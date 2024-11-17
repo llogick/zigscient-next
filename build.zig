@@ -23,12 +23,14 @@ pub fn build(b: *std.Build) !void {
     });
     const optimize = b.standardOptimizeOption(.{});
 
+    const dev: DevEnv = b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .lsps;
+
     const flat = b.option(bool, "flat", "Put files into the installation prefix in a manner suited for upstream distribution rather than a posix file system hierarchy standard") orelse false;
     const single_threaded = b.option(bool, "single-threaded", "Build artifacts that run in single threaded mode");
     const use_zig_libcxx = b.option(bool, "use-zig-libcxx", "If libc++ is needed, use zig's bundled version, don't try to integrate with the system") orelse false;
 
     const test_step = b.step("test", "Run all the tests");
-    const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse false;
+    const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse if (dev == .lsps) true else false;
     const skip_install_langref = b.option(bool, "no-langref", "skip copying of langref to the installation prefix") orelse skip_install_lib_files;
     const std_docs = b.option(bool, "std-docs", "include standard library autodocs") orelse false;
     const no_bin = b.option(bool, "no-bin", "skip emitting compiler binary") orelse false;
@@ -186,7 +188,10 @@ pub fn build(b: *std.Build) !void {
         break :blk 4;
     };
 
+    const exe_name = if (dev == .lsps) "zigscient" else "zig";
+
     const exe = addCompilerStep(b, .{
+        .exe_name = exe_name,
         .optimize = optimize,
         .target = target,
         .strip = strip,
@@ -234,7 +239,7 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(bool, "llvm_has_arc", llvm_has_arc);
     exe_options.addOption(bool, "llvm_has_xtensa", llvm_has_xtensa);
     exe_options.addOption(bool, "debug_gpa", debug_gpa);
-    exe_options.addOption(DevEnv, "dev", b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .full);
+    exe_options.addOption(DevEnv, "dev", dev);
     exe_options.addOption(ValueInterpretMode, "value_interpret_mode", value_interpret_mode);
 
     if (link_libc) {
@@ -384,6 +389,44 @@ pub fn build(b: *std.Build) !void {
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const test_target_filters = b.option([]const []const u8, "test-target-filter", "Skip tests whose target triple do not match any filter") orelse &[0][]const u8{};
     const test_slow_targets = b.option(bool, "test-slow-targets", "Enable running module tests for targets that have a slow compiler backend") orelse false;
+
+    cfgLspServer(
+        b,
+        exe_options,
+        exe,
+        target,
+        optimize,
+        test_filters,
+        single_threaded,
+        pie,
+        use_llvm,
+    );
+
+    const test_cases_options = b.addOptions();
+
+    test_cases_options.addOption(bool, "enable_tracy", false);
+    test_cases_options.addOption(bool, "enable_debug_extensions", enable_debug_extensions);
+    test_cases_options.addOption(bool, "enable_logging", enable_logging);
+    test_cases_options.addOption(bool, "enable_link_snapshots", enable_link_snapshots);
+    test_cases_options.addOption(bool, "skip_non_native", skip_non_native);
+    test_cases_options.addOption(bool, "have_llvm", enable_llvm);
+    test_cases_options.addOption(bool, "llvm_has_m68k", llvm_has_m68k);
+    test_cases_options.addOption(bool, "llvm_has_csky", llvm_has_csky);
+    test_cases_options.addOption(bool, "llvm_has_arc", llvm_has_arc);
+    test_cases_options.addOption(bool, "llvm_has_xtensa", llvm_has_xtensa);
+    test_cases_options.addOption(bool, "force_gpa", force_gpa);
+    test_cases_options.addOption(bool, "enable_qemu", b.enable_qemu);
+    test_cases_options.addOption(bool, "enable_wine", b.enable_wine);
+    test_cases_options.addOption(bool, "enable_wasmtime", b.enable_wasmtime);
+    test_cases_options.addOption(bool, "enable_rosetta", b.enable_rosetta);
+    test_cases_options.addOption(bool, "enable_darling", b.enable_darling);
+    test_cases_options.addOption(u32, "mem_leak_frames", mem_leak_frames * 2);
+    test_cases_options.addOption(bool, "value_tracing", value_tracing);
+    test_cases_options.addOption(?[]const u8, "glibc_runtimes_dir", b.glibc_runtimes_dir);
+    test_cases_options.addOption([:0]const u8, "version", version);
+    test_cases_options.addOption(std.SemanticVersion, "semver", semver);
+    test_cases_options.addOption([]const []const u8, "test_filters", test_filters);
+    test_cases_options.addOption(DevEnv, "dev", if (only_c) .bootstrap else .core);
 
     var chosen_opt_modes_buf: [4]builtin.OptimizeMode = undefined;
     var chosen_mode_index: usize = 0;
@@ -594,6 +637,7 @@ fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
     const semver = try std.SemanticVersion.parse(version);
 
     const exe = addCompilerStep(b, .{
+        .exe_name = "zig",
         .optimize = .ReleaseSmall,
         .target = b.resolveTargetQuery(std.Target.Query.parse(.{
             .arch_os_abi = "wasm32-wasi",
@@ -659,6 +703,7 @@ fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
 }
 
 const AddCompilerStepOptions = struct {
+    exe_name: []const u8,
     optimize: std.builtin.OptimizeMode,
     target: std.Build.ResolvedTarget,
     strip: ?bool = null,
@@ -709,7 +754,7 @@ fn addCompilerStep(b: *std.Build, options: AddCompilerStepOptions) *std.Build.St
     compiler_mod.addImport("aro_translate_c", aro_translate_c_mod);
 
     const exe = b.addExecutable(.{
-        .name = "zig",
+        .name = options.exe_name,
         .max_rss = 7_800_000_000,
         .root_module = compiler_mod,
     });
@@ -1399,3 +1444,295 @@ fn superHtmlCheck(b: *std.Build, html_file: std.Build.LazyPath) *std.Build.Step 
     run_superhtml.expectExitCode(0);
     return &run_superhtml.step;
 }
+
+// lsp-server
+
+/// Must match the `version` in `build.zig.zon`.
+/// Remove `.pre` when tagging a new release and add it back on the next development cycle.
+const proj_version = std.SemanticVersion{ .major = 0, .minor = 14, .patch = 0, .pre = "dev" };
+
+/// Specify the minimum Zig version that is required to compile and test the project:
+/// Must match the `minimum_zig_version` in `build.zig.zon`.
+/// Breaking change summary: Replace `std.builtin.CallingConvention` with a tagged union, eliminating `@setAlignStack`
+const minimum_build_zig_version = "0.14.0-dev.1983+6bf52b050";
+
+/// Specify the minimum Zig version that is required to run the project:
+/// Release 0.12.0
+///
+/// Examples of reasons that would cause the minimum runtime version to be bumped are:
+///   - breaking change to the Zig Syntax
+///   - breaking change to AstGen (i.e `zig ast-check`)
+///
+/// A breaking change to the Zig Build System should be handled by updating the build runner (see src\build_runner)
+const minimum_runtime_zig_version = "0.12.0";
+
+fn cfgLspServer(
+    b: *std.Build,
+    exe_options: *std.Build.Step.Options,
+    exe: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    test_filters: []const []const u8,
+    single_threaded: ?bool,
+    pie: ?bool,
+    use_llvm: ?bool,
+) void {
+    const resolved_proj_version = getVersion(b);
+    const resolved_proj_version_string = b.fmt("{}", .{resolved_proj_version});
+
+    const ls_build_options = b.addOptions();
+    ls_build_options.step.name = "Build Options";
+    const ls_build_options_module = ls_build_options.createModule();
+    ls_build_options.addOption(std.SemanticVersion, "version", resolved_proj_version);
+    ls_build_options.addOption([]const u8, "version_string", resolved_proj_version_string);
+    ls_build_options.addOption([]const u8, "minimum_runtime_zig_version_string", minimum_runtime_zig_version);
+
+    const exe_options_module = exe_options.createModule();
+    exe_options.addOption(bool, "enable_failing_allocator", b.option(bool, "enable_failing_allocator", "Whether to use a randomly failing allocator.") orelse false);
+    exe_options.addOption(u32, "enable_failing_allocator_likelihood", b.option(u32, "enable_failing_allocator_likelihood", "The chance that an allocation will fail is `1/likelihood`") orelse 256);
+    exe_options.addOption(bool, "use_gpa", b.option(bool, "use_gpa", "Good for debugging") orelse (optimize == .Debug));
+    const link_libc_opt = b.option(bool, "llc", "Link against libc and use the c allocator") orelse false;
+    exe_options.addOption(bool, "llc", link_libc_opt);
+
+    const test_options = b.addOptions();
+    test_options.step.name = "Tests Options";
+    const test_options_module = test_options.createModule();
+    test_options.addOption([]const u8, "zig_exe_path", b.graph.zig_exe);
+    test_options.addOption([]const u8, "zig_lib_path", b.graph.zig_lib_directory.path.?);
+    test_options.addOption([]const u8, "global_cache_path", b.graph.global_cache_root.join(b.allocator, &.{"zigscient"}) catch @panic("OOM"));
+
+    const known_folders_module = b.dependency("known_folders", .{}).module("known-folders");
+    const diffz_module = b.dependency("diffz", .{}).module("diffz");
+    const lsp_module = b.dependency("lsp-codegen", .{}).module("lsp");
+
+    const gen_exe = b.addExecutable(.{
+        .name = "cfg_gen",
+        .root_source_file = b.path("src/lsp-server/tools/config_gen.zig"),
+        .target = b.graph.host,
+        .single_threaded = true,
+    });
+
+    const version_data_module = blk: {
+        const gen_version_data_cmd = b.addRunArtifact(gen_exe);
+        const version = if (proj_version.pre == null and proj_version.build == null) b.fmt("{}", .{proj_version}) else "master";
+        gen_version_data_cmd.addArgs(&.{ "--langref-version", version });
+
+        gen_version_data_cmd.addArg("--langref-path");
+        gen_version_data_cmd.addFileArg(b.path("doc/langref.html.in"));
+
+        gen_version_data_cmd.addArg("--generate-version-data");
+        const version_data_path = gen_version_data_cmd.addOutputFileArg("version_data.zig");
+
+        break :blk b.addModule("version_data", .{ .root_source_file = version_data_path });
+    };
+
+    const gen_cmd = b.addRunArtifact(gen_exe);
+    gen_cmd.addArgs(&.{
+        "--generate-config",
+        b.pathFromRoot("src/Config.zig"),
+        "--generate-schema",
+        b.pathFromRoot("schema.json"),
+    });
+    if (b.args) |args| gen_cmd.addArgs(args);
+
+    const gen_step = b.step("gen", "Regenerate config files");
+    gen_step.dependOn(&gen_cmd.step);
+
+    const tracy_module = b.addModule("tracy", .{
+        .root_source_file = b.path("src/lsp-server/tracy.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const zls_module = b.addModule("zls", .{
+        .root_source_file = b.path("src/lsp-server/zls.zig"),
+        .imports = &.{
+            .{ .name = "known-folders", .module = known_folders_module },
+            .{ .name = "diffz", .module = diffz_module },
+            .{ .name = "lsp", .module = lsp_module },
+            .{ .name = "ls_build_options", .module = ls_build_options_module },
+            .{ .name = "exe_options", .module = exe_options_module },
+            .{ .name = "version_data", .module = version_data_module },
+            .{ .name = "tracy", .module = tracy_module },
+        },
+    });
+
+    if (link_libc_opt) exe.linkLibC();
+    exe.root_module.addImport("ls_build_options", ls_build_options_module);
+    exe.root_module.addImport("version_data", version_data_module);
+    exe.root_module.addImport("diffz", diffz_module);
+    exe.root_module.addImport("lsp", lsp_module);
+    exe.root_module.addImport("known-folders", known_folders_module);
+    exe.root_module.addImport("zls", zls_module);
+
+    const test_step = b.step("test-lsp", "Run lsp-server tests");
+
+    const ls_tests = b.addTest(.{
+        .root_source_file = b.path("src/lsp-server/tests/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filters = test_filters,
+        .single_threaded = single_threaded,
+        .pic = pie,
+        .use_llvm = use_llvm,
+        .use_lld = use_llvm,
+    });
+
+    ls_tests.root_module.addImport("ls_build_options", ls_build_options_module);
+    ls_tests.root_module.addImport("zls", zls_module);
+    ls_tests.root_module.addImport("test_options", test_options_module);
+    test_step.dependOn(&b.addRunArtifact(ls_tests).step);
+
+    const src_tests = b.addTest(.{
+        .name = "src test",
+        .root_source_file = b.path("src/lsp-server/zls.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filters = test_filters,
+        .single_threaded = single_threaded,
+        .pic = pie,
+        .use_llvm = use_llvm,
+        .use_lld = use_llvm,
+    });
+    src_tests.root_module.addImport("ls_build_options", ls_build_options_module);
+    src_tests.root_module.addImport("test_options", test_options_module);
+    src_tests.root_module.addImport("lsp", lsp_module);
+    test_step.dependOn(&b.addRunArtifact(src_tests).step);
+}
+
+/// Returns `MAJOR.MINOR.PATCH-dev` when `git describe` failed.
+fn getVersion(b: *Build) std.SemanticVersion {
+    if (proj_version.pre == null and proj_version.build == null) return proj_version;
+
+    var code: u8 = undefined;
+    const git_describe_untrimmed = b.runAllowFail(
+        &.{ "git", "-C", b.pathFromRoot("."), "describe", "--match", "*.*.*", "--tags" },
+        &code,
+        .Ignore,
+    ) catch return proj_version;
+
+    const git_describe = std.mem.trim(u8, git_describe_untrimmed, " \n\r");
+
+    switch (std.mem.count(u8, git_describe, "-")) {
+        0 => {
+            // Tagged release version (e.g. 0.10.0).
+            std.debug.assert(std.mem.eql(u8, git_describe, b.fmt("{}", .{proj_version}))); // tagged release must match version string
+            return proj_version;
+        },
+        2 => {
+            // Untagged development build (e.g. 0.10.0-dev.216+34ce200).
+            var it = std.mem.splitScalar(u8, git_describe, '-');
+            const tagged_ancestor = it.first();
+            const commit_height = it.next().?;
+            const commit_id = it.next().?;
+
+            const ancestor_ver = std.SemanticVersion.parse(tagged_ancestor) catch unreachable;
+            std.debug.assert(proj_version.order(ancestor_ver) == .gt); // version must be greater than its previous version
+            std.debug.assert(std.mem.startsWith(u8, commit_id, "g")); // commit hash is prefixed with a 'g'
+
+            return std.SemanticVersion{
+                .major = proj_version.major,
+                .minor = proj_version.minor,
+                .patch = proj_version.patch,
+                .pre = b.fmt("dev.{s}", .{commit_height}),
+                .build = commit_id[1..],
+            };
+        },
+        else => {
+            std.debug.print("Unexpected 'git describe' output: '{s}'\n", .{git_describe});
+            std.process.exit(1);
+        },
+    }
+}
+
+const Build = blk: {
+    const min_build_zig = std.SemanticVersion.parse(minimum_build_zig_version) catch unreachable;
+    const min_runtime_zig = std.SemanticVersion.parse(minimum_runtime_zig_version) catch unreachable;
+
+    std.debug.assert(proj_version.pre == null or std.mem.eql(u8, proj_version.pre.?, "dev"));
+    std.debug.assert(proj_version.build == null);
+    const proj_version_is_tagged = proj_version.pre == null and proj_version.build == null;
+
+    if (min_runtime_zig.order(min_build_zig) == .gt) {
+        const message = std.fmt.comptimePrint(
+            \\The minimum runtime Zig version must be less or equal to the minimum build Zig version:
+            \\  minimum build   Zig version: {[min_build_zig]}
+            \\  minimum runtime Zig version: {[min_runtime_zig]}
+            \\
+            \\This is a developer error.
+        , .{ .min_build_zig = min_build_zig, .min_runtime_zig = min_runtime_zig });
+        @compileError(message);
+    }
+
+    // check that the project version and minimum build version make sense
+    if (proj_version_is_tagged) {
+        if (proj_version.order(min_build_zig) != .eq) {
+            const message = std.fmt.comptimePrint(
+                \\A tagged release should have the same tagged release of Zig as the minimum build requirement:
+                \\          Project version: {[current_version]}
+                \\  minimum Zig     version: {[minimum_version]}
+                \\
+                \\This is a developer error. Set `minimum_build_zig_version` in `build.zig` and `minimum_zig_version` in `build.zig.zon` to {[current_version]}.
+            , .{ .current_version = proj_version, .minimum_version = min_build_zig });
+            @compileError(message);
+        }
+    } else {
+        const min_build_zig_simple = std.SemanticVersion{ .major = min_build_zig.major, .minor = min_build_zig.minor, .patch = 0 };
+        const proj_version_simple = std.SemanticVersion{ .major = proj_version.major, .minor = proj_version.minor, .patch = 0 };
+        const min_zig_is_tagged = min_build_zig.build == null and min_build_zig.pre == null;
+        if (!min_zig_is_tagged and proj_version_simple.order(min_build_zig_simple) != .eq) {
+            const message = std.fmt.comptimePrint(
+                \\A development build should have a tagged release of Zig as the minimum build requirement or
+                \\have a development build of Zig as the minimum build requirement with the same major and minor version.
+                \\          Project version: {d}.{d}.*
+                \\  minimum Zig     version: {}
+                \\
+                \\
+                \\This is a developer error.
+            , .{ proj_version.major, proj_version.minor, min_build_zig });
+            @compileError(message);
+        }
+    }
+
+    const zbuiltin = @import("builtin");
+
+    // check minimum build version
+    const is_current_zig_tagged_release = zbuiltin.zig_version.pre == null and zbuiltin.zig_version.build == null;
+    const is_min_build_zig_tagged_release = min_build_zig.pre == null and min_build_zig.build == null;
+    const min_build_zig_simple = std.SemanticVersion{ .major = min_build_zig.major, .minor = min_build_zig.minor, .patch = 0 };
+    const current_zig_simple = std.SemanticVersion{ .major = zbuiltin.zig_version.major, .minor = zbuiltin.zig_version.minor, .patch = 0 };
+    if (switch (zbuiltin.zig_version.order(min_build_zig)) {
+        .lt => true,
+        .eq => false,
+        .gt => (is_current_zig_tagged_release and !is_min_build_zig_tagged_release) or
+            // a tagged release of the project must be built with a tagged release of Zig that has the same major and minor version.
+            (proj_version_is_tagged and (min_build_zig_simple.order(current_zig_simple) != .eq)),
+    }) {
+        const message = std.fmt.comptimePrint(
+            \\Your Zig version does not meet the minimum build requirement:
+            \\  required Zig version: {[minimum_version]} {[required_zig_version_note]s}
+            \\  actual   Zig version: {[current_version]}
+            \\
+            \\
+        ++ if (is_min_build_zig_tagged_release)
+            std.fmt.comptimePrint(
+                \\Please download the {[minimum_version]} release of Zig. (https://ziglang.org/download/)
+            , .{
+                .minimum_version = min_build_zig,
+                .minimum_version_simple = min_build_zig_simple,
+            })
+        else if (is_current_zig_tagged_release)
+            \\Please download or compile a tagged release of this project.
+        else
+            \\You can take one of the following actions to resolve this issue:
+            \\  - Download the latest nightly of Zig (https://ziglang.org/download/)
+            \\  - Compile an older version of this project that is compatible with your Zig version
+        , .{
+            .current_version = builtin.zig_version,
+            .minimum_version = min_build_zig,
+            .required_zig_version_note = if (!proj_version_is_tagged) "(or greater)" else "",
+        });
+        @compileError(message);
+    }
+    break :blk std.Build;
+};

@@ -42,6 +42,8 @@ const LlvmObject = @import("codegen/llvm.zig").Object;
 const dev = @import("dev.zig");
 const ThreadSafeQueue = @import("ThreadSafeQueue.zig").ThreadSafeQueue;
 
+const LspDocumentStore = @import("lsp-server/DocumentStore.zig");
+
 pub const Directory = Cache.Directory;
 pub const Config = @import("Compilation/Config.zig");
 
@@ -1174,6 +1176,9 @@ pub const CreateOptions = struct {
 
     parent_whole_cache: ?ParentWholeCache = null,
 
+    project_root_path: ?[]const u8 = null,
+    lsp_ds: ?*LspDocumentStore = null,
+
     pub const Entry = link.File.OpenOptions.Entry;
 };
 
@@ -1430,6 +1435,8 @@ pub fn create(gpa: Allocator, arena: Allocator, options: CreateOptions) !*Compil
                 .local_zir_cache = local_zir_cache,
                 .error_limit = error_limit,
                 .llvm_object = null,
+                .project_root_path = options.project_root_path,
+                .lsp_ds = options.lsp_ds,
             };
             try zcu.init(options.thread_pool.getIdCount());
             break :blk zcu;
@@ -1909,6 +1916,9 @@ pub fn create(gpa: Allocator, arena: Allocator, options: CreateOptions) !*Compil
 pub fn destroy(comp: *Compilation) void {
     const gpa = comp.gpa;
 
+    // if (true) @panic("Why comp.destroy()?");
+    std.debug.print("!!!!! comp.destroy() called\n", .{});
+
     if (comp.bin_file) |lf| lf.destroy();
     if (comp.zcu) |zcu| zcu.deinit();
     comp.cache_use.deinit();
@@ -2193,6 +2203,8 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) !void {
     if (comp.zcu) |zcu| {
         const pt: Zcu.PerThread = .activate(zcu, .main);
         defer pt.deactivate();
+
+        std.debug.print("comp update for: {s}\n", .{zcu.project_root_path.?});
 
         zcu.compile_log_text.shrinkAndFree(gpa, 0);
 

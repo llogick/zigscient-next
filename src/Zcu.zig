@@ -224,6 +224,11 @@ builtin_decl_values: BuiltinDecl.Memoized = .initFill(.none),
 
 generation: u32 = 0,
 
+project_root_path: ?[]const u8 = null,
+lsp_ds: ?*LspDocumentStore = null,
+
+const LspDocumentStore = @import("lsp-server/DocumentStore.zig");
+
 pub const PerThread = @import("Zcu/PerThread.zig");
 
 /// Names of declarations in `std.builtin` whose values are memoized in a `BuiltinDecl.Memoized`.

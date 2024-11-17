@@ -92,11 +92,28 @@ pub fn updateFile(
     const comp = zcu.comp;
     const gpa = zcu.gpa;
 
+    var file_path = try file.fullPath(gpa);
+    if (!std.fs.path.isAbsolute(file_path)) blk: {
+        const prp = zcu.project_root_path orelse break :blk;
+        const absfp = std.fs.path.join(gpa, &.{ prp, file_path }) catch break :blk;
+        gpa.free(file_path);
+        file_path = absfp;
+    }
+    defer gpa.free(file_path);
+    const uri = try @import("../lsp-server/uri.zig").fromPath(gpa, file_path);
+    defer gpa.free(uri);
+    // std.debug.print("uri: {s}\n", .{uri});
+
+    const lsps_file = if (zcu.lsp_ds) |ds| ds.getHandle(uri) orelse null else null;
+
     // In any case we need to examine the stat of the file to determine the course of action.
     var source_file = try file.mod.root.openFile(file.sub_file_path, .{});
     defer source_file.close();
 
-    const stat = try source_file.stat();
+    var stat = try source_file.stat();
+    if (lsps_file) |lsps_f| {
+        if (lsps_f.stat) |lsps_fstat| stat.mtime = lsps_fstat.mtime;
+    }
 
     const want_local_cache = file.mod == zcu.main_mod;
     const hex_digest = Cache.binToHex(path_digest);
@@ -1875,6 +1892,7 @@ pub fn importPkg(pt: Zcu.PerThread, mod: *Module) Allocator.Error!Zcu.ImportFile
     });
     var keep_resolved_path = false;
     defer if (!keep_resolved_path) gpa.free(resolved_path);
+    // std.debug.print("iP: {s}\n", .{resolved_path});
 
     const gop = try zcu.import_table.getOrPut(gpa, resolved_path);
     errdefer _ = zcu.import_table.pop();
@@ -1989,6 +2007,7 @@ pub fn importFile(
         "..",
         import_string,
     });
+    // std.debug.print("iF: {s}\n", .{resolved_path});
 
     var keep_resolved_path = false;
     defer if (!keep_resolved_path) gpa.free(resolved_path);

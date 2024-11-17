@@ -14025,6 +14025,9 @@ fn zirImport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
             return sema.fail(block, operand_src, "import of file outside module path: '{s}'", .{operand});
         },
         error.ModuleNotFound => {
+            std.debug.print("no module named '{s}' available within module '{s}'\n", .{
+                operand, block.getFileScope(zcu).mod.fully_qualified_name,
+            });
             return sema.fail(block, operand_src, "no module named '{s}' available within module {s}", .{
                 operand, block.getFileScope(zcu).mod.fully_qualified_name,
             });
