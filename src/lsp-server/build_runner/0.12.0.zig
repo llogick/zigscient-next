@@ -1177,6 +1177,14 @@ fn extractBuildInformation(
                 try addStepDependencies(allocator, set, root_source_file);
             }
 
+            for (module.lib_paths.items) |lib_path| {
+                try addStepDependencies(allocator, set, lib_path);
+            }
+
+            for (module.rpaths.items) |rpath| {
+                if (rpath == .lazy_path) try addStepDependencies(allocator, set, rpath.lazy_path);
+            }
+
             for (module.import_table.values()) |import| {
                 if (import.root_source_file) |root_source_file| {
                     try addStepDependencies(allocator, set, root_source_file);
@@ -1453,7 +1461,11 @@ fn extractBuildInformation(
 
     var roots = try std.ArrayListUnmanaged(BuildConfig.RootEntry).initCapacity(gpa, unsorted_roots.items.len);
     for (unsorted_roots.items) |item| {
-        roots.appendAssumeCapacity(.{ .name = item.step.name, .args = try getZigArgs(item.step, false), .mods = item.mods });
+        roots.appendAssumeCapacity(.{
+            .name = item.step.name,
+            .args = try getZigArgs(item.step, false),
+            .mods = item.mods,
+        });
         try roots_info.print(&roots_info_slc, &root_idx, item.step);
     }
 
@@ -2305,22 +2317,22 @@ fn getZigArgs(compile: *std.Build.Step.Compile, fuzz: bool) ![][]const u8 {
     if (compile.wasi_exec_model) |model| {
         try zig_args.append(b.fmt("-mexec-model={s}", .{@tagName(model)}));
     }
-    if (compile.linker_script) |linker_script| {
-        try zig_args.append("--script");
-        try zig_args.append(linker_script.getPath2(b, step));
-    }
+    // if (compile.linker_script) |linker_script| {
+    //     try zig_args.append("--script");
+    //     try zig_args.append(linker_script.getPath2(b, step));
+    // }
 
-    if (compile.version_script) |version_script| {
-        try zig_args.append("--version-script");
-        try zig_args.append(version_script.getPath2(b, step));
-    }
-    if (compile.linker_allow_undefined_version) |x| {
-        try zig_args.append(if (x) "--undefined-version" else "--no-undefined-version");
-    }
+    // if (compile.version_script) |version_script| {
+    //     try zig_args.append("--version-script");
+    //     try zig_args.append(version_script.getPath2(b, step));
+    // }
+    // if (compile.linker_allow_undefined_version) |x| {
+    //     try zig_args.append(if (x) "--undefined-version" else "--no-undefined-version");
+    // }
 
-    if (compile.linker_enable_new_dtags) |enabled| {
-        try zig_args.append(if (enabled) "--enable-new-dtags" else "--disable-new-dtags");
-    }
+    // if (compile.linker_enable_new_dtags) |enabled| {
+    //     try zig_args.append(if (enabled) "--enable-new-dtags" else "--disable-new-dtags");
+    // }
 
     if (compile.kind == .@"test") {
         if (compile.exec_cmd_args) |exec_cmd_args| {
