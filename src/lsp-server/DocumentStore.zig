@@ -21,15 +21,18 @@ const ContentChanges = @import("diff.zig").ContentChanges;
 const Compilation = @import("../Compilation.zig");
 const DocumentStore = @This();
 const zmain = @import("../main.zig");
+const Server = @import("Server.zig");
+const lsp = @import("lsp");
 
 allocator: std.mem.Allocator,
 /// the DocumentStore assumes that `config` is not modified while calling one of its functions.
 config: Config,
+server: *Server,
 lock: std.Thread.RwLock = .{},
-thread_pool: if (builtin.single_threaded) void else *std.Thread.Pool,
 handles: std.StringArrayHashMapUnmanaged(*Handle) = .{},
 build_files: std.StringArrayHashMapUnmanaged(*BuildFile) = .{},
 cimports: std.AutoArrayHashMapUnmanaged(Hash, translate_c.Result) = .{},
+num_builds_in_progress: std.atomic.Value(i32) = .init(0),
 
 pub const Uri = []const u8;
 
@@ -180,10 +183,13 @@ pub const BuildFile = struct {
         // defer self.impl.mutex.unlock();
 
         if (self.impl.compilation) |comp| {
-            if (true) return; // XXX something is calling destroy()
             comp.destroy();
             self.impl.compilation = null;
-            _ = self.impl.arena_instance.reset(.retain_capacity);
+            ds.allocator.destroy(self.impl.comp_state);
+            self.impl.comp_state = undefined;
+            var arena_i = self.impl.arena_instance.promote(ds.allocator);
+            defer self.impl.arena_instance = arena_i.state;
+            _ = arena_i.reset(.retain_capacity);
         }
         if (self.impl.config) |cfg| blk: {
             if (cfg.value.roots.len == 0) break :blk;
@@ -208,6 +214,8 @@ pub const BuildFile = struct {
             errdefer {
                 // if (self.impl.compilation) |c| c.destroy();
                 self.impl.compilation = null;
+                ds.allocator.destroy(self.impl.comp_state);
+                self.impl.comp_state = undefined;
                 std.debug.print("comp failed\n", .{});
             }
             if (std.mem.eql(u8, cmd, "build-exe")) {
@@ -241,7 +249,7 @@ pub const BuildFile = struct {
                     &self.impl.compilation,
                 ) catch break :blk;
             }
-            std.debug.print("new comp: {*}\n", .{self.impl.compilation.?});
+            if (self.impl.compilation) |c| std.debug.print("new comp: {*}\n", .{c});
             // var eb = self.impl.compilation.?.getAllErrorsAlloc() catch @panic("OOM");
             // defer eb.deinit(ds.allocator);
             // std.debug.print("initial comp errorMsgCount: {}\n", .{eb.errorMessageCount()});
@@ -680,6 +688,9 @@ pub const Handle = struct {
             if (tok.tag != .number_literal) return;
             const root_id = std.fmt.parseInt(u32, source[tok.loc.start..tok.loc.end], 10) catch return;
             build_file.root_id = root_id;
+            build_file.impl.mutex.lock();
+            defer build_file.impl.mutex.unlock();
+            build_file.redoCompilation(ds);
         }
     }
 
@@ -891,6 +902,95 @@ pub fn refreshDocument(self: *DocumentStore, handle: *Handle, content_changes: C
     handle.cimports = try collectCIncludes(self.allocator, handle.tree);
 }
 
+// Build Progress Notification
+const progress_token = "buildProgressToken";
+
+fn sendMessageToClient(allocator: std.mem.Allocator, transport: lsp.AnyTransport, message: anytype) !void {
+    const serialized = try std.json.stringifyAlloc(
+        allocator,
+        message,
+        .{ .emit_null_optional_fields = false },
+    );
+    defer allocator.free(serialized);
+
+    try transport.writeJsonMessage(serialized);
+}
+
+fn notifyBuildStart(self: *DocumentStore) void {
+    if (!self.server.client_capabilities.supports_work_done_progress) return;
+
+    // Atomicity note: We do not actually care about memory surrounding the
+    // counter, we only care about the counter itself. We only need to ensure
+    // we aren't double entering/exiting
+    const prev = self.num_builds_in_progress.fetchAdd(1, .monotonic);
+    if (prev != 0) return;
+
+    const transport = self.server.transport orelse return;
+
+    sendMessageToClient(
+        self.allocator,
+        transport,
+        .{
+            .jsonrpc = "2.0",
+            .id = "progress",
+            .method = "window/workDoneProgress/create",
+            .params = lsp.types.WorkDoneProgressCreateParams{
+                .token = .{ .string = progress_token },
+            },
+        },
+    ) catch |err| {
+        log.err("Failed to send create work message: {}", .{err});
+        return;
+    };
+
+    sendMessageToClient(self.allocator, transport, .{
+        .jsonrpc = "2.0",
+        .method = "$/progress",
+        .params = .{
+            .token = progress_token,
+            .value = lsp.types.WorkDoneProgressBegin{
+                .title = "Loading build configuration",
+            },
+        },
+    }) catch |err| {
+        log.err("Failed to send progress start message: {}", .{err});
+        return;
+    };
+}
+
+const EndStatus = enum { success, failed };
+
+fn notifyBuildEnd(self: *DocumentStore, status: EndStatus) void {
+    if (!self.server.client_capabilities.supports_work_done_progress) return;
+
+    // Atomicity note: We do not actually care about memory surrounding the
+    // counter, we only care about the counter itself. We only need to ensure
+    // we aren't double entering/exiting
+    const prev = self.num_builds_in_progress.fetchSub(1, .monotonic);
+    if (prev != 1) return;
+
+    const transport = self.server.transport orelse return;
+
+    const message = switch (status) {
+        .failed => "Failed",
+        .success => "Success",
+    };
+
+    sendMessageToClient(self.allocator, transport, .{
+        .jsonrpc = "2.0",
+        .method = "$/progress",
+        .params = .{
+            .token = progress_token,
+            .value = lsp.types.WorkDoneProgressEnd{
+                .message = message,
+            },
+        },
+    }) catch |err| {
+        log.err("Failed to send progress end message: {}", .{err});
+        return;
+    };
+}
+
 /// Invalidates a build files.
 /// **Thread safe** takes a shared lock
 pub fn invalidateBuildFile(self: *DocumentStore, build_file_uri: Uri) error{OutOfMemory}!void {
@@ -906,12 +1006,16 @@ pub fn invalidateBuildFile(self: *DocumentStore, build_file_uri: Uri) error{OutO
     if (builtin.single_threaded) {
         self.invalidateBuildFileWorker(uri);
     } else {
-        try self.thread_pool.spawn(invalidateBuildFileWorker, .{ self, uri });
+        try self.server.thread_pool.spawn(invalidateBuildFileWorker, .{ self, uri });
     }
 }
 
 fn invalidateBuildFileWorker(self: *DocumentStore, build_file_uri: Uri) void {
     defer self.allocator.free(build_file_uri);
+
+    var end_status: EndStatus = .failed;
+    self.notifyBuildStart();
+    defer self.notifyBuildEnd(end_status);
 
     const build_config = loadBuildConfiguration(self, build_file_uri) catch |err| {
         log.err("Failed to load build configuration for {s} (error: {})", .{ build_file_uri, err });
@@ -923,6 +1027,16 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file_uri: Uri) void {
         return;
     };
 
+    if (build_file.impl.compilation) |comp| {
+        comp.destroy();
+        build_file.impl.compilation = null;
+        self.allocator.destroy(build_file.impl.comp_state);
+        build_file.impl.comp_state = undefined;
+        var arena_i = build_file.impl.arena_instance.promote(self.allocator);
+        defer build_file.impl.arena_instance = arena_i.state;
+        _ = arena_i.reset(.retain_capacity);
+    }
+
     blk: {
         const bfh = self.getHandle(build_file_uri) orelse break :blk;
         bfh.handleRootIdComment(self);
@@ -932,6 +1046,35 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file_uri: Uri) void {
     build_file.impl.mutex.lock();
     defer build_file.impl.mutex.unlock();
     if (build_file.impl.compilation == null) build_file.redoCompilation(self);
+
+    // Notify client to refresh semanticTokens and inlayHints for the workspace
+    if (self.server.transport) |transport| {
+        if (self.server.client_capabilities.supports_semantic_tokens_refresh) {
+            sendMessageToClient(
+                self.allocator,
+                transport,
+                lsp.TypedJsonRPCRequest(?void){
+                    .id = .{ .string = "semantic_tokens_refresh" },
+                    .method = "workspace/semanticTokens/refresh",
+                    .params = @as(?void, null),
+                },
+            ) catch {};
+        }
+        if (self.server.client_capabilities.supports_inlay_hints_refresh) {
+            sendMessageToClient(
+                self.allocator,
+                transport,
+                lsp.TypedJsonRPCRequest(?void){
+                    .id = .{ .string = "inlay_hints_refresh" },
+                    .method = "workspace/inlayHint/refresh",
+                    .params = @as(?void, null),
+                },
+            ) catch {};
+        }
+    }
+
+    // Looks like a useless assignment, but alters deffered onEnd
+    end_status = .success;
 }
 
 /// The `DocumentStore` represents a graph structure where every
@@ -1417,7 +1560,7 @@ fn createDocument(self: *DocumentStore, uri: Uri, text: [:0]const u8, open: bool
     if (isBuildFile(handle.uri) and !isInStd(handle.uri)) {
         _ = self.getOrLoadBuildFile(handle.uri);
     } else if (!isBuiltinFile(handle.uri) and !isInStd(handle.uri)) blk: {
-        if (true) break :blk; // XXX <------------------------------- limit to ws_build_zig
+        // if (true) break :blk; // XXX <------------------------------- limit to ws_build_zig
         handle.closest_build_zig = findBuildZig(self.allocator, handle.uri) catch null;
         if (handle.closest_build_zig) |bzfuri| cbz: {
             if (self.config.ws_build_zig) |wsbz| {
