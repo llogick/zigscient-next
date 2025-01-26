@@ -18,9 +18,24 @@ const CustomAst = @import("zig-components/Ast.zig");
 const InternPool = @import("analyser/InternPool.zig");
 const DocumentScope = @import("DocumentScope.zig");
 const ContentChanges = @import("diff.zig").ContentChanges;
-const Compilation = @import("../Compilation.zig");
+const Compilation = if (!builtin.is_test) @import("../Compilation.zig") else struct {
+    pub fn destroy(_: anytype) void {}
+};
 const DocumentStore = @This();
-const zmain = @import("../main.zig");
+const zmain = if (!builtin.is_test) @import("../main.zig") else struct {
+    pub const CompilationState = struct {
+        pub fn deinit(_: anytype, _: anytype, _: anytype) void {}
+    };
+    pub fn buildOutputType2(
+        _: anytype,
+        _: anytype,
+        _: anytype,
+        _: anytype,
+        _: anytype,
+        _: anytype,
+        _: anytype,
+    ) !void {}
+};
 const Server = @import("Server.zig");
 const lsp = @import("lsp");
 
