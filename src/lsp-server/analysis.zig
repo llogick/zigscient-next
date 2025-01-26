@@ -1228,7 +1228,18 @@ fn resolveIntegerLiteral(analyser: *Analyser, comptime T: type, node_handle: Nod
     return analyser.ip.toInt(ip_index, T);
 }
 
-const primitives = std.StaticStringMap(InternPool.Index).initComptime(.{
+fn extractArrayData(data: *Type.Data) ?*Type.Data {
+    return switch (data.*) {
+        .array => data,
+        .pointer => |*p| switch (p.elem_ty.data) {
+            .array => &p.elem_ty.data,
+            else => null,
+        },
+        else => null,
+    };
+}
+
+const primitives: std.StaticStringMap(InternPool.Index) = .initComptime(.{
     .{ "anyerror", .anyerror_type },
     .{ "anyframe", .anyframe_type },
     .{ "anyopaque", .anyopaque_type },
@@ -1581,7 +1592,7 @@ fn resolveTypeOfNodeUncached(analyser: *Analyser, node_handle: NodeWithHandle) e
                 .unwrap_optional => try analyser.resolveOptionalUnwrap(base_type),
                 .array_access => try analyser.resolveBracketAccessType(base_type, .Single),
                 .@"orelse" => {
-                    const type_right = try analyser.resolveTypeOfNodeInternal(.{ .node = datas[node].rhs, .handle = handle }) orelse return null;
+                    const type_right = try analyser.resolveTypeOfNodeInternal(.{ .node = datas[node].rhs, .handle = handle }) orelse return try analyser.resolveOptionalUnwrap(base_type);
                     return try analyser.resolveOrelseType(base_type, type_right);
                 },
                 .@"catch" => try analyser.resolveUnwrapErrorUnionType(base_type, .payload),
@@ -1919,7 +1930,7 @@ fn resolveTypeOfNodeUncached(analyser: *Analyser, node_handle: NodeWithHandle) e
         .@"if", .if_simple => {
             const if_node = ast.fullIf(tree, node).?;
 
-            // HACK: resolve std.ArrayList(T).Slice
+            // HACK: resolve std.ArrayList(T).slice
             if (std.mem.endsWith(u8, node_handle.handle.uri, "array_list.zig") and
                 if_node.payload_token != null and
                 std.mem.eql(u8, offsets.identifierTokenToNameSlice(tree, if_node.payload_token.?), "a") and
@@ -2230,8 +2241,40 @@ fn resolveTypeOfNodeUncached(analyser: *Analyser, node_handle: NodeWithHandle) e
         => {},
 
         .array_mult,
+        => {
+            const elem_idx = datas[node].lhs;
+            var elem_ty = try analyser.resolveTypeOfNodeInternal(.{ .node = elem_idx, .handle = handle }) orelse return null;
+            const arr_data = extractArrayData(&elem_ty.data) orelse return null;
+
+            const mult_idx = datas[node].rhs;
+            const mult_lit = try analyser.resolveIntegerLiteral(u64, .{ .node = mult_idx, .handle = handle });
+
+            if (arr_data.array.elem_count) |count| {
+                arr_data.array.elem_count = if (mult_lit) |mult| count * mult else null;
+            }
+
+            return elem_ty;
+        },
         .array_cat,
-        => {},
+        => {
+            const l_elem_idx = datas[node].lhs;
+            var l_elem_ty = try analyser.resolveTypeOfNodeInternal(.{ .node = l_elem_idx, .handle = handle }) orelse return null;
+            const l_arr_data = extractArrayData(&l_elem_ty.data) orelse return null;
+
+            const r_elem_idx = datas[node].rhs;
+            var r_elem_ty = try analyser.resolveTypeOfNodeInternal(.{ .node = r_elem_idx, .handle = handle }) orelse return null;
+            const r_arr_data = extractArrayData(&r_elem_ty.data) orelse return null;
+
+            if (l_arr_data.array.elem_count != null) {
+                if (r_arr_data.array.elem_count) |right_count| {
+                    l_arr_data.array.elem_count.? += right_count;
+                } else {
+                    l_arr_data.array.elem_count = null;
+                }
+            }
+
+            return l_elem_ty;
+        },
 
         .assign_mul,
         .assign_div,
@@ -3519,6 +3562,44 @@ pub fn getPositionContext(
             continue;
         }
         break;
+    }
+
+    // Check if the (trimmed) line starts with a ').', ie a multi-line fncall field-access,
+    // and find the line on which the opening paren is -- include anything in-between
+    if (std.mem.startsWith(
+        u8,
+        std.mem.trimLeft(
+            u8,
+            text[line_loc.start..line_loc.end],
+            " \t\r",
+        ),
+        ").",
+    )) blk: {
+        var i = doc_index;
+        while (i != 0) : (i -= 1) {
+            if (text[i] == '\n') break;
+        } else break :blk;
+        var tok_i = offsets.sourceIndexToTokenIndex(tree, i);
+        var depth: u32 = 1;
+        while (tok_i > 0) : (tok_i -= 1) {
+            switch (token_tags[tok_i]) {
+                .r_paren => depth += 1,
+                .l_paren => {
+                    depth -= 1;
+                    if (depth != 0) continue;
+                    var new_src_idx = tree.tokens.items(.start)[tok_i];
+                    while (new_src_idx != 0) : (new_src_idx -= 1) {
+                        if (text[new_src_idx] == '\n') {
+                            line_loc.start = new_src_idx;
+                            break;
+                        }
+                    }
+                    break;
+                },
+                .semicolon => break :blk,
+                else => {},
+            }
+        }
     }
 
     var stack = try std.ArrayListUnmanaged(StackState).initCapacity(allocator, 8);

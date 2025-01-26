@@ -89,6 +89,9 @@ const ClientCapabilities = struct {
     supports_configuration: bool = false,
     supports_workspace_did_change_configuration_dynamic_registration: bool = false,
     supports_textDocument_definition_linkSupport: bool = false,
+    supports_work_done_progress: bool = false,
+    supports_semantic_tokens_refresh: bool = false,
+    supports_inlay_hints_refresh: bool = false,
     /// The detail entries for big structs such as std.zig.CrossTarget were
     /// bricking the preview window in Sublime Text.
     /// https://github.com/zigtools/zls/pull/261
@@ -334,7 +337,7 @@ fn initAnalyser(server: *Server, handle: ?*DocumentStore.Handle) Analyser {
     );
 }
 
-fn getAutofixMode(server: *Server) enum {
+pub fn getAutofixMode(server: *Server) enum {
     on_save,
     will_save_wait_until,
     fixall,
@@ -409,28 +412,18 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
     }
 
     if (request.capabilities.general) |general| {
-        var supports_utf8 = false;
-        var supports_utf16 = false;
-        var supports_utf32 = false;
         if (general.positionEncodings) |position_encodings| {
-            for (position_encodings) |encoding| {
+            server.offset_encoding = outer: for (position_encodings) |encoding| {
                 switch (encoding) {
-                    .@"utf-8" => supports_utf8 = true,
-                    .@"utf-16" => supports_utf16 = true,
-                    .@"utf-32" => supports_utf32 = true,
+                    .@"utf-8" => break :outer .@"utf-8",
+                    .@"utf-16" => break :outer .@"utf-16",
+                    .@"utf-32" => break :outer .@"utf-32",
                     .custom_value => {},
                 }
-            }
-        }
-
-        if (supports_utf8) {
-            server.offset_encoding = .@"utf-8";
-        } else if (supports_utf32) {
-            server.offset_encoding = .@"utf-32";
-        } else {
-            server.offset_encoding = .@"utf-16";
+            } else server.offset_encoding;
         }
     }
+    // server.diagnostics_collection.offset_encoding = server.offset_encoding;
 
     if (request.capabilities.textDocument) |textDocument| {
         server.client_capabilities.supports_publish_diagnostics = textDocument.publishDiagnostics != null;
@@ -513,6 +506,12 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
         }
     }
 
+    if (request.capabilities.window) |window| {
+        if (window.workDoneProgress) |wdp| {
+            server.client_capabilities.supports_work_done_progress = wdp;
+        }
+    }
+
     if (request.capabilities.workspace) |workspace| {
         server.client_capabilities.supports_apply_edits = workspace.applyEdit orelse false;
         server.client_capabilities.supports_configuration = workspace.configuration orelse false;
@@ -520,6 +519,12 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
             if (did_change.dynamicRegistration orelse false) {
                 server.client_capabilities.supports_workspace_did_change_configuration_dynamic_registration = true;
             }
+        }
+        if (workspace.semanticTokens) |workspace_semantic_tokens| {
+            server.client_capabilities.supports_semantic_tokens_refresh = workspace_semantic_tokens.refreshSupport orelse false;
+        }
+        if (workspace.inlayHint) |inlay_hint| {
+            server.client_capabilities.supports_inlay_hints_refresh = inlay_hint.refreshSupport orelse false;
         }
     }
 
@@ -970,13 +975,6 @@ pub fn updateConfiguration(
                 try server.pushJob(.{ .generate_diagnostics = try server.allocator.dupe(u8, handle.uri) });
             }
         }
-
-        const json_message = try server.sendToClientRequest(
-            .{ .string = "semantic_tokens_refresh" },
-            "workspace/semanticTokens/refresh",
-            {},
-        );
-        server.allocator.free(json_message);
     }
 
     // <---------------------------------------------------------->
@@ -1782,11 +1780,12 @@ pub fn create(allocator: std.mem.Allocator) !*Server {
         .document_store = .{
             .allocator = allocator,
             .config = DocumentStore.Config.fromMainConfig(Config{}),
-            .thread_pool = if (zig_builtin.single_threaded) {} else undefined, // set below
+            .server = server,
         },
         .job_queue = std.fifo.LinearFifo(Job, .Dynamic).init(allocator),
         .thread_pool = undefined, // set below
         .wait_group = if (zig_builtin.single_threaded) {} else .{},
+        // .diagnostics_collection = .{ .allocator = allocator },
     };
 
     if (zig_builtin.single_threaded) {
@@ -1796,7 +1795,6 @@ pub fn create(allocator: std.mem.Allocator) !*Server {
             .allocator = allocator,
             .n_jobs = 8, // what is a good value here?
         });
-        server.document_store.thread_pool = &server.thread_pool;
     }
 
     server.ip = try InternPool.init(allocator);
@@ -1816,7 +1814,13 @@ pub fn destroy(server: *Server) void {
     server.ip.deinit(server.allocator);
     server.client_capabilities.deinit(server.allocator);
     server.config_arena.promote(server.allocator).deinit();
+    // server.diagnostics_collection.deinit();
     server.allocator.destroy(server);
+}
+
+pub fn setTransport(server: *Server, transport: lsp.AnyTransport) void {
+    server.transport = transport;
+    server.diagnostics_collection.transport = transport;
 }
 
 pub fn keepRunning(server: Server) bool {
@@ -2188,13 +2192,16 @@ fn handleResponse(server: *Server, response: lsp.JsonRPCMessage.Response) Error!
         },
     };
 
-    if (std.mem.eql(u8, id, "semantic_tokens_refresh")) {
-        //
-    } else if (std.mem.startsWith(u8, id, "register")) {
-        //
-    } else if (std.mem.eql(u8, id, "apply_edit")) {
-        //
-    } else if (std.mem.eql(u8, id, "i_haz_configuration")) {
+    const ignore_map = std.StaticStringMap(void).initComptime(.{
+        .{"semantic_tokens_refresh"},
+        .{"inlay_hints_refresh"},
+        .{"register"},
+        .{"apply_edit"},
+        .{"progress"},
+    });
+    if (ignore_map.has(id)) return;
+
+    if (std.mem.eql(u8, id, "i_haz_configuration")) {
         try server.handleConfiguration(result orelse .null);
     } else {
         log.warn("received response from client with id '{s}' that has no handler!", .{id});
