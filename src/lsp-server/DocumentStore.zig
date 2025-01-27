@@ -703,9 +703,13 @@ pub const Handle = struct {
             if (tok.tag != .number_literal) return;
             const root_id = std.fmt.parseInt(u32, source[tok.loc.start..tok.loc.end], 10) catch return;
             build_file.root_id = root_id;
-            build_file.impl.mutex.lock();
-            defer build_file.impl.mutex.unlock();
-            build_file.redoCompilation(ds);
+            if (ds.config.ws_build_zig) |ws_build_zig| {
+                if (std.mem.eql(u8, build_file.uri, ws_build_zig)) {
+                    build_file.impl.mutex.lock();
+                    defer build_file.impl.mutex.unlock();
+                    build_file.redoCompilation(ds);
+                }
+            }
         }
     }
 
@@ -1042,25 +1046,20 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file_uri: Uri) void {
         return;
     };
 
-    if (build_file.impl.compilation) |comp| {
-        comp.destroy();
-        build_file.impl.compilation = null;
-        self.allocator.destroy(build_file.impl.comp_state);
-        build_file.impl.comp_state = undefined;
-        var arena_i = build_file.impl.arena_instance.promote(self.allocator);
-        defer build_file.impl.arena_instance = arena_i.state;
-        _ = arena_i.reset(.retain_capacity);
-    }
-
     blk: {
         const bfh = self.getHandle(build_file_uri) orelse break :blk;
         bfh.handleRootIdComment(self);
     }
 
     build_file.setBuildConfig(build_config);
-    build_file.impl.mutex.lock();
-    defer build_file.impl.mutex.unlock();
-    if (build_file.impl.compilation == null) build_file.redoCompilation(self);
+
+    if (self.config.ws_build_zig) |ws_build_zig| {
+        if (std.mem.eql(u8, build_file.uri, ws_build_zig)) {
+            build_file.impl.mutex.lock();
+            defer build_file.impl.mutex.unlock();
+            build_file.redoCompilation(self);
+        }
+    }
 
     // Notify client to refresh semanticTokens and inlayHints for the workspace
     if (self.server.transport) |transport| {
