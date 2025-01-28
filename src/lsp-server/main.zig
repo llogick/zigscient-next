@@ -72,7 +72,7 @@ fn logFn(
     };
     const scope_txt: []const u8 = comptime @tagName(scope);
     if (comptime !std.mem.startsWith(u8, scope_txt, "_")) return; // and
-        // !std.mem.startsWith(u8, scope_txt, "zcu")) return; // XXX
+    // !std.mem.startsWith(u8, scope_txt, "zcu")) return; // XXX
     const trimmed_scope = if (comptime std.mem.startsWith(u8, scope_txt, "_")) scope_txt[1..] else scope_txt;
 
     var buffer: [4096]u8 = undefined;
@@ -401,7 +401,7 @@ pub fn main() !u8 {
 
     const server = try Server.create(allocator);
     defer server.destroy();
-    server.transport = transport.any();
+    server.setTransport(transport.any());
     server.config_path = result.config_path;
     server.message_tracing = result.enable_message_tracing;
 
