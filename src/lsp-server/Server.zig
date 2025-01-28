@@ -22,6 +22,7 @@ const diff = @import("diff.zig");
 const InternPool = @import("analyser/analyser.zig").InternPool;
 const known_folders = @import("known-folders");
 const BuildRunnerVersion = @import("build_runner/BuildRunnerVersion.zig").BuildRunnerVersion;
+const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 
 const signature_help = @import("features/signature_help.zig");
 const references = @import("features/references.zig");
@@ -67,6 +68,7 @@ zig_ast_check_lock: std.Thread.Mutex = .{},
 /// often in one session,
 config_arena: std.heap.ArenaAllocator.State = .{},
 client_capabilities: ClientCapabilities = .{},
+diagnostics_collection: DiagnosticsCollection,
 
 // Code was based off of https://github.com/andersfr/zig-lsp/blob/master/server.zig
 
@@ -423,7 +425,7 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
             } else server.offset_encoding;
         }
     }
-    // server.diagnostics_collection.offset_encoding = server.offset_encoding;
+    server.diagnostics_collection.offset_encoding = server.offset_encoding;
 
     if (request.capabilities.textDocument) |textDocument| {
         server.client_capabilities.supports_publish_diagnostics = textDocument.publishDiagnostics != null;
@@ -1785,7 +1787,7 @@ pub fn create(allocator: std.mem.Allocator) !*Server {
         .job_queue = std.fifo.LinearFifo(Job, .Dynamic).init(allocator),
         .thread_pool = undefined, // set below
         .wait_group = if (zig_builtin.single_threaded) {} else .{},
-        // .diagnostics_collection = .{ .allocator = allocator },
+        .diagnostics_collection = .{ .allocator = allocator },
     };
 
     if (zig_builtin.single_threaded) {
@@ -1814,7 +1816,7 @@ pub fn destroy(server: *Server) void {
     server.ip.deinit(server.allocator);
     server.client_capabilities.deinit(server.allocator);
     server.config_arena.promote(server.allocator).deinit();
-    // server.diagnostics_collection.deinit();
+    server.diagnostics_collection.deinit();
     server.allocator.destroy(server);
 }
 
@@ -2029,6 +2031,8 @@ fn processMessageReportError(server: *Server, message: Message) ?[]const u8 {
     };
 }
 
+var incremental_comp_cycle: u32 = 0;
+
 fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) void {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
@@ -2049,42 +2053,46 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
             if (!DocumentStore.isBuildFile(uri)) comp: {
                 const bfile_uri = handle.closest_build_zig orelse server.config.ws_build_zig orelse break :comp;
                 const bfile = server.document_store.getBuildFile(bfile_uri) orelse break :comp;
+
                 if (!bfile.impl.mutex.tryLock()) break :comp;
                 defer bfile.impl.mutex.unlock();
+
                 const comp = bfile.impl.compilation orelse break :comp;
-                // std.debug.print("gendiag comp: {*}\n", .{comp});
-                // if (true) break :comp; // XXX
-                // std.debug.print("bfile.impl.args: {s}\n", .{bfile.impl.args});
-                // std.debug.print("bfile.impl.arena_i: {}\n", .{bfile.impl.arena_instance});
-                // std.debug.print("bfile.impl.comp_state: {*}\n", .{bfile.impl.comp_state});
-                // std.debug.print("bfile.impl.comp_state.cm.m: {*}\n", .{&bfile.impl.comp_state.create_module.modules});
-                // for (bfile.impl.comp_state.create_module.modules.keys(), bfile.impl.comp_state.create_module.modules.values()) |key, cli_mod| {
-                //     _ = cli_mod;
-                //     std.debug.print("mod: {s}\n", .{key});
-                // }
                 comp.update(.none) catch break :comp;
+
                 var error_bundle = comp.getAllErrorsAlloc() catch break :comp;
                 defer error_bundle.deinit(server.document_store.allocator);
+
                 // std.debug.print("gendiag errb: {}\n", .{error_bundle});
-                const diagnostics = diagnostics_gen.generateDiagnostics(
-                    server,
-                    arena_allocator.allocator(),
-                    handle,
+
+                incremental_comp_cycle += 1;
+                server.diagnostics_collection.pushErrorBundle(
+                    .incremental,
+                    incremental_comp_cycle,
+                    bfile.impl.comp_state.project_root_path.?,
                     error_bundle,
-                ) catch {
-                    std.debug.print("gendiag error !\n", .{});
-                    return;
-                };
-                const json_message = server.sendToClientNotification(
-                    "textDocument/publishDiagnostics",
-                    diagnostics,
                 ) catch return;
-                server.allocator.free(json_message);
+
+                server.diagnostics_collection.publishDiagnostics() catch return;
                 return;
+
+                // const diagnostics = diagnostics_gen.generateDiagnostics(
+                //     server,
+                //     handle,
+                //     error_bundle,
+                // ) catch {
+                //     std.debug.print("gendiag error !\n", .{});
+                //     return;
+                // };
+                // const json_message = server.sendToClientNotification(
+                //     "textDocument/publishDiagnostics",
+                //     diagnostics,
+                // ) catch return;
+                // server.allocator.free(json_message);
+                // return;
             }
             const diagnostics = diagnostics_gen.generateDiagnostics(
                 server,
-                arena_allocator.allocator(),
                 handle,
                 null,
             ) catch return;
