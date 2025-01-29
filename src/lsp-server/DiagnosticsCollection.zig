@@ -104,6 +104,8 @@ pub fn pushSingleDocumentDiagnostics(
     }
 }
 
+pub const version_always_new: u32 = 9000;
+
 pub fn pushErrorBundle(
     collection: *DiagnosticsCollection,
     /// All changes will affect diagnostics with the same tag.
@@ -126,7 +128,7 @@ pub fn pushErrorBundle(
     defer collection.mutex.unlock();
 
     const gop = try collection.tag_set.getOrPutValue(collection.allocator, tag, .{});
-    const version_order = std.math.order(version, gop.value_ptr.version);
+    const version_order = if (version == version_always_new) .gt else std.math.order(version, gop.value_ptr.version);
 
     switch (version_order) {
         .lt => return, // Ignore outdated diagnostics
@@ -136,13 +138,23 @@ pub fn pushErrorBundle(
 
     if (error_bundle.errorMessageCount() == 0 and gop.value_ptr.error_bundle.errorMessageCount() == 0) return;
 
-    try collectUrisFromErrorBundle(collection.allocator, error_bundle, src_base_path, &collection.outdated_files);
+    try collectUrisFromErrorBundle(
+        collection.allocator,
+        error_bundle,
+        src_base_path,
+        &collection.outdated_files,
+    );
     if (error_bundle.errorMessageCount() != 0) {
         try new_error_bundle.addBundleAsRoots(error_bundle);
     }
 
     if (version_order == .gt) {
-        try collectUrisFromErrorBundle(collection.allocator, gop.value_ptr.error_bundle, src_base_path, &collection.outdated_files);
+        try collectUrisFromErrorBundle(
+            collection.allocator,
+            gop.value_ptr.error_bundle,
+            src_base_path,
+            &collection.outdated_files,
+        );
     } else {
         if (gop.value_ptr.error_bundle.errorMessageCount() != 0) {
             try new_error_bundle.addBundleAsRoots(gop.value_ptr.error_bundle);
@@ -295,6 +307,27 @@ fn collectLspDiagnosticsForDocument(
     }
 }
 
+/// Returns the requested data, as well as the new index which is at the start of the
+/// trailers for the object.
+fn extraData(eb: std.zig.ErrorBundle, comptime T: type, index: usize) struct { data: T, end: usize } {
+    const fields = @typeInfo(T).@"struct".fields;
+    var i: usize = index;
+    var result: T = undefined;
+    inline for (fields) |field| {
+        @field(result, field.name) = switch (field.type) {
+            u32 => eb.extra[i],
+            std.zig.ErrorBundle.MessageIndex => @as(std.zig.ErrorBundle.MessageIndex, @enumFromInt(eb.extra[i])),
+            std.zig.ErrorBundle.SourceLocationIndex => @as(std.zig.ErrorBundle.SourceLocationIndex, @enumFromInt(eb.extra[i])),
+            else => @compileError("bad field type"),
+        };
+        i += 1;
+    }
+    return .{
+        .data = result,
+        .end = i,
+    };
+}
+
 fn convertErrorBundleToLSPDiangostics(
     eb: std.zig.ErrorBundle,
     error_bundle_src_base_path: ?[]const u8,
@@ -309,6 +342,8 @@ fn convertErrorBundleToLSPDiangostics(
         const err = eb.getErrorMessage(msg_index);
         if (err.src_loc == .none) continue;
 
+        const src = extraData(eb, std.zig.ErrorBundle.SourceLocation, @intFromEnum(err.src_loc));
+
         const src_loc = eb.getSourceLocation(err.src_loc);
         const src_path = eb.nullTerminatedString(src_loc.src_path);
 
@@ -320,30 +355,66 @@ fn convertErrorBundleToLSPDiangostics(
         const src_range = errorBundleSourceLocationToRange(eb, src_loc, offset_encoding);
 
         const eb_notes = eb.getNotes(msg_index);
-        const relatedInformation = if (eb_notes.len == 0) null else blk: {
-            const lsp_notes = try arena.alloc(lsp.types.DiagnosticRelatedInformation, eb_notes.len);
-            for (lsp_notes, eb_notes) |*lsp_note, eb_note_index| {
-                const eb_note = eb.getErrorMessage(eb_note_index);
-                if (eb_note.src_loc == .none) continue;
+        const relatedInformation = blk: {
+            if (eb_notes.len != 0) {
+                const lsp_notes = try arena.alloc(lsp.types.DiagnosticRelatedInformation, eb_notes.len);
+                for (lsp_notes, eb_notes) |*lsp_note, eb_note_index| {
+                    const eb_note = eb.getErrorMessage(eb_note_index);
+                    if (eb_note.src_loc == .none) continue;
 
-                const note_src_loc = eb.getSourceLocation(eb_note.src_loc);
-                const note_src_path = eb.nullTerminatedString(note_src_loc.src_path);
-                const note_src_range = errorBundleSourceLocationToRange(eb, note_src_loc, offset_encoding);
+                    const note_src_loc = eb.getSourceLocation(eb_note.src_loc);
+                    const note_src_path = eb.nullTerminatedString(note_src_loc.src_path);
+                    const note_src_range = errorBundleSourceLocationToRange(eb, note_src_loc, offset_encoding);
 
-                const note_uri = if (is_single_document)
-                    document_uri
-                else
-                    try pathToUri(arena, error_bundle_src_base_path, note_src_path) orelse continue;
+                    const note_uri = if (is_single_document)
+                        document_uri
+                    else
+                        try pathToUri(arena, error_bundle_src_base_path, note_src_path) orelse continue;
 
-                lsp_note.* = .{
-                    .location = .{
-                        .uri = note_uri,
-                        .range = note_src_range,
-                    },
-                    .message = eb.nullTerminatedString(eb_note.msg),
-                };
-            }
-            break :blk lsp_notes;
+                    lsp_note.* = .{
+                        .location = .{
+                            .uri = note_uri,
+                            .range = note_src_range,
+                        },
+                        .message = eb.nullTerminatedString(eb_note.msg),
+                    };
+                }
+                break :blk lsp_notes;
+            } else if (src_loc.reference_trace_len > 0) {
+                //             ^^^^^^^^^^^^^^^
+                // @compileError does not provide notes, eg
+                // `@compileError("invalid format string '" ++ fmt ++ "' for type '" ++ @typeName(@TypeOf(value)) ++ "'")`
+                // in std/fmt.zig .
+                // Attach a few reference-trace entries to help out.
+                var refs = try arena.alloc(lsp.types.DiagnosticRelatedInformation, src_loc.reference_trace_len);
+                var ref_index = src.end;
+                for (refs, 0..src.data.reference_trace_len) |*ref, i| {
+                    const ref_trace = extraData(eb, std.zig.ErrorBundle.ReferenceTrace, ref_index);
+                    ref_index = ref_trace.end;
+                    if (ref_trace.data.src_loc != .none) {
+                        const ref_src_loc = eb.getSourceLocation(ref_trace.data.src_loc);
+                        const ref_src_path = eb.nullTerminatedString(ref_src_loc.src_path);
+                        const ref_src_range = errorBundleSourceLocationToRange(eb, ref_src_loc, offset_encoding);
+
+                        const ref_uri = if (is_single_document)
+                            document_uri
+                        else
+                            try pathToUri(arena, error_bundle_src_base_path, ref_src_path) orelse continue;
+
+                        ref.* = .{
+                            .location = .{
+                                .uri = ref_uri,
+                                .range = ref_src_range,
+                            },
+                            .message = eb.nullTerminatedString(ref_trace.data.decl_name),
+                        };
+                    } else {
+                        refs.len = i;
+                        break;
+                    }
+                }
+                break :blk refs;
+            } else break :blk null;
         };
 
         try diagnostics.append(arena, .{

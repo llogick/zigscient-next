@@ -2031,8 +2031,6 @@ fn processMessageReportError(server: *Server, message: Message) ?[]const u8 {
     };
 }
 
-var incremental_comp_cycle: u32 = 0;
-
 fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) void {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
@@ -2063,43 +2061,30 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
                 var error_bundle = comp.getAllErrorsAlloc() catch break :comp;
                 defer error_bundle.deinit(server.document_store.allocator);
 
-                // std.debug.print("gendiag errb: {}\n", .{error_bundle});
+                std.debug.print("gendiag errb: {}\n", .{error_bundle});
 
-                incremental_comp_cycle += 1;
                 server.diagnostics_collection.pushErrorBundle(
                     .incremental,
-                    incremental_comp_cycle,
+                    DiagnosticsCollection.version_always_new,
                     bfile.impl.comp_state.project_root_path.?,
                     error_bundle,
                 ) catch return;
 
                 server.diagnostics_collection.publishDiagnostics() catch return;
                 return;
-
-                // const diagnostics = diagnostics_gen.generateDiagnostics(
-                //     server,
-                //     handle,
-                //     error_bundle,
-                // ) catch {
-                //     std.debug.print("gendiag error !\n", .{});
-                //     return;
-                // };
-                // const json_message = server.sendToClientNotification(
-                //     "textDocument/publishDiagnostics",
-                //     diagnostics,
-                // ) catch return;
-                // server.allocator.free(json_message);
-                // return;
             }
+
             const diagnostics = diagnostics_gen.generateDiagnostics(
                 server,
                 handle,
                 null,
             ) catch return;
+
             const json_message = server.sendToClientNotification(
                 "textDocument/publishDiagnostics",
                 diagnostics,
             ) catch return;
+
             server.allocator.free(json_message);
         },
         .run_build_on_save => {

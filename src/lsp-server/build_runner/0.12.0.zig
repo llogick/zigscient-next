@@ -161,6 +161,8 @@ pub fn main() !void {
     var output_tmp_nonce: ?[16]u8 = null;
     var debounce_interval_ms: u16 = 50;
 
+    builder.reference_trace = 12;
+
     while (nextArg(args, &arg_idx)) |arg| {
         if (mem.startsWith(u8, arg, "-Z")) {
             if (arg.len != 18) fatal("bad argument: '{s}'", .{arg});

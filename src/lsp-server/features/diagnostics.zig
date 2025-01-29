@@ -433,25 +433,26 @@ fn getErrorBundleFromAstCheck(
     return try error_bundle.toOwnedBundle("");
 }
 
-//     fn handleWatchErrorBundle(
-//         collection: *DiagnosticsCollection,
-//         workspace_path: []const u8,
-//         diagnostic_tags: *std.AutoArrayHashMapUnmanaged(DiagnosticsCollection.Tag, void),
-//          error_bundle: std.zig.ErrorBundle
-//     ) !void {
-
-//         var hasher: std.hash.Wyhash = .init(0);
-//         hasher.update(workspace_path);
-//         std.hash.autoHash(&hasher, header.step_id);
-
-//         const diagnostic_tag: DiagnosticsCollection.Tag = @enumFromInt(@as(u32, @truncate(hasher.final())));
-
-//         try diagnostic_tags.put(self.allocator, diagnostic_tag, {});
-
-//         try collection.pushErrorBundle(diagnostic_tag, header.cycle, workspace_path, error_bundle);
-//         try collection.publishDiagnostics();
-//     }
-// };
+// pub fn publishCompilationResult(
+//     server: *Server,
+//     src_base_path: ?[]const u8,
+//     error_bundle: std.zig.ErrorBundle,
+// ) error{OutOfMemory}!void {
+//     var diagnostics: std.ArrayListUnmanaged(lsp.types.Diagnostic) = .empty;
+//     defer diagnostics.deinit(server.allocator);
+//     // defer {
+//     //             const notification: lsp.TypedJsonRPCNotification(lsp.types.PublishDiagnosticsParams) = .{
+//     //             .method = "textDocument/publishDiagnostics",
+//     //             .params = .{
+//     //                 .uri = document_uri,
+//     //                 .diagnostics = diagnostics.items,
+//     //             },
+//     //         };
+//     // try std.json.stringifyAlloc(collection.allocator, notification, .{ .emit_null_optional_fields = false });
+//     // defer server.allocator.free(json_message);
+//     // try transport.writeJsonMessage(json_message);
+//     // }
+// }
 
 // Legacy
 pub fn generateBuildOnSaveDiagnostics(
