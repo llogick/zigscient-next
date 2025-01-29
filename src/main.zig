@@ -7938,9 +7938,9 @@ pub fn buildOutputType2(
     // var listen: Listen = .none;
     // var debug_compile_errors = false;
     cs.verbose_link = (native_os != .wasi or builtin.link_libc) and
-        EnvVar.ZIG_VERBOSE_LINK.isSet();
+        try EnvVar.ZIG_VERBOSE_LINK.isSet(arena);
     cs.verbose_cc = (native_os != .wasi or builtin.link_libc) and
-        EnvVar.ZIG_VERBOSE_CC.isSet();
+        try EnvVar.ZIG_VERBOSE_CC.isSet(arena);
     // var verbose_air = false;
     // var verbose_intern_pool = false;
     // var verbose_generic_instances = false;
@@ -8119,9 +8119,9 @@ pub fn buildOutputType2(
     // if set, default the color setting to .off or .on, respectively
     // explicit --color arguments will still override this setting.
     // Disable color on WASI per https://github.com/WebAssembly/WASI/issues/162
-    var color: Color = if (native_os == .wasi or EnvVar.NO_COLOR.isSet())
+    var color: Color = if (native_os == .wasi or try EnvVar.NO_COLOR.isSet(arena))
         .off
-    else if (EnvVar.CLICOLOR_FORCE.isSet())
+    else if (try EnvVar.CLICOLOR_FORCE.isSet(arena))
         .on
     else
         .auto;
