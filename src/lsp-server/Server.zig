@@ -2063,14 +2063,12 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
 
                 std.debug.print("gendiag errb: {}\n", .{error_bundle});
 
-                server.diagnostics_collection.pushErrorBundle(
-                    .incremental,
-                    DiagnosticsCollection.version_always_new,
+                server.diagnostics_collection.publishCompilationResult(
+                    server,
                     bfile.impl.comp_state.project_root_path.?,
                     error_bundle,
                 ) catch return;
 
-                server.diagnostics_collection.publishDiagnostics() catch return;
                 return;
             }
 
