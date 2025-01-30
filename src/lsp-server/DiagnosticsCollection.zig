@@ -2,6 +2,7 @@ const std = @import("std");
 const lsp = @import("lsp");
 const offsets = @import("offsets.zig");
 const URI = @import("uri.zig");
+const Server = @import("Server.zig");
 
 allocator: std.mem.Allocator,
 mutex: std.Thread.Mutex = .{},
@@ -20,6 +21,17 @@ tag_set: std.AutoArrayHashMapUnmanaged(Tag, struct {
 outdated_files: std.StringArrayHashMapUnmanaged(void) = .empty,
 transport: ?lsp.AnyTransport = null,
 offset_encoding: offsets.Encoding = .@"utf-16",
+
+uris: std.StringArrayHashMapUnmanaged(UriState) = .empty,
+
+const UriState = struct {
+    state: u32,
+    diagnostics: std.ArrayListUnmanaged(lsp.types.Diagnostic) = .empty,
+
+    pub const new_diags: u32 = 2;
+    pub const stale: u32 = 1;
+    pub const unchanged: u32 = 0;
+};
 
 const DiagnosticsCollection = @This();
 
@@ -49,9 +61,176 @@ pub fn deinit(collection: *DiagnosticsCollection) void {
         entry.diagnostics_set.deinit(collection.allocator);
     }
     collection.tag_set.deinit(collection.allocator);
+
     for (collection.outdated_files.keys()) |uri| collection.allocator.free(uri);
     collection.outdated_files.deinit(collection.allocator);
+
+    for (collection.uris.keys(), collection.uris.values()) |uri, *state| {
+        if (state.diagnostics.items.len != 0) state.diagnostics.deinit(collection.allocator);
+        collection.allocator.free(uri);
+    }
+    collection.uris.deinit(collection.allocator);
+
     collection.* = undefined;
+}
+
+pub fn publishCompilationResult(
+    collection: *DiagnosticsCollection,
+    server: *Server,
+    /// Used to resolve relative `std.zig.ErrorBundle.SourceLocation.src_path`
+    proj_base_path: ?[]const u8,
+    error_bundle: std.zig.ErrorBundle,
+) error{OutOfMemory}!void {
+    var arena: std.heap.ArenaAllocator = .init(server.allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
+    if (error_bundle.errorMessageCount() != 0) {
+        for (error_bundle.getMessages()) |msg_index| {
+            const err = error_bundle.getErrorMessage(msg_index);
+            if (err.src_loc == .none) continue;
+
+            const src_loc = error_bundle.getSourceLocation(err.src_loc);
+            const src_path = error_bundle.nullTerminatedString(src_loc.src_path);
+
+            const uri = try pathToUri(
+                server.allocator,
+                proj_base_path,
+                src_path,
+            ) orelse continue;
+
+            const gop = try collection.uris.getOrPut(
+                server.allocator,
+                uri,
+            );
+
+            gop.value_ptr.*.state = UriState.new_diags;
+            if (!gop.found_existing) {
+                gop.value_ptr.*.diagnostics = .empty;
+            }
+
+            const src_range = errorBundleSourceLocationToRange(
+                error_bundle,
+                src_loc,
+                collection.offset_encoding,
+            );
+
+            const eb_notes = error_bundle.getNotes(msg_index);
+            const relatedInformation = blk: {
+                if (eb_notes.len != 0) {
+                    const lsp_notes = try arena_allocator.alloc(lsp.types.DiagnosticRelatedInformation, eb_notes.len);
+                    for (lsp_notes, eb_notes) |*lsp_note, eb_note_index| {
+                        const eb_note = error_bundle.getErrorMessage(eb_note_index);
+                        if (eb_note.src_loc == .none) continue;
+
+                        const note_src_loc = error_bundle.getSourceLocation(eb_note.src_loc);
+                        const note_src_path = error_bundle.nullTerminatedString(note_src_loc.src_path);
+                        const note_src_range = errorBundleSourceLocationToRange(
+                            error_bundle,
+                            note_src_loc,
+                            collection.offset_encoding,
+                        );
+
+                        const note_uri = try pathToUri(
+                            arena_allocator,
+                            proj_base_path,
+                            note_src_path,
+                        ) orelse continue;
+
+                        lsp_note.* = .{
+                            .location = .{
+                                .uri = note_uri,
+                                .range = note_src_range,
+                            },
+                            .message = error_bundle.nullTerminatedString(eb_note.msg),
+                        };
+                    }
+                    break :blk lsp_notes;
+                } else if (src_loc.reference_trace_len > 0) {
+                    //             ^^^^^^^^^^^^^^^
+                    // @compileError does not provide notes, eg
+                    // `@compileError("invalid format string '" ++ fmt ++ "' for type '" ++ @typeName(@TypeOf(value)) ++ "'")`
+                    // in std/fmt.zig .
+                    // Attach a few reference-trace entries to help out.
+                    const src = extraData(
+                        error_bundle,
+                        std.zig.ErrorBundle.SourceLocation,
+                        @intFromEnum(err.src_loc),
+                    );
+                    var refs = try arena_allocator.alloc(lsp.types.DiagnosticRelatedInformation, src_loc.reference_trace_len);
+                    var ref_index = src.end;
+                    for (refs, 0..src.data.reference_trace_len) |*ref, i| {
+                        const ref_trace = extraData(
+                            error_bundle,
+                            std.zig.ErrorBundle.ReferenceTrace,
+                            ref_index,
+                        );
+                        ref_index = ref_trace.end;
+                        if (ref_trace.data.src_loc != .none) {
+                            const ref_src_loc = error_bundle.getSourceLocation(ref_trace.data.src_loc);
+                            const ref_src_path = error_bundle.nullTerminatedString(ref_src_loc.src_path);
+                            const ref_src_range = errorBundleSourceLocationToRange(
+                                error_bundle,
+                                ref_src_loc,
+                                collection.offset_encoding,
+                            );
+
+                            const ref_uri = try pathToUri(
+                                arena_allocator,
+                                proj_base_path,
+                                ref_src_path,
+                            ) orelse continue;
+
+                            ref.* = .{
+                                .location = .{
+                                    .uri = ref_uri,
+                                    .range = ref_src_range,
+                                },
+                                .message = error_bundle.nullTerminatedString(ref_trace.data.decl_name),
+                            };
+                        } else {
+                            refs.len = i;
+                            break;
+                        }
+                    }
+                    break :blk refs;
+                } else break :blk null;
+            };
+
+            try gop.value_ptr.*.diagnostics.append(arena_allocator, .{
+                .range = src_range,
+                .severity = .Error,
+                .source = "zigscient",
+                .message = error_bundle.nullTerminatedString(err.msg),
+                .relatedInformation = relatedInformation,
+            });
+        }
+    }
+
+    for (collection.uris.keys(), collection.uris.values()) |uri, *state| {
+        if (state.state == 0) continue;
+
+        const notification: lsp.TypedJsonRPCNotification(lsp.types.PublishDiagnosticsParams) = .{
+            .method = "textDocument/publishDiagnostics",
+            .params = .{
+                .uri = uri,
+                .diagnostics = state.diagnostics.items,
+            },
+        };
+
+        const json_message = try std.json.stringifyAlloc(
+            arena_allocator,
+            notification,
+            .{ .emit_null_optional_fields = false },
+        );
+
+        collection.transport.?.writeJsonMessage(json_message) catch {
+            //
+        };
+
+        state.state -= 1;
+        state.diagnostics = .empty;
+    }
 }
 
 pub fn pushSingleDocumentDiagnostics(
