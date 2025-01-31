@@ -23,7 +23,6 @@ const Zir = std.zig.Zir;
 pub fn generateDiagnostics(
     server: *Server,
     handle: *DocumentStore.Handle,
-    err_bundle: ?std.zig.ErrorBundle,
 ) error{OutOfMemory}!void {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
@@ -32,8 +31,8 @@ pub fn generateDiagnostics(
         const tracy_zone2 = tracy.traceNamed(@src(), "ast-check");
         defer tracy_zone2.end();
 
-        var error_bundle = if (err_bundle) |eb| eb else try getAstCheckDiagnostics(server, handle);
-        defer if (err_bundle == null) error_bundle.deinit(server.allocator);
+        var error_bundle = try getAstCheckDiagnostics(server, handle);
+        defer error_bundle.deinit(server.allocator);
 
         try server.diagnostics_collection.pushSingleDocumentDiagnostics(
             .parse,

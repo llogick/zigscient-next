@@ -3,6 +3,7 @@ const lsp = @import("lsp");
 const offsets = @import("offsets.zig");
 const URI = @import("uri.zig");
 const Server = @import("Server.zig");
+const log = std.log.scoped(._diags);
 
 allocator: std.mem.Allocator,
 mutex: std.Thread.Mutex = .{},
@@ -78,7 +79,7 @@ pub fn publishCompilationResult(
     collection: *DiagnosticsCollection,
     server: *Server,
     /// Used to resolve relative `std.zig.ErrorBundle.SourceLocation.src_path`
-    proj_base_path: ?[]const u8,
+    proj_base_path: []const u8,
     error_bundle: std.zig.ErrorBundle,
 ) error{OutOfMemory}!void {
     var arena: std.heap.ArenaAllocator = .init(server.allocator);
@@ -86,129 +87,41 @@ pub fn publishCompilationResult(
     const arena_allocator = arena.allocator();
 
     if (error_bundle.errorMessageCount() != 0) {
-        for (error_bundle.getMessages()) |msg_index| {
-            const err = error_bundle.getErrorMessage(msg_index);
-            if (err.src_loc == .none) continue;
+        for (error_bundle.getMessages()) |err_msg_index| {
+            const err_msg = error_bundle.getErrorMessage(err_msg_index);
+            if (err_msg.src_loc == .none) continue;
 
-            const src_loc = error_bundle.getSourceLocation(err.src_loc);
-            const src_path = error_bundle.nullTerminatedString(src_loc.src_path);
-
-            const uri = try pathToUri(
-                server.allocator,
-                proj_base_path,
-                src_path,
-            ) orelse continue;
-
-            const gop = try collection.uris.getOrPut(
-                server.allocator,
-                uri,
-            );
-
-            gop.value_ptr.*.state = UriState.new_diags;
-            if (!gop.found_existing) {
-                gop.value_ptr.*.diagnostics = .empty;
-            }
-
-            const src_range = errorBundleSourceLocationToRange(
+            const err_src_loc = error_bundle.getSourceLocation(err_msg.src_loc);
+            const err_src_path = error_bundle.nullTerminatedString(err_src_loc.src_path);
+            const err_src_range = errorBundleSourceLocationToRange(
                 error_bundle,
-                src_loc,
+                err_src_loc,
                 collection.offset_encoding,
             );
 
-            const eb_notes = error_bundle.getNotes(msg_index);
-            const relatedInformation = blk: {
-                if (eb_notes.len != 0) {
-                    const lsp_notes = try arena_allocator.alloc(lsp.types.DiagnosticRelatedInformation, eb_notes.len);
-                    for (lsp_notes, eb_notes) |*lsp_note, eb_note_index| {
-                        const eb_note = error_bundle.getErrorMessage(eb_note_index);
-                        if (eb_note.src_loc == .none) continue;
+            const uri = try pathToUri(
+                arena_allocator,
+                proj_base_path,
+                err_src_path,
+            ) orelse continue;
 
-                        const note_src_loc = error_bundle.getSourceLocation(eb_note.src_loc);
-                        const note_src_path = error_bundle.nullTerminatedString(note_src_loc.src_path);
-                        const note_src_range = errorBundleSourceLocationToRange(
-                            error_bundle,
-                            note_src_loc,
-                            collection.offset_encoding,
-                        );
-
-                        const note_uri = try pathToUri(
-                            arena_allocator,
-                            proj_base_path,
-                            note_src_path,
-                        ) orelse continue;
-
-                        lsp_note.* = .{
-                            .location = .{
-                                .uri = note_uri,
-                                .range = note_src_range,
-                            },
-                            .message = error_bundle.nullTerminatedString(eb_note.msg),
-                        };
-                    }
-                    break :blk lsp_notes;
-                } else if (src_loc.reference_trace_len > 0) {
-                    //             ^^^^^^^^^^^^^^^
-                    // @compileError does not provide notes, eg
-                    // `@compileError("invalid format string '" ++ fmt ++ "' for type '" ++ @typeName(@TypeOf(value)) ++ "'")`
-                    // in std/fmt.zig .
-                    // Attach a few reference-trace entries to help out.
-                    const src = extraData(
-                        error_bundle,
-                        std.zig.ErrorBundle.SourceLocation,
-                        @intFromEnum(err.src_loc),
-                    );
-                    var refs = try arena_allocator.alloc(lsp.types.DiagnosticRelatedInformation, src_loc.reference_trace_len);
-                    var ref_index = src.end;
-                    for (refs, 0..src.data.reference_trace_len) |*ref, i| {
-                        const ref_trace = extraData(
-                            error_bundle,
-                            std.zig.ErrorBundle.ReferenceTrace,
-                            ref_index,
-                        );
-                        ref_index = ref_trace.end;
-                        if (ref_trace.data.src_loc != .none) {
-                            const ref_src_loc = error_bundle.getSourceLocation(ref_trace.data.src_loc);
-                            const ref_src_path = error_bundle.nullTerminatedString(ref_src_loc.src_path);
-                            const ref_src_range = errorBundleSourceLocationToRange(
-                                error_bundle,
-                                ref_src_loc,
-                                collection.offset_encoding,
-                            );
-
-                            const ref_uri = try pathToUri(
-                                arena_allocator,
-                                proj_base_path,
-                                ref_src_path,
-                            ) orelse continue;
-
-                            ref.* = .{
-                                .location = .{
-                                    .uri = ref_uri,
-                                    .range = ref_src_range,
-                                },
-                                .message = error_bundle.nullTerminatedString(ref_trace.data.decl_name),
-                            };
-                        } else {
-                            refs.len = i;
-                            break;
-                        }
-                    }
-                    break :blk refs;
-                } else break :blk null;
-            };
-
-            try gop.value_ptr.*.diagnostics.append(arena_allocator, .{
-                .range = src_range,
-                .severity = .Error,
-                .source = "zigscient",
-                .message = error_bundle.nullTerminatedString(err.msg),
-                .relatedInformation = relatedInformation,
-            });
+            collection.addDiag(
+                server,
+                arena_allocator,
+                proj_base_path,
+                uri,
+                err_src_range,
+                err_msg_index,
+                error_bundle,
+                "",
+            ) catch @panic("Could not add a diagnostic");
         }
     }
 
     for (collection.uris.keys(), collection.uris.values()) |uri, *state| {
+        // log.debug("PD: {s} : {}", .{ uri, state.state });
         if (state.state == 0) continue;
+        state.state -= 1;
 
         const notification: lsp.TypedJsonRPCNotification(lsp.types.PublishDiagnosticsParams) = .{
             .method = "textDocument/publishDiagnostics",
@@ -224,13 +137,149 @@ pub fn publishCompilationResult(
             .{ .emit_null_optional_fields = false },
         );
 
-        collection.transport.?.writeJsonMessage(json_message) catch {
-            //
-        };
-
-        state.state -= 1;
         state.diagnostics = .empty;
+
+        collection.transport.?.writeJsonMessage(json_message) catch {
+            log.err("couldn't collection.transport.?.writeJsonMessage(json_message)\n", .{});
+        };
     }
+}
+
+fn addDiag(
+    collection: *DiagnosticsCollection,
+    server: *Server,
+    arena_allocator: std.mem.Allocator,
+    proj_base_path: []const u8,
+    uri: []const u8,
+    target_range: lsp.types.Range,
+    err_msg_index: std.zig.ErrorBundle.MessageIndex,
+    error_bundle: std.zig.ErrorBundle,
+    prefix: []const u8,
+) !void {
+    const gop = try collection.uris.getOrPut(
+        server.allocator,
+        try server.allocator.dupe(u8, uri),
+    );
+
+    gop.value_ptr.*.state = UriState.new_diags;
+    if (!gop.found_existing) {
+        gop.value_ptr.*.diagnostics = .empty;
+    }
+
+    const err_msg = error_bundle.getErrorMessage(err_msg_index);
+    const err_src_loc = error_bundle.getSourceLocation(err_msg.src_loc);
+
+    const eb_notes = error_bundle.getNotes(err_msg_index);
+    const relatedInformation = blk: {
+        var info: std.ArrayListUnmanaged(lsp.types.DiagnosticRelatedInformation) = try .initCapacity(
+            arena_allocator,
+            eb_notes.len + err_src_loc.reference_trace_len,
+        );
+        if (eb_notes.len != 0) {
+            for (eb_notes) |eb_note_index| {
+                const eb_note = error_bundle.getErrorMessage(eb_note_index);
+                if (eb_note.src_loc == .none) continue;
+
+                const note_src_loc = error_bundle.getSourceLocation(eb_note.src_loc);
+                const note_src_path = error_bundle.nullTerminatedString(note_src_loc.src_path);
+                const note_src_range = errorBundleSourceLocationToRange(
+                    error_bundle,
+                    note_src_loc,
+                    collection.offset_encoding,
+                );
+
+                const note_uri = try pathToUri(
+                    arena_allocator,
+                    proj_base_path,
+                    note_src_path,
+                ) orelse continue;
+
+                info.appendAssumeCapacity(.{
+                    .location = .{
+                        .uri = note_uri,
+                        .range = note_src_range,
+                    },
+                    .message = error_bundle.nullTerminatedString(eb_note.msg),
+                });
+            }
+        }
+        if (err_src_loc.reference_trace_len > 0) {
+            const doc_is_open_in_editor = if (server.document_store.getHandle(uri)) |doc| doc.isOpen() else false;
+            // log.debug("-> {s}: {}", .{ uri, doc_is_open_in_editor });
+            var open_ref_doc_found: bool = false;
+            // @compileError does not provide notes, eg
+            // `@compileError("invalid format string '" ++ fmt ++ "' for type '" ++ @typeName(@TypeOf(value)) ++ "'")`
+            // in std/fmt.zig .
+            // Attach a few reference-trace entries to help out.
+            const src = extraData(
+                error_bundle,
+                std.zig.ErrorBundle.SourceLocation,
+                @intFromEnum(err_msg.src_loc),
+            );
+            var ref_index = src.end;
+            for (0..src.data.reference_trace_len) |i| {
+                const ref_trace = extraData(
+                    error_bundle,
+                    std.zig.ErrorBundle.ReferenceTrace,
+                    ref_index,
+                );
+                ref_index = ref_trace.end;
+                if (ref_trace.data.src_loc != .none) {
+                    const ref_src_loc = error_bundle.getSourceLocation(ref_trace.data.src_loc);
+                    const ref_src_path = error_bundle.nullTerminatedString(ref_src_loc.src_path);
+                    const ref_src_range = errorBundleSourceLocationToRange(
+                        error_bundle,
+                        ref_src_loc,
+                        collection.offset_encoding,
+                    );
+
+                    const ref_uri = try pathToUri(
+                        arena_allocator,
+                        proj_base_path,
+                        ref_src_path,
+                    ) orelse continue;
+
+                    info.appendAssumeCapacity(.{
+                        .location = .{
+                            .uri = ref_uri,
+                            .range = ref_src_range,
+                        },
+                        .message = error_bundle.nullTerminatedString(ref_trace.data.decl_name),
+                    });
+
+                    if (!open_ref_doc_found and !doc_is_open_in_editor and (if (server.document_store.getHandle(ref_uri)) |doc| doc.isOpen() else false)) {
+                        // log.debug("Found open ref {s} for {s}", .{ ref_uri, uri });
+                        collection.addDiag(
+                            server,
+                            arena_allocator,
+                            proj_base_path,
+                            ref_uri,
+                            ref_src_range,
+                            err_msg_index,
+                            error_bundle,
+                            try std.fmt.allocPrint(arena_allocator, "(RTE#{}) ", .{i + 1}),
+                        ) catch @panic("Could not add a diagnostic");
+                        open_ref_doc_found = true;
+                    }
+                } else break;
+            }
+        }
+        break :blk info;
+    };
+
+    const message = if (prefix.len != 0) try std.fmt.allocPrint(
+        arena_allocator,
+        "{s}{s}",
+        .{ prefix, error_bundle.nullTerminatedString(err_msg.msg) },
+    ) else error_bundle.nullTerminatedString(err_msg.msg);
+
+    try gop.value_ptr.*.diagnostics.append(arena_allocator, .{
+        .range = target_range,
+        .severity = .Error,
+        .source = "zigscient",
+        .message = message,
+        .relatedInformation = relatedInformation.items,
+    });
 }
 
 pub fn pushSingleDocumentDiagnostics(
