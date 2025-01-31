@@ -2072,17 +2072,10 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
                 return;
             }
 
-            const diagnostics = diagnostics_gen.generateDiagnostics(
+            diagnostics_gen.generateDiagnostics(
                 server,
                 handle,
             ) catch return;
-
-            const json_message = server.sendToClientNotification(
-                "textDocument/publishDiagnostics",
-                diagnostics,
-            ) catch return;
-
-            server.allocator.free(json_message);
         },
         .run_build_on_save => {
             if (!std.process.can_spawn) unreachable;

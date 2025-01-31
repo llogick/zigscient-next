@@ -32,7 +32,7 @@ pub fn generateDiagnostics(
         defer tracy_zone2.end();
 
         var error_bundle = try getAstCheckDiagnostics(server, handle);
-        defer error_bundle.deinit(server.allocator);
+        errdefer error_bundle.deinit(server.allocator);
 
         try server.diagnostics_collection.pushSingleDocumentDiagnostics(
             .parse,

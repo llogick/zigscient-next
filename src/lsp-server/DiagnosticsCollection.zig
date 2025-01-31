@@ -570,8 +570,6 @@ fn convertErrorBundleToLSPDiangostics(
         const err = eb.getErrorMessage(msg_index);
         if (err.src_loc == .none) continue;
 
-        const src = extraData(eb, std.zig.ErrorBundle.SourceLocation, @intFromEnum(err.src_loc));
-
         const src_loc = eb.getSourceLocation(err.src_loc);
         const src_path = eb.nullTerminatedString(src_loc.src_path);
 
@@ -583,66 +581,30 @@ fn convertErrorBundleToLSPDiangostics(
         const src_range = errorBundleSourceLocationToRange(eb, src_loc, offset_encoding);
 
         const eb_notes = eb.getNotes(msg_index);
-        const relatedInformation = blk: {
-            if (eb_notes.len != 0) {
-                const lsp_notes = try arena.alloc(lsp.types.DiagnosticRelatedInformation, eb_notes.len);
-                for (lsp_notes, eb_notes) |*lsp_note, eb_note_index| {
-                    const eb_note = eb.getErrorMessage(eb_note_index);
-                    if (eb_note.src_loc == .none) continue;
+        const relatedInformation = if (eb_notes.len == 0) null else blk: {
+            const lsp_notes = try arena.alloc(lsp.types.DiagnosticRelatedInformation, eb_notes.len);
+            for (lsp_notes, eb_notes) |*lsp_note, eb_note_index| {
+                const eb_note = eb.getErrorMessage(eb_note_index);
+                if (eb_note.src_loc == .none) continue;
 
-                    const note_src_loc = eb.getSourceLocation(eb_note.src_loc);
-                    const note_src_path = eb.nullTerminatedString(note_src_loc.src_path);
-                    const note_src_range = errorBundleSourceLocationToRange(eb, note_src_loc, offset_encoding);
+                const note_src_loc = eb.getSourceLocation(eb_note.src_loc);
+                const note_src_path = eb.nullTerminatedString(note_src_loc.src_path);
+                const note_src_range = errorBundleSourceLocationToRange(eb, note_src_loc, offset_encoding);
 
-                    const note_uri = if (is_single_document)
-                        document_uri
-                    else
-                        try pathToUri(arena, error_bundle_src_base_path, note_src_path) orelse continue;
+                const note_uri = if (is_single_document)
+                    document_uri
+                else
+                    try pathToUri(arena, error_bundle_src_base_path, note_src_path) orelse continue;
 
-                    lsp_note.* = .{
-                        .location = .{
-                            .uri = note_uri,
-                            .range = note_src_range,
-                        },
-                        .message = eb.nullTerminatedString(eb_note.msg),
-                    };
-                }
-                break :blk lsp_notes;
-            } else if (src_loc.reference_trace_len > 0) {
-                //             ^^^^^^^^^^^^^^^
-                // @compileError does not provide notes, eg
-                // `@compileError("invalid format string '" ++ fmt ++ "' for type '" ++ @typeName(@TypeOf(value)) ++ "'")`
-                // in std/fmt.zig .
-                // Attach a few reference-trace entries to help out.
-                var refs = try arena.alloc(lsp.types.DiagnosticRelatedInformation, src_loc.reference_trace_len);
-                var ref_index = src.end;
-                for (refs, 0..src.data.reference_trace_len) |*ref, i| {
-                    const ref_trace = extraData(eb, std.zig.ErrorBundle.ReferenceTrace, ref_index);
-                    ref_index = ref_trace.end;
-                    if (ref_trace.data.src_loc != .none) {
-                        const ref_src_loc = eb.getSourceLocation(ref_trace.data.src_loc);
-                        const ref_src_path = eb.nullTerminatedString(ref_src_loc.src_path);
-                        const ref_src_range = errorBundleSourceLocationToRange(eb, ref_src_loc, offset_encoding);
-
-                        const ref_uri = if (is_single_document)
-                            document_uri
-                        else
-                            try pathToUri(arena, error_bundle_src_base_path, ref_src_path) orelse continue;
-
-                        ref.* = .{
-                            .location = .{
-                                .uri = ref_uri,
-                                .range = ref_src_range,
-                            },
-                            .message = eb.nullTerminatedString(ref_trace.data.decl_name),
-                        };
-                    } else {
-                        refs.len = i;
-                        break;
-                    }
-                }
-                break :blk refs;
-            } else break :blk null;
+                lsp_note.* = .{
+                    .location = .{
+                        .uri = note_uri,
+                        .range = note_src_range,
+                    },
+                    .message = eb.nullTerminatedString(eb_note.msg),
+                };
+            }
+            break :blk lsp_notes;
         };
 
         try diagnostics.append(arena, .{
