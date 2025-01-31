@@ -2061,13 +2061,13 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
                 var error_bundle = comp.getAllErrorsAlloc() catch break :comp;
                 defer error_bundle.deinit(server.document_store.allocator);
 
-                std.debug.print("gendiag errb: {}\n", .{error_bundle});
+                log.debug("gendiag errb: {}", .{error_bundle});
 
                 server.diagnostics_collection.publishCompilationResult(
                     server,
                     bfile.impl.comp_state.project_root_path.?,
                     error_bundle,
-                ) catch return;
+                ) catch @panic("no recovery possible");
 
                 return;
             }
@@ -2075,7 +2075,6 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
             const diagnostics = diagnostics_gen.generateDiagnostics(
                 server,
                 handle,
-                null,
             ) catch return;
 
             const json_message = server.sendToClientNotification(
