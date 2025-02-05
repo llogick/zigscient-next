@@ -255,16 +255,25 @@ pub fn updateFile(
         if (stat.size > std.math.maxInt(u32))
             return error.FileTooBig;
 
-        const source = try gpa.allocSentinel(u8, @as(usize, @intCast(stat.size)), 0);
-        defer if (file.source == null) gpa.free(source);
-        const amt = try source_file.readAll(source);
-        if (amt != stat.size)
-            return error.UnexpectedEndOfFile;
 
-        file.source = source;
+       const source = if (lsps_file) |lsps_f| lsps_f.tree.source else src: {
+            const src = try gpa.allocSentinel(u8, @as(usize, @intCast(stat.size)), 0);
+            errdefer gpa.free(src);
+
+            const amt = try source_file.readAll(src);
+            if (amt != stat.size)
+                return error.UnexpectedEndOfFile;
+
+            break :src src;
+        };
+        defer if (lsps_file == null and file.source == null) gpa.free(source);
 
         // Any potential AST errors are converted to ZIR errors when we run AstGen/ZonGen.
-        file.tree = try Ast.parse(gpa, source, file.getMode());
+        file.tree = if (lsps_file) |lsps_f| lsps_f.tree else try Ast.parse(gpa, source, file.getMode());
+        
+        file.source = source;
+        
+        if (lsps_file != null) file.owned_by_comp = false;
 
         switch (file.getMode()) {
             .zig => {
