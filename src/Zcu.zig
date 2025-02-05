@@ -720,6 +720,8 @@ pub const File = struct {
     /// we invalidate the corresponding `zon_file` dependency, and reset it to `false`.
     zoir_invalidated: bool = false,
 
+    owned_by_comp: bool = true,
+
     /// A single reference to a file.
     pub const Reference = union(enum) {
         /// The file is imported directly (i.e. not as a package) with @import.
@@ -751,14 +753,14 @@ pub const File = struct {
 
     pub fn unloadTree(file: *File, gpa: Allocator) void {
         if (file.tree) |*tree| {
-            tree.deinit(gpa);
+            if (file.owned_by_comp) tree.deinit(gpa);
             file.tree = null;
         }
     }
 
     pub fn unloadSource(file: *File, gpa: Allocator) void {
         if (file.source) |source| {
-            gpa.free(source);
+            if (file.owned_by_comp)  gpa.free(source);
             file.source = null;
         }
     }
