@@ -23,5 +23,5 @@ To ensure correct modules lookup, please refer to the [wiki page](https://github
 > This is a resource-intensive piece of software, so a capable CPU with good single-thread performance is recommended.
 
 ```bash
-zig build -Doptimize=ReleaseFast -Dllc --zig-lib-dir ./lib/
+zig build -Doptimize=ReleaseFast --zig-lib-dir ./lib/
 ```

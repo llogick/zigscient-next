@@ -320,43 +320,12 @@ fn parseArgs(allocator: std.mem.Allocator) ParseArgsError!ParseArgsResult {
     return result;
 }
 
-const LibcAllocatorInterface = struct {
-    const Self = @This();
-    pub fn allocator(_: Self) std.mem.Allocator {
-        return std.heap.c_allocator;
-    }
-    pub const init: Self = .{};
-    pub fn deinit(_: Self) void {}
-};
-
-const stack_frames = switch (zig_builtin.mode) {
-    .Debug => 10,
-    else => 0,
-};
-
-pub fn main() !u8 {
+pub fn serveLsp(gpa: std.mem.Allocator) !u8 {
     const preferred_runtime_log_level = runtime_log_level;
     runtime_log_level = init_stage_log_level;
 
-    var allocator_state, const allocator_name = if (exe_options.use_gpa)
-        .{
-            std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = stack_frames }){},
-            "GPA",
-        }
-    else if (exe_options.llc)
-        .{
-            LibcAllocatorInterface{},
-            "C",
-        }
-    else
-        .{
-            binned_allocator.BinnedAllocator(.{}){},
-            "Binned",
-        };
-    defer _ = allocator_state.deinit();
-
-    var tracy_state = if (tracy.enable_allocation) tracy.tracyAllocator(allocator_state.allocator()) else void{};
-    const inner_allocator: std.mem.Allocator = if (tracy.enable_allocation) tracy_state.allocator() else allocator_state.allocator();
+    var tracy_state = if (tracy.enable_allocation) tracy.tracyAllocator(gpa) else void{};
+    const inner_allocator: std.mem.Allocator = if (tracy.enable_allocation) tracy_state.allocator() else gpa;
 
     var failing_allocator_state = if (exe_options.enable_failing_allocator) debug.FailingAllocator.init(inner_allocator, exe_options.enable_failing_allocator_likelihood) else void{};
     const allocator: std.mem.Allocator = if (exe_options.enable_failing_allocator) failing_allocator_state.allocator() else inner_allocator;
@@ -379,14 +348,12 @@ pub fn main() !u8 {
         \\Hello/
         \\                      {s}
         \\                      Zigscient       {s}  {s}
-        \\                      Allocator       {s}
         \\                      Log Level       {s}
         \\                      Message Tracing {}
     , .{
         result.zls_exe_path,
         build_options.version_string,
         @tagName(zig_builtin.mode),
-        allocator_name,
         @tagName(resolved_log_level),
         result.enable_message_tracing,
     });
