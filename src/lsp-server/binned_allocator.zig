@@ -61,6 +61,7 @@ pub fn BinnedAllocator(comptime config: Config) type {
                 .vtable = &.{
                     .alloc = alloc,
                     .resize = resize,
+                    .remap = @panic("unsupported"),
                     .free = free,
                 },
             };
