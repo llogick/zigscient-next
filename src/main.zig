@@ -232,7 +232,7 @@ fn mainArgs(gpa: Allocator, arena: Allocator, args: []const []const u8) !void {
     defer tr.end();
 
     if (args.len <= 1) {
-        _ = try @import("lsp-server/main.zig").main();
+        _ = try @import("lsp-server/main.zig").serveLsp(gpa);
         return;
         // std.log.info("{s}", .{usage});
         // fatal("expected command argument", .{});
@@ -390,7 +390,7 @@ fn mainArgs(gpa: Allocator, arena: Allocator, args: []const []const u8) !void {
     } else if (build_options.enable_debug_extensions and mem.eql(u8, cmd, "llvm-ints")) {
         return cmdDumpLlvmInts(gpa, arena, cmd_args);
     } else {
-        _ = try @import("lsp-server/main.zig").main();
+        _ = try @import("lsp-server/main.zig").serveLsp(gpa);
         // std.log.info("{s}", .{usage});
         // fatal("unknown command: {s}", .{args[1]});
     }
