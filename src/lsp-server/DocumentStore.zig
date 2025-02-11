@@ -208,6 +208,15 @@ pub const BuildFile = struct {
         }
         if (self.impl.config) |cfg| blk: {
             if (cfg.value.roots.len == 0) break :blk;
+
+            var cleanup: bool = false;
+            defer if (cleanup) {
+                self.impl.compilation = null;
+                ds.allocator.destroy(self.impl.comp_state);
+                self.impl.comp_state = undefined;
+                log.err("Failed to create a compilation for: {s}", .{self.uri});
+            };
+
             const root_id = if (!(self.root_id < cfg.value.roots.len)) 0 else self.root_id;
             var arena_i = self.impl.arena_instance.promote(ds.allocator);
             defer self.impl.arena_instance = arena_i.state;
@@ -221,18 +230,10 @@ pub const BuildFile = struct {
                 ) catch @panic("OOM"),
             ) catch @panic("OOM");
             self.impl.args = args_dups.toOwnedSlice(ds.allocator) catch @panic("OOM"); //arena.dupe([]const u8, cfg.value.roots[root_id].args) catch @panic("OOM");
-            std.debug.print("bfuri: {s}\ncomp args {s}\n", .{ self.uri, self.impl.args });
+            log.debug("Creating a compilation for: {s}\n{s}", .{ self.uri, self.impl.args });
             const cmd = self.impl.args[1];
             self.impl.comp_state = ds.allocator.create(zmain.CompilationState) catch break :blk;
             self.impl.comp_state.* = .{};
-            // errdefer _ = self.impl.arena_instance.reset(.retain_capacity);
-            errdefer {
-                // if (self.impl.compilation) |c| c.destroy();
-                self.impl.compilation = null;
-                ds.allocator.destroy(self.impl.comp_state);
-                self.impl.comp_state = undefined;
-                std.debug.print("comp failed\n", .{});
-            }
             if (std.mem.eql(u8, cmd, "build-exe")) {
                 zmain.buildOutputType2(
                     ds.allocator,
@@ -242,7 +243,10 @@ pub const BuildFile = struct {
                     self.impl.comp_state,
                     ds,
                     &self.impl.compilation,
-                ) catch break :blk;
+                ) catch {
+                    cleanup = true;
+                    break :blk;
+                };
             } else if (std.mem.eql(u8, cmd, "build-lib")) {
                 zmain.buildOutputType2(
                     ds.allocator,
@@ -252,7 +256,10 @@ pub const BuildFile = struct {
                     self.impl.comp_state,
                     ds,
                     &self.impl.compilation,
-                ) catch break :blk;
+                ) catch {
+                    cleanup = true;
+                    break :blk;
+                };
             } else if (std.mem.eql(u8, cmd, "build-obj")) {
                 zmain.buildOutputType2(
                     ds.allocator,
@@ -262,9 +269,12 @@ pub const BuildFile = struct {
                     self.impl.comp_state,
                     ds,
                     &self.impl.compilation,
-                ) catch break :blk;
+                ) catch {
+                    cleanup = true;
+                    break :blk;
+                };
             }
-            if (self.impl.compilation) |c| std.debug.print("new comp: {*}\n", .{c});
+            // if (self.impl.compilation) |c| log.debug("new comp: {*}", .{c});
             // var eb = self.impl.compilation.?.getAllErrorsAlloc() catch @panic("OOM");
             // defer eb.deinit(ds.allocator);
             // std.debug.print("initial comp errorMsgCount: {}\n", .{eb.errorMessageCount()});
@@ -283,7 +293,7 @@ pub const BuildFile = struct {
     }
 
     fn deinit(self: *BuildFile, allocator: std.mem.Allocator) void {
-        std.debug.print("deiniting bfile w/ uri: {s}\n", .{self.uri});
+        // std.debug.print("deiniting bfile w/ uri: {s}\n", .{self.uri});
         allocator.free(self.uri);
         if (self.impl.config) |cfg| cfg.deinit();
         if (self.builtin_uri) |builtin_uri| allocator.free(builtin_uri);
@@ -872,7 +882,7 @@ pub fn getBuildFile(self: *DocumentStore, uri: Uri) ?*BuildFile {
 /// **Thread safe** takes an exclusive lock
 /// This function does not protect against data races from modifying the BuildFile
 fn getOrLoadBuildFile(self: *DocumentStore, uri: Uri) ?*BuildFile {
-    std.debug.print("getOrLoadBFile: {s}\n", .{uri});
+    // std.debug.print("getOrLoadBFile: {s}\n", .{uri});
     if (self.getBuildFile(uri)) |build_file| return build_file;
 
     self.lock.lock();

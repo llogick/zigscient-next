@@ -10686,7 +10686,7 @@ pub fn buildOutputType2(
         else => fatal("unable to create compilation: {s}", .{@errorName(err)}),
     };
 
-    std.debug.print("comp: {*}\n", .{comp});
+    // std.debug.print("comp: {*}\n", .{comp});
 
     if (lsps_compilation) |c| {
         c.* = comp;

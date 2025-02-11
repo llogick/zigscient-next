@@ -1916,9 +1916,6 @@ pub fn create(gpa: Allocator, arena: Allocator, options: CreateOptions) !*Compil
 pub fn destroy(comp: *Compilation) void {
     const gpa = comp.gpa;
 
-    // if (true) @panic("Why comp.destroy()?");
-    std.debug.print("!!!!! comp.destroy() called\n", .{});
-
     if (comp.bin_file) |lf| lf.destroy();
     if (comp.zcu) |zcu| zcu.deinit();
     comp.cache_use.deinit();
@@ -2204,7 +2201,7 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) !void {
         const pt: Zcu.PerThread = .activate(zcu, .main);
         defer pt.deactivate();
 
-        std.debug.print("comp update for: {s}\n", .{zcu.project_root_path.?});
+        // std.debug.print("comp update for: {s}\n", .{zcu.project_root_path.?});
 
         zcu.compile_log_text.shrinkAndFree(gpa, 0);
 
