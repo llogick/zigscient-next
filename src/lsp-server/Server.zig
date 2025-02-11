@@ -2063,7 +2063,7 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
                 var error_bundle = comp.getAllErrorsAlloc() catch break :comp;
                 defer error_bundle.deinit(server.document_store.allocator);
 
-                log.debug("gendiag errb: {}", .{error_bundle});
+                // log.debug("Compilation result: {}", .{error_bundle});
 
                 server.diagnostics_collection.publishCompilationResult(
                     server,
