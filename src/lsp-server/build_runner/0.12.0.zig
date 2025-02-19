@@ -63,6 +63,7 @@ var build_root: [:0]const u8 = undefined;
 ///! This is a modified build runner to extract information out of build.zig
 ///! Modified version of lib/build_runner.zig
 pub fn main() !void {
+    @setEvalBranchQuota(10_000);
     // Here we use an ArenaAllocator backed by a DirectAllocator because a build is a short-lived,
     // one shot program. We don't need to waste time freeing memory and finding places to squish
     // bytes into. So we free everything all at once at the very end.
@@ -431,7 +432,6 @@ pub fn main() !void {
 
     const watch_suported = switch (builtin.os.tag) {
         .linux => blk: {
-            @setEvalBranchQuota(10000);
             if (comptime builtin.zig_version.order(file_watch_version) == .lt) break :blk false;
 
             // std.build.Watch requires `FAN_REPORT_TARGET_FID` which is Linux 5.17+
@@ -2258,22 +2258,22 @@ fn getZigArgs(compile: *std.Build.Step.Compile, fuzz: bool) ![][]const u8 {
         .dynamic => try zig_args.append("-dynamic"),
         .static => try zig_args.append("-static"),
     };
-    if (compile.kind == .lib and compile.linkage != null and compile.linkage.? == .dynamic) {
-        if (compile.version) |version| {
-            try zig_args.append("--version");
-            try zig_args.append(b.fmt("{}", .{version}));
-        }
+    // if (compile.kind == .lib and compile.linkage != null and compile.linkage.? == .dynamic) {
+    //     if (compile.version) |version| {
+    //         try zig_args.append("--version");
+    //         try zig_args.append(b.fmt("{}", .{version}));
+    //     }
 
-        if (compile.rootModuleTarget().isDarwin()) {
-            const install_name = compile.install_name orelse b.fmt("@rpath/{s}{s}{s}", .{
-                compile.rootModuleTarget().libPrefix(),
-                compile.name,
-                compile.rootModuleTarget().dynamicLibSuffix(),
-            });
-            try zig_args.append("-install_name");
-            try zig_args.append(install_name);
-        }
-    }
+    //     if (compile.rootModuleTarget().isDarwin()) {
+    //         const install_name = compile.install_name orelse b.fmt("@rpath/{s}{s}{s}", .{
+    //             compile.rootModuleTarget().libPrefix(),
+    //             compile.name,
+    //             compile.rootModuleTarget().dynamicLibSuffix(),
+    //         });
+    //         try zig_args.append("-install_name");
+    //         try zig_args.append(install_name);
+    //     }
+    // }
 
     if (compile.entitlements) |entitlements| {
         try zig_args.appendSlice(&[_][]const u8{ "--entitlements", entitlements });
