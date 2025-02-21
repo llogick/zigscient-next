@@ -18,6 +18,12 @@ The server requires a valid workspace folder path to be passed in the `initializ
 
 To ensure correct modules lookup, please refer to the [wiki page](https://github.com/llogick/zigscient/wiki/Modules:-Switching-%60root_id%60).
 
+### Keep In Mind
+
+Conditionals like `if` and `else` can influence what is analyzed. Make sure you're aware of the implications when editing code within these blocks.
+
+https://github.com/user-attachments/assets/9e47daca-1d6d-492e-b840-85fbfb83e4c8
+
 ## Building
 >[!NOTE]
 > This is a resource-intensive piece of software, so a capable CPU with good single-thread performance is recommended.
