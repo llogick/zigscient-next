@@ -765,7 +765,7 @@ pub const File = struct {
 
     pub fn unloadSource(file: *File, gpa: Allocator) void {
         if (file.source) |source| {
-            if (file.owned_by_comp)  gpa.free(source);
+            if (file.owned_by_comp) gpa.free(source);
             file.source = null;
         }
     }

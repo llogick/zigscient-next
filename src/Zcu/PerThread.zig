@@ -255,8 +255,7 @@ pub fn updateFile(
         if (stat.size > std.math.maxInt(u32))
             return error.FileTooBig;
 
-
-       const source = if (lsps_file) |lsps_f| lsps_f.tree.source else src: {
+        const source = if (lsps_file) |lsps_f| lsps_f.tree.source else src: {
             const src = try gpa.allocSentinel(u8, @as(usize, @intCast(stat.size)), 0);
             errdefer gpa.free(src);
 
@@ -270,9 +269,9 @@ pub fn updateFile(
 
         // Any potential AST errors are converted to ZIR errors when we run AstGen/ZonGen.
         file.tree = if (lsps_file) |lsps_f| lsps_f.tree else try Ast.parse(gpa, source, file.getMode());
-        
+
         file.source = source;
-        
+
         if (lsps_file != null) file.owned_by_comp = false;
 
         switch (file.getMode()) {
