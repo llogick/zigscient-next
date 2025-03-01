@@ -1518,7 +1518,7 @@ fn cfgLspServer(
 
     const known_folders_module = b.dependency("known_folders", .{}).module("known-folders");
     const diffz_module = b.dependency("diffz", .{}).module("diffz");
-    const lsp_module = b.dependency("lsp-codegen", .{}).module("lsp");
+    const lsp_module = b.dependency("lsp_codegen", .{}).module("lsp");
 
     const gen_exe = b.addExecutable(.{
         .name = "cfg_gen",
