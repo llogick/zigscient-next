@@ -1468,8 +1468,8 @@ const proj_version = std.SemanticVersion{ .major = 0, .minor = 14, .patch = 0, .
 
 /// Specify the minimum Zig version that is required to compile and test the project:
 /// Must match the `minimum_zig_version` in `build.zig.zon`.
-/// Breaking change summary: Replace `std.builtin.CallingConvention` with a tagged union, eliminating `@setAlignStack`
-const minimum_build_zig_version = "0.14.0-dev.1983+6bf52b050";
+/// Breaking change summary: 0.14.0 
+const minimum_build_zig_version = "0.14.0";
 
 /// Specify the minimum Zig version that is required to run the project:
 /// Release 0.12.0
@@ -1743,7 +1743,7 @@ const Build = blk: {
             \\  - Download the latest nightly of Zig (https://ziglang.org/download/)
             \\  - Compile an older version of this project that is compatible with your Zig version
         , .{
-            .current_version = builtin.zig_version,
+            .current_version = zbuiltin.zig_version,
             .minimum_version = min_build_zig,
             .required_zig_version_note = if (!proj_version_is_tagged) "(or greater)" else "",
         });
