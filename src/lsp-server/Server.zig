@@ -2057,13 +2057,15 @@ fn processJob(server: *Server, job: Job, wait_group: ?*std.Thread.WaitGroup) voi
                 if (!bfile.impl.mutex.tryLock()) break :comp;
                 defer bfile.impl.mutex.unlock();
 
+                log.debug("Triggering a compilation update for: {s}", .{bfile_uri});
+
                 const comp = bfile.impl.compilation orelse break :comp;
                 comp.update(.none) catch break :comp;
 
                 var error_bundle = comp.getAllErrorsAlloc() catch break :comp;
                 defer error_bundle.deinit(server.document_store.allocator);
 
-                // log.debug("Compilation result: {}", .{error_bundle});
+                log.debug("Compilation result: {}", .{error_bundle});
 
                 server.diagnostics_collection.publishCompilationResult(
                     server,
