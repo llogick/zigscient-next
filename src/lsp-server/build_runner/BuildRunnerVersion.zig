@@ -9,6 +9,7 @@ const build_options = @import("ls_build_options");
 /// The GitHub matrix in `.github\workflows\build_runner.yml` should be updated to check Zig master with the latest build runner file.
 pub const BuildRunnerVersion = enum {
     // master,
+    @"0.14.0",
     @"0.13.0",
     @"0.12.0",
 
@@ -24,8 +25,10 @@ pub const BuildRunnerVersion = enum {
     pub fn getBuildRunnerFile(version: BuildRunnerVersion) [:0]const u8 {
         return switch (version) {
             // .master => @embedFile("master.zig"),
-            .@"0.13.0" => @embedFile("0.12.0.zig"), // The Zig 0.12.0 build runner is also compatible with Zig 0.13.0
-            .@"0.12.0" => @embedFile("0.12.0.zig"),
+            .@"0.14.0",
+            .@"0.13.0",
+            .@"0.12.0",
+            => @embedFile("0.12.0.zig"),
         };
     }
 
