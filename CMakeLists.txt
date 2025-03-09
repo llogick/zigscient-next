@@ -979,7 +979,7 @@ set(ZIG2_WORKING_DIR "${PROJECT_SOURCE_DIR}")
 
 add_custom_command(
   OUTPUT "${PROJECT_BINARY_DIR}/stage3/bin/zig"
-  COMMAND zig2 build --prefix "${PROJECT_BINARY_DIR}/stage3" ${ZIG_BUILD_ARGS}
+  COMMAND zig2 build --prefix "${PROJECT_BINARY_DIR}/stage3" -Ddev=full ${ZIG_BUILD_ARGS}
   COMMENT "Building stage3"
   WORKING_DIRECTORY "${ZIG2_WORKING_DIR}"
 )

@@ -9213,8 +9213,27 @@ pub fn buildOutputType2(
                         }
                     },
                     .no_stack_protector => cs.mod_opts.stack_protector = 0,
-                    .unwind_tables => cs.mod_opts.unwind_tables = true,
-                    .no_unwind_tables => cs.mod_opts.unwind_tables = false,
+                    // The way these unwind table options are processed in GCC and Clang is crazy
+                    // convoluted, and we also don't know the target triple here, so this is all
+                    // best-effort.
+                    .unwind_tables => if (cs.mod_opts.unwind_tables) |uwt| switch (uwt) {
+                        .none => {
+                            cs.mod_opts.unwind_tables = .sync;
+                        },
+                        .sync, .@"async" => {},
+                    } else {
+                        cs.mod_opts.unwind_tables = .sync;
+                    },
+                    .no_unwind_tables => cs.mod_opts.unwind_tables = .none,
+                    .asynchronous_unwind_tables => cs.mod_opts.unwind_tables = .@"async",
+                    .no_asynchronous_unwind_tables => if (cs.mod_opts.unwind_tables) |uwt| switch (uwt) {
+                        .none, .sync => {},
+                        .@"async" => {
+                            cs.mod_opts.unwind_tables = .sync;
+                        },
+                    } else {
+                        cs.mod_opts.unwind_tables = .sync;
+                    },
                     .nostdlib => {
                         cs.create_module.opts.ensure_libc_on_non_freestanding = false;
                         cs.create_module.opts.ensure_libcpp_on_non_freestanding = false;
