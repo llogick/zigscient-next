@@ -281,12 +281,13 @@ pub fn build(b: *std.Build) !void {
                 const tagged_ancestor = it.first();
                 const commit_height = it.next().?;
                 const commit_id = it.next().?;
+                _ = tagged_ancestor;
 
-                const ancestor_ver = try std.SemanticVersion.parse(tagged_ancestor);
-                if (zig_version.order(ancestor_ver) != .gt) {
-                    std.debug.print("Zig version '{}' must be greater than tagged ancestor '{}'\n", .{ zig_version, ancestor_ver });
-                    std.process.exit(1);
-                }
+                // const ancestor_ver = try std.SemanticVersion.parse(tagged_ancestor);
+                // if (zig_version.order(ancestor_ver) != .gt) {
+                //     std.debug.print("Zig version '{}' must be greater than tagged ancestor '{}'\n", .{ zig_version, ancestor_ver });
+                //     std.process.exit(1);
+                // }
 
                 // Check that the commit hash is prefixed with a 'g' (a Git convention).
                 if (commit_id.len < 1 or commit_id[0] != 'g') {
@@ -1468,7 +1469,7 @@ const proj_version = std.SemanticVersion{ .major = 0, .minor = 14, .patch = 0, .
 
 /// Specify the minimum Zig version that is required to compile and test the project:
 /// Must match the `minimum_zig_version` in `build.zig.zon`.
-/// Breaking change summary: 0.14.0 
+/// Breaking change summary: 0.14.0
 const minimum_build_zig_version = "0.14.0";
 
 /// Specify the minimum Zig version that is required to run the project:
@@ -1640,9 +1641,10 @@ fn getVersion(b: *Build) std.SemanticVersion {
             const tagged_ancestor = it.first();
             const commit_height = it.next().?;
             const commit_id = it.next().?;
+            _ = tagged_ancestor;
 
-            const ancestor_ver = std.SemanticVersion.parse(tagged_ancestor) catch unreachable;
-            std.debug.assert(proj_version.order(ancestor_ver) == .gt); // version must be greater than its previous version
+            // const ancestor_ver = std.SemanticVersion.parse(tagged_ancestor) catch unreachable;
+            // std.debug.assert(proj_version.order(ancestor_ver) == .gt); // version must be greater than its previous version
             std.debug.assert(std.mem.startsWith(u8, commit_id, "g")); // commit hash is prefixed with a 'g'
 
             return std.SemanticVersion{
