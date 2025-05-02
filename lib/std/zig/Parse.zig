@@ -92,7 +92,7 @@ fn reserveNode(p: *Parse, tag: Ast.Node.Tag) !usize {
 }
 
 fn unreserveNode(p: *Parse, node_index: usize) void {
-    if (p.nodes.len == node_index) {
+    if (p.nodes.len == node_index + 1) {
         p.nodes.resize(p.gpa, p.nodes.len - 1) catch unreachable;
     } else {
         // There is zombie node left in the tree, let's make it as inoffensive as possible
@@ -3416,4 +3416,23 @@ const Token = std.zig.Token;
 
 test {
     _ = @import("parser_test.zig");
+}
+
+test "unreserving a freshly reserved AST node must not create zombies" {
+    const gpa = std.testing.allocator;
+    var parser: Parse = .{
+        .gpa = gpa,
+        .nodes = .empty,
+        .errors = .empty,
+        .extra_data = .empty,
+        .scratch = .empty,
+        .source = "",
+        .tok_i = 0,
+        .tokens = undefined,
+        .recover = false,
+    };
+    defer parser.nodes.deinit(gpa);
+    const last = try parser.reserveNode(.@"try");
+    parser.unreserveNode(last);
+    try std.testing.expectEqual(parser.nodes.len, 0);
 }
