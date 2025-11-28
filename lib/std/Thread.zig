@@ -63,11 +63,8 @@ pub fn setName(self: Thread, io: Io, name: []const u8) SetNameError!void {
         .linux => if (use_pthreads) {
             if (self.getHandle() == std.c.pthread_self()) {
                 // Set the name of the calling thread (no thread id required).
-                const err = try posix.prctl(.SET_NAME, .{@intFromPtr(name_with_terminator.ptr)});
-                switch (@as(posix.E, @enumFromInt(err))) {
-                    .SUCCESS => return,
-                    else => |e| return posix.unexpectedErrno(e),
-                }
+                assert(try posix.prctl(.SET_NAME, .{@intFromPtr(name_with_terminator.ptr)}) == 0);
+                return;
             } else {
                 const err = std.c.pthread_setname_np(self.getHandle(), name_with_terminator.ptr);
                 switch (@as(posix.E, @enumFromInt(err))) {
@@ -167,11 +164,8 @@ pub fn getName(self: Thread, buffer_ptr: *[max_name_len:0]u8) GetNameError!?[]co
         .linux => if (use_pthreads) {
             if (self.getHandle() == std.c.pthread_self()) {
                 // Get the name of the calling thread (no thread id required).
-                const err = try posix.prctl(.GET_NAME, .{@intFromPtr(buffer.ptr)});
-                switch (@as(posix.E, @enumFromInt(err))) {
-                    .SUCCESS => return std.mem.sliceTo(buffer, 0),
-                    else => |e| return posix.unexpectedErrno(e),
-                }
+                assert(try posix.prctl(.GET_NAME, .{@intFromPtr(buffer.ptr)}) == 0);
+                return std.mem.sliceTo(buffer, 0);
             } else {
                 const err = std.c.pthread_getname_np(self.getHandle(), buffer.ptr, max_name_len + 1);
                 switch (@as(posix.E, @enumFromInt(err))) {
