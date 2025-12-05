@@ -593,7 +593,7 @@ const known_options = [_]KnownOpt{
 const blacklisted_options = [_][]const u8{};
 
 fn knownOption(name: []const u8) ?[]const u8 {
-    const chopped_name = if (std.mem.endsWith(u8, name, "=")) name[0 .. name.len - 1] else name;
+    const chopped_name = if (std.mem.indexOfScalar(u8, name, '=')) |idx| name[0..idx] else name;
     for (known_options) |item| {
         if (std.mem.eql(u8, chopped_name, item.name)) {
             return item.ident;
