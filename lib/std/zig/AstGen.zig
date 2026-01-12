@@ -3975,81 +3975,67 @@ fn arrayTypeSentinel(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.
     return rvalue(gz, ri, result, node);
 }
 
-const WipMembers = struct {
-    payload: *ArrayList(u32),
-    payload_top: usize,
-    field_bits_start: u32,
-    fields_start: u32,
-    fields_end: u32,
-    decl_index: u32 = 0,
-    field_index: u32 = 0,
-
-    const Self = @This();
-
-    fn init(gpa: Allocator, payload: *ArrayList(u32), decl_count: u32, field_count: u32, comptime bits_per_field: u32, comptime max_field_size: u32) Allocator.Error!Self {
-        const payload_top: u32 = @intCast(payload.items.len);
-        const field_bits_start = payload_top + decl_count;
-        const fields_start = field_bits_start + if (bits_per_field > 0) blk: {
-            const fields_per_u32 = 32 / bits_per_field;
-            break :blk (field_count + fields_per_u32 - 1) / fields_per_u32;
-        } else 0;
-        const payload_end = fields_start + field_count * max_field_size;
-        try payload.resize(gpa, payload_end);
+const Scratch = struct {
+    astgen: *AstGen,
+    scratch_top: u32,
+    fn init(astgen: *AstGen) Scratch {
         return .{
-            .payload = payload,
-            .payload_top = payload_top,
-            .field_bits_start = field_bits_start,
-            .fields_start = fields_start,
-            .fields_end = fields_start,
+            .astgen = astgen,
+            .scratch_top = @intCast(astgen.scratch.items.len),
         };
     }
-
-    fn nextDecl(self: *Self, decl_inst: Zir.Inst.Index) void {
-        self.payload.items[self.payload_top + self.decl_index] = @intFromEnum(decl_inst);
-        self.decl_index += 1;
+    fn reset(s: *Scratch) void {
+        s.astgen.scratch.shrinkRetainingCapacity(s.scratch_top);
+        s.* = undefined;
     }
-
-    fn nextField(self: *Self, comptime bits_per_field: u32, bits: [bits_per_field]bool) void {
-        const fields_per_u32 = 32 / bits_per_field;
-        const index = self.field_bits_start + self.field_index / fields_per_u32;
-        assert(index < self.fields_start);
-        var bit_bag: u32 = if (self.field_index % fields_per_u32 == 0) 0 else self.payload.items[index];
-        bit_bag >>= bits_per_field;
-        comptime var i = 0;
-        inline while (i < bits_per_field) : (i += 1) {
-            bit_bag |= @as(u32, @intFromBool(bits[i])) << (32 - bits_per_field + i);
+    fn addSlice(s: *Scratch, len: u32) Allocator.Error!Slice {
+        const start: u32 = @intCast(s.astgen.scratch.items.len);
+        try s.astgen.scratch.resize(s.astgen.gpa, start + len);
+        return .{ .start = start, .len = len };
+    }
+    fn addOptionalSlice(s: *Scratch, present: bool, len: u32) Allocator.Error!?Slice {
+        if (!present) return null;
+        return try addSlice(s, len);
+    }
+    fn appendBodyWithFixups(s: *Scratch, body: []const Zir.Inst.Index) Allocator.Error!u32 {
+        const len = countBodyLenAfterFixups(s.astgen, body);
+        try s.astgen.scratch.ensureUnusedCapacity(s.astgen.gpa, len);
+        appendBodyWithFixupsArrayList(s.astgen, &s.astgen.scratch, body);
+        return len;
+    }
+    /// Returns the slice containing all data added to this `Scratch`.
+    fn all(s: *Scratch) Slice {
+        const len = s.astgen.scratch.items.len - s.scratch_top;
+        return .{ .start = s.scratch_top, .len = @intCast(len) };
+    }
+    const Slice = struct {
+        start: u32,
+        len: u32,
+        fn get(s: Slice, astgen: *AstGen) []u32 {
+            return astgen.scratch.items[s.start..][0..s.len];
         }
-        self.payload.items[index] = bit_bag;
-        self.field_index += 1;
-    }
+    };
+};
 
-    fn appendToField(self: *Self, data: u32) void {
-        assert(self.fields_end < self.payload.items.len);
-        self.payload.items[self.fields_end] = data;
-        self.fields_end += 1;
-    }
+const WipDecls = struct {
+    astgen: *AstGen,
+    slice: Scratch.Slice,
+    index: u32,
 
-    fn finishBits(self: *Self, comptime bits_per_field: u32) void {
-        if (bits_per_field > 0) {
-            const fields_per_u32 = 32 / bits_per_field;
-            const empty_field_slots = fields_per_u32 - (self.field_index % fields_per_u32);
-            if (self.field_index > 0 and empty_field_slots < fields_per_u32) {
-                const index = self.field_bits_start + self.field_index / fields_per_u32;
-                self.payload.items[index] >>= @intCast(empty_field_slots * bits_per_field);
-            }
-        }
+    fn init(scratch: *Scratch, decls_len: u32) Allocator.Error!WipDecls {
+        return .{
+            .astgen = scratch.astgen,
+            .slice = try scratch.addSlice(decls_len),
+            .index = 0,
+        };
     }
-
-    fn declsSlice(self: *Self) []u32 {
-        return self.payload.items[self.payload_top..][0..self.decl_index];
+    fn finish(wip: *WipDecls) void {
+        assert(wip.index == wip.slice.len);
+        wip.* = undefined;
     }
-
-    fn fieldsSlice(self: *Self) []u32 {
-        return self.payload.items[self.field_bits_start..self.fields_end];
-    }
-
-    fn deinit(self: *Self) void {
-        self.payload.items.len = self.payload_top;
+    fn nextDecl(wip: *WipDecls, decl_inst: Zir.Inst.Index) void {
+        wip.slice.get(wip.astgen)[wip.index] = @intFromEnum(decl_inst);
+        wip.index += 1;
     }
 };
 
@@ -4057,7 +4043,7 @@ fn fnDecl(
     astgen: *AstGen,
     gz: *GenZir,
     scope: *Scope,
-    wip_members: *WipMembers,
+    wip_decls: *WipDecls,
     decl_node: Ast.Node.Index,
     body_node: Ast.Node.OptionalIndex,
     fn_proto: Ast.full.FnProto,
@@ -4133,7 +4119,7 @@ fn fnDecl(
         assert(!is_extern); // validated by parser (TODO why???)
     }
 
-    wip_members.nextDecl(decl_inst);
+    wip_decls.nextDecl(decl_inst);
 
     var type_gz: GenZir = .{
         .is_comptime = true,
@@ -4488,7 +4474,7 @@ fn globalVarDecl(
     astgen: *AstGen,
     gz: *GenZir,
     scope: *Scope,
-    wip_members: *WipMembers,
+    wip_decls: *WipDecls,
     node: Ast.Node.Index,
     var_decl: Ast.full.VarDecl,
 ) InnerError!void {
@@ -4533,7 +4519,7 @@ fn globalVarDecl(
     const decl_column = astgen.source_column;
 
     const decl_inst = try gz.makeDeclaration(node);
-    wip_members.nextDecl(decl_inst);
+    wip_decls.nextDecl(decl_inst);
 
     if (var_decl.ast.init_node.unwrap()) |init_node| {
         if (is_extern) {
@@ -4635,7 +4621,7 @@ fn comptimeDecl(
     astgen: *AstGen,
     gz: *GenZir,
     scope: *Scope,
-    wip_members: *WipMembers,
+    wip_decls: *WipDecls,
     node: Ast.Node.Index,
 ) InnerError!void {
     const tree = astgen.tree;
@@ -4650,7 +4636,7 @@ fn comptimeDecl(
     // Up top so the ZIR instruction index marks the start range of this
     // top-level declaration.
     const decl_inst = try gz.makeDeclaration(node);
-    wip_members.nextDecl(decl_inst);
+    wip_decls.nextDecl(decl_inst);
     astgen.advanceSourceCursorToNode(node);
 
     // This is just needed for the `setDeclaration` call.
@@ -4698,7 +4684,7 @@ fn testDecl(
     astgen: *AstGen,
     gz: *GenZir,
     scope: *Scope,
-    wip_members: *WipMembers,
+    wip_decls: *WipDecls,
     node: Ast.Node.Index,
 ) InnerError!void {
     const tree = astgen.tree;
@@ -4714,7 +4700,7 @@ fn testDecl(
     // top-level declaration.
     const decl_inst = try gz.makeDeclaration(node);
 
-    wip_members.nextDecl(decl_inst);
+    wip_decls.nextDecl(decl_inst);
     astgen.advanceSourceCursorToNode(node);
 
     // This is just needed for the `setDeclaration` call.
@@ -4914,7 +4900,7 @@ fn structDeclInner(
     node: Ast.Node.Index,
     container_decl: Ast.full.ContainerDecl,
     layout: std.builtin.Type.ContainerLayout,
-    backing_int_node: Ast.Node.OptionalIndex,
+    maybe_backing_int_node: Ast.Node.OptionalIndex,
     name_strat: Zir.Inst.NameStrategy,
 ) InnerError!Zir.Inst.Ref {
     const astgen = gz.astgen;
@@ -4930,27 +4916,39 @@ fn structDeclInner(
         if (node == .root) {
             return astgen.failNode(tuple_field_node, "file cannot be a tuple", .{});
         } else {
-            return tupleDecl(gz, scope, node, container_decl, layout, backing_int_node);
+            return tupleDecl(gz, scope, node, container_decl, layout, maybe_backing_int_node);
         }
     }
 
+    astgen.advanceSourceCursorToNode(node);
+
+    const backing_int_type_ref: Zir.Inst.Ref = ty: {
+        const backing_int_node = maybe_backing_int_node.unwrap() orelse break :ty .none;
+        if (layout != .@"packed") return astgen.failNode(
+            backing_int_node,
+            "non-packed struct does not support backing integer type",
+            .{},
+        );
+        break :ty try typeExpr(gz, scope, backing_int_node);
+    };
+
     const decl_inst = try gz.reserveInstructionIndex();
 
-    if (container_decl.ast.members.len == 0 and backing_int_node == .none) {
+    if (container_decl.ast.members.len == 0 and backing_int_type_ref == .none) {
         try gz.setStruct(decl_inst, .{
             .src_node = node,
-            .layout = layout,
-            .captures_len = 0,
-            .fields_len = 0,
-            .decls_len = 0,
-            .has_backing_int = false,
-            .known_non_opv = false,
-            .known_comptime_only = false,
-            .any_comptime_fields = false,
-            .any_default_inits = false,
-            .any_aligned_fields = false,
-            .fields_hash = std.zig.hashSrc(@tagName(layout)),
             .name_strat = name_strat,
+            .layout = layout,
+            .backing_int_type = .none,
+            .decls_len = 0,
+            .fields_len = 0,
+            .any_field_aligns = false,
+            .any_field_defaults = false,
+            .any_comptime_fields = false,
+            .fields_hash = @splat(0),
+            .captures = &.{},
+            .capture_names = &.{},
+            .remaining = &.{},
         });
         return decl_inst.toRef();
     }
@@ -4967,7 +4965,6 @@ fn structDeclInner(
     // The struct_decl instruction introduces a scope in which the decls of the struct
     // are in scope, so that field types, alignments, and default value expressions
     // can refer to decls within the struct itself.
-    astgen.advanceSourceCursorToNode(node);
     var block_scope: GenZir = .{
         .parent = &namespace.base,
         .decl_node_index = node,
@@ -4979,196 +4976,117 @@ fn structDeclInner(
     };
     defer block_scope.unstack();
 
-    const scratch_top = astgen.scratch.items.len;
-    defer astgen.scratch.items.len = scratch_top;
+    const scan_result = try astgen.scanContainer(&namespace, container_decl.ast.members, .@"struct");
 
-    var backing_int_body_len: usize = 0;
-    const backing_int_ref: Zir.Inst.Ref = blk: {
-        if (backing_int_node.unwrap()) |arg| {
-            if (layout != .@"packed") {
-                return astgen.failNode(arg, "non-packed struct does not support backing integer type", .{});
-            } else {
-                const backing_int_ref = try typeExpr(&block_scope, &namespace.base, arg);
-                if (!block_scope.isEmpty()) {
-                    if (!block_scope.endsWithNoReturn()) {
-                        _ = try block_scope.addBreak(.break_inline, decl_inst, backing_int_ref);
-                    }
+    var scratch: Scratch = .init(astgen);
+    defer scratch.reset();
 
-                    const body = block_scope.instructionsSlice();
-                    const old_scratch_len = astgen.scratch.items.len;
-                    try astgen.scratch.ensureUnusedCapacity(gpa, countBodyLenAfterFixups(astgen, body));
-                    appendBodyWithFixupsArrayList(astgen, &astgen.scratch, body);
-                    backing_int_body_len = astgen.scratch.items.len - old_scratch_len;
-                    block_scope.instructions.items.len = block_scope.instructions_top;
-                }
-                break :blk backing_int_ref;
-            }
-        } else {
-            break :blk .none;
-        }
-    };
-
-    const decl_count = try astgen.scanContainer(&namespace, container_decl.ast.members, .@"struct");
-    const field_count: u32 = @intCast(container_decl.ast.members.len - decl_count);
-
-    const bits_per_field = 4;
-    const max_field_size = 5;
-    var wip_members = try WipMembers.init(gpa, &astgen.scratch, decl_count, field_count, bits_per_field, max_field_size);
-    defer wip_members.deinit();
-
-    // We will use the scratch buffer, starting here, for the bodies:
-    //    bodies: { // for every fields_len
-    //        field_type_body_inst: Inst, // for each field_type_body_len
-    //        align_body_inst: Inst, // for each align_body_len
-    //        init_body_inst: Inst, // for each init_body_len
-    //    }
-    // Note that the scratch buffer is simultaneously being used by WipMembers, however
-    // it will not access any elements beyond this point in the ArrayList. It also
-    // accesses via the ArrayList items field so it can handle the scratch buffer being
-    // reallocated.
-    // No defer needed here because it is handled by `wip_members.deinit()` above.
-    const bodies_start = astgen.scratch.items.len;
+    // Replicate the structure of the ZIR trailing data in `scratch`
+    var wip_decls: WipDecls = try .init(&scratch, scan_result.decls_len);
+    const field_names = try scratch.addSlice(scan_result.fields_len);
+    const field_type_body_lens = try scratch.addSlice(scan_result.fields_len);
+    const field_align_body_lens = try scratch.addOptionalSlice(scan_result.any_field_aligns, scan_result.fields_len);
+    const field_default_body_lens = try scratch.addOptionalSlice(scan_result.any_field_values, scan_result.fields_len);
+    const field_comptime_bits = try scratch.addOptionalSlice(
+        scan_result.any_comptime_fields,
+        std.math.divCeil(u32, scan_result.fields_len, 32) catch unreachable,
+    );
+    if (field_comptime_bits) |bits| @memset(bits.get(astgen), 0);
 
     const old_hasher = astgen.src_hasher;
     defer astgen.src_hasher = old_hasher;
-    astgen.src_hasher = std.zig.SrcHasher.init(.{});
-    astgen.src_hasher.update(@tagName(layout));
-    if (backing_int_node.unwrap()) |arg| {
-        astgen.src_hasher.update(tree.getNodeSource(arg));
-    }
+    astgen.src_hasher = .init(.{});
 
-    var known_non_opv = false;
-    var known_comptime_only = false;
-    var any_comptime_fields = false;
-    var any_aligned_fields = false;
-    var any_default_inits = false;
+    var next_field_idx: u32 = 0;
     for (container_decl.ast.members) |member_node| {
-        var member = switch (try containerMember(&block_scope, &namespace.base, &wip_members, member_node)) {
+        var member = switch (try containerMember(&block_scope, &namespace.base, &wip_decls, member_node)) {
             .decl => continue,
             .field => |field| field,
         };
+        const field_idx = next_field_idx;
+        next_field_idx += 1;
 
         astgen.src_hasher.update(tree.getNodeSource(member_node));
 
-        const field_name = try astgen.identAsString(member.ast.main_token);
         member.convertToNonTupleLike(astgen.tree);
         assert(!member.ast.tuple_like);
-        wip_members.appendToField(@intFromEnum(field_name));
 
-        const type_expr = member.ast.type_expr.unwrap() orelse {
-            return astgen.failTok(member.ast.main_token, "struct field missing type", .{});
-        };
+        field_names.get(astgen)[field_idx] = @intFromEnum(try astgen.identAsString(member.ast.main_token));
 
-        const field_type = try typeExpr(&block_scope, &namespace.base, type_expr);
-        const have_type_body = !block_scope.isEmpty();
-        const have_align = member.ast.align_expr != .none;
-        const have_value = member.ast.value_expr != .none;
-        const is_comptime = member.comptime_token != null;
-
-        if (is_comptime) {
-            switch (layout) {
-                .@"packed", .@"extern" => return astgen.failTok(member.comptime_token.?, "{s} struct fields cannot be marked comptime", .{@tagName(layout)}),
-                .auto => any_comptime_fields = true,
-            }
-        } else {
-            known_non_opv = known_non_opv or
-                nodeImpliesMoreThanOnePossibleValue(tree, type_expr);
-            known_comptime_only = known_comptime_only or
-                nodeImpliesComptimeOnly(tree, type_expr);
-        }
-        wip_members.nextField(bits_per_field, .{ have_align, have_value, is_comptime, have_type_body });
-
-        if (have_type_body) {
+        {
+            const type_node = member.ast.type_expr.unwrap() orelse {
+                return astgen.failTok(member.ast.main_token, "struct field missing type", .{});
+            };
+            const type_ref = try typeExpr(&block_scope, &namespace.base, type_node);
             if (!block_scope.endsWithNoReturn()) {
-                _ = try block_scope.addBreak(.break_inline, decl_inst, field_type);
+                _ = try block_scope.addBreak(.break_inline, decl_inst, type_ref);
             }
-            const body = block_scope.instructionsSlice();
-            const old_scratch_len = astgen.scratch.items.len;
-            try astgen.scratch.ensureUnusedCapacity(gpa, countBodyLenAfterFixups(astgen, body));
-            appendBodyWithFixupsArrayList(astgen, &astgen.scratch, body);
-            wip_members.appendToField(@intCast(astgen.scratch.items.len - old_scratch_len));
+            const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+            field_type_body_lens.get(astgen)[field_idx] = body_len;
             block_scope.instructions.items.len = block_scope.instructions_top;
-        } else {
-            wip_members.appendToField(@intFromEnum(field_type));
         }
 
-        if (member.ast.align_expr.unwrap()) |align_expr| {
+        if (member.ast.align_expr.unwrap()) |align_node| {
             if (layout == .@"packed") {
-                return astgen.failNode(align_expr, "unable to override alignment of packed struct fields", .{});
+                return astgen.failNode(align_node, "unable to override alignment of packed struct fields", .{});
             }
-            any_aligned_fields = true;
-            const align_ref = try expr(&block_scope, &namespace.base, coerced_align_ri, align_expr);
+            const align_ref = try expr(&block_scope, &namespace.base, coerced_align_ri, align_node);
             if (!block_scope.endsWithNoReturn()) {
                 _ = try block_scope.addBreak(.break_inline, decl_inst, align_ref);
             }
-            const body = block_scope.instructionsSlice();
-            const old_scratch_len = astgen.scratch.items.len;
-            try astgen.scratch.ensureUnusedCapacity(gpa, countBodyLenAfterFixups(astgen, body));
-            appendBodyWithFixupsArrayList(astgen, &astgen.scratch, body);
-            wip_members.appendToField(@intCast(astgen.scratch.items.len - old_scratch_len));
+            const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+            field_align_body_lens.?.get(astgen)[field_idx] = body_len;
             block_scope.instructions.items.len = block_scope.instructions_top;
+        } else if (field_align_body_lens) |lens| {
+            lens.get(astgen)[field_idx] = 0;
         }
 
-        if (member.ast.value_expr.unwrap()) |value_expr| {
-            any_default_inits = true;
-
-            // The decl_inst is used as here so that we can easily reconstruct a mapping
-            // between it and the field type when the fields inits are analyzed.
-            const ri: ResultInfo = .{ .rl = if (field_type == .none) .none else .{ .coerced_ty = decl_inst.toRef() } };
-
-            const default_inst = try expr(&block_scope, &namespace.base, ri, value_expr);
+        if (member.ast.value_expr.unwrap()) |default_node| {
+            const ri: ResultInfo = .{ .rl = .{ .coerced_ty = decl_inst.toRef() } };
+            const default_ref = try expr(&block_scope, &namespace.base, ri, default_node);
             if (!block_scope.endsWithNoReturn()) {
-                _ = try block_scope.addBreak(.break_inline, decl_inst, default_inst);
+                _ = try block_scope.addBreak(.break_inline, decl_inst, default_ref);
             }
-            const body = block_scope.instructionsSlice();
-            const old_scratch_len = astgen.scratch.items.len;
-            try astgen.scratch.ensureUnusedCapacity(gpa, countBodyLenAfterFixups(astgen, body));
-            appendBodyWithFixupsArrayList(astgen, &astgen.scratch, body);
-            wip_members.appendToField(@intCast(astgen.scratch.items.len - old_scratch_len));
+            const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+            field_default_body_lens.?.get(astgen)[field_idx] = body_len;
             block_scope.instructions.items.len = block_scope.instructions_top;
-        } else if (member.comptime_token) |comptime_token| {
-            return astgen.failTok(comptime_token, "comptime field without default initialization value", .{});
+        } else if (field_default_body_lens) |lens| {
+            lens.get(astgen)[field_idx] = 0;
+        }
+
+        if (member.comptime_token) |comptime_token| {
+            switch (layout) {
+                .@"packed", .@"extern" => return astgen.failTok(comptime_token, "{s} struct fields cannot be marked comptime", .{@tagName(layout)}),
+                .auto => {},
+            }
+            if (member.ast.value_expr == .none) {
+                return astgen.failTok(comptime_token, "comptime field without default initialization value", .{});
+            }
+            const mask = @as(u32, 1) << @intCast(field_idx % 32);
+            field_comptime_bits.?.get(astgen)[field_idx / 32] |= mask;
         }
     }
+    assert(next_field_idx == scan_result.fields_len);
+    wip_decls.finish();
 
     var fields_hash: std.zig.SrcHash = undefined;
     astgen.src_hasher.final(&fields_hash);
 
     try gz.setStruct(decl_inst, .{
         .src_node = node,
-        .layout = layout,
-        .captures_len = @intCast(namespace.captures.count()),
-        .fields_len = field_count,
-        .decls_len = decl_count,
-        .has_backing_int = backing_int_ref != .none,
-        .known_non_opv = known_non_opv,
-        .known_comptime_only = known_comptime_only,
-        .any_comptime_fields = any_comptime_fields,
-        .any_default_inits = any_default_inits,
-        .any_aligned_fields = any_aligned_fields,
-        .fields_hash = fields_hash,
         .name_strat = name_strat,
+        .layout = layout,
+        .backing_int_type = backing_int_type_ref,
+        .decls_len = scan_result.decls_len,
+        .fields_len = scan_result.fields_len,
+        .any_field_aligns = scan_result.any_field_aligns,
+        .any_field_defaults = scan_result.any_field_values,
+        .any_comptime_fields = scan_result.any_comptime_fields,
+        .fields_hash = fields_hash,
+        .captures = namespace.captures.keys(),
+        .capture_names = namespace.captures.values(),
+        .remaining = scratch.all().get(astgen),
     });
-
-    wip_members.finishBits(bits_per_field);
-    const decls_slice = wip_members.declsSlice();
-    const fields_slice = wip_members.fieldsSlice();
-    const bodies_slice = astgen.scratch.items[bodies_start..];
-    try astgen.extra.ensureUnusedCapacity(gpa, backing_int_body_len + 2 +
-        decls_slice.len + namespace.captures.count() * 2 + fields_slice.len + bodies_slice.len);
-    astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.keys()));
-    astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.values()));
-    if (backing_int_ref != .none) {
-        astgen.extra.appendAssumeCapacity(@intCast(backing_int_body_len));
-        if (backing_int_body_len == 0) {
-            astgen.extra.appendAssumeCapacity(@intFromEnum(backing_int_ref));
-        } else {
-            astgen.extra.appendSliceAssumeCapacity(astgen.scratch.items[scratch_top..][0..backing_int_body_len]);
-        }
-    }
-    astgen.extra.appendSliceAssumeCapacity(decls_slice);
-    astgen.extra.appendSliceAssumeCapacity(fields_slice);
-    astgen.extra.appendSliceAssumeCapacity(bodies_slice);
 
     block_scope.unstack();
     return decl_inst.toRef();
@@ -5281,10 +5199,33 @@ fn unionDeclInner(
     auto_enum_tok: ?Ast.TokenIndex,
     name_strat: Zir.Inst.NameStrategy,
 ) InnerError!Zir.Inst.Ref {
-    const decl_inst = try gz.reserveInstructionIndex();
-
     const astgen = gz.astgen;
     const gpa = astgen.gpa;
+
+    const explicit_int_or_enum_tag = switch (layout) {
+        .auto => opt_arg_node != .none,
+        .@"extern" => if (opt_arg_node.unwrap()) |arg_node| {
+            return astgen.failNode(arg_node, "{s} union does not support enum tag type", .{@tagName(layout)});
+        } else false,
+        .@"packed" => false,
+    };
+
+    if (auto_enum_tok) |t| {
+        if (layout != .auto) {
+            return astgen.failTok(t, "{s} union does not support enum tag type", .{@tagName(layout)});
+        }
+    }
+
+    const is_tagged = explicit_int_or_enum_tag or auto_enum_tok != null;
+
+    astgen.advanceSourceCursorToNode(node);
+
+    const arg_type_ref: Zir.Inst.Ref = ref: {
+        const arg_node = opt_arg_node.unwrap() orelse break :ref .none;
+        break :ref try typeExpr(gz, scope, arg_node);
+    };
+
+    const decl_inst = try gz.reserveInstructionIndex();
 
     var namespace: Scope.Namespace = .{
         .parent = scope,
@@ -5298,7 +5239,6 @@ fn unionDeclInner(
     // The union_decl instruction introduces a scope in which the decls of the union
     // are in scope, so that field types, alignments, and default value expressions
     // can refer to decls within the union itself.
-    astgen.advanceSourceCursorToNode(node);
     var block_scope: GenZir = .{
         .parent = &namespace.base,
         .decl_node_index = node,
@@ -5310,42 +5250,31 @@ fn unionDeclInner(
     };
     defer block_scope.unstack();
 
-    const decl_count = try astgen.scanContainer(&namespace, members, .@"union");
-    const field_count: u32 = @intCast(members.len - decl_count);
+    const scan_result = try astgen.scanContainer(&namespace, members, .@"union");
 
-    if (layout != .auto and (auto_enum_tok != null or opt_arg_node != .none)) {
-        if (opt_arg_node.unwrap()) |arg_node| {
-            return astgen.failNode(arg_node, "{s} union does not support enum tag type", .{@tagName(layout)});
-        } else {
-            return astgen.failTok(auto_enum_tok.?, "{s} union does not support enum tag type", .{@tagName(layout)});
-        }
-    }
+    var scratch: Scratch = .init(astgen);
+    defer scratch.reset();
 
-    const arg_inst: Zir.Inst.Ref = if (opt_arg_node.unwrap()) |arg_node|
-        try typeExpr(&block_scope, &namespace.base, arg_node)
-    else
-        .none;
-
-    const bits_per_field = 4;
-    const max_field_size = 4;
-    var any_aligned_fields = false;
-    var wip_members = try WipMembers.init(gpa, &astgen.scratch, decl_count, field_count, bits_per_field, max_field_size);
-    defer wip_members.deinit();
+    // Replicate the structure of the ZIR trailing data in `scratch`
+    var wip_decls: WipDecls = try .init(&scratch, scan_result.decls_len);
+    const field_names = try scratch.addSlice(scan_result.fields_len);
+    const field_type_body_lens = try scratch.addSlice(scan_result.fields_len);
+    const field_align_body_lens = try scratch.addOptionalSlice(scan_result.any_field_aligns, scan_result.fields_len);
+    const field_value_body_lens = try scratch.addOptionalSlice(scan_result.any_field_values, scan_result.fields_len);
 
     const old_hasher = astgen.src_hasher;
     defer astgen.src_hasher = old_hasher;
-    astgen.src_hasher = std.zig.SrcHasher.init(.{});
-    astgen.src_hasher.update(@tagName(layout));
-    astgen.src_hasher.update(&.{@intFromBool(auto_enum_tok != null)});
-    if (opt_arg_node.unwrap()) |arg_node| {
-        astgen.src_hasher.update(astgen.tree.getNodeSource(arg_node));
-    }
+    astgen.src_hasher = .init(.{});
 
+    var next_field_idx: u32 = 0;
     for (members) |member_node| {
-        var member = switch (try containerMember(&block_scope, &namespace.base, &wip_members, member_node)) {
+        var member = switch (try containerMember(&block_scope, &namespace.base, &wip_decls, member_node)) {
             .decl => continue,
             .field => |field| field,
         };
+        const field_idx = next_field_idx;
+        next_field_idx += 1;
+
         astgen.src_hasher.update(astgen.tree.getNodeSource(member_node));
         member.convertToNonTupleLike(astgen.tree);
         if (member.ast.tuple_like) {
@@ -5355,96 +5284,90 @@ fn unionDeclInner(
             return astgen.failTok(comptime_token, "union fields cannot be marked comptime", .{});
         }
 
-        const field_name = try astgen.identAsString(member.ast.main_token);
-        wip_members.appendToField(@intFromEnum(field_name));
+        field_names.get(astgen)[field_idx] = @intFromEnum(try astgen.identAsString(member.ast.main_token));
 
-        const have_type = member.ast.type_expr != .none;
-        const have_align = member.ast.align_expr != .none;
-        const have_value = member.ast.value_expr != .none;
-        const unused = false;
-        wip_members.nextField(bits_per_field, .{ have_type, have_align, have_value, unused });
-
-        if (member.ast.type_expr.unwrap()) |type_expr| {
-            const field_type = try typeExpr(&block_scope, &namespace.base, type_expr);
-            wip_members.appendToField(@intFromEnum(field_type));
-        } else if (arg_inst == .none and auto_enum_tok == null) {
+        if (member.ast.type_expr.unwrap()) |type_node| {
+            const type_ref = try typeExpr(&block_scope, &namespace.base, type_node);
+            if (!block_scope.endsWithNoReturn()) {
+                _ = try block_scope.addBreak(.break_inline, decl_inst, type_ref);
+            }
+            const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+            field_type_body_lens.get(astgen)[field_idx] = body_len;
+            block_scope.instructions.items.len = block_scope.instructions_top;
+        } else if (!is_tagged) {
             return astgen.failNode(member_node, "union field missing type", .{});
+        } else {
+            field_type_body_lens.get(astgen)[field_idx] = 0;
         }
-        if (member.ast.align_expr.unwrap()) |align_expr| {
+
+        if (member.ast.align_expr.unwrap()) |align_node| {
             if (layout == .@"packed") {
-                return astgen.failNode(align_expr, "unable to override alignment of packed union fields", .{});
+                return astgen.failNode(align_node, "unable to override alignment of packed union fields", .{});
             }
-            const align_inst = try expr(&block_scope, &block_scope.base, coerced_align_ri, align_expr);
-            wip_members.appendToField(@intFromEnum(align_inst));
-            any_aligned_fields = true;
+            const align_ref = try expr(&block_scope, &namespace.base, coerced_align_ri, align_node);
+            if (!block_scope.endsWithNoReturn()) {
+                _ = try block_scope.addBreak(.break_inline, decl_inst, align_ref);
+            }
+            const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+            field_align_body_lens.?.get(astgen)[field_idx] = body_len;
+            block_scope.instructions.items.len = block_scope.instructions_top;
+        } else if (field_align_body_lens) |lens| {
+            lens.get(astgen)[field_idx] = 0;
         }
-        if (member.ast.value_expr.unwrap()) |value_expr| {
-            if (arg_inst == .none) {
-                return astgen.failNodeNotes(
-                    node,
-                    "explicitly valued tagged union missing integer tag type",
-                    .{},
-                    &[_]u32{
-                        try astgen.errNoteNode(
-                            value_expr,
-                            "tag value specified here",
-                            .{},
-                        ),
-                    },
-                );
+
+        if (member.ast.value_expr.unwrap()) |value_node| {
+            if (!explicit_int_or_enum_tag) return astgen.failNodeNotes(
+                node,
+                "explicitly valued tagged union missing integer tag type",
+                .{},
+                &.{try astgen.errNoteNode(value_node, "tag value specified here", .{})},
+            );
+            if (auto_enum_tok == null) return astgen.failNodeNotes(
+                node,
+                "explicitly valued tagged union requires inferred enum tag type",
+                .{},
+                &.{try astgen.errNoteNode(value_node, "tag value specified here", .{})},
+            );
+            const ri: ResultInfo = .{ .rl = .{ .coerced_ty = decl_inst.toRef() } };
+            const value_ref = try expr(&block_scope, &namespace.base, ri, value_node);
+            if (!block_scope.endsWithNoReturn()) {
+                _ = try block_scope.addBreak(.break_inline, decl_inst, value_ref);
             }
-            if (auto_enum_tok == null) {
-                return astgen.failNodeNotes(
-                    node,
-                    "explicitly valued tagged union requires inferred enum tag type",
-                    .{},
-                    &[_]u32{
-                        try astgen.errNoteNode(
-                            value_expr,
-                            "tag value specified here",
-                            .{},
-                        ),
-                    },
-                );
-            }
-            const tag_value = try expr(&block_scope, &block_scope.base, .{ .rl = .{ .ty = arg_inst } }, value_expr);
-            wip_members.appendToField(@intFromEnum(tag_value));
+            const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+            field_value_body_lens.?.get(astgen)[field_idx] = body_len;
+            block_scope.instructions.items.len = block_scope.instructions_top;
+        } else if (field_value_body_lens) |lens| {
+            lens.get(astgen)[field_idx] = 0;
         }
     }
+    assert(next_field_idx == scan_result.fields_len);
+    wip_decls.finish();
 
     var fields_hash: std.zig.SrcHash = undefined;
     astgen.src_hasher.final(&fields_hash);
 
-    if (!block_scope.isEmpty()) {
-        _ = try block_scope.addBreak(.break_inline, decl_inst, .void_value);
-    }
-
-    const body = block_scope.instructionsSlice();
-    const body_len = astgen.countBodyLenAfterFixups(body);
-
     try gz.setUnion(decl_inst, .{
         .src_node = node,
-        .layout = layout,
-        .tag_type = arg_inst,
-        .captures_len = @intCast(namespace.captures.count()),
-        .body_len = body_len,
-        .fields_len = field_count,
-        .decls_len = decl_count,
-        .auto_enum_tag = auto_enum_tok != null,
-        .any_aligned_fields = any_aligned_fields,
-        .fields_hash = fields_hash,
         .name_strat = name_strat,
+        .kind = switch (layout) {
+            .auto => if (auto_enum_tok == null) l: {
+                break :l if (opt_arg_node == .none) .auto else .tagged_explicit;
+            } else l: {
+                break :l if (opt_arg_node == .none) .tagged_enum else .tagged_enum_explicit;
+            },
+            .@"extern" => .@"extern",
+            .@"packed" => if (opt_arg_node != .none) .packed_explicit else .@"packed",
+        },
+        .arg_type = arg_type_ref,
+        .decls_len = scan_result.decls_len,
+        .fields_len = scan_result.fields_len,
+        .any_field_aligns = scan_result.any_field_aligns,
+        .any_field_values = scan_result.any_field_values,
+        .fields_hash = fields_hash,
+        .captures = namespace.captures.keys(),
+        .capture_names = namespace.captures.values(),
+        .remaining = scratch.all().get(astgen),
     });
-
-    wip_members.finishBits(bits_per_field);
-    const decls_slice = wip_members.declsSlice();
-    const fields_slice = wip_members.fieldsSlice();
-    try astgen.extra.ensureUnusedCapacity(gpa, namespace.captures.count() * 2 + decls_slice.len + body_len + fields_slice.len);
-    astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.keys()));
-    astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.values()));
-    astgen.extra.appendSliceAssumeCapacity(decls_slice);
-    astgen.appendBodyWithFixups(body);
-    astgen.extra.appendSliceAssumeCapacity(fields_slice);
 
     block_scope.unstack();
     return decl_inst.toRef();
@@ -5494,103 +5417,13 @@ fn containerDecl(
             if (container_decl.layout_token) |t| {
                 return astgen.failTok(t, "enums do not support 'packed' or 'extern'; instead provide an explicit integer tag type", .{});
             }
-            // Count total fields as well as how many have explicitly provided tag values.
-            const counts = blk: {
-                var values: usize = 0;
-                var total_fields: usize = 0;
-                var decls: usize = 0;
-                var opt_nonexhaustive_node: Ast.Node.OptionalIndex = .none;
-                var nonfinal_nonexhaustive = false;
-                for (container_decl.ast.members) |member_node| {
-                    var member = tree.fullContainerField(member_node) orelse {
-                        decls += 1;
-                        continue;
-                    };
-                    member.convertToNonTupleLike(astgen.tree);
-                    if (member.ast.tuple_like) {
-                        return astgen.failTok(member.ast.main_token, "enum field missing name", .{});
-                    }
-                    if (member.comptime_token) |comptime_token| {
-                        return astgen.failTok(comptime_token, "enum fields cannot be marked comptime", .{});
-                    }
-                    if (member.ast.type_expr.unwrap()) |type_expr| {
-                        return astgen.failNodeNotes(
-                            type_expr,
-                            "enum fields do not have types",
-                            .{},
-                            &[_]u32{
-                                try astgen.errNoteNode(
-                                    node,
-                                    "consider 'union(enum)' here to make it a tagged union",
-                                    .{},
-                                ),
-                            },
-                        );
-                    }
-                    if (member.ast.align_expr.unwrap()) |align_expr| {
-                        return astgen.failNode(align_expr, "enum fields cannot be aligned", .{});
-                    }
 
-                    const name_token = member.ast.main_token;
-                    if (mem.eql(u8, tree.tokenSlice(name_token), "_")) {
-                        if (opt_nonexhaustive_node.unwrap()) |nonexhaustive_node| {
-                            return astgen.failNodeNotes(
-                                member_node,
-                                "redundant non-exhaustive enum mark",
-                                .{},
-                                &[_]u32{
-                                    try astgen.errNoteNode(
-                                        nonexhaustive_node,
-                                        "other mark here",
-                                        .{},
-                                    ),
-                                },
-                            );
-                        }
-                        opt_nonexhaustive_node = member_node.toOptional();
-                        if (member.ast.value_expr.unwrap()) |value_expr| {
-                            return astgen.failNode(value_expr, "'_' is used to mark an enum as non-exhaustive and cannot be assigned a value", .{});
-                        }
-                        continue;
-                    } else if (opt_nonexhaustive_node != .none) {
-                        nonfinal_nonexhaustive = true;
-                    }
-                    total_fields += 1;
-                    if (member.ast.value_expr.unwrap()) |value_expr| {
-                        if (container_decl.ast.arg == .none) {
-                            return astgen.failNode(value_expr, "value assigned to enum tag with inferred tag type", .{});
-                        }
-                        values += 1;
-                    }
-                }
-                if (nonfinal_nonexhaustive) {
-                    return astgen.failNode(opt_nonexhaustive_node.unwrap().?, "'_' field of non-exhaustive enum must be last", .{});
-                }
-                break :blk .{
-                    .total_fields = total_fields,
-                    .values = values,
-                    .decls = decls,
-                    .nonexhaustive_node = opt_nonexhaustive_node,
-                };
+            astgen.advanceSourceCursorToNode(node);
+
+            const tag_type_ref: Zir.Inst.Ref = ref: {
+                const arg_node = container_decl.ast.arg.unwrap() orelse break :ref .none;
+                break :ref try typeExpr(gz, scope, arg_node);
             };
-            if (counts.nonexhaustive_node != .none and container_decl.ast.arg == .none) {
-                const nonexhaustive_node = counts.nonexhaustive_node.unwrap().?;
-                return astgen.failNodeNotes(
-                    node,
-                    "non-exhaustive enum missing integer tag type",
-                    .{},
-                    &[_]u32{
-                        try astgen.errNoteNode(
-                            nonexhaustive_node,
-                            "marked non-exhaustive here",
-                            .{},
-                        ),
-                    },
-                );
-            }
-            // In this case we must generate ZIR code for the tag values, similar to
-            // how structs are handled above.
-            const nonexhaustive = counts.nonexhaustive_node != .none;
 
             const decl_inst = try gz.reserveInstructionIndex();
 
@@ -5605,7 +5438,6 @@ fn containerDecl(
 
             // The enum_decl instruction introduces a scope in which the decls of the enum
             // are in scope, so that tag values can refer to decls within the enum itself.
-            astgen.advanceSourceCursorToNode(node);
             var block_scope: GenZir = .{
                 .parent = &namespace.base,
                 .decl_node_index = node,
@@ -5617,103 +5449,110 @@ fn containerDecl(
             };
             defer block_scope.unstack();
 
-            _ = try astgen.scanContainer(&namespace, container_decl.ast.members, .@"enum");
-            namespace.base.tag = .namespace;
+            const scan_result = try astgen.scanContainer(&namespace, container_decl.ast.members, .@"enum");
+            // The name `_` is not actually a field; it marks a non-exhaustive enum.
+            const fields_len: u32 = scan_result.fields_len - @intFromBool(scan_result.has_underscore_field);
 
-            const arg_inst: Zir.Inst.Ref = if (container_decl.ast.arg.unwrap()) |arg|
-                try comptimeExpr(&block_scope, &namespace.base, coerced_type_ri, arg, .type)
-            else
-                .none;
+            var scratch: Scratch = .init(astgen);
+            defer scratch.reset();
 
-            const bits_per_field = 1;
-            const max_field_size = 2;
-            var wip_members = try WipMembers.init(gpa, &astgen.scratch, @intCast(counts.decls), @intCast(counts.total_fields), bits_per_field, max_field_size);
-            defer wip_members.deinit();
+            // Replicate the structure of the ZIR trailing data in `scratch`
+            var wip_decls: WipDecls = try .init(&scratch, scan_result.decls_len);
+            const field_names = try scratch.addSlice(fields_len);
+            const field_value_body_lens = try scratch.addOptionalSlice(scan_result.any_field_values, fields_len);
 
             const old_hasher = astgen.src_hasher;
             defer astgen.src_hasher = old_hasher;
-            astgen.src_hasher = std.zig.SrcHasher.init(.{});
-            if (container_decl.ast.arg.unwrap()) |arg| {
-                astgen.src_hasher.update(tree.getNodeSource(arg));
-            }
-            astgen.src_hasher.update(&.{@intFromBool(nonexhaustive)});
+            astgen.src_hasher = .init(.{});
 
+            var next_field_idx: u32 = 0;
+            var opt_nonexhaustive_node: Ast.Node.OptionalIndex = .none;
             for (container_decl.ast.members) |member_node| {
-                if (member_node.toOptional() == counts.nonexhaustive_node)
-                    continue;
-                astgen.src_hasher.update(tree.getNodeSource(member_node));
-                var member = switch (try containerMember(&block_scope, &namespace.base, &wip_members, member_node)) {
+                var member = switch (try containerMember(&block_scope, &namespace.base, &wip_decls, member_node)) {
                     .decl => continue,
                     .field => |field| field,
                 };
                 member.convertToNonTupleLike(astgen.tree);
-                assert(member.comptime_token == null);
-                assert(member.ast.type_expr == .none);
-                assert(member.ast.align_expr == .none);
-
-                const field_name = try astgen.identAsString(member.ast.main_token);
-                wip_members.appendToField(@intFromEnum(field_name));
-
-                const have_value = member.ast.value_expr != .none;
-                wip_members.nextField(bits_per_field, .{have_value});
-
-                if (member.ast.value_expr.unwrap()) |value_expr| {
-                    if (arg_inst == .none) {
-                        return astgen.failNodeNotes(
-                            node,
-                            "explicitly valued enum missing integer tag type",
-                            .{},
-                            &[_]u32{
-                                try astgen.errNoteNode(
-                                    value_expr,
-                                    "tag value specified here",
-                                    .{},
-                                ),
-                            },
-                        );
+                if (member.ast.tuple_like) return astgen.failTok(member.ast.main_token, "enum field missing name", .{});
+                if (member.comptime_token) |t| return astgen.failTok(t, "enum fields cannot be marked comptime", .{});
+                if (member.ast.type_expr.unwrap()) |type_node| {
+                    return astgen.failNodeNotes(type_node, "enum fields do not have types", .{}, &.{
+                        try astgen.errNoteNode(node, "consider 'union(enum)' here to make it a tagged union", .{}),
+                    });
+                }
+                if (member.ast.align_expr.unwrap()) |n| return astgen.failNode(n, "enum fields cannot be aligned", .{});
+                if (mem.eql(u8, tree.tokenSlice(member.ast.main_token), "_")) {
+                    // non-exhaustive mark
+                    assert(scan_result.has_underscore_field);
+                    if (opt_nonexhaustive_node.unwrap()) |prev_node| {
+                        return astgen.failNodeNotes(member_node, "redundant non-exhaustive enum mark", .{}, &.{
+                            try astgen.errNoteNode(prev_node, "other mark here", .{}),
+                        });
                     }
-                    const tag_value_inst = try expr(&block_scope, &namespace.base, .{ .rl = .{ .ty = arg_inst } }, value_expr);
-                    wip_members.appendToField(@intFromEnum(tag_value_inst));
+                    if (member.ast.value_expr.unwrap()) |value_node| {
+                        return astgen.failNode(value_node, "'_' is used to mark an enum as non-exhaustive and cannot be assigned a value", .{});
+                    }
+                    if (next_field_idx != fields_len) {
+                        return astgen.failNode(member_node, "'_' field of non-exhaustive enum must be last", .{});
+                    }
+                    opt_nonexhaustive_node = member_node.toOptional();
+                    continue;
+                }
+
+                // This is a real field rather than a non-exhaustive mark.
+                const field_idx = next_field_idx;
+                next_field_idx += 1;
+
+                astgen.src_hasher.update(tree.getNodeSource(member_node));
+
+                field_names.get(astgen)[field_idx] = @intFromEnum(try astgen.identAsString(member.ast.main_token));
+
+                if (member.ast.value_expr.unwrap()) |value_node| {
+                    if (tag_type_ref == .none) {
+                        return astgen.failNodeNotes(node, "explicitly valued enum missing integer tag type", .{}, &.{
+                            try astgen.errNoteNode(value_node, "tag value specified here", .{}),
+                        });
+                    }
+                    const val_ri: ResultInfo = .{ .rl = .{ .coerced_ty = decl_inst.toRef() } };
+                    const value_ref = try expr(&block_scope, &namespace.base, val_ri, value_node);
+                    if (!block_scope.endsWithNoReturn()) {
+                        _ = try block_scope.addBreak(.break_inline, decl_inst, value_ref);
+                    }
+                    const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+                    field_value_body_lens.?.get(astgen)[field_idx] = body_len;
+                    block_scope.instructions.items.len = block_scope.instructions_top;
+                } else if (field_value_body_lens) |lens| {
+                    lens.get(astgen)[field_idx] = 0;
                 }
             }
-
-            if (!block_scope.isEmpty()) {
-                _ = try block_scope.addBreak(.break_inline, decl_inst, .void_value);
-            }
+            assert(scan_result.has_underscore_field == (opt_nonexhaustive_node != .none));
+            assert(next_field_idx == fields_len);
+            wip_decls.finish();
 
             var fields_hash: std.zig.SrcHash = undefined;
             astgen.src_hasher.final(&fields_hash);
 
-            const body = block_scope.instructionsSlice();
-            const body_len = astgen.countBodyLenAfterFixups(body);
-
             try gz.setEnum(decl_inst, .{
                 .src_node = node,
-                .nonexhaustive = nonexhaustive,
-                .tag_type = arg_inst,
-                .captures_len = @intCast(namespace.captures.count()),
-                .body_len = body_len,
-                .fields_len = @intCast(counts.total_fields),
-                .decls_len = @intCast(counts.decls),
-                .fields_hash = fields_hash,
                 .name_strat = name_strat,
+                .tag_type = tag_type_ref,
+                .nonexhaustive = scan_result.has_underscore_field,
+                .decls_len = scan_result.decls_len,
+                .fields_len = fields_len,
+                .any_field_values = scan_result.any_field_values,
+                .fields_hash = fields_hash,
+                .captures = namespace.captures.keys(),
+                .capture_names = namespace.captures.values(),
+                .remaining = scratch.all().get(astgen),
             });
-
-            wip_members.finishBits(bits_per_field);
-            const decls_slice = wip_members.declsSlice();
-            const fields_slice = wip_members.fieldsSlice();
-            try astgen.extra.ensureUnusedCapacity(gpa, namespace.captures.count() * 2 + decls_slice.len + body_len + fields_slice.len);
-            astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.keys()));
-            astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.values()));
-            astgen.extra.appendSliceAssumeCapacity(decls_slice);
-            astgen.appendBodyWithFixups(body);
-            astgen.extra.appendSliceAssumeCapacity(fields_slice);
 
             block_scope.unstack();
             return rvalue(gz, ri, decl_inst.toRef(), node);
         },
         .keyword_opaque => {
             assert(container_decl.ast.arg == .none);
+
+            astgen.advanceSourceCursorToNode(node);
 
             const decl_inst = try gz.reserveInstructionIndex();
 
@@ -5726,7 +5565,6 @@ fn containerDecl(
             };
             defer namespace.deinit(gpa);
 
-            astgen.advanceSourceCursorToNode(node);
             var block_scope: GenZir = .{
                 .parent = &namespace.base,
                 .decl_node_index = node,
@@ -5738,35 +5576,33 @@ fn containerDecl(
             };
             defer block_scope.unstack();
 
-            const decl_count = try astgen.scanContainer(&namespace, container_decl.ast.members, .@"opaque");
+            const scan_result = try astgen.scanContainer(&namespace, container_decl.ast.members, .@"opaque");
 
-            var wip_members = try WipMembers.init(gpa, &astgen.scratch, decl_count, 0, 0, 0);
-            defer wip_members.deinit();
+            var scratch: Scratch = .init(astgen);
+            defer scratch.reset();
+            var wip_decls: WipDecls = try .init(&scratch, scan_result.decls_len);
 
             if (container_decl.layout_token) |layout_token| {
                 return astgen.failTok(layout_token, "opaque types do not support 'packed' or 'extern'", .{});
             }
 
             for (container_decl.ast.members) |member_node| {
-                const res = try containerMember(&block_scope, &namespace.base, &wip_members, member_node);
-                if (res == .field) {
-                    return astgen.failNode(member_node, "opaque types cannot have fields", .{});
+                switch (try containerMember(&block_scope, &namespace.base, &wip_decls, member_node)) {
+                    .decl => {},
+                    .field => return astgen.failNode(member_node, "opaque types cannot have fields", .{}),
                 }
             }
 
+            wip_decls.finish();
+
             try gz.setOpaque(decl_inst, .{
                 .src_node = node,
-                .captures_len = @intCast(namespace.captures.count()),
-                .decls_len = decl_count,
                 .name_strat = name_strat,
+                .decls_len = scan_result.decls_len,
+                .captures = namespace.captures.keys(),
+                .capture_names = namespace.captures.values(),
+                .decls = @ptrCast(scratch.all().get(astgen)),
             });
-
-            wip_members.finishBits(0);
-            const decls_slice = wip_members.declsSlice();
-            try astgen.extra.ensureUnusedCapacity(gpa, namespace.captures.count() * 2 + decls_slice.len);
-            astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.keys()));
-            astgen.extra.appendSliceAssumeCapacity(@ptrCast(namespace.captures.values()));
-            astgen.extra.appendSliceAssumeCapacity(decls_slice);
 
             block_scope.unstack();
             return rvalue(gz, ri, decl_inst.toRef(), node);
@@ -5780,7 +5616,7 @@ const ContainerMemberResult = union(enum) { decl, field: Ast.full.ContainerField
 fn containerMember(
     gz: *GenZir,
     scope: *Scope,
-    wip_members: *WipMembers,
+    wip_decls: *WipDecls,
     member_node: Ast.Node.Index,
 ) InnerError!ContainerMemberResult {
     const astgen = gz.astgen;
@@ -5805,13 +5641,13 @@ fn containerMember(
             else
                 .none;
 
-            const prev_decl_index = wip_members.decl_index;
-            astgen.fnDecl(gz, scope, wip_members, member_node, body, full) catch |err| switch (err) {
+            const prev_decl_index = wip_decls.index;
+            astgen.fnDecl(gz, scope, wip_decls, member_node, body, full) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.AnalysisFail => {
-                    wip_members.decl_index = prev_decl_index;
+                    wip_decls.index = prev_decl_index;
                     try addFailedDeclaration(
-                        wip_members,
+                        wip_decls,
                         gz,
                         .@"const",
                         try astgen.identAsString(full.name_token.?),
@@ -5828,13 +5664,13 @@ fn containerMember(
         .aligned_var_decl,
         => {
             const full = tree.fullVarDecl(member_node).?;
-            const prev_decl_index = wip_members.decl_index;
-            astgen.globalVarDecl(gz, scope, wip_members, member_node, full) catch |err| switch (err) {
+            const prev_decl_index = wip_decls.index;
+            astgen.globalVarDecl(gz, scope, wip_decls, member_node, full) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.AnalysisFail => {
-                    wip_members.decl_index = prev_decl_index;
+                    wip_decls.index = prev_decl_index;
                     try addFailedDeclaration(
-                        wip_members,
+                        wip_decls,
                         gz,
                         .@"const", // doesn't really matter
                         try astgen.identAsString(full.ast.mut_token + 1),
@@ -5846,13 +5682,13 @@ fn containerMember(
         },
 
         .@"comptime" => {
-            const prev_decl_index = wip_members.decl_index;
-            astgen.comptimeDecl(gz, scope, wip_members, member_node) catch |err| switch (err) {
+            const prev_decl_index = wip_decls.index;
+            astgen.comptimeDecl(gz, scope, wip_decls, member_node) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.AnalysisFail => {
-                    wip_members.decl_index = prev_decl_index;
+                    wip_decls.index = prev_decl_index;
                     try addFailedDeclaration(
-                        wip_members,
+                        wip_decls,
                         gz,
                         .@"comptime",
                         .empty,
@@ -5863,16 +5699,16 @@ fn containerMember(
             };
         },
         .test_decl => {
-            const prev_decl_index = wip_members.decl_index;
+            const prev_decl_index = wip_decls.index;
             // We need to have *some* decl here so that the decl count matches what's expected.
             // Since it doesn't strictly matter *what* this is, let's save ourselves the trouble
             // of duplicating the test name logic, and just assume this is an unnamed test.
-            astgen.testDecl(gz, scope, wip_members, member_node) catch |err| switch (err) {
+            astgen.testDecl(gz, scope, wip_decls, member_node) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.AnalysisFail => {
-                    wip_members.decl_index = prev_decl_index;
+                    wip_decls.index = prev_decl_index;
                     try addFailedDeclaration(
-                        wip_members,
+                        wip_decls,
                         gz,
                         .unnamed_test,
                         .empty,
@@ -10619,482 +10455,6 @@ fn nodeMayEvalToError(tree: *const Ast, start_node: Ast.Node.Index) BuiltinFn.Ev
     }
 }
 
-/// Returns `true` if it is known the type expression has more than one possible value;
-/// `false` otherwise.
-fn nodeImpliesMoreThanOnePossibleValue(tree: *const Ast, start_node: Ast.Node.Index) bool {
-    var node = start_node;
-    while (true) {
-        switch (tree.nodeTag(node)) {
-            .root,
-            .test_decl,
-            .switch_case,
-            .switch_case_inline,
-            .switch_case_one,
-            .switch_case_inline_one,
-            .container_field_init,
-            .container_field_align,
-            .container_field,
-            .asm_output,
-            .asm_input,
-            .global_var_decl,
-            .local_var_decl,
-            .simple_var_decl,
-            .aligned_var_decl,
-            => unreachable,
-
-            .@"return",
-            .@"break",
-            .@"continue",
-            .bit_not,
-            .bool_not,
-            .@"defer",
-            .@"errdefer",
-            .address_of,
-            .negation,
-            .negation_wrap,
-            .@"resume",
-            .array_type,
-            .@"suspend",
-            .fn_decl,
-            .anyframe_literal,
-            .number_literal,
-            .enum_literal,
-            .string_literal,
-            .multiline_string_literal,
-            .char_literal,
-            .unreachable_literal,
-            .error_set_decl,
-            .container_decl,
-            .container_decl_trailing,
-            .container_decl_two,
-            .container_decl_two_trailing,
-            .container_decl_arg,
-            .container_decl_arg_trailing,
-            .tagged_union,
-            .tagged_union_trailing,
-            .tagged_union_two,
-            .tagged_union_two_trailing,
-            .tagged_union_enum_tag,
-            .tagged_union_enum_tag_trailing,
-            .@"asm",
-            .asm_simple,
-            .add,
-            .add_wrap,
-            .add_sat,
-            .array_cat,
-            .array_mult,
-            .assign,
-            .assign_destructure,
-            .assign_bit_and,
-            .assign_bit_or,
-            .assign_shl,
-            .assign_shl_sat,
-            .assign_shr,
-            .assign_bit_xor,
-            .assign_div,
-            .assign_sub,
-            .assign_sub_wrap,
-            .assign_sub_sat,
-            .assign_mod,
-            .assign_add,
-            .assign_add_wrap,
-            .assign_add_sat,
-            .assign_mul,
-            .assign_mul_wrap,
-            .assign_mul_sat,
-            .bang_equal,
-            .bit_and,
-            .bit_or,
-            .shl,
-            .shl_sat,
-            .shr,
-            .bit_xor,
-            .bool_and,
-            .bool_or,
-            .div,
-            .equal_equal,
-            .error_union,
-            .greater_or_equal,
-            .greater_than,
-            .less_or_equal,
-            .less_than,
-            .merge_error_sets,
-            .mod,
-            .mul,
-            .mul_wrap,
-            .mul_sat,
-            .switch_range,
-            .for_range,
-            .field_access,
-            .sub,
-            .sub_wrap,
-            .sub_sat,
-            .slice,
-            .slice_open,
-            .slice_sentinel,
-            .deref,
-            .array_access,
-            .error_value,
-            .while_simple,
-            .while_cont,
-            .for_simple,
-            .if_simple,
-            .@"catch",
-            .@"orelse",
-            .array_init_one,
-            .array_init_one_comma,
-            .array_init_dot_two,
-            .array_init_dot_two_comma,
-            .array_init_dot,
-            .array_init_dot_comma,
-            .array_init,
-            .array_init_comma,
-            .struct_init_one,
-            .struct_init_one_comma,
-            .struct_init_dot_two,
-            .struct_init_dot_two_comma,
-            .struct_init_dot,
-            .struct_init_dot_comma,
-            .struct_init,
-            .struct_init_comma,
-            .@"while",
-            .@"if",
-            .@"for",
-            .@"switch",
-            .switch_comma,
-            .call_one,
-            .call_one_comma,
-            .call,
-            .call_comma,
-            .block_two,
-            .block_two_semicolon,
-            .block,
-            .block_semicolon,
-            .builtin_call,
-            .builtin_call_comma,
-            .builtin_call_two,
-            .builtin_call_two_comma,
-            // these are function bodies, not pointers
-            .fn_proto_simple,
-            .fn_proto_multi,
-            .fn_proto_one,
-            .fn_proto,
-            => return false,
-
-            // Forward the question to the LHS sub-expression.
-            .@"try",
-            .@"comptime",
-            .@"nosuspend",
-            => node = tree.nodeData(node).node,
-            .grouped_expression,
-            .unwrap_optional,
-            => node = tree.nodeData(node).node_and_token[0],
-
-            .ptr_type_aligned,
-            .ptr_type_sentinel,
-            .ptr_type,
-            .ptr_type_bit_range,
-            .optional_type,
-            .anyframe_type,
-            .array_type_sentinel,
-            => return true,
-
-            .identifier => {
-                const ident_bytes = tree.tokenSlice(tree.nodeMainToken(node));
-                if (primitive_instrs.get(ident_bytes)) |primitive| switch (primitive) {
-                    .anyerror_type,
-                    .anyframe_type,
-                    .anyopaque_type,
-                    .bool_type,
-                    .c_int_type,
-                    .c_long_type,
-                    .c_longdouble_type,
-                    .c_longlong_type,
-                    .c_char_type,
-                    .c_short_type,
-                    .c_uint_type,
-                    .c_ulong_type,
-                    .c_ulonglong_type,
-                    .c_ushort_type,
-                    .comptime_float_type,
-                    .comptime_int_type,
-                    .f16_type,
-                    .f32_type,
-                    .f64_type,
-                    .f80_type,
-                    .f128_type,
-                    .i16_type,
-                    .i32_type,
-                    .i64_type,
-                    .i128_type,
-                    .i8_type,
-                    .isize_type,
-                    .type_type,
-                    .u16_type,
-                    .u29_type,
-                    .u32_type,
-                    .u64_type,
-                    .u128_type,
-                    .u1_type,
-                    .u8_type,
-                    .usize_type,
-                    => return true,
-
-                    .void_type,
-                    .bool_false,
-                    .bool_true,
-                    .null_value,
-                    .undef,
-                    .noreturn_type,
-                    => return false,
-
-                    else => unreachable, // that's all the values from `primitives`.
-                } else {
-                    return false;
-                }
-            },
-        }
-    }
-}
-
-/// Returns `true` if it is known the expression is a type that cannot be used at runtime;
-/// `false` otherwise.
-fn nodeImpliesComptimeOnly(tree: *const Ast, start_node: Ast.Node.Index) bool {
-    var node = start_node;
-    while (true) {
-        switch (tree.nodeTag(node)) {
-            .root,
-            .test_decl,
-            .switch_case,
-            .switch_case_inline,
-            .switch_case_one,
-            .switch_case_inline_one,
-            .container_field_init,
-            .container_field_align,
-            .container_field,
-            .asm_output,
-            .asm_input,
-            .global_var_decl,
-            .local_var_decl,
-            .simple_var_decl,
-            .aligned_var_decl,
-            => unreachable,
-
-            .@"return",
-            .@"break",
-            .@"continue",
-            .bit_not,
-            .bool_not,
-            .@"defer",
-            .@"errdefer",
-            .address_of,
-            .negation,
-            .negation_wrap,
-            .@"resume",
-            .array_type,
-            .@"suspend",
-            .fn_decl,
-            .anyframe_literal,
-            .number_literal,
-            .enum_literal,
-            .string_literal,
-            .multiline_string_literal,
-            .char_literal,
-            .unreachable_literal,
-            .error_set_decl,
-            .container_decl,
-            .container_decl_trailing,
-            .container_decl_two,
-            .container_decl_two_trailing,
-            .container_decl_arg,
-            .container_decl_arg_trailing,
-            .tagged_union,
-            .tagged_union_trailing,
-            .tagged_union_two,
-            .tagged_union_two_trailing,
-            .tagged_union_enum_tag,
-            .tagged_union_enum_tag_trailing,
-            .@"asm",
-            .asm_simple,
-            .add,
-            .add_wrap,
-            .add_sat,
-            .array_cat,
-            .array_mult,
-            .assign,
-            .assign_destructure,
-            .assign_bit_and,
-            .assign_bit_or,
-            .assign_shl,
-            .assign_shl_sat,
-            .assign_shr,
-            .assign_bit_xor,
-            .assign_div,
-            .assign_sub,
-            .assign_sub_wrap,
-            .assign_sub_sat,
-            .assign_mod,
-            .assign_add,
-            .assign_add_wrap,
-            .assign_add_sat,
-            .assign_mul,
-            .assign_mul_wrap,
-            .assign_mul_sat,
-            .bang_equal,
-            .bit_and,
-            .bit_or,
-            .shl,
-            .shl_sat,
-            .shr,
-            .bit_xor,
-            .bool_and,
-            .bool_or,
-            .div,
-            .equal_equal,
-            .error_union,
-            .greater_or_equal,
-            .greater_than,
-            .less_or_equal,
-            .less_than,
-            .merge_error_sets,
-            .mod,
-            .mul,
-            .mul_wrap,
-            .mul_sat,
-            .switch_range,
-            .for_range,
-            .field_access,
-            .sub,
-            .sub_wrap,
-            .sub_sat,
-            .slice,
-            .slice_open,
-            .slice_sentinel,
-            .deref,
-            .array_access,
-            .error_value,
-            .while_simple,
-            .while_cont,
-            .for_simple,
-            .if_simple,
-            .@"catch",
-            .@"orelse",
-            .array_init_one,
-            .array_init_one_comma,
-            .array_init_dot_two,
-            .array_init_dot_two_comma,
-            .array_init_dot,
-            .array_init_dot_comma,
-            .array_init,
-            .array_init_comma,
-            .struct_init_one,
-            .struct_init_one_comma,
-            .struct_init_dot_two,
-            .struct_init_dot_two_comma,
-            .struct_init_dot,
-            .struct_init_dot_comma,
-            .struct_init,
-            .struct_init_comma,
-            .@"while",
-            .@"if",
-            .@"for",
-            .@"switch",
-            .switch_comma,
-            .call_one,
-            .call_one_comma,
-            .call,
-            .call_comma,
-            .block_two,
-            .block_two_semicolon,
-            .block,
-            .block_semicolon,
-            .builtin_call,
-            .builtin_call_comma,
-            .builtin_call_two,
-            .builtin_call_two_comma,
-            .ptr_type_aligned,
-            .ptr_type_sentinel,
-            .ptr_type,
-            .ptr_type_bit_range,
-            .optional_type,
-            .anyframe_type,
-            .array_type_sentinel,
-            => return false,
-
-            // these are function bodies, not pointers
-            .fn_proto_simple,
-            .fn_proto_multi,
-            .fn_proto_one,
-            .fn_proto,
-            => return true,
-
-            // Forward the question to the LHS sub-expression.
-            .@"try",
-            .@"comptime",
-            .@"nosuspend",
-            => node = tree.nodeData(node).node,
-            .grouped_expression,
-            .unwrap_optional,
-            => node = tree.nodeData(node).node_and_token[0],
-
-            .identifier => {
-                const ident_bytes = tree.tokenSlice(tree.nodeMainToken(node));
-                if (primitive_instrs.get(ident_bytes)) |primitive| switch (primitive) {
-                    .anyerror_type,
-                    .anyframe_type,
-                    .anyopaque_type,
-                    .bool_type,
-                    .c_int_type,
-                    .c_long_type,
-                    .c_longdouble_type,
-                    .c_longlong_type,
-                    .c_char_type,
-                    .c_short_type,
-                    .c_uint_type,
-                    .c_ulong_type,
-                    .c_ulonglong_type,
-                    .c_ushort_type,
-                    .f16_type,
-                    .f32_type,
-                    .f64_type,
-                    .f80_type,
-                    .f128_type,
-                    .i16_type,
-                    .i32_type,
-                    .i64_type,
-                    .i128_type,
-                    .i8_type,
-                    .isize_type,
-                    .u16_type,
-                    .u29_type,
-                    .u32_type,
-                    .u64_type,
-                    .u128_type,
-                    .u1_type,
-                    .u8_type,
-                    .usize_type,
-                    .void_type,
-                    .bool_false,
-                    .bool_true,
-                    .null_value,
-                    .undef,
-                    .noreturn_type,
-                    => return false,
-
-                    .comptime_float_type,
-                    .comptime_int_type,
-                    .type_type,
-                    => return true,
-
-                    else => unreachable, // that's all the values from `primitives`.
-                } else {
-                    return false;
-                }
-            },
-        }
-    }
-}
-
 /// Applies `rl` semantics to `result`. Expressions which do not do their own handling of
 /// result locations must call this function on their result.
 /// As an example, if `ri.rl` is `.ptr`, it will write the result to the pointer.
@@ -13044,18 +12404,19 @@ const GenZir = struct {
 
     fn setStruct(gz: *GenZir, inst: Zir.Inst.Index, args: struct {
         src_node: Ast.Node.Index,
-        captures_len: u32,
-        fields_len: u32,
-        decls_len: u32,
-        has_backing_int: bool,
-        layout: std.builtin.Type.ContainerLayout,
-        known_non_opv: bool,
-        known_comptime_only: bool,
-        any_comptime_fields: bool,
-        any_default_inits: bool,
-        any_aligned_fields: bool,
-        fields_hash: std.zig.SrcHash,
         name_strat: Zir.Inst.NameStrategy,
+        layout: std.builtin.Type.ContainerLayout,
+        backing_int_type: Zir.Inst.Ref,
+        decls_len: u32,
+        fields_len: u32,
+        any_field_aligns: bool,
+        any_field_defaults: bool,
+        any_comptime_fields: bool,
+        fields_hash: std.zig.SrcHash,
+        captures: []const Zir.Inst.Capture,
+        capture_names: []const Zir.NullTerminatedString,
+        /// The trailing declaration list, field information, and body instructions.
+        remaining: []const u32,
     }) !void {
         const astgen = gz.astgen;
         const gpa = astgen.gpa;
@@ -13063,9 +12424,16 @@ const GenZir = struct {
         // Node .root is valid for the root `struct_decl` of a file!
         assert(args.src_node != .root or gz.parent.tag == .top);
 
+        const captures_len: u32 = @intCast(args.captures.len);
+        assert(args.capture_names.len == captures_len);
+
         const fields_hash_arr: [4]u32 = @bitCast(args.fields_hash);
 
-        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.StructDecl).@"struct".fields.len + 3);
+        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.StructDecl).@"struct".fields.len +
+            4 + // `captures_len`, `decls_len`, `fields_len`, `backing_int_type`
+            captures_len * 2 + // `capture`, `capture_name`
+            args.remaining.len);
+
         const payload_index = astgen.addExtraAssumeCapacity(Zir.Inst.StructDecl{
             .fields_hash_0 = fields_hash_arr[0],
             .fields_hash_1 = fields_hash_arr[1],
@@ -13075,31 +12443,28 @@ const GenZir = struct {
             .src_node = args.src_node,
         });
 
-        if (args.captures_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.captures_len);
-        }
-        if (args.fields_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.fields_len);
-        }
-        if (args.decls_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.decls_len);
-        }
+        if (captures_len != 0) astgen.extra.appendAssumeCapacity(captures_len);
+        if (args.decls_len != 0) astgen.extra.appendAssumeCapacity(args.decls_len);
+        if (args.fields_len != 0) astgen.extra.appendAssumeCapacity(args.fields_len);
+        if (args.backing_int_type != .none) astgen.extra.appendAssumeCapacity(@intFromEnum(args.backing_int_type));
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.captures));
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.capture_names));
+        astgen.extra.appendSliceAssumeCapacity(args.remaining);
+
         astgen.instructions.set(@intFromEnum(inst), .{
             .tag = .extended,
             .data = .{ .extended = .{
                 .opcode = .struct_decl,
                 .small = @bitCast(Zir.Inst.StructDecl.Small{
-                    .has_captures_len = args.captures_len != 0,
-                    .has_fields_len = args.fields_len != 0,
+                    .has_captures_len = captures_len != 0,
                     .has_decls_len = args.decls_len != 0,
-                    .has_backing_int = args.has_backing_int,
-                    .known_non_opv = args.known_non_opv,
-                    .known_comptime_only = args.known_comptime_only,
+                    .has_fields_len = args.fields_len != 0,
                     .name_strategy = args.name_strat,
                     .layout = args.layout,
+                    .has_backing_int_type = args.backing_int_type != .none,
+                    .any_field_aligns = args.any_field_aligns,
+                    .any_field_defaults = args.any_field_defaults,
                     .any_comptime_fields = args.any_comptime_fields,
-                    .any_default_inits = args.any_default_inits,
-                    .any_aligned_fields = args.any_aligned_fields,
                 }),
                 .operand = payload_index,
             } },
@@ -13108,25 +12473,34 @@ const GenZir = struct {
 
     fn setUnion(gz: *GenZir, inst: Zir.Inst.Index, args: struct {
         src_node: Ast.Node.Index,
-        tag_type: Zir.Inst.Ref,
-        captures_len: u32,
-        body_len: u32,
-        fields_len: u32,
-        decls_len: u32,
-        layout: std.builtin.Type.ContainerLayout,
-        auto_enum_tag: bool,
-        any_aligned_fields: bool,
-        fields_hash: std.zig.SrcHash,
         name_strat: Zir.Inst.NameStrategy,
+        kind: Zir.Inst.UnionDecl.Kind,
+        arg_type: Zir.Inst.Ref,
+        decls_len: u32,
+        fields_len: u32,
+        any_field_aligns: bool,
+        any_field_values: bool,
+        fields_hash: std.zig.SrcHash,
+        captures: []const Zir.Inst.Capture,
+        capture_names: []const Zir.NullTerminatedString,
+        /// The trailing declaration list, field information, and body instructions.
+        remaining: []const u32,
     }) !void {
         const astgen = gz.astgen;
         const gpa = astgen.gpa;
 
         assert(args.src_node != .root);
 
+        const captures_len: u32 = @intCast(args.captures.len);
+        assert(args.capture_names.len == captures_len);
+
         const fields_hash_arr: [4]u32 = @bitCast(args.fields_hash);
 
-        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.UnionDecl).@"struct".fields.len + 5);
+        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.UnionDecl).@"struct".fields.len +
+            4 + // `captures_len`, `decls_len`, `fields_len`, `backing_int_type`
+            captures_len * 2 + // `capture`, `capture_name`
+            args.remaining.len);
+
         const payload_index = astgen.addExtraAssumeCapacity(Zir.Inst.UnionDecl{
             .fields_hash_0 = fields_hash_arr[0],
             .fields_hash_1 = fields_hash_arr[1],
@@ -13136,60 +12510,68 @@ const GenZir = struct {
             .src_node = args.src_node,
         });
 
-        if (args.tag_type != .none) {
-            astgen.extra.appendAssumeCapacity(@intFromEnum(args.tag_type));
+        if (captures_len != 0) astgen.extra.appendAssumeCapacity(captures_len);
+        if (args.decls_len != 0) astgen.extra.appendAssumeCapacity(args.decls_len);
+        if (args.fields_len != 0) astgen.extra.appendAssumeCapacity(args.fields_len);
+        if (args.kind.hasArgType()) {
+            assert(args.arg_type != .none);
+            astgen.extra.appendAssumeCapacity(@intFromEnum(args.arg_type));
+        } else {
+            assert(args.arg_type == .none);
         }
-        if (args.captures_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.captures_len);
-        }
-        if (args.body_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.body_len);
-        }
-        if (args.fields_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.fields_len);
-        }
-        if (args.decls_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.decls_len);
-        }
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.captures));
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.capture_names));
+        astgen.extra.appendSliceAssumeCapacity(args.remaining);
+
         astgen.instructions.set(@intFromEnum(inst), .{
             .tag = .extended,
-            .data = .{ .extended = .{
-                .opcode = .union_decl,
-                .small = @bitCast(Zir.Inst.UnionDecl.Small{
-                    .has_tag_type = args.tag_type != .none,
-                    .has_captures_len = args.captures_len != 0,
-                    .has_body_len = args.body_len != 0,
-                    .has_fields_len = args.fields_len != 0,
-                    .has_decls_len = args.decls_len != 0,
-                    .name_strategy = args.name_strat,
-                    .layout = args.layout,
-                    .auto_enum_tag = args.auto_enum_tag,
-                    .any_aligned_fields = args.any_aligned_fields,
-                }),
-                .operand = payload_index,
-            } },
+            .data = .{
+                .extended = .{
+                    .opcode = .union_decl,
+                    .small = @bitCast(Zir.Inst.UnionDecl.Small{
+                        .has_captures_len = captures_len != 0,
+                        .has_decls_len = args.decls_len != 0,
+                        .has_fields_len = args.fields_len != 0,
+                        .name_strategy = args.name_strat,
+                        .kind = args.kind,
+                        .any_field_aligns = args.any_field_aligns,
+                        .any_field_values = args.any_field_values,
+                    }),
+                    .operand = payload_index,
+                },
+            },
         });
     }
 
     fn setEnum(gz: *GenZir, inst: Zir.Inst.Index, args: struct {
         src_node: Ast.Node.Index,
-        tag_type: Zir.Inst.Ref,
-        captures_len: u32,
-        body_len: u32,
-        fields_len: u32,
-        decls_len: u32,
-        nonexhaustive: bool,
-        fields_hash: std.zig.SrcHash,
         name_strat: Zir.Inst.NameStrategy,
+        tag_type: Zir.Inst.Ref,
+        nonexhaustive: bool,
+        decls_len: u32,
+        fields_len: u32,
+        any_field_values: bool,
+        fields_hash: std.zig.SrcHash,
+        captures: []const Zir.Inst.Capture,
+        capture_names: []const Zir.NullTerminatedString,
+        /// The trailing declaration list, field information, and body instructions.
+        remaining: []const u32,
     }) !void {
         const astgen = gz.astgen;
         const gpa = astgen.gpa;
 
         assert(args.src_node != .root);
 
+        const captures_len: u32 = @intCast(args.captures.len);
+        assert(args.capture_names.len == captures_len);
+
         const fields_hash_arr: [4]u32 = @bitCast(args.fields_hash);
 
-        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.EnumDecl).@"struct".fields.len + 5);
+        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.EnumDecl).@"struct".fields.len +
+            4 + // `captures_len`, `decls_len`, `fields_len`, `tag_type`
+            captures_len * 2 + // `capture`, `capture_name`
+            args.remaining.len);
+
         const payload_index = astgen.addExtraAssumeCapacity(Zir.Inst.EnumDecl{
             .fields_hash_0 = fields_hash_arr[0],
             .fields_hash_1 = fields_hash_arr[1],
@@ -13199,33 +12581,26 @@ const GenZir = struct {
             .src_node = args.src_node,
         });
 
-        if (args.tag_type != .none) {
-            astgen.extra.appendAssumeCapacity(@intFromEnum(args.tag_type));
-        }
-        if (args.captures_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.captures_len);
-        }
-        if (args.body_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.body_len);
-        }
-        if (args.fields_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.fields_len);
-        }
-        if (args.decls_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.decls_len);
-        }
+        if (captures_len != 0) astgen.extra.appendAssumeCapacity(captures_len);
+        if (args.decls_len != 0) astgen.extra.appendAssumeCapacity(args.decls_len);
+        if (args.fields_len != 0) astgen.extra.appendAssumeCapacity(args.fields_len);
+        if (args.tag_type != .none) astgen.extra.appendAssumeCapacity(@intFromEnum(args.tag_type));
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.captures));
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.capture_names));
+        astgen.extra.appendSliceAssumeCapacity(args.remaining);
+
         astgen.instructions.set(@intFromEnum(inst), .{
             .tag = .extended,
             .data = .{ .extended = .{
                 .opcode = .enum_decl,
                 .small = @bitCast(Zir.Inst.EnumDecl.Small{
-                    .has_tag_type = args.tag_type != .none,
-                    .has_captures_len = args.captures_len != 0,
-                    .has_body_len = args.body_len != 0,
-                    .has_fields_len = args.fields_len != 0,
+                    .has_captures_len = captures_len != 0,
                     .has_decls_len = args.decls_len != 0,
+                    .has_fields_len = args.fields_len != 0,
                     .name_strategy = args.name_strat,
+                    .has_tag_type = args.tag_type != .none,
                     .nonexhaustive = args.nonexhaustive,
+                    .any_field_values = args.any_field_values,
                 }),
                 .operand = payload_index,
             } },
@@ -13234,33 +12609,41 @@ const GenZir = struct {
 
     fn setOpaque(gz: *GenZir, inst: Zir.Inst.Index, args: struct {
         src_node: Ast.Node.Index,
-        captures_len: u32,
-        decls_len: u32,
         name_strat: Zir.Inst.NameStrategy,
+        decls_len: u32,
+        captures: []const Zir.Inst.Capture,
+        capture_names: []const Zir.NullTerminatedString,
+        decls: []const Zir.Inst.Index,
     }) !void {
         const astgen = gz.astgen;
         const gpa = astgen.gpa;
 
         assert(args.src_node != .root);
 
-        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.OpaqueDecl).@"struct".fields.len + 2);
+        const captures_len: u32 = @intCast(args.captures.len);
+        assert(args.capture_names.len == captures_len);
+
+        try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.OpaqueDecl).@"struct".fields.len +
+            2 + // `captures_len`, `decls_len`
+            captures_len * 2 + // `capture`, `capture_name`
+            args.decls.len);
+
         const payload_index = astgen.addExtraAssumeCapacity(Zir.Inst.OpaqueDecl{
             .src_line = astgen.source_line,
             .src_node = args.src_node,
         });
+        if (captures_len != 0) astgen.extra.appendAssumeCapacity(captures_len);
+        if (args.decls_len != 0) astgen.extra.appendAssumeCapacity(args.decls_len);
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.captures));
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.capture_names));
+        astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.decls));
 
-        if (args.captures_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.captures_len);
-        }
-        if (args.decls_len != 0) {
-            astgen.extra.appendAssumeCapacity(args.decls_len);
-        }
         astgen.instructions.set(@intFromEnum(inst), .{
             .tag = .extended,
             .data = .{ .extended = .{
                 .opcode = .opaque_decl,
                 .small = @bitCast(Zir.Inst.OpaqueDecl.Small{
-                    .has_captures_len = args.captures_len != 0,
+                    .has_captures_len = captures_len != 0,
                     .has_decls_len = args.decls_len != 0,
                     .name_strategy = args.name_strat,
                 }),
@@ -13484,14 +12867,24 @@ fn restoreSourceCursor(astgen: *AstGen, cursor: SourceCursor) void {
     astgen.source_column = cursor.column;
 }
 
+const ScanContainerResult = struct {
+    /// Includes unnamed declarations (e.g. `comptime` decls)
+    decls_len: u32,
+    fields_len: u32,
+    any_field_aligns: bool,
+    any_field_values: bool,
+    any_comptime_fields: bool,
+    /// Whether there is a field named `_` (indicating a non-exhaustive enum)
+    has_underscore_field: bool,
+};
+
 /// Detects name conflicts for decls and fields, and populates `namespace.decls` with all named declarations.
-/// Returns the number of declarations in the namespace, including unnamed declarations (e.g. `comptime` decls).
 fn scanContainer(
     astgen: *AstGen,
     namespace: *Scope.Namespace,
     members: []const Ast.Node.Index,
     container_kind: enum { @"struct", @"union", @"enum", @"opaque" },
-) !u32 {
+) !ScanContainerResult {
     const gpa = astgen.gpa;
     const tree = astgen.tree;
 
@@ -13521,6 +12914,10 @@ fn scanContainer(
 
     var any_duplicates = false;
     var decl_count: u32 = 0;
+    var any_field_aligns = false;
+    var any_field_values = false;
+    var any_comptime_fields = false;
+    var has_underscore_field = false;
     for (members) |member_node| {
         const Kind = enum { decl, field };
         const kind: Kind, const name_token = switch (tree.nodeTag(member_node)) {
@@ -13533,6 +12930,10 @@ fn scanContainer(
                     .@"struct", .@"opaque" => {},
                     .@"union", .@"enum" => full.convertToNonTupleLike(astgen.tree),
                 }
+                if (full.ast.align_expr != .none) any_field_aligns = true;
+                if (full.ast.value_expr != .none) any_field_values = true;
+                if (full.comptime_token != null) any_comptime_fields = true;
+                if (mem.eql(u8, tree.tokenSlice(full.ast.main_token), "_")) has_underscore_field = true;
                 if (full.ast.tuple_like) continue;
                 break :blk .{ .field, full.ast.main_token };
             },
@@ -13698,7 +13099,14 @@ fn scanContainer(
 
     if (!any_duplicates) {
         if (any_invalid_declarations) return error.AnalysisFail;
-        return decl_count;
+        return .{
+            .decls_len = decl_count,
+            .fields_len = @intCast(members.len - decl_count),
+            .any_field_aligns = any_field_aligns,
+            .any_field_values = any_field_values,
+            .any_comptime_fields = any_comptime_fields,
+            .has_underscore_field = has_underscore_field,
+        };
     }
 
     for (names.keys(), names.values()) |name, first| {
@@ -13954,7 +13362,7 @@ const DeclarationName = union(enum) {
 };
 
 fn addFailedDeclaration(
-    wip_members: *WipMembers,
+    wip_decls: *WipDecls,
     gz: *GenZir,
     kind: Zir.Inst.Declaration.Unwrapped.Kind,
     name: Zir.NullTerminatedString,
@@ -13962,7 +13370,7 @@ fn addFailedDeclaration(
     is_pub: bool,
 ) !void {
     const decl_inst = try gz.makeDeclaration(src_node);
-    wip_members.nextDecl(decl_inst);
+    wip_decls.nextDecl(decl_inst);
 
     var dummy_gz = gz.makeSubBlock(&gz.base);
 
