@@ -79,8 +79,8 @@ fn bitCastInner(
 
     const val_ty = val.typeOf(zcu);
 
-    try val_ty.resolveLayout(pt);
-    try dest_ty.resolveLayout(pt);
+    val_ty.assertHasLayout(zcu);
+    try sema.ensureLayoutResolved(dest_ty);
 
     assert(val_ty.hasWellDefinedLayout(zcu));
 
@@ -138,8 +138,8 @@ fn bitCastSpliceInner(
     const val_ty = val.typeOf(zcu);
     const splice_val_ty = splice_val.typeOf(zcu);
 
-    try val_ty.resolveLayout(pt);
-    try splice_val_ty.resolveLayout(pt);
+    try sema.ensureLayoutResolved(val_ty);
+    try sema.ensureLayoutResolved(splice_val_ty);
 
     const splice_bits = splice_val_ty.bitSize(zcu);
 
@@ -673,6 +673,9 @@ const PackValueBits = struct {
     fn primitive(pack: *PackValueBits, want_ty: Type) BitCastError!Value {
         const pt = pack.pt;
         const zcu = pt.zcu;
+
+        if (try want_ty.onePossibleValue(pt)) |opv| return opv;
+
         const vals, const bit_offset = pack.prepareBits(want_ty.bitSize(zcu));
 
         for (vals) |val| {

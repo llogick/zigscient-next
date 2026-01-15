@@ -44,7 +44,7 @@ pub fn classifyType(ty: Type, zcu: *Zcu, ctx: Context) Class {
             return .byval;
         },
         .vector => {
-            const elem_type = ty.elemType2(zcu);
+            const elem_type = ty.childType(zcu);
             switch (elem_type.zigTypeTag(zcu)) {
                 .bool, .int => {
                     const bit_size = ty.bitSize(zcu);

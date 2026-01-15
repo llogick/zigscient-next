@@ -18,7 +18,7 @@ pub const MutableValue = union(enum) {
     opt_payload: SubValue,
     /// An aggregate consisting of a single repeated value.
     repeated: SubValue,
-    /// An aggregate of `u8` consisting of "plain" bytes (no lazy or undefined elements).
+    /// An aggregate of `u8` consisting of "plain" bytes (no undefined elements).
     bytes: Bytes,
     /// An aggregate with arbitrary sub-values.
     aggregate: Aggregate,
@@ -415,16 +415,7 @@ pub const MutableValue = union(enum) {
                 } else if (!is_struct and is_trivial_int and Type.fromInterned(a.ty).childType(zcu).toIntern() == .u8_type) {
                     // See if we can switch to `bytes` repr
                     for (a.elems) |e| {
-                        switch (e) {
-                            else => break,
-                            .interned => |ip_index| switch (ip.indexToKey(ip_index)) {
-                                else => break,
-                                .int => |int| switch (int.storage) {
-                                    .u64, .i64, .big_int => {},
-                                    .lazy_align, .lazy_size => break,
-                                },
-                            },
-                        }
+                        if (!e.isTrivialInt(zcu)) break;
                     } else {
                         const bytes = try arena.alloc(u8, a.elems.len);
                         for (a.elems, bytes) |elem_val, *b| {
@@ -494,10 +485,7 @@ pub const MutableValue = union(enum) {
             else => false,
             .interned => |ip_index| switch (zcu.intern_pool.indexToKey(ip_index)) {
                 else => false,
-                .int => |int| switch (int.storage) {
-                    .u64, .i64, .big_int => true,
-                    .lazy_align, .lazy_size => false,
-                },
+                .int => true,
             },
         };
     }

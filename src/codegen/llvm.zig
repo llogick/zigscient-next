@@ -2112,7 +2112,7 @@ pub const Object = struct {
                 return debug_array_type;
             },
             .vector => {
-                const elem_ty = ty.elemType2(zcu);
+                const elem_ty = ty.childType(zcu);
                 // Vector elements cannot be padded since that would make
                 // @bitSizOf(elem) * len > @bitSizOf(vec).
                 // Neither gdb nor lldb seem to be able to display non-byte sized

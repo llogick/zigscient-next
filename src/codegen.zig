@@ -1088,7 +1088,7 @@ pub fn lowerValue(pt: Zcu.PerThread, val: Value, target: *const std.Target) Allo
                                     return .{ .immediate = fn_ty.abiAlignment(zcu).toByteUnits().? };
                                 }
                             } else if (ty.zigTypeTag(zcu) == .pointer) {
-                                const elem_ty = ty.elemType2(zcu);
+                                const elem_ty = ty.childType(zcu);
                                 if (!elem_ty.hasRuntimeBits(zcu)) {
                                     return .{ .immediate = elem_ty.abiAlignment(zcu).toByteUnits().? };
                                 }

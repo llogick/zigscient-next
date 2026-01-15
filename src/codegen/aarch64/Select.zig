@@ -2464,7 +2464,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
 
                 const ty_pl = air.data(air.inst_index).ty_pl;
                 const bin_op = isel.air.extraData(Air.Bin, ty_pl.payload).data;
-                const elem_size = ty_pl.ty.toType().elemType2(zcu).abiSize(zcu);
+                const elem_size = ty_pl.ty.toType().childType(zcu).abiSize(zcu);
 
                 const base_vi = try isel.use(bin_op.lhs);
                 var base_part_it = base_vi.field(ty_pl.ty.toType(), 0, 8);
@@ -6145,7 +6145,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 } else {
                     const elem_ptr_ra = try isel.allocIntReg();
                     defer isel.freeReg(elem_ptr_ra);
-                    if (!try elem_vi.value.load(isel, slice_ty.elemType2(zcu), elem_ptr_ra, .{
+                    if (!try elem_vi.value.load(isel, slice_ty.childType(zcu), elem_ptr_ra, .{
                         .@"volatile" = ptr_info.flags.is_volatile,
                     })) break :unused;
                     const slice_vi = try isel.use(bin_op.lhs);
@@ -6253,7 +6253,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 } else {
                     const elem_ptr_ra = try isel.allocIntReg();
                     defer isel.freeReg(elem_ptr_ra);
-                    if (!try elem_vi.value.load(isel, ptr_ty.elemType2(zcu), elem_ptr_ra, .{
+                    if (!try elem_vi.value.load(isel, ptr_ty.childType(zcu), elem_ptr_ra, .{
                         .@"volatile" = ptr_info.flags.is_volatile,
                     })) break :unused;
                     const base_vi = try isel.use(bin_op.lhs);
@@ -6594,7 +6594,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                     if (try isel.hasRepeatedByteRepr(.fromInterned(fill_val))) |fill_byte|
                         break :fill_byte .{ .constant = fill_byte };
                 }
-                switch (dst_ty.elemType2(zcu).abiSize(zcu)) {
+                switch (dst_ty.indexablePtrElem(zcu).abiSize(zcu)) {
                     0 => unreachable,
                     1 => break :fill_byte .{ .value = bin_op.rhs },
                     2, 4, 8 => |size| {

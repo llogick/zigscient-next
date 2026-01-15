@@ -502,8 +502,7 @@ pub fn intByteSize(target: *const std.Target, bits: u16) u16 {
 pub fn intAlignment(target: *const std.Target, bits: u16) u16 {
     return switch (target.cpu.arch) {
         .x86 => switch (bits) {
-            0 => 0,
-            1...8 => 1,
+            0...8 => 1,
             9...16 => 2,
             17...32 => 4,
             33...64 => switch (target.os.tag) {
@@ -513,8 +512,7 @@ pub fn intAlignment(target: *const std.Target, bits: u16) u16 {
             else => 16,
         },
         .x86_64 => switch (bits) {
-            0 => 0,
-            1...8 => 1,
+            0...8 => 1,
             9...16 => 2,
             17...32 => 4,
             33...64 => 8,

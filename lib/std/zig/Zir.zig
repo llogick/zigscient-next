@@ -3710,7 +3710,7 @@ pub const Inst = struct {
                 };
             }
 
-            pub fn layout(k: Kind) std.builtin.ContainerLayout {
+            pub fn layout(k: Kind) std.builtin.Type.ContainerLayout {
                 return switch (k) {
                     .auto, .tagged_explicit, .tagged_enum, .tagged_enum_explicit => .auto,
                     .@"extern" => .@"extern",
@@ -4007,20 +4007,6 @@ pub const Inst = struct {
         path: NullTerminatedString,
     };
 };
-
-/// MLUGG TODO: delete this!
-pub const DeclIterator = struct {
-    decls: []const Inst.Index,
-    index: usize,
-    pub fn next(it: *DeclIterator) ?Inst.Index {
-        if (it.index == it.decls.len) return null;
-        defer it.index += 1;
-        return it.decls[it.index];
-    }
-};
-pub fn declIterator(zir: Zir, decl_inst: Zir.Inst.Index) DeclIterator {
-    return .{ .decls = zir.typeDecls(decl_inst), .index = 0 };
-}
 
 /// `DeclContents` contains all "interesting" instructions found within a declaration by `findTrackable`.
 /// These instructions are partitioned into a few different sets, since this makes ZIR instruction mapping

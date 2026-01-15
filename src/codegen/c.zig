@@ -3676,7 +3676,7 @@ fn airPtrElemPtr(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const inst_ty = f.typeOfIndex(inst);
     const ptr_ty = f.typeOf(bin_op.lhs);
-    const elem_has_bits = ptr_ty.elemType2(zcu).hasRuntimeBitsIgnoreComptime(zcu);
+    const elem_has_bits = ptr_ty.indexablePtrElem(zcu).hasRuntimeBitsIgnoreComptime(zcu);
 
     const ptr = try f.resolveInst(bin_op.lhs);
     const index = try f.resolveInst(bin_op.rhs);
@@ -3738,7 +3738,7 @@ fn airSliceElemPtr(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const inst_ty = f.typeOfIndex(inst);
     const slice_ty = f.typeOf(bin_op.lhs);
-    const elem_ty = slice_ty.elemType2(zcu);
+    const elem_ty = slice_ty.childType(zcu);
     const elem_has_bits = elem_ty.hasRuntimeBitsIgnoreComptime(zcu);
 
     const slice = try f.resolveInst(bin_op.lhs);
@@ -4502,7 +4502,7 @@ fn airPtrAddSub(f: *Function, inst: Air.Inst.Index, operator: u8) !CValue {
 
     const inst_ty = f.typeOfIndex(inst);
     const inst_scalar_ty = inst_ty.scalarType(zcu);
-    const elem_ty = inst_scalar_ty.elemType2(zcu);
+    const elem_ty = inst_scalar_ty.indexablePtrElem(zcu);
     if (!elem_ty.hasRuntimeBitsIgnoreComptime(zcu)) return f.moveCValue(inst, inst_ty, lhs);
     const inst_scalar_ctype = try f.ctypeFromType(inst_scalar_ty, .complete);
 
@@ -7037,7 +7037,7 @@ fn airMemcpy(f: *Function, inst: Air.Inst.Index, function_paren: []const u8) !CV
     try w.writeAll(", ");
     try writeArrayLen(f, dest_ptr, dest_ty);
     try w.writeAll(" * sizeof(");
-    try f.renderType(w, dest_ty.elemType2(zcu));
+    try f.renderType(w, dest_ty.indexablePtrElem(zcu));
     try w.writeAll("));");
     try f.object.newline();
 

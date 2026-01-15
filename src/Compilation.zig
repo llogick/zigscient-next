@@ -126,15 +126,7 @@ oneshot_prelink_tasks: std.ArrayList(link.PrelinkTask),
 /// work is queued or not.
 queued_jobs: QueuedJobs,
 
-work_queues: [
-    len: {
-        var len: usize = 0;
-        for (std.enums.values(Job.Tag)) |tag| {
-            len = @max(Job.stage(tag) + 1, len);
-        }
-        break :len len;
-    }
-]std.Deque(Job),
+work_queues: [2]std.Deque(Job),
 
 /// These jobs are to invoke the Clang compiler to create an object file, which
 /// gets linked with the Compilation.
@@ -990,34 +982,26 @@ const Job = union(enum) {
     update_line_number: InternPool.TrackedInst.Index,
     /// The `AnalUnit`, which is *not* a `func`, must be semantically analyzed.
     /// This may be its first time being analyzed, or it may be outdated.
-    /// If the unit is a test function, an `analyze_func` job will then be queued.
-    analyze_comptime_unit: InternPool.AnalUnit,
-    /// This function must be semantically analyzed.
-    /// This may be its first time being analyzed, or it may be outdated.
-    /// After analysis, a `codegen_func` job will be queued.
-    /// These must be separate jobs to ensure any needed type resolution occurs *before* codegen.
-    /// This job is separate from `analyze_comptime_unit` because it has a different priority.
-    analyze_func: InternPool.Index,
+    /// If the unit is a function, a `codegen_func` job will be queued after analysis completes.
+    /// If the unit is a *test* function, an `analyze_func` job will also be queued.
+    analyze_unit: InternPool.AnalUnit,
     /// The main source file for the module needs to be analyzed.
     analyze_mod: *Package.Module,
-    /// Fully resolve the given `struct` or `union` type.
-    resolve_type_fully: InternPool.Index,
 
     /// The value is the index into `windows_libs`.
     windows_import_lib: usize,
 
-    const Tag = @typeInfo(Job).@"union".tag_type.?;
-    fn stage(tag: Tag) usize {
-        return switch (tag) {
-            // Prioritize functions so that codegen can get to work on them on a
-            // separate thread, while Sema goes back to its own work.
-            .resolve_type_fully, .analyze_func, .codegen_func => 0,
+    fn stage(job: *const Job) usize {
+        // Prioritize functions so that codegen can get to work on them on a
+        // separate thread, while Sema goes back to its own work.
+        return switch (job.*) {
+            .codegen_func => 0,
+            .analyze_unit => |unit| switch (unit.unwrap()) {
+                .func => 0,
+                else => 1,
+            },
             else => 1,
         };
-    }
-    comptime {
-        // Job dependencies
-        assert(stage(.resolve_type_fully) <= stage(.codegen_func));
     }
 };
 
@@ -3728,7 +3712,9 @@ const Header = extern struct {
         src_hash_deps_len: u32,
         nav_val_deps_len: u32,
         nav_ty_deps_len: u32,
-        interned_deps_len: u32,
+        type_layout_deps_len: u32,
+        type_inits_deps_len: u32,
+        func_ies_deps_len: u32,
         zon_file_deps_len: u32,
         embed_file_deps_len: u32,
         namespace_deps_len: u32,
@@ -3776,7 +3762,9 @@ pub fn saveState(comp: *Compilation) !void {
                 .src_hash_deps_len = @intCast(ip.src_hash_deps.count()),
                 .nav_val_deps_len = @intCast(ip.nav_val_deps.count()),
                 .nav_ty_deps_len = @intCast(ip.nav_ty_deps.count()),
-                .interned_deps_len = @intCast(ip.interned_deps.count()),
+                .type_layout_deps_len = @intCast(ip.type_layout_deps.count()),
+                .type_inits_deps_len = @intCast(ip.type_inits_deps.count()),
+                .func_ies_deps_len = @intCast(ip.func_ies_deps.count()),
                 .zon_file_deps_len = @intCast(ip.zon_file_deps.count()),
                 .embed_file_deps_len = @intCast(ip.embed_file_deps.count()),
                 .namespace_deps_len = @intCast(ip.namespace_deps.count()),
@@ -3800,7 +3788,7 @@ pub fn saveState(comp: *Compilation) !void {
             },
         });
 
-        try bufs.ensureTotalCapacityPrecise(22 + 9 * pt_headers.items.len);
+        try bufs.ensureTotalCapacityPrecise(26 + 9 * pt_headers.items.len);
         addBuf(&bufs, mem.asBytes(&header));
         addBuf(&bufs, @ptrCast(pt_headers.items));
 
@@ -3810,8 +3798,12 @@ pub fn saveState(comp: *Compilation) !void {
         addBuf(&bufs, @ptrCast(ip.nav_val_deps.values()));
         addBuf(&bufs, @ptrCast(ip.nav_ty_deps.keys()));
         addBuf(&bufs, @ptrCast(ip.nav_ty_deps.values()));
-        addBuf(&bufs, @ptrCast(ip.interned_deps.keys()));
-        addBuf(&bufs, @ptrCast(ip.interned_deps.values()));
+        addBuf(&bufs, @ptrCast(ip.type_layout_deps.keys()));
+        addBuf(&bufs, @ptrCast(ip.type_layout_deps.values()));
+        addBuf(&bufs, @ptrCast(ip.type_inits_deps.keys()));
+        addBuf(&bufs, @ptrCast(ip.type_inits_deps.values()));
+        addBuf(&bufs, @ptrCast(ip.func_ies_deps.keys()));
+        addBuf(&bufs, @ptrCast(ip.func_ies_deps.values()));
         addBuf(&bufs, @ptrCast(ip.zon_file_deps.keys()));
         addBuf(&bufs, @ptrCast(ip.zon_file_deps.values()));
         addBuf(&bufs, @ptrCast(ip.embed_file_deps.keys()));
@@ -4489,7 +4481,7 @@ pub fn addModuleErrorMsg(
                 const root_name: ?[]const u8 = switch (ref.referencer.unwrap()) {
                     .@"comptime" => "comptime",
                     .nav_val, .nav_ty => |nav| ip.getNav(nav).name.toSlice(ip),
-                    .type => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
+                    .type_layout, .type_inits => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
                     .func => |f| ip.getNav(zcu.funcInfo(f).owner_nav).name.toSlice(ip),
                     .memoized_state => null,
                 };
@@ -4900,15 +4892,7 @@ fn performAllTheWork(
             // If there's no work queued, check if there's anything outdated
             // which we need to work on, and queue it if so.
             if (try zcu.findOutdatedToAnalyze()) |outdated| {
-                try comp.queueJob(switch (outdated.unwrap()) {
-                    .func => |f| .{ .analyze_func = f },
-                    .memoized_state,
-                    .@"comptime",
-                    .nav_ty,
-                    .nav_val,
-                    .type,
-                    => .{ .analyze_comptime_unit = outdated },
-                });
+                try comp.queueJob(.{ .analyze_unit = outdated });
                 continue;
             }
             zcu.sema_prog_node.end();
@@ -5151,7 +5135,7 @@ fn dispatchPrelinkWork(comp: *Compilation, main_progress_node: std.Progress.Node
 const JobError = Allocator.Error || Io.Cancelable;
 
 pub fn queueJob(comp: *Compilation, job: Job) !void {
-    try comp.work_queues[Job.stage(job)].pushBack(comp.gpa, job);
+    try comp.work_queues[job.stage()].pushBack(comp.gpa, job);
 }
 
 pub fn queueJobs(comp: *Compilation, jobs: []const Job) !void {
@@ -5166,13 +5150,24 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
             var owned_air: ?Air = func.air;
             defer if (owned_air) |*air| air.deinit(gpa);
 
-            if (!owned_air.?.typesFullyResolved(zcu)) {
-                // Type resolution failed in a way which affects this function. This is a transitive
-                // failure, but it doesn't need recording, because this function semantically depends
-                // on the failed type, so when it is changed the function is updated.
-                zcu.codegen_prog_node.completeOne();
-                comp.link_prog_node.completeOne();
-                return;
+            {
+                const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
+                defer pt.deactivate();
+                pt.resolveAirTypesForCodegen(&owned_air.?) catch |err| switch (err) {
+                    error.OutOfMemory,
+                    error.Canceled,
+                    => |e| return e,
+
+                    error.AnalysisFail => {
+                        // Type resolution failed, making codegen of this function impossible. This
+                        // is a transitive failure, but it doesn't need recording, because this
+                        // function semantically depends on the failed type, so when it is changed
+                        // the function will be updated.
+                        zcu.codegen_prog_node.completeOne();
+                        comp.link_prog_node.completeOne();
+                        return;
+                    },
+                };
             }
 
             // Some linkers need to refer to the AIR. In that case, the linker is not running
@@ -5198,45 +5193,54 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 }
             }
             assert(nav.status == .fully_resolved);
-            if (!Air.valFullyResolved(zcu.navValue(nav_index), zcu)) {
-                // Type resolution failed in a way which affects this `Nav`. This is a transitive
-                // failure, but it doesn't need recording, because this `Nav` semantically depends
-                // on the failed type, so when it is changed the `Nav` will be updated.
-                comp.link_prog_node.completeOne();
-                return;
+            {
+                const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
+                defer pt.deactivate();
+                pt.resolveValueTypesForCodegen(zcu.navValue(nav_index)) catch |err| switch (err) {
+                    error.OutOfMemory,
+                    error.Canceled,
+                    => |e| return e,
+
+                    error.AnalysisFail => {
+                        // Type resolution failed, making codegen of this `Nav` impossible. This is
+                        // a transitive failure, but it doesn't need recording, because this `Nav`
+                        // semantically depends on the failed type, so when it is changed the value
+                        // of the `Nav` will be updated.
+                        comp.link_prog_node.completeOne();
+                        return;
+                    },
+                };
             }
             try comp.link_queue.enqueueZcu(comp, tid, .{ .link_nav = nav_index });
         },
         .link_type => |ty| {
             const zcu = comp.zcu.?;
             if (zcu.failed_types.fetchSwapRemove(ty)) |*entry| entry.value.deinit(zcu.gpa);
-            if (!Air.typeFullyResolved(.fromInterned(ty), zcu)) {
-                // Type resolution failed in a way which affects this type. This is a transitive
-                // failure, but it doesn't need recording, because this type semantically depends
-                // on the failed type, so when that is changed, this type will be updated.
-                comp.link_prog_node.completeOne();
-                return;
+            {
+                const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
+                defer pt.deactivate();
+                pt.resolveTypeForCodegen(.fromInterned(ty)) catch |err| switch (err) {
+                    error.OutOfMemory,
+                    error.Canceled,
+                    => |e| return e,
+
+                    error.AnalysisFail => {
+                        // Type resolution failed, making codegen of this type impossible. This is
+                        // a transitive failure, but it doesn't need recording, because this type
+                        // semantically depends on the failed type, so when it is changed the type
+                        // will be updated appropriately.
+                        comp.link_prog_node.completeOne();
+                        return;
+                    },
+                };
             }
             try comp.link_queue.enqueueZcu(comp, tid, .{ .link_type = ty });
         },
         .update_line_number => |tracked_inst| {
             try comp.link_queue.enqueueZcu(comp, tid, .{ .update_line_number = tracked_inst });
         },
-        .analyze_func => |func| {
-            const tracy_trace = traceNamed(@src(), "analyze_func");
-            defer tracy_trace.end();
-
-            const pt: Zcu.PerThread = .activate(comp.zcu.?, tid);
-            defer pt.deactivate();
-
-            pt.ensureFuncBodyUpToDate(func) catch |err| switch (err) {
-                error.OutOfMemory => |e| return e,
-                error.Canceled => |e| return e,
-                error.AnalysisFail => return,
-            };
-        },
-        .analyze_comptime_unit => |unit| {
-            const tracy_trace = traceNamed(@src(), "analyze_comptime_unit");
+        .analyze_unit => |unit| {
+            const tracy_trace = traceNamed(@src(), "analyze_unit");
             defer tracy_trace.end();
 
             const pt: Zcu.PerThread = .activate(comp.zcu.?, tid);
@@ -5246,9 +5250,10 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 .@"comptime" => |cu| pt.ensureComptimeUnitUpToDate(cu),
                 .nav_ty => |nav| pt.ensureNavTypeUpToDate(nav),
                 .nav_val => |nav| pt.ensureNavValUpToDate(nav),
-                .type => |ty| if (pt.ensureTypeUpToDate(ty)) |_| {} else |err| err,
+                .type_layout => |ty| pt.ensureTypeLayoutUpToDate(.fromInterned(ty)),
+                .type_inits => |ty| pt.ensureTypeInitsUpToDate(.fromInterned(ty)),
                 .memoized_state => |stage| pt.ensureMemoizedStateUpToDate(stage),
-                .func => unreachable,
+                .func => |func| pt.ensureFuncBodyUpToDate(func),
             };
             maybe_err catch |err| switch (err) {
                 error.OutOfMemory => |e| return e,
@@ -5275,27 +5280,15 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 try pt.zcu.ensureFuncBodyAnalysisQueued(ip.getNav(nav).status.fully_resolved.val);
             }
         },
-        .resolve_type_fully => |ty| {
-            const tracy_trace = traceNamed(@src(), "resolve_type_fully");
-            defer tracy_trace.end();
-
-            const pt: Zcu.PerThread = .activate(comp.zcu.?, tid);
-            defer pt.deactivate();
-            Type.fromInterned(ty).resolveFully(pt) catch |err| switch (err) {
-                error.OutOfMemory, error.Canceled => |e| return e,
-                error.AnalysisFail => return,
-            };
-        },
         .analyze_mod => |mod| {
             const tracy_trace = traceNamed(@src(), "analyze_mod");
             defer tracy_trace.end();
 
             const pt: Zcu.PerThread = .activate(comp.zcu.?, tid);
             defer pt.deactivate();
-            pt.semaMod(mod) catch |err| switch (err) {
-                error.OutOfMemory, error.Canceled => |e| return e,
-                error.AnalysisFail => return,
-            };
+
+            const mod_root_file = pt.zcu.module_roots.get(mod).?.unwrap().?;
+            try pt.ensureFileAnalyzed(mod_root_file);
         },
         .windows_import_lib => |index| {
             const tracy_trace = traceNamed(@src(), "windows_import_lib");

@@ -4381,7 +4381,7 @@ fn airSliceElemVal(cg: *CodeGen, inst: Air.Inst.Index) !?Id {
 fn ptrElemPtr(cg: *CodeGen, ptr_ty: Type, ptr_id: Id, index_id: Id) !Id {
     const zcu = cg.module.zcu;
     // Construct new pointer type for the resulting pointer
-    const elem_ty = ptr_ty.elemType2(zcu); // use elemType() so that we get T for *[N]T.
+    const elem_ty = ptr_ty.indexablePtrElem(zcu);
     const elem_ty_id = try cg.resolveType(elem_ty, .indirect);
     const elem_ptr_ty_id = try cg.module.ptrType(elem_ty_id, cg.module.storageClass(ptr_ty.ptrAddressSpace(zcu)));
     if (ptr_ty.isSinglePointer(zcu)) {

@@ -81,14 +81,6 @@ pub fn print(
         .int => |int| switch (int.storage) {
             inline .u64, .i64 => |x| try writer.print("{d}", .{x}),
             .big_int => |x| try writer.print("{d}", .{x}),
-            .lazy_align => |ty| if (opt_sema != null) {
-                const a = try Type.fromInterned(ty).abiAlignmentSema(pt);
-                try writer.print("{d}", .{a.toByteUnits() orelse 0});
-            } else try writer.print("@alignOf({f})", .{Type.fromInterned(ty).fmt(pt)}),
-            .lazy_size => |ty| if (opt_sema != null) {
-                const s = try Type.fromInterned(ty).abiSizeSema(pt);
-                try writer.print("{d}", .{s});
-            } else try writer.print("@sizeOf({f})", .{Type.fromInterned(ty).fmt(pt)}),
         },
         .err => |err| try writer.print("error.{f}", .{
             err.name.fmt(ip),
@@ -104,8 +96,8 @@ pub fn print(
         }),
         .enum_tag => |enum_tag| {
             const enum_type = ip.loadEnumType(val.typeOf(zcu).toIntern());
-            if (enum_type.tagValueIndex(ip, val.toIntern())) |tag_index| {
-                return writer.print(".{f}", .{enum_type.names.get(ip)[tag_index].fmt(ip)});
+            if (enum_type.tagValueIndex(ip, enum_tag.int)) |tag_index| {
+                return writer.print(".{f}", .{enum_type.field_names.get(ip)[tag_index].fmt(ip)});
             }
             if (level == 0) {
                 return writer.writeAll("@enumFromInt(...)");

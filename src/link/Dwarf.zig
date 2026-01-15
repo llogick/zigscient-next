@@ -4575,10 +4575,10 @@ fn updateContainerTypeWriterError(
             const name_strat: Zir.Inst.NameStrategy = switch (decl_inst.tag) {
                 .struct_init, .struct_init_ref, .struct_init_anon => .anon,
                 .extended => switch (decl_inst.data.extended.opcode) {
-                    .struct_decl => @as(Zir.Inst.StructDecl.Small, @bitCast(decl_inst.data.extended.small)).name_strategy,
-                    .enum_decl => @as(Zir.Inst.EnumDecl.Small, @bitCast(decl_inst.data.extended.small)).name_strategy,
-                    .union_decl => @as(Zir.Inst.UnionDecl.Small, @bitCast(decl_inst.data.extended.small)).name_strategy,
-                    .opaque_decl => @as(Zir.Inst.OpaqueDecl.Small, @bitCast(decl_inst.data.extended.small)).name_strategy,
+                    .struct_decl => file.zir.?.getStructDecl(inst_info.inst).name_strategy,
+                    .union_decl => file.zir.?.getUnionDecl(inst_info.inst).name_strategy,
+                    .enum_decl => file.zir.?.getEnumDecl(inst_info.inst).name_strategy,
+                    .opaque_decl => file.zir.?.getOpaqueDecl(inst_info.inst).name_strategy,
 
                     .reify_enum,
                     .reify_struct,

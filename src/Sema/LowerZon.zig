@@ -125,6 +125,7 @@ fn lowerExprAnonResTy(self: *LowerZon, node: Zoir.Node.Index) CompileError!Inter
             return (try pt.aggregateValue(.fromInterned(ty), values)).toIntern();
         },
         .struct_literal => |init| {
+            if (true) @panic("MLUGG TODO");
             const elems = try self.sema.arena.alloc(InternPool.Index, init.names.len);
             for (0..init.names.len) |i| {
                 elems[i] = try self.lowerExprAnonResTy(init.vals.at(@intCast(i)));
@@ -299,7 +300,7 @@ fn checkTypeInner(
         } else {
             const gop = try visited.getOrPut(sema.arena, ty.toIntern());
             if (gop.found_existing) return;
-            try ty.resolveFields(pt);
+            try sema.ensureLayoutResolved(ty);
             const struct_info = zcu.typeToStruct(ty).?;
             for (struct_info.field_types.get(ip)) |field_type| {
                 try self.checkTypeInner(.fromInterned(field_type), null, visited);
@@ -308,7 +309,7 @@ fn checkTypeInner(
         .@"union" => {
             const gop = try visited.getOrPut(sema.arena, ty.toIntern());
             if (gop.found_existing) return;
-            try ty.resolveFields(pt);
+            try sema.ensureLayoutResolved(ty);
             const union_info = zcu.typeToUnion(ty).?;
             for (union_info.field_types.get(ip)) |field_type| {
                 if (field_type != .void_type) {
@@ -767,8 +768,8 @@ fn lowerStruct(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool
     const io = comp.io;
     const ip = &pt.zcu.intern_pool;
 
-    try res_ty.resolveFields(self.sema.pt);
-    try res_ty.resolveStructFieldInits(self.sema.pt);
+    try self.sema.ensureLayoutResolved(res_ty);
+    try self.sema.ensureFieldInitsResolved(res_ty);
     const struct_info = self.sema.pt.zcu.typeToStruct(res_ty).?;
 
     const fields: @FieldType(Zoir.Node, "struct_literal") = switch (node.get(self.file.zoir.?)) {
@@ -779,7 +780,7 @@ fn lowerStruct(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool
 
     const field_values = try self.sema.arena.alloc(InternPool.Index, struct_info.field_names.len);
 
-    const field_defaults = struct_info.field_inits.get(ip);
+    const field_defaults = struct_info.field_defaults.get(ip);
     if (field_defaults.len > 0) {
         @memcpy(field_values, field_defaults);
     } else {
@@ -803,7 +804,7 @@ fn lowerStruct(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool
         const field_type: Type = .fromInterned(struct_info.field_types.get(ip)[name_index]);
         field_values[name_index] = try self.lowerExprKnownResTy(field_node, field_type);
 
-        if (struct_info.comptime_bits.getBit(ip, name_index)) {
+        if (struct_info.field_is_comptime_bits.get(ip, name_index)) {
             const val = ip.indexToKey(field_values[name_index]);
             const default = ip.indexToKey(field_defaults[name_index]);
             if (!val.eql(default, ip)) {
@@ -918,9 +919,9 @@ fn lowerUnion(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool.
     const gpa = comp.gpa;
     const io = comp.io;
     const ip = &pt.zcu.intern_pool;
-    try res_ty.resolveFields(self.sema.pt);
-    const union_info = self.sema.pt.zcu.typeToUnion(res_ty).?;
-    const enum_tag_info = union_info.loadTagType(ip);
+    try self.sema.ensureLayoutResolved(res_ty);
+    const union_info = pt.zcu.typeToUnion(res_ty).?;
+    const enum_tag_info = ip.loadEnumType(union_info.enum_tag_type);
 
     const field_name, const maybe_field_node = switch (node.get(self.file.zoir.?)) {
         .enum_literal => |name| b: {
@@ -956,7 +957,7 @@ fn lowerUnion(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool.
     const name_index = enum_tag_info.nameIndex(ip, field_name) orelse {
         return error.WrongType;
     };
-    const tag = try self.sema.pt.enumValueFieldIndex(.fromInterned(union_info.enum_tag_ty), name_index);
+    const tag = try self.sema.pt.enumValueFieldIndex(.fromInterned(union_info.enum_tag_type), name_index);
     const field_type: Type = .fromInterned(union_info.field_types.get(ip)[name_index]);
     const val = if (maybe_field_node) |field_node| b: {
         if (field_type.toIntern() == .void_type) {

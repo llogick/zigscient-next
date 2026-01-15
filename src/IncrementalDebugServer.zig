@@ -306,12 +306,8 @@ fn handleCommand(zcu: *Zcu, w: *Io.Writer, cmd_str: []const u8, arg_str: []const
             try w.print("[{d}] ", .{i});
             switch (dependee) {
                 .src_hash, .namespace, .namespace_name, .zon_file, .embed_file => try w.print("{f}", .{zcu.fmtDependee(dependee)}),
-                .nav_val, .nav_ty => |nav| try w.print("{s} {d}", .{ @tagName(dependee), @intFromEnum(nav) }),
-                .interned => |ip_index| switch (ip.indexToKey(ip_index)) {
-                    .struct_type, .union_type, .enum_type => try w.print("type {d}", .{@intFromEnum(ip_index)}),
-                    .func => try w.print("func {d}", .{@intFromEnum(ip_index)}),
-                    else => unreachable,
-                },
+                .nav_val, .nav_ty => |nav| try w.print("{t} {d}", .{ dependee, @intFromEnum(nav) }),
+                .type_layout, .type_inits, .func_ies => |ip_index| try w.print("{t} {d}", .{ dependee, @intFromEnum(ip_index) }),
                 .memoized_state => |stage| try w.print("memoized_state {s}", .{@tagName(stage)}),
             }
             try w.writeByte('\n');
@@ -376,8 +372,10 @@ fn parseAnalUnit(str: []const u8) ?AnalUnit {
         return .wrap(.{ .nav_val = @enumFromInt(parseIndex(idx_str) orelse return null) });
     } else if (std.mem.eql(u8, kind, "nav_ty")) {
         return .wrap(.{ .nav_ty = @enumFromInt(parseIndex(idx_str) orelse return null) });
-    } else if (std.mem.eql(u8, kind, "type")) {
-        return .wrap(.{ .type = @enumFromInt(parseIndex(idx_str) orelse return null) });
+    } else if (std.mem.eql(u8, kind, "type_layout")) {
+        return .wrap(.{ .type_layout = @enumFromInt(parseIndex(idx_str) orelse return null) });
+    } else if (std.mem.eql(u8, kind, "type_inits")) {
+        return .wrap(.{ .type_inits = @enumFromInt(parseIndex(idx_str) orelse return null) });
     } else if (std.mem.eql(u8, kind, "func")) {
         return .wrap(.{ .func = @enumFromInt(parseIndex(idx_str) orelse return null) });
     } else if (std.mem.eql(u8, kind, "memoized_state")) {
