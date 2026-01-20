@@ -5258,14 +5258,13 @@ pub const FuncGen = struct {
     };
 
     fn airCall(self: *FuncGen, inst: Air.Inst.Index, modifier: std.builtin.CallModifier) !Builder.Value {
-        const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
-        const extra = self.air.extraData(Air.Call, pl_op.payload);
-        const args: []const Air.Inst.Ref = @ptrCast(self.air.extra.items[extra.end..][0..extra.data.args_len]);
+        const air_call = self.air.unwrapCall(inst);
+        const args = air_call.args;
         const o = self.ng.object;
         const pt = self.ng.pt;
         const zcu = pt.zcu;
         const ip = &zcu.intern_pool;
-        const callee_ty = self.typeOf(pl_op.operand);
+        const callee_ty = self.typeOf(air_call.callee);
         const zig_fn_ty = switch (callee_ty.zigTypeTag(zcu)) {
             .@"fn" => callee_ty,
             .pointer => callee_ty.childType(zcu),
@@ -5273,7 +5272,7 @@ pub const FuncGen = struct {
         };
         const fn_info = zcu.typeToFunc(zig_fn_ty).?;
         const return_type = Type.fromInterned(fn_info.return_type);
-        const llvm_fn = try self.resolveInst(pl_op.operand);
+        const llvm_fn = try self.resolveInst(air_call.callee);
         const target = zcu.getTarget();
         const sret = firstParamSRet(fn_info, zcu, target);
 
@@ -5934,9 +5933,8 @@ pub const FuncGen = struct {
     }
 
     fn airBlock(self: *FuncGen, inst: Air.Inst.Index) !Builder.Value {
-        const ty_pl = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_pl;
-        const extra = self.air.extraData(Air.Block, ty_pl.payload);
-        return self.lowerBlock(inst, null, @ptrCast(self.air.extra.items[extra.end..][0..extra.data.body_len]));
+        const block = self.air.unwrapBlock(inst);
+        return self.lowerBlock(inst, null, block.body);
     }
 
     fn lowerBlock(
@@ -6216,11 +6214,10 @@ pub const FuncGen = struct {
     }
 
     fn airCondBr(self: *FuncGen, inst: Air.Inst.Index) !void {
-        const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
-        const cond = try self.resolveInst(pl_op.operand);
-        const extra = self.air.extraData(Air.CondBr, pl_op.payload);
-        const then_body: []const Air.Inst.Index = @ptrCast(self.air.extra.items[extra.end..][0..extra.data.then_body_len]);
-        const else_body: []const Air.Inst.Index = @ptrCast(self.air.extra.items[extra.end + then_body.len ..][0..extra.data.else_body_len]);
+        const cond_br = self.air.unwrapCondBr(inst);
+        const cond = try self.resolveInst(cond_br.condition);
+        const then_body = cond_br.then_body;
+        const else_body = cond_br.else_body;
 
         const Hint = enum {
             none,
@@ -6230,22 +6227,22 @@ pub const FuncGen = struct {
             then_cold,
             else_cold,
         };
-        const hint: Hint = switch (extra.data.branch_hints.true) {
-            .none => switch (extra.data.branch_hints.false) {
+        const hint: Hint = switch (cond_br.branch_hints.true) {
+            .none => switch (cond_br.branch_hints.false) {
                 .none => .none,
                 .likely => .else_likely,
                 .unlikely => .then_likely,
                 .cold => .else_cold,
                 .unpredictable => .unpredictable,
             },
-            .likely => switch (extra.data.branch_hints.false) {
+            .likely => switch (cond_br.branch_hints.false) {
                 .none => .then_likely,
                 .likely => .unpredictable,
                 .unlikely => .then_likely,
                 .cold => .else_cold,
                 .unpredictable => .unpredictable,
             },
-            .unlikely => switch (extra.data.branch_hints.false) {
+            .unlikely => switch (cond_br.branch_hints.false) {
                 .none => .else_likely,
                 .likely => .else_likely,
                 .unlikely => .unpredictable,
@@ -6267,35 +6264,33 @@ pub const FuncGen = struct {
 
         self.wip.cursor = .{ .block = then_block };
         if (hint == .then_cold) _ = try self.wip.callIntrinsicAssumeCold();
-        try self.genBodyDebugScope(null, then_body, extra.data.branch_hints.then_cov);
+        try self.genBodyDebugScope(null, then_body, cond_br.branch_hints.then_cov);
 
         self.wip.cursor = .{ .block = else_block };
         if (hint == .else_cold) _ = try self.wip.callIntrinsicAssumeCold();
-        try self.genBodyDebugScope(null, else_body, extra.data.branch_hints.else_cov);
+        try self.genBodyDebugScope(null, else_body, cond_br.branch_hints.else_cov);
 
         // No need to reset the insert cursor since this instruction is noreturn.
     }
 
     fn airTry(self: *FuncGen, inst: Air.Inst.Index, err_cold: bool) !Builder.Value {
-        const pl_op = self.air.instructions.items(.data)[@intFromEnum(inst)].pl_op;
-        const err_union = try self.resolveInst(pl_op.operand);
-        const extra = self.air.extraData(Air.Try, pl_op.payload);
-        const body: []const Air.Inst.Index = @ptrCast(self.air.extra.items[extra.end..][0..extra.data.body_len]);
-        const err_union_ty = self.typeOf(pl_op.operand);
+        const unwrapped_try = self.air.unwrapTry(inst);
+        const err_union = try self.resolveInst(unwrapped_try.error_union);
+        const body = unwrapped_try.else_body;
+        const err_union_ty = self.typeOf(unwrapped_try.error_union);
         const is_unused = self.liveness.isUnused(inst);
         return lowerTry(self, err_union, body, err_union_ty, false, false, is_unused, err_cold);
     }
 
     fn airTryPtr(self: *FuncGen, inst: Air.Inst.Index, err_cold: bool) !Builder.Value {
         const zcu = self.ng.pt.zcu;
-        const ty_pl = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_pl;
-        const extra = self.air.extraData(Air.TryPtr, ty_pl.payload);
-        const err_union_ptr = try self.resolveInst(extra.data.ptr);
-        const body: []const Air.Inst.Index = @ptrCast(self.air.extra.items[extra.end..][0..extra.data.body_len]);
-        const err_union_ty = self.typeOf(extra.data.ptr).childType(zcu);
+        const unwrapped_try = self.air.unwrapTryPtr(inst);
+        const err_union_ptr = try self.resolveInst(unwrapped_try.error_union_ptr);
+        const body = unwrapped_try.else_body;
+        const err_union_ty = self.typeOf(unwrapped_try.error_union_ptr).childType(zcu);
         const is_unused = self.liveness.isUnused(inst);
 
-        self.maybeMarkAllowZeroAccess(self.typeOf(extra.data.ptr).ptrInfo(zcu));
+        self.maybeMarkAllowZeroAccess(self.typeOf(unwrapped_try.error_union_ptr).ptrInfo(zcu));
 
         return lowerTry(self, err_union_ptr, body, err_union_ty, true, true, is_unused, err_cold);
     }
@@ -6627,9 +6622,8 @@ pub const FuncGen = struct {
     }
 
     fn airLoop(self: *FuncGen, inst: Air.Inst.Index) !void {
-        const ty_pl = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_pl;
-        const loop = self.air.extraData(Air.Block, ty_pl.payload);
-        const body: []const Air.Inst.Index = @ptrCast(self.air.extra.items[loop.end..][0..loop.data.body_len]);
+        const block = self.air.unwrapBlock(inst);
+        const body = block.body;
         const loop_block = try self.wip.block(1, "Loop"); // `airRepeat` will increment incoming each time
         _ = try self.wip.br(loop_block);
 
@@ -7137,10 +7131,9 @@ pub const FuncGen = struct {
     }
 
     fn airDbgInlineBlock(self: *FuncGen, inst: Air.Inst.Index) !Builder.Value {
-        const ty_pl = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_pl;
-        const extra = self.air.extraData(Air.DbgInlineBlock, ty_pl.payload);
+        const block = self.air.unwrapDbgBlock(inst);
         self.arg_inline_index = 0;
-        return self.lowerBlock(inst, extra.data.func, @ptrCast(self.air.extra.items[extra.end..][0..extra.data.body_len]));
+        return self.lowerBlock(inst, block.func, block.body);
     }
 
     fn airDbgVarPtr(self: *FuncGen, inst: Air.Inst.Index) !Builder.Value {
@@ -7262,17 +7255,12 @@ pub const FuncGen = struct {
         // this implementation feeds the inline assembly code directly to LLVM.
 
         const o = self.ng.object;
-        const ty_pl = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_pl;
-        const extra = self.air.extraData(Air.Asm, ty_pl.payload);
-        const is_volatile = extra.data.flags.is_volatile;
-        const outputs_len = extra.data.flags.outputs_len;
+        const unwrapped_asm = self.air.unwrapAsm(inst);
+        const is_volatile = unwrapped_asm.is_volatile;
         const gpa = self.gpa;
-        var extra_i: usize = extra.end;
 
-        const outputs: []const Air.Inst.Ref = @ptrCast(self.air.extra.items[extra_i..][0..outputs_len]);
-        extra_i += outputs.len;
-        const inputs: []const Air.Inst.Ref = @ptrCast(self.air.extra.items[extra_i..][0..extra.data.inputs_len]);
-        extra_i += inputs.len;
+        const outputs = unwrapped_asm.outputs;
+        const inputs = unwrapped_asm.inputs;
 
         var llvm_constraints: std.ArrayList(u8) = .empty;
         defer llvm_constraints.deinit(gpa);
@@ -7305,14 +7293,10 @@ pub const FuncGen = struct {
         var name_map: std.StringArrayHashMapUnmanaged(u16) = .empty;
         try name_map.ensureUnusedCapacity(arena, max_param_count);
 
-        var rw_extra_i = extra_i;
-        for (outputs, llvm_ret_indirect, llvm_rw_vals) |output, *is_indirect, *llvm_rw_val| {
-            const extra_bytes = std.mem.sliceAsBytes(self.air.extra.items[extra_i..]);
-            const constraint = std.mem.sliceTo(std.mem.sliceAsBytes(self.air.extra.items[extra_i..]), 0);
-            const name = std.mem.sliceTo(extra_bytes[constraint.len + 1 ..], 0);
-            // This equation accounts for the fact that even if we have exactly 4 bytes
-            // for the string, we still use the next u32 for the null terminator.
-            extra_i += (constraint.len + name.len + (2 + 3)) / 4;
+        var it = unwrapped_asm.iterateOutputs();
+        while (it.next()) |output| {
+            const constraint = output.constraint;
+            const name = output.name;
 
             try llvm_constraints.ensureUnusedCapacity(gpa, constraint.len + 3);
             if (total_i != 0) {
@@ -7320,15 +7304,15 @@ pub const FuncGen = struct {
             }
             llvm_constraints.appendAssumeCapacity('=');
 
-            if (output != .none) {
-                const output_inst = try self.resolveInst(output);
-                const output_ty = self.typeOf(output);
+            if (output.operand != .none) {
+                const output_inst = try self.resolveInst(output.operand);
+                const output_ty = self.typeOf(output.operand);
                 assert(output_ty.zigTypeTag(zcu) == .pointer);
                 const elem_llvm_ty = try o.lowerPtrElemTy(pt, output_ty.childType(zcu));
 
                 switch (constraint[0]) {
                     '=' => {},
-                    '+' => llvm_rw_val.* = output_inst,
+                    '+' => llvm_rw_vals[output.index] = output_inst,
                     else => return self.todo("unsupported output constraint on output type '{c}'", .{
                         constraint[0],
                     }),
@@ -7337,8 +7321,8 @@ pub const FuncGen = struct {
                 self.maybeMarkAllowZeroAccess(output_ty.ptrInfo(zcu));
 
                 // Pass any non-return outputs indirectly, if the constraint accepts a memory location
-                is_indirect.* = constraintAllowsMemory(constraint);
-                if (is_indirect.*) {
+                llvm_ret_indirect[output.index] = constraintAllowsMemory(constraint);
+                if (llvm_ret_indirect[output.index]) {
                     // Pass the result by reference as an indirect output (e.g. "=*m")
                     llvm_constraints.appendAssumeCapacity('*');
 
@@ -7359,7 +7343,7 @@ pub const FuncGen = struct {
                     }),
                 }
 
-                is_indirect.* = false;
+                llvm_ret_indirect[output.index] = false;
 
                 const ret_ty = self.typeOfIndex(inst);
                 llvm_ret_types[llvm_ret_i] = try o.lowerType(pt, ret_ty);
@@ -7387,16 +7371,13 @@ pub const FuncGen = struct {
             total_i += 1;
         }
 
-        for (inputs) |input| {
-            const extra_bytes = std.mem.sliceAsBytes(self.air.extra.items[extra_i..]);
-            const constraint = std.mem.sliceTo(extra_bytes, 0);
-            const name = std.mem.sliceTo(extra_bytes[constraint.len + 1 ..], 0);
-            // This equation accounts for the fact that even if we have exactly 4 bytes
-            // for the string, we still use the next u32 for the null terminator.
-            extra_i += (constraint.len + name.len + (2 + 3)) / 4;
+        it = unwrapped_asm.iterateInputs();
+        while (it.next()) |input| {
+            const constraint = input.constraint;
+            const name = input.name;
 
-            const arg_llvm_value = try self.resolveInst(input);
-            const arg_ty = self.typeOf(input);
+            const arg_llvm_value = try self.resolveInst(input.operand);
+            const arg_ty = self.typeOf(input.operand);
             const is_by_ref = isByRef(arg_ty, zcu);
             if (is_by_ref) {
                 if (constraintAllowsMemory(constraint)) {
@@ -7452,27 +7433,23 @@ pub const FuncGen = struct {
             total_i += 1;
         }
 
-        for (outputs, llvm_ret_indirect, llvm_rw_vals, 0..) |output, is_indirect, llvm_rw_val, output_index| {
-            const extra_bytes = std.mem.sliceAsBytes(self.air.extra.items[rw_extra_i..]);
-            const constraint = std.mem.sliceTo(std.mem.sliceAsBytes(self.air.extra.items[rw_extra_i..]), 0);
-            const name = std.mem.sliceTo(extra_bytes[constraint.len + 1 ..], 0);
-            // This equation accounts for the fact that even if we have exactly 4 bytes
-            // for the string, we still use the next u32 for the null terminator.
-            rw_extra_i += (constraint.len + name.len + (2 + 3)) / 4;
+        it = unwrapped_asm.iterateOutputs();
+        while (it.next()) |output| {
+            const constraint = output.constraint;
 
             if (constraint[0] != '+') continue;
 
-            const rw_ty = self.typeOf(output);
+            const rw_ty = self.typeOf(output.operand);
             const llvm_elem_ty = try o.lowerPtrElemTy(pt, rw_ty.childType(zcu));
-            if (is_indirect) {
-                llvm_param_values[llvm_param_i] = llvm_rw_val;
-                llvm_param_types[llvm_param_i] = llvm_rw_val.typeOfWip(&self.wip);
+            if (llvm_ret_indirect[output.index]) {
+                llvm_param_values[llvm_param_i] = llvm_rw_vals[output.index];
+                llvm_param_types[llvm_param_i] = llvm_rw_vals[output.index].typeOfWip(&self.wip);
             } else {
                 const alignment = rw_ty.abiAlignment(zcu).toLlvm();
                 const loaded = try self.wip.load(
                     if (rw_ty.isVolatilePtr(zcu)) .@"volatile" else .normal,
                     llvm_elem_ty,
-                    llvm_rw_val,
+                    llvm_rw_vals[output.index],
                     alignment,
                     "",
                 );
@@ -7480,18 +7457,18 @@ pub const FuncGen = struct {
                 llvm_param_types[llvm_param_i] = llvm_elem_ty;
             }
 
-            try llvm_constraints.print(gpa, ",{d}", .{output_index});
+            try llvm_constraints.print(gpa, ",{d}", .{output.index});
 
             // In the case of indirect inputs, LLVM requires the callsite to have
             // an elementtype(<ty>) attribute.
-            llvm_param_attrs[llvm_param_i] = if (is_indirect) llvm_elem_ty else .none;
+            llvm_param_attrs[llvm_param_i] = if (llvm_ret_indirect[output.index]) llvm_elem_ty else .none;
 
             llvm_param_i += 1;
             total_i += 1;
         }
 
         const ip = &zcu.intern_pool;
-        const aggregate = ip.indexToKey(extra.data.clobbers).aggregate;
+        const aggregate = ip.indexToKey(unwrapped_asm.clobbers).aggregate;
         const struct_type: Type = .fromInterned(aggregate.ty);
         if (total_i != 0) try llvm_constraints.append(gpa, ',');
         switch (aggregate.storage) {
@@ -7539,7 +7516,7 @@ pub const FuncGen = struct {
 
         if (std.mem.endsWith(u8, llvm_constraints.items, ",")) llvm_constraints.items.len -= 1;
 
-        const asm_source = std.mem.sliceAsBytes(self.air.extra.items[extra_i..])[0..extra.data.source_len];
+        const asm_source = unwrapped_asm.source;
 
         // hackety hacks until stage2 has proper inline asm in the frontend.
         var rendered_template = std.array_list.Managed(u8).init(gpa);
