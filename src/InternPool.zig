@@ -4150,6 +4150,13 @@ pub const Index = enum(u32) {
             const extra = ip.getLocalShared(slice.tid).extra.acquire();
             return @ptrCast(extra.view().items(.@"0")[slice.start..][0..slice.len]);
         }
+
+        /// If `slice` is empty (`slice.len == 0`), returns `.none`.
+        /// Otherwise, asserts that `index < slice.len`, and returns the value at `index`.
+        pub fn getOrNone(slice: Slice, ip: *const InternPool, index: usize) Index {
+            if (slice.len == 0) return .none;
+            return slice.get(ip)[index];
+        }
     };
 
     /// Used for a map of `Index` values to the index within a list of `Index` values.
@@ -5980,6 +5987,13 @@ pub const Alignment = enum(u6) {
             const extra = ip.getLocalShared(slice.tid).extra.acquire();
             const bytes: []u8 = @ptrCast(extra.view().items(.@"0")[slice.start..]);
             return @ptrCast(bytes[0..slice.len]);
+        }
+
+        /// If `slice` is empty (`slice.len == 0`), returns `.none`.
+        /// Otherwise, asserts that `index < slice.len`, and returns the value at `index`.
+        pub fn getOrNone(slice: Slice, ip: *const InternPool, index: usize) Alignment {
+            if (slice.len == 0) return .none;
+            return slice.get(ip)[index];
         }
     };
 

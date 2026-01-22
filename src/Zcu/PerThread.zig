@@ -4097,6 +4097,7 @@ pub fn getExtern(pt: Zcu.PerThread, key: InternPool.Key.Extern) Allocator.Error!
 }
 
 // TODO: this shouldn't need a `PerThread`! Fix the signature of `Type.abiAlignment`.
+// MLUGG TODO: that's done, move it!
 pub fn navAlignment(pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) InternPool.Alignment {
     const zcu = pt.zcu;
     const ty: Type, const alignment = switch (zcu.intern_pool.getNav(nav_index).status) {

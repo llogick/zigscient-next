@@ -43261,7 +43261,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 var ops = try cg.tempsFromOperands(inst, .{ bin_op.lhs, bin_op.rhs });
                 try ops[0].toSlicePtr(cg);
                 var res: [1]Temp = undefined;
-                if (!hack_around_sema_opv_bugs or ty_pl.ty.toType().childType(zcu).hasRuntimeBitsIgnoreComptime(zcu)) cg.select(&res, &.{ty_pl.ty.toType()}, &ops, comptime &.{ .{
+                if (!hack_around_sema_opv_bugs or ty_pl.ty.toType().childType(zcu).hasRuntimeBits(zcu)) cg.select(&res, &.{ty_pl.ty.toType()}, &ops, comptime &.{ .{
                     .patterns = &.{
                         .{ .src = .{ .to_gpr, .simm32, .none } },
                     },
@@ -43375,7 +43375,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 var ops = try cg.tempsFromOperands(inst, .{ bin_op.lhs, bin_op.rhs });
                 try ops[0].toSlicePtr(cg);
                 var res: [1]Temp = undefined;
-                if (!hack_around_sema_opv_bugs or ty_pl.ty.toType().childType(zcu).hasRuntimeBitsIgnoreComptime(zcu)) cg.select(&res, &.{ty_pl.ty.toType()}, &ops, comptime &.{ .{
+                if (!hack_around_sema_opv_bugs or ty_pl.ty.toType().childType(zcu).hasRuntimeBits(zcu)) cg.select(&res, &.{ty_pl.ty.toType()}, &ops, comptime &.{ .{
                     .patterns = &.{
                         .{ .src = .{ .to_gpr, .simm32, .none } },
                     },
@@ -103699,7 +103699,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
             .optional_payload => {
                 const ty_op = air_datas[@intFromEnum(inst)].ty_op;
                 var ops = try cg.tempsFromOperands(inst, .{ty_op.operand});
-                const pl = if (!hack_around_sema_opv_bugs or ty_op.ty.toType().hasRuntimeBitsIgnoreComptime(zcu))
+                const pl = if (!hack_around_sema_opv_bugs or ty_op.ty.toType().hasRuntimeBits(zcu))
                     try ops[0].read(ty_op.ty.toType(), .{}, cg)
                 else
                     try cg.tempInit(ty_op.ty.toType(), .none);
@@ -103745,7 +103745,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 const eu_pl_ty = ty_op.ty.toType();
                 const eu_pl_off: i32 = @intCast(codegen.errUnionPayloadOffset(eu_pl_ty, zcu));
                 var ops = try cg.tempsFromOperands(inst, .{ty_op.operand});
-                const pl = if (!hack_around_sema_opv_bugs or eu_pl_ty.hasRuntimeBitsIgnoreComptime(zcu))
+                const pl = if (!hack_around_sema_opv_bugs or eu_pl_ty.hasRuntimeBits(zcu))
                     try ops[0].read(eu_pl_ty, .{ .disp = eu_pl_off }, cg)
                 else
                     try cg.tempInit(eu_pl_ty, .none);
@@ -103864,7 +103864,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                     .@"packed" => unreachable,
                 };
                 var ops = try cg.tempsFromOperands(inst, .{struct_field.struct_operand});
-                var res = if (!hack_around_sema_opv_bugs or field_ty.hasRuntimeBitsIgnoreComptime(zcu))
+                var res = if (!hack_around_sema_opv_bugs or field_ty.hasRuntimeBits(zcu))
                     try ops[0].read(field_ty, .{ .disp = field_off }, cg)
                 else
                     try cg.tempInit(field_ty, .none);
@@ -104125,7 +104125,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 var ops = try cg.tempsFromOperands(inst, .{ bin_op.lhs, bin_op.rhs });
                 try ops[0].toSlicePtr(cg);
                 var res: [1]Temp = undefined;
-                if (!hack_around_sema_opv_bugs or res_ty.hasRuntimeBitsIgnoreComptime(zcu)) cg.select(&res, &.{res_ty}, &ops, comptime &.{ .{
+                if (!hack_around_sema_opv_bugs or res_ty.hasRuntimeBits(zcu)) cg.select(&res, &.{res_ty}, &ops, comptime &.{ .{
                     .dst_constraints = .{ .{ .int = .byte }, .any },
                     .patterns = &.{
                         .{ .src = .{ .to_gpr, .simm32, .none } },
@@ -171422,10 +171422,10 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                             .auto, .@"extern" => {
                                 for (elems, 0..) |elem_ref, field_index| {
                                     const elem_dies = bt.feed();
-                                    if (loaded_struct.fieldIsComptime(ip, field_index)) continue;
-                                    if (!hack_around_sema_opv_bugs or Type.fromInterned(loaded_struct.field_types.get(ip)[field_index]).hasRuntimeBitsIgnoreComptime(zcu)) {
+                                    if (loaded_struct.field_is_comptime_bits.get(ip, field_index)) continue;
+                                    if (!hack_around_sema_opv_bugs or Type.fromInterned(loaded_struct.field_types.get(ip)[field_index]).hasRuntimeBits(zcu)) {
                                         var elem = try cg.tempFromOperand(elem_ref, elem_dies);
-                                        try res.write(&elem, .{ .disp = @intCast(loaded_struct.offsets.get(ip)[field_index]) }, cg);
+                                        try res.write(&elem, .{ .disp = @intCast(loaded_struct.field_offsets.get(ip)[field_index]) }, cg);
                                         try elem.die(cg);
                                         try cg.resetTemps(reset_index);
                                     }
@@ -171441,7 +171441,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                             const elem_dies = bt.feed();
                             if (tuple_type.values.get(ip)[field_index] != .none) continue;
                             const field_type = Type.fromInterned(tuple_type.types.get(ip)[field_index]);
-                            if (!hack_around_sema_opv_bugs or field_type.hasRuntimeBitsIgnoreComptime(zcu)) {
+                            if (!hack_around_sema_opv_bugs or field_type.hasRuntimeBits(zcu)) {
                                 elem_disp = @intCast(field_type.abiAlignment(zcu).forward(elem_disp));
                                 var elem = try cg.tempFromOperand(elem_ref, elem_dies);
                                 try res.write(&elem, .{ .disp = elem_disp }, cg);
@@ -173756,7 +173756,7 @@ fn genLazy(cg: *CodeGen, lazy_sym: link.File.LazySymbol) InnerError!void {
 
             var data_off: i32 = 0;
             const reset_index = cg.next_temp_index;
-            const tag_names = ip.loadEnumType(lazy_sym.ty).names;
+            const tag_names = ip.loadEnumType(lazy_sym.ty).field_names;
             for (0..tag_names.len) |tag_index| {
                 var enum_temp = try cg.tempInit(enum_ty, if (enum_ty.abiSize(zcu) <= @as(u4, switch (cg.target.cpu.arch) {
                     else => unreachable,
@@ -174334,7 +174334,7 @@ fn genUnwrapErrUnionPayloadMir(
     const payload_ty = err_union_ty.errorUnionPayload(zcu);
 
     const result: MCValue = result: {
-        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .none;
+        if (!payload_ty.hasRuntimeBits(zcu)) break :result .none;
 
         const payload_off: u31 = @intCast(codegen.errUnionPayloadOffset(payload_ty, zcu));
         switch (err_union) {
@@ -174450,7 +174450,7 @@ fn load(self: *CodeGen, dst_mcv: MCValue, ptr_ty: Type, ptr_mcv: MCValue) InnerE
     const pt = self.pt;
     const zcu = pt.zcu;
     const dst_ty = ptr_ty.childType(zcu);
-    if (!dst_ty.hasRuntimeBitsIgnoreComptime(zcu)) return;
+    if (!dst_ty.hasRuntimeBits(zcu)) return;
     switch (ptr_mcv) {
         .none,
         .unreach,
@@ -174503,7 +174503,7 @@ fn store(
     const pt = self.pt;
     const zcu = pt.zcu;
     const src_ty = ptr_ty.childType(zcu);
-    if (!src_ty.hasRuntimeBitsIgnoreComptime(zcu)) return;
+    if (!src_ty.hasRuntimeBits(zcu)) return;
     switch (ptr_mcv) {
         .none,
         .unreach,
@@ -176615,7 +176615,7 @@ fn lowerSwitchBr(
             break :condition_index condition_index;
         };
         try cg.spillEflagsIfOccupied();
-        if (min.?.orderAgainstZero(zcu).compare(.neq)) try cg.genBinOpMir(
+        if (Value.compareHetero(min.?, .neq, .zero_comptime_int, zcu)) try cg.genBinOpMir(
             .{ ._, .sub },
             condition_ty,
             condition_index,
@@ -176957,7 +176957,7 @@ fn airSwitchDispatch(self: *CodeGen, inst: Air.Inst.Index) !void {
         const unsigned_condition_ty = try self.pt.intType(.unsigned, self.intInfo(condition_ty).?.bits);
         const condition_mcv = block_tracking.short;
         try self.spillEflagsIfOccupied();
-        if (table.min.orderAgainstZero(self.pt.zcu).compare(.neq)) try self.genBinOpMir(
+        if (Value.compareHetero(table.min, .neq, .zero_comptime_int, self.pt.zcu)) try self.genBinOpMir(
             .{ ._, .sub },
             condition_ty,
             condition_mcv,
@@ -177054,8 +177054,7 @@ fn airBr(self: *CodeGen, inst: Air.Inst.Index) !void {
     const br = self.air.instructions.items(.data)[@intFromEnum(inst)].br;
 
     const block_ty = self.typeOfIndex(br.block_inst);
-    const block_unused =
-        !block_ty.hasRuntimeBitsIgnoreComptime(zcu) or self.liveness.isUnused(br.block_inst);
+    const block_unused = !block_ty.hasRuntimeBits(zcu) or self.liveness.isUnused(br.block_inst);
     const block_tracking = self.inst_tracking.getPtr(br.block_inst).?;
     const block_data = self.blocks.getPtr(br.block_inst).?;
     const first_br = block_data.relocs.items.len == 0;
@@ -180986,7 +180985,7 @@ fn resolveInst(self: *CodeGen, ref: Air.Inst.Ref) InnerError!MCValue {
     const ty = self.typeOf(ref);
 
     // If the type has no codegen bits, no need to store it.
-    if (!ty.hasRuntimeBitsIgnoreComptime(zcu)) return .none;
+    if (!ty.hasRuntimeBits(zcu)) return .none;
 
     const mcv: MCValue = if (ref.toIndex()) |inst| mcv: {
         break :mcv self.inst_tracking.getPtr(inst).?.short;
@@ -181105,7 +181104,7 @@ fn resolveCallingConventionValues(
             // Return values
             if (ret_ty.isNoReturn(zcu)) {
                 result.return_value = .init(.unreach);
-            } else if (!ret_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+            } else if (!ret_ty.hasRuntimeBits(zcu)) {
                 // TODO: is this even possible for C calling convention?
                 result.return_value = .init(.none);
             } else {
@@ -181182,7 +181181,7 @@ fn resolveCallingConventionValues(
 
             // Input params
             params: for (param_types, result.args) |ty, *arg| {
-                assert(ty.hasRuntimeBitsIgnoreComptime(zcu));
+                assert(ty.hasRuntimeBits(zcu));
                 result.air_arg_count += 1;
                 switch (cc) {
                     .x86_64_sysv => {},
@@ -181327,7 +181326,7 @@ fn resolveCallingConventionValues(
             // Return values
             result.return_value = if (ret_ty.isNoReturn(zcu))
                 .init(.unreach)
-            else if (!ret_ty.hasRuntimeBitsIgnoreComptime(zcu))
+            else if (!ret_ty.hasRuntimeBits(zcu))
                 .init(.none)
             else return_value: {
                 const ret_gpr = abi.getCAbiIntReturnRegs(cc);
@@ -181357,7 +181356,7 @@ fn resolveCallingConventionValues(
 
             // Input params
             for (param_types, result.args) |param_ty, *arg| {
-                if (!param_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+                if (!param_ty.hasRuntimeBits(zcu)) {
                     arg.* = .none;
                     continue;
                 }
@@ -181721,7 +181720,7 @@ fn intInfo(cg: *CodeGen, ty: Type) ?std.builtin.Type.Int {
             .one, .many, .c => .{ .signedness = .unsigned, .bits = cg.target.ptrBitWidth() },
             .slice => null,
         },
-        .opt_type => |opt_child| return if (!Type.fromInterned(opt_child).hasRuntimeBitsIgnoreComptime(zcu))
+        .opt_type => |opt_child| return if (!Type.fromInterned(opt_child).hasRuntimeBits(zcu))
             .{ .signedness = .unsigned, .bits = 1 }
         else switch (ip.indexToKey(opt_child)) {
             .ptr_type => |ptr_type| switch (ptr_type.flags.size) {
@@ -181734,7 +181733,7 @@ fn intInfo(cg: *CodeGen, ty: Type) ?std.builtin.Type.Int {
             else => null,
         },
         .error_union_type => |error_union_type| return if (!Type.fromInterned(error_union_type.payload_type)
-            .hasRuntimeBitsIgnoreComptime(zcu)) .{ .signedness = .unsigned, .bits = zcu.errorSetBits() } else null,
+            .hasRuntimeBits(zcu)) .{ .signedness = .unsigned, .bits = zcu.errorSetBits() } else null,
         .simple_type => |simple_type| return switch (simple_type) {
             .bool => .{ .signedness = .unsigned, .bits = 1 },
             .anyerror => .{ .signedness = .unsigned, .bits = zcu.errorSetBits() },
@@ -181767,14 +181766,17 @@ fn intInfo(cg: *CodeGen, ty: Type) ?std.builtin.Type.Int {
             const loaded_struct = ip.loadStructType(ty_index);
             switch (loaded_struct.layout) {
                 .auto, .@"extern" => return null,
-                .@"packed" => ty_index = loaded_struct.backingIntTypeUnordered(ip),
+                .@"packed" => ty_index = loaded_struct.packed_backing_int_type,
             }
         },
-        .union_type => return switch (ip.loadUnionType(ty_index).flagsUnordered(ip).layout) {
-            .auto, .@"extern" => null,
-            .@"packed" => .{ .signedness = .unsigned, .bits = @intCast(ty.bitSize(zcu)) },
+        .union_type => {
+            const loaded_union = ip.loadUnionType(ty_index);
+            switch (loaded_union.layout) {
+                .auto, .@"extern" => return null,
+                .@"packed" => ty_index = loaded_union.packed_backing_int_type,
+            }
         },
-        .enum_type => ty_index = ip.loadEnumType(ty_index).tag_ty,
+        .enum_type => ty_index = ip.loadEnumType(ty_index).int_tag_type,
         .error_set_type, .inferred_error_set_type => return .{ .signedness = .unsigned, .bits = zcu.errorSetBits() },
         else => return null,
     };
