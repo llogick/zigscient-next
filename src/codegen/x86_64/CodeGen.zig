@@ -104121,7 +104121,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
             },
             .slice_elem_val, .ptr_elem_val => {
                 const bin_op = air_datas[@intFromEnum(inst)].bin_op;
-                const res_ty = cg.typeOf(bin_op.lhs).indexablePtrElem(zcu);
+                const res_ty = cg.typeOf(bin_op.lhs).indexableElem(zcu);
                 var ops = try cg.tempsFromOperands(inst, .{ bin_op.lhs, bin_op.rhs });
                 try ops[0].toSlicePtr(cg);
                 var res: [1]Temp = undefined;
@@ -188179,8 +188179,8 @@ const Select = struct {
                     .signed => false,
                     .unsigned => size.bitSize(cg.target) >= int_info.bits,
                 } else false,
-                .elem_size_is => |size| size == ty.indexablePtrElem(zcu).abiSize(zcu),
-                .po2_elem_size => std.math.isPowerOfTwo(ty.indexablePtrElem(zcu).abiSize(zcu)),
+                .elem_size_is => |size| size == ty.indexableElem(zcu).abiSize(zcu),
+                .po2_elem_size => std.math.isPowerOfTwo(ty.indexableElem(zcu).abiSize(zcu)),
             };
         }
     };
@@ -189941,9 +189941,9 @@ const Select = struct {
                     op.flags.base.ref.typeOf(s).scalarType(s.cg.pt.zcu).abiSize(s.cg.pt.zcu),
                     @divExact(op.flags.base.size.bitSize(s.cg.target), 8),
                 )),
-                .elem_size => @intCast(op.flags.base.ref.typeOf(s).scalarType(s.cg.pt.zcu).abiSize(s.cg.pt.zcu)),
-                .src0_elem_size => @intCast(Select.Operand.Ref.src0.typeOf(s).scalarType(s.cg.pt.zcu).abiSize(s.cg.pt.zcu)),
-                .dst0_elem_size => @intCast(Select.Operand.Ref.dst0.typeOf(s).scalarType(s.cg.pt.zcu).abiSize(s.cg.pt.zcu)),
+                .elem_size => @intCast(op.flags.base.ref.typeOf(s).indexableElem(s.cg.pt.zcu).abiSize(s.cg.pt.zcu)),
+                .src0_elem_size => @intCast(Select.Operand.Ref.src0.typeOf(s).indexableElem(s.cg.pt.zcu).abiSize(s.cg.pt.zcu)),
+                .dst0_elem_size => @intCast(Select.Operand.Ref.dst0.typeOf(s).indexableElem(s.cg.pt.zcu).abiSize(s.cg.pt.zcu)),
                 .src0_elem_size_mul_src1 => @intCast(Select.Operand.Ref.src0.typeOf(s).indexableElem(s.cg.pt.zcu).abiSize(s.cg.pt.zcu) *
                     Select.Operand.Ref.src1.valueOf(s).immediate),
                 .vector_index => switch (op.flags.base.ref.typeOf(s).ptrInfo(s.cg.pt.zcu).flags.vector_index) {
@@ -189953,7 +189953,7 @@ const Select = struct {
                 .src1 => @intCast(Select.Operand.Ref.src1.valueOf(s).immediate),
                 .src1_sub_bit_size => @as(SignedImm, @intCast(Select.Operand.Ref.src1.valueOf(s).immediate)) -
                     @as(SignedImm, @intCast(s.cg.nonBoolScalarBitSize(op.flags.base.ref.typeOf(s)))),
-                .log2_src0_elem_size => @intCast(std.math.log2(Select.Operand.Ref.src0.typeOf(s).scalarType(s.cg.pt.zcu).abiSize(s.cg.pt.zcu))),
+                .log2_src0_elem_size => @intCast(std.math.log2(Select.Operand.Ref.src0.typeOf(s).indexableElem(s.cg.pt.zcu).abiSize(s.cg.pt.zcu))),
                 .elem_mask => @as(u8, std.math.maxInt(u8)) >> @intCast(
                     8 - ((s.cg.unalignedSize(op.flags.base.ref.typeOf(s)) - 1) %
                         @divExact(op.flags.base.size.bitSize(s.cg.target), 8) + 1 >>

@@ -821,7 +821,6 @@ fn constant(cg: *CodeGen, ty: Type, val: Value, repr: Repr) Error!Id {
                 .undefined,
                 .void,
                 .null,
-                .empty_tuple,
                 .@"unreachable",
                 => unreachable, // non-runtime values
 
@@ -1150,7 +1149,7 @@ fn constantUavRef(
     }
 
     // const is_fn_body = decl_ty.zigTypeTag(zcu) == .@"fn";
-    if (!uav_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+    if (!uav_ty.hasRuntimeBits(zcu)) {
         // Pointer to nothing - return undefined
         return cg.module.constUndef(ty_id);
     }
@@ -1196,7 +1195,7 @@ fn constantNavRef(cg: *CodeGen, ty: Type, nav_index: InternPool.Nav.Index) !Id {
         },
     }
 
-    if (!nav_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+    if (!nav_ty.hasRuntimeBits(zcu)) {
         // Pointer to nothing - return undefined.
         return cg.module.constUndef(ty_id);
     }
@@ -4381,7 +4380,7 @@ fn airSliceElemVal(cg: *CodeGen, inst: Air.Inst.Index) !?Id {
 fn ptrElemPtr(cg: *CodeGen, ptr_ty: Type, ptr_id: Id, index_id: Id) !Id {
     const zcu = cg.module.zcu;
     // Construct new pointer type for the resulting pointer
-    const elem_ty = ptr_ty.indexablePtrElem(zcu);
+    const elem_ty = ptr_ty.indexableElem(zcu);
     const elem_ty_id = try cg.resolveType(elem_ty, .indirect);
     const elem_ptr_ty_id = try cg.module.ptrType(elem_ty_id, cg.module.storageClass(ptr_ty.ptrAddressSpace(zcu)));
     if (ptr_ty.isSinglePointer(zcu)) {
@@ -5028,7 +5027,7 @@ fn lowerBlock(cg: *CodeGen, inst: Air.Inst.Index, body: []const Air.Inst.Index) 
     const gpa = cg.module.gpa;
     const zcu = cg.module.zcu;
     const ty = cg.typeOfIndex(inst);
-    const have_block_result = ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu);
+    const have_block_result = ty.hasRuntimeBits(zcu);
 
     const cf = switch (cg.control_flow) {
         .structured => |*cf| cf,
@@ -5166,7 +5165,7 @@ fn airBr(cg: *CodeGen, inst: Air.Inst.Index) !void {
 
     switch (cg.control_flow) {
         .structured => |*cf| {
-            if (operand_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+            if (operand_ty.hasRuntimeBits(zcu)) {
                 const operand_id = try cg.resolve(br.operand);
                 const block_result_var_id = cf.block_results.get(br.block_inst).?;
                 try cg.store(operand_ty, block_result_var_id, operand_id, .{});
@@ -5177,7 +5176,7 @@ fn airBr(cg: *CodeGen, inst: Air.Inst.Index) !void {
         },
         .unstructured => |cf| {
             const block = cf.blocks.get(br.block_inst).?;
-            if (operand_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+            if (operand_ty.hasRuntimeBits(zcu)) {
                 const operand_id = try cg.resolve(br.operand);
                 // block_label should not be undefined here, lest there
                 // is a br or br_void in the function's body.

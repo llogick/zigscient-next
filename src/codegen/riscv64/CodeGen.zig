@@ -2673,7 +2673,7 @@ fn genBinOp(
             defer func.register_manager.unlockReg(tmp_lock);
 
             // RISC-V has no immediate mul, so we copy the size to a temporary register
-            const elem_size = lhs_ty.indexablePtrElem(zcu).abiSize(zcu);
+            const elem_size = lhs_ty.indexableElem(zcu).abiSize(zcu);
             const elem_size_reg = try func.copyToTmpRegister(Type.u64, .{ .immediate = elem_size });
 
             try func.genBinOp(
@@ -3913,7 +3913,7 @@ fn airPtrElemVal(func: *Func, inst: Air.Inst.Index) !void {
     const base_ptr_ty = func.typeOf(bin_op.lhs);
 
     const result: MCValue = if (!is_volatile and func.liveness.isUnused(inst)) .unreach else result: {
-        const elem_ty = base_ptr_ty.indexablePtrElem(zcu);
+        const elem_ty = base_ptr_ty.indexableElem(zcu);
         if (!elem_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .none;
         const base_ptr_mcv = try func.resolveInst(bin_op.lhs);
         const base_ptr_lock: ?RegisterLock = switch (base_ptr_mcv) {

@@ -837,6 +837,10 @@ pub const SimpleComptimeReason = enum(u32) {
     tuple_field_types,
     enum_field_names,
     enum_field_values,
+    union_enum_tag_type,
+    enum_int_tag_type,
+    packed_struct_backing_int_type,
+    packed_union_backing_int_type,
 
     // Evaluating at comptime because decl/field name must be comptime-known.
     decl_name,
@@ -924,6 +928,11 @@ pub const SimpleComptimeReason = enum(u32) {
             .tuple_field_types   => "tuple field types must be comptime-known",
             .enum_field_names    => "enum field names must be comptime-known",
             .enum_field_values   => "enum field values must be comptime-known",
+
+            .union_enum_tag_type            => "enum tag type of union must be comptime-known",
+            .enum_int_tag_type              => "integer tag type of enum must be comptime-known",
+            .packed_struct_backing_int_type => "packed struct backing integer type must be comptime-known",
+            .packed_union_backing_int_type  => "packed struct backing integer type must be comptime-known",
 
             .decl_name         => "declaration name must be comptime-known",
             .field_name        => "field name must be comptime-known",

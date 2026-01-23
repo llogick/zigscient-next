@@ -695,20 +695,46 @@ pub fn ensureFileAnalyzed(pt: Zcu.PerThread, file_index: Zcu.File.Index) (Alloca
         .file = file_index,
         .inst = .main_struct_inst,
     });
-    const file_root_type = try Sema.analyzeStructDecl(
-        pt,
-        file_index,
-        &file.zir.?,
-        .none,
-        tracked_inst,
-        &struct_decl,
-        null,
-        &.{},
-        .{ .exact = .{
-            .name = try file.internFullyQualifiedName(pt),
-            .nav = .none,
-        } },
-    );
+    const wip: InternPool.WipContainerType = switch (try ip.getDeclaredStructType(gpa, io, pt.tid, .{
+        .zir_index = tracked_inst,
+        .captures = &.{},
+        .fields_len = @intCast(struct_decl.field_names.len),
+        .layout = struct_decl.layout,
+        .any_comptime_fields = struct_decl.field_comptime_bits != null,
+        .any_field_defaults = struct_decl.field_default_body_lens != null,
+        .any_field_aligns = struct_decl.field_align_body_lens != null,
+        .packed_backing_mode = if (struct_decl.backing_int_type_body != null) .explicit else .auto,
+    })) {
+        .existing => unreachable, // it would have been set as `zcu.fileRootType` already
+        .wip => |wip| wip,
+    };
+    errdefer wip.cancel(ip, pt.tid);
+
+    wip.setName(ip, try file.internFullyQualifiedName(pt), .none);
+    const new_namespace_index: InternPool.NamespaceIndex = try pt.createNamespace(.{
+        .parent = .none,
+        .owner_type = wip.index,
+        .file_scope = file_index,
+        .generation = zcu.generation,
+    });
+    errdefer pt.destroyNamespace(new_namespace_index);
+    try pt.scanNamespace(new_namespace_index, struct_decl.decls);
+    // MLUGG TODO: we could potentially revert this language change if we wanted? don't mind
+    try zcu.comp.queueJob(.{ .analyze_unit = .wrap(.{ .type_layout = wip.index }) });
+    try zcu.comp.queueJob(.{ .analyze_unit = .wrap(.{ .struct_defaults = wip.index }) });
+
+    if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
+
+    try zcu.outdated.ensureUnusedCapacity(gpa, 2);
+    try zcu.outdated_ready.ensureUnusedCapacity(gpa, 2);
+    errdefer comptime unreachable; // because we don't remove the `outdated` entries
+    zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .type_layout = wip.index }), 0);
+    zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .struct_defaults = wip.index }), 0);
+    zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .type_layout = wip.index }), {});
+    zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .struct_defaults = wip.index }), {});
+
+    const file_root_type: Type = .fromInterned(wip.finish(ip, new_namespace_index));
+
     zcu.setFileRootType(file_index, file_root_type.toIntern());
     if (zcu.comp.time_report) |*tr| tr.stats.n_imported_files += 1;
 }
@@ -1048,11 +1074,6 @@ pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void 
 
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
-    // Determine whether or not this type is outdated. For this kind of `AnalUnit`, that's
-    // the only indicator as to whether or not analysis is required; when a struct/union is
-    // first created, it's marked as outdated.
-    // MLUGG TODO: make that actually true, it's a good strategy here!
-
     const was_outdated = zcu.outdated.swapRemove(anal_unit) or
         zcu.potentially_outdated.swapRemove(anal_unit);
 
@@ -1113,17 +1134,11 @@ pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void 
     };
     defer sema.deinit();
 
-    const result = switch (ty.containerLayout(zcu)) {
-        .auto, .@"extern" => switch (ty.zigTypeTag(zcu)) {
-            .@"struct" => Sema.type_resolution.resolveStructLayout(&sema, ty),
-            .@"union" => Sema.type_resolution.resolveUnionLayout(&sema, ty),
-            else => unreachable,
-        },
-        .@"packed" => switch (ty.zigTypeTag(zcu)) {
-            .@"struct" => Sema.type_resolution.resolvePackedStructLayout(&sema, ty),
-            .@"union" => Sema.type_resolution.resolvePackedUnionLayout(&sema, ty),
-            else => unreachable,
-        },
+    const result = switch (ty.zigTypeTag(zcu)) {
+        .@"enum" => Sema.type_resolution.resolveEnumLayout(&sema, ty),
+        .@"struct" => Sema.type_resolution.resolveStructLayout(&sema, ty),
+        .@"union" => Sema.type_resolution.resolveUnionLayout(&sema, ty),
+        else => unreachable,
     };
     result catch |err| switch (err) {
         error.AnalysisFail => {
@@ -1145,36 +1160,31 @@ pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void 
     sema.flushExports() catch |err| switch (err) {
         error.OutOfMemory => |e| return e,
     };
-
-    codegen_type: {
-        if (zcu.comp.config.use_llvm) break :codegen_type;
-        if (file.mod.?.strip) break :codegen_type;
-        zcu.comp.link_prog_node.increaseEstimatedTotalItems(1);
-        try zcu.comp.queueJob(.{ .link_type = ty.toIntern() });
-    }
 }
 
-/// Ensures that the default/tag values of the given `struct` or `enum` type are fully up-to-date,
-/// performing re-analysis if necessary. Asserts that `ty` is a struct (not a tuple!) or an enum.
-/// Returns `error.AnalysisFail` if an analysis error is encountered during resolution; the caller
-/// is free to ignore this, since the error is already registered.
-pub fn ensureTypeInitsUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
+/// Ensures that the default values of the given "declared" (not reified) `struct` type are fully
+/// up-to-date, performing re-analysis if necessary. Asserts that `ty` is a struct (not tuple) type.
+/// Returns `error.AnalysisFail` if an analysis error is encountered while resolving the default
+/// field values; the caller is free to ignore this, since the error is already registered.
+pub fn ensureStructDefaultsUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
     const tracy = trace(@src());
     defer tracy.end();
 
     const zcu = pt.zcu;
     const gpa = zcu.gpa;
 
-    const anal_unit: AnalUnit = .wrap(.{ .type_inits = ty.toIntern() });
+    assert(ty.zigTypeTag(zcu) == .@"struct");
+    assert(!ty.isTuple(zcu));
 
-    log.debug("ensureTypeInitsUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
+    const anal_unit: AnalUnit = .wrap(.{ .struct_defaults = ty.toIntern() });
+
+    log.debug("ensureStructDefaultsUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
 
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
     // Determine whether or not this type is outdated. For this kind of `AnalUnit`, that's
     // the only indicator as to whether or not analysis is required; when a struct/enum is
     // first created, it's marked as outdated.
-    // MLUGG TODO: make that actually true, it's a good strategy here!
 
     const was_outdated = zcu.outdated.swapRemove(anal_unit) or
         zcu.potentially_outdated.swapRemove(anal_unit);
@@ -1194,7 +1204,7 @@ pub fn ensureTypeInitsUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
         }
         // For types, we already know that we have to invalidate all dependees.
         // TODO: we actually *could* detect whether everything was the same. should we bother?
-        try zcu.markDependeeOutdated(.marked_po, .{ .type_inits = ty.toIntern() });
+        try zcu.markDependeeOutdated(.marked_po, .{ .struct_defaults = ty.toIntern() });
     } else {
         // We can trust the current information about this unit.
         if (zcu.failed_analysis.contains(anal_unit)) return error.AnalysisFail;
@@ -1236,12 +1246,7 @@ pub fn ensureTypeInitsUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
     };
     defer sema.deinit();
 
-    const result = switch (ty.zigTypeTag(zcu)) {
-        .@"struct" => Sema.type_resolution.resolveStructDefaults(&sema, ty),
-        .@"enum" => Sema.type_resolution.resolveEnumValues(&sema, ty),
-        else => unreachable,
-    };
-    result catch |err| switch (err) {
+    Sema.type_resolution.resolveStructDefaults(&sema, ty) catch |err| switch (err) {
         error.AnalysisFail => {
             if (!zcu.failed_analysis.contains(anal_unit)) {
                 // If this unit caused the error, it would have an entry in `failed_analysis`.
@@ -1269,20 +1274,6 @@ pub fn ensureTypeInitsUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
 pub fn ensureNavValUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.SemaError!void {
     const tracy = trace(@src());
     defer tracy.end();
-
-    // TODO: document this elsewhere mlugg!
-    // For my own benefit, here's how a namespace update for a normal (non-file-root) type works:
-    // `const S = struct { ... };`
-    // We are adding or removing a declaration within this `struct`.
-    // * `S` registers a dependency on `.{ .src_hash = (declaration of S) }`
-    // * Any change to the `struct` body -- including changing a declaration -- invalidates this
-    // * `S` is re-analyzed, but notes:
-    //   * there is an existing struct instance (at this `TrackedInst` with these captures)
-    //   * the struct's resolution is up-to-date (because nothing about the fields changed)
-    // * so, it uses the same `struct`
-    // * but this doesn't stop it from updating the namespace!
-    //   * we basically do `scanDecls`, updating the namespace as needed
-    // * so everyone lived happily ever after
 
     const zcu = pt.zcu;
     const gpa = zcu.gpa;
@@ -3033,7 +3024,7 @@ fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.Sem
     const zir = file.zir.?;
 
     try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, {});
-    errdefer _ = zcu.analysis_in_progress.swapRemove(anal_unit);
+    defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
 
     func.setAnalyzed(ip, io);
     if (func.analysisUnordered(ip).inferred_error_set) {
@@ -3230,9 +3221,6 @@ fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.Sem
         assert(ies.resolved != .none);
         func.setResolvedErrorSet(ip, io, ies.resolved);
     }
-
-    // MLUGG TODO: i think this can go away and the assert move to the defer?
-    assert(zcu.analysis_in_progress.swapRemove(anal_unit));
 
     try sema.flushExports();
 
@@ -3835,7 +3823,6 @@ pub fn enumValue(pt: Zcu.PerThread, ty: Type, tag_int: InternPool.Index) Allocat
 /// declaration order.
 pub fn enumValueFieldIndex(pt: Zcu.PerThread, ty: Type, field_index: u32) Allocator.Error!Value {
     const ip = &pt.zcu.intern_pool;
-    ty.assertHasInits(pt.zcu);
     const enum_type = ip.loadEnumType(ty.toIntern());
 
     assert(field_index < enum_type.field_names.len);
@@ -3859,7 +3846,9 @@ pub fn enumValueFieldIndex(pt: Zcu.PerThread, ty: Type, field_index: u32) Alloca
 
 pub fn undefValue(pt: Zcu.PerThread, ty: Type) Allocator.Error!Value {
     if (std.debug.runtime_safety) {
-        assert(try ty.onePossibleValue(pt) == null);
+        if (try ty.onePossibleValue(pt)) |opv| {
+            assert(opv.isUndef(pt.zcu));
+        }
     }
     return .fromInterned(try pt.intern(.{ .undef = ty.toIntern() }));
 }
@@ -3941,7 +3930,10 @@ pub fn aggregateValue(pt: Zcu.PerThread, ty: Type, elems: []const InternPool.Ind
     for (elems) |elem| {
         if (!Value.fromInterned(elem).isUndef(pt.zcu)) break;
     } else if (elems.len > 0) {
-        return pt.undefValue(ty); // all-undef
+        // All undef, so return an undef struct. However, don't use `undefValue`, because its
+        // non-OPV assertion can loop on `[1]@TypeOf(undefined)`: that type has an OPV of
+        // `.{undefined}`, which here we normalize to `undefined`.
+        return .fromInterned(try pt.intern(.{ .undef = ty.toIntern() }));
     }
     return .fromInterned(try pt.intern(.{ .aggregate = .{
         .ty = ty.toIntern(),
@@ -4094,19 +4086,6 @@ pub fn getExtern(pt: Zcu.PerThread, key: InternPool.Key.Extern) Allocator.Error!
         if (comp.debugIncremental()) try zcu.incremental_debug_state.newNav(zcu, nav);
     }
     return result.index;
-}
-
-// TODO: this shouldn't need a `PerThread`! Fix the signature of `Type.abiAlignment`.
-// MLUGG TODO: that's done, move it!
-pub fn navAlignment(pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) InternPool.Alignment {
-    const zcu = pt.zcu;
-    const ty: Type, const alignment = switch (zcu.intern_pool.getNav(nav_index).status) {
-        .unresolved => unreachable,
-        .type_resolved => |r| .{ .fromInterned(r.type), r.alignment },
-        .fully_resolved => |r| .{ Value.fromInterned(r.val).typeOf(zcu), r.alignment },
-    };
-    if (alignment != .none) return alignment;
-    return ty.abiAlignment(zcu);
 }
 
 /// Given a namespace, re-scan its declarations from the type definition if they have not
@@ -4393,7 +4372,7 @@ pub fn resolveTypeForCodegen(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
         .@"struct" => switch (ip.indexToKey(ty.toIntern())) {
             .struct_type => {
                 try pt.ensureTypeLayoutUpToDate(ty);
-                try pt.ensureTypeInitsUpToDate(ty);
+                try pt.ensureStructDefaultsUpToDate(ty);
             },
             .tuple_type => |tuple| for (0..tuple.types.len) |i| {
                 const field_is_comptime = tuple.values.get(ip)[i] != .none;
@@ -4405,7 +4384,7 @@ pub fn resolveTypeForCodegen(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
         },
 
         .@"union" => try pt.ensureTypeLayoutUpToDate(ty),
-        .@"enum" => try pt.ensureTypeInitsUpToDate(ty),
+        .@"enum" => try pt.ensureTypeLayoutUpToDate(ty),
     }
 }
 pub fn resolveValueTypesForCodegen(pt: Zcu.PerThread, val: Value) Zcu.SemaError!void {

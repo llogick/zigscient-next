@@ -307,7 +307,7 @@ fn handleCommand(zcu: *Zcu, w: *Io.Writer, cmd_str: []const u8, arg_str: []const
             switch (dependee) {
                 .src_hash, .namespace, .namespace_name, .zon_file, .embed_file => try w.print("{f}", .{zcu.fmtDependee(dependee)}),
                 .nav_val, .nav_ty => |nav| try w.print("{t} {d}", .{ dependee, @intFromEnum(nav) }),
-                .type_layout, .type_inits, .func_ies => |ip_index| try w.print("{t} {d}", .{ dependee, @intFromEnum(ip_index) }),
+                .type_layout, .struct_defaults, .func_ies => |ip_index| try w.print("{t} {d}", .{ dependee, @intFromEnum(ip_index) }),
                 .memoized_state => |stage| try w.print("memoized_state {s}", .{@tagName(stage)}),
             }
             try w.writeByte('\n');
@@ -374,8 +374,8 @@ fn parseAnalUnit(str: []const u8) ?AnalUnit {
         return .wrap(.{ .nav_ty = @enumFromInt(parseIndex(idx_str) orelse return null) });
     } else if (std.mem.eql(u8, kind, "type_layout")) {
         return .wrap(.{ .type_layout = @enumFromInt(parseIndex(idx_str) orelse return null) });
-    } else if (std.mem.eql(u8, kind, "type_inits")) {
-        return .wrap(.{ .type_inits = @enumFromInt(parseIndex(idx_str) orelse return null) });
+    } else if (std.mem.eql(u8, kind, "struct_defaults")) {
+        return .wrap(.{ .struct_defaults = @enumFromInt(parseIndex(idx_str) orelse return null) });
     } else if (std.mem.eql(u8, kind, "func")) {
         return .wrap(.{ .func = @enumFromInt(parseIndex(idx_str) orelse return null) });
     } else if (std.mem.eql(u8, kind, "memoized_state")) {

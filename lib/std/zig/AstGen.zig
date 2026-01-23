@@ -4922,24 +4922,14 @@ fn structDeclInner(
 
     astgen.advanceSourceCursorToNode(node);
 
-    const backing_int_type_ref: Zir.Inst.Ref = ty: {
-        const backing_int_node = maybe_backing_int_node.unwrap() orelse break :ty .none;
-        if (layout != .@"packed") return astgen.failNode(
-            backing_int_node,
-            "non-packed struct does not support backing integer type",
-            .{},
-        );
-        break :ty try typeExpr(gz, scope, backing_int_node);
-    };
-
     const decl_inst = try gz.reserveInstructionIndex();
 
-    if (container_decl.ast.members.len == 0 and backing_int_type_ref == .none) {
+    if (container_decl.ast.members.len == 0 and maybe_backing_int_node == .none) {
         try gz.setStruct(decl_inst, .{
             .src_node = node,
             .name_strat = name_strat,
             .layout = layout,
-            .backing_int_type = .none,
+            .backing_int_type_body_len = null,
             .decls_len = 0,
             .fields_len = 0,
             .any_field_aligns = false,
@@ -4992,6 +4982,22 @@ fn structDeclInner(
         std.math.divCeil(u32, scan_result.fields_len, 32) catch unreachable,
     );
     if (field_comptime_bits) |bits| @memset(bits.get(astgen), 0);
+
+    // Before any field bodies comes the backing int type, if specified.
+    const backing_int_type_body_len: ?u32 = if (maybe_backing_int_node.unwrap()) |backing_int_node| len: {
+        if (layout != .@"packed") return astgen.failNode(
+            backing_int_node,
+            "non-packed struct does not support backing integer type",
+            .{},
+        );
+        const type_ref = try typeExpr(&block_scope, &namespace.base, backing_int_node);
+        if (!block_scope.endsWithNoReturn()) {
+            _ = try block_scope.addBreak(.break_inline, decl_inst, type_ref);
+        }
+        const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+        block_scope.instructions.items.len = block_scope.instructions_top;
+        break :len body_len;
+    } else null;
 
     const old_hasher = astgen.src_hasher;
     defer astgen.src_hasher = old_hasher;
@@ -5076,7 +5082,7 @@ fn structDeclInner(
         .src_node = node,
         .name_strat = name_strat,
         .layout = layout,
-        .backing_int_type = backing_int_type_ref,
+        .backing_int_type_body_len = backing_int_type_body_len,
         .decls_len = scan_result.decls_len,
         .fields_len = scan_result.fields_len,
         .any_field_aligns = scan_result.any_field_aligns,
@@ -5220,11 +5226,6 @@ fn unionDeclInner(
 
     astgen.advanceSourceCursorToNode(node);
 
-    const arg_type_ref: Zir.Inst.Ref = ref: {
-        const arg_node = opt_arg_node.unwrap() orelse break :ref .none;
-        break :ref try typeExpr(gz, scope, arg_node);
-    };
-
     const decl_inst = try gz.reserveInstructionIndex();
 
     var namespace: Scope.Namespace = .{
@@ -5261,6 +5262,17 @@ fn unionDeclInner(
     const field_type_body_lens = try scratch.addSlice(scan_result.fields_len);
     const field_align_body_lens = try scratch.addOptionalSlice(scan_result.any_field_aligns, scan_result.fields_len);
     const field_value_body_lens = try scratch.addOptionalSlice(scan_result.any_field_values, scan_result.fields_len);
+
+    // Before any field bodies comes the tag/backing type, if specified.
+    const arg_type_body_len: ?u32 = if (opt_arg_node.unwrap()) |arg_node| len: {
+        const type_ref = try typeExpr(&block_scope, &namespace.base, arg_node);
+        if (!block_scope.endsWithNoReturn()) {
+            _ = try block_scope.addBreak(.break_inline, decl_inst, type_ref);
+        }
+        const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+        block_scope.instructions.items.len = block_scope.instructions_top;
+        break :len body_len;
+    } else null;
 
     const old_hasher = astgen.src_hasher;
     defer astgen.src_hasher = old_hasher;
@@ -5358,7 +5370,7 @@ fn unionDeclInner(
             .@"extern" => .@"extern",
             .@"packed" => if (opt_arg_node != .none) .packed_explicit else .@"packed",
         },
-        .arg_type = arg_type_ref,
+        .arg_type_body_len = arg_type_body_len,
         .decls_len = scan_result.decls_len,
         .fields_len = scan_result.fields_len,
         .any_field_aligns = scan_result.any_field_aligns,
@@ -5420,11 +5432,6 @@ fn containerDecl(
 
             astgen.advanceSourceCursorToNode(node);
 
-            const tag_type_ref: Zir.Inst.Ref = ref: {
-                const arg_node = container_decl.ast.arg.unwrap() orelse break :ref .none;
-                break :ref try typeExpr(gz, scope, arg_node);
-            };
-
             const decl_inst = try gz.reserveInstructionIndex();
 
             var namespace: Scope.Namespace = .{
@@ -5460,6 +5467,17 @@ fn containerDecl(
             var wip_decls: WipDecls = try .init(&scratch, scan_result.decls_len);
             const field_names = try scratch.addSlice(fields_len);
             const field_value_body_lens = try scratch.addOptionalSlice(scan_result.any_field_values, fields_len);
+
+            // Before any field bodies comes the tag type, if specified.
+            const tag_type_body_len: ?u32 = if (container_decl.ast.arg.unwrap()) |tag_type_node| len: {
+                const type_ref = try typeExpr(&block_scope, &namespace.base, tag_type_node);
+                if (!block_scope.endsWithNoReturn()) {
+                    _ = try block_scope.addBreak(.break_inline, decl_inst, type_ref);
+                }
+                const body_len = try scratch.appendBodyWithFixups(block_scope.instructionsSlice());
+                block_scope.instructions.items.len = block_scope.instructions_top;
+                break :len body_len;
+            } else null;
 
             const old_hasher = astgen.src_hasher;
             defer astgen.src_hasher = old_hasher;
@@ -5508,7 +5526,7 @@ fn containerDecl(
                 field_names.get(astgen)[field_idx] = @intFromEnum(try astgen.identAsString(member.ast.main_token));
 
                 if (member.ast.value_expr.unwrap()) |value_node| {
-                    if (tag_type_ref == .none) {
+                    if (tag_type_body_len == null) {
                         return astgen.failNodeNotes(node, "explicitly valued enum missing integer tag type", .{}, &.{
                             try astgen.errNoteNode(value_node, "tag value specified here", .{}),
                         });
@@ -5535,7 +5553,7 @@ fn containerDecl(
             try gz.setEnum(decl_inst, .{
                 .src_node = node,
                 .name_strat = name_strat,
-                .tag_type = tag_type_ref,
+                .tag_type_body_len = tag_type_body_len,
                 .nonexhaustive = scan_result.has_underscore_field,
                 .decls_len = scan_result.decls_len,
                 .fields_len = fields_len,
@@ -12406,7 +12424,7 @@ const GenZir = struct {
         src_node: Ast.Node.Index,
         name_strat: Zir.Inst.NameStrategy,
         layout: std.builtin.Type.ContainerLayout,
-        backing_int_type: Zir.Inst.Ref,
+        backing_int_type_body_len: ?u32,
         decls_len: u32,
         fields_len: u32,
         any_field_aligns: bool,
@@ -12430,7 +12448,7 @@ const GenZir = struct {
         const fields_hash_arr: [4]u32 = @bitCast(args.fields_hash);
 
         try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.StructDecl).@"struct".fields.len +
-            4 + // `captures_len`, `decls_len`, `fields_len`, `backing_int_type`
+            4 + // `captures_len`, `decls_len`, `fields_len`, `backing_int_type_body_len`
             captures_len * 2 + // `capture`, `capture_name`
             args.remaining.len);
 
@@ -12446,7 +12464,7 @@ const GenZir = struct {
         if (captures_len != 0) astgen.extra.appendAssumeCapacity(captures_len);
         if (args.decls_len != 0) astgen.extra.appendAssumeCapacity(args.decls_len);
         if (args.fields_len != 0) astgen.extra.appendAssumeCapacity(args.fields_len);
-        if (args.backing_int_type != .none) astgen.extra.appendAssumeCapacity(@intFromEnum(args.backing_int_type));
+        if (args.backing_int_type_body_len) |n| astgen.extra.appendAssumeCapacity(n);
         astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.captures));
         astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.capture_names));
         astgen.extra.appendSliceAssumeCapacity(args.remaining);
@@ -12461,7 +12479,7 @@ const GenZir = struct {
                     .has_fields_len = args.fields_len != 0,
                     .name_strategy = args.name_strat,
                     .layout = args.layout,
-                    .has_backing_int_type = args.backing_int_type != .none,
+                    .has_backing_int_type = args.backing_int_type_body_len != null,
                     .any_field_aligns = args.any_field_aligns,
                     .any_field_defaults = args.any_field_defaults,
                     .any_comptime_fields = args.any_comptime_fields,
@@ -12475,7 +12493,7 @@ const GenZir = struct {
         src_node: Ast.Node.Index,
         name_strat: Zir.Inst.NameStrategy,
         kind: Zir.Inst.UnionDecl.Kind,
-        arg_type: Zir.Inst.Ref,
+        arg_type_body_len: ?u32,
         decls_len: u32,
         fields_len: u32,
         any_field_aligns: bool,
@@ -12497,7 +12515,7 @@ const GenZir = struct {
         const fields_hash_arr: [4]u32 = @bitCast(args.fields_hash);
 
         try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.UnionDecl).@"struct".fields.len +
-            4 + // `captures_len`, `decls_len`, `fields_len`, `backing_int_type`
+            4 + // `captures_len`, `decls_len`, `fields_len`, `arg_type_body_len`
             captures_len * 2 + // `capture`, `capture_name`
             args.remaining.len);
 
@@ -12514,10 +12532,9 @@ const GenZir = struct {
         if (args.decls_len != 0) astgen.extra.appendAssumeCapacity(args.decls_len);
         if (args.fields_len != 0) astgen.extra.appendAssumeCapacity(args.fields_len);
         if (args.kind.hasArgType()) {
-            assert(args.arg_type != .none);
-            astgen.extra.appendAssumeCapacity(@intFromEnum(args.arg_type));
+            astgen.extra.appendAssumeCapacity(args.arg_type_body_len.?);
         } else {
-            assert(args.arg_type == .none);
+            assert(args.arg_type_body_len == null);
         }
         astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.captures));
         astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.capture_names));
@@ -12525,28 +12542,26 @@ const GenZir = struct {
 
         astgen.instructions.set(@intFromEnum(inst), .{
             .tag = .extended,
-            .data = .{
-                .extended = .{
-                    .opcode = .union_decl,
-                    .small = @bitCast(Zir.Inst.UnionDecl.Small{
-                        .has_captures_len = captures_len != 0,
-                        .has_decls_len = args.decls_len != 0,
-                        .has_fields_len = args.fields_len != 0,
-                        .name_strategy = args.name_strat,
-                        .kind = args.kind,
-                        .any_field_aligns = args.any_field_aligns,
-                        .any_field_values = args.any_field_values,
-                    }),
-                    .operand = payload_index,
-                },
-            },
+            .data = .{ .extended = .{
+                .opcode = .union_decl,
+                .small = @bitCast(Zir.Inst.UnionDecl.Small{
+                    .has_captures_len = captures_len != 0,
+                    .has_decls_len = args.decls_len != 0,
+                    .has_fields_len = args.fields_len != 0,
+                    .name_strategy = args.name_strat,
+                    .kind = args.kind,
+                    .any_field_aligns = args.any_field_aligns,
+                    .any_field_values = args.any_field_values,
+                }),
+                .operand = payload_index,
+            } },
         });
     }
 
     fn setEnum(gz: *GenZir, inst: Zir.Inst.Index, args: struct {
         src_node: Ast.Node.Index,
         name_strat: Zir.Inst.NameStrategy,
-        tag_type: Zir.Inst.Ref,
+        tag_type_body_len: ?u32,
         nonexhaustive: bool,
         decls_len: u32,
         fields_len: u32,
@@ -12568,7 +12583,7 @@ const GenZir = struct {
         const fields_hash_arr: [4]u32 = @bitCast(args.fields_hash);
 
         try astgen.extra.ensureUnusedCapacity(gpa, @typeInfo(Zir.Inst.EnumDecl).@"struct".fields.len +
-            4 + // `captures_len`, `decls_len`, `fields_len`, `tag_type`
+            4 + // `captures_len`, `decls_len`, `fields_len`, `tag_type_body_len`
             captures_len * 2 + // `capture`, `capture_name`
             args.remaining.len);
 
@@ -12584,7 +12599,7 @@ const GenZir = struct {
         if (captures_len != 0) astgen.extra.appendAssumeCapacity(captures_len);
         if (args.decls_len != 0) astgen.extra.appendAssumeCapacity(args.decls_len);
         if (args.fields_len != 0) astgen.extra.appendAssumeCapacity(args.fields_len);
-        if (args.tag_type != .none) astgen.extra.appendAssumeCapacity(@intFromEnum(args.tag_type));
+        if (args.tag_type_body_len) |n| astgen.extra.appendAssumeCapacity(n);
         astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.captures));
         astgen.extra.appendSliceAssumeCapacity(@ptrCast(args.capture_names));
         astgen.extra.appendSliceAssumeCapacity(args.remaining);
@@ -12598,7 +12613,7 @@ const GenZir = struct {
                     .has_decls_len = args.decls_len != 0,
                     .has_fields_len = args.fields_len != 0,
                     .name_strategy = args.name_strat,
-                    .has_tag_type = args.tag_type != .none,
+                    .has_tag_type = args.tag_type_body_len != null,
                     .nonexhaustive = args.nonexhaustive,
                     .any_field_values = args.any_field_values,
                 }),

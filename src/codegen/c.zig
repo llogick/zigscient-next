@@ -789,7 +789,7 @@ pub const DeclGen = struct {
 
         // Render an undefined pointer if we have a pointer to a zero-bit or comptime type.
         const ptr_ty: Type = .fromInterned(uav.orig_ty);
-        if (ptr_ty.isPtrAtRuntime(zcu) and !uav_ty.isFnOrHasRuntimeBits(zcu)) {
+        if (ptr_ty.isPtrAtRuntime(zcu) and !uav_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
             return dg.writeCValue(w, .{ .undef = ptr_ty });
         }
 
@@ -862,7 +862,7 @@ pub const DeclGen = struct {
         // Render an undefined pointer if we have a pointer to a zero-bit or comptime type.
         const nav_ty: Type = .fromInterned(ip.getNav(owner_nav).typeOf(ip));
         const ptr_ty = try pt.navPtrType(owner_nav);
-        if (!nav_ty.isFnOrHasRuntimeBits(zcu)) {
+        if (!nav_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
             return dg.writeCValue(w, .{ .undef = ptr_ty });
         }
 
@@ -1043,7 +1043,6 @@ pub const DeclGen = struct {
                 .undefined => unreachable,
                 .void => unreachable,
                 .null => unreachable,
-                .empty_tuple => unreachable,
                 .@"unreachable" => unreachable,
 
                 .false => try w.writeAll("false"),
@@ -3077,7 +3076,7 @@ pub fn genDecl(o: *Object) Error!void {
     const nav = ip.getNav(o.dg.pass.nav);
     const nav_ty: Type = .fromInterned(nav.typeOf(ip));
 
-    if (!nav_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) return;
+    if (!nav_ty.hasRuntimeBits(zcu)) return;
     switch (ip.indexToKey(nav.status.fully_resolved.val)) {
         .@"extern" => |@"extern"| {
             if (!ip.isFunctionType(nav_ty.toIntern())) return o.dg.renderFwdDecl(o.dg.pass.nav, .{
@@ -3676,7 +3675,7 @@ fn airPtrElemPtr(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const inst_ty = f.typeOfIndex(inst);
     const ptr_ty = f.typeOf(bin_op.lhs);
-    const elem_has_bits = ptr_ty.indexablePtrElem(zcu).hasRuntimeBitsIgnoreComptime(zcu);
+    const elem_has_bits = ptr_ty.indexableElem(zcu).hasRuntimeBitsIgnoreComptime(zcu);
 
     const ptr = try f.resolveInst(bin_op.lhs);
     const index = try f.resolveInst(bin_op.rhs);
@@ -3792,7 +3791,7 @@ fn airAlloc(f: *Function, inst: Air.Inst.Index) !CValue {
     const zcu = pt.zcu;
     const inst_ty = f.typeOfIndex(inst);
     const elem_ty = inst_ty.childType(zcu);
-    if (!elem_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) return .{ .undef = inst_ty };
+    if (!elem_ty.hasRuntimeBits(zcu)) return .{ .undef = inst_ty };
 
     const local = try f.allocLocalValue(.{
         .ctype = try f.ctypeFromType(elem_ty, .complete),
@@ -3829,7 +3828,7 @@ fn airRetPtr(f: *Function, inst: Air.Inst.Index) !CValue {
     const zcu = pt.zcu;
     const inst_ty = f.typeOfIndex(inst);
     const elem_ty = inst_ty.childType(zcu);
-    if (!elem_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) return .{ .undef = inst_ty };
+    if (!elem_ty.hasRuntimeBits(zcu)) return .{ .undef = inst_ty };
 
     const local = try f.allocLocalValue(.{
         .ctype = try f.ctypeFromType(elem_ty, .complete),
@@ -4502,7 +4501,7 @@ fn airPtrAddSub(f: *Function, inst: Air.Inst.Index, operator: u8) !CValue {
 
     const inst_ty = f.typeOfIndex(inst);
     const inst_scalar_ty = inst_ty.scalarType(zcu);
-    const elem_ty = inst_scalar_ty.indexablePtrElem(zcu);
+    const elem_ty = inst_scalar_ty.indexableElem(zcu);
     if (!elem_ty.hasRuntimeBitsIgnoreComptime(zcu)) return f.moveCValue(inst, inst_ty, lhs);
     const inst_scalar_ctype = try f.ctypeFromType(inst_scalar_ty, .complete);
 
@@ -7037,7 +7036,7 @@ fn airMemcpy(f: *Function, inst: Air.Inst.Index, function_paren: []const u8) !CV
     try w.writeAll(", ");
     try writeArrayLen(f, dest_ptr, dest_ty);
     try w.writeAll(" * sizeof(");
-    try f.renderType(w, dest_ty.indexablePtrElem(zcu));
+    try f.renderType(w, dest_ty.indexableElem(zcu));
     try w.writeAll("));");
     try f.object.newline();
 

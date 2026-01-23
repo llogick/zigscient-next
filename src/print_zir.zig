@@ -1439,10 +1439,10 @@ const Writer = struct {
 
         try stream.print("{s}, ", .{@tagName(struct_decl.name_strategy)});
 
-        if (struct_decl.backing_int_type != .none) {
+        if (struct_decl.backing_int_type_body) |backing_int_type_body| {
             assert(struct_decl.layout == .@"packed");
             try stream.writeAll("packed(");
-            try self.writeInstRef(stream, struct_decl.backing_int_type);
+            try self.writeBracedDecl(stream, backing_int_type_body);
             try stream.writeAll("), ");
         } else {
             try stream.print("{s}, ", .{@tagName(struct_decl.layout)});
@@ -1507,18 +1507,18 @@ const Writer = struct {
             .@"packed" => try stream.writeAll("packed, "),
             .packed_explicit => {
                 try stream.writeAll("packed(");
-                try self.writeInstRef(stream, union_decl.arg_type);
+                try self.writeBracedDecl(stream, union_decl.arg_type_body.?);
                 try stream.writeAll("), ");
             },
             .tagged_explicit => {
-                try stream.writeAll("auto(");
-                try self.writeInstRef(stream, union_decl.arg_type);
+                try stream.writeAll("tagged(");
+                try self.writeBracedDecl(stream, union_decl.arg_type_body.?);
                 try stream.writeAll("), ");
             },
-            .tagged_enum => try stream.writeAll("auto(enum)"),
+            .tagged_enum => try stream.writeAll("tagged(enum), "),
             .tagged_enum_explicit => {
-                try stream.writeAll("auto(enum(");
-                try self.writeInstRef(stream, union_decl.arg_type);
+                try stream.writeAll("tagged(enum(");
+                try self.writeBracedDecl(stream, union_decl.arg_type_body.?);
                 try stream.writeAll(")), ");
             },
         }
@@ -1577,7 +1577,11 @@ const Writer = struct {
 
         try stream.print("{s}, ", .{@tagName(enum_decl.name_strategy)});
         try self.writeFlag(stream, "nonexhaustive, ", enum_decl.nonexhaustive);
-        try self.writeInstRef(stream, enum_decl.tag_type);
+        if (enum_decl.tag_type_body) |tag_type_body| {
+            try stream.writeAll("tag(");
+            try self.writeBracedDecl(stream, tag_type_body);
+            try stream.writeAll("), ");
+        }
 
         try self.writeCaptures(stream, enum_decl.captures, enum_decl.capture_names);
         try stream.writeAll(", ");
@@ -1585,9 +1589,9 @@ const Writer = struct {
         try stream.writeAll(", ");
 
         if (enum_decl.field_names.len == 0) {
-            try stream.writeAll(", {}) ");
+            try stream.writeAll("{}) ");
         } else {
-            try stream.writeAll(", {\n");
+            try stream.writeAll("{\n");
             self.indent += 2;
 
             var it = enum_decl.iterateFields();

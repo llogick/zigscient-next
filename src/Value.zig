@@ -2207,7 +2207,7 @@ pub fn pointerDerivationAdvanced(ptr_val: Value, arena: Allocator, pt: Zcu.PerTh
 
     const ptr_ty_info = Type.fromInterned(ptr.ty).ptrInfo(zcu);
     const need_child: Type = .fromInterned(ptr_ty_info.child);
-    if (need_child.comptimeOnly(zcu)) {
+    if (need_child.comptimeOnly(zcu) or need_child.zigTypeTag(zcu) == .@"opaque") {
         // No refinement can happen - this pointer is presumably invalid.
         // Just offset it.
         const parent = try arena.create(PointerDeriveStep);
@@ -2595,8 +2595,8 @@ pub fn uninterpret(val: anytype, ty: Type, pt: Zcu.PerThread) error{ OutOfMemory
 pub fn doPointersOverlap(ptr_val_a: Value, ptr_val_b: Value, elem_count: u64, zcu: *const Zcu) bool {
     const ip = &zcu.intern_pool;
 
-    const a_elem_ty = ptr_val_a.typeOf(zcu).indexablePtrElem(zcu);
-    const b_elem_ty = ptr_val_b.typeOf(zcu).indexablePtrElem(zcu);
+    const a_elem_ty = ptr_val_a.typeOf(zcu).indexableElem(zcu);
+    const b_elem_ty = ptr_val_b.typeOf(zcu).indexableElem(zcu);
 
     const a_ptr = ip.indexToKey(ptr_val_a.toIntern()).ptr;
     const b_ptr = ip.indexToKey(ptr_val_b.toIntern()).ptr;
@@ -2681,4 +2681,59 @@ pub fn eqlScalarNum(lhs: Value, rhs: Value, zcu: *Zcu) bool {
     const lhs_bigint = lhs.toBigInt(&lhs_bigint_space, zcu);
     const rhs_bigint = rhs.toBigInt(&rhs_bigint_space, zcu);
     return lhs_bigint.eql(rhs_bigint);
+}
+
+/// Asserts the value is an integer, and the destination type is ComptimeInt or Int.
+/// Vectors are also accepted. Vector results are reduced with AND.
+///
+/// If provided, `vector_index` reports the first element that failed the range check.
+pub fn intFitsInType(
+    val: Value,
+    ty: Type,
+    vector_index: ?*usize,
+    zcu: *const Zcu,
+) bool {
+    if (ty.toIntern() == .comptime_int_type) return true;
+    const info = ty.intInfo(zcu);
+    switch (val.toIntern()) {
+        .zero_usize, .zero_u8 => return true,
+        else => switch (zcu.intern_pool.indexToKey(val.toIntern())) {
+            .undef => return true,
+            .variable, .@"extern", .func, .ptr => {
+                const target = zcu.getTarget();
+                const ptr_bits = target.ptrBitWidth();
+                return switch (info.signedness) {
+                    .signed => info.bits > ptr_bits,
+                    .unsigned => info.bits >= ptr_bits,
+                };
+            },
+            .int => |int| {
+                var buffer: InternPool.Key.Int.Storage.BigIntSpace = undefined;
+                const big_int = int.storage.toBigInt(&buffer);
+                return big_int.fitsInTwosComp(info.signedness, info.bits);
+            },
+            .aggregate => |aggregate| {
+                assert(ty.zigTypeTag(zcu) == .vector);
+                return switch (aggregate.storage) {
+                    .bytes => |bytes| for (bytes.toSlice(ty.vectorLen(zcu), &zcu.intern_pool), 0..) |byte, i| {
+                        if (byte == 0) continue;
+                        const actual_needed_bits = std.math.log2(byte) + 1 + @intFromBool(info.signedness == .signed);
+                        if (info.bits >= actual_needed_bits) continue;
+                        if (vector_index) |vi| vi.* = i;
+                        break false;
+                    } else true,
+                    .elems, .repeated_elem => for (switch (aggregate.storage) {
+                        .bytes => unreachable,
+                        .elems => |elems| elems,
+                        .repeated_elem => |elem| @as(*const [1]InternPool.Index, &elem),
+                    }, 0..) |elem, i| {
+                        if (Value.fromInterned(elem).intFitsInType(ty.scalarType(zcu), null, zcu)) continue;
+                        if (vector_index) |vi| vi.* = i;
+                        break false;
+                    } else true,
+                };
+            },
+            else => unreachable,
+        },
+    }
 }

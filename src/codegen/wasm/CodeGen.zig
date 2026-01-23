@@ -2099,7 +2099,7 @@ fn airRetPtr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const child_type = cg.typeOfIndex(inst).childType(zcu);
 
     const result = result: {
-        if (!child_type.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!child_type.hasRuntimeBits(zcu)) {
             break :result try cg.allocStack(Type.usize); // create pointer to void
         }
 
@@ -3161,7 +3161,6 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
             .undefined,
             .void,
             .null,
-            .empty_tuple,
             .@"unreachable",
             => unreachable, // non-runtime values
             .false, .true => return .{ .imm32 = switch (simple_value) {

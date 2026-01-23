@@ -437,6 +437,7 @@ pub fn toValue(self: Type) Value {
 ///   - an enum with an explicit tag type has the ABI size of the integer tag type,
 ///     making it one-possible-value only if the integer tag type has 0 bits.
 pub fn hasRuntimeBits(ty: Type, zcu: *const Zcu) bool {
+    ty.assertHasLayout(zcu);
     const ip = &zcu.intern_pool;
     return switch (ip.indexToKey(ty.toIntern())) {
         .int_type => |int_type| int_type.bits != 0,
@@ -499,14 +500,18 @@ pub fn hasRuntimeBits(ty: Type, zcu: *const Zcu) bool {
             .generic_poison => unreachable,
         },
         .struct_type => {
-            // TODO MLUGG: memoize this state when resolving struct?
             const struct_obj = ip.loadStructType(ty.toIntern());
-            for (struct_obj.field_types.get(ip), 0..) |field_ty_ip, field_idx| {
-                if (struct_obj.field_is_comptime_bits.get(ip, field_idx)) continue;
-                const field_ty: Type = .fromInterned(field_ty_ip);
-                if (field_ty.hasRuntimeBits(zcu)) return true;
+            switch (struct_obj.layout) {
+                .auto, .@"extern" => return struct_obj.has_runtime_bits,
+                .@"packed" => return Type.fromInterned(struct_obj.packed_backing_int_type).hasRuntimeBits(zcu),
             }
-            return false;
+        },
+        .union_type => {
+            const union_obj = ip.loadUnionType(ty.toIntern());
+            switch (union_obj.layout) {
+                .auto, .@"extern" => return union_obj.has_runtime_bits,
+                .@"packed" => return Type.fromInterned(union_obj.packed_backing_int_type).hasRuntimeBits(zcu),
+            }
         },
         .tuple_type => |tuple| {
             for (tuple.types.get(ip), tuple.values.get(ip)) |field_ty, val| {
@@ -515,23 +520,8 @@ pub fn hasRuntimeBits(ty: Type, zcu: *const Zcu) bool {
             }
             return false;
         },
-        .union_type => {
-            // TODO MLUGG: memoize this state when resolving union?
-            const union_obj = ip.loadUnionType(ty.toIntern());
-            switch (union_obj.runtime_tag) {
-                .none => {},
-                .safety, .tagged => {
-                    if (Type.fromInterned(union_obj.enum_tag_type).hasRuntimeBits(zcu)) return true;
-                },
-            }
-            for (union_obj.field_types.get(ip)) |field_ty_ip| {
-                const field_ty: Type = .fromInterned(field_ty_ip);
-                if (field_ty.hasRuntimeBits(zcu)) return true;
-            }
-            return false;
-        },
 
-        // MLUGG TODO: i think this can go away and the assert move to the defer?
+        // MLUGG TODO: this answer was already here but... does it actually make sense?
         .opaque_type => true,
         .enum_type => Type.fromInterned(ip.loadEnumType(ty.toIntern()).int_tag_type).hasRuntimeBits(zcu),
 
@@ -618,17 +608,18 @@ pub fn hasWellDefinedLayout(ty: Type, zcu: *const Zcu) bool {
             .generic_poison,
             => false,
         },
-        .struct_type => ip.loadStructType(ty.toIntern()).layout != .auto,
-        .union_type => {
-            const union_obj = ip.loadUnionType(ty.toIntern());
-            if (union_obj.layout == .auto) return false;
-            return switch (union_obj.runtime_tag) {
-                .none => true,
-                .tagged => false,
-                .safety => unreachable, // well-defined layout can't have a safety tag
-            };
+        .struct_type => switch (ip.loadStructType(ty.toIntern()).layout) {
+            .auto => false,
+            .@"extern", .@"packed" => true,
         },
-        .enum_type => ip.loadEnumType(ty.toIntern()).int_tag_is_explicit,
+        .union_type => switch (ip.loadUnionType(ty.toIntern()).layout) {
+            .auto => false,
+            .@"extern", .@"packed" => true,
+        },
+        .enum_type => switch (ip.loadEnumType(ty.toIntern()).int_tag_mode) {
+            .explicit => true,
+            .auto => false,
+        },
 
         // values, not types
         .undef,
@@ -664,26 +655,27 @@ pub fn fnHasRuntimeBits(fn_ty: Type, zcu: *Zcu) bool {
         if (param_ty == .generic_poison_type) return false;
         if (Type.fromInterned(param_ty).comptimeOnly(zcu)) return false;
     }
+    const ret_ty: Type = .fromInterned(fn_info.return_type);
+    if (ret_ty.toIntern() == .generic_poison_type) {
+        return false;
+    }
+    if (ret_ty.zigTypeTag(zcu) == .error_union and
+        ret_ty.errorUnionPayload(zcu).toIntern() == .generic_poison_type)
+    {
+        return false;
+    }
     if (fn_info.return_type == .generic_poison_type) return false;
     if (Type.fromInterned(fn_info.return_type).comptimeOnly(zcu)) return false;
     if (fn_info.cc == .@"inline") return false;
     return true;
 }
 
-pub fn isFnOrHasRuntimeBits(ty: Type, zcu: *Zcu) bool {
+/// Like `hasRuntimeBits`, but also returns `true` for runtime functions.
+pub fn isRuntimeFnOrHasRuntimeBits(ty: Type, zcu: *Zcu) bool {
     switch (ty.zigTypeTag(zcu)) {
         .@"fn" => return ty.fnHasRuntimeBits(zcu),
         else => return ty.hasRuntimeBits(zcu),
     }
-}
-
-/// Same as `isFnOrHasRuntimeBits` but comptime-only types may return a false positive.
-/// MLUGG TODO: this function is a bit silly now...
-pub fn isFnOrHasRuntimeBitsIgnoreComptime(ty: Type, zcu: *Zcu) bool {
-    return switch (ty.zigTypeTag(zcu)) {
-        .@"fn" => true,
-        else => return ty.hasRuntimeBits(zcu),
-    };
 }
 
 pub fn isNoReturn(ty: Type, zcu: *const Zcu) bool {
@@ -711,7 +703,6 @@ pub fn ptrAddressSpace(ty: Type, zcu: *const Zcu) std.builtin.AddressSpace {
 }
 
 /// Never returns `none`. Asserts that all necessary type resolution is already done.
-/// MLUGG TODO:  check that it really does never return `.none`
 pub fn abiAlignment(ty: Type, zcu: *const Zcu) Alignment {
     const ip = &zcu.intern_pool;
     const target = zcu.getTarget();
@@ -810,7 +801,7 @@ pub fn abiAlignment(ty: Type, zcu: *const Zcu) Alignment {
             for (tuple.types.get(ip), tuple.values.get(ip)) |field_ty, val| {
                 if (val != .none) continue; // comptime field
                 const field_align = Type.fromInterned(field_ty).abiAlignment(zcu);
-                big_align = big_align.max(field_align);
+                big_align = big_align.maxStrict(field_align);
             }
             return big_align;
         },
@@ -818,14 +809,20 @@ pub fn abiAlignment(ty: Type, zcu: *const Zcu) Alignment {
             const struct_obj = ip.loadStructType(ty.toIntern());
             switch (struct_obj.layout) {
                 .@"packed" => return Type.fromInterned(struct_obj.packed_backing_int_type).abiAlignment(zcu),
-                .auto, .@"extern" => return struct_obj.alignment,
+                .auto, .@"extern" => {
+                    assert(struct_obj.alignment != .none);
+                    return struct_obj.alignment;
+                },
             }
         },
         .union_type => {
             const union_obj = ip.loadUnionType(ty.toIntern());
             switch (union_obj.layout) {
                 .@"packed" => return Type.fromInterned(union_obj.packed_backing_int_type).abiAlignment(zcu),
-                .auto, .@"extern" => return getUnionLayout(union_obj, zcu).abi_align,
+                .auto, .@"extern" => {
+                    assert(union_obj.alignment != .none);
+                    return union_obj.alignment;
+                },
             }
         },
         .enum_type => Type.fromInterned(ip.loadEnumType(ty.toIntern()).int_tag_type).abiAlignment(zcu),
@@ -1277,38 +1274,17 @@ pub fn nullablePtrElem(ty: Type, zcu: *const Zcu) Type {
     }
 }
 
-/// Given that `ty` is an indexable pointer, returns its element type. Specifically:
-/// * for `*[n]T`, returns `T`
-/// * for `*@Vector(n, T)`, returns `T`
-/// * for `[]T`, returns `T`
-/// * for `[*]T`, returns `T`
-/// * for `[*c]T`, returns `T`
+/// Asserts that `ty` is an indexable type, and returns its element type. Tuples (and pointers to
+/// tuples) are not supported because they do not have a single element type.
 ///
-/// Tuples are not supported because they do not have a single element type.
-///
-/// MLUGG TODO: should i even have this one? it's a subset of indexableElem
-pub fn indexablePtrElem(ty: Type, zcu: *const Zcu) Type {
-    const ip = &zcu.intern_pool;
-    const ptr_type = ip.indexToKey(ty.toIntern()).ptr_type;
-    return switch (ptr_type.flags.size) {
-        .many, .slice, .c => return .fromInterned(ptr_type.child),
-        .one => switch (ip.indexToKey(ptr_type.child)) {
-            inline .array_type, .vector_type => |arr| return .fromInterned(arr.child),
-            else => unreachable,
-        },
-    };
-}
-
-/// Given that `ty` is an indexable type, returns its element type. Specifically:
-/// * for `[n]T`, returns `T`
-/// * for `@Vector(n, T)`, returns `T`
-/// * for `*[n]T`, returns `T`
-/// * for `*@Vector(n, T)`, returns `T`
-/// * for `[]T`, returns `T`
-/// * for `[*]T`, returns `T`
-/// * for `[*c]T`, returns `T`
-///
-/// Tuples are not supported because they do not have a single element type.
+/// Returns `T` for each of the following types:
+/// * `[n]T`
+/// * `@Vector(n, T)`
+/// * `*[n]T`
+/// * `*@Vector(n, T)`
+/// * `[]T`
+/// * `[*]T`
+/// * `[*c]T`
 pub fn indexableElem(ty: Type, zcu: *const Zcu) Type {
     const ip = &zcu.intern_pool;
     return switch (ip.indexToKey(ty.toIntern())) {
@@ -1348,6 +1324,7 @@ pub fn optionalChild(ty: Type, zcu: *const Zcu) Type {
 /// Returns the tag type of a union, if the type is a union and it has a tag type.
 /// Otherwise, returns `null`.
 pub fn unionTagType(ty: Type, zcu: *const Zcu) ?Type {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     switch (ip.indexToKey(ty.toIntern())) {
         .union_type => {},
@@ -1363,6 +1340,7 @@ pub fn unionTagType(ty: Type, zcu: *const Zcu) ?Type {
 /// Same as `unionTagType` but includes safety tag.
 /// Codegen should use this version.
 pub fn unionTagTypeSafety(ty: Type, zcu: *const Zcu) ?Type {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     return switch (ip.indexToKey(ty.toIntern())) {
         .union_type => {
@@ -1377,11 +1355,13 @@ pub fn unionTagTypeSafety(ty: Type, zcu: *const Zcu) ?Type {
 /// Asserts the type is a union; returns the tag type, even if the tag will
 /// not be stored at runtime.
 pub fn unionTagTypeHypothetical(ty: Type, zcu: *const Zcu) Type {
+    assertHasLayout(ty, zcu);
     const union_obj = zcu.typeToUnion(ty).?;
     return Type.fromInterned(union_obj.enum_tag_type);
 }
 
 pub fn unionFieldType(ty: Type, enum_tag: Value, zcu: *const Zcu) ?Type {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     const union_obj = zcu.typeToUnion(ty).?;
     const union_fields = union_obj.field_types.get(ip);
@@ -1390,17 +1370,20 @@ pub fn unionFieldType(ty: Type, enum_tag: Value, zcu: *const Zcu) ?Type {
 }
 
 pub fn unionFieldTypeByIndex(ty: Type, index: usize, zcu: *const Zcu) Type {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     const union_obj = zcu.typeToUnion(ty).?;
     return Type.fromInterned(union_obj.field_types.get(ip)[index]);
 }
 
 pub fn unionTagFieldIndex(ty: Type, enum_tag: Value, zcu: *const Zcu) ?u32 {
+    assertHasLayout(ty, zcu);
     const union_obj = zcu.typeToUnion(ty).?;
     return zcu.unionTagFieldIndex(union_obj, enum_tag);
 }
 
 pub fn unionHasAllZeroBitFieldTypes(ty: Type, zcu: *Zcu) bool {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     const union_obj = zcu.typeToUnion(ty).?;
     for (union_obj.field_types.get(ip)) |field_ty| {
@@ -1413,14 +1396,17 @@ pub fn unionHasAllZeroBitFieldTypes(ty: Type, zcu: *Zcu) bool {
 /// Asserts the type is either an extern or packed union.
 pub fn unionBackingType(ty: Type, pt: Zcu.PerThread) !Type {
     const zcu = pt.zcu;
-    return switch (ty.containerLayout(zcu)) {
+    assertHasLayout(ty, zcu);
+    const loaded_union = zcu.intern_pool.loadUnionType(ty.toIntern());
+    return switch (loaded_union.layout) {
         .@"extern" => try pt.arrayType(.{ .len = ty.abiSize(zcu), .child = .u8_type }),
-        .@"packed" => try pt.intType(.unsigned, @intCast(ty.bitSize(zcu))),
+        .@"packed" => .fromInterned(loaded_union.packed_backing_int_type),
         .auto => unreachable,
     };
 }
 
 pub fn unionGetLayout(ty: Type, zcu: *const Zcu) Zcu.UnionLayout {
+    assertHasLayout(ty, zcu);
     const union_obj = zcu.intern_pool.loadUnionType(ty.toIntern());
     return Type.getUnionLayout(union_obj, zcu);
 }
@@ -1865,11 +1851,8 @@ pub fn onePossibleValue(starting_type: Type, pt: Zcu.PerThread) !?Value {
                 for (field_vals, 0..) |*field_val, i_usize| {
                     const i: u32 = @intCast(i_usize);
                     if (struct_obj.field_is_comptime_bits.get(ip, i)) {
-                        // MLUGG TODO: this is kinda a problem... we don't necessarily know the opv field vals!
-                        // for now i'm just not letting structs with comptime fields be opv :)
-                        if (true) return null;
-                        assertHasInits(ty, zcu);
                         field_val.* = struct_obj.field_defaults.get(ip)[i];
+                        assert(field_val.* != .none);
                         continue;
                     }
                     const field_ty = Type.fromInterned(struct_obj.field_types.get(ip)[i]);
@@ -2257,19 +2240,23 @@ pub fn errorSetNames(ty: Type, zcu: *const Zcu) InternPool.NullTerminatedString.
 }
 
 pub fn enumFields(ty: Type, zcu: *const Zcu) InternPool.NullTerminatedString.Slice {
+    assertHasLayout(ty, zcu);
     return zcu.intern_pool.loadEnumType(ty.toIntern()).field_names;
 }
 
 pub fn enumFieldCount(ty: Type, zcu: *const Zcu) usize {
+    assertHasLayout(ty, zcu);
     return zcu.intern_pool.loadEnumType(ty.toIntern()).field_names.len;
 }
 
 pub fn enumFieldName(ty: Type, field_index: usize, zcu: *const Zcu) InternPool.NullTerminatedString {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     return ip.loadEnumType(ty.toIntern()).field_names.get(ip)[field_index];
 }
 
 pub fn enumFieldIndex(ty: Type, field_name: InternPool.NullTerminatedString, zcu: *const Zcu) ?u32 {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     const enum_type = ip.loadEnumType(ty.toIntern());
     return enum_type.nameIndex(ip, field_name);
@@ -2279,6 +2266,7 @@ pub fn enumFieldIndex(ty: Type, field_name: InternPool.NullTerminatedString, zcu
 /// an integer which represents the enum value. Returns the field index in
 /// declaration order, or `null` if `enum_tag` does not match any field.
 pub fn enumTagFieldIndex(ty: Type, enum_tag: Value, zcu: *const Zcu) ?u32 {
+    assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     const enum_type = ip.loadEnumType(ty.toIntern());
     const int_tag = switch (ip.indexToKey(enum_tag.toIntern())) {
@@ -2293,28 +2281,40 @@ pub fn enumTagFieldIndex(ty: Type, enum_tag: Value, zcu: *const Zcu) ?u32 {
 /// Returns none in the case of a tuple which uses the integer index as the field name.
 pub fn structFieldName(ty: Type, index: usize, zcu: *const Zcu) InternPool.OptionalNullTerminatedString {
     const ip = &zcu.intern_pool;
-    return switch (ip.indexToKey(ty.toIntern())) {
-        .struct_type => ip.loadStructType(ty.toIntern()).field_names.get(ip)[index].toOptional(),
-        .tuple_type => .none,
+    switch (ip.indexToKey(ty.toIntern())) {
+        .struct_type => {
+            assertHasLayout(ty, zcu);
+            return ip.loadStructType(ty.toIntern()).field_names.get(ip)[index].toOptional();
+        },
+        .tuple_type => return .none,
         else => unreachable,
-    };
+    }
 }
 
 pub fn structFieldCount(ty: Type, zcu: *const Zcu) u32 {
     const ip = &zcu.intern_pool;
-    return switch (ip.indexToKey(ty.toIntern())) {
-        .struct_type => ip.loadStructType(ty.toIntern()).field_types.len,
-        .tuple_type => |tuple| tuple.types.len,
+    switch (ip.indexToKey(ty.toIntern())) {
+        .struct_type => {
+            assertHasLayout(ty, zcu);
+            return ip.loadStructType(ty.toIntern()).field_types.len;
+        },
+        .tuple_type => |tuple| return tuple.types.len,
         else => unreachable,
-    };
+    }
 }
 
 /// Returns the field type. Supports structs and unions.
 pub fn fieldType(ty: Type, index: usize, zcu: *const Zcu) Type {
     const ip = &zcu.intern_pool;
     const types = switch (ip.indexToKey(ty.toIntern())) {
-        .struct_type => ip.loadStructType(ty.toIntern()).field_types,
-        .union_type => ip.loadUnionType(ty.toIntern()).field_types,
+        .struct_type => types: {
+            assertHasLayout(ty, zcu);
+            break :types ip.loadStructType(ty.toIntern()).field_types;
+        },
+        .union_type => types: {
+            assertHasLayout(ty, zcu);
+            break :types ip.loadUnionType(ty.toIntern()).field_types;
+        },
         .tuple_type => |tuple| tuple.types,
         else => unreachable,
     };
@@ -2335,11 +2335,13 @@ pub fn resolvedFieldAlignment(ty: Type, index: usize, zcu: *const Zcu) Alignment
     return switch (ip.indexToKey(ty.toIntern())) {
         .tuple_type => |tuple| Type.fromInterned(tuple.types.get(ip)[index]).abiAlignment(zcu),
         .struct_type => {
+            assertHasLayout(ty, zcu);
             const struct_obj = ip.loadStructType(ty.toIntern());
             const field_ty: Type = .fromInterned(struct_obj.field_types.get(ip)[index]);
             return field_ty.defaultStructFieldAlignment(struct_obj.layout, zcu);
         },
         .union_type => {
+            assertHasLayout(ty, zcu);
             const union_obj = ip.loadUnionType(ty.toIntern());
             const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[index]);
             return field_ty.abiAlignment(zcu);
@@ -2353,12 +2355,14 @@ pub fn explicitFieldAlignment(ty: Type, index: usize, zcu: *const Zcu) Alignment
     return switch (ip.indexToKey(ty.toIntern())) {
         .tuple_type => .none,
         .struct_type => {
+            assertHasLayout(ty, zcu);
             const struct_obj = ip.loadStructType(ty.toIntern());
             assert(struct_obj.layout != .@"packed");
             if (struct_obj.field_aligns.len == 0) return .none;
             return struct_obj.field_aligns.get(ip)[index];
         },
         .union_type => {
+            assertHasLayout(ty, zcu);
             const union_obj = ip.loadUnionType(ty.toIntern());
             assert(union_obj.layout != .@"packed");
             if (union_obj.field_aligns.len == 0) return .none;
@@ -2413,7 +2417,6 @@ pub fn structFieldValueComptime(ty: Type, pt: Zcu.PerThread, index: usize) !?Val
         .struct_type => {
             const struct_type = ip.loadStructType(ty.toIntern());
             if (struct_type.field_is_comptime_bits.get(ip, index)) {
-                assertHasInits(ty, zcu);
                 return .fromInterned(struct_type.field_defaults.get(ip)[index]);
             } else {
                 return Type.fromInterned(struct_type.field_types.get(ip)[index]).onePossibleValue(pt);
@@ -2433,11 +2436,14 @@ pub fn structFieldValueComptime(ty: Type, pt: Zcu.PerThread, index: usize) !?Val
 
 pub fn structFieldIsComptime(ty: Type, index: usize, zcu: *const Zcu) bool {
     const ip = &zcu.intern_pool;
-    return switch (ip.indexToKey(ty.toIntern())) {
-        .struct_type => ip.loadStructType(ty.toIntern()).field_is_comptime_bits.get(ip, index),
-        .tuple_type => |tuple| tuple.values.get(ip)[index] != .none,
+    switch (ip.indexToKey(ty.toIntern())) {
+        .struct_type => {
+            assertHasLayout(ty, zcu);
+            return ip.loadStructType(ty.toIntern()).field_is_comptime_bits.get(ip, index);
+        },
+        .tuple_type => |tuple| return tuple.values.get(ip)[index] != .none,
         else => unreachable,
-    };
+    }
 }
 
 pub const FieldOffset = struct {
@@ -2850,8 +2856,79 @@ pub fn isNullFromType(ty: Type, zcu: *const Zcu) ?bool {
     return null;
 }
 
-/// Returns true if `ty` is allowed in packed types.
-pub fn packable(ty: Type, zcu: *const Zcu) bool {
+pub const UnpackableReason = union(enum) {
+    comptime_only,
+    pointer,
+    enum_inferred_int_tag: Type,
+    non_packed_struct: Type,
+    non_packed_union: Type,
+    other,
+};
+
+/// Returns `null` iff `ty` is allowed in packed types.
+pub fn unpackable(ty: Type, zcu: *const Zcu) ?UnpackableReason {
+    return switch (ty.zigTypeTag(zcu)) {
+        .void,
+        .bool,
+        .float,
+        .int,
+        => null,
+
+        .type,
+        .comptime_float,
+        .comptime_int,
+        .enum_literal,
+        .undefined,
+        .null,
+        => .comptime_only,
+
+        .noreturn,
+        .@"opaque",
+        .error_union,
+        .error_set,
+        .frame,
+        .@"anyframe",
+        .@"fn",
+        .array,
+        .vector,
+        => .other,
+
+        .optional => if (ty.isPtrLikeOptional(zcu))
+            .pointer
+        else
+            .other,
+
+        .pointer => .pointer,
+
+        .@"enum" => switch (zcu.intern_pool.loadEnumType(ty.toIntern()).int_tag_mode) {
+            .explicit => null,
+            .auto => .{ .enum_inferred_int_tag = ty },
+        },
+
+        .@"struct" => switch (ty.containerLayout(zcu)) {
+            .@"packed" => null,
+            .auto, .@"extern" => .{ .non_packed_struct = ty },
+        },
+        .@"union" => switch (ty.containerLayout(zcu)) {
+            .@"packed" => null,
+            .auto, .@"extern" => .{ .non_packed_union = ty },
+        },
+    };
+}
+
+pub const ExternPosition = enum {
+    ret_ty,
+    param_ty,
+    union_field,
+    struct_field,
+    element,
+    other,
+};
+
+/// Returns true if `ty` is allowed in extern types.
+/// Does not require `ty` to be resolved in any way.
+/// Keep in sync with `Sema.explainWhyTypeIsNotExtern`.
+pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool {
     return switch (ty.zigTypeTag(zcu)) {
         .type,
         .comptime_float,
@@ -2862,22 +2939,83 @@ pub fn packable(ty: Type, zcu: *const Zcu) bool {
         .error_union,
         .error_set,
         .frame,
-        .noreturn,
-        .@"opaque",
-        .@"anyframe",
-        .@"fn",
-        .array,
         => false,
-        .optional => return ty.isPtrLikeOptional(zcu),
-        .void,
+
+        .void => switch (position) {
+            .ret_ty,
+            .union_field,
+            .struct_field,
+            .element,
+            => true,
+            .param_ty,
+            .other,
+            => false,
+        },
+
+        .noreturn => position == .ret_ty,
+
+        .@"opaque",
         .bool,
         .float,
-        .int,
-        .vector,
+        .@"anyframe",
         => true,
-        .@"enum" => zcu.intern_pool.loadEnumType(ty.toIntern()).int_tag_is_explicit,
-        .pointer => !ty.isSlice(zcu),
-        .@"struct", .@"union" => ty.containerLayout(zcu) == .@"packed",
+
+        .pointer => {
+            if (ty.isSlice(zcu)) return false;
+            const child_ty = ty.childType(zcu);
+            if (child_ty.zigTypeTag(zcu) == .@"fn") {
+                return ty.isConstPtr(zcu) and child_ty.validateExtern(.other, zcu);
+            }
+            return true;
+        },
+        .int => switch (ty.intInfo(zcu).bits) {
+            0, 8, 16, 32, 64, 128 => true,
+            else => false,
+        },
+        .@"fn" => {
+            if (position != .other) return false;
+            // For now we want to authorize PTX kernel to use zig objects, even if we end up exposing the ABI.
+            // The goal is to experiment with more integrated CPU/GPU code.
+            if (ty.fnCallingConvention(zcu) == .nvptx_kernel) {
+                return true;
+            }
+            return !target_util.fnCallConvAllowsZigTypes(ty.fnCallingConvention(zcu));
+        },
+        .@"enum" => {
+            const enum_obj = zcu.intern_pool.loadEnumType(ty.toIntern());
+            return switch (enum_obj.int_tag_mode) {
+                .auto => false,
+                .explicit => Type.fromInterned(enum_obj.int_tag_type).validateExtern(position, zcu),
+            };
+        },
+        .@"struct" => {
+            const struct_obj = zcu.intern_pool.loadStructType(ty.toIntern());
+            return switch (struct_obj.layout) {
+                .auto => false,
+                .@"extern" => true,
+                .@"packed" => switch (struct_obj.packed_backing_mode) {
+                    .auto => false,
+                    .explicit => Type.fromInterned(struct_obj.packed_backing_int_type).validateExtern(position, zcu),
+                },
+            };
+        },
+        .@"union" => {
+            const union_obj = zcu.intern_pool.loadUnionType(ty.toIntern());
+            return switch (union_obj.layout) {
+                .auto => false,
+                .@"extern" => true,
+                .@"packed" => switch (union_obj.packed_backing_mode) {
+                    .auto => false,
+                    .explicit => Type.fromInterned(union_obj.packed_backing_int_type).validateExtern(position, zcu),
+                },
+            };
+        },
+        .array => {
+            if (position == .ret_ty or position == .param_ty) return false;
+            return ty.childType(zcu).validateExtern(.element, zcu);
+        },
+        .vector => ty.childType(zcu).validateExtern(.element, zcu),
+        .optional => ty.isPtrLikeOptional(zcu),
     };
 }
 
@@ -2889,7 +3027,6 @@ pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
         .anyframe_type,
         .simple_type,
         .opaque_type,
-        .enum_type,
         .error_set_type,
         .inferred_error_set_type,
         => {},
@@ -2906,12 +3043,11 @@ pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
         .tuple_type => |tuple| for (tuple.types.get(&zcu.intern_pool)) |field_ty| {
             assertHasLayout(.fromInterned(field_ty), zcu);
         },
-        .struct_type, .union_type => {
+        .struct_type, .union_type, .enum_type => {
             const unit: InternPool.AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
             assert(!zcu.outdated.contains(unit));
             assert(!zcu.potentially_outdated.contains(unit));
         },
-        else => unreachable, // assertion failure; not a struct or union
 
         // values, not types
         .simple_value,
@@ -2930,21 +3066,11 @@ pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
         .opt,
         .aggregate,
         .un,
+        .undef,
         // memoization, not types
         .memoized_call,
         => unreachable,
     }
-}
-
-/// Asserts that `ty` is an enum or struct type whose field values/defaults are resolved.
-pub fn assertHasInits(ty: Type, zcu: *const Zcu) void {
-    switch (zcu.intern_pool.indexToKey(ty.toIntern())) {
-        .struct_type, .enum_type => {},
-        else => unreachable,
-    }
-    const unit: InternPool.AnalUnit = .wrap(.{ .type_inits = ty.toIntern() });
-    assert(!zcu.outdated.contains(unit));
-    assert(!zcu.potentially_outdated.contains(unit));
 }
 
 /// Recursively walks the type and marks for each subtype how many times it has been seen
@@ -3116,6 +3242,7 @@ pub const Comparison = struct {
     };
 };
 
+pub const @"u0": Type = .{ .ip_index = .u0_type };
 pub const @"u1": Type = .{ .ip_index = .u1_type };
 pub const @"u8": Type = .{ .ip_index = .u8_type };
 pub const @"u16": Type = .{ .ip_index = .u16_type };

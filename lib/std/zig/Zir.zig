@@ -3465,7 +3465,7 @@ pub const Inst = struct {
     /// 0.  captures_len: u32 // if `has_captures_len`
     /// 1.  decls_len: u32, // if `has_decls_len`
     /// 2.  fields_len: u32, // if `has_fields_len`
-    /// 3.  backing_int_type: Ref // if `has_backing_int`
+    /// 3.  backing_int_body_len: u32 // if `has_backing_int`
     /// 4.  capture: Capture // for every `captures_len`
     /// 5.  capture_name: NullTerminatedString // for every `captures_len`
     /// 6.  decl: Index, // for every `decls_len`; points to a `declaration` instruction
@@ -3475,7 +3475,8 @@ pub const Inst = struct {
     /// 10. field_default_body_len: u32 // for every `fields_len` if `any_field_defaults`
     /// 11. field_comptime_bits: u32 // one bit per `fields_len` if `any_comptime_fields`
     ///                              // LSB is first field, minimum number of `u32` needed
-    /// 12. body_inst: Inst.Index // type body, then align body, then default body, for each field
+    /// 12. backing_int_body_inst: Inst.Index // for each `backing_int_body_len`
+    /// 13. body_inst: Inst.Index // type body, then align body, then default body, for each field
     pub const StructDecl = struct {
         // These fields should be concatenated and reinterpreted as a `std.zig.SrcHash`.
         // This hash contains the source of all fields, and any specified attributes (`extern`, backing type, etc).
@@ -3622,13 +3623,14 @@ pub const Inst = struct {
     /// 0. captures_len: u32, // if has_captures_len
     /// 1. decls_len: u32, // if has_decls_len
     /// 2. fields_len: u32, // if has_fields_len
-    /// 3. tag_type: Ref, // if has_tag_type
+    /// 3. tag_type_body_len: u32, // if has_tag_type
     /// 4. capture: Capture // for every `captures_len`
     /// 5. capture_name: NullTerminatedString // for every `captures_len`
     /// 6. decl: Index, // for every `decls_len`; points to a `declaration` instruction
     /// 7. field_name: NullTerminatedString // for every `fields_len`
     /// 8. field_value_body_len: u32 // for every `fields_len` if `any_field_values`
-    /// 9. body_inst: Inst.Index // value body for each field
+    /// 9. tag_type_body_inst: Inst.Index // for each `tag_type_body_len`
+    /// 10. body_inst: Inst.Index // value body for each field
     pub const EnumDecl = struct {
         // These fields should be concatenated and reinterpreted as a `std.zig.SrcHash`.
         // This hash contains the source of all fields, and the backing type if specified.
@@ -3656,7 +3658,7 @@ pub const Inst = struct {
     /// 0.  captures_len: u32 // if `has_captures_len`
     /// 1.  decls_len: u32, // if `has_decls_len`
     /// 2.  fields_len: u32, // if `has_fields_len`
-    /// 3.  arg_type: Ref, // if `kind.hasArgType()`
+    /// 3.  arg_type_body_len: u32, // if `kind.hasArgType()`
     /// 4.  capture: Capture // for every `captures_len`
     /// 5.  capture_name: NullTerminatedString // for every `captures_len`
     /// 6.  decl: Index, // for every `decls_len`; points to a `declaration` instruction
@@ -3664,7 +3666,8 @@ pub const Inst = struct {
     /// 8.  field_type_body_len: u32 // for every `fields_len`
     /// 9 . field_align_body_len: u32 // for every `fields_len` if `any_field_aligns`
     /// 10. field_value_body_len: u32 // for every `fields_len` if `any_field_values`
-    /// 11. body_inst: Inst.Index // type body, then align body, then value body, for each field
+    /// 11. arg_type_body_inst: Inst.Index // for each `arg_type_body_len`
+    /// 12. body_inst: Inst.Index // type body, then align body, then value body, for each field
     pub const UnionDecl = struct {
         // These fields should be concatenated and reinterpreted as a `std.zig.SrcHash`.
         // This hash contains the source of all fields, and any specified attributes (`extern` etc).
@@ -5235,18 +5238,6 @@ pub fn assertTrackable(zir: Zir, inst_idx: Zir.Inst.Index) void {
     }
 }
 
-/// MLUGG TODO: maybe delete these two?
-pub fn typeCapturesLen(zir: Zir, type_decl: Inst.Index) u32 {
-    const inst = zir.instructions.get(@intFromEnum(type_decl));
-    assert(inst.tag == .extended);
-    return switch (inst.data.extended.opcode) {
-        .struct_decl => @intCast(zir.getStructDecl(type_decl).captures.len),
-        .union_decl => @intCast(zir.getUnionDecl(type_decl).captures.len),
-        .enum_decl => @intCast(zir.getEnumDecl(type_decl).captures.len),
-        .opaque_decl => @intCast(zir.getOpaqueDecl(type_decl).captures.len),
-        else => unreachable,
-    };
-}
 pub fn typeDecls(zir: Zir, type_decl: Inst.Index) []const Zir.Inst.Index {
     const inst = zir.instructions.get(@intFromEnum(type_decl));
     assert(inst.tag == .extended);
@@ -5281,11 +5272,11 @@ pub fn getStructDecl(zir: *const Zir, struct_decl: Inst.Index) UnwrappedStructDe
         extra_index += 1;
         break :blk fields_len;
     } else 0;
-    const backing_int_type: Inst.Ref = if (small.has_backing_int_type) ty: {
-        const ty = zir.extra[extra_index];
+    const backing_int_type_body_len: u32 = if (small.has_backing_int_type) len: {
+        const body_len = zir.extra[extra_index];
         extra_index += 1;
-        break :ty @enumFromInt(ty);
-    } else .none;
+        break :len body_len;
+    } else 0;
     const captures: []const Inst.Capture = @ptrCast(zir.extra[extra_index..][0..captures_len]);
     extra_index += captures_len;
     const capture_names: []const NullTerminatedString = @ptrCast(zir.extra[extra_index..][0..captures_len]);
@@ -5312,6 +5303,11 @@ pub fn getStructDecl(zir: *const Zir, struct_decl: Inst.Index) UnwrappedStructDe
         extra_index += bits_len;
         break :bits bits;
     } else null;
+    const backing_int_type_body: ?[]const Zir.Inst.Index = switch (backing_int_type_body_len) {
+        0 => null,
+        else => |n| zir.bodySlice(extra_index, n),
+    };
+    extra_index += backing_int_type_body_len;
     const field_bodies_overlong: []const Inst.Index = @ptrCast(zir.extra[extra_index..]);
     return .{
         .src_line = extra.data.src_line,
@@ -5321,7 +5317,7 @@ pub fn getStructDecl(zir: *const Zir, struct_decl: Inst.Index) UnwrappedStructDe
         .capture_names = capture_names,
         .decls = decls,
         .layout = small.layout,
-        .backing_int_type = backing_int_type,
+        .backing_int_type_body = backing_int_type_body,
         .field_names = field_names,
         .field_type_body_lens = field_type_body_lens,
         .field_align_body_lens = field_align_body_lens,
@@ -5341,7 +5337,7 @@ pub const UnwrappedStructDecl = struct {
     decls: []const Inst.Index,
 
     layout: std.builtin.Type.ContainerLayout,
-    backing_int_type: Inst.Ref,
+    backing_int_type_body: ?[]const Inst.Index,
 
     field_names: []const NullTerminatedString,
     field_type_body_lens: []const u32,
@@ -5427,11 +5423,11 @@ pub fn getUnionDecl(zir: *const Zir, union_decl: Inst.Index) UnwrappedUnionDecl 
         extra_index += 1;
         break :blk fields_len;
     } else 0;
-    const arg_type: Inst.Ref = if (small.kind.hasArgType()) ty: {
-        const ty = zir.extra[extra_index];
+    const arg_type_body_len: u32 = if (small.kind.hasArgType()) len: {
+        const body_len = zir.extra[extra_index];
         extra_index += 1;
-        break :ty @enumFromInt(ty);
-    } else .none;
+        break :len body_len;
+    } else 0;
     const captures: []const Inst.Capture = @ptrCast(zir.extra[extra_index..][0..captures_len]);
     extra_index += captures_len;
     const capture_names: []const NullTerminatedString = @ptrCast(zir.extra[extra_index..][0..captures_len]);
@@ -5452,6 +5448,11 @@ pub fn getUnionDecl(zir: *const Zir, union_decl: Inst.Index) UnwrappedUnionDecl 
         extra_index += fields_len;
         break :lens @ptrCast(lens);
     } else null;
+    const arg_type_body: ?[]const Zir.Inst.Index = switch (arg_type_body_len) {
+        0 => null,
+        else => |n| zir.bodySlice(extra_index, n),
+    };
+    extra_index += arg_type_body_len;
     const field_bodies_overlong: []const Inst.Index = @ptrCast(zir.extra[extra_index..]);
     return .{
         .src_line = extra.data.src_line,
@@ -5461,7 +5462,7 @@ pub fn getUnionDecl(zir: *const Zir, union_decl: Inst.Index) UnwrappedUnionDecl 
         .capture_names = capture_names,
         .decls = decls,
         .kind = small.kind,
-        .arg_type = arg_type,
+        .arg_type_body = arg_type_body,
         .field_names = field_names,
         .field_type_body_lens = field_type_body_lens,
         .field_align_body_lens = field_align_body_lens,
@@ -5480,7 +5481,7 @@ pub const UnwrappedUnionDecl = struct {
     decls: []const Inst.Index,
 
     kind: Inst.UnionDecl.Kind,
-    arg_type: Inst.Ref,
+    arg_type_body: ?[]const Inst.Index,
 
     field_names: []const NullTerminatedString,
     field_type_body_lens: []const u32,
@@ -5556,11 +5557,11 @@ pub fn getEnumDecl(zir: *const Zir, enum_decl: Inst.Index) UnwrappedEnumDecl {
         extra_index += 1;
         break :blk fields_len;
     } else 0;
-    const tag_type: Inst.Ref = if (small.has_tag_type) ty: {
-        const ty = zir.extra[extra_index];
+    const tag_type_body_len: u32 = if (small.has_tag_type) len: {
+        const body_len = zir.extra[extra_index];
         extra_index += 1;
-        break :ty @enumFromInt(ty);
-    } else .none;
+        break :len body_len;
+    } else 0;
     const captures: []const Inst.Capture = @ptrCast(zir.extra[extra_index..][0..captures_len]);
     extra_index += captures_len;
     const capture_names: []const NullTerminatedString = @ptrCast(zir.extra[extra_index..][0..captures_len]);
@@ -5574,6 +5575,11 @@ pub fn getEnumDecl(zir: *const Zir, enum_decl: Inst.Index) UnwrappedEnumDecl {
         extra_index += fields_len;
         break :lens @ptrCast(lens);
     } else null;
+    const tag_type_body: ?[]const Zir.Inst.Index = switch (tag_type_body_len) {
+        0 => null,
+        else => |n| zir.bodySlice(extra_index, n),
+    };
+    extra_index += tag_type_body_len;
     const field_bodies_overlong: []const Inst.Index = @ptrCast(zir.extra[extra_index..]);
     return .{
         .src_line = extra.data.src_line,
@@ -5582,7 +5588,7 @@ pub fn getEnumDecl(zir: *const Zir, enum_decl: Inst.Index) UnwrappedEnumDecl {
         .captures = captures,
         .capture_names = capture_names,
         .decls = decls,
-        .tag_type = tag_type,
+        .tag_type_body = tag_type_body,
         .nonexhaustive = small.nonexhaustive,
         .field_names = field_names,
         .field_value_body_lens = field_value_body_lens,
@@ -5599,7 +5605,7 @@ pub const UnwrappedEnumDecl = struct {
 
     decls: []const Inst.Index,
 
-    tag_type: Inst.Ref,
+    tag_type_body: ?[]const Inst.Index,
     nonexhaustive: bool,
 
     field_names: []const NullTerminatedString,

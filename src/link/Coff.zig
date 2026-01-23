@@ -1552,7 +1552,7 @@ fn updateNavInner(coff: *Coff, pt: Zcu.PerThread, nav_index: InternPool.Nav.Inde
                 const sec_si = try coff.navSection(zcu, nav.status.fully_resolved);
                 try coff.nodes.ensureUnusedCapacity(gpa, 1);
                 const ni = try coff.mf.addLastChildNode(gpa, sec_si.node(coff), .{
-                    .alignment = pt.navAlignment(nav_index).toStdMem(),
+                    .alignment = zcu.navAlignment(nav_index).toStdMem(),
                     .moved = true,
                 });
                 coff.nodes.appendAssumeCapacity(.{ .nav = nmi });

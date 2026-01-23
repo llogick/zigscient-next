@@ -1912,40 +1912,6 @@ pub const SrcLoc = struct {
                 const full = tree.fullPtrType(parent_node).?;
                 return tree.nodeToSpan(full.ast.bit_range_end.unwrap().?);
             },
-            .node_offset_container_tag => |node_off| {
-                const tree = try src_loc.file_scope.getTree(zcu);
-                const parent_node = node_off.toAbsolute(src_loc.base_node);
-
-                switch (tree.nodeTag(parent_node)) {
-                    .container_decl_arg, .container_decl_arg_trailing => {
-                        const full = tree.containerDeclArg(parent_node);
-                        const arg_node = full.ast.arg.unwrap().?;
-                        return tree.nodeToSpan(arg_node);
-                    },
-                    .tagged_union_enum_tag, .tagged_union_enum_tag_trailing => {
-                        const full = tree.taggedUnionEnumTag(parent_node);
-                        const arg_node = full.ast.arg.unwrap().?;
-
-                        return tree.tokensToSpan(
-                            tree.firstToken(arg_node) - 2,
-                            tree.lastToken(arg_node) + 1,
-                            tree.nodeMainToken(arg_node),
-                        );
-                    },
-                    else => unreachable,
-                }
-            },
-            .node_offset_field_default => |node_off| {
-                const tree = try src_loc.file_scope.getTree(zcu);
-                const parent_node = node_off.toAbsolute(src_loc.base_node);
-
-                const full: Ast.full.ContainerField = switch (tree.nodeTag(parent_node)) {
-                    .container_field => tree.containerField(parent_node),
-                    .container_field_init => tree.containerFieldInit(parent_node),
-                    else => unreachable,
-                };
-                return tree.nodeToSpan(full.ast.value_expr.unwrap().?);
-            },
             .node_offset_init_ty => |node_off| {
                 const tree = try src_loc.file_scope.getTree(zcu);
                 const parent_node = node_off.toAbsolute(src_loc.base_node);
@@ -2020,6 +1986,14 @@ pub const SrcLoc = struct {
                     }
                 }
                 return tree.nodeToSpan(node);
+            },
+            .container_arg => {
+                const tree = try src_loc.file_scope.getTree(zcu);
+                const node = src_loc.base_node;
+                var buf: [2]Ast.Node.Index = undefined;
+                const container_decl = tree.fullContainerDecl(&buf, node) orelse return tree.nodeToSpan(node);
+                const arg_node = container_decl.ast.arg.unwrap() orelse return tree.nodeToSpan(node);
+                return tree.nodeToSpan(arg_node);
             },
             .container_field_name,
             .container_field_value,
@@ -2262,7 +2236,11 @@ pub const SrcLoc = struct {
                 var param_it = full.iterate(tree);
                 for (0..param_idx) |_| assert(param_it.next() != null);
                 const param = param_it.next().?;
-                return tree.nodeToSpan(param.type_expr.?);
+                if (param.anytype_ellipsis3) |tok| {
+                    return tree.tokenToSpan(tok);
+                } else {
+                    return tree.nodeToSpan(param.type_expr.?);
+                }
             },
         }
     }
@@ -2484,10 +2462,6 @@ pub const LazySrcLoc = struct {
         node_offset_ptr_bitoffset: Ast.Node.Offset,
         /// The source location points to the host size of a pointer.
         node_offset_ptr_hostsize: Ast.Node.Offset,
-        /// The source location points to the tag type of an union or an enum.
-        node_offset_container_tag: Ast.Node.Offset,
-        /// The source location points to the default value of a field.
-        node_offset_field_default: Ast.Node.Offset,
         /// The source location points to the type of an array or struct initializer.
         node_offset_init_ty: Ast.Node.Offset,
         /// The source location points to the LHS of an assignment (or assign-op, e.g. `+=`).
@@ -2532,6 +2506,11 @@ pub const LazySrcLoc = struct {
         fn_proto_param_type: FnProtoParam,
         array_cat_lhs: ArrayCat,
         array_cat_rhs: ArrayCat,
+        /// The source location points to the backing or tag type expression of
+        /// the container type declaration at the base node.
+        ///
+        /// For 'union(enum(T))', this points to 'T', not 'enum(T)'.
+        container_arg,
         /// The source location points to the name of the field at the given index
         /// of the container type declaration at the base node.
         container_field_name: u32,
@@ -3149,7 +3128,7 @@ pub fn markPoDependeeUpToDate(zcu: *Zcu, dependee: InternPool.Dependee) !void {
             .nav_val => |nav| try zcu.markPoDependeeUpToDate(.{ .nav_val = nav }),
             .nav_ty => |nav| try zcu.markPoDependeeUpToDate(.{ .nav_ty = nav }),
             .type_layout => |ty| try zcu.markPoDependeeUpToDate(.{ .type_layout = ty }),
-            .type_inits => |ty| try zcu.markPoDependeeUpToDate(.{ .type_inits = ty }),
+            .struct_defaults => |ty| try zcu.markPoDependeeUpToDate(.{ .struct_defaults = ty }),
             .func => |func| try zcu.markPoDependeeUpToDate(.{ .func_ies = func }),
             .memoized_state => |stage| try zcu.markPoDependeeUpToDate(.{ .memoized_state = stage }),
         }
@@ -3165,7 +3144,7 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
         .nav_val => |nav| .{ .nav_val = nav },
         .nav_ty => |nav| .{ .nav_ty = nav },
         .type_layout => |ty| .{ .type_layout = ty },
-        .type_inits => |ty| .{ .type_inits = ty },
+        .struct_defaults => |ty| .{ .struct_defaults = ty },
         .func => |func_index| .{ .func_ies = func_index },
         .memoized_state => |stage| .{ .memoized_state = stage },
     };
@@ -3195,88 +3174,44 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
     }
 }
 
+/// Selects an outdated `AnalUnit` to analyze next. Called from the main semantic analysis loop when
+/// there is no work immediately queued. The unit is chosen such that it is unlikely to require any
+/// recursive analysis (all of its previously-marked dependencies are already up-to-date), because
+/// recursive analysis can cause over-analysis on incremental updates.
 pub fn findOutdatedToAnalyze(zcu: *Zcu) Allocator.Error!?AnalUnit {
     if (!zcu.comp.config.incremental) return null;
 
-    if (zcu.outdated.count() == 0) {
-        // Any units in `potentially_outdated` must just be stuck in loops with one another: none of those
-        // units have had any outdated dependencies so far, and all of their remaining PO deps are triggered
-        // by other units in `potentially_outdated`. So, we can safety assume those units up-to-date.
-        zcu.potentially_outdated.clearRetainingCapacity();
-        log.debug("findOutdatedToAnalyze: no outdated depender", .{});
-        return null;
-    }
-
-    // Our goal is to find an outdated AnalUnit which itself has no outdated or
-    // PO dependencies. Most of the time, such an AnalUnit will exist - we track
-    // them in the `outdated_ready` set for efficiency. However, this is not
-    // necessarily the case, since the Decl dependency graph may contain loops
-    // via mutually recursive definitions:
-    //   pub const A = struct { b: *B };
-    //   pub const B = struct { b: *A };
-    // In this case, we must defer to more complex logic below.
-
     if (zcu.outdated_ready.count() > 0) {
         const unit = zcu.outdated_ready.keys()[0];
-        log.debug("findOutdatedToAnalyze: trivial {f}", .{zcu.fmtAnalUnit(unit)});
+        log.debug("findOutdatedToAnalyze: {f}", .{zcu.fmtAnalUnit(unit)});
         return unit;
     }
 
-    // There is no single AnalUnit which is ready for re-analysis. Instead, we must assume that some
-    // AnalUnit with PO dependencies is outdated -- e.g. in the above example we arbitrarily pick one of
-    // A or B. We should definitely not select a function, since a function can't be responsible for the
-    // loop (IES dependencies can't have loops). We should also, of course, not select a `comptime`
-    // declaration, since you can't depend on those!
+    // Usually, getting here means that everything is up-to-date, so there is no more work to do. We
+    // will see that `zcu.outdated` and `zcu.potentially_outdated` are both empty.
+    //
+    // However, if a previous update had a dependency loop compile error, there is a cycle in the
+    // dependency graph (which is usually acyclic), which can cause a scenario where no unit appears
+    // to be ready, because they're all waiting for the next in the loop to be up-to-date. In that
+    // case, we usually have to just bite the bullet and analyze one of them. An exception is if
+    // `zcu.outdated` is empty but `zcu.potentially_outdated` is non-empty: in that case, the only
+    // possible situation is a cycle where everything is actually up-to-date, so we can clear out
+    // `zcu.potentially_outdated` and we are done.
 
-    // The choice of this unit could have a big impact on how much total analysis we perform, since
-    // if analysis concludes any dependencies on its result are up-to-date, then other PO AnalUnit
-    // may be resolved as up-to-date. To hopefully avoid doing too much work, let's find a unit
-    // which the most things depend on - the idea is that this will resolve a lot of loops (but this
-    // is only a heuristic).
-
-    log.debug("findOutdatedToAnalyze: no trivial ready, using heuristic; {d} outdated, {d} PO", .{
-        zcu.outdated.count(),
-        zcu.potentially_outdated.count(),
-    });
-
-    const ip = &zcu.intern_pool;
-
-    var chosen_unit: ?AnalUnit = null;
-    var chosen_unit_dependers: u32 = undefined;
-
-    // MLUGG TODO: i'm 99% sure this is now impossible. check!!!
-    inline for (.{ zcu.outdated.keys(), zcu.potentially_outdated.keys() }) |outdated_units| {
-        for (outdated_units) |unit| {
-            var n: u32 = 0;
-            var it = ip.dependencyIterator(switch (unit.unwrap()) {
-                .func => continue, // a `func` definitely can't be causing the loop so it is a bad choice
-                .@"comptime" => continue, // a `comptime` block can't even be depended on so it is a terrible choice
-                .type_layout => |ty| .{ .type_layout = ty },
-                .type_inits => |ty| .{ .type_inits = ty },
-                .nav_val => |nav| .{ .nav_val = nav },
-                .nav_ty => |nav| .{ .nav_ty = nav },
-                .memoized_state => {
-                    // If we've hit a loop and some `.memoized_state` is outdated, we should make that choice eagerly.
-                    // In general, it's good to resolve this early on, since -- for instance -- almost every function
-                    // references the panic handler.
-                    return unit;
-                },
-            });
-            while (it.next()) |_| n += 1;
-
-            if (chosen_unit == null or n > chosen_unit_dependers) {
-                chosen_unit = unit;
-                chosen_unit_dependers = n;
-            }
-        }
+    if (zcu.outdated.count() == 0) {
+        // Everything is up-to-date. There could be lingering entries in `zcu.potentially_outdated`
+        // from a dependency loop on a previous update.
+        zcu.potentially_outdated.clearRetainingCapacity();
+        log.debug("findOutdatedToAnalyze: all up-to-date", .{});
+        return null;
     }
 
-    log.debug("findOutdatedToAnalyze: heuristic returned '{f}' ({d} dependers)", .{
-        zcu.fmtAnalUnit(chosen_unit.?),
-        chosen_unit_dependers,
+    const unit = zcu.outdated.keys()[0];
+    log.debug("findOutdatedToAnalyze: dependency loop affecting {d} units, selected {f}", .{
+        zcu.outdated.count(),
+        zcu.fmtAnalUnit(unit),
     });
-
-    return chosen_unit.?;
+    return unit;
 }
 
 /// During an incremental update, before semantic analysis, call this to flush all values from
@@ -3356,12 +3291,59 @@ pub fn mapOldZirToNew(
     }
 
     while (match_stack.pop()) |match_item| {
-        // First, a check: if the number of captures of this type has changed, we can't map it, because
-        // we wouldn't know how to correlate type information with the last update.
-        // Synchronizes with logic in `Zcu.PerThread.recreateStructType` etc.
-        if (old_zir.typeCapturesLen(match_item.old_inst) != new_zir.typeCapturesLen(match_item.new_inst)) {
-            // Don't map this type or anything within it.
-            continue;
+        // There are some properties of type declarations which cannot change across incremental
+        // updates. If they have, we need to ignore this mapping. These properties are essentially
+        // everything passed into `InternPool.getDeclaredStructType` (likewise for unions, enums,
+        // and opaques).
+        const old_tag = old_zir.instructions.items(.data)[@intFromEnum(match_item.old_inst)].extended.opcode;
+        const new_tag = new_zir.instructions.items(.data)[@intFromEnum(match_item.new_inst)].extended.opcode;
+        if (old_tag != new_tag) continue;
+        switch (old_tag) {
+            .struct_decl => {
+                const old = old_zir.getStructDecl(match_item.old_inst);
+                const new = new_zir.getStructDecl(match_item.new_inst);
+                if (old.captures.len != new.captures.len) continue;
+                if (old.field_names.len != new.field_names.len) continue;
+                if (old.layout != new.layout) continue;
+                const old_any_field_aligns = old.field_align_body_lens != null;
+                const old_any_field_defaults = old.field_default_body_lens != null;
+                const old_any_comptime_fields = old.field_comptime_bits != null;
+                const old_explicit_backing_int = old.backing_int_type_body != null;
+                const new_any_field_aligns = new.field_align_body_lens != null;
+                const new_any_field_defaults = new.field_default_body_lens != null;
+                const new_any_comptime_fields = new.field_comptime_bits != null;
+                const new_explicit_backing_int = new.backing_int_type_body != null;
+                if (old_any_field_aligns != new_any_field_aligns) continue;
+                if (old_any_field_defaults != new_any_field_defaults) continue;
+                if (old_any_comptime_fields != new_any_comptime_fields) continue;
+                if (old_explicit_backing_int != new_explicit_backing_int) continue;
+            },
+            .union_decl => {
+                const old = old_zir.getUnionDecl(match_item.old_inst);
+                const new = new_zir.getUnionDecl(match_item.new_inst);
+                if (old.captures.len != new.captures.len) continue;
+                if (old.field_names.len != new.field_names.len) continue;
+                if (old.kind != new.kind) continue;
+                const old_any_field_aligns = old.field_align_body_lens != null;
+                const new_any_field_aligns = new.field_align_body_lens != null;
+                if (old_any_field_aligns != new_any_field_aligns) continue;
+            },
+            .enum_decl => {
+                const old = old_zir.getEnumDecl(match_item.old_inst);
+                const new = new_zir.getEnumDecl(match_item.new_inst);
+                if (old.captures.len != new.captures.len) continue;
+                if (old.field_names.len != new.field_names.len) continue;
+                if (old.nonexhaustive != new.nonexhaustive) continue;
+                const old_explicit_tag_type = old.tag_type_body != null;
+                const new_explicit_tag_type = new.tag_type_body != null;
+                if (old_explicit_tag_type != new_explicit_tag_type) continue;
+            },
+            .opaque_decl => {
+                const old = old_zir.getOpaqueDecl(match_item.old_inst);
+                const new = new_zir.getOpaqueDecl(match_item.new_inst);
+                if (old.captures.len != new.captures.len) continue;
+            },
+            else => unreachable,
         }
 
         // Match the namespace declaration itself
@@ -4068,7 +4050,7 @@ fn resolveReferencesInner(zcu: *Zcu) !std.AutoArrayHashMapUnmanaged(AnalUnit, ?R
             }
             if (has_inits) {
                 // this should only be referenced by the type
-                const unit: AnalUnit = .wrap(.{ .type_inits = ty });
+                const unit: AnalUnit = .wrap(.{ .struct_defaults = ty });
                 try units.putNoClobber(gpa, unit, referencer);
             }
 
@@ -4184,7 +4166,7 @@ fn resolveReferencesInner(zcu: *Zcu) !std.AutoArrayHashMapUnmanaged(AnalUnit, ?R
                 const other: AnalUnit = .wrap(switch (unit.unwrap()) {
                     .nav_val => |n| .{ .nav_ty = n },
                     .nav_ty => |n| .{ .nav_val = n },
-                    .@"comptime", .type_layout, .type_inits, .func, .memoized_state => break :queue_paired,
+                    .@"comptime", .type_layout, .struct_defaults, .func, .memoized_state => break :queue_paired,
                 });
                 const gop = try units.getOrPut(gpa, other);
                 if (gop.found_existing) break :queue_paired;
@@ -4305,6 +4287,16 @@ pub fn navFileScope(zcu: *Zcu, nav: InternPool.Nav.Index) *File {
     return zcu.fileByIndex(zcu.navFileScopeIndex(nav));
 }
 
+pub fn navAlignment(zcu: *Zcu, nav_index: InternPool.Nav.Index) InternPool.Alignment {
+    const ty: Type, const alignment = switch (zcu.intern_pool.getNav(nav_index).status) {
+        .unresolved => unreachable,
+        .type_resolved => |r| .{ .fromInterned(r.type), r.alignment },
+        .fully_resolved => |r| .{ Value.fromInterned(r.val).typeOf(zcu), r.alignment },
+    };
+    if (alignment != .none) return alignment;
+    return ty.abiAlignment(zcu);
+}
+
 pub fn fmtAnalUnit(zcu: *Zcu, unit: AnalUnit) std.fmt.Alt(FormatAnalUnit, formatAnalUnit) {
     return .{ .data = .{ .unit = unit, .zcu = zcu } };
 }
@@ -4331,7 +4323,7 @@ fn formatAnalUnit(data: FormatAnalUnit, writer: *Io.Writer) Io.Writer.Error!void
             }
         },
         .nav_val, .nav_ty => |nav, tag| return writer.print("{t}('{f}' [{}])", .{ tag, ip.getNav(nav).fqn.fmt(ip), @intFromEnum(nav) }),
-        .type_layout, .type_inits => |ty, tag| return writer.print("{t}('{f}' [{}])", .{ tag, Type.fromInterned(ty).containerTypeName(ip).fmt(ip), @intFromEnum(ty) }),
+        .type_layout, .struct_defaults => |ty, tag| return writer.print("{t}('{f}' [{}])", .{ tag, Type.fromInterned(ty).containerTypeName(ip).fmt(ip), @intFromEnum(ty) }),
         .func => |func| {
             const nav = zcu.funcInfo(func).owner_nav;
             return writer.print("func('{f}' [{}])", .{ ip.getNav(nav).fqn.fmt(ip), @intFromEnum(func) });
@@ -4357,7 +4349,7 @@ fn formatDependee(data: FormatDependee, writer: *Io.Writer) Io.Writer.Error!void
             const fqn = ip.getNav(nav).fqn;
             return writer.print("{t}('{f}')", .{ tag, fqn.fmt(ip) });
         },
-        .type_layout, .type_inits => |ip_index, tag| {
+        .type_layout, .struct_defaults => |ip_index, tag| {
             const name = Type.fromInterned(ip_index).containerTypeName(ip);
             return writer.print("{t}('{f}')", .{ tag, name.fmt(ip) });
         },

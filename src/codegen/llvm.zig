@@ -3725,7 +3725,6 @@ pub const Object = struct {
                 .undefined => unreachable, // non-runtime value
                 .void => unreachable, // non-runtime value
                 .null => unreachable, // non-runtime value
-                .empty_tuple => unreachable, // non-runtime value
                 .@"unreachable" => unreachable, // non-runtime value
 
                 .false => .false,
@@ -4604,7 +4603,7 @@ pub const NavGen = struct {
             _ = try o.resolveLlvmFunction(pt, owner_nav);
         } else {
             const variable_index = try o.resolveGlobalNav(pt, nav_index);
-            variable_index.setAlignment(pt.navAlignment(nav_index).toLlvm(), &o.builder);
+            variable_index.setAlignment(zcu.navAlignment(nav_index).toLlvm(), &o.builder);
             if (resolved.@"linksection".toSlice(ip)) |section|
                 variable_index.setSection(try o.builder.string(section), &o.builder);
             if (is_const) variable_index.setMutability(.constant, &o.builder);
@@ -5953,7 +5952,7 @@ pub const FuncGen = struct {
             return .none;
         }
 
-        const have_block_result = inst_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu);
+        const have_block_result = inst_ty.hasRuntimeBits(zcu);
 
         var breaks: BreakList = if (have_block_result) .{ .list = .{} } else .{ .len = 0 };
         defer if (have_block_result) breaks.list.deinit(self.gpa);
@@ -6000,7 +5999,7 @@ pub const FuncGen = struct {
 
         // Add the values to the lists only if the break provides a value.
         const operand_ty = self.typeOf(branch.operand);
-        if (operand_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+        if (operand_ty.hasRuntimeBits(zcu)) {
             const val = try self.resolveInst(branch.operand);
 
             // For the phi node, we need the basic blocks and the values of the
@@ -9581,7 +9580,7 @@ pub const FuncGen = struct {
         const zcu = pt.zcu;
         const ptr_ty = self.typeOfIndex(inst);
         const pointee_type = ptr_ty.childType(zcu);
-        if (!pointee_type.isFnOrHasRuntimeBitsIgnoreComptime(zcu))
+        if (!pointee_type.hasRuntimeBits(zcu))
             return (try o.lowerPtrToVoid(pt, ptr_ty)).toValue();
 
         const pointee_llvm_ty = try o.lowerType(pt, pointee_type);
@@ -9595,7 +9594,7 @@ pub const FuncGen = struct {
         const zcu = pt.zcu;
         const ptr_ty = self.typeOfIndex(inst);
         const ret_ty = ptr_ty.childType(zcu);
-        if (!ret_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu))
+        if (!ret_ty.hasRuntimeBits(zcu))
             return (try o.lowerPtrToVoid(pt, ptr_ty)).toValue();
         if (self.ret_ptr != .none) return self.ret_ptr;
         const ret_llvm_ty = try o.lowerType(pt, ret_ty);
@@ -9897,7 +9896,7 @@ pub const FuncGen = struct {
         const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
         const ptr_ty = self.typeOf(bin_op.lhs);
         const operand_ty = ptr_ty.childType(zcu);
-        if (!operand_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) return .none;
+        if (!operand_ty.hasRuntimeBits(zcu)) return .none;
         const ptr = try self.resolveInst(bin_op.lhs);
         var element = try self.resolveInst(bin_op.rhs);
         const llvm_abi_ty = try o.getAtomicAbiType(pt, operand_ty, false);
@@ -11478,7 +11477,7 @@ pub const FuncGen = struct {
         const zcu = pt.zcu;
         const info = ptr_ty.ptrInfo(zcu);
         const elem_ty = Type.fromInterned(info.child);
-        if (!elem_ty.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!elem_ty.hasRuntimeBits(zcu)) {
             return;
         }
         const ptr_alignment = ptr_ty.ptrAlignment(zcu).toLlvm();

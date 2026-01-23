@@ -1479,7 +1479,7 @@ fn updateTlv(
 
     log.debug("updateTlv {f}({d})", .{ nav.fqn.fmt(ip), nav_index });
 
-    const required_alignment = pt.navAlignment(nav_index);
+    const required_alignment = zcu.navAlignment(nav_index);
 
     const sym = self.symbol(sym_index);
     const esym = &self.symtab.items(.elf_sym)[sym.esym_index];

@@ -72,8 +72,13 @@ pub fn print(
         .undef => try writer.writeAll("undefined"),
         .simple_value => |simple_value| switch (simple_value) {
             .void => try writer.writeAll("{}"),
-            .empty_tuple => try writer.writeAll(".{}"),
-            else => try writer.writeAll(@tagName(simple_value)),
+
+            .undefined,
+            .null,
+            .true,
+            .false,
+            .@"unreachable",
+            => try writer.writeAll(@tagName(simple_value)),
         },
         .variable => try writer.writeAll("(variable)"),
         .@"extern" => |e| try writer.print("(extern '{f}')", .{e.name.fmt(ip)}),
@@ -248,17 +253,26 @@ fn printAggregate(
     const len = ty.arrayLen(zcu);
 
     if (is_ref) try writer.writeByte('&');
-    try writer.writeAll(".{ ");
-
-    const max_len = @min(len, max_aggregate_items);
-    for (0..max_len) |i| {
-        if (i != 0) try writer.writeAll(", ");
-        try print(try val.fieldValue(pt, i), writer, level - 1, pt, opt_sema);
+    switch (len) {
+        0 => try writer.writeAll(".{}"),
+        1 => {
+            try writer.writeAll(".{");
+            try print(try val.fieldValue(pt, 0), writer, level - 1, pt, opt_sema);
+            try writer.writeByte('}');
+        },
+        else => {
+            try writer.writeAll(".{ ");
+            const max_len = @min(len, max_aggregate_items);
+            for (0..max_len) |i| {
+                if (i != 0) try writer.writeAll(", ");
+                try print(try val.fieldValue(pt, i), writer, level - 1, pt, opt_sema);
+            }
+            if (len > max_aggregate_items) {
+                try writer.writeAll(", ...");
+            }
+            try writer.writeAll(" }");
+        },
     }
-    if (len > max_aggregate_items) {
-        try writer.writeAll(", ...");
-    }
-    return writer.writeAll(" }");
 }
 
 fn printPtr(

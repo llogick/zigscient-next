@@ -769,7 +769,7 @@ fn lowerStruct(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool
     const ip = &pt.zcu.intern_pool;
 
     try self.sema.ensureLayoutResolved(res_ty);
-    try self.sema.ensureFieldInitsResolved(res_ty);
+    try self.sema.ensureStructDefaultsResolved(res_ty);
     const struct_info = self.sema.pt.zcu.typeToStruct(res_ty).?;
 
     const fields: @FieldType(Zoir.Node, "struct_literal") = switch (node.get(self.file.zoir.?)) {

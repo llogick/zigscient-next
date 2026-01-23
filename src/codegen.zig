@@ -347,7 +347,6 @@ pub fn generateSymbol(
             .void => unreachable, // non-runtime value
             .null => unreachable, // non-runtime value
             .@"unreachable" => unreachable, // non-runtime value
-            .empty_tuple => return,
             .false, .true => try w.writeByte(switch (simple_value) {
                 .false => 0,
                 .true => 1,
@@ -1065,20 +1064,20 @@ pub fn lowerValue(pt: Zcu.PerThread, val: Value, target: *const std.Target) Allo
                 const elem_ty = ty.childType(zcu);
                 const ptr = ip.indexToKey(val.toIntern()).ptr;
                 if (ptr.base_addr == .int) return .{ .immediate = ptr.byte_offset };
-                switch (ptr.base_addr) {
+                if (ptr.byte_offset == 0) switch (ptr.base_addr) {
                     .int => unreachable, // handled above
 
-                    .nav => |nav| if (elem_ty.isFnOrHasRuntimeBits(zcu)) {
+                    .nav => |nav| if (elem_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
                         return .{ .lea_nav = nav };
                     } else {
                         // Create the 0xaa bit pattern...
                         const undef_ptr_bits: u64 = @intCast((@as(u66, 1) << @intCast(target.ptrBitWidth() + 1)) / 3);
                         // ...but align the pointer
-                        const alignment = pt.navAlignment(nav);
+                        const alignment = zcu.navAlignment(nav);
                         return .{ .immediate = alignment.forward(undef_ptr_bits) };
                     },
 
-                    .uav => |uav| if (elem_ty.isFnOrHasRuntimeBits(zcu)) {
+                    .uav => |uav| if (elem_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
                         return .{ .lea_uav = uav };
                     } else {
                         // Create the 0xaa bit pattern...
@@ -1089,7 +1088,7 @@ pub fn lowerValue(pt: Zcu.PerThread, val: Value, target: *const std.Target) Allo
                     },
 
                     else => {},
-                }
+                };
             },
         },
         .int => {

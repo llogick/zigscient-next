@@ -6594,7 +6594,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                     if (try isel.hasRepeatedByteRepr(.fromInterned(fill_val))) |fill_byte|
                         break :fill_byte .{ .constant = fill_byte };
                 }
-                switch (dst_ty.indexablePtrElem(zcu).abiSize(zcu)) {
+                switch (dst_ty.indexableElem(zcu).abiSize(zcu)) {
                     0 => unreachable,
                     1 => break :fill_byte .{ .value = bin_op.rhs },
                     2, 4, 8 => |size| {
@@ -7217,7 +7217,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 const ptr_ra = try ptr_vi.value.defReg(isel) orelse break :unused;
 
                 const ty_nav = air.data(air.inst_index).ty_nav;
-                if (ZigType.fromInterned(ip.getNav(ty_nav.nav).typeOf(ip)).isFnOrHasRuntimeBits(zcu)) switch (true) {
+                if (ZigType.fromInterned(ip.getNav(ty_nav.nav).typeOf(ip)).isRuntimeFnOrHasRuntimeBits(zcu)) switch (true) {
                     false => {
                         try isel.nav_relocs.append(gpa, .{
                             .nav = ty_nav.nav,
@@ -7240,7 +7240,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                         });
                         try isel.emit(.adrp(ptr_ra.x(), 0));
                     },
-                } else try isel.movImmediate(ptr_ra.x(), isel.pt.navAlignment(ty_nav.nav).forward(0xaaaaaaaaaaaaaaaa));
+                } else try isel.movImmediate(ptr_ra.x(), zcu.navAlignment(ty_nav.nav).forward(0xaaaaaaaaaaaaaaaa));
             }
             if (air.next()) |next_air_tag| continue :air_tag next_air_tag;
         },
@@ -10738,7 +10738,7 @@ pub const Value = struct {
                                     } }),
                                 }),
                                 .simple_value => |simple_value| switch (simple_value) {
-                                    .undefined, .void, .null, .empty_tuple, .@"unreachable" => unreachable,
+                                    .undefined, .void, .null, .@"unreachable" => unreachable,
                                     .true => continue :constant_key .{ .int = .{
                                         .ty = .bool_type,
                                         .storage = .{ .u64 = 1 },
@@ -10931,7 +10931,7 @@ pub const Value = struct {
                                 .ptr => |ptr| {
                                     assert(offset == 0 and size == 8);
                                     break :free switch (ptr.base_addr) {
-                                        .nav => |nav| if (ZigType.fromInterned(ip.getNav(nav).typeOf(ip)).isFnOrHasRuntimeBits(zcu)) switch (true) {
+                                        .nav => |nav| if (ZigType.fromInterned(ip.getNav(nav).typeOf(ip)).isRuntimeFnOrHasRuntimeBits(zcu)) switch (true) {
                                             false => {
                                                 try isel.nav_relocs.append(zcu.gpa, .{
                                                     .nav = nav,
@@ -10965,9 +10965,9 @@ pub const Value = struct {
                                             },
                                         } else continue :constant_key .{ .int = .{
                                             .ty = .usize_type,
-                                            .storage = .{ .u64 = isel.pt.navAlignment(nav).forward(0xaaaaaaaaaaaaaaaa) },
+                                            .storage = .{ .u64 = zcu.navAlignment(nav).forward(0xaaaaaaaaaaaaaaaa) },
                                         } },
-                                        .uav => |uav| if (ZigType.fromInterned(ip.typeOf(uav.val)).isFnOrHasRuntimeBits(zcu)) switch (true) {
+                                        .uav => |uav| if (ZigType.fromInterned(ip.typeOf(uav.val)).isRuntimeFnOrHasRuntimeBits(zcu)) switch (true) {
                                             false => {
                                                 try isel.uav_relocs.append(zcu.gpa, .{
                                                     .uav = uav,
