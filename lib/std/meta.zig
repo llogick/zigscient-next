@@ -315,7 +315,7 @@ test declarationInfo {
         try testing.expect(comptime mem.eql(u8, info.name, "a"));
     }
 }
-pub fn fields(comptime T: type) switch (@typeInfo(T)) {
+pub inline fn fields(comptime T: type) switch (@typeInfo(T)) {
     .@"struct" => []const Type.StructField,
     .@"union" => []const Type.UnionField,
     .@"enum" => []const Type.EnumField,

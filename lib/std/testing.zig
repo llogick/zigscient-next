@@ -950,9 +950,8 @@ test "expectEqualDeep primitive type" {
 }
 
 test "expectEqualDeep pointer" {
-    const a = 1;
-    const b = 1;
-    try expectEqualDeep(&a, &b);
+    try comptime expectEqualDeep(&1, &1);
+    try expectEqualDeep(&@as(u32, 1), &@as(u32, 1));
 }
 
 test "expectEqualDeep composite type" {
