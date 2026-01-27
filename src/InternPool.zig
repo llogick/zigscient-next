@@ -546,6 +546,8 @@ pub const Nav = struct {
     analysis: ?struct {
         namespace: NamespaceIndex,
         zir_index: TrackedInst.Index,
+        /// Initially `false`. Set to `true` by `setWantNavAnalysis`.
+        wanted: bool,
     },
     status: union(enum) {
         /// This `Nav` is pending semantic analysis.
@@ -743,7 +745,7 @@ pub const Nav = struct {
     const Repr = struct {
         name: NullTerminatedString,
         fqn: NullTerminatedString,
-        // The following 1 fields are either both populated, or both `.none`.
+        // The following 2 fields are either both populated, or both `.none`.
         analysis_namespace: OptionalNamespaceIndex,
         analysis_zir_index: TrackedInst.Index.Optional,
         /// Populated only if `bits.status != .unresolved`.
@@ -762,7 +764,7 @@ pub const Nav = struct {
             @"addrspace": std.builtin.AddressSpace,
             /// Populated only if `bits.status == .type_resolved`.
             is_threadlocal: bool,
-            _: u1 = 0,
+            want_analysis: bool,
         };
 
         fn unpack(repr: Repr) Nav {
@@ -772,6 +774,7 @@ pub const Nav = struct {
                 .analysis = if (repr.analysis_namespace.unwrap()) |namespace| .{
                     .namespace = namespace,
                     .zir_index = repr.analysis_zir_index.unwrap().?,
+                    .wanted = repr.bits.want_analysis,
                 } else a: {
                     assert(repr.analysis_zir_index == .none);
                     break :a null;
@@ -824,6 +827,7 @@ pub const Nav = struct {
                     .alignment = .none,
                     .@"addrspace" = .generic,
                     .is_threadlocal = false,
+                    .want_analysis = if (nav.analysis) |a| a.wanted else false,
                 },
                 .type_resolved => |r| .{
                     .status = if (r.is_extern_decl) .type_resolved_extern_decl else .type_resolved,
@@ -831,6 +835,7 @@ pub const Nav = struct {
                     .alignment = r.alignment,
                     .@"addrspace" = r.@"addrspace",
                     .is_threadlocal = r.is_threadlocal,
+                    .want_analysis = if (nav.analysis) |a| a.wanted else false,
                 },
                 .fully_resolved => |r| .{
                     .status = .fully_resolved,
@@ -838,6 +843,7 @@ pub const Nav = struct {
                     .alignment = r.alignment,
                     .@"addrspace" = r.@"addrspace",
                     .is_threadlocal = false,
+                    .want_analysis = if (nav.analysis) |a| a.wanted else false,
                 },
             },
         };
@@ -2412,17 +2418,6 @@ pub const Key = union(enum) {
             @atomicStore(FuncAnalysis, analysis_ptr, analysis, .release);
         }
 
-        pub fn setAnalyzed(func: Func, ip: *InternPool, io: Io) void {
-            const extra_mutex = &ip.getLocal(func.tid).mutate.extra.mutex;
-            extra_mutex.lockUncancelable(io);
-            defer extra_mutex.unlock(io);
-
-            const analysis_ptr = func.analysisPtr(ip);
-            var analysis = analysis_ptr.*;
-            analysis.is_analyzed = true;
-            @atomicStore(FuncAnalysis, analysis_ptr, analysis, .release);
-        }
-
         /// Returns a pointer that becomes invalid after any additions to the `InternPool`.
         fn zirBodyInstPtr(func: Func, ip: *const InternPool) *TrackedInst.Index {
             const extra = ip.getLocalShared(func.tid).extra.acquire();
@@ -3314,6 +3309,25 @@ pub const LoadedStructType = struct {
     /// May be `undefined` if `layout != .@"packed"`.
     packed_backing_mode: BackingTypeMode,
 
+    /// Initially `false`, and set to `true` once any dependency on or reference to the struct's
+    /// layout is encountered, after which it is never reset to `false`, even across incremental
+    /// updates.
+    ///
+    /// This field is purely an optimization to avoid resolving the layout of types whose layouts
+    /// are never demanded. If this field is `true` but the layout is not actually needed, the
+    /// compiler frontend resolves this by traversing the reference graph at the end of each update
+    /// with `Zcu.resolveReferences` and hiding compile errors which arise from this analysis.
+    want_layout: bool,
+    /// Initially `false`, and set to `true` once any dependency on or reference to the struct's
+    /// default field values is encountered, after which it is never reset to `false`, even across
+    /// incremental updates.
+    ///
+    /// This field is purely an optimization to avoid resolving the layout of types whose layouts
+    /// are never demanded. If this field is `true` but the layout is not actually needed, the
+    /// compiler frontend resolves this by traversing the reference graph at the end of each update
+    /// with `Zcu.resolveReferences` and hiding compile errors which arise from this analysis.
+    want_defaults: bool,
+
     // The remaining fields are only valid once the struct's layout is resolved.
     field_name_map: MapIndex,
     field_names: NullTerminatedString.Slice,
@@ -3490,6 +3504,16 @@ pub const LoadedUnionType = struct {
     /// or populate `enum_tag_type`.
     reified_field_names: NullTerminatedString.Slice,
 
+    /// Initially `false`, and set to `true` once any dependency on or reference to the struct's
+    /// layout is encountered, after which it is never reset to `false`, even across incremental
+    /// updates.
+    ///
+    /// This field is purely an optimization to avoid resolving the layout of types whose layouts
+    /// are never demanded. If this field is `true` but the layout is not actually needed, the
+    /// compiler frontend resolves this by traversing the reference graph at the end of each update
+    /// with `Zcu.resolveReferences` and hiding compile errors which arise from this analysis.
+    want_layout: bool,
+
     // The remaining fields are only valid once the union's layout is resolved.
     field_types: Index.Slice,
     field_aligns: Alignment.Slice,
@@ -3531,6 +3555,16 @@ pub const LoadedEnumType = struct {
 
     int_tag_mode: BackingTypeMode,
     nonexhaustive: bool,
+
+    /// Initially `false`, and set to `true` once any dependency on or reference to the struct's
+    /// layout is encountered, after which it is never reset to `false`, even across incremental
+    /// updates.
+    ///
+    /// This field is purely an optimization to avoid resolving the layout of types whose layouts
+    /// are never demanded. If this field is `true` but the layout is not actually needed, the
+    /// compiler frontend resolves this by traversing the reference graph at the end of each update
+    /// with `Zcu.resolveReferences` and hiding compile errors which arise from this analysis.
+    want_layout: bool,
 
     // The remaining fields are only valid once the enum's layout is resolved.
     int_tag_type: Index,
@@ -3669,6 +3703,9 @@ pub fn loadStructType(ip: *const InternPool, index: Index) LoadedStructType {
                 },
                 .packed_backing_mode = undefined,
 
+                .want_layout = extra.data.flags.want_layout,
+                .want_defaults = extra.data.flags.want_defaults,
+
                 .field_name_map = extra.data.field_name_map,
                 .field_names = field_names,
                 .field_types = field_types,
@@ -3690,15 +3727,15 @@ pub fn loadStructType(ip: *const InternPool, index: Index) LoadedStructType {
     };
     const extra = extraDataTrail(extra_list, Tag.TypeStructPacked, item.data);
     var extra_index = extra.end;
-    const captures: CaptureValue.Slice = switch (extra.data.captures_len) {
+    const captures: CaptureValue.Slice = switch (extra.data.bits.captures_len) {
         .reified => captures: {
             extra_index += 2; // type_hash: PackedU64
             break :captures .empty;
         },
-        _ => .{
+        _ => |n| .{
             .tid = unwrapped_index.tid,
             .start = extra_index,
-            .len = @intFromEnum(extra.data.captures_len),
+            .len = @intFromEnum(n),
         },
     };
     extra_index += captures.len;
@@ -3723,12 +3760,15 @@ pub fn loadStructType(ip: *const InternPool, index: Index) LoadedStructType {
     return .{
         .zir_index = extra.data.zir_index,
         .captures = captures,
-        .is_reified = extra.data.captures_len == .reified,
+        .is_reified = extra.data.bits.captures_len == .reified,
         .name = extra.data.name,
         .name_nav = extra.data.name_nav,
         .namespace = extra.data.namespace,
         .layout = .@"packed",
         .packed_backing_mode = backing_mode,
+
+        .want_layout = extra.data.bits.want_layout,
+        .want_defaults = extra.data.bits.want_defaults,
 
         .field_name_map = extra.data.field_name_map,
         .field_names = field_names,
@@ -3813,6 +3853,7 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
                 .packed_backing_mode = undefined,
                 .packed_backing_int_type = undefined,
                 .reified_field_names = reified_field_names,
+                .want_layout = extra.data.flags.want_layout,
                 .field_types = field_types,
                 .field_aligns = field_aligns,
                 .has_no_possible_value = extra.data.flags.has_no_possible_value,
@@ -3828,19 +3869,19 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
     };
     const extra = extraDataTrail(extra_list, Tag.TypeUnionPacked, item.data);
     var extra_index = extra.end;
-    const captures: CaptureValue.Slice = switch (extra.data.captures_len) {
+    const captures: CaptureValue.Slice = switch (extra.data.bits.captures_len) {
         .reified => captures: {
             extra_index += 2; // type_hash: PackedU64
             break :captures .empty;
         },
-        _ => .{
+        _ => |n| .{
             .tid = unwrapped_index.tid,
             .start = extra_index,
-            .len = @intFromEnum(extra.data.captures_len),
+            .len = @intFromEnum(n),
         },
     };
     extra_index += captures.len;
-    const reified_field_names: NullTerminatedString.Slice = if (extra.data.captures_len == .reified) .{
+    const reified_field_names: NullTerminatedString.Slice = if (extra.data.bits.captures_len == .reified) .{
         .tid = unwrapped_index.tid,
         .start = extra_index,
         .len = extra.data.fields_len,
@@ -3855,7 +3896,7 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
     return .{
         .zir_index = extra.data.zir_index,
         .captures = captures,
-        .is_reified = extra.data.captures_len == .reified,
+        .is_reified = extra.data.bits.captures_len == .reified,
         .name = extra.data.name,
         .name_nav = extra.data.name_nav,
         .namespace = extra.data.namespace,
@@ -3866,6 +3907,7 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
         .packed_backing_mode = backing_mode,
         .packed_backing_int_type = extra.data.backing_int_type,
         .reified_field_names = reified_field_names,
+        .want_layout = extra.data.bits.want_layout,
         .field_types = field_types,
         .field_aligns = .empty,
         .has_no_possible_value = undefined,
@@ -3891,7 +3933,7 @@ pub fn loadEnumType(ip: *const InternPool, index: Index) LoadedEnumType {
     };
     const extra = extraDataTrail(extra_list, Tag.TypeEnum, item.data);
     var extra_index: u32 = @intCast(extra.end);
-    const zir_index: TrackedInst.Index.Optional, const captures: CaptureValue.Slice, const owner_union: Index = switch (extra.data.captures_len) {
+    const zir_index: TrackedInst.Index.Optional, const captures: CaptureValue.Slice, const owner_union: Index = switch (extra.data.bits.captures_len) {
         .reified => info: {
             const zir_index: TrackedInst.Index = @enumFromInt(extra_items[extra_index]);
             extra_index += 1;
@@ -3903,13 +3945,13 @@ pub fn loadEnumType(ip: *const InternPool, index: Index) LoadedEnumType {
             extra_index += 1;
             break :info .{ .none, .empty, owner_union };
         },
-        _ => info: {
+        _ => |n| info: {
             const zir_index: TrackedInst.Index = @enumFromInt(extra_items[extra_index]);
             extra_index += 1;
             const captures: CaptureValue.Slice = .{
                 .tid = unwrapped_index.tid,
                 .start = extra_index,
-                .len = @intFromEnum(extra.data.captures_len),
+                .len = @intFromEnum(n),
             };
             extra_index += captures.len;
             break :info .{ zir_index.toOptional(), captures, .none };
@@ -3935,7 +3977,7 @@ pub fn loadEnumType(ip: *const InternPool, index: Index) LoadedEnumType {
     return .{
         .zir_index = zir_index,
         .captures = captures,
-        .is_reified = extra.data.captures_len == .reified,
+        .is_reified = extra.data.bits.captures_len == .reified,
         .owner_union = owner_union,
         .name = extra.data.name,
         .name_nav = extra.data.name_nav,
@@ -3943,6 +3985,7 @@ pub fn loadEnumType(ip: *const InternPool, index: Index) LoadedEnumType {
         .int_tag_type = extra.data.int_tag_type,
         .int_tag_mode = if (explicit_int_tag) .explicit else .auto,
         .nonexhaustive = nonexhaustive,
+        .want_layout = extra.data.bits.want_layout,
         .field_name_map = extra.data.field_name_map,
         .field_value_map = field_value_map,
         .field_names = field_names,
@@ -5629,7 +5672,10 @@ pub const Tag = enum(u8) {
             /// Alignment of the whole struct. Always `.none` until layout resolved.
             alignment: Alignment,
 
-            _: u16 = 0,
+            want_layout: bool,
+            want_defaults: bool,
+
+            _: u14 = 0,
         };
     };
 
@@ -5641,10 +5687,7 @@ pub const Tag = enum(u8) {
     /// 4. field_default: Index             // if item tag implies field defaults; for each `fields_len`
     pub const TypeStructPacked = struct {
         zir_index: TrackedInst.Index,
-        captures_len: enum(u32) {
-            reified = std.math.maxInt(u32),
-            _,
-        },
+        bits: Bits,
 
         name: NullTerminatedString,
         name_nav: Nav.Index.Optional,
@@ -5655,6 +5698,15 @@ pub const Tag = enum(u8) {
 
         fields_len: u32,
         field_name_map: MapIndex,
+
+        const Bits = packed struct(u32) {
+            captures_len: enum(u30) {
+                reified = std.math.maxInt(u30),
+                _,
+            },
+            want_layout: bool,
+            want_defaults: bool,
+        };
     };
 
     /// For declared unions, field names are intentionally omitted because they are available in
@@ -5718,7 +5770,9 @@ pub const Tag = enum(u8) {
             /// Alignment of the whole union. Always `.none` until layout resolved.
             alignment: Alignment,
 
-            _: u15 = 0,
+            want_layout: bool,
+
+            _: u14 = 0,
         };
     };
 
@@ -5734,10 +5788,7 @@ pub const Tag = enum(u8) {
     /// 3. field_type: Index     // for each `fields_len`
     pub const TypeUnionPacked = struct {
         zir_index: TrackedInst.Index,
-        captures_len: enum(u32) {
-            reified = std.math.maxInt(u32),
-            _,
-        },
+        bits: Bits,
 
         name: NullTerminatedString,
         name_nav: Nav.Index.Optional,
@@ -5753,6 +5804,14 @@ pub const Tag = enum(u8) {
         /// to store it directly. This is also necessary for `dumpStatsFallible` to
         /// work on unresolved types.
         fields_len: u32,
+
+        const Bits = packed struct(u32) {
+            captures_len: enum(u31) {
+                reified = std.math.maxInt(u31),
+                _,
+            },
+            want_layout: bool,
+        };
     };
 
     /// Trailing:
@@ -5764,11 +5823,7 @@ pub const Tag = enum(u8) {
     /// 5. field_name: NullTerminatedString // for each `fields_len`
     /// 6. field_value: Index               // if tag is not `.type_enum_auto`; for each `fields_len`
     pub const TypeEnum = struct {
-        captures_len: enum(u32) {
-            reified = std.math.maxInt(u32),
-            generated_union_tag = std.math.maxInt(u32) - 1,
-            _,
-        },
+        bits: Bits,
 
         name: NullTerminatedString,
         name_nav: Nav.Index.Optional,
@@ -5780,6 +5835,15 @@ pub const Tag = enum(u8) {
 
         fields_len: u32,
         field_name_map: MapIndex,
+
+        const Bits = packed struct(u32) {
+            captures_len: enum(u31) {
+                reified = std.math.maxInt(u31),
+                generated_union_tag = std.math.maxInt(u31) - 1,
+                _,
+            },
+            want_layout: bool,
+        };
     };
 
     /// Trailing:
@@ -5812,7 +5876,7 @@ pub const BackingTypeMode = enum(u1) {
 /// equality or hashing, except for `inferred_error_set` which is considered
 /// to be part of the type of the function.
 pub const FuncAnalysis = packed struct(u32) {
-    is_analyzed: bool,
+    want_runtime_analysis: bool,
     branch_hint: std.builtin.BranchHint,
     is_noinline: bool,
     has_error_trace: bool,
@@ -6597,17 +6661,17 @@ pub fn indexToKey(ip: *const InternPool, index: Index) Key {
         => .{ .struct_type = ns: {
             const extra_list = unwrapped_index.getExtra(ip);
             const extra = extraDataTrail(extra_list, Tag.TypeStructPacked, data);
-            break :ns switch (extra.data.captures_len) {
+            break :ns switch (extra.data.bits.captures_len) {
                 .reified => .{ .reified = .{
                     .zir_index = extra.data.zir_index,
                     .type_hash = extraData(extra_list, PackedU64, extra.end).get(),
                 } },
-                _ => .{ .declared = .{
+                _ => |len| .{ .declared = .{
                     .zir_index = extra.data.zir_index,
                     .captures = .{ .owned = .{
                         .tid = unwrapped_index.tid,
                         .start = extra.end,
-                        .len = @intFromEnum(extra.data.captures_len),
+                        .len = @intFromEnum(len),
                     } },
                 } },
             };
@@ -6637,17 +6701,17 @@ pub fn indexToKey(ip: *const InternPool, index: Index) Key {
         .type_union_packed_auto, .type_union_packed_explicit => .{ .union_type = ns: {
             const extra_list = unwrapped_index.getExtra(ip);
             const extra = extraDataTrail(extra_list, Tag.TypeUnionPacked, data);
-            break :ns switch (extra.data.captures_len) {
+            break :ns switch (extra.data.bits.captures_len) {
                 .reified => .{ .reified = .{
                     .zir_index = extra.data.zir_index,
                     .type_hash = extraData(extra_list, PackedU64, extra.end).get(),
                 } },
-                _ => .{ .declared = .{
+                _ => |len| .{ .declared = .{
                     .zir_index = extra.data.zir_index,
                     .captures = .{ .owned = .{
                         .tid = unwrapped_index.tid,
                         .start = extra.end,
-                        .len = @intFromEnum(extra.data.captures_len),
+                        .len = @intFromEnum(len),
                     } },
                 } },
             };
@@ -6655,7 +6719,7 @@ pub fn indexToKey(ip: *const InternPool, index: Index) Key {
         .type_enum_auto, .type_enum_explicit, .type_enum_nonexhaustive => .{ .enum_type = ns: {
             const extra_list = unwrapped_index.getExtra(ip);
             const extra = extraDataTrail(extra_list, Tag.TypeEnum, data);
-            break :ns switch (extra.data.captures_len) {
+            break :ns switch (extra.data.bits.captures_len) {
                 .reified => .{ .reified = .{
                     .zir_index = @enumFromInt(extra_list.view().items(.@"0")[extra.end]),
                     .type_hash = extraData(extra_list, PackedU64, extra.end + 1).get(),
@@ -6663,12 +6727,12 @@ pub fn indexToKey(ip: *const InternPool, index: Index) Key {
                 .generated_union_tag => .{ .generated_union_tag = owner_union: {
                     break :owner_union @enumFromInt(extra_list.view().items(.@"0")[extra.end]);
                 } },
-                _ => .{ .declared = .{
+                _ => |len| .{ .declared = .{
                     .zir_index = @enumFromInt(extra_list.view().items(.@"0")[extra.end]),
                     .captures = .{ .owned = .{
                         .tid = unwrapped_index.tid,
                         .start = extra.end + 1,
-                        .len = @intFromEnum(extra.data.captures_len),
+                        .len = @intFromEnum(len),
                     } },
                 } },
             };
@@ -8138,7 +8202,11 @@ pub fn getDeclaredStructType(
 
             const extra_index = addExtraAssumeCapacity(extra, Tag.TypeStructPacked{
                 .zir_index = ini.zir_index,
-                .captures_len = @enumFromInt(ini.captures.len),
+                .bits = .{
+                    .captures_len = @enumFromInt(ini.captures.len),
+                    .want_layout = false,
+                    .want_defaults = false,
+                },
                 .name = undefined, // set by `finish`
                 .name_nav = undefined, // set by `finish`
                 .namespace = undefined, // set by `finish`
@@ -8204,6 +8272,8 @@ pub fn getDeclaredStructType(
             .comptime_only = false,
             .has_runtime_bits = false,
             .alignment = .none,
+            .want_layout = false,
+            .want_defaults = false,
         },
     });
     if (ini.captures.len != 0) {
@@ -8281,7 +8351,11 @@ pub fn getReifiedStructType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Pe
 
             const extra_index = addExtraAssumeCapacity(extra, Tag.TypeStructPacked{
                 .zir_index = ini.zir_index,
-                .captures_len = .reified,
+                .bits = .{
+                    .captures_len = .reified,
+                    .want_layout = false,
+                    .want_defaults = false,
+                },
                 .name = undefined, // set by `finish`
                 .name_nav = undefined, // set by `finish`
                 .namespace = undefined, // set by `finish`
@@ -8352,6 +8426,8 @@ pub fn getReifiedStructType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Pe
             .comptime_only = false,
             .has_runtime_bits = false,
             .alignment = .none,
+            .want_layout = false,
+            .want_defaults = false,
         },
     });
     _ = addExtraAssumeCapacity(extra, PackedU64.init(ini.type_hash)); // type_hash
@@ -8451,7 +8527,10 @@ pub fn getDeclaredUnionType(
 
             const extra_index = addExtraAssumeCapacity(extra, Tag.TypeUnionPacked{
                 .zir_index = ini.zir_index,
-                .captures_len = @enumFromInt(ini.captures.len),
+                .bits = .{
+                    .captures_len = @enumFromInt(ini.captures.len),
+                    .want_layout = false,
+                },
                 .name = undefined, // set by `finish`
                 .name_nav = undefined, // set by `finish`
                 .namespace = undefined, // set by `finish`
@@ -8509,6 +8588,7 @@ pub fn getDeclaredUnionType(
             .comptime_only = false,
             .has_runtime_bits = false,
             .alignment = .none,
+            .want_layout = false,
         },
     });
     if (ini.captures.len > 0) {
@@ -8572,7 +8652,10 @@ pub fn getReifiedUnionType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Per
 
             const extra_index = addExtraAssumeCapacity(extra, Tag.TypeUnionPacked{
                 .zir_index = ini.zir_index,
-                .captures_len = .reified,
+                .bits = .{
+                    .captures_len = .reified,
+                    .want_layout = false,
+                },
                 .name = undefined, // set by `finish`
                 .name_nav = undefined, // set by `finish`
                 .namespace = undefined, // set by `finish`
@@ -8633,6 +8716,7 @@ pub fn getReifiedUnionType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Per
             .comptime_only = false,
             .has_runtime_bits = false,
             .alignment = .none,
+            .want_layout = false,
         },
     });
     _ = addExtraAssumeCapacity(extra, PackedU64.init(ini.type_hash));
@@ -8723,7 +8807,10 @@ pub fn getDeclaredEnumType(
         (if (have_values) ini.fields_len else 0)); // field_value
 
     const extra_index = addExtraAssumeCapacity(extra, Tag.TypeEnum{
-        .captures_len = @enumFromInt(ini.captures.len),
+        .bits = .{
+            .captures_len = @enumFromInt(ini.captures.len),
+            .want_layout = false,
+        },
         .name = undefined, // set by `finish`
         .name_nav = undefined, // set by `finish`
         .namespace = undefined, // set by `finish`
@@ -8795,7 +8882,10 @@ pub fn getReifiedEnumType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerT
         (if (have_values) ini.fields_len else 0)); // field_value
 
     const extra_index = addExtraAssumeCapacity(extra, Tag.TypeEnum{
-        .captures_len = .reified,
+        .bits = .{
+            .captures_len = .reified,
+            .want_layout = false,
+        },
         .name = undefined, // set by `finish`
         .name_nav = undefined, // set by `finish`
         .namespace = undefined, // set by `finish`
@@ -8865,7 +8955,10 @@ pub fn getGeneratedEnumTagType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu
         (if (have_values) ini.fields_len else 0)); // field_value
 
     const extra_index = addExtraAssumeCapacity(extra, Tag.TypeEnum{
-        .captures_len = .generated_union_tag,
+        .bits = .{
+            .captures_len = .generated_union_tag,
+            .want_layout = false,
+        },
         .name = undefined, // set by `finish`
         .name_nav = undefined, // set by `finish`
         .namespace = undefined, // set by `finish`
@@ -9249,7 +9342,7 @@ pub fn getFuncDecl(
 
     const func_decl_extra_index = addExtraAssumeCapacity(extra, Tag.FuncDecl{
         .analysis = .{
-            .is_analyzed = false,
+            .want_runtime_analysis = false,
             .branch_hint = .none,
             .is_noinline = key.is_noinline,
             .has_error_trace = false,
@@ -9359,7 +9452,7 @@ pub fn getFuncDeclIes(
 
     const func_decl_extra_index = addExtraAssumeCapacity(extra, Tag.FuncDecl{
         .analysis = .{
-            .is_analyzed = false,
+            .want_runtime_analysis = false,
             .branch_hint = .none,
             .is_noinline = key.is_noinline,
             .has_error_trace = false,
@@ -9557,7 +9650,7 @@ pub fn getFuncInstance(
 
     const func_extra_index = addExtraAssumeCapacity(extra, Tag.FuncInstance{
         .analysis = .{
-            .is_analyzed = false,
+            .want_runtime_analysis = false,
             .branch_hint = .none,
             .is_noinline = arg.is_noinline,
             .has_error_trace = false,
@@ -9658,7 +9751,7 @@ fn getFuncInstanceIes(
 
     const func_extra_index = addExtraAssumeCapacity(extra, Tag.FuncInstance{
         .analysis = .{
-            .is_analyzed = false,
+            .want_runtime_analysis = false,
             .branch_hint = .none,
             .is_noinline = arg.is_noinline,
             .has_error_trace = false,
@@ -9902,9 +9995,6 @@ fn addExtraAssumeCapacity(extra: Local.Extra.Mutable, item: anytype) u32 {
             TrackedInst.Index,
             TrackedInst.Index.Optional,
             ComptimeAllocIndex,
-            @FieldType(Tag.TypeStructPacked, "captures_len"),
-            @FieldType(Tag.TypeUnionPacked, "captures_len"),
-            @FieldType(Tag.TypeEnum, "captures_len"),
             => @intFromEnum(@field(item, field.name)),
 
             u32,
@@ -9916,6 +10006,9 @@ fn addExtraAssumeCapacity(extra: Local.Extra.Mutable, item: anytype) u32 {
             Tag.TypePointer.PackedOffset,
             Tag.TypeUnion.Flags,
             Tag.TypeStruct.Flags,
+            Tag.TypeStructPacked.Bits,
+            Tag.TypeUnionPacked.Bits,
+            Tag.TypeEnum.Bits,
             => @bitCast(@field(item, field.name)),
 
             else => @compileError("bad field type: " ++ @typeName(field.type)),
@@ -9967,9 +10060,6 @@ fn extraDataTrail(extra: Local.Extra, comptime T: type, index: u32) struct { dat
             TrackedInst.Index,
             TrackedInst.Index.Optional,
             ComptimeAllocIndex,
-            @FieldType(Tag.TypeStructPacked, "captures_len"),
-            @FieldType(Tag.TypeUnionPacked, "captures_len"),
-            @FieldType(Tag.TypeEnum, "captures_len"),
             => @enumFromInt(extra_item),
 
             u32,
@@ -9981,6 +10071,9 @@ fn extraDataTrail(extra: Local.Extra, comptime T: type, index: u32) struct { dat
             Tag.TypeUnion.Flags,
             Tag.TypeStruct.Flags,
             FuncAnalysis,
+            Tag.TypeStructPacked.Bits,
+            Tag.TypeUnionPacked.Bits,
+            Tag.TypeEnum.Bits,
             => @bitCast(extra_item),
 
             else => @compileError("bad field type: " ++ @typeName(field.type)),
@@ -10750,7 +10843,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                 .type_struct_packed_auto, .type_struct_packed_explicit => b: {
                     var n: usize = @typeInfo(Tag.TypeStructPacked).@"struct".fields.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeStructPacked, data);
-                    switch (extra.data.captures_len) {
+                    switch (extra.data.bits.captures_len) {
                         .reified => n += 2, // type_hash: PackedU64
                         _ => |len| n += @intFromEnum(len), // capture: CaptureValue
                     }
@@ -10761,7 +10854,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                 .type_struct_packed_auto_defaults, .type_struct_packed_explicit_defaults => b: {
                     var n: usize = @typeInfo(Tag.TypeStructPacked).@"struct".fields.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeStructPacked, data);
-                    switch (extra.data.captures_len) {
+                    switch (extra.data.bits.captures_len) {
                         .reified => n += 2, // type_hash: PackedU64
                         _ => |len| n += @intFromEnum(len), // capture: CaptureValue
                     }
@@ -10790,7 +10883,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                 .type_union_packed_auto, .type_union_packed_explicit => b: {
                     var n: usize = @typeInfo(Tag.TypeUnionPacked).@"struct".fields.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeUnionPacked, data);
-                    switch (extra.data.captures_len) {
+                    switch (extra.data.bits.captures_len) {
                         .reified => n += 2, // type_hash: PackedU64
                         _ => |len| n += @intFromEnum(len), // capture: CaptureValue
                     }
@@ -10800,7 +10893,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                 .type_enum_auto => b: {
                     var n: usize = @typeInfo(Tag.TypeEnum).@"struct".fields.len;
                     const extra = extraData(extra_list, Tag.TypeEnum, data);
-                    switch (extra.captures_len) {
+                    switch (extra.bits.captures_len) {
                         .generated_union_tag => n += 1, // owner_union: Index
                         .reified => {
                             n += 1; // zir_index: TrackedInst.Index,
@@ -10817,7 +10910,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                 .type_enum_explicit, .type_enum_nonexhaustive => b: {
                     var n: usize = @typeInfo(Tag.TypeEnum).@"struct".fields.len;
                     const extra = extraData(extra_list, Tag.TypeEnum, data);
-                    switch (extra.captures_len) {
+                    switch (extra.bits.captures_len) {
                         .generated_union_tag => n += 1, // owner_union: Index
                         .reified => {
                             n += 1; // zir_index: TrackedInst.Index,
@@ -11204,6 +11297,7 @@ pub fn createDeclNav(
         .analysis = .{
             .namespace = namespace,
             .zir_index = zir_index,
+            .wanted = false,
         },
         .status = .unresolved,
     }));
@@ -12828,4 +12922,176 @@ pub fn resolveEnumLayout(
     }
 
     extra_items[item.data + std.meta.fieldIndex(Tag.TypeEnum, "int_tag_type").?] = @intFromEnum(int_tag_type);
+}
+
+/// Sets the "want_layout" flag on the given struct, union, or enum type. Returns true if the flag
+/// was *not* already set, meaning we have just discovered the first reference to this type's
+/// layout. This flag is never reset to false, and exists purely as an optimization; for details,
+/// see doc comments in `LoadedStructType`.
+pub fn setWantTypeLayout(ip: *InternPool, io: Io, container_type: Index) bool {
+    const unwrapped_index = container_type.unwrap(ip);
+
+    const local = ip.getLocal(unwrapped_index.tid);
+    local.mutate.extra.mutex.lockUncancelable(io);
+    defer local.mutate.extra.mutex.unlock(io);
+
+    const extra_items = local.shared.extra.view().items(.@"0");
+    const item = unwrapped_index.getItem(ip);
+    switch (item.tag) {
+        .type_struct_packed_auto,
+        .type_struct_packed_explicit,
+        .type_struct_packed_auto_defaults,
+        .type_struct_packed_explicit_defaults,
+        => {
+            const bits: *Tag.TypeStructPacked.Bits = @ptrCast(&extra_items[
+                item.data + std.meta.fieldIndex(Tag.TypeStructPacked, "bits").?
+            ]);
+            if (bits.want_layout) {
+                return false;
+            } else {
+                bits.want_layout = true;
+                return true;
+            }
+        },
+
+        .type_struct => {
+            const flags: *Tag.TypeStruct.Flags = @ptrCast(&extra_items[
+                item.data + std.meta.fieldIndex(Tag.TypeStruct, "flags").?
+            ]);
+            if (flags.want_layout) {
+                return false;
+            } else {
+                flags.want_layout = true;
+                return true;
+            }
+        },
+
+        .type_union_packed_auto,
+        .type_union_packed_explicit,
+        => {
+            const bits: *Tag.TypeUnionPacked.Bits = @ptrCast(&extra_items[
+                item.data + std.meta.fieldIndex(Tag.TypeUnionPacked, "bits").?
+            ]);
+            if (bits.want_layout) {
+                return false;
+            } else {
+                bits.want_layout = true;
+                return true;
+            }
+        },
+
+        .type_union => {
+            const flags: *Tag.TypeUnion.Flags = @ptrCast(&extra_items[
+                item.data + std.meta.fieldIndex(Tag.TypeUnion, "flags").?
+            ]);
+            if (flags.want_layout) {
+                return false;
+            } else {
+                flags.want_layout = true;
+                return true;
+            }
+        },
+
+        .type_enum_auto,
+        .type_enum_explicit,
+        .type_enum_nonexhaustive,
+        => {
+            const bits: *Tag.TypeEnum.Bits = @ptrCast(&extra_items[
+                item.data + std.meta.fieldIndex(Tag.TypeEnum, "bits").?
+            ]);
+            if (bits.want_layout) {
+                return false;
+            } else {
+                bits.want_layout = true;
+                return true;
+            }
+        },
+
+        else => unreachable,
+    }
+}
+
+/// Like `setWantTypeLayout`, but for the default field values of a struct (so this sets the
+/// `want_defaults` flag rather than the `want_layout` flag).
+pub fn setWantStructDefaults(ip: *InternPool, io: Io, struct_type: Index) bool {
+    const unwrapped_index = struct_type.unwrap(ip);
+
+    const local = ip.getLocal(unwrapped_index.tid);
+    local.mutate.extra.mutex.lockUncancelable(io);
+    defer local.mutate.extra.mutex.unlock(io);
+
+    const extra_items = local.shared.extra.view().items(.@"0");
+    const item = unwrapped_index.getItem(ip);
+    switch (item.tag) {
+        .type_struct_packed_auto,
+        .type_struct_packed_explicit,
+        .type_struct_packed_auto_defaults,
+        .type_struct_packed_explicit_defaults,
+        => {
+            const bits: *Tag.TypeStructPacked.Bits = @ptrCast(&extra_items[
+                item.data + std.meta.fieldIndex(Tag.TypeStructPacked, "bits").?
+            ]);
+            if (bits.want_defaults) {
+                return false;
+            } else {
+                bits.want_defaults = true;
+                return true;
+            }
+        },
+
+        .type_struct => {
+            const flags: *Tag.TypeStruct.Flags = @ptrCast(&extra_items[
+                item.data + std.meta.fieldIndex(Tag.TypeStruct, "flags").?
+            ]);
+            if (flags.want_defaults) {
+                return false;
+            } else {
+                flags.want_defaults = true;
+                return true;
+            }
+        },
+
+        else => unreachable,
+    }
+}
+
+/// Like `setWantTypeLayout`, but for runtime analysis of a function body, using the
+/// `FuncAnalysis.want_runtime_analysis` flag.
+pub fn setWantRuntimeFnAnalysis(ip: *InternPool, io: Io, func_index: Index) bool {
+    const unwrapped_index = func_index.unwrap(ip);
+
+    const local = ip.getLocal(unwrapped_index.tid);
+    local.mutate.extra.mutex.lockUncancelable(io);
+    defer local.mutate.extra.mutex.unlock(io);
+
+    const a = funcAnalysisPtr(ip, func_index);
+    if (a.want_runtime_analysis) {
+        return false;
+    } else {
+        a.want_runtime_analysis = true;
+        return true;
+    }
+}
+
+/// Like `setWantTypeLayout`, but for runtime analysis of a `Nav`, using the `Nav.analysis.wanted` flag.
+pub fn setWantNavAnalysis(ip: *InternPool, io: Io, nav_index: Nav.Index) bool {
+    const unwrapped = nav_index.unwrap(ip);
+
+    const local = ip.getLocal(unwrapped.tid);
+    local.mutate.extra.mutex.lockUncancelable(io);
+    defer local.mutate.extra.mutex.unlock(io);
+
+    const navs = local.shared.navs.view();
+
+    if (navs.items(.analysis_namespace)[unwrapped.index] == .none) {
+        return false;
+    }
+
+    const bits = &navs.items(.bits)[unwrapped.index];
+    if (bits.want_analysis) {
+        return false;
+    } else {
+        bits.want_analysis = true;
+        return true;
+    }
 }

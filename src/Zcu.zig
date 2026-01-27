@@ -266,9 +266,6 @@ outdated_ready: std.AutoArrayHashMapUnmanaged(AnalUnit, void) = .empty,
 /// it as outdated.
 retryable_failures: std.ArrayList(AnalUnit) = .empty,
 
-func_body_analysis_queued: std.AutoArrayHashMapUnmanaged(InternPool.Index, void) = .empty,
-nav_val_analysis_queued: std.AutoArrayHashMapUnmanaged(InternPool.Nav.Index, void) = .empty,
-
 /// These are the modules which we initially queue for analysis in `Compilation.update`.
 /// `resolveReferences` will use these as the root of its reachability traversal.
 analysis_roots_buffer: [5]*Package.Module,
@@ -2814,9 +2811,6 @@ pub fn deinit(zcu: *Zcu) void {
         zcu.outdated_ready.deinit(gpa);
         zcu.retryable_failures.deinit(gpa);
 
-        zcu.func_body_analysis_queued.deinit(gpa);
-        zcu.nav_val_analysis_queued.deinit(gpa);
-
         zcu.test_functions.deinit(gpa);
 
         for (zcu.global_assembly.values()) |s| {
@@ -3179,8 +3173,6 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
 /// recursive analysis (all of its previously-marked dependencies are already up-to-date), because
 /// recursive analysis can cause over-analysis on incremental updates.
 pub fn findOutdatedToAnalyze(zcu: *Zcu) Allocator.Error!?AnalUnit {
-    if (!zcu.comp.config.incremental) return null;
-
     if (zcu.outdated_ready.count() > 0) {
         const unit = zcu.outdated_ready.keys()[0];
         log.debug("findOutdatedToAnalyze: {f}", .{zcu.fmtAnalUnit(unit)});
@@ -3458,47 +3450,35 @@ pub fn mapOldZirToNew(
 /// The caller is responsible for ensuring the function decl itself is already
 /// analyzed, and for ensuring it can exist at runtime (see
 /// `Type.fnHasRuntimeBitsSema`). This function does *not* guarantee that the body
-/// will be analyzed when it returns: for that, see `ensureFuncBodyAnalyzed`.
-pub fn ensureFuncBodyAnalysisQueued(zcu: *Zcu, func_index: InternPool.Index) !void {
+/// will be analyzed when it returns: for that, see `PerThread.ensureFuncBodyUpToDate`.
+pub fn ensureFuncBodyAnalysisQueued(zcu: *Zcu, func: InternPool.Index) !void {
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+    const io = comp.io;
     const ip = &zcu.intern_pool;
-
-    const func = zcu.funcInfo(func_index);
-
-    assert(func.ty == func.uncoerced_ty); // analyze the body of the original function, not a coerced one
-
-    if (zcu.func_body_analysis_queued.contains(func_index)) return;
-
-    if (func.analysisUnordered(ip).is_analyzed) {
-        if (!zcu.outdated.contains(.wrap(.{ .func = func_index })) and
-            !zcu.potentially_outdated.contains(.wrap(.{ .func = func_index })))
-        {
-            // This function has been analyzed before and is definitely up-to-date.
-            return;
-        }
+    assert(func == ip.unwrapCoercedFunc(func)); // analyze the body of the original function, not a coerced one
+    if (ip.setWantRuntimeFnAnalysis(io, func)) {
+        // This is the first reference to this function, so we must ensure it will be analyzed.
+        const unit: AnalUnit = .wrap(.{ .func = func });
+        try zcu.outdated.putNoClobber(gpa, unit, 0);
+        try zcu.outdated_ready.putNoClobber(gpa, unit, {});
     }
-
-    try zcu.func_body_analysis_queued.ensureUnusedCapacity(zcu.gpa, 1);
-    try zcu.comp.queueJob(.{ .analyze_unit = .wrap(.{ .func = func_index }) });
-    zcu.func_body_analysis_queued.putAssumeCapacityNoClobber(func_index, {});
 }
 
-pub fn ensureNavValAnalysisQueued(zcu: *Zcu, nav_id: InternPool.Nav.Index) !void {
+pub fn ensureNavValAnalysisQueued(zcu: *Zcu, nav: InternPool.Nav.Index) !void {
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+    const io = comp.io;
     const ip = &zcu.intern_pool;
-
-    if (zcu.nav_val_analysis_queued.contains(nav_id)) return;
-
-    if (ip.getNav(nav_id).status == .fully_resolved) {
-        if (!zcu.outdated.contains(.wrap(.{ .nav_val = nav_id })) and
-            !zcu.potentially_outdated.contains(.wrap(.{ .nav_val = nav_id })))
-        {
-            // This `Nav` has been analyzed before and is definitely up-to-date.
-            return;
-        }
+    if (ip.setWantNavAnalysis(io, nav)) {
+        // This is the first reference to this function, so we must ensure it will be analyzed.
+        try zcu.outdated.ensureUnusedCapacity(gpa, 2);
+        try zcu.outdated_ready.ensureUnusedCapacity(gpa, 2);
+        zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .nav_val = nav }), 0);
+        zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .nav_ty = nav }), 0);
+        zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .nav_val = nav }), {});
+        zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .nav_ty = nav }), {});
     }
-
-    try zcu.nav_val_analysis_queued.ensureUnusedCapacity(zcu.gpa, 1);
-    try zcu.comp.queueJob(.{ .analyze_unit = .wrap(.{ .nav_val = nav_id }) });
-    zcu.nav_val_analysis_queued.putAssumeCapacityNoClobber(nav_id, {});
 }
 
 pub const ImportResult = struct {
@@ -4034,37 +4014,6 @@ fn resolveReferencesInner(zcu: *Zcu) !std.AutoArrayHashMapUnmanaged(AnalUnit, ?R
             type_idx += 1;
 
             refs_log.debug("handle type '{f}'", .{Type.fromInterned(ty).containerTypeName(ip).fmt(ip)});
-
-            // If this type undergoes type resolution, the corresponding `AnalUnit`s are automatically referenced.
-            const has_layout: bool, const has_inits: bool = switch (ip.indexToKey(ty)) {
-                .struct_type => .{ true, true },
-                .union_type => .{ true, false },
-                .enum_type => .{ false, true },
-                .opaque_type => .{ false, false },
-                else => unreachable,
-            };
-            if (has_layout) {
-                // this should only be referenced by the type
-                const unit: AnalUnit = .wrap(.{ .type_layout = ty });
-                try units.putNoClobber(gpa, unit, referencer);
-            }
-            if (has_inits) {
-                // this should only be referenced by the type
-                const unit: AnalUnit = .wrap(.{ .struct_defaults = ty });
-                try units.putNoClobber(gpa, unit, referencer);
-            }
-
-            // If this is a union with a generated tag, its tag type is automatically referenced.
-            // We don't add this reference for non-generated tags, as those will already be referenced via the union's type resolution, with a better source location.
-            implicit_tag: {
-                const loaded_union = zcu.typeToUnion(.fromInterned(ty)) orelse break :implicit_tag;
-                const tag_ty = loaded_union.enum_tag_type;
-                if (tag_ty == .none) break :implicit_tag;
-                if (ip.indexToKey(tag_ty).enum_type != .generated_union_tag) break :implicit_tag;
-                const gop = try types.getOrPut(gpa, tag_ty);
-                if (gop.found_existing) break :implicit_tag;
-                gop.value_ptr.* = referencer;
-            }
 
             // Queue any decls within this type which would be automatically analyzed.
             // Keep in sync with analysis queueing logic in `Zcu.PerThread.ScanDeclIter.scanDecl`.

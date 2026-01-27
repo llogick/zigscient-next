@@ -3044,7 +3044,20 @@ pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
         .tuple_type => |tuple| for (tuple.types.get(&zcu.intern_pool)) |field_ty| {
             assertHasLayout(.fromInterned(field_ty), zcu);
         },
-        .struct_type, .union_type, .enum_type => {
+        .struct_type => {
+            assert(zcu.intern_pool.loadStructType(ty.toIntern()).want_layout);
+            const unit: InternPool.AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
+            assert(!zcu.outdated.contains(unit));
+            assert(!zcu.potentially_outdated.contains(unit));
+        },
+        .union_type => {
+            assert(zcu.intern_pool.loadUnionType(ty.toIntern()).want_layout);
+            const unit: InternPool.AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
+            assert(!zcu.outdated.contains(unit));
+            assert(!zcu.potentially_outdated.contains(unit));
+        },
+        .enum_type => {
+            assert(zcu.intern_pool.loadEnumType(ty.toIntern()).want_layout);
             const unit: InternPool.AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
             assert(!zcu.outdated.contains(unit));
             assert(!zcu.potentially_outdated.contains(unit));

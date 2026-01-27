@@ -19,7 +19,7 @@ const arith = @import("arith.zig");
 /// Adds incremental dependencies tracking any required type resolution.
 /// MLUGG TODO: to make the langspec non-stupid, we need to call this from WAY fewer places (the conditions need to be less specific).
 /// MLUGG TODO: to be clear, i should audit EVERY use of this before PRing
-pub fn ensureLayoutResolved(sema: *Sema, ty: Type) SemaError!void {
+pub fn ensureLayoutResolved(sema: *Sema, ty: Type, src: LazySrcLoc) SemaError!void {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
@@ -35,20 +35,21 @@ pub fn ensureLayoutResolved(sema: *Sema, ty: Type) SemaError!void {
 
         .func_type => |func_type| {
             for (func_type.param_types.get(ip)) |param_ty| {
-                try ensureLayoutResolved(sema, .fromInterned(param_ty));
+                try ensureLayoutResolved(sema, .fromInterned(param_ty), src);
             }
-            try ensureLayoutResolved(sema, .fromInterned(func_type.return_type));
+            try ensureLayoutResolved(sema, .fromInterned(func_type.return_type), src);
         },
 
-        .array_type => |arr| return ensureLayoutResolved(sema, .fromInterned(arr.child)),
-        .vector_type => |vec| return ensureLayoutResolved(sema, .fromInterned(vec.child)),
-        .opt_type => |child| return ensureLayoutResolved(sema, .fromInterned(child)),
-        .error_union_type => |eu| return ensureLayoutResolved(sema, .fromInterned(eu.payload_type)),
+        .array_type => |arr| return ensureLayoutResolved(sema, .fromInterned(arr.child), src),
+        .vector_type => |vec| return ensureLayoutResolved(sema, .fromInterned(vec.child), src),
+        .opt_type => |child| return ensureLayoutResolved(sema, .fromInterned(child), src),
+        .error_union_type => |eu| return ensureLayoutResolved(sema, .fromInterned(eu.payload_type), src),
         .tuple_type => |tuple| for (tuple.types.get(ip)) |field_ty| {
-            try ensureLayoutResolved(sema, .fromInterned(field_ty));
+            try ensureLayoutResolved(sema, .fromInterned(field_ty), src);
         },
         .struct_type, .union_type, .enum_type => {
             try sema.declareDependency(.{ .type_layout = ty.toIntern() });
+            try sema.addReferenceEntry(null, src, .wrap(.{ .type_layout = ty.toIntern() }));
             if (zcu.analysis_in_progress.contains(.wrap(.{ .type_layout = ty.toIntern() }))) {
                 // TODO: better error message
                 return sema.failWithOwnedErrorMsg(null, try sema.errMsg(
@@ -89,13 +90,14 @@ pub fn ensureLayoutResolved(sema: *Sema, ty: Type) SemaError!void {
 ///
 /// It is not necessary to call this function to query the values of comptime fields: those values
 /// are available from type *layout* resolution, see `ensureLayoutResolved`.
-pub fn ensureStructDefaultsResolved(sema: *Sema, ty: Type) SemaError!void {
+pub fn ensureStructDefaultsResolved(sema: *Sema, ty: Type, src: LazySrcLoc) SemaError!void {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     assert(ip.indexToKey(ty.toIntern()) == .struct_type);
 
     try sema.declareDependency(.{ .struct_defaults = ty.toIntern() });
+    try sema.addReferenceEntry(null, src, .wrap(.{ .struct_defaults = ty.toIntern() }));
     if (zcu.analysis_in_progress.contains(.wrap(.{ .struct_defaults = ty.toIntern() }))) {
         // TODO: better error message
         return sema.failWithOwnedErrorMsg(null, try sema.errMsg(
@@ -120,7 +122,8 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
     assert(sema.owner.unwrap().type_layout == struct_ty.toIntern());
 
     const struct_obj = ip.loadStructType(struct_ty.toIntern());
-    const zir_index = struct_obj.zir_index.resolve(ip).?;
+    assert(struct_obj.want_layout);
+    const zir_index = struct_obj.zir_index.resolve(ip) orelse return error.AnalysisFail;
 
     var block: Block = .{
         .parent = null,
@@ -219,7 +222,7 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src);
 
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(&block, msg: {
@@ -368,7 +371,7 @@ fn resolvePackedStructLayout(
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src);
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "cannot directly embed opaque type '{f}' in struct", .{field_ty.fmt(pt)});
@@ -458,16 +461,19 @@ pub fn resolveStructDefaults(sema: *Sema, struct_ty: Type) CompileError!void {
 
     assert(sema.owner.unwrap().struct_defaults == struct_ty.toIntern());
 
-    try sema.ensureLayoutResolved(struct_ty);
+    try sema.ensureLayoutResolved(struct_ty, struct_ty.srcLoc(zcu));
 
     const struct_obj = ip.loadStructType(struct_ty.toIntern());
+    assert(struct_obj.want_defaults);
+
+    if (struct_obj.is_reified) {
+        // `Sema.zirReifyStruct` has already populated the default field values *and* (by loading
+        // the default values from pointers) validated their types, so we have nothing to do. We
+        // don't even need to mark any dependencies.
+        return;
+    }
 
     try sema.declareDependency(.{ .src_hash = struct_obj.zir_index });
-
-    // This logic isn't used for reified structs, because the signature of `@Struct` requires that
-    // default values are populated and correctly typed from the moment the struct type is interned
-    // (because `Sema.zirReifyStruct` had to dereference the default value from a pointer).
-    assert(!struct_obj.is_reified);
 
     if (struct_obj.field_defaults.len == 0) {
         // The struct has no default field values, so the slice has been omitted.
@@ -509,7 +515,7 @@ fn resolveStructDefaultsInner(
     const ip = &zcu.intern_pool;
 
     // We'll need to map the struct decl instruction to provide result types
-    const zir_index = struct_obj.zir_index.resolve(ip).?;
+    const zir_index = struct_obj.zir_index.resolve(ip) orelse return error.AnalysisFail;
     try sema.inst_map.ensureSpaceForInstructions(gpa, &.{zir_index});
 
     const field_types = struct_obj.field_types.get(ip);
@@ -555,7 +561,8 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
     assert(sema.owner.unwrap().type_layout == union_ty.toIntern());
 
     const union_obj = ip.loadUnionType(union_ty.toIntern());
-    const zir_index = union_obj.zir_index.resolve(ip).?;
+    assert(union_obj.want_layout);
+    const zir_index = union_obj.zir_index.resolve(ip) orelse return error.AnalysisFail;
 
     var block: Block = .{
         .parent = null,
@@ -627,16 +634,11 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
                 .generation = zcu.generation,
             });
             if (comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-            try zcu.outdated.ensureUnusedCapacity(gpa, 1);
-            try zcu.outdated_ready.ensureUnusedCapacity(gpa, 1);
-            errdefer comptime unreachable; // because we don't remove the `outdated` entry
-            zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .type_layout = wip.index }), 0);
-            zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .type_layout = wip.index }), {});
             break :tag_ty .fromInterned(wip.finish(ip, new_namespace_index));
         },
     };
 
-    try sema.ensureLayoutResolved(enum_tag_ty);
+    try sema.ensureLayoutResolved(enum_tag_ty, block.src(.container_arg));
     const enum_obj = ip.loadEnumType(enum_tag_ty.toIntern());
 
     if (union_obj.is_reified) {
@@ -731,7 +733,7 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src);
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(&block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "cannot directly embed opaque type '{f}' in union", .{field_ty.fmt(pt)});
@@ -889,7 +891,7 @@ fn resolvePackedUnionLayout(
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src);
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "cannot directly embed opaque type '{f}' in union", .{field_ty.fmt(pt)});
@@ -995,6 +997,7 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
     assert(sema.owner.unwrap().type_layout == enum_ty.toIntern());
 
     const enum_obj = ip.loadEnumType(enum_ty.toIntern());
+    assert(enum_obj.want_layout);
 
     const maybe_parent_union_obj: ?InternPool.LoadedUnionType = un: {
         if (enum_obj.owner_union == .none) break :un null;
@@ -1002,6 +1005,7 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
     };
 
     const tracked_inst = enum_obj.zir_index.unwrap() orelse maybe_parent_union_obj.?.zir_index;
+    const zir_index = tracked_inst.resolve(ip) orelse return error.AnalysisFail;
 
     var block: Block = .{
         .parent = null,
@@ -1040,7 +1044,7 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
             // Generated tag enums for declared unions do not yet have field names populated. It is
             // our job to populate them now.
             try sema.declareDependency(.{ .src_hash = union_obj.zir_index });
-            const zir_union = sema.code.getUnionDecl(union_obj.zir_index.resolve(ip).?);
+            const zir_union = sema.code.getUnionDecl(zir_index);
             for (zir_union.field_names) |zir_field_name| {
                 const name_slice = sema.code.nullTerminatedString(zir_field_name);
                 const name = try ip.getOrPutString(gpa, io, pt.tid, name_slice, .no_embedded_nulls);
@@ -1065,7 +1069,7 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
         } else {
             // Declared enums do not yet have field names populated. It is our job to populate them now.
             try sema.declareDependency(.{ .src_hash = enum_obj.zir_index.unwrap().? });
-            const zir_enum = sema.code.getEnumDecl(enum_obj.zir_index.unwrap().?.resolve(ip).?);
+            const zir_enum = sema.code.getEnumDecl(zir_index);
             for (zir_enum.field_names) |zir_field_name| {
                 const name_slice = sema.code.nullTerminatedString(zir_field_name);
                 const name = try ip.getOrPutString(gpa, io, pt.tid, name_slice, .no_embedded_nulls);
@@ -1087,7 +1091,6 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
             // Reification has no equivalent of 'union(enum(T))'.
             break :ty null;
         }
-        const zir_index = union_obj.zir_index.resolve(ip).?;
         const zir_union = sema.code.getUnionDecl(zir_index);
         if (zir_union.kind != .tagged_enum_explicit) {
             break :ty null; // int tag type will be inferred
@@ -1102,7 +1105,6 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
         const type_ref = try sema.resolveInlineBody(&block, tag_type_body, zir_index);
         break :ty try sema.analyzeAsType(&block, tag_type_src, .enum_int_tag_type, type_ref);
     } else ty: {
-        const zir_index = enum_obj.zir_index.unwrap().?.resolve(ip).?;
         const zir_enum = sema.code.getEnumDecl(zir_index);
         const tag_type_body = zir_enum.tag_type_body orelse {
             break :ty null; // int tag type will be inferred
@@ -1146,8 +1148,6 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
 
     // There may be old field values in here from a previous update.
     field_value_map.get(ip).clearRetainingCapacity();
-
-    const zir_index = tracked_inst.resolve(ip).?;
 
     // Map the enum (or union) decl instruction to provide the tag type as the result type
     try sema.inst_map.ensureSpaceForInstructions(gpa, &.{zir_index});

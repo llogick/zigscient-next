@@ -2149,7 +2149,7 @@ pub fn pointerDerivationAdvanced(ptr_val: Value, arena: Allocator, pt: Zcu.PerTh
             const base_ptr = Value.fromInterned(field.base);
             const base_ptr_ty = base_ptr.typeOf(zcu);
             const agg_ty = base_ptr_ty.childType(zcu);
-            if (resolve_types) try opt_sema.?.ensureLayoutResolved(agg_ty);
+            if (resolve_types) try opt_sema.?.ensureLayoutResolved(agg_ty, .unneeded); // MLUGG TODO: unneeded is a hack
             const field_ty: Type, const field_align: InternPool.Alignment = switch (agg_ty.zigTypeTag(zcu)) {
                 .@"struct", .@"union" => .{ agg_ty.fieldType(@intCast(field.index), zcu), agg_ty.resolvedFieldAlignment(@intCast(field.index), pt.zcu) },
                 .pointer => switch (field.index) {

@@ -300,7 +300,7 @@ fn checkTypeInner(
         } else {
             const gop = try visited.getOrPut(sema.arena, ty.toIntern());
             if (gop.found_existing) return;
-            try sema.ensureLayoutResolved(ty);
+            try sema.ensureLayoutResolved(ty, self.import_loc);
             const struct_info = zcu.typeToStruct(ty).?;
             for (struct_info.field_types.get(ip)) |field_type| {
                 try self.checkTypeInner(.fromInterned(field_type), null, visited);
@@ -309,7 +309,7 @@ fn checkTypeInner(
         .@"union" => {
             const gop = try visited.getOrPut(sema.arena, ty.toIntern());
             if (gop.found_existing) return;
-            try sema.ensureLayoutResolved(ty);
+            try sema.ensureLayoutResolved(ty, self.import_loc);
             const union_info = zcu.typeToUnion(ty).?;
             for (union_info.field_types.get(ip)) |field_type| {
                 if (field_type != .void_type) {
@@ -646,6 +646,7 @@ fn lowerEnum(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool.I
     const gpa = comp.gpa;
     const io = comp.io;
     const ip = &pt.zcu.intern_pool;
+    try self.sema.ensureLayoutResolved(res_ty, self.import_loc);
     switch (node.get(self.file.zoir.?)) {
         .enum_literal => |field_name| {
             const field_name_interned = try ip.getOrPutString(
@@ -768,8 +769,8 @@ fn lowerStruct(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool
     const io = comp.io;
     const ip = &pt.zcu.intern_pool;
 
-    try self.sema.ensureLayoutResolved(res_ty);
-    try self.sema.ensureStructDefaultsResolved(res_ty);
+    try self.sema.ensureLayoutResolved(res_ty, self.import_loc);
+    try self.sema.ensureStructDefaultsResolved(res_ty, self.import_loc);
     const struct_info = self.sema.pt.zcu.typeToStruct(res_ty).?;
 
     const fields: @FieldType(Zoir.Node, "struct_literal") = switch (node.get(self.file.zoir.?)) {
@@ -919,7 +920,7 @@ fn lowerUnion(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool.
     const gpa = comp.gpa;
     const io = comp.io;
     const ip = &pt.zcu.intern_pool;
-    try self.sema.ensureLayoutResolved(res_ty);
+    try self.sema.ensureLayoutResolved(res_ty, self.import_loc);
     const union_info = pt.zcu.typeToUnion(res_ty).?;
     const enum_tag_info = ip.loadEnumType(union_info.enum_tag_type);
 
