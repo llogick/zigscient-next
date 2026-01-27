@@ -641,9 +641,9 @@ pub fn readFromPackedMemory(
         .optional => {
             assert(ty.isPtrLikeOptional(zcu));
             const addr = (try readFromPackedMemory(Type.usize, pt, buffer, bit_offset, arena)).toUnsignedInt(zcu);
-            return Value.fromInterned(try pt.intern(.{ .opt = .{
+            return .fromInterned(try pt.intern(.{ .opt = .{
                 .ty = ty.toIntern(),
-                .val = (try pt.ptrIntValue(ty.childType(zcu), addr)).toIntern(),
+                .val = if (addr == 0) .none else (try pt.ptrIntValue(ty.childType(zcu), addr)).toIntern(),
             } }));
         },
         else => @panic("TODO implement readFromPackedMemory for more types"),

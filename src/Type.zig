@@ -1472,14 +1472,15 @@ pub fn isError(ty: Type, zcu: *const Zcu) bool {
 /// Returns whether ty, which must be an error set, includes an error `name`.
 /// Might return a false negative if `ty` is an inferred error set and not fully
 /// resolved yet.
-pub fn errorSetHasFieldIp(
-    ip: *const InternPool,
-    ty: InternPool.Index,
+pub fn errorSetHasField(
+    ty: Type,
     name: InternPool.NullTerminatedString,
+    zcu: *const Zcu,
 ) bool {
-    return switch (ty) {
+    const ip = &zcu.intern_pool;
+    return switch (ty.toIntern()) {
         .anyerror_type => true,
-        else => switch (ip.indexToKey(ty)) {
+        else => switch (ip.indexToKey(ty.toIntern())) {
             .error_set_type => |error_set_type| error_set_type.nameIndex(ip, name) != null,
             .inferred_error_set_type => |i| switch (ip.funcIesResolvedUnordered(i)) {
                 .anyerror_type => true,

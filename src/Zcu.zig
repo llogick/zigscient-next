@@ -4059,6 +4059,7 @@ fn resolveReferencesInner(zcu: *Zcu) !std.AutoArrayHashMapUnmanaged(AnalUnit, ?R
             implicit_tag: {
                 const loaded_union = zcu.typeToUnion(.fromInterned(ty)) orelse break :implicit_tag;
                 const tag_ty = loaded_union.enum_tag_type;
+                if (tag_ty == .none) break :implicit_tag;
                 if (ip.indexToKey(tag_ty).enum_type != .generated_union_tag) break :implicit_tag;
                 const gop = try types.getOrPut(gpa, tag_ty);
                 if (gop.found_existing) break :implicit_tag;
@@ -4380,32 +4381,6 @@ fn formatDependee(data: FormatDependee, writer: *Io.Writer) Io.Writer.Error!void
             return writer.print("namespace('{f}', %{d}, '{f}')", .{ file_path.fmt(zcu.comp), @intFromEnum(info.inst), k.name.fmt(ip) });
         },
         .memoized_state => return writer.writeAll("memoized_state"),
-    }
-}
-
-/// Given the `InternPool.Index` of a function, set its resolved IES to `.none` if it
-/// may be outdated. `Sema` should do this before ever loading a resolved IES.
-pub fn maybeUnresolveIes(zcu: *Zcu, func_index: InternPool.Index) !void {
-    const unit = AnalUnit.wrap(.{ .func = func_index });
-    if (zcu.outdated.contains(unit) or zcu.potentially_outdated.contains(unit)) {
-        // We're consulting the resolved IES now, but the function is outdated, so its
-        // IES may have changed. We have to assume the IES is outdated and set the resolved
-        // set back to `.none`.
-        //
-        // This will cause `PerThread.analyzeFnBody` to mark the IES as outdated when it's
-        // eventually hit.
-        //
-        // Since the IES needs to be resolved, the function body will now definitely need
-        // re-analysis (even if the IES turns out to be the same!), so mark it as
-        // definitely-outdated if it's only PO.
-        if (zcu.potentially_outdated.fetchSwapRemove(unit)) |kv| {
-            const gpa = zcu.gpa;
-            try zcu.outdated.putNoClobber(gpa, unit, kv.value);
-            if (kv.value == 0) {
-                try zcu.outdated_ready.put(gpa, unit, {});
-            }
-        }
-        zcu.intern_pool.funcSetIesResolved(zcu.comp.io, func_index, .none);
     }
 }
 

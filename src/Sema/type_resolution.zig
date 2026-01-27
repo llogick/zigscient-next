@@ -132,7 +132,7 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         .src_base_inst = struct_obj.zir_index,
         .type_name_ctx = struct_obj.name,
     };
-    defer assert(block.instructions.items.len == 0);
+    defer block.instructions.deinit(gpa);
 
     // There may be old field names in here from a previous update.
     struct_obj.field_name_map.get(ip).clearRetainingCapacity();
@@ -452,6 +452,8 @@ fn resolvePackedStructLayout(
 pub fn resolveStructDefaults(sema: *Sema, struct_ty: Type) CompileError!void {
     const pt = sema.pt;
     const zcu = pt.zcu;
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
     const ip = &zcu.intern_pool;
 
     assert(sema.owner.unwrap().struct_defaults == struct_ty.toIntern());
@@ -490,7 +492,7 @@ pub fn resolveStructDefaults(sema: *Sema, struct_ty: Type) CompileError!void {
         .src_base_inst = struct_obj.zir_index,
         .type_name_ctx = struct_obj.name,
     };
-    defer assert(block.instructions.items.len == 0);
+    defer block.instructions.deinit(gpa);
 
     return resolveStructDefaultsInner(sema, &block, &struct_obj);
 }
@@ -565,7 +567,7 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         .src_base_inst = union_obj.zir_index,
         .type_name_ctx = union_obj.name,
     };
-    defer assert(block.instructions.items.len == 0);
+    defer block.instructions.deinit(gpa);
 
     // MLUGG TODO: this is fucking ugly bro
     const explicit_enum_tag_ty: ?Type = if (union_obj.is_reified) ty: {
@@ -1011,7 +1013,7 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
         .src_base_inst = tracked_inst,
         .type_name_ctx = enum_obj.name,
     };
-    defer assert(block.instructions.items.len == 0);
+    defer block.instructions.deinit(gpa);
 
     // There may be old field names in the map from a previous update.
     enum_obj.field_name_map.get(ip).clearRetainingCapacity();
