@@ -177113,7 +177113,7 @@ fn airBr(self: *CodeGen, inst: Air.Inst.Index) !void {
 }
 
 fn airAsm(self: *CodeGen, inst: Air.Inst.Index) !void {
-    @setEvalBranchQuota(1_100);
+    @setEvalBranchQuota(1_100 + @typeInfo(Mir.Inst.Fixes).@"enum".fields.len);
     const pt = self.pt;
     const zcu = pt.zcu;
     const unwrapped_asm = self.air.unwrapAsm(inst);
