@@ -177294,41 +177294,38 @@ fn airAsm(self: *CodeGen, inst: Air.Inst.Index) !void {
     }
 
     const ip = &zcu.intern_pool;
-    const aggregate = ip.indexToKey(unwrapped_asm.clobbers).aggregate;
-    const struct_type: Type = .fromInterned(aggregate.ty);
-    switch (aggregate.storage) {
-        .elems => |elems| for (elems, 0..) |elem, i| switch (elem) {
-            .bool_true => {
-                const clobber = struct_type.structFieldName(i, zcu).toSlice(ip).?;
-                assert(clobber.len != 0);
+    const clobbers_val: Value = .fromInterned(unwrapped_asm.clobbers);
+    const clobbers_ty = clobbers_val.typeOf(zcu);
+    var clobbers_bigint_buf: Value.BigIntSpace = undefined;
+    const clobbers_bigint = clobbers_val.toBigInt(&clobbers_bigint_buf, zcu);
+    for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
+        assert(clobbers_ty.fieldType(field_index, zcu).toIntern() == .bool_type);
+        const limb_bits = @bitSizeOf(std.math.big.Limb);
+        if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
+        switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> @intCast(field_index % limb_bits)))) {
+            0 => continue, // field is false
+            1 => {}, // field is true
+        }
+        const clobber = clobbers_ty.structFieldName(field_index, zcu).toSlice(ip).?;
+        assert(clobber.len != 0);
 
-                if (std.mem.eql(u8, clobber, "memory") or
-                    std.mem.eql(u8, clobber, "fpsr") or
-                    std.mem.eql(u8, clobber, "fpcr") or
-                    std.mem.eql(u8, clobber, "mxcsr") or
-                    std.mem.eql(u8, clobber, "dirflag"))
-                {
-                    // ok, sure
-                } else if (std.mem.eql(u8, clobber, "cc") or
-                    std.mem.eql(u8, clobber, "flags") or
-                    std.mem.eql(u8, clobber, "eflags") or
-                    std.mem.eql(u8, clobber, "rflags"))
-                {
-                    try self.spillEflagsIfOccupied();
-                } else {
-                    try self.register_manager.getReg(parseRegName(clobber) orelse
-                        return self.fail("invalid clobber: '{s}'", .{clobber}), null);
-                }
-            },
-            .bool_false => continue,
-            else => unreachable,
-        },
-        .repeated_elem => |elem| switch (elem) {
-            .bool_true => @panic("TODO"),
-            .bool_false => {},
-            else => unreachable,
-        },
-        .bytes => @panic("TODO"),
+        if (std.mem.eql(u8, clobber, "memory") or
+            std.mem.eql(u8, clobber, "fpsr") or
+            std.mem.eql(u8, clobber, "fpcr") or
+            std.mem.eql(u8, clobber, "mxcsr") or
+            std.mem.eql(u8, clobber, "dirflag"))
+        {
+            // ok, sure
+        } else if (std.mem.eql(u8, clobber, "cc") or
+            std.mem.eql(u8, clobber, "flags") or
+            std.mem.eql(u8, clobber, "eflags") or
+            std.mem.eql(u8, clobber, "rflags"))
+        {
+            try self.spillEflagsIfOccupied();
+        } else {
+            try self.register_manager.getReg(parseRegName(clobber) orelse
+                return self.fail("invalid clobber: '{s}'", .{clobber}), null);
+        }
     }
 
     const Label = struct {

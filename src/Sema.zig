@@ -3583,7 +3583,7 @@ fn resolveComptimeKnownAllocPtr(sema: *Sema, block: *Block, alloc: Air.Inst.Ref,
             },
             .field => |idx| ptr: {
                 const maybe_union_ty = Value.fromInterned(decl_parent_ptr).typeOf(zcu).childType(zcu);
-                if (zcu.typeToUnion(maybe_union_ty)) |union_obj| {
+                if (zcu.typeToUnion(maybe_union_ty)) |union_obj| if (union_obj.layout == .auto) {
                     // As this is a union field, we must store to the pointer now to set the tag.
                     // The payload value will be stored later, so undef is a sufficent payload for now.
                     const payload_ty: Type = .fromInterned(union_obj.field_types.get(&zcu.intern_pool)[idx]);
@@ -3591,7 +3591,7 @@ fn resolveComptimeKnownAllocPtr(sema: *Sema, block: *Block, alloc: Air.Inst.Ref,
                     const tag_val = try pt.enumValueFieldIndex(.fromInterned(union_obj.enum_tag_type), idx);
                     const store_val = try pt.unionValue(maybe_union_ty, tag_val, payload_val);
                     try sema.storePtrVal(block, .unneeded, .fromInterned(decl_parent_ptr), store_val, maybe_union_ty);
-                }
+                };
                 break :ptr (try Value.fromInterned(decl_parent_ptr).ptrField(idx, pt)).toIntern();
             },
             .elem => |idx| (try Value.fromInterned(decl_parent_ptr).ptrElem(idx, pt)).toIntern(),
@@ -18510,6 +18510,10 @@ fn zirUnionInit(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
 
     const payload = try sema.coerce(block, field_ty, sema.resolveInst(extra.init), payload_src);
 
+    if (union_ty.containerLayout(zcu) == .@"packed") {
+        return sema.bitCast(block, union_ty, payload, block.nodeOffset(inst_data.src_node), payload_src);
+    }
+
     if (sema.resolveValue(payload)) |payload_val| {
         const tag_ty = union_ty.unionTagTypeHypothetical(zcu);
         const tag_val = try pt.enumValueFieldIndex(tag_ty, field_index);
@@ -18642,6 +18646,10 @@ fn zirStructInit(
 
         const uncoerced_init_inst = sema.resolveInst(item.data.init);
         const init_inst = try sema.coerce(block, field_ty, uncoerced_init_inst, field_src);
+
+        if (resolved_ty.containerLayout(zcu) == .@"packed") {
+            return sema.bitCast(block, resolved_ty, init_inst, src, field_src);
+        }
 
         if (sema.resolveValue(init_inst)) |val| {
             const struct_val = Value.fromInterned(try pt.internUnion(.{
@@ -18789,15 +18797,35 @@ fn finishStructInit(
         }
     } else null;
 
-    const runtime_index = opt_runtime_index orelse {
-        const elems = try sema.arena.alloc(InternPool.Index, field_inits.len);
-        for (elems, field_inits) |*elem, field_init| {
-            elem.* = sema.resolveValue(field_init).?.toIntern();
-        }
-        const struct_val = try pt.aggregateValue(struct_ty, elems);
-        const final_val_inst = try sema.coerce(block, result_ty, Air.internedToRef(struct_val.toIntern()), init_src);
-        const final_val = sema.resolveValue(final_val_inst).?;
-        return sema.addConstantMaybeRef(final_val.toIntern(), is_ref);
+    const runtime_index = opt_runtime_index orelse switch (struct_ty.containerLayout(zcu)) {
+        .auto, .@"extern" => {
+            const elems = try sema.arena.alloc(InternPool.Index, field_inits.len);
+            for (elems, field_inits) |*elem, field_init| {
+                elem.* = sema.resolveValue(field_init).?.toIntern();
+            }
+            const struct_val = try pt.aggregateValue(struct_ty, elems);
+            const final_val_ref = try sema.coerce(block, result_ty, .fromValue(struct_val), init_src);
+            return sema.addConstantMaybeRef(final_val_ref.toInterned().?, is_ref);
+        },
+        .@"packed" => {
+            const buf = try sema.arena.alloc(u8, (struct_ty.bitSize(zcu) + 7) / 8);
+            var bit_offset: u16 = 0;
+            for (field_inits) |field_init| {
+                const field_val = sema.resolveValue(field_init).?;
+                field_val.writeToPackedMemory(pt, buf, bit_offset) catch |err| switch (err) {
+                    error.ReinterpretDeclRef => unreachable, // bitpack fields cannot be pointers
+                    error.OutOfMemory => |e| return e,
+                };
+                bit_offset += @intCast(field_val.typeOf(zcu).bitSize(zcu));
+            }
+            assert(bit_offset == struct_ty.bitSize(zcu));
+            const struct_val = Value.readFromPackedMemory(struct_ty, pt, buf, 0, sema.arena) catch |err| switch (err) {
+                error.IllDefinedMemoryLayout => unreachable, // bitpacks have well-defined layout
+                error.OutOfMemory => |e| return e,
+            };
+            const final_val_ref = try sema.coerce(block, result_ty, .fromValue(struct_val), init_src);
+            return sema.addConstantMaybeRef(final_val_ref.toInterned().?, is_ref);
+        },
     };
 
     if (struct_ty.comptimeOnly(zcu)) {

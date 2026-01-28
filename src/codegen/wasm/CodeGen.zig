@@ -3253,7 +3253,7 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
                 // are by-ref types.
                 assert(struct_type.layout == .@"packed");
                 var buf: [8]u8 = .{0} ** 8; // zero the buffer so we do not read 0xaa as integer
-                val.writeToPackedMemory(ty, pt, &buf, 0) catch unreachable;
+                val.writeToPackedMemory(pt, &buf, 0) catch unreachable;
                 const backing_int_ty = Type.fromInterned(struct_type.backingIntTypeUnordered(ip));
                 const int_val = try pt.intValue(
                     backing_int_ty,
@@ -3267,7 +3267,7 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
             const int_type = try pt.intType(.unsigned, @intCast(ty.bitSize(zcu)));
 
             var buf: [8]u8 = .{0} ** 8; // zero the buffer so we do not read 0xaa as integer
-            val.writeToPackedMemory(ty, pt, &buf, 0) catch unreachable;
+            val.writeToPackedMemory(pt, &buf, 0) catch unreachable;
             const int_val = try pt.intValue(
                 int_type,
                 mem.readInt(u64, &buf, .little),

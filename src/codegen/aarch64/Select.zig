@@ -2791,17 +2791,17 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 } else return isel.fail("invalid constraint: '{s}'", .{constraint});
             }
 
-            const clobbers = ip.indexToKey(unwrapped_asm.clobbers).aggregate;
-            const clobbers_ty: ZigType = .fromInterned(clobbers.ty);
+            const clobbers_val: Value = .fromInterned(unwrapped_asm.clobbers);
+            const clobbers_ty = clobbers_val.typeOf(zcu);
+            var clobbers_bigint_buf: Value.BigIntSpace = undefined;
+            const clobbers_bigint = clobbers_val.toBigInt(&clobbers_bigint_buf, zcu);
             for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
-                switch (switch (clobbers.storage) {
-                    .bytes => unreachable,
-                    .elems => |elems| elems[field_index],
-                    .repeated_elem => |repeated_elem| repeated_elem,
-                }) {
-                    else => unreachable,
-                    .bool_false => continue,
-                    .bool_true => {},
+                assert(clobbers_ty.fieldType(field_index, zcu).toIntern() == .bool_type);
+                const limb_bits = @bitSizeOf(std.math.big.Limb);
+                if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
+                switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> @intCast(field_index % limb_bits)))) {
+                    0 => continue, // field is false
+                    1 => {}, // field is true
                 }
                 const clobber_name = clobbers_ty.structFieldName(field_index, zcu).toSlice(ip).?;
                 if (std.mem.eql(u8, clobber_name, "memory")) continue;
@@ -2816,14 +2816,11 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 }
             }
             for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
-                switch (switch (clobbers.storage) {
-                    .bytes => unreachable,
-                    .elems => |elems| elems[field_index],
-                    .repeated_elem => |repeated_elem| repeated_elem,
-                }) {
-                    else => unreachable,
-                    .bool_false => continue,
-                    .bool_true => {},
+                const limb_bits = @bitSizeOf(std.math.big.Limb);
+                if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
+                switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> field_index % limb_bits))) {
+                    0 => continue, // field is false
+                    1 => {}, // field is true
                 }
                 const clobber_name = clobbers_ty.structFieldName(field_index, zcu).toSlice(ip).?;
                 if (std.mem.eql(u8, clobber_name, "memory")) continue;
@@ -2872,14 +2869,11 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
             }
 
             for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
-                switch (switch (clobbers.storage) {
-                    .bytes => unreachable,
-                    .elems => |elems| elems[field_index],
-                    .repeated_elem => |repeated_elem| repeated_elem,
-                }) {
-                    else => unreachable,
-                    .bool_false => continue,
-                    .bool_true => {},
+                const limb_bits = @bitSizeOf(std.math.big.Limb);
+                if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
+                switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> field_index % limb_bits))) {
+                    0 => continue, // field is false
+                    1 => {}, // field is true
                 }
                 const clobber_name = clobbers_ty.structFieldName(field_index, zcu).toSlice(ip).?;
                 if (std.mem.eql(u8, clobber_name, "memory")) continue;

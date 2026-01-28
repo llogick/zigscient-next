@@ -164,7 +164,7 @@ pub fn print(
                 return;
             }
             if (un.tag == .none) {
-                const backing_ty = try val.typeOf(zcu).unionBackingType(pt);
+                const backing_ty = try val.typeOf(zcu).externUnionBackingType(pt);
                 try writer.print("@bitCast(@as({f}, ", .{backing_ty.fmt(pt)});
                 try print(Value.fromInterned(un.val), writer, level - 1, pt, opt_sema);
                 try writer.writeAll("))");
@@ -174,6 +174,32 @@ pub fn print(
                 try writer.writeAll(" = ");
                 try print(Value.fromInterned(un.val), writer, level - 1, pt, opt_sema);
                 try writer.writeAll(" }");
+            }
+        },
+        .bitpack => |bitpack| {
+            const ty: Type = .fromInterned(bitpack.ty);
+            switch (ty.zigTypeTag(zcu)) {
+                .@"struct" => {
+                    if (ty.structFieldCount(zcu) == 0) {
+                        return writer.writeAll(".{}");
+                    }
+                    try writer.writeAll(".{ ");
+                    const max_len = @min(ty.structFieldCount(zcu), max_aggregate_items);
+                    for (0..max_len) |i| {
+                        if (i != 0) try writer.writeAll(", ");
+                        const field_name = ty.structFieldName(@intCast(i), zcu).unwrap().?;
+                        try writer.print(".{f} = ", .{field_name.fmt(ip)});
+                        try print(try val.fieldValue(pt, i), writer, level - 1, pt, opt_sema);
+                    }
+                    try writer.writeAll(" }");
+                    return;
+                },
+                .@"union" => {
+                    try writer.print("@bitCast(@as({f}, ", .{ty.bitpackBackingInt(zcu).fmt(pt)});
+                    try print(.fromInterned(bitpack.backing_int_val), writer, level - 1, pt, opt_sema);
+                    try writer.writeAll("))");
+                },
+                else => unreachable,
             }
         },
         .memoized_call => unreachable,

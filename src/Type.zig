@@ -407,6 +407,7 @@ pub fn print(ty: Type, writer: *std.Io.Writer, pt: Zcu.PerThread, ctx: ?*Compari
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -543,6 +544,7 @@ pub fn hasRuntimeBits(ty: Type, zcu: *const Zcu) bool {
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -639,6 +641,7 @@ pub fn hasWellDefinedLayout(ty: Type, zcu: *const Zcu) bool {
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -846,6 +849,7 @@ pub fn abiAlignment(ty: Type, zcu: *const Zcu) Alignment {
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -978,6 +982,7 @@ pub fn abiSize(ty: Type, zcu: *const Zcu) u64 {
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -1102,6 +1107,7 @@ pub fn bitSize(ty: Type, zcu: *const Zcu) u64 {
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -1393,16 +1399,16 @@ pub fn unionHasAllZeroBitFieldTypes(ty: Type, zcu: *Zcu) bool {
 }
 
 /// Returns the type used for backing storage of this union during comptime operations.
-/// Asserts the type is either an extern or packed union.
-pub fn unionBackingType(ty: Type, pt: Zcu.PerThread) !Type {
+/// Asserts the type is an extern union.
+pub fn externUnionBackingType(ty: Type, pt: Zcu.PerThread) !Type {
     const zcu = pt.zcu;
     assertHasLayout(ty, zcu);
     const loaded_union = zcu.intern_pool.loadUnionType(ty.toIntern());
-    return switch (loaded_union.layout) {
-        .@"extern" => try pt.arrayType(.{ .len = ty.abiSize(zcu), .child = .u8_type }),
-        .@"packed" => .fromInterned(loaded_union.packed_backing_int_type),
+    switch (loaded_union.layout) {
+        .@"extern" => return pt.arrayType(.{ .len = ty.abiSize(zcu), .child = .u8_type }),
+        .@"packed" => unreachable,
         .auto => unreachable,
-    };
+    }
 }
 
 pub fn unionGetLayout(ty: Type, zcu: *const Zcu) Zcu.UnionLayout {
@@ -1417,6 +1423,15 @@ pub fn containerLayout(ty: Type, zcu: *const Zcu) std.builtin.Type.ContainerLayo
         .tuple_type => .auto,
         .struct_type => ip.loadStructType(ty.toIntern()).layout,
         .union_type => ip.loadUnionType(ty.toIntern()).layout,
+        else => unreachable,
+    };
+}
+
+pub fn bitpackBackingInt(ty: Type, zcu: *const Zcu) Type {
+    const ip = &zcu.intern_pool;
+    return switch (ip.indexToKey(ty.toIntern())) {
+        .struct_type => .fromInterned(ip.loadStructType(ty.toIntern()).packed_backing_int_type),
+        .union_type => .fromInterned(ip.loadUnionType(ty.toIntern()).packed_backing_int_type),
         else => unreachable,
     };
 }
@@ -1635,6 +1650,7 @@ pub fn intInfo(starting_ty: Type, zcu: *const Zcu) InternPool.Key.IntType {
             .opt,
             .aggregate,
             .un,
+            .bitpack,
             // memoization, not types
             .memoized_call,
             => unreachable,
@@ -1842,7 +1858,7 @@ pub fn onePossibleValue(starting_type: Type, pt: Zcu.PerThread) !?Value {
                 if (struct_obj.layout == .@"packed") {
                     const backing_ty: Type = .fromInterned(struct_obj.packed_backing_int_type);
                     const backing_val = try backing_ty.onePossibleValue(pt) orelse return null;
-                    _ = backing_val; // MLUGG TODO: represent unions as their bits!
+                    return try pt.bitpackValue(ty, backing_val);
                 } else {
                     if (!struct_obj.has_one_possible_value) return null;
                 }
@@ -1893,8 +1909,13 @@ pub fn onePossibleValue(starting_type: Type, pt: Zcu.PerThread) !?Value {
             },
 
             .union_type => {
-                // MLUGG TODO: is this nonsensical or what!!!!!!
                 const union_obj = ip.loadUnionType(ty.toIntern());
+                if (union_obj.layout == .@"packed") {
+                    const backing_ty: Type = .fromInterned(union_obj.packed_backing_int_type);
+                    const backing_val = try backing_ty.onePossibleValue(pt) orelse return null;
+                    return try pt.bitpackValue(ty, backing_val);
+                }
+                // MLUGG TODO: is this nonsensical or what!!!!!!
                 const tag_val = (try Type.fromInterned(union_obj.enum_tag_type).onePossibleValue(pt)) orelse
                     return null;
                 if (union_obj.field_types.len == 0) {
@@ -1957,6 +1978,7 @@ pub fn onePossibleValue(starting_type: Type, pt: Zcu.PerThread) !?Value {
             .opt,
             .aggregate,
             .un,
+            .bitpack,
             // memoization, not types
             .memoized_call,
             => unreachable,
@@ -2061,6 +2083,7 @@ pub fn comptimeOnly(ty: Type, zcu: *const Zcu) bool {
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -3080,6 +3103,7 @@ pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         .undef,
         // memoization, not types
         .memoized_call,
@@ -3158,6 +3182,7 @@ fn collectSubtypes(ty: Type, pt: Zcu.PerThread, visited: *std.AutoArrayHashMapUn
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,

@@ -3680,7 +3680,7 @@ pub const Object = struct {
         const limbs = try allocator.alloc(std.math.big.Limb, std.math.big.int.calcTwosCompLimbCount(bits));
         defer allocator.free(limbs);
 
-        val.writeToPackedMemory(ty, pt, buffer, 0) catch unreachable;
+        val.writeToPackedMemory(pt, buffer, 0) catch unreachable;
 
         var big: std.math.big.int.Mutable = .init(limbs, 0);
         big.readTwosComplement(buffer, bits, target.cpu.arch.endian(), .unsigned);
@@ -7467,29 +7467,20 @@ pub const FuncGen = struct {
         }
 
         const ip = &zcu.intern_pool;
-        const aggregate = ip.indexToKey(unwrapped_asm.clobbers).aggregate;
-        const struct_type: Type = .fromInterned(aggregate.ty);
-        if (total_i != 0) try llvm_constraints.append(gpa, ',');
-        switch (aggregate.storage) {
-            .elems => |elems| for (elems, 0..) |elem, i| {
-                switch (elem) {
-                    .bool_true => {
-                        const name = struct_type.structFieldName(i, zcu).toSlice(ip).?;
-                        total_i += try appendConstraints(gpa, &llvm_constraints, name, target);
-                    },
-                    .bool_false => continue,
-                    else => unreachable,
-                }
-            },
-            .repeated_elem => |elem| switch (elem) {
-                .bool_true => for (0..struct_type.structFieldCount(zcu)) |i| {
-                    const name = struct_type.structFieldName(i, zcu).toSlice(ip).?;
-                    total_i += try appendConstraints(gpa, &llvm_constraints, name, target);
-                },
-                .bool_false => {},
-                else => unreachable,
-            },
-            .bytes => @panic("TODO"),
+        const clobbers_val: Value = .fromInterned(unwrapped_asm.clobbers);
+        const clobbers_ty = clobbers_val.typeOf(zcu);
+        var clobbers_bigint_buf: Value.BigIntSpace = undefined;
+        const clobbers_bigint = clobbers_val.toBigInt(&clobbers_bigint_buf, zcu);
+        for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
+            assert(clobbers_ty.fieldType(field_index, zcu).toIntern() == .bool_type);
+            const limb_bits = @bitSizeOf(std.math.big.Limb);
+            if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
+            switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> @intCast(field_index % limb_bits)))) {
+                0 => continue, // field is false
+                1 => {}, // field is true
+            }
+            const name = clobbers_ty.structFieldName(field_index, zcu).toSlice(ip).?;
+            total_i += try appendConstraints(gpa, &llvm_constraints, name, target);
         }
 
         // We have finished scanning through all inputs/outputs, so the number of

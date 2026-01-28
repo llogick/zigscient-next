@@ -97,8 +97,8 @@ pub const MutableValue = union(enum) {
     /// * Non-error error unions use `eu_payload`
     /// * Non-null optionals use `eu_payload
     /// * Slices use `slice`
-    /// * Unions use `un`
-    /// * Aggregates use `repeated` or `bytes` or `aggregate`
+    /// * Unions use `un` (excluding packed unions)
+    /// * Aggregates use `repeated` or `bytes` or `aggregate` (excluding packed structs)
     /// If `!allow_bytes`, the `bytes` representation will not be used.
     /// If `!allow_repeated`, the `repeated` representation will not be used.
     pub fn unintern(
@@ -209,6 +209,7 @@ pub const MutableValue = union(enum) {
                 .undef => |ty_ip| switch (Type.fromInterned(ty_ip).zigTypeTag(zcu)) {
                     .@"struct", .array, .vector => |type_tag| {
                         const ty = Type.fromInterned(ty_ip);
+                        if (type_tag == .@"struct" and ty.containerLayout(zcu) == .@"packed") return;
                         const opt_sent = ty.sentinel(zcu);
                         if (type_tag == .@"struct" or opt_sent != null or !allow_repeated) {
                             const len_no_sent = ip.aggregateTypeLen(ty_ip);
@@ -241,15 +242,18 @@ pub const MutableValue = union(enum) {
                             } };
                         }
                     },
-                    .@"union" => {
-                        const payload = try arena.create(MutableValue);
-                        const backing_ty = try Type.fromInterned(ty_ip).unionBackingType(pt);
-                        payload.* = .{ .interned = try pt.intern(.{ .undef = backing_ty.toIntern() }) };
-                        mv.* = .{ .un = .{
-                            .ty = ty_ip,
-                            .tag = .none,
-                            .payload = payload,
-                        } };
+                    .@"union" => switch (Type.fromInterned(ty_ip).containerLayout(zcu)) {
+                        .auto, .@"packed" => {},
+                        .@"extern" => {
+                            const payload = try arena.create(MutableValue);
+                            const backing_ty = try Type.fromInterned(ty_ip).externUnionBackingType(pt);
+                            payload.* = .{ .interned = try pt.intern(.{ .undef = backing_ty.toIntern() }) };
+                            mv.* = .{ .un = .{
+                                .ty = ty_ip,
+                                .tag = .none,
+                                .payload = payload,
+                            } };
+                        },
                     },
                     .pointer => {
                         const ptr_ty = ip.indexToKey(ty_ip).ptr_type;

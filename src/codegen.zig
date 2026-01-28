@@ -570,42 +570,7 @@ pub fn generateSymbol(
             .struct_type => {
                 const struct_type = ip.loadStructType(ty.toIntern());
                 switch (struct_type.layout) {
-                    .@"packed" => {
-                        const abi_size = math.cast(usize, ty.abiSize(zcu)) orelse return error.Overflow;
-                        const start = w.end;
-                        const buffer = try w.writableSlice(abi_size);
-                        @memset(buffer, 0);
-                        var bits: u16 = 0;
-
-                        for (struct_type.field_types.get(ip), 0..) |field_ty, index| {
-                            const field_val = switch (aggregate.storage) {
-                                .bytes => |bytes| try pt.intern(.{ .int = .{
-                                    .ty = field_ty,
-                                    .storage = .{ .u64 = bytes.at(index, ip) },
-                                } }),
-                                .elems => |elems| elems[index],
-                                .repeated_elem => |elem| elem,
-                            };
-
-                            // pointer may point to a decl which must be marked used
-                            // but can also result in a relocation. Therefore we handle those separately.
-                            if (Type.fromInterned(field_ty).zigTypeTag(zcu) == .pointer) {
-                                const field_offset = std.math.divExact(u16, bits, 8) catch |err| switch (err) {
-                                    error.DivisionByZero => unreachable,
-                                    error.UnexpectedRemainder => return error.RelocationNotByteAligned,
-                                };
-                                w.end = start + field_offset;
-                                defer {
-                                    assert(w.end == start + field_offset + @divExact(target.ptrBitWidth(), 8));
-                                    w.end = start + abi_size;
-                                }
-                                try generateSymbol(bin_file, pt, src_loc, Value.fromInterned(field_val), w, reloc_parent);
-                            } else {
-                                Value.fromInterned(field_val).writeToPackedMemory(.fromInterned(field_ty), pt, buffer, bits) catch unreachable;
-                            }
-                            bits += @intCast(Type.fromInterned(field_ty).bitSize(zcu));
-                        }
-                    },
+                    .@"packed" => unreachable,
                     .auto, .@"extern" => {
                         const struct_begin = w.end;
                         const field_types = struct_type.field_types.get(ip);
@@ -683,6 +648,7 @@ pub fn generateSymbol(
                 }
             }
         },
+        .bitpack => |bitpack| try generateSymbol(bin_file, pt, src_loc, .fromInterned(bitpack.backing_int_val), w, reloc_parent),
         .memoized_call => unreachable,
     }
 }
@@ -1119,6 +1085,10 @@ pub fn lowerValue(pt: Zcu.PerThread, val: Value, target: *const std.Target) Allo
                 Value.fromInterned(enum_tag.int),
                 target,
             );
+        },
+        .@"struct", .@"union" => if (ty.containerLayout(zcu) == .@"packed") {
+            const bitpack = ip.indexToKey(val.toIntern()).bitpack;
+            return lowerValue(pt, .fromInterned(bitpack.backing_int_val), target);
         },
         .error_set => {
             const err_name = ip.indexToKey(val.toIntern()).err.name;

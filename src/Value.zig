@@ -158,6 +158,7 @@ pub fn toBigInt(val: Value, space: *BigIntSpace, zcu: *Zcu) BigIntConst {
     const ip = &zcu.intern_pool;
     const int_key = switch (ip.indexToKey(val.toIntern())) {
         .enum_tag => |enum_tag| ip.indexToKey(enum_tag.int).int,
+        .bitpack => |bitpack| ip.indexToKey(bitpack.backing_int_val).int,
         .int => |int| int,
         else => unreachable,
     };
@@ -216,6 +217,7 @@ pub fn getUnsignedInt(val: Value, zcu: *const Zcu) ?u64 {
                 else => |payload| Value.fromInterned(payload).getUnsignedInt(zcu),
             },
             .enum_tag => |enum_tag| Value.fromInterned(enum_tag.int).getUnsignedInt(zcu),
+            .bitpack => |bitpack| Value.fromInterned(bitpack.backing_int_val).getUnsignedInt(zcu),
             .err => |err| zcu.intern_pool.getErrorValueIfExists(err.name).?,
             else => null,
         },
@@ -309,7 +311,7 @@ pub fn writeToMemory(val: Value, pt: Zcu.PerThread, buffer: []u8) error{
             // We use byte_count instead of abi_size here, so that any padding bytes
             // follow the data bytes, on both big- and little-endian systems.
             const byte_count = (@as(usize, @intCast(ty.bitSize(zcu))) + 7) / 8;
-            return writeToPackedMemory(val, ty, pt, buffer[0..byte_count], 0);
+            return writeToPackedMemory(val, pt, buffer[0..byte_count], 0);
         },
         .@"struct" => {
             const struct_type = zcu.typeToStruct(ty) orelse return error.IllDefinedMemoryLayout;
@@ -328,8 +330,8 @@ pub fn writeToMemory(val: Value, pt: Zcu.PerThread, buffer: []u8) error{
                     try writeToMemory(field_val, pt, buffer[off..]);
                 },
                 .@"packed" => {
-                    const byte_count = (@as(usize, @intCast(ty.bitSize(zcu))) + 7) / 8;
-                    return writeToPackedMemory(val, ty, pt, buffer[0..byte_count], 0);
+                    const int_index = ip.indexToKey(val.toIntern()).bitpack.backing_int_val;
+                    return Value.fromInterned(int_index).writeToMemory(pt, buffer);
                 },
             }
         },
@@ -344,15 +346,14 @@ pub fn writeToMemory(val: Value, pt: Zcu.PerThread, buffer: []u8) error{
                     const byte_count: usize = @intCast(field_type.abiSize(zcu));
                     return writeToMemory(field_val, pt, buffer[0..byte_count]);
                 } else {
-                    const backing_ty = try ty.unionBackingType(pt);
+                    const backing_ty = try ty.externUnionBackingType(pt);
                     const byte_count: usize = @intCast(backing_ty.abiSize(zcu));
                     return writeToMemory(val.unionValue(zcu), pt, buffer[0..byte_count]);
                 }
             },
             .@"packed" => {
-                const backing_ty = try ty.unionBackingType(pt);
-                const byte_count: usize = @intCast(backing_ty.abiSize(zcu));
-                return writeToPackedMemory(val, ty, pt, buffer[0..byte_count], 0);
+                const int_val: Value = .fromInterned(ip.indexToKey(val.toIntern()).bitpack.backing_int_val);
+                return writeToMemory(int_val, pt, buffer);
             },
         },
         .optional => {
@@ -374,7 +375,6 @@ pub fn writeToMemory(val: Value, pt: Zcu.PerThread, buffer: []u8) error{
 /// big-endian packed memory layouts start at the end of the buffer.
 pub fn writeToPackedMemory(
     val: Value,
-    ty: Type,
     pt: Zcu.PerThread,
     buffer: []u8,
     bit_offset: usize,
@@ -383,6 +383,7 @@ pub fn writeToPackedMemory(
     const ip = &zcu.intern_pool;
     const target = zcu.getTarget();
     const endian = target.cpu.arch.endian();
+    const ty = val.typeOf(zcu);
     if (val.isUndef(zcu)) {
         const bit_size: usize = @intCast(ty.bitSize(zcu));
         if (bit_size != 0) {
@@ -405,7 +406,13 @@ pub fn writeToPackedMemory(
         },
         .@"enum" => {
             const int_val = val.intFromEnum(zcu);
-            return int_val.writeToPackedMemory(int_val.typeOf(zcu), pt, buffer, bit_offset);
+            return int_val.writeToPackedMemory(pt, buffer, bit_offset);
+        },
+        .pointer => {
+            assert(!ty.isSlice(zcu)); // No well defined layout.
+            if (ip.getBackingAddrTag(val.toIntern()).? != .int) return error.ReinterpretDeclRef;
+            const addr = val.toUnsignedInt(zcu);
+            std.mem.writeVarPackedInt(buffer, bit_offset, zcu.getTarget().ptrBitWidth(), addr, endian);
         },
         .int => {
             const bits = ty.intInfo(zcu).bits;
@@ -434,54 +441,21 @@ pub fn writeToPackedMemory(
                 // On big-endian systems, LLVM reverses the element order of vectors by default
                 const tgt_elem_i = if (endian == .big) len - elem_i - 1 else elem_i;
                 const elem_val = try val.elemValue(pt, tgt_elem_i);
-                try elem_val.writeToPackedMemory(elem_ty, pt, buffer, bit_offset + bits);
+                try elem_val.writeToPackedMemory(pt, buffer, bit_offset + bits);
                 bits += elem_bit_size;
             }
         },
-        .@"struct" => {
-            const struct_type = ip.loadStructType(ty.toIntern());
-            // Sema is supposed to have emitted a compile error already in the case of Auto,
-            // and Extern is handled in non-packed writeToMemory.
-            assert(struct_type.layout == .@"packed");
-            var bits: u16 = 0;
-            for (0..struct_type.field_types.len) |i| {
-                const field_val = Value.fromInterned(switch (ip.indexToKey(val.toIntern()).aggregate.storage) {
-                    .bytes => unreachable,
-                    .elems => |elems| elems[i],
-                    .repeated_elem => |elem| elem,
-                });
-                const field_ty = Type.fromInterned(struct_type.field_types.get(ip)[i]);
-                const field_bits: u16 = @intCast(field_ty.bitSize(zcu));
-                try field_val.writeToPackedMemory(field_ty, pt, buffer, bit_offset + bits);
-                bits += field_bits;
-            }
-        },
-        .@"union" => {
-            const union_obj = zcu.typeToUnion(ty).?;
-            assert(union_obj.layout == .@"packed");
-            if (val.unionTag(zcu)) |union_tag| {
-                const field_index = zcu.unionTagFieldIndex(union_obj, union_tag).?;
-                const field_type = Type.fromInterned(union_obj.field_types.get(ip)[field_index]);
-                const field_val = try val.fieldValue(pt, field_index);
-                return field_val.writeToPackedMemory(field_type, pt, buffer, bit_offset);
-            } else {
-                const backing_ty = try ty.unionBackingType(pt);
-                return val.unionValue(zcu).writeToPackedMemory(backing_ty, pt, buffer, bit_offset);
-            }
-        },
-        .pointer => {
-            assert(!ty.isSlice(zcu)); // No well defined layout.
-            if (ip.getBackingAddrTag(val.toIntern()).? != .int) return error.ReinterpretDeclRef;
-            return val.writeToPackedMemory(Type.usize, pt, buffer, bit_offset);
+        .@"struct", .@"union" => {
+            assert(ty.containerLayout(zcu) == .@"packed");
+            const int_val: Value = .fromInterned(ip.indexToKey(val.toIntern()).bitpack.backing_int_val);
+            return int_val.writeToPackedMemory(pt, buffer, bit_offset);
         },
         .optional => {
             assert(ty.isPtrLikeOptional(zcu));
-            const child = ty.optionalChild(zcu);
-            const opt_val = val.optionalValue(zcu);
-            if (opt_val) |some| {
-                return some.writeToPackedMemory(child, pt, buffer, bit_offset);
+            if (val.optionalValue(zcu)) |ptr_val| {
+                return ptr_val.writeToPackedMemory(pt, buffer, bit_offset);
             } else {
-                return writeToPackedMemory(try pt.intValue(Type.usize, 0), Type.usize, pt, buffer, bit_offset);
+                return Value.zero_usize.writeToPackedMemory(pt, buffer, bit_offset);
             }
         },
         else => @panic("TODO implement writeToPackedMemory for more types"),
@@ -531,13 +505,12 @@ pub fn readFromPackedMemory(
     pt: Zcu.PerThread,
     buffer: []const u8,
     bit_offset: usize,
-    arena: Allocator,
+    gpa: Allocator,
 ) error{
     IllDefinedMemoryLayout,
     OutOfMemory,
 }!Value {
     const zcu = pt.zcu;
-    const ip = &zcu.intern_pool;
     const target = zcu.getTarget();
     const endian = target.cpu.arch.endian();
     switch (ty.zigTypeTag(zcu)) {
@@ -571,7 +544,8 @@ pub fn readFromPackedMemory(
             const abi_size: usize = @intCast(ty.abiSize(zcu));
             const Limb = std.math.big.Limb;
             const limb_count = (abi_size + @sizeOf(Limb) - 1) / @sizeOf(Limb);
-            const limbs_buffer = try arena.alloc(Limb, limb_count);
+            const limbs_buffer = try gpa.alloc(Limb, limb_count);
+            defer gpa.free(limbs_buffer);
 
             var bigint = BigIntMutable.init(limbs_buffer, 0);
             bigint.readPackedTwosComplement(buffer, bit_offset, bits, endian, int_info.signedness);
@@ -579,7 +553,7 @@ pub fn readFromPackedMemory(
         },
         .@"enum" => {
             const int_ty = ty.intTagType(zcu);
-            const int_val = try Value.readFromPackedMemory(int_ty, pt, buffer, bit_offset, arena);
+            const int_val = try Value.readFromPackedMemory(int_ty, pt, buffer, bit_offset, gpa);
             return pt.getCoerced(int_val, ty);
         },
         .float => return Value.fromInterned(try pt.intern(.{ .float = .{
@@ -595,52 +569,32 @@ pub fn readFromPackedMemory(
         } })),
         .vector => {
             const elem_ty = ty.childType(zcu);
-            const elems = try arena.alloc(InternPool.Index, @intCast(ty.arrayLen(zcu)));
+            const elems = try gpa.alloc(InternPool.Index, @intCast(ty.arrayLen(zcu)));
+            defer gpa.free(elems);
 
             var bits: u16 = 0;
             const elem_bit_size: u16 = @intCast(elem_ty.bitSize(zcu));
             for (elems, 0..) |_, i| {
                 // On big-endian systems, LLVM reverses the element order of vectors by default
                 const tgt_elem_i = if (endian == .big) elems.len - i - 1 else i;
-                elems[tgt_elem_i] = (try readFromPackedMemory(elem_ty, pt, buffer, bit_offset + bits, arena)).toIntern();
+                elems[tgt_elem_i] = (try readFromPackedMemory(elem_ty, pt, buffer, bit_offset + bits, gpa)).toIntern();
                 bits += elem_bit_size;
             }
             return pt.aggregateValue(ty, elems);
         },
-        .@"struct" => {
-            // Sema is supposed to have emitted a compile error already for Auto layout structs,
-            // and Extern is handled by non-packed readFromMemory.
-            const struct_type = zcu.typeToPackedStruct(ty).?;
-            var bits: u16 = 0;
-            const field_vals = try arena.alloc(InternPool.Index, struct_type.field_types.len);
-            for (field_vals, 0..) |*field_val, i| {
-                const field_ty = Type.fromInterned(struct_type.field_types.get(ip)[i]);
-                const field_bits: u16 = @intCast(field_ty.bitSize(zcu));
-                field_val.* = (try readFromPackedMemory(field_ty, pt, buffer, bit_offset + bits, arena)).toIntern();
-                bits += field_bits;
-            }
-            return pt.aggregateValue(ty, field_vals);
-        },
-        .@"union" => switch (ty.containerLayout(zcu)) {
-            .auto, .@"extern" => unreachable, // Handled by non-packed readFromMemory
-            .@"packed" => {
-                const backing_ty = try ty.unionBackingType(pt);
-                const val = (try readFromPackedMemory(backing_ty, pt, buffer, bit_offset, arena)).toIntern();
-                return Value.fromInterned(try pt.internUnion(.{
-                    .ty = ty.toIntern(),
-                    .tag = .none,
-                    .val = val,
-                }));
-            },
+        .@"struct", .@"union" => {
+            assert(ty.containerLayout(zcu) == .@"packed");
+            const int_val: Value = try .readFromPackedMemory(ty.bitpackBackingInt(zcu), pt, buffer, bit_offset, gpa);
+            return pt.bitpackValue(ty, int_val);
         },
         .pointer => {
             assert(!ty.isSlice(zcu)); // No well defined layout.
-            const addr = (try readFromPackedMemory(Type.usize, pt, buffer, bit_offset, arena)).toUnsignedInt(zcu);
+            const addr = (try readFromPackedMemory(Type.usize, pt, buffer, bit_offset, gpa)).toUnsignedInt(zcu);
             return pt.ptrIntValue(ty, addr);
         },
         .optional => {
             assert(ty.isPtrLikeOptional(zcu));
-            const addr = (try readFromPackedMemory(Type.usize, pt, buffer, bit_offset, arena)).toUnsignedInt(zcu);
+            const addr = (try readFromPackedMemory(Type.usize, pt, buffer, bit_offset, gpa)).toUnsignedInt(zcu);
             return .fromInterned(try pt.intern(.{ .opt = .{
                 .ty = ty.toIntern(),
                 .val = if (addr == 0) .none else (try pt.ptrIntValue(ty.childType(zcu), addr)).toIntern(),
@@ -915,8 +869,44 @@ pub fn fieldValue(val: Value, pt: Zcu.PerThread, index: usize) !Value {
             .elems => |elems| elems[index],
             .repeated_elem => |elem| elem,
         }),
-        // TODO assert the tag is correct
-        .un => |un| Value.fromInterned(un.val),
+        .un => |un| {
+            switch (Type.fromInterned(un.ty).containerLayout(zcu)) {
+                .auto, .@"extern" => {}, // TODO assert the tag is correct
+                .@"packed" => unreachable,
+            }
+            return .fromInterned(un.val);
+        },
+        .bitpack => |bitpack| {
+            const ty: Type = .fromInterned(bitpack.ty);
+            assert(ty.containerLayout(zcu) == .@"packed");
+            const int_val: Value = .fromInterned(bitpack.backing_int_val);
+            assert(!int_val.isUndef(zcu));
+            const field_ty = ty.fieldType(index, zcu);
+            const field_bit_offset: u16 = switch (ty.zigTypeTag(zcu)) {
+                .@"union" => 0,
+                .@"struct" => off: {
+                    var off: u16 = 0;
+                    for (0..index) |preceding_field_index| {
+                        off += @intCast(ty.fieldType(preceding_field_index, zcu).bitSize(zcu));
+                    }
+                    break :off off;
+                },
+                else => unreachable,
+            };
+            // Avoid hitting gpa for accesses to small packed structs
+            var sfba_state = std.heap.stackFallback(128, zcu.comp.gpa);
+            const sfba = sfba_state.get();
+            const buf = try sfba.alloc(u8, (ty.bitSize(zcu) + 7) / 8);
+            defer sfba.free(buf);
+            int_val.writeToPackedMemory(pt, buf, 0) catch |err| switch (err) {
+                error.ReinterpretDeclRef => unreachable, // it's an integer
+                error.OutOfMemory => |e| return e,
+            };
+            return Value.readFromPackedMemory(field_ty, pt, buf, field_bit_offset, sfba) catch |err| switch (err) {
+                error.IllDefinedMemoryLayout => unreachable, // it's a bitpack
+                error.OutOfMemory => |e| return e,
+            };
+        },
         else => unreachable,
     };
 }

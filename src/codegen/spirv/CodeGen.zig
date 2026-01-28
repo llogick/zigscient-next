@@ -969,7 +969,7 @@ fn constant(cg: *CodeGen, ty: Type, val: Value, repr: Repr) Error!Id {
                         const bytes = std.mem.alignForward(u16, cg.module.backingIntBits(bits).@"0", 8) / 8;
                         var limbs: [8]u8 = undefined;
                         @memset(&limbs, 0);
-                        val.writeToPackedMemory(ty, pt, limbs[0..bytes], 0) catch unreachable;
+                        val.writeToPackedMemory(pt, limbs[0..bytes], 0) catch unreachable;
                         const backing_ty: Type = .fromInterned(struct_type.backingIntTypeUnordered(ip));
                         return try cg.constInt(backing_ty, @as(u64, @bitCast(limbs)));
                     }

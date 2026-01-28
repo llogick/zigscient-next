@@ -1362,77 +1362,42 @@ pub const DeclGen = struct {
                 },
                 .struct_type => {
                     const loaded_struct = ip.loadStructType(ty.toIntern());
-                    switch (loaded_struct.layout) {
-                        .auto, .@"extern" => {
-                            if (!location.isInitializer()) {
-                                try w.writeByte('(');
-                                try dg.renderCType(w, ctype);
-                                try w.writeByte(')');
-                            }
+                    assert(loaded_struct.layout != .@"packed");
 
-                            try w.writeByte('{');
-                            var field_it = loaded_struct.iterateRuntimeOrder(ip);
-                            var need_comma = false;
-                            while (field_it.next()) |field_index| {
-                                const field_ty: Type = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                                if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
-
-                                if (need_comma) try w.writeByte(',');
-                                need_comma = true;
-                                const field_val = switch (ip.indexToKey(val.toIntern()).aggregate.storage) {
-                                    .bytes => |bytes| try pt.intern(.{ .int = .{
-                                        .ty = field_ty.toIntern(),
-                                        .storage = .{ .u64 = bytes.at(field_index, ip) },
-                                    } }),
-                                    .elems => |elems| elems[field_index],
-                                    .repeated_elem => |elem| elem,
-                                };
-                                try dg.renderValue(w, Value.fromInterned(field_val), initializer_type);
-                            }
-                            try w.writeByte('}');
-                        },
-                        .@"packed" => {
-                            // https://github.com/ziglang/zig/issues/24657 will eliminate most of the
-                            // following logic, leaving only the recursive `renderValue` call. Once
-                            // that proposal is implemented, a `packed struct` will literally be
-                            // represented in the InternPool by its comptime-known backing integer.
-                            var arena: std.heap.ArenaAllocator = .init(zcu.gpa);
-                            defer arena.deinit();
-                            const backing_ty: Type = .fromInterned(loaded_struct.backingIntTypeUnordered(ip));
-                            const buf = try arena.allocator().alloc(u8, @intCast(ty.abiSize(zcu)));
-                            val.writeToMemory(pt, buf) catch |err| switch (err) {
-                                error.IllDefinedMemoryLayout => unreachable,
-                                error.OutOfMemory => |e| return e,
-                                error.ReinterpretDeclRef, error.Unimplemented => return dg.fail("TODO: C backend: lower packed struct value", .{}),
-                            };
-                            const backing_val: Value = try .readUintFromMemory(backing_ty, pt, buf, arena.allocator());
-                            return dg.renderValue(w, backing_val, location);
-                        },
+                    if (!location.isInitializer()) {
+                        try w.writeByte('(');
+                        try dg.renderCType(w, ctype);
+                        try w.writeByte(')');
                     }
+
+                    try w.writeByte('{');
+                    var field_it = loaded_struct.iterateRuntimeOrder(ip);
+                    var need_comma = false;
+                    while (field_it.next()) |field_index| {
+                        const field_ty: Type = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
+                        if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+
+                        if (need_comma) try w.writeByte(',');
+                        need_comma = true;
+                        const field_val = switch (ip.indexToKey(val.toIntern()).aggregate.storage) {
+                            .bytes => |bytes| try pt.intern(.{ .int = .{
+                                .ty = field_ty.toIntern(),
+                                .storage = .{ .u64 = bytes.at(field_index, ip) },
+                            } }),
+                            .elems => |elems| elems[field_index],
+                            .repeated_elem => |elem| elem,
+                        };
+                        try dg.renderValue(w, Value.fromInterned(field_val), initializer_type);
+                    }
+                    try w.writeByte('}');
                 },
                 else => unreachable,
             },
+            .bitpack => |bitpack| return dg.renderValue(w, .fromInterned(bitpack.backing_int_val), location),
             .un => |un| {
                 const loaded_union = ip.loadUnionType(ty.toIntern());
-                if (loaded_union.flagsUnordered(ip).layout == .@"packed") {
-                    // https://github.com/ziglang/zig/issues/24657 will eliminate most of the
-                    // following logic, leaving only the recursive `renderValue` call. Once
-                    // that proposal is implemented, a `packed union` will literally be
-                    // represented in the InternPool by its comptime-known backing integer.
-                    var arena: std.heap.ArenaAllocator = .init(zcu.gpa);
-                    defer arena.deinit();
-                    const backing_ty = try ty.unionBackingType(pt);
-                    const buf = try arena.allocator().alloc(u8, @intCast(ty.abiSize(zcu)));
-                    val.writeToMemory(pt, buf) catch |err| switch (err) {
-                        error.IllDefinedMemoryLayout => unreachable,
-                        error.OutOfMemory => |e| return e,
-                        error.ReinterpretDeclRef, error.Unimplemented => return dg.fail("TODO: C backend: lower packed union value", .{}),
-                    };
-                    const backing_val: Value = try .readUintFromMemory(backing_ty, pt, buf, arena.allocator());
-                    return dg.renderValue(w, backing_val, location);
-                }
                 if (un.tag == .none) {
-                    const backing_ty = try ty.unionBackingType(pt);
+                    const backing_ty = try ty.externUnionBackingType(pt);
                     assert(loaded_union.flagsUnordered(ip).layout == .@"extern");
                     if (location == .StaticInitializer) {
                         return dg.fail("TODO: C backend: implement extern union backing type rendering in static initializers", .{});
@@ -1642,11 +1607,7 @@ pub const DeclGen = struct {
                             }
                             return w.writeByte('}');
                         },
-                        .@"packed" => return dg.renderUndefValue(
-                            w,
-                            .fromInterned(loaded_struct.backingIntTypeUnordered(ip)),
-                            location,
-                        ),
+                        .@"packed" => return dg.renderUndefValue(w, ty.bitpackBackingInt(zcu), location),
                     }
                 },
                 .tuple_type => |tuple_info| {
@@ -1714,11 +1675,7 @@ pub const DeclGen = struct {
                             }
                             if (has_tag) try w.writeByte('}');
                         },
-                        .@"packed" => return dg.renderUndefValue(
-                            w,
-                            try ty.unionBackingType(pt),
-                            location,
-                        ),
+                        .@"packed" => return dg.renderUndefValue(w, ty.bitpackBackingInt(zcu), location),
                     }
                 },
                 .error_union_type => |error_union_type| switch (ctype.info(ctype_pool)) {
@@ -5623,48 +5580,45 @@ fn airAsm(f: *Function, inst: Air.Inst.Index) !CValue {
         }
         try w.writeByte(':');
         const ip = &zcu.intern_pool;
-        const aggregate = ip.indexToKey(unwrapped_asm.clobbers).aggregate;
-        const struct_type: Type = .fromInterned(aggregate.ty);
-        switch (aggregate.storage) {
-            .elems => |elems| for (elems, 0..) |elem, i| switch (elem) {
-                .bool_true => {
-                    const field_name = struct_type.structFieldName(i, zcu).toSlice(ip).?;
-                    assert(field_name.len != 0);
+        const clobbers_val: Value = .fromInterned(unwrapped_asm.clobbers);
+        const clobbers_ty = clobbers_val.typeOf(zcu);
+        var clobbers_bigint_buf: Value.BigIntSpace = undefined;
+        const clobbers_bigint = clobbers_val.toBigInt(&clobbers_bigint_buf, zcu);
+        for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
+            assert(clobbers_ty.fieldType(field_index, zcu).toIntern() == .bool_type);
+            const limb_bits = @bitSizeOf(std.math.big.Limb);
+            if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
+            switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> @intCast(field_index % limb_bits)))) {
+                0 => continue, // field is false
+                1 => {}, // field is true
+            }
+            const field_name = clobbers_ty.structFieldName(field_index, zcu).toSlice(ip).?;
+            assert(field_name.len != 0);
 
-                    const target = &f.object.dg.mod.resolved_target.result;
-                    var c_name_buf: [16]u8 = undefined;
-                    const name =
-                        if ((target.cpu.arch.isMIPS() or target.cpu.arch == .alpha) and field_name[0] == 'r') name: {
-                            // Convert "rN" to "$N"
-                            const c_name = (&c_name_buf)[0..field_name.len];
-                            @memcpy(c_name, field_name);
-                            c_name_buf[0] = '$';
-                            break :name c_name;
-                        } else if ((target.cpu.arch.isMIPS() and (mem.startsWith(u8, field_name, "fcc") or field_name[0] == 'w')) or
-                        ((target.cpu.arch.isMIPS() or target.cpu.arch == .alpha) and field_name[0] == 'f') or
-                        (target.cpu.arch == .kvx and !mem.eql(u8, field_name, "memory"))) name: {
-                            // "$" prefix for these registers
-                            c_name_buf[0] = '$';
-                            @memcpy((&c_name_buf)[1..][0..field_name.len], field_name);
-                            break :name (&c_name_buf)[0 .. 1 + field_name.len];
-                        } else if (target.cpu.arch.isSPARC() and
-                        (mem.eql(u8, field_name, "ccr") or mem.eql(u8, field_name, "icc") or mem.eql(u8, field_name, "xcc"))) name: {
-                            // C compilers just use `icc` to encompass all of these.
-                            break :name "icc";
-                        } else field_name;
+            const target = &f.object.dg.mod.resolved_target.result;
+            var c_name_buf: [16]u8 = undefined;
+            const name =
+                if ((target.cpu.arch.isMIPS() or target.cpu.arch == .alpha) and field_name[0] == 'r') name: {
+                    // Convert "rN" to "$N"
+                    const c_name = (&c_name_buf)[0..field_name.len];
+                    @memcpy(c_name, field_name);
+                    c_name_buf[0] = '$';
+                    break :name c_name;
+                } else if ((target.cpu.arch.isMIPS() and (mem.startsWith(u8, field_name, "fcc") or field_name[0] == 'w')) or
+                ((target.cpu.arch.isMIPS() or target.cpu.arch == .alpha) and field_name[0] == 'f') or
+                (target.cpu.arch == .kvx and !mem.eql(u8, field_name, "memory"))) name: {
+                    // "$" prefix for these registers
+                    c_name_buf[0] = '$';
+                    @memcpy((&c_name_buf)[1..][0..field_name.len], field_name);
+                    break :name (&c_name_buf)[0 .. 1 + field_name.len];
+                } else if (target.cpu.arch.isSPARC() and
+                (mem.eql(u8, field_name, "ccr") or mem.eql(u8, field_name, "icc") or mem.eql(u8, field_name, "xcc"))) name: {
+                    // C compilers just use `icc` to encompass all of these.
+                    break :name "icc";
+                } else field_name;
 
-                    try w.print(" {f}", .{fmtStringLiteral(name, null)});
-                    (try w.writableArray(1))[0] = ',';
-                },
-                .bool_false => continue,
-                else => unreachable,
-            },
-            .repeated_elem => |elem| switch (elem) {
-                .bool_true => @panic("TODO"),
-                .bool_false => {},
-                else => unreachable,
-            },
-            .bytes => @panic("TODO"),
+            try w.print(" {f}", .{fmtStringLiteral(name, null)});
+            (try w.writableArray(1))[0] = ',';
         }
         w.undo(1); // erase the last comma
         try w.writeAll(");");

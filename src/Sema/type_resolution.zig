@@ -79,6 +79,7 @@ pub fn ensureLayoutResolved(sema: *Sema, ty: Type, src: LazySrcLoc) SemaError!vo
         .opt,
         .aggregate,
         .un,
+        .bitpack,
         // memoization, not types
         .memoized_call,
         => unreachable,
