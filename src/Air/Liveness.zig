@@ -153,8 +153,8 @@ pub fn analyze(zcu: *Zcu, air: Air, intern_pool: *InternPool) Allocator.Error!Li
             usize,
             (air.instructions.len * bpi + @bitSizeOf(usize) - 1) / @bitSizeOf(usize),
         ),
-        .extra = .{},
-        .special = .{},
+        .extra = .empty,
+        .special = .empty,
         .intern_pool = intern_pool,
     };
     errdefer gpa.free(a.tomb_bits);
@@ -175,7 +175,7 @@ pub fn analyze(zcu: *Zcu, air: Air, intern_pool: *InternPool) Allocator.Error!Li
         var data: LivenessPassData(.main_analysis) = .{};
         defer data.deinit(gpa);
         data.old_extra = a.extra;
-        a.extra = .{};
+        a.extra = .empty;
         try analyzeBody(&a, .main_analysis, &data, main_body);
         assert(data.live_set.count() == 0);
     }
@@ -1360,7 +1360,7 @@ fn analyzeInstSwitchBr(
             const mirrored_deaths = try gpa.alloc(DeathList, ncases + 1);
             defer gpa.free(mirrored_deaths);
 
-            @memset(mirrored_deaths, .{});
+            @memset(mirrored_deaths, .empty);
             defer for (mirrored_deaths) |*md| md.deinit(gpa);
 
             {

@@ -1054,13 +1054,13 @@ pub const Pool = struct {
     };
 
     pub const empty: Pool = .{
-        .map = .{},
-        .items = .{},
-        .extra = .{},
+        .map = .empty,
+        .items = .empty,
+        .extra = .empty,
 
-        .string_map = .{},
-        .string_indices = .{},
-        .string_bytes = .{},
+        .string_map = .empty,
+        .string_indices = .empty,
+        .string_bytes = .empty,
     };
 
     pub fn init(pool: *Pool, allocator: std.mem.Allocator) !void {

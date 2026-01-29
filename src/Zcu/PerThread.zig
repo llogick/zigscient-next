@@ -865,7 +865,7 @@ fn analyzeMemoizedState(pt: Zcu.PerThread, stage: InternPool.MemoizedStateStage)
         .parent = null,
         .sema = &sema,
         .namespace = std_namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = null,
         .comptime_reason = .{ .reason = .{
             .src = src,
@@ -1014,7 +1014,7 @@ fn analyzeComptimeUnit(pt: Zcu.PerThread, cu_id: InternPool.ComptimeUnit.Id) Zcu
         .parent = null,
         .sema = &sema,
         .namespace = comptime_unit.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = null,
         .comptime_reason = .{ .reason = .{
             .src = .{
@@ -1131,109 +1131,6 @@ pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void 
         else => unreachable,
     };
     result catch |err| switch (err) {
-        error.AnalysisFail => {
-            if (!zcu.failed_analysis.contains(anal_unit)) {
-                // If this unit caused the error, it would have an entry in `failed_analysis`.
-                // Since it does not, this must be a transitive failure.
-                try zcu.transitive_failed_analysis.put(gpa, anal_unit, {});
-                log.debug("mark transitive analysis failure for {f}", .{zcu.fmtAnalUnit(anal_unit)});
-            }
-            return error.AnalysisFail;
-        },
-        error.OutOfMemory,
-        error.Canceled,
-        => |e| return e,
-        error.ComptimeReturn => unreachable,
-        error.ComptimeBreak => unreachable,
-    };
-
-    sema.flushExports() catch |err| switch (err) {
-        error.OutOfMemory => |e| return e,
-    };
-}
-
-/// Ensures that the default values of the given "declared" (not reified) `struct` type are fully
-/// up-to-date, performing re-analysis if necessary. Asserts that `ty` is a struct (not tuple) type.
-/// Returns `error.AnalysisFail` if an analysis error is encountered while resolving the default
-/// field values; the caller is free to ignore this, since the error is already registered.
-pub fn ensureStructDefaultsUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
-    const tracy = trace(@src());
-    defer tracy.end();
-
-    const zcu = pt.zcu;
-    const gpa = zcu.gpa;
-
-    assert(ty.zigTypeTag(zcu) == .@"struct");
-    assert(!ty.isTuple(zcu));
-
-    const anal_unit: AnalUnit = .wrap(.{ .struct_defaults = ty.toIntern() });
-
-    log.debug("ensureStructDefaultsUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
-
-    assert(!zcu.analysis_in_progress.contains(anal_unit));
-
-    const was_outdated = zcu.outdated.swapRemove(anal_unit) or
-        zcu.potentially_outdated.swapRemove(anal_unit) or
-        zcu.intern_pool.setWantStructDefaults(zcu.comp.io, ty.toIntern());
-
-    if (was_outdated) {
-        _ = zcu.outdated_ready.swapRemove(anal_unit);
-        // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
-        if (dev.env.supports(.incremental)) {
-            zcu.deleteUnitExports(anal_unit);
-            zcu.deleteUnitReferences(anal_unit);
-            zcu.deleteUnitCompileLogs(anal_unit);
-            if (zcu.failed_analysis.fetchSwapRemove(anal_unit)) |kv| {
-                kv.value.destroy(gpa);
-            }
-            _ = zcu.transitive_failed_analysis.swapRemove(anal_unit);
-            zcu.intern_pool.removeDependenciesForDepender(gpa, anal_unit);
-        }
-        // For types, we already know that we have to invalidate all dependees.
-        // TODO: we actually *could* detect whether everything was the same. should we bother?
-        try zcu.markDependeeOutdated(.marked_po, .{ .struct_defaults = ty.toIntern() });
-    } else {
-        // We can trust the current information about this unit.
-        if (zcu.failed_analysis.contains(anal_unit)) return error.AnalysisFail;
-        if (zcu.transitive_failed_analysis.contains(anal_unit)) return error.AnalysisFail;
-        return;
-    }
-
-    if (zcu.comp.debugIncremental()) {
-        const info = try zcu.incremental_debug_state.getUnitInfo(gpa, anal_unit);
-        info.last_update_gen = zcu.generation;
-        info.deps.clearRetainingCapacity();
-    }
-
-    const unit_tracking = zcu.trackUnitSema(ty.containerTypeName(&zcu.intern_pool).toSlice(&zcu.intern_pool), null);
-    defer unit_tracking.end(zcu);
-
-    try zcu.analysis_in_progress.put(gpa, anal_unit, {});
-    defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
-
-    var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
-    defer analysis_arena.deinit();
-
-    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
-    defer comptime_err_ret_trace.deinit();
-
-    const zir = zcu.namespacePtr(ty.getNamespaceIndex(zcu)).fileScope(zcu).zir.?;
-
-    var sema: Sema = .{
-        .pt = pt,
-        .gpa = gpa,
-        .arena = analysis_arena.allocator(),
-        .code = zir,
-        .owner = anal_unit,
-        .func_index = .none,
-        .func_is_naked = false,
-        .fn_ret_ty = .void,
-        .fn_ret_ty_ies = null,
-        .comptime_err_ret_trace = &comptime_err_ret_trace,
-    };
-    defer sema.deinit();
-
-    Sema.type_resolution.resolveStructDefaults(&sema, ty) catch |err| switch (err) {
         error.AnalysisFail => {
             if (!zcu.failed_analysis.contains(anal_unit)) {
                 // If this unit caused the error, it would have an entry in `failed_analysis`.
@@ -1452,7 +1349,7 @@ fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileErr
         .parent = null,
         .sema = &sema,
         .namespace = old_nav.analysis.?.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = null,
         .comptime_reason = undefined, // set below
         .src_base_inst = old_nav.analysis.?.zir_index,
@@ -1831,7 +1728,7 @@ fn analyzeNavType(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileEr
         .parent = null,
         .sema = &sema,
         .namespace = old_nav.analysis.?.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = null,
         .comptime_reason = undefined, // set below
         .src_base_inst = old_nav.analysis.?.zir_index,
@@ -3078,7 +2975,7 @@ fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.Sem
         .parent = null,
         .sema = &sema,
         .namespace = decl_nav.analysis.?.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = null,
         .comptime_reason = null,
         .src_base_inst = decl_nav.analysis.?.zir_index,
@@ -3327,7 +3224,7 @@ pub fn processExports(pt: Zcu.PerThread) !void {
                 break :gop .{ gop.value_ptr, gop.found_existing };
             },
         };
-        if (!found_existing) value_ptr.* = .{};
+        if (!found_existing) value_ptr.* = .empty;
         try value_ptr.append(gpa, export_idx);
     }
 
@@ -3356,7 +3253,7 @@ pub fn processExports(pt: Zcu.PerThread) !void {
                     break :gop .{ gop.value_ptr, gop.found_existing };
                 },
             };
-            if (!found_existing) value_ptr.* = .{};
+            if (!found_existing) value_ptr.* = .empty;
             try value_ptr.append(gpa, @enumFromInt(export_idx));
         }
     }
@@ -4353,10 +4250,7 @@ pub fn resolveTypeForCodegen(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
         },
 
         .@"struct" => switch (ip.indexToKey(ty.toIntern())) {
-            .struct_type => {
-                try pt.ensureTypeLayoutUpToDate(ty);
-                try pt.ensureStructDefaultsUpToDate(ty);
-            },
+            .struct_type => try pt.ensureTypeLayoutUpToDate(ty),
             .tuple_type => |tuple| for (0..tuple.types.len) |i| {
                 const field_is_comptime = tuple.values.get(ip)[i] != .none;
                 if (field_is_comptime) continue;

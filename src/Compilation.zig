@@ -3713,7 +3713,6 @@ const Header = extern struct {
         nav_val_deps_len: u32,
         nav_ty_deps_len: u32,
         type_layout_deps_len: u32,
-        struct_defaults_deps_len: u32,
         func_ies_deps_len: u32,
         zon_file_deps_len: u32,
         embed_file_deps_len: u32,
@@ -3763,7 +3762,6 @@ pub fn saveState(comp: *Compilation) !void {
                 .nav_val_deps_len = @intCast(ip.nav_val_deps.count()),
                 .nav_ty_deps_len = @intCast(ip.nav_ty_deps.count()),
                 .type_layout_deps_len = @intCast(ip.type_layout_deps.count()),
-                .struct_defaults_deps_len = @intCast(ip.struct_defaults_deps.count()),
                 .func_ies_deps_len = @intCast(ip.func_ies_deps.count()),
                 .zon_file_deps_len = @intCast(ip.zon_file_deps.count()),
                 .embed_file_deps_len = @intCast(ip.embed_file_deps.count()),
@@ -3788,7 +3786,7 @@ pub fn saveState(comp: *Compilation) !void {
             },
         });
 
-        try bufs.ensureTotalCapacityPrecise(26 + 9 * pt_headers.items.len);
+        try bufs.ensureTotalCapacityPrecise(24 + 9 * pt_headers.items.len);
         addBuf(&bufs, mem.asBytes(&header));
         addBuf(&bufs, @ptrCast(pt_headers.items));
 
@@ -3800,8 +3798,6 @@ pub fn saveState(comp: *Compilation) !void {
         addBuf(&bufs, @ptrCast(ip.nav_ty_deps.values()));
         addBuf(&bufs, @ptrCast(ip.type_layout_deps.keys()));
         addBuf(&bufs, @ptrCast(ip.type_layout_deps.values()));
-        addBuf(&bufs, @ptrCast(ip.struct_defaults_deps.keys()));
-        addBuf(&bufs, @ptrCast(ip.struct_defaults_deps.values()));
         addBuf(&bufs, @ptrCast(ip.func_ies_deps.keys()));
         addBuf(&bufs, @ptrCast(ip.func_ies_deps.values()));
         addBuf(&bufs, @ptrCast(ip.zon_file_deps.keys()));
@@ -4481,7 +4477,7 @@ pub fn addModuleErrorMsg(
                 const root_name: ?[]const u8 = switch (ref.referencer.unwrap()) {
                     .@"comptime" => "comptime",
                     .nav_val, .nav_ty => |nav| ip.getNav(nav).name.toSlice(ip),
-                    .type_layout, .struct_defaults => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
+                    .type_layout => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
                     .func => |f| ip.getNav(zcu.funcInfo(f).owner_nav).name.toSlice(ip),
                     .memoized_state => null,
                 };
@@ -5251,7 +5247,6 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 .nav_ty => |nav| pt.ensureNavTypeUpToDate(nav),
                 .nav_val => |nav| pt.ensureNavValUpToDate(nav),
                 .type_layout => |ty| pt.ensureTypeLayoutUpToDate(.fromInterned(ty)),
-                .struct_defaults => |ty| pt.ensureStructDefaultsUpToDate(.fromInterned(ty)),
                 .memoized_state => |stage| pt.ensureMemoizedStateUpToDate(stage),
                 .func => |func| pt.ensureFuncBodyUpToDate(func),
             };

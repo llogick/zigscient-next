@@ -979,7 +979,7 @@ fn buildOutputType(
         .dirs = undefined,
         .object_format = null,
         .dynamic_linker = null,
-        .modules = .{},
+        .modules = .empty,
         .opts = .{
             .is_test = switch (arg_mode) {
                 .zig_test, .zig_test_obj => true,
@@ -1006,18 +1006,18 @@ fn buildOutputType(
         .windows_libs = .empty,
         .link_inputs = .empty,
 
-        .c_source_files = .{},
-        .rc_source_files = .{},
+        .c_source_files = .empty,
+        .rc_source_files = .empty,
 
-        .llvm_m_args = .{},
+        .llvm_m_args = .empty,
         .sysroot = null,
-        .lib_directories = .{}, // populated by createModule()
-        .lib_dir_args = .{}, // populated from CLI arg parsing
+        .lib_directories = .empty, // populated by createModule()
+        .lib_dir_args = .empty, // populated from CLI arg parsing
         .libc_installation = null,
         .want_native_include_dirs = false,
-        .frameworks = .{},
-        .framework_dirs = .{},
-        .rpath_list = .{},
+        .frameworks = .empty,
+        .framework_dirs = .empty,
+        .rpath_list = .empty,
         .each_lib_rpath = null,
         .libc_paths_file = EnvVar.ZIG_LIBC.get(environ_map),
         .native_system_include_paths = &.{},

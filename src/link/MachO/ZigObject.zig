@@ -3,7 +3,7 @@ data: std.ArrayList(u8) = .empty,
 basename: []const u8,
 index: File.Index,
 
-symtab: std.MultiArrayList(Nlist) = .{},
+symtab: std.MultiArrayList(Nlist) = .empty,
 strtab: StringTable = .{},
 
 symbols: std.ArrayList(Symbol) = .empty,
@@ -29,7 +29,7 @@ uavs: UavTable = .{},
 tlv_initializers: TlvInitializerTable = .{},
 
 /// A table of relocations.
-relocs: RelocationTable = .{},
+relocs: RelocationTable = .empty,
 
 dwarf: ?Dwarf = null,
 

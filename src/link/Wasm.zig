@@ -78,7 +78,7 @@ export_table: bool,
 /// Output name of the file
 name: []const u8,
 /// List of relocatable files to be linked into the final binary.
-objects: std.ArrayList(Object) = .{},
+objects: std.ArrayList(Object) = .empty,
 
 func_types: std.AutoArrayHashMapUnmanaged(FunctionType, void) = .empty,
 /// Provides a mapping of both imports and provided functions to symbol name.
@@ -278,7 +278,7 @@ any_tls_relocs: bool = false,
 any_passive_inits: bool = false,
 
 /// All MIR instructions for all Zcu functions.
-mir_instructions: std.MultiArrayList(Mir.Inst) = .{},
+mir_instructions: std.MultiArrayList(Mir.Inst) = .empty,
 /// Corresponds to `mir_instructions`.
 mir_extra: std.ArrayList(u32) = .empty,
 /// All local types for all Zcu functions.

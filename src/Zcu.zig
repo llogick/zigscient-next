@@ -3122,7 +3122,6 @@ pub fn markPoDependeeUpToDate(zcu: *Zcu, dependee: InternPool.Dependee) !void {
             .nav_val => |nav| try zcu.markPoDependeeUpToDate(.{ .nav_val = nav }),
             .nav_ty => |nav| try zcu.markPoDependeeUpToDate(.{ .nav_ty = nav }),
             .type_layout => |ty| try zcu.markPoDependeeUpToDate(.{ .type_layout = ty }),
-            .struct_defaults => |ty| try zcu.markPoDependeeUpToDate(.{ .struct_defaults = ty }),
             .func => |func| try zcu.markPoDependeeUpToDate(.{ .func_ies = func }),
             .memoized_state => |stage| try zcu.markPoDependeeUpToDate(.{ .memoized_state = stage }),
         }
@@ -3138,7 +3137,6 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
         .nav_val => |nav| .{ .nav_val = nav },
         .nav_ty => |nav| .{ .nav_ty = nav },
         .type_layout => |ty| .{ .type_layout = ty },
-        .struct_defaults => |ty| .{ .struct_defaults = ty },
         .func => |func_index| .{ .func_ies = func_index },
         .memoized_state => |stage| .{ .memoized_state = stage },
     };
@@ -4116,7 +4114,7 @@ fn resolveReferencesInner(zcu: *Zcu) !std.AutoArrayHashMapUnmanaged(AnalUnit, ?R
                 const other: AnalUnit = .wrap(switch (unit.unwrap()) {
                     .nav_val => |n| .{ .nav_ty = n },
                     .nav_ty => |n| .{ .nav_val = n },
-                    .@"comptime", .type_layout, .struct_defaults, .func, .memoized_state => break :queue_paired,
+                    .@"comptime", .type_layout, .func, .memoized_state => break :queue_paired,
                 });
                 const gop = try units.getOrPut(gpa, other);
                 if (gop.found_existing) break :queue_paired;
@@ -4273,7 +4271,7 @@ fn formatAnalUnit(data: FormatAnalUnit, writer: *Io.Writer) Io.Writer.Error!void
             }
         },
         .nav_val, .nav_ty => |nav, tag| return writer.print("{t}('{f}' [{}])", .{ tag, ip.getNav(nav).fqn.fmt(ip), @intFromEnum(nav) }),
-        .type_layout, .struct_defaults => |ty, tag| return writer.print("{t}('{f}' [{}])", .{ tag, Type.fromInterned(ty).containerTypeName(ip).fmt(ip), @intFromEnum(ty) }),
+        .type_layout => |ty, tag| return writer.print("{t}('{f}' [{}])", .{ tag, Type.fromInterned(ty).containerTypeName(ip).fmt(ip), @intFromEnum(ty) }),
         .func => |func| {
             const nav = zcu.funcInfo(func).owner_nav;
             return writer.print("func('{f}' [{}])", .{ ip.getNav(nav).fqn.fmt(ip), @intFromEnum(func) });
@@ -4299,7 +4297,7 @@ fn formatDependee(data: FormatDependee, writer: *Io.Writer) Io.Writer.Error!void
             const fqn = ip.getNav(nav).fqn;
             return writer.print("{t}('{f}')", .{ tag, fqn.fmt(ip) });
         },
-        .type_layout, .struct_defaults => |ip_index, tag| {
+        .type_layout => |ip_index, tag| {
             const name = Type.fromInterned(ip_index).containerTypeName(ip);
             return writer.print("{t}('{f}')", .{ tag, name.fmt(ip) });
         },

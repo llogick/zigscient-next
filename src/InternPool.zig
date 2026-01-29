@@ -54,9 +54,6 @@ func_ies_deps: std.AutoArrayHashMapUnmanaged(Index, DepEntry.Index),
 /// Dependencies on the resolved layout of a `struct`, `union`, or `enum` type.
 /// Value is index into `dep_entries` of the first dependency on this type's layout.
 type_layout_deps: std.AutoArrayHashMapUnmanaged(Index, DepEntry.Index),
-/// Dependencies on the resolved default field values of a `struct` type.
-/// Value is index into `dep_entries` of the first dependency on this type's inits.
-struct_defaults_deps: std.AutoArrayHashMapUnmanaged(Index, DepEntry.Index),
 /// Dependencies on a ZON file. Triggered by `@import` of ZON.
 /// Value is index into `dep_entries` of the first dependency on this ZON file.
 zon_file_deps: std.AutoArrayHashMapUnmanaged(FileIndex, DepEntry.Index),
@@ -111,7 +108,6 @@ pub const empty: InternPool = .{
     .nav_ty_deps = .empty,
     .func_ies_deps = .empty,
     .type_layout_deps = .empty,
-    .struct_defaults_deps = .empty,
     .zon_file_deps = .empty,
     .embed_file_deps = .empty,
     .namespace_deps = .empty,
@@ -423,7 +419,6 @@ pub const AnalUnit = packed struct(u64) {
         nav_val,
         nav_ty,
         type_layout,
-        struct_defaults,
         func,
         memoized_state,
     };
@@ -437,8 +432,6 @@ pub const AnalUnit = packed struct(u64) {
         nav_ty: Nav.Index,
         /// This `AnalUnit` resolves the layout of the given `struct`, `union`, or `enum` type.
         type_layout: InternPool.Index,
-        /// This `AnalUnit` resolves the default field values of the given `struct` type.
-        struct_defaults: InternPool.Index,
         /// This `AnalUnit` analyzes the body of the given runtime function.
         func: InternPool.Index,
         /// This `AnalUnit` resolves all state which is memoized in fields on `Zcu`.
@@ -858,7 +851,6 @@ pub const Dependee = union(enum) {
     /// Index is the function, not its IES.
     func_ies: Index,
     type_layout: Index,
-    struct_defaults: Index,
     zon_file: FileIndex,
     embed_file: Zcu.EmbedFile.Index,
     namespace: TrackedInst.Index,
@@ -912,7 +904,6 @@ pub fn dependencyIterator(ip: *const InternPool, dependee: Dependee) DependencyI
         .nav_ty => |x| ip.nav_ty_deps.get(x),
         .func_ies => |x| ip.func_ies_deps.get(x),
         .type_layout => |x| ip.type_layout_deps.get(x),
-        .struct_defaults => |x| ip.struct_defaults_deps.get(x),
         .zon_file => |x| ip.zon_file_deps.get(x),
         .embed_file => |x| ip.embed_file_deps.get(x),
         .namespace => |x| ip.namespace_deps.get(x),
@@ -987,7 +978,6 @@ pub fn addDependency(ip: *InternPool, gpa: Allocator, depender: AnalUnit, depend
                 .nav_ty => ip.nav_ty_deps,
                 .func_ies => ip.func_ies_deps,
                 .type_layout => ip.type_layout_deps,
-                .struct_defaults => ip.struct_defaults_deps,
                 .zon_file => ip.zon_file_deps,
                 .embed_file => ip.embed_file_deps,
                 .namespace => ip.namespace_deps,
@@ -3326,15 +3316,6 @@ pub const LoadedStructType = struct {
     /// compiler frontend resolves this by traversing the reference graph at the end of each update
     /// with `Zcu.resolveReferences` and hiding compile errors which arise from this analysis.
     want_layout: bool,
-    /// Initially `false`, and set to `true` once any dependency on or reference to the struct's
-    /// default field values is encountered, after which it is never reset to `false`, even across
-    /// incremental updates.
-    ///
-    /// This field is purely an optimization to avoid resolving the layout of types whose layouts
-    /// are never demanded. If this field is `true` but the layout is not actually needed, the
-    /// compiler frontend resolves this by traversing the reference graph at the end of each update
-    /// with `Zcu.resolveReferences` and hiding compile errors which arise from this analysis.
-    want_defaults: bool,
 
     // The remaining fields are only valid once the struct's layout is resolved.
     field_name_map: MapIndex,
@@ -3711,7 +3692,6 @@ pub fn loadStructType(ip: *const InternPool, index: Index) LoadedStructType {
                 .packed_backing_mode = undefined,
 
                 .want_layout = extra.data.flags.want_layout,
-                .want_defaults = extra.data.flags.want_defaults,
 
                 .field_name_map = extra.data.field_name_map,
                 .field_names = field_names,
@@ -3772,7 +3752,6 @@ pub fn loadStructType(ip: *const InternPool, index: Index) LoadedStructType {
         .packed_backing_mode = backing_mode,
 
         .want_layout = extra.data.bits.want_layout,
-        .want_defaults = extra.data.bits.want_defaults,
 
         .field_name_map = extra.data.field_name_map,
         .field_names = field_names,
@@ -5666,9 +5645,8 @@ pub const Tag = enum(u8) {
             alignment: Alignment,
 
             want_layout: bool,
-            want_defaults: bool,
 
-            _: u15 = 0,
+            _: u16 = 0,
         };
     };
 
@@ -5693,12 +5671,11 @@ pub const Tag = enum(u8) {
         field_name_map: MapIndex,
 
         const Bits = packed struct(u32) {
-            captures_len: enum(u30) {
-                reified = std.math.maxInt(u30),
+            captures_len: enum(u31) {
+                reified = std.math.maxInt(u31),
                 _,
             },
             want_layout: bool,
-            want_defaults: bool,
         };
     };
 
@@ -6477,7 +6454,6 @@ pub fn deinit(ip: *InternPool, gpa: Allocator, io: Io) void {
     ip.nav_ty_deps.deinit(gpa);
     ip.func_ies_deps.deinit(gpa);
     ip.type_layout_deps.deinit(gpa);
-    ip.struct_defaults_deps.deinit(gpa);
     ip.zon_file_deps.deinit(gpa);
     ip.embed_file_deps.deinit(gpa);
     ip.namespace_deps.deinit(gpa);
@@ -8191,7 +8167,6 @@ pub fn getDeclaredStructType(
                 .bits = .{
                     .captures_len = @enumFromInt(ini.captures.len),
                     .want_layout = false,
-                    .want_defaults = false,
                 },
                 .name = undefined, // set by `finish`
                 .name_nav = undefined, // set by `finish`
@@ -8256,7 +8231,6 @@ pub fn getDeclaredStructType(
             .class = .no_possible_value,
             .alignment = .none,
             .want_layout = false,
-            .want_defaults = false,
         },
     });
     if (ini.captures.len != 0) {
@@ -8337,7 +8311,6 @@ pub fn getReifiedStructType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Pe
                 .bits = .{
                     .captures_len = .reified,
                     .want_layout = false,
-                    .want_defaults = false,
                 },
                 .name = undefined, // set by `finish`
                 .name_nav = undefined, // set by `finish`
@@ -8407,7 +8380,6 @@ pub fn getReifiedStructType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Pe
             .class = .no_possible_value,
             .alignment = .none,
             .want_layout = false,
-            .want_defaults = false,
         },
     });
     _ = addExtraAssumeCapacity(extra, PackedU64.init(ini.type_hash)); // type_hash
@@ -10647,7 +10619,6 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
     const nav_ty_deps_len = ip.nav_ty_deps.count();
     const func_ies_deps_len = ip.func_ies_deps.count();
     const type_layout_deps_len = ip.type_layout_deps.count();
-    const struct_defaults_deps_len = ip.struct_defaults_deps.count();
     const zon_file_deps_len = ip.zon_file_deps.count();
     const embed_file_deps_len = ip.embed_file_deps.count();
     const namespace_deps_len = ip.namespace_deps.count();
@@ -10658,7 +10629,6 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
     const nav_ty_deps_size = nav_ty_deps_len * 8;
     const func_ies_deps_size = func_ies_deps_len * 8;
     const type_layout_deps_size = type_layout_deps_len * 8;
-    const struct_defaults_deps_size = struct_defaults_deps_len * 8;
     const zon_file_deps_size = zon_file_deps_len * 8;
     const embed_file_deps_size = embed_file_deps_len * 8;
     const namespace_deps_size = namespace_deps_len * 8;
@@ -10672,7 +10642,6 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
         \\  {d} nav_ty: {d} bytes
         \\  {d} func_ies: {d} bytes
         \\  {d} type_layout: {d} bytes
-        \\  {d} struct_defaults: {d} bytes
         \\  {d} zon_file: {d} bytes
         \\  {d} embed_file: {d} bytes
         \\  {d} namespace: {d} bytes
@@ -10680,7 +10649,7 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
         \\
     , .{
         dep_entries_size + src_hash_deps_size + nav_val_deps_size + nav_ty_deps_size +
-            func_ies_deps_size + type_layout_deps_size + struct_defaults_deps_size + zon_file_deps_size +
+            func_ies_deps_size + type_layout_deps_size + zon_file_deps_size +
             embed_file_deps_size + namespace_deps_size + namespace_name_deps_size,
         dep_entries_len,
         dep_entries_size,
@@ -10694,8 +10663,6 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
         func_ies_deps_size,
         type_layout_deps_len,
         type_layout_deps_size,
-        struct_defaults_deps_len,
-        struct_defaults_deps_size,
         zon_file_deps_len,
         zon_file_deps_size,
         embed_file_deps_len,
@@ -11136,7 +11103,7 @@ pub fn dumpGenericInstancesFallible(ip: *const InternPool, allocator: Allocator,
             const info = extraData(extra_list, Tag.FuncInstance, data);
 
             const gop = try instances.getOrPut(arena, info.generic_owner);
-            if (!gop.found_existing) gop.value_ptr.* = .{};
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
 
             try gop.value_ptr.append(
                 arena,
@@ -12961,50 +12928,6 @@ pub fn setWantTypeLayout(ip: *InternPool, io: Io, container_type: Index) bool {
                 return false;
             } else {
                 bits.want_layout = true;
-                return true;
-            }
-        },
-
-        else => unreachable,
-    }
-}
-
-/// Like `setWantTypeLayout`, but for the default field values of a struct (so this sets the
-/// `want_defaults` flag rather than the `want_layout` flag).
-pub fn setWantStructDefaults(ip: *InternPool, io: Io, struct_type: Index) bool {
-    const unwrapped_index = struct_type.unwrap(ip);
-
-    const local = ip.getLocal(unwrapped_index.tid);
-    local.mutate.extra.mutex.lockUncancelable(io);
-    defer local.mutate.extra.mutex.unlock(io);
-
-    const extra_items = local.shared.extra.view().items(.@"0");
-    const item = unwrapped_index.getItem(ip);
-    switch (item.tag) {
-        .type_struct_packed_auto,
-        .type_struct_packed_explicit,
-        .type_struct_packed_auto_defaults,
-        .type_struct_packed_explicit_defaults,
-        => {
-            const bits: *Tag.TypeStructPacked.Bits = @ptrCast(&extra_items[
-                item.data + std.meta.fieldIndex(Tag.TypeStructPacked, "bits").?
-            ]);
-            if (bits.want_defaults) {
-                return false;
-            } else {
-                bits.want_defaults = true;
-                return true;
-            }
-        },
-
-        .type_struct => {
-            const flags: *Tag.TypeStruct.Flags = @ptrCast(&extra_items[
-                item.data + std.meta.fieldIndex(Tag.TypeStruct, "flags").?
-            ]);
-            if (flags.want_defaults) {
-                return false;
-            } else {
-                flags.want_defaults = true;
                 return true;
             }
         },

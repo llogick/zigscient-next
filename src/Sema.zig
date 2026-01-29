@@ -4519,10 +4519,6 @@ fn validateStructInit(
         if (explicit) continue;
         if (struct_ty.structFieldIsComptime(i, zcu)) continue;
 
-        if (!struct_ty.isTuple(zcu)) {
-            try sema.ensureStructDefaultsResolved(struct_ty, init_src);
-        }
-
         const default_val = struct_ty.structFieldDefaultValue(i, zcu) orelse {
             const field_name = struct_ty.structFieldName(i, zcu).unwrap() orelse {
                 const template = "missing tuple field with index {d}";
@@ -5180,9 +5176,9 @@ fn zirLoop(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileError
     var label: Block.Label = .{
         .zir_block = inst,
         .merges = .{
-            .src_locs = .{},
-            .results = .{},
-            .br_list = .{},
+            .src_locs = .empty,
+            .results = .empty,
+            .br_list = .empty,
             .block_inst = block_inst,
         },
     };
@@ -5254,7 +5250,7 @@ fn zirCImport(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileEr
         .parent = parent_block,
         .sema = sema,
         .namespace = parent_block.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = parent_block.inlining,
         .comptime_reason = .{ .reason = .{
             .src = src,
@@ -5389,9 +5385,9 @@ fn zirBlock(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileErro
     var label: Block.Label = .{
         .zir_block = inst,
         .merges = .{
-            .src_locs = .{},
-            .results = .{},
-            .br_list = .{},
+            .src_locs = .empty,
+            .results = .empty,
+            .br_list = .empty,
             .block_inst = block_inst,
         },
     };
@@ -5400,7 +5396,7 @@ fn zirBlock(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileErro
         .parent = parent_block,
         .sema = sema,
         .namespace = parent_block.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .label = &label,
         .inlining = parent_block.inlining,
         .comptime_reason = parent_block.comptime_reason,
@@ -5839,7 +5835,6 @@ fn zirDisableInstrumentation(sema: *Sema) CompileError!void {
         .nav_val,
         .nav_ty,
         .type_layout,
-        .struct_defaults,
         .memoized_state,
         => return, // does nothing outside a function
     };
@@ -5858,7 +5853,6 @@ fn zirDisableIntrinsics(sema: *Sema) CompileError!void {
         .nav_val,
         .nav_ty,
         .type_layout,
-        .struct_defaults,
         .memoized_state,
         => return, // does nothing outside a function
     };
@@ -6870,7 +6864,7 @@ fn analyzeCall(
         .parent = null,
         .sema = sema,
         .namespace = fn_nav.analysis.?.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = &generic_inlining,
         .src_base_inst = fn_nav.analysis.?.zir_index,
         .type_name_ctx = fn_nav.fqn,
@@ -7067,7 +7061,7 @@ fn analyzeCall(
         });
         if (func_ty_info.cc == .auto) {
             switch (sema.owner.unwrap()) {
-                .@"comptime", .nav_ty, .nav_val, .type_layout, .struct_defaults, .memoized_state => {},
+                .@"comptime", .nav_ty, .nav_val, .type_layout, .memoized_state => {},
                 .func => |owner_func| ip.funcSetHasErrorTrace(io, owner_func, true),
             }
         }
@@ -7382,7 +7376,7 @@ fn analyzeCall(
         .parent = null,
         .sema = sema,
         .namespace = fn_nav.analysis.?.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = &inlining,
         .is_typeof = block.is_typeof,
         .comptime_reason = if (block.isComptime()) .inlining_parent else null,
@@ -9945,9 +9939,9 @@ fn zirSwitchBlockErrUnion(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
     var label: Block.Label = .{
         .zir_block = inst,
         .merges = .{
-            .src_locs = .{},
-            .results = .{},
-            .br_list = .{},
+            .src_locs = .empty,
+            .results = .empty,
+            .br_list = .empty,
             .block_inst = block_inst,
         },
     };
@@ -10100,9 +10094,9 @@ fn zirSwitchBlock(
     var label: Block.Label = .{
         .zir_block = inst,
         .merges = .{
-            .src_locs = .{},
-            .results = .{},
-            .br_list = .{},
+            .src_locs = .empty,
+            .results = .empty,
+            .br_list = .empty,
             .block_inst = block_inst,
         },
     };
@@ -16864,7 +16858,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     .struct_type => ip.loadStructType(ty.toIntern()),
                     else => unreachable,
                 };
-                try sema.ensureStructDefaultsResolved(ty, src); // can't do this sooner, since it's not allowed on tuples
                 struct_field_vals = try gpa.alloc(InternPool.Index, struct_type.field_types.len);
 
                 for (struct_field_vals, 0..) |*field_val, field_index| {
@@ -17122,7 +17115,7 @@ fn zirTypeofBuiltin(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErr
         .parent = block,
         .sema = sema,
         .namespace = block.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = block.inlining,
         .comptime_reason = null,
         .is_typeof = true,
@@ -17190,7 +17183,7 @@ fn zirTypeofPeer(
         .parent = block,
         .sema = sema,
         .namespace = block.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = block.inlining,
         .comptime_reason = null,
         .is_typeof = true,
@@ -17764,9 +17757,9 @@ fn ensurePostHoc(sema: *Sema, block: *Block, dest_block: Zir.Inst.Index) !*Label
         .label = .{
             .zir_block = dest_block,
             .merges = .{
-                .src_locs = .{},
-                .results = .{},
-                .br_list = .{},
+                .src_locs = .empty,
+                .results = .empty,
+                .br_list = .empty,
                 .block_inst = new_block_inst,
             },
         },
@@ -17774,7 +17767,7 @@ fn ensurePostHoc(sema: *Sema, block: *Block, dest_block: Zir.Inst.Index) !*Label
             .parent = block,
             .sema = sema,
             .namespace = block.namespace,
-            .instructions = .{},
+            .instructions = .empty,
             .label = &labeled_block.label,
             .inlining = block.inlining,
             .comptime_reason = block.comptime_reason,
@@ -18753,8 +18746,6 @@ fn finishStructInit(
                     continue;
                 }
 
-                try sema.ensureStructDefaultsResolved(struct_ty, init_src);
-
                 const field_default: InternPool.Index = d: {
                     if (struct_type.field_defaults.len == 0) break :d .none;
                     break :d struct_type.field_defaults.get(ip)[i];
@@ -19420,7 +19411,7 @@ fn getErrorReturnTrace(sema: *Sema, block: *Block) CompileError!Air.Inst.Ref {
         .func => |func| if (ip.funcAnalysisUnordered(func).has_error_trace and block.ownerModule().error_tracing) {
             return block.addTy(.err_return_trace, opt_ptr_stack_trace_ty);
         },
-        .@"comptime", .nav_ty, .nav_val, .type_layout, .struct_defaults, .memoized_state => {},
+        .@"comptime", .nav_ty, .nav_val, .type_layout, .memoized_state => {},
     }
     return Air.internedToRef(try pt.intern(.{ .opt = .{
         .ty = opt_ptr_stack_trace_ty.toIntern(),
@@ -24738,7 +24729,7 @@ fn zirBuiltinExtern(
         // So, for now, just use our containing `declaration`.
         .zir_index = switch (sema.owner.unwrap()) {
             .@"comptime" => |cu| ip.getComptimeUnit(cu).zir_index,
-            .type_layout, .struct_defaults => |owner_ty| Type.fromInterned(owner_ty).typeDeclInstAllowGeneratedTag(zcu).?,
+            .type_layout => |owner_ty| Type.fromInterned(owner_ty).typeDeclInstAllowGeneratedTag(zcu).?,
             .memoized_state => unreachable,
             .nav_ty, .nav_val => |nav| ip.getNav(nav).analysis.?.zir_index,
             .func => |func| zir_index: {
@@ -25230,7 +25221,7 @@ fn getPanicIdFunc(sema: *Sema, src: LazySrcLoc, panic_id: Zcu.SimplePanicId) !In
     try sema.ensureMemoizedStateResolved(src, .panic);
     const panic_fn_index = zcu.builtin_decl_values.get(panic_id.toBuiltin());
     switch (sema.owner.unwrap()) {
-        .@"comptime", .nav_ty, .nav_val, .type_layout, .struct_defaults, .memoized_state => {},
+        .@"comptime", .nav_ty, .nav_val, .type_layout, .memoized_state => {},
         .func => |owner_func| zcu.intern_pool.funcSetHasErrorTrace(io, owner_func, true),
     }
     return panic_fn_index;
@@ -25250,7 +25241,7 @@ fn addSafetyCheck(
         .parent = parent_block,
         .sema = sema,
         .namespace = parent_block.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = parent_block.inlining,
         .comptime_reason = null,
         .src_base_inst = parent_block.src_base_inst,
@@ -25344,7 +25335,7 @@ fn addSafetyCheckUnwrapError(
         .parent = parent_block,
         .sema = sema,
         .namespace = parent_block.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = parent_block.inlining,
         .comptime_reason = null,
         .src_base_inst = parent_block.src_base_inst,
@@ -25449,7 +25440,7 @@ fn addSafetyCheckCall(
         .parent = parent_block,
         .sema = sema,
         .namespace = parent_block.namespace,
-        .instructions = .{},
+        .instructions = .empty,
         .inlining = parent_block.inlining,
         .comptime_reason = null,
         .src_base_inst = parent_block.src_base_inst,
@@ -33859,7 +33850,6 @@ const ComptimeStoreResult = @import("Sema/comptime_ptr_access.zig").ComptimeStor
 
 pub const type_resolution = @import("Sema/type_resolution.zig");
 pub const ensureLayoutResolved = type_resolution.ensureLayoutResolved;
-pub const ensureStructDefaultsResolved = type_resolution.ensureStructDefaultsResolved;
 
 pub fn getBuiltinType(sema: *Sema, src: LazySrcLoc, decl: Zcu.BuiltinDecl) SemaError!Type {
     assert(decl.kind() == .type);
