@@ -175,10 +175,10 @@ pub fn parseTokens(
         .source = source,
         .gpa = gpa,
         .tokens = tokens,
-        .errors = .{},
-        .nodes = .{},
-        .extra_data = .{},
-        .scratch = .{},
+        .errors = .empty,
+        .nodes = .empty,
+        .extra_data = .empty,
+        .scratch = .empty,
         .tok_i = 0,
     };
     defer parser.errors.deinit(gpa);

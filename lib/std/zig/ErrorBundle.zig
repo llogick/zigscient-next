@@ -340,9 +340,9 @@ pub const Wip = struct {
     pub fn init(wip: *Wip, gpa: Allocator) !void {
         wip.* = .{
             .gpa = gpa,
-            .string_bytes = .{},
-            .extra = .{},
-            .root_list = .{},
+            .string_bytes = .empty,
+            .extra = .empty,
+            .root_list = .empty,
         };
 
         // So that 0 can be used to indicate a null string.
@@ -371,9 +371,9 @@ pub const Wip = struct {
             wip.deinit();
             wip.* = .{
                 .gpa = gpa,
-                .string_bytes = .{},
-                .extra = .{},
-                .root_list = .{},
+                .string_bytes = .empty,
+                .extra = .empty,
+                .root_list = .empty,
             };
             return empty;
         }

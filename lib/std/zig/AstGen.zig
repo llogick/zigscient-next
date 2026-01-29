@@ -1780,7 +1780,7 @@ fn structInitExpr(
                 try gop.value_ptr.append(sfba_allocator, name_token);
                 any_duplicate = true;
             } else {
-                gop.value_ptr.* = .{};
+                gop.value_ptr.* = .empty;
                 try gop.value_ptr.append(sfba_allocator, name_token);
             }
         }
