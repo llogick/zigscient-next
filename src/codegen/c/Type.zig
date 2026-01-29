@@ -2479,7 +2479,7 @@ pub const Pool = struct {
                     return pool.fromFields(allocator, .@"struct", &fields, kind);
                 },
                 .opt_type => |payload_type| {
-                    if (ip.isNoReturn(payload_type)) return .void;
+                    if (Type.fromInterned(payload_type).isNoReturn(zcu)) return .void;
                     const payload_ctype = try pool.fromType(
                         allocator,
                         scratch,
@@ -2521,7 +2521,7 @@ pub const Pool = struct {
                         .signedness = .unsigned,
                         .bits = error_set_bits,
                     }, mod, kind);
-                    if (ip.isNoReturn(error_union_info.payload_type)) return error_set_ctype;
+                    if (Type.fromInterned(error_union_info.payload_type).isNoReturn(zcu)) return error_set_ctype;
                     const payload_type = Type.fromInterned(error_union_info.payload_type);
                     const payload_ctype = try pool.fromType(
                         allocator,
@@ -2684,9 +2684,8 @@ pub const Pool = struct {
                     const loaded_union = ip.loadUnionType(ip_index);
                     switch (loaded_union.flagsUnordered(ip).layout) {
                         .auto, .@"extern" => {
-                            const has_tag = loaded_union.hasTag(ip);
                             const fwd_decl = try pool.getFwdDecl(allocator, .{
-                                .tag = if (has_tag) .@"struct" else .@"union",
+                                .tag = if (loaded_union.has_runtime_tag) .@"struct" else .@"union",
                                 .name = .{ .index = ip_index },
                             });
                             if (kind.isForward()) return if (ty.hasRuntimeBitsIgnoreComptime(zcu))
@@ -2707,7 +2706,7 @@ pub const Pool = struct {
                                 const field_type = Type.fromInterned(
                                     loaded_union.field_types.get(ip)[field_index],
                                 );
-                                if (ip.isNoReturn(field_type.toIntern())) continue;
+                                if (field_type.isNoReturn(zcu)) continue;
                                 const field_ctype = try pool.fromType(
                                     allocator,
                                     scratch,
@@ -2738,7 +2737,7 @@ pub const Pool = struct {
                                 scratch.items.len - scratch_top,
                                 @typeInfo(Field).@"struct".fields.len,
                             ));
-                            if (!has_tag) {
+                            if (!loaded_union.has_runtime_tag) {
                                 if (fields_len == 0) return .void;
                                 try pool.ensureUnusedCapacity(allocator, 1);
                                 const extra_index = try pool.addHashedExtra(
@@ -2836,7 +2835,7 @@ pub const Pool = struct {
                     var hasher = Hasher.init;
                     const return_type = Type.fromInterned(func_info.return_type);
                     const return_ctype: CType =
-                        if (!ip.isNoReturn(func_info.return_type)) try pool.fromType(
+                        if (!Type.fromInterned(func_info.return_type).isNoReturn(zcu)) try pool.fromType(
                             allocator,
                             scratch,
                             return_type,
@@ -2889,7 +2888,6 @@ pub const Pool = struct {
                 .error_union,
                 .enum_literal,
                 .enum_tag,
-                .empty_enum_value,
                 .float,
                 .ptr,
                 .slice,

@@ -72,7 +72,6 @@ pub fn ensureLayoutResolved(sema: *Sema, ty: Type, src: LazySrcLoc) SemaError!vo
         .error_union,
         .enum_literal,
         .enum_tag,
-        .empty_enum_value,
         .float,
         .ptr,
         .slice,
@@ -249,10 +248,10 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
     // Fields are okay. Now we need to resolve the struct's overall layout (size, field offsets, etc).
 
     var any_comptime_fields = false;
-    var comptime_only = false;
-    var one_possible_value = true;
-    var has_runtime_bits = false;
     var struct_align: Alignment = .@"1";
+    var has_no_possible_value = false;
+    var has_runtime_state = false;
+    var has_comptime_state = false;
     // Unlike `struct_obj.field_aligns`, these are not `.none`.
     const resolved_field_aligns = try sema.arena.alloc(Alignment, struct_obj.field_names.len);
     for (resolved_field_aligns, 0..) |*align_out, field_idx| {
@@ -264,22 +263,37 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
             }
             break :a field_ty.defaultStructFieldAlignment(struct_obj.layout, zcu);
         };
-        if (!struct_obj.field_is_comptime_bits.get(ip, field_idx)) {
-            // Non-`comptime` fields contribute to the struct's layout.
-            struct_align = struct_align.maxStrict(field_align);
-            if (field_ty.comptimeOnly(zcu)) comptime_only = true;
-            if (field_ty.hasRuntimeBits(zcu)) has_runtime_bits = true;
-            if (try field_ty.onePossibleValue(pt) == null) one_possible_value = false;
-            if (struct_obj.layout == .auto) {
-                struct_obj.field_runtime_order.get(ip)[field_idx] = @enumFromInt(field_idx);
-            }
-        } else {
+        align_out.* = field_align;
+        if (struct_obj.field_is_comptime_bits.get(ip, field_idx)) {
             assert(struct_obj.layout == .auto); // comptime fields not allowed in extern or packed structs
             struct_obj.field_runtime_order.get(ip)[field_idx] = .omitted; // comptime fields are not in the runtime order
             any_comptime_fields = true;
+            continue; // `comptime` fields do not contribute to the struct layout
         }
-        align_out.* = field_align;
+        struct_align = struct_align.maxStrict(field_align);
+        if (struct_obj.layout == .auto) {
+            struct_obj.field_runtime_order.get(ip)[field_idx] = @enumFromInt(field_idx);
+        }
+        switch (field_ty.classify(zcu)) {
+            .one_possible_value => {},
+            .no_possible_value => has_no_possible_value = true,
+            .runtime => has_runtime_state = true,
+            .fully_comptime => has_comptime_state = true,
+            .partially_comptime => {
+                has_runtime_state = true;
+                has_comptime_state = true;
+            },
+        }
     }
+    const class: Type.Class = class: {
+        if (has_no_possible_value) break :class .no_possible_value;
+        if (has_comptime_state) {
+            break :class if (has_runtime_state) .partially_comptime else .fully_comptime;
+        } else {
+            break :class if (has_runtime_state) .runtime else .one_possible_value;
+        }
+    };
+
     if (struct_obj.layout == .auto) {
         const runtime_order = struct_obj.field_runtime_order.get(ip);
         // This logic does not reorder fields; it only moves the omitted ones to the end so that logic
@@ -327,21 +341,21 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         struct_obj.field_offsets.get(ip)[field_idx] = @truncate(offset); // truncate because the overflow is handled below
         cur_offset = offset + field_ty.abiSize(zcu);
     }
-    const struct_size = std.math.cast(u32, struct_align.forward(cur_offset)) orelse return sema.fail(
-        &block,
-        struct_ty.srcLoc(zcu),
-        "struct layout requires size {d}, this compiler implementation supports up to {d}",
-        .{ struct_align.forward(cur_offset), std.math.maxInt(u32) },
-    );
+    const struct_size: u32 = switch (class) {
+        .no_possible_value => 0,
+        else => std.math.cast(u32, struct_align.forward(cur_offset)) orelse return sema.fail(
+            &block,
+            struct_ty.srcLoc(zcu),
+            "struct layout requires size {d}, this compiler implementation supports up to {d}",
+            .{ struct_align.forward(cur_offset), std.math.maxInt(u32) },
+        ),
+    };
     ip.resolveStructLayout(
         io,
         struct_ty.toIntern(),
         struct_size,
         struct_align,
-        false, // MLUGG TODO XXX NPV
-        one_possible_value,
-        comptime_only,
-        has_runtime_bits,
+        class,
     );
 
     if (any_comptime_fields and !struct_obj.is_reified) {
@@ -758,9 +772,8 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
     // Fields are okay. Now we need to resolve the union's overall layout (size, alignment, etc).
     var payload_align: Alignment = .@"1";
     var payload_size: u64 = 0;
-    var comptime_only = false;
-    var has_runtime_bits = union_obj.runtime_tag != .none and enum_tag_ty.hasRuntimeBits(zcu);
-    var possible_values: enum { none, one, many } = .none;
+    var possible_tags: u32 = 0;
+    var payload_has_comptime_state = false;
     for (0..union_obj.field_types.len) |field_idx| {
         const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[field_idx]);
         const field_align: Alignment = a: {
@@ -772,21 +785,41 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         };
         payload_align = payload_align.maxStrict(field_align);
         payload_size = @max(payload_size, field_ty.abiSize(zcu));
-        if (field_ty.comptimeOnly(zcu)) comptime_only = true;
-        if (field_ty.hasRuntimeBits(zcu)) has_runtime_bits = true;
-        if (!field_ty.isNoReturn(zcu)) {
-            if (try field_ty.onePossibleValue(pt) != null) {
-                possible_values = .many; // this field alone has many possible values
-            } else switch (possible_values) {
-                .none => possible_values = .one, // there were none, now there is this field's OPV
-                .one => possible_values = .many, // there was one, now there are two
-                .many => {},
-            }
+
+        switch (field_ty.classify(zcu)) {
+            .no_possible_value => {}, // uninstantiable field has no effect
+            .one_possible_value, .runtime => {
+                possible_tags += 1;
+            },
+            .partially_comptime, .fully_comptime => {
+                possible_tags += 1;
+                payload_has_comptime_state = true;
+            },
         }
     }
 
+    // We only need a runtime tag if there are multiple possible active fields *and* the union is
+    // not going to be comptime-only. Even if there are still runtime bits in the payload, the tag
+    // does not require runtime bits in a comptime-only union, because it is impossible to get a
+    // pointer to a union's tag.
+    const has_runtime_tag = switch (possible_tags) {
+        0, 1 => false,
+        else => union_obj.tag_usage != .none and !payload_has_comptime_state,
+    };
+
+    const class: Type.Class = class: {
+        if (possible_tags == 0) {
+            break :class .no_possible_value;
+        }
+        if (payload_has_comptime_state) {
+            break :class if (payload_size > 0) .partially_comptime else .fully_comptime;
+        }
+        const have_runtime_bits = has_runtime_tag or payload_size > 0;
+        break :class if (have_runtime_bits) .runtime else .one_possible_value;
+    };
+
     const size: u64, const padding: u64, const alignment: Alignment = layout: {
-        if (union_obj.runtime_tag == .none) {
+        if (!has_runtime_tag) {
             break :layout .{ payload_align.forward(payload_size), 0, payload_align };
         }
         const tag_align = enum_tag_ty.abiAlignment(zcu);
@@ -800,6 +833,11 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         break :layout .{ size, size - unpadded_size, alignment };
     };
 
+    if (class == .no_possible_value or class == .one_possible_value) {
+        assert(size == 0);
+        assert(padding == 0);
+    }
+
     const casted_size = std.math.cast(u32, size) orelse return sema.fail(
         &block,
         union_ty.srcLoc(zcu),
@@ -810,13 +848,11 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         io,
         union_ty.toIntern(),
         enum_tag_ty.toIntern(),
+        class,
+        has_runtime_tag,
         casted_size,
         @intCast(padding), // okay because padding is no greater than size
         alignment,
-        possible_values == .none, // MLUGG TODO: make sure queries use `LoadedUnionType.has_no_possible_value`!
-        possible_values == .one,
-        comptime_only,
-        has_runtime_bits,
     );
 }
 fn failUnionFieldMismatch(sema: *Sema, block: *Block, union_field_names: []const InternPool.NullTerminatedString, enum_tag_ty: Type, enum_obj: *const InternPool.LoadedEnumType) CompileError {

@@ -17,6 +17,7 @@ const Hash = std.hash.Wyhash;
 const Zir = std.zig.Zir;
 
 const Zcu = @import("Zcu.zig");
+const TypeClass = @import("Type.zig").Class;
 
 /// One item per thread, indexed by `tid`, which is dense and unique per thread.
 locals: []Local,
@@ -2113,10 +2114,6 @@ pub const Key = union(enum) {
     enum_literal: NullTerminatedString,
     /// A specific enum tag, indicated by the integer tag value.
     enum_tag: EnumTag,
-    /// An empty enum or union. TODO: this value's existence is strange, because such a type in
-    /// reality has no values. See #15909.
-    /// Payload is the type for which we are an empty value.
-    empty_enum_value: Index,
     float: Float,
     ptr: Ptr,
     slice: Slice,
@@ -2722,7 +2719,6 @@ pub const Key = union(enum) {
             .err,
             .enum_literal,
             .enum_tag,
-            .empty_enum_value,
             .inferred_error_set_type,
             .un,
             => |x| Hash.hash(seed, asBytes(&x)),
@@ -3004,10 +3000,6 @@ pub const Key = union(enum) {
             .enum_tag => |a_info| {
                 const b_info = b.enum_tag;
                 return std.meta.eql(a_info, b_info);
-            },
-            .empty_enum_value => |a_info| {
-                const b_info = b.empty_enum_value;
-                return a_info == b_info;
             },
             .bitpack => |a_info| {
                 const b_info = b.bitpack;
@@ -3294,10 +3286,8 @@ pub const Key = union(enum) {
             .enum_literal => .enum_literal_type,
 
             .undef => |x| x,
-            .empty_enum_value => |x| x,
 
             .simple_value => |s| switch (s) {
-                .undefined => .undefined_type,
                 .void => .void_type,
                 .null => .null_type,
                 .false, .true => .bool_type,
@@ -3356,10 +3346,7 @@ pub const LoadedStructType = struct {
     field_runtime_order: RuntimeOrder.Slice,
     field_offsets: Offsets,
     packed_backing_int_type: Index,
-    has_no_possible_value: bool,
-    has_one_possible_value: bool,
-    comptime_only: bool,
-    has_runtime_bits: bool,
+    class: TypeClass,
     size: u32,
     alignment: Alignment,
 
@@ -3535,19 +3522,21 @@ pub const LoadedUnionType = struct {
     // The remaining fields are only valid once the union's layout is resolved.
     field_types: Index.Slice,
     field_aligns: Alignment.Slice,
-    runtime_tag: RuntimeTag,
-    /// Even if `runtime_tag == .none`, this is populated with the union's "hypothetical" tag type.
+    tag_usage: TagUsage,
+    /// While `tag_usage` indicates whether the union should logically contain a tag, it may be
+    /// omitted if the union layout is resolved as OPV or NPV. This field is `true` iff there is an
+    /// actual runtime tag in the union layout.
+    has_runtime_tag: bool,
+    /// Even if `tag_usage == .none` and `has_runtime_tag == false`, this is still populated with
+    /// the union's "hypothetical" tag type.
     enum_tag_type: Index,
     packed_backing_int_type: Index,
-    has_no_possible_value: bool,
-    has_one_possible_value: bool,
-    comptime_only: bool,
-    has_runtime_bits: bool,
+    class: TypeClass,
     size: u32,
     padding: u32,
     alignment: Alignment,
 
-    pub const RuntimeTag = enum(u2) {
+    pub const TagUsage = enum(u2) {
         none,
         safety,
         tagged,
@@ -3733,10 +3722,7 @@ pub fn loadStructType(ip: *const InternPool, index: Index) LoadedStructType {
                 .field_runtime_order = field_runtime_order,
                 .field_offsets = field_offsets,
                 .packed_backing_int_type = .none,
-                .has_no_possible_value = extra.data.flags.has_no_possible_value,
-                .has_one_possible_value = extra.data.flags.has_one_possible_value,
-                .comptime_only = extra.data.flags.comptime_only,
-                .has_runtime_bits = extra.data.flags.has_runtime_bits,
+                .class = extra.data.flags.class,
                 .size = extra.data.size,
                 .alignment = extra.data.flags.alignment,
             };
@@ -3797,10 +3783,7 @@ pub fn loadStructType(ip: *const InternPool, index: Index) LoadedStructType {
         .field_runtime_order = .empty,
         .field_offsets = .empty,
         .packed_backing_int_type = extra.data.backing_int_type,
-        .has_no_possible_value = undefined,
-        .has_one_possible_value = undefined,
-        .comptime_only = undefined,
-        .has_runtime_bits = undefined,
+        .class = undefined,
         .size = undefined,
         .alignment = undefined,
     };
@@ -3865,7 +3848,7 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
                     .auto => .auto,
                     .@"extern" => .@"extern",
                 },
-                .runtime_tag = extra.data.flags.runtime_tag,
+                .tag_usage = extra.data.flags.tag_usage,
                 .enum_tag_mode = extra.data.flags.enum_tag_mode,
                 .enum_tag_type = extra.data.enum_tag_type,
                 .packed_backing_mode = undefined,
@@ -3874,10 +3857,8 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
                 .want_layout = extra.data.flags.want_layout,
                 .field_types = field_types,
                 .field_aligns = field_aligns,
-                .has_no_possible_value = extra.data.flags.has_no_possible_value,
-                .has_one_possible_value = extra.data.flags.has_one_possible_value,
-                .comptime_only = extra.data.flags.comptime_only,
-                .has_runtime_bits = extra.data.flags.has_runtime_bits,
+                .has_runtime_tag = extra.data.flags.has_runtime_tag,
+                .class = extra.data.flags.class,
                 .size = extra.data.size,
                 .padding = extra.data.padding,
                 .alignment = extra.data.flags.alignment,
@@ -3919,7 +3900,7 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
         .name_nav = extra.data.name_nav,
         .namespace = extra.data.namespace,
         .layout = .@"packed",
-        .runtime_tag = .none,
+        .tag_usage = .none,
         .enum_tag_mode = .auto,
         .enum_tag_type = extra.data.enum_tag_type,
         .packed_backing_mode = backing_mode,
@@ -3928,10 +3909,8 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
         .want_layout = extra.data.bits.want_layout,
         .field_types = field_types,
         .field_aligns = .empty,
-        .has_no_possible_value = undefined,
-        .has_one_possible_value = undefined,
-        .comptime_only = undefined,
-        .has_runtime_bits = undefined,
+        .has_runtime_tag = undefined,
+        .class = undefined,
         .size = undefined,
         .padding = undefined,
         .alignment = undefined,
@@ -4818,7 +4797,7 @@ pub const static_keys: [static_len]Key = .{
         .values = .empty,
     } },
 
-    .{ .simple_value = .undefined },
+    .{ .undef = .undefined_type },
     .{ .undef = .bool_type },
     .{ .undef = .usize_type },
     .{ .undef = .u1_type },
@@ -5682,23 +5661,14 @@ pub const Tag = enum(u8) {
             any_field_defaults: bool,
             any_field_aligns: bool,
 
-            /// Whether the struct is an OPV type. Always `false` until layout resolved.
-            /// The actual OPV is not cached, but caching this bit of state means we avoid
-            /// repeatedly doing redundant checks to find that the struct is not OPV!
-            has_one_possible_value: bool,
-            /// Like `has_one_possible_value`, but for a "noreturn" union (where all fields are noreturn).
-            has_no_possible_value: bool,
-            /// Whether the struct is comptime-only. Always `false` until layout resolved.
-            comptime_only: bool,
-            /// Whether the struct has runtime bits. Always `false` until layout resolved.
-            has_runtime_bits: bool,
+            class: TypeClass,
             /// Alignment of the whole struct. Always `.none` until layout resolved.
             alignment: Alignment,
 
             want_layout: bool,
             want_defaults: bool,
 
-            _: u14 = 0,
+            _: u15 = 0,
         };
     };
 
@@ -5778,18 +5748,11 @@ pub const Tag = enum(u8) {
             layout: enum(u1) { auto, @"extern" },
 
             any_field_aligns: bool,
-            runtime_tag: LoadedUnionType.RuntimeTag,
+            tag_usage: LoadedUnionType.TagUsage,
 
-            /// Whether the union is an OPV type. Always `false` until layout resolved.
-            /// The actual OPV is not cached, but caching this bit of state means we avoid
-            /// repeatedly doing redundant checks to find that the union is not OPV!
-            has_one_possible_value: bool,
-            /// Like `has_one_possible_value`, but for a "noreturn" union (where all fields are noreturn).
-            has_no_possible_value: bool,
-            /// Whether the union is comptime-only. Always `false` until layout resolved.
-            comptime_only: bool,
-            /// Whether the union has runtime bits. Always `false` until layout resolved.
-            has_runtime_bits: bool,
+            class: TypeClass,
+            has_runtime_tag: bool,
+
             /// Alignment of the whole union. Always `.none` until layout resolved.
             alignment: Alignment,
 
@@ -5970,8 +5933,6 @@ pub const SimpleType = enum(u32) {
 };
 
 pub const SimpleValue = enum(u32) {
-    /// This is untyped `undefined`.
-    undefined = @intFromEnum(Index.undef),
     void = @intFromEnum(Index.void_value),
     /// This is untyped `null`.
     null = @intFromEnum(Index.null_value),
@@ -7016,11 +6977,6 @@ pub fn indexToKey(ip: *const InternPool, index: Index) Key {
                     } };
                 },
 
-                .type_enum_auto,
-                .type_enum_explicit,
-                .type_union,
-                => .{ .empty_enum_value = ty },
-
                 else => unreachable,
             };
         },
@@ -7914,11 +7870,6 @@ pub fn get(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerThread.Id, key: 
             });
         },
 
-        .empty_enum_value => |enum_or_union_ty| items.appendAssumeCapacity(.{
-            .tag = .only_possible_value,
-            .data = @intFromEnum(enum_or_union_ty),
-        }),
-
         .float => |float| {
             switch (float.ty) {
                 .f16_type => items.appendAssumeCapacity(.{
@@ -8302,10 +8253,7 @@ pub fn getDeclaredStructType(
             .any_comptime_fields = ini.any_comptime_fields,
             .any_field_defaults = ini.any_field_defaults,
             .any_field_aligns = ini.any_field_aligns,
-            .has_one_possible_value = false,
-            .has_no_possible_value = false,
-            .comptime_only = false,
-            .has_runtime_bits = false,
+            .class = .no_possible_value,
             .alignment = .none,
             .want_layout = false,
             .want_defaults = false,
@@ -8456,10 +8404,7 @@ pub fn getReifiedStructType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Pe
             .any_comptime_fields = ini.any_comptime_fields,
             .any_field_defaults = ini.any_field_defaults,
             .any_field_aligns = ini.any_field_aligns,
-            .has_one_possible_value = false,
-            .has_no_possible_value = false,
-            .comptime_only = false,
-            .has_runtime_bits = false,
+            .class = .no_possible_value,
             .alignment = .none,
             .want_layout = false,
             .want_defaults = false,
@@ -8535,7 +8480,7 @@ pub fn getDeclaredUnionType(
         fields_len: u32,
         layout: std.builtin.Type.ContainerLayout,
         any_field_aligns: bool,
-        runtime_tag: LoadedUnionType.RuntimeTag,
+        tag_usage: LoadedUnionType.TagUsage,
         enum_tag_mode: BackingTypeMode,
         packed_backing_mode: BackingTypeMode,
     },
@@ -8617,11 +8562,9 @@ pub fn getDeclaredUnionType(
             .enum_tag_mode = ini.enum_tag_mode,
             .layout = if (is_extern) .@"extern" else .auto,
             .any_field_aligns = ini.any_field_aligns,
-            .runtime_tag = ini.runtime_tag,
-            .has_one_possible_value = false,
-            .has_no_possible_value = false,
-            .comptime_only = false,
-            .has_runtime_bits = false,
+            .tag_usage = ini.tag_usage,
+            .class = .no_possible_value,
+            .has_runtime_tag = false,
             .alignment = .none,
             .want_layout = false,
         },
@@ -8658,8 +8601,8 @@ pub fn getReifiedUnionType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Per
     fields_len: u32,
     layout: std.builtin.Type.ContainerLayout,
     any_field_aligns: bool,
-    runtime_tag: LoadedUnionType.RuntimeTag,
-    /// Explicitly specified enum tag type. `.none` if `runtime_tag != .tagged`.
+    tag_usage: LoadedUnionType.TagUsage,
+    /// Explicitly specified enum tag type. `.none` if `tag_usage != .tagged`.
     enum_tag_type: Index,
     /// Explicitly specified backing int type. `.none` if not packed or if backing type is inferred.
     packed_backing_int_type: Index,
@@ -8745,11 +8688,9 @@ pub fn getReifiedUnionType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Per
             .enum_tag_mode = if (ini.enum_tag_type == .none) .auto else .explicit,
             .layout = if (is_extern) .@"extern" else .auto,
             .any_field_aligns = ini.any_field_aligns,
-            .runtime_tag = ini.runtime_tag,
-            .has_one_possible_value = false,
-            .has_no_possible_value = false,
-            .comptime_only = false,
-            .has_runtime_bits = false,
+            .tag_usage = ini.tag_usage,
+            .class = .no_possible_value,
+            .has_runtime_tag = false,
             .alignment = .none,
             .want_layout = false,
         },
@@ -12007,20 +11948,6 @@ pub fn funcTypeReturnType(ip: *const InternPool, ty: Index) Index {
     ]);
 }
 
-pub fn isNoReturn(ip: *const InternPool, ty: Index) bool {
-    switch (ty) {
-        .noreturn_type => return true,
-        else => {
-            const unwrapped_ty = ty.unwrap(ip);
-            const ty_item = unwrapped_ty.getItem(ip);
-            return switch (ty_item.tag) {
-                .type_error_set => unwrapped_ty.getExtra(ip).view().items(.@"0")[ty_item.data + std.meta.fieldIndex(Tag.ErrorSet, "names_len").?] == 0,
-                else => false,
-            };
-        },
-    }
-}
-
 pub fn isUndef(ip: *const InternPool, val: Index) bool {
     return val == .undef or val.unwrap(ip).getTag(ip) == .undef;
 }
@@ -12823,10 +12750,7 @@ pub fn resolveStructLayout(
     struct_type: Index,
     size: u32,
     alignment: Alignment,
-    has_no_possible_value: bool,
-    has_one_possible_value: bool,
-    comptime_only: bool,
-    has_runtime_bits: bool,
+    class: TypeClass,
 ) void {
     const unwrapped_index = struct_type.unwrap(ip);
 
@@ -12840,10 +12764,7 @@ pub fn resolveStructLayout(
 
     extra_items[item.data + std.meta.fieldIndex(Tag.TypeStruct, "size").?] = size;
     const flags: *Tag.TypeStruct.Flags = @ptrCast(&extra_items[item.data + std.meta.fieldIndex(Tag.TypeStruct, "flags").?]);
-    flags.has_no_possible_value = has_no_possible_value;
-    flags.has_one_possible_value = has_one_possible_value;
-    flags.comptime_only = comptime_only;
-    flags.has_runtime_bits = has_runtime_bits;
+    flags.class = class;
     flags.alignment = alignment;
 }
 
@@ -12856,13 +12777,11 @@ pub fn resolveUnionLayout(
     io: Io,
     union_type: Index,
     enum_tag_type: Index,
+    class: TypeClass,
+    has_runtime_tag: bool,
     size: u32,
     padding: u32,
     alignment: Alignment,
-    has_no_possible_value: bool,
-    has_one_possible_value: bool,
-    comptime_only: bool,
-    has_runtime_bits: bool,
 ) void {
     const unwrapped_index = union_type.unwrap(ip);
 
@@ -12878,10 +12797,8 @@ pub fn resolveUnionLayout(
     extra_items[item.data + std.meta.fieldIndex(Tag.TypeUnion, "size").?] = size;
     extra_items[item.data + std.meta.fieldIndex(Tag.TypeUnion, "padding").?] = padding;
     const flags: *Tag.TypeUnion.Flags = @ptrCast(&extra_items[item.data + std.meta.fieldIndex(Tag.TypeUnion, "flags").?]);
-    flags.has_no_possible_value = has_no_possible_value;
-    flags.has_one_possible_value = has_one_possible_value;
-    flags.comptime_only = comptime_only;
-    flags.has_runtime_bits = has_runtime_bits;
+    flags.class = class;
+    flags.has_runtime_tag = has_runtime_tag;
     flags.alignment = alignment;
 }
 

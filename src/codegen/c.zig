@@ -1040,7 +1040,6 @@ pub const DeclGen = struct {
             .undef => unreachable, // handled above
             .simple_value => |simple_value| switch (simple_value) {
                 // non-runtime values
-                .undefined => unreachable,
                 .void => unreachable,
                 .null => unreachable,
                 .@"unreachable" => unreachable,
@@ -1052,7 +1051,6 @@ pub const DeclGen = struct {
             .@"extern",
             .func,
             .enum_literal,
-            .empty_enum_value,
             => unreachable, // non-runtime values
             .int => |int| switch (int.storage) {
                 .u64, .i64, .big_int => try w.print("{f}", .{try dg.fmtIntLiteralDec(val, location)}),
@@ -1756,7 +1754,6 @@ pub const DeclGen = struct {
                 .error_union,
                 .enum_literal,
                 .enum_tag,
-                .empty_enum_value,
                 .float,
                 .ptr,
                 .slice,
@@ -5848,7 +5845,7 @@ fn fieldLocation(
                 .auto, .@"extern" => {
                     const field_ty: Type = .fromInterned(loaded_union.field_types.get(ip)[field_index]);
                     if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu))
-                        return if (loaded_union.hasTag(ip) and !container_ty.unionHasAllZeroBitFieldTypes(zcu))
+                        return if (loaded_union.has_runtime_tag and !container_ty.unionHasAllZeroBitFieldTypes(zcu))
                             .{ .field = .{ .identifier = "payload" } }
                         else
                             .begin;
@@ -7022,7 +7019,7 @@ fn airSetUnionTag(f: *Function, inst: Air.Inst.Index) !CValue {
     const union_ty = f.typeOf(bin_op.lhs).childType(zcu);
     const layout = union_ty.unionGetLayout(zcu);
     if (layout.tag_size == 0) return .none;
-    const tag_ty = union_ty.unionTagTypeSafety(zcu).?;
+    const tag_ty = union_ty.unionTagTypeRuntime(zcu).?;
 
     const w = &f.object.code.writer;
     const a = try Assignment.start(f, w, try f.ctypeFromType(tag_ty, .complete));
@@ -7462,18 +7459,15 @@ fn airUnionInit(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const local = try f.allocLocal(inst, union_ty);
 
-    const field: CValue = if (union_ty.unionTagTypeSafety(zcu)) |tag_ty| field: {
-        const layout = union_ty.unionGetLayout(zcu);
-        if (layout.tag_size != 0) {
-            const field_index = tag_ty.enumFieldIndex(field_name, zcu).?;
-            const tag_val = try pt.enumValueFieldIndex(tag_ty, field_index);
-
-            const a = try Assignment.start(f, w, try f.ctypeFromType(tag_ty, .complete));
-            try f.writeCValueMember(w, local, .{ .identifier = "tag" });
-            try a.assign(f, w);
-            try w.print("{f}", .{try f.fmtIntLiteralDec(try tag_val.intFromEnum(tag_ty, pt))});
-            try a.end(f, w);
-        }
+    const field: CValue = if (union_ty.unionTagTypeRuntime(zcu)) |tag_ty| field: {
+        assert(union_ty.unionGetLayout(zcu).tag_size != 0);
+        const field_index = tag_ty.enumFieldIndex(field_name, zcu).?;
+        const tag_val = try pt.enumValueFieldIndex(tag_ty, field_index);
+        const a = try Assignment.start(f, w, try f.ctypeFromType(tag_ty, .complete));
+        try f.writeCValueMember(w, local, .{ .identifier = "tag" });
+        try a.assign(f, w);
+        try w.print("{f}", .{try f.fmtIntLiteralDec(try tag_val.intFromEnum(tag_ty, pt))});
+        try a.end(f, w);
         break :field .{ .payload_identifier = field_name.toSlice(ip) };
     } else .{ .identifier = field_name.toSlice(ip) };
 

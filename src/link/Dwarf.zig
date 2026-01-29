@@ -1603,7 +1603,7 @@ pub const WipNav = struct {
         const zcu = pt.zcu;
         const ty = val.typeOf(zcu);
         const has_runtime_bits = ty.hasRuntimeBits(zcu);
-        const has_comptime_state = ty.comptimeOnly(zcu) and try ty.onePossibleValue(pt) == null;
+        const has_comptime_state = ty.comptimeOnly(zcu);
         try wip_nav.abbrevCode(if (has_runtime_bits and has_comptime_state) switch (tag) {
             .comptime_arg => if (opt_name) |_| .comptime_arg_runtime_bits_comptime_state else .unnamed_comptime_arg_runtime_bits_comptime_state,
             .local_const => if (opt_name) |_| .local_const_runtime_bits_comptime_state else unreachable,
@@ -2108,7 +2108,7 @@ pub const WipNav = struct {
         const zcu = wip_nav.pt.zcu;
         const ip = &zcu.intern_pool;
         const ty = value.typeOf(zcu);
-        if (std.debug.runtime_safety) assert(ty.comptimeOnly(zcu) and try ty.onePossibleValue(wip_nav.pt) == null);
+        if (std.debug.runtime_safety) assert(ty.comptimeOnly(zcu));
         if (ty.toIntern() == .type_type) return wip_nav.getTypeEntry(value.toType());
         if (ip.isFunctionType(ty.toIntern()) and !value.isUndef(zcu)) return wip_nav.getNavEntry(switch (ip.indexToKey(value.toIntern())) {
             else => unreachable,
@@ -2705,7 +2705,7 @@ fn initWipNavInner(
                 try wip_nav.refType(.fromInterned(if (maybe_func_type) |func_type| func_type.return_type else @"extern".ty));
                 if (maybe_func_type) |func_type| {
                     try wip_nav.infoAddrSym(sym_index, 0);
-                    try diw.writeByte(@intFromBool(ip.isNoReturn(func_type.return_type)));
+                    try diw.writeByte(@intFromBool(Type.fromInterned(func_type.return_type).isNoReturn(zcu)));
                     if (func_type.param_types.len > 0 or func_type.is_var_args) {
                         for (func_type.param_types.get(ip)) |param_type| {
                             try wip_nav.abbrevCode(.extern_param);
@@ -2733,7 +2733,7 @@ fn initWipNavInner(
                     try wip_nav.strp(@"extern".name.toSlice(ip));
                     try wip_nav.refType(.fromInterned(func_type.return_type));
                     try wip_nav.infoAddrSym(sym_index, 0);
-                    try diw.writeByte(@intFromBool(ip.isNoReturn(func_type.return_type)));
+                    try diw.writeByte(@intFromBool(Type.fromInterned(func_type.return_type).isNoReturn(zcu)));
                     if (func_type.param_types.len > 0 or func_type.is_var_args) {
                         for (func_type.param_types.get(ip)) |param_type| {
                             try wip_nav.abbrevCode(.extern_param);
@@ -2818,7 +2818,7 @@ fn initWipNavInner(
                 else => |a| a.maxStrict(target_info.minFunctionAlignment(target)),
             }.toByteUnits().?);
             try diw.writeByte(@intFromBool(decl.linkage != .normal));
-            try diw.writeByte(@intFromBool(ip.isNoReturn(func_type.return_type)));
+            try diw.writeByte(@intFromBool(Type.fromInterned(func_type.return_type).isNoReturn(zcu)));
 
             const dlw = &wip_nav.debug_line.writer;
             try dlw.writeByte(DW.LNS.extended_op);
@@ -3172,7 +3172,7 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
                                 .none => .{ false, false },
                                 else => .{
                                     field_type.hasRuntimeBits(zcu),
-                                    field_type.comptimeOnly(zcu) and try field_type.onePossibleValue(pt) == null,
+                                    field_type.comptimeOnly(zcu),
                                 },
                             };
                             try wip_nav.abbrevCode(if (is_comptime)
@@ -3294,7 +3294,7 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
             try diw.writeUleb128(union_layout.abi_size);
             try diw.writeUleb128(union_layout.abi_align.toByteUnits().?);
             const loaded_tag = ip.loadEnumType(loaded_union.enum_tag_type);
-            if (loaded_union.runtime_tag != .none) {
+            if (loaded_union.has_runtime_tag) {
                 try wip_nav.abbrevCode(.tagged_union);
                 try wip_nav.infoSectionOffset(
                     .debug_info,
@@ -3371,7 +3371,6 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
         .error_union,
         .enum_literal,
         .enum_tag,
-        .empty_enum_value,
         .float,
         .ptr,
         .slice,
@@ -3465,7 +3464,7 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
             const diw = &wip_nav.debug_info.writer;
             const nav_ty = nav_val.typeOf(zcu);
             const has_runtime_bits = nav_ty.hasRuntimeBits(zcu);
-            const has_comptime_state = nav_ty.comptimeOnly(zcu) and try nav_ty.onePossibleValue(pt) == null;
+            const has_comptime_state = nav_ty.comptimeOnly(zcu);
             try wip_nav.declCommon(if (has_runtime_bits and has_comptime_state) .{
                 .decl = .decl_const_runtime_bits_comptime_state,
                 .generic_decl = .generic_decl_const,
@@ -3845,7 +3844,7 @@ fn updateLazyType(
                     .none => .{ false, false },
                     else => .{
                         field_type.hasRuntimeBits(zcu),
-                        field_type.comptimeOnly(zcu) and try field_type.onePossibleValue(pt) == null,
+                        field_type.comptimeOnly(zcu),
                     },
                 };
                 try wip_nav.abbrevCode(if (has_comptime_state)
@@ -4008,7 +4007,6 @@ fn updateLazyType(
         .error_union,
         .enum_literal,
         .enum_tag,
-        .empty_enum_value,
         .float,
         .ptr,
         .slice,
@@ -4128,7 +4126,7 @@ fn updateLazyValue(
                 .payload => |payload_val| {
                     const payload_type: Type = .fromInterned(ip.typeOf(payload_val));
                     const has_runtime_bits = payload_type.hasRuntimeBits(zcu);
-                    const has_comptime_state = payload_type.comptimeOnly(zcu) and try payload_type.onePossibleValue(pt) == null;
+                    const has_comptime_state = payload_type.comptimeOnly(zcu);
                     try wip_nav.abbrevCode(if (has_comptime_state)
                         .comptime_value_field_comptime_state
                     else if (has_runtime_bits)
@@ -4164,7 +4162,6 @@ fn updateLazyValue(
             }, .fromInterned(int.ty), Value.fromInterned(value_index).toBigInt(&big_int_space, zcu));
             try wip_nav.refType(.fromInterned(enum_tag.ty));
         },
-        .empty_enum_value => unreachable,
         .float => |float| {
             switch (float.storage) {
                 .f16 => |f16_val| {
@@ -4209,7 +4206,7 @@ fn updateLazyValue(
                         .comptime_alloc, .comptime_field => unreachable,
                         .uav => |uav| {
                             const uav_ty: Type = .fromInterned(ip.typeOf(uav.val));
-                            if (try uav_ty.onePossibleValue(pt)) |_| {
+                            if (uav_ty.classify(zcu) == .one_possible_value) {
                                 try wip_nav.abbrevCode(if (zero_bit_accesses.items.len > 0)
                                     .aggregate_udata_comptime_value
                                 else
@@ -4337,7 +4334,7 @@ fn updateLazyValue(
             }
             if (opt.val != .none) child_field: {
                 const has_runtime_bits = opt_child_type.hasRuntimeBits(zcu);
-                const has_comptime_state = opt_child_type.comptimeOnly(zcu) and try opt_child_type.onePossibleValue(pt) == null;
+                const has_comptime_state = opt_child_type.comptimeOnly(zcu);
                 try wip_nav.abbrevCode(if (has_comptime_state)
                     .comptime_value_field_comptime_state
                 else if (has_runtime_bits)
@@ -4363,7 +4360,7 @@ fn updateLazyValue(
                         if (loaded_struct_type.field_is_comptime_bits.get(ip, field_index)) continue;
                         const field_type: Type = .fromInterned(loaded_struct_type.field_types.get(ip)[field_index]);
                         const has_runtime_bits = field_type.hasRuntimeBits(zcu);
-                        const has_comptime_state = field_type.comptimeOnly(zcu) and try field_type.onePossibleValue(pt) == null;
+                        const has_comptime_state = field_type.comptimeOnly(zcu);
                         try wip_nav.abbrevCode(if (has_comptime_state)
                             .comptime_value_field_comptime_state
                         else if (has_runtime_bits)
@@ -4386,7 +4383,7 @@ fn updateLazyValue(
                     if (tuple_type.values.get(ip)[field_index] != .none) continue;
                     const field_type: Type = .fromInterned(tuple_type.types.get(ip)[field_index]);
                     const has_runtime_bits = field_type.hasRuntimeBits(zcu);
-                    const has_comptime_state = field_type.comptimeOnly(zcu) and try field_type.onePossibleValue(pt) == null;
+                    const has_comptime_state = field_type.comptimeOnly(zcu);
                     try wip_nav.abbrevCode(if (has_comptime_state)
                         .comptime_value_field_comptime_state
                     else if (has_runtime_bits)
@@ -4411,7 +4408,7 @@ fn updateLazyValue(
                 inline .array_type, .vector_type => |sequence_type| {
                     const child_type: Type = .fromInterned(sequence_type.child);
                     const has_runtime_bits = child_type.hasRuntimeBits(zcu);
-                    const has_comptime_state = child_type.comptimeOnly(zcu) and try child_type.onePossibleValue(pt) == null;
+                    const has_comptime_state = child_type.comptimeOnly(zcu);
                     for (switch (aggregate.storage) {
                         .bytes => unreachable,
                         .elems => |elems| elems,
@@ -4443,7 +4440,7 @@ fn updateLazyValue(
                 const field_ty: Type = .fromInterned(loaded_union_type.field_types.get(ip)[field_index]);
                 const field_name = ip.loadEnumType(loaded_union_type.enum_tag_type).field_names.get(ip)[field_index];
                 const has_runtime_bits = field_ty.hasRuntimeBits(zcu);
-                const has_comptime_state = field_ty.comptimeOnly(zcu) and try field_ty.onePossibleValue(pt) == null;
+                const has_comptime_state = field_ty.comptimeOnly(zcu);
                 try wip_nav.abbrevCode(if (has_comptime_state)
                     .comptime_value_field_comptime_state
                 else if (has_runtime_bits)
@@ -4540,7 +4537,7 @@ fn updateContainerTypeWriterError(
                     .none => .{ false, false },
                     else => .{
                         field_type.hasRuntimeBits(zcu),
-                        field_type.comptimeOnly(zcu) and try field_type.onePossibleValue(pt) == null,
+                        field_type.comptimeOnly(zcu),
                     },
                 };
                 try wip_nav.abbrevCode(if (is_comptime)
@@ -4647,7 +4644,7 @@ fn updateContainerTypeWriterError(
                                     .none => .{ false, false },
                                     else => .{
                                         field_type.hasRuntimeBits(zcu),
-                                        field_type.comptimeOnly(zcu) and try field_type.onePossibleValue(pt) == null,
+                                        field_type.comptimeOnly(zcu),
                                     },
                                 };
                                 try wip_nav.abbrevCode(if (is_comptime)
@@ -4724,7 +4721,7 @@ fn updateContainerTypeWriterError(
                 try diw.writeUleb128(union_layout.abi_size);
                 try diw.writeUleb128(union_layout.abi_align.toByteUnits().?);
                 const loaded_tag = ip.loadEnumType(loaded_union.enum_tag_type);
-                if (loaded_union.runtime_tag != .none) {
+                if (loaded_union.has_runtime_tag) {
                     try wip_nav.abbrevCode(.tagged_union);
                     try wip_nav.infoSectionOffset(
                         .debug_info,

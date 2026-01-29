@@ -3825,9 +3825,7 @@ pub fn enumValueFieldIndex(pt: Zcu.PerThread, ty: Type, field_index: u32) Alloca
 
 pub fn undefValue(pt: Zcu.PerThread, ty: Type) Allocator.Error!Value {
     if (std.debug.runtime_safety) {
-        if (try ty.onePossibleValue(pt)) |opv| {
-            assert(opv.isUndef(pt.zcu));
-        }
+        assert(ty.classify(pt.zcu) != .one_possible_value);
     }
     return .fromInterned(try pt.intern(.{ .undef = ty.toIntern() }));
 }
@@ -3909,10 +3907,7 @@ pub fn aggregateValue(pt: Zcu.PerThread, ty: Type, elems: []const InternPool.Ind
     for (elems) |elem| {
         if (!Value.fromInterned(elem).isUndef(pt.zcu)) break;
     } else if (elems.len > 0) {
-        // All undef, so return an undef struct. However, don't use `undefValue`, because its
-        // non-OPV assertion can loop on `[1]@TypeOf(undefined)`: that type has an OPV of
-        // `.{undefined}`, which here we normalize to `undefined`.
-        return .fromInterned(try pt.intern(.{ .undef = ty.toIntern() }));
+        return pt.undefValue(ty);
     }
     return .fromInterned(try pt.intern(.{ .aggregate = .{
         .ty = ty.toIntern(),

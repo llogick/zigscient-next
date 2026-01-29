@@ -178,8 +178,11 @@ const ComptimeAlloc = struct {
 fn newComptimeAlloc(sema: *Sema, block: *Block, src: LazySrcLoc, ty: Type, alignment: Alignment) !ComptimeAllocIndex {
     const pt = sema.pt;
 
-    // Explicit guard because this call mutates the InternPool so cannot be optimized out.
-    if (std.debug.runtime_safety) assert(ty.onePossibleValue(pt) catch @panic("") == null);
+    switch (ty.classify(pt.zcu)) {
+        .no_possible_value => unreachable,
+        .one_possible_value => unreachable,
+        else => {},
+    }
 
     const idx = sema.comptime_allocs.items.len;
     try sema.comptime_allocs.append(sema.gpa, .{
@@ -1991,31 +1994,28 @@ fn analyzeBodyInner(
                 break :blk .void_value;
             },
         };
-        if (sema.isNoReturn(air_ref)) {
-            // We're going to assume that the body itself is noreturn, so let's ensure that now
-            assert(block.instructions.items.len > 0);
-            assert(sema.isNoReturn(block.instructions.items[block.instructions.items.len - 1].toRef()));
-            break;
-        }
 
+        const is_inferred_alloc = if (air_ref.toIndex()) |air_inst| switch (sema.air_instructions.items(.tag)[@intFromEnum(air_inst)]) {
+            .inferred_alloc, .inferred_alloc_comptime => true,
+            else => false,
+        } else false;
         // We must resolve the layout of a type before creating a value of that type. Therefore,
-        // the layout of the type of `air_ref` must already be resolved.
-        check_type: {
-            if (air_ref.toIndex()) |air_inst| switch (sema.air_instructions.items(.tag)[@intFromEnum(air_inst)]) {
-                .inferred_alloc, .inferred_alloc_comptime => break :check_type,
-                else => {},
-            };
-            sema.typeOf(air_ref).assertHasLayout(zcu);
-            // If the type has an OPV, `air_ref` must be that OPV: there is no other interned value
-            // it could be, and it would be a bug for the value to not be comptime-known when it has
-            // an OPV. Behind a `std.debug.runtime_safety` check because `onePossibleValue` mutates
-            // the InternPool so cannot be optimized out.
-            if (std.debug.runtime_safety) {
-                if (try sema.typeOf(air_ref).onePossibleValue(pt)) |opv| {
-                    assert(air_ref == Air.Inst.Ref.fromValue(opv));
-                }
-            }
-        }
+        // the layout of the type of `air_ref` must already be resolved. The call to `classify`
+        // doubles as an assertion of this.
+        if (!is_inferred_alloc) switch (sema.typeOf(air_ref).classify(zcu)) {
+            .no_possible_value => {
+                // The instruction result was noreturn, which should mean that the body itself now
+                // ends with a noreturn instruction. Let's confirm that.
+                const last_inst = block.instructions.items[block.instructions.items.len - 1];
+                const last_inst_ty = sema.typeOf(last_inst.toRef());
+                assert(last_inst_ty.classify(zcu) == .no_possible_value);
+                break;
+            },
+            .one_possible_value => assert(air_ref.toInterned() != null), // the value should be comptime-known
+            .partially_comptime => assert(air_ref.toInterned() != null), // the value should be comptime-known
+            .fully_comptime => assert(air_ref.toInterned() != null), // the value should be comptime-known
+            .runtime => {},
+        };
 
         map.putAssumeCapacity(inst, air_ref);
         i += 1;
@@ -2287,11 +2287,12 @@ fn resolveValue(sema: *Sema, inst: Air.Inst.Ref) ?Value {
             .inferred_alloc_comptime => unreachable, // assertion failure
             else => {},
         }
-        // Assert that the type is not OPV -- if it was, the value would have been comptime-known.
-        // Explicit guard because this could add to the InternPool so cannot be optimized away.
-        if (std.debug.runtime_safety) {
-            const opv = sema.typeOf(inst).onePossibleValue(sema.pt) catch @panic("oom in assert");
-            assert(opv == null);
+        switch (sema.typeOf(inst).classify(zcu)) {
+            .no_possible_value => unreachable, // values of this type do not exist
+            .one_possible_value => unreachable, // the value should be comptime-known
+            .partially_comptime => unreachable, // the value should be comptime-known
+            .fully_comptime => unreachable, // the value should be comptime-known
+            .runtime => {},
         }
         return null;
     }
@@ -4645,16 +4646,21 @@ fn zirValidateDeref(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErr
     const elem_ty = operand_ty.childType(zcu);
     try sema.ensureLayoutResolved(elem_ty, src);
 
-    if (try elem_ty.onePossibleValue(pt) != null) {
-        // No need to validate the actual pointer value, we don't need it!
-        return;
-    }
+    const need_comptime = switch (elem_ty.classify(zcu)) {
+        .no_possible_value => return sema.fail(block, src, "cannot load {s} type '{f}'", .{
+            if (elem_ty.zigTypeTag(zcu) == .@"opaque") "opaque" else "uninstantiable",
+            elem_ty.fmt(pt),
+        }),
+        .one_possible_value => return, // no need to validate the actual pointer value!
+        .runtime => false,
+        .partially_comptime, .fully_comptime => true,
+    };
 
     if (sema.resolveValue(operand)) |val| {
         if (val.isUndef(zcu)) {
             return sema.fail(block, src, "cannot dereference undefined value", .{});
         }
-    } else if (elem_ty.comptimeOnly(zcu)) {
+    } else if (need_comptime) {
         const msg = msg: {
             const msg = try sema.errMsg(
                 src,
@@ -4870,7 +4876,7 @@ fn storeToInferredAllocComptime(
             .is_const = iac.is_const,
         },
     });
-    if (try operand_ty.onePossibleValue(pt) != null or
+    if (operand_ty.classify(zcu) == .one_possible_value or
         (iac.is_const and !operand_val.canMutateComptimeVarState(zcu)))
     {
         iac.ptr = try pt.intern(.{ .ptr = .{
@@ -6672,7 +6678,7 @@ const CallArgsInfo = union(enum) {
                     return sema.failWithNeededComptime(block, cai.argSrc(block, arg_index), null);
                 }
 
-                if (sema.typeOf(uncoerced_arg).zigTypeTag(zcu) == .noreturn) {
+                if (sema.typeOf(uncoerced_arg).classify(zcu) == .no_possible_value) {
                     // This terminates resolution of arguments. The caller should
                     // propagate this.
                     return uncoerced_arg;
@@ -6928,7 +6934,7 @@ fn analyzeCall(
 
         arg.* = try args_info.analyzeArg(sema, block, arg_idx, param_ty, func_ty_info, callee, maybe_func_inst);
         const arg_ty = sema.typeOf(arg.*);
-        if (arg_ty.zigTypeTag(zcu) == .noreturn) {
+        if (arg_ty.classify(zcu) == .no_possible_value) {
             return arg.*; // terminate analysis here
         }
 
@@ -7183,7 +7189,7 @@ fn analyzeCall(
             return sema.handleTailCall(block, call_src, runtime_func_ty, maybe_opv);
         }
 
-        if (ip.isNoReturn(resolved_ret_ty.toIntern())) {
+        if (resolved_ret_ty.isNoReturn(zcu)) {
             const want_check = c: {
                 if (!block.wantSafety()) break :c false;
                 if (func_val != null) break :c false;
@@ -7989,16 +7995,16 @@ fn zirIntFromEnum(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError
     const enum_tag: Air.Inst.Ref = switch (operand_ty.zigTypeTag(zcu)) {
         .@"enum" => operand,
         .@"union" => blk: {
-            const tag_ty = operand_ty.unionTagType(zcu) orelse {
+            if (operand_ty.unionTagType(zcu) == null) {
                 return sema.fail(
                     block,
                     operand_src,
                     "untagged union '{f}' cannot be converted to integer",
                     .{operand_ty.fmt(pt)},
                 );
-            };
+            }
 
-            break :blk try sema.unionToTag(block, tag_ty, operand, operand_src);
+            break :blk try sema.unionToTag(block, operand);
         },
         else => {
             return sema.fail(block, operand_src, "expected enum or tagged union, found '{f}'", .{
@@ -10151,9 +10157,8 @@ fn analyzeSwitchBlock(
         const maybe_operand_opv = try operand_ty.onePossibleValue(pt);
         const init_cond: Air.Inst.Ref, const item_ty: Type = switch (operand_ty.zigTypeTag(zcu)) {
             .@"union" => tag: {
-                const tag_ty = operand_ty.unionTagType(zcu).?;
-                const tag_val = try sema.unionToTag(block, tag_ty, val, operand_src);
-                break :tag .{ tag_val, tag_ty };
+                const tag_val = try sema.unionToTag(block, val);
+                break :tag .{ tag_val, sema.typeOf(tag_val) };
             },
             else => .{
                 if (maybe_operand_opv) |operand_opv| .fromValue(operand_opv) else val,
@@ -10245,7 +10250,7 @@ fn analyzeSwitchBlock(
                         .{ new_operand, .none };
 
                     const new_cond_ref = if (union_originally)
-                        try sema.unionToTag(child_block, item_ty, new_val, src)
+                        try sema.unionToTag(child_block, new_val)
                     else
                         new_val;
 
@@ -12147,8 +12152,7 @@ fn analyzeSwitchTagCapture(
         .item_refs => |refs| if (refs.len == 1) return refs[0],
         .special => {},
     }
-    const tag_ty = operand_ty.unionTagType(zcu).?;
-    return sema.unionToTag(case_block, tag_ty, operand_val, tag_capture_src);
+    return sema.unionToTag(case_block, operand_val);
 }
 
 fn analyzeSwitchPayloadCapture(
@@ -15389,9 +15393,12 @@ fn analyzePtrArithmetic(
     const elem_ty: Type = .fromInterned(ptr_info.child);
     elem_ty.assertHasLayout(zcu);
 
-    if (elem_ty.abiSize(zcu) == 0) {
-        // Offset will be multiplied by zero, so result is the same as the base pointer.
-        return ptr;
+    switch (elem_ty.classify(zcu)) {
+        .no_possible_value, .one_possible_value => {
+            // Offset will be multiplied by zero, so result is the same as the base pointer.
+            return ptr;
+        },
+        else => {},
     }
 
     const new_ptr_ty = t: {
@@ -15757,7 +15764,7 @@ fn analyzeCmpUnionTag(
     if (sema.resolveValue(coerced_tag)) |enum_val| {
         if (enum_val.isUndef(zcu)) return .undef_bool;
         const field_ty = union_ty.unionFieldType(enum_val, zcu).?;
-        if (field_ty.zigTypeTag(zcu) == .noreturn) {
+        if (field_ty.classify(zcu) == .no_possible_value) {
             return .bool_false;
         }
     }
@@ -15934,39 +15941,22 @@ fn zirSizeOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const ty = try sema.resolveType(block, operand_src, inst_data.operand);
-    switch (ty.zigTypeTag(zcu)) {
-        .@"fn",
-        .noreturn,
-        .undefined,
-        .null,
-        .@"opaque",
-        => return sema.fail(block, operand_src, "no size available for type '{f}'", .{ty.fmt(pt)}),
-
-        .type,
-        .enum_literal,
-        .comptime_float,
-        .comptime_int,
-        .void,
-        => return .zero,
-
-        .bool,
-        .int,
-        .float,
-        .pointer,
-        .array,
-        .@"struct",
-        .optional,
-        .error_union,
-        .error_set,
-        .@"enum",
-        .@"union",
-        .vector,
-        .frame,
-        .@"anyframe",
-        => {},
-    }
     try sema.ensureLayoutResolved(ty, operand_src);
-    return .fromValue(try pt.intValue(.comptime_int, ty.abiSize(zcu)));
+    switch (ty.classify(zcu)) {
+        .no_possible_value,
+        => return sema.fail(block, operand_src, "no size available for uninstantiable type '{f}'", .{ty.fmt(pt)}),
+
+        .partially_comptime,
+        .fully_comptime,
+        => return sema.fail(block, operand_src, "no size available for comptime-only type '{f}'", .{ty.fmt(pt)}),
+
+        .one_possible_value => {
+            assert(ty.abiSize(zcu) == 0);
+            return .zero;
+        },
+
+        .runtime => return .fromValue(try pt.intValue(.comptime_int, ty.abiSize(zcu))),
+    }
 }
 
 fn zirBitSizeOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Inst.Ref {
@@ -18631,9 +18621,9 @@ fn zirStructInit(
         const tag_val = try pt.enumValueFieldIndex(tag_ty, field_index);
         const field_ty: Type = .fromInterned(zcu.typeToUnion(resolved_ty).?.field_types.get(ip)[field_index]);
 
-        if (field_ty.zigTypeTag(zcu) == .noreturn) {
+        if (field_ty.classify(zcu) == .no_possible_value) {
             return sema.failWithOwnedErrorMsg(block, msg: {
-                const msg = try sema.errMsg(src, "cannot initialize 'noreturn' field of union", .{});
+                const msg = try sema.errMsg(src, "cannot initialize union field with uninstantiable type '{f}'", .{field_ty.fmt(pt)});
                 errdefer msg.destroy(sema.gpa);
 
                 try sema.addFieldErrNote(resolved_ty, field_index, msg, "field '{f}' declared here", .{
@@ -18648,7 +18638,13 @@ fn zirStructInit(
         const init_inst = try sema.coerce(block, field_ty, uncoerced_init_inst, field_src);
 
         if (resolved_ty.containerLayout(zcu) == .@"packed") {
-            return sema.bitCast(block, resolved_ty, init_inst, src, field_src);
+            const union_val = try sema.bitCast(block, resolved_ty, init_inst, src, field_src);
+            const result_val = try sema.coerce(block, result_ty, union_val, src);
+            if (is_ref) {
+                return sema.analyzeRef(block, src, result_val);
+            } else {
+                return result_val;
+            }
         }
 
         if (sema.resolveValue(init_inst)) |val| {
@@ -18681,9 +18677,6 @@ fn zirStructInit(
             const base_ptr = try sema.optEuBasePtrInit(block, alloc, src);
             const field_ptr = try sema.unionFieldPtr(block, field_src, base_ptr, field_name, field_src, resolved_ty, true);
             try sema.storePtr(block, src, field_ptr, init_inst);
-            if (try tag_ty.onePossibleValue(pt) == null) {
-                _ = try block.addBinOp(.set_union_tag, base_ptr, .fromValue(tag_val));
-            }
             return sema.makePtrConst(block, alloc);
         }
 
@@ -19451,10 +19444,10 @@ fn zirAlignOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const ty = try sema.resolveType(block, operand_src, inst_data.operand);
+    try sema.ensureLayoutResolved(ty, operand_src);
     if (ty.isNoReturn(zcu)) {
         return sema.fail(block, operand_src, "no align available for type '{f}'", .{ty.fmt(sema.pt)});
     }
-    try sema.ensureLayoutResolved(ty, operand_src);
     return .fromValue(try pt.intValue(.comptime_int, ty.abiAlignment(zcu).toByteUnits().?));
 }
 
@@ -20447,10 +20440,10 @@ fn zirReifyUnion(
         .fields_len = @intCast(fields_len),
         .layout = layout,
         .any_field_aligns = any_field_aligns,
-        .runtime_tag = rt: {
-            if (explicit_tag_ty != null) break :rt .tagged;
-            if (layout == .auto and block.wantSafeTypes()) break :rt .safety;
-            break :rt .none;
+        .tag_usage = tag: {
+            if (explicit_tag_ty != null) break :tag .tagged;
+            if (layout == .auto and block.wantSafeTypes()) break :tag .safety;
+            break :tag .none;
         },
         .enum_tag_type = if (explicit_tag_ty) |ty| ty.toIntern() else .none,
         .packed_backing_int_type = if (explicit_packed_backing_type) |ty| ty.toIntern() else .none,
@@ -22608,7 +22601,7 @@ fn zirCmpxchg(
     const result_ty = try pt.optionalType(elem_ty.toIntern());
 
     // special case zero bit types
-    if (try elem_ty.onePossibleValue(pt) != null) {
+    if (elem_ty.classify(zcu) == .one_possible_value) {
         return .fromValue(try pt.nullValue(result_ty));
     }
 
@@ -25514,8 +25507,9 @@ fn fieldPtrLoad(
     const pt = sema.pt;
     const zcu = pt.zcu;
     const object_ptr_ty = sema.typeOf(object_ptr);
+    assert(object_ptr_ty.zigTypeTag(zcu) == .pointer);
     const pointee_ty = object_ptr_ty.childType(zcu);
-    try sema.ensureLayoutResolved(pointee_ty, src); // MLUGG TODO
+    try sema.ensureLayoutResolved(pointee_ty, src);
     if (try pointee_ty.onePossibleValue(pt)) |opv| {
         const object: Air.Inst.Ref = .fromValue(opv);
         return fieldVal(sema, block, src, object, field_name, field_name_src);
@@ -26477,9 +26471,9 @@ fn unionFieldPtr(
     });
     const enum_field_index: u32 = @intCast(Type.fromInterned(union_obj.enum_tag_type).enumFieldIndex(field_name, zcu).?);
 
-    if (initializing and field_ty.zigTypeTag(zcu) == .noreturn) {
+    if (initializing and field_ty.classify(zcu) == .no_possible_value) {
         const msg = msg: {
-            const msg = try sema.errMsg(src, "cannot initialize 'noreturn' field of union", .{});
+            const msg = try sema.errMsg(src, "cannot initialize union field with uninstantiable type '{f}'", .{field_ty.fmt(pt)});
             errdefer msg.destroy(sema.gpa);
 
             try sema.addFieldErrNote(union_ty, field_index, msg, "field '{f}' declared here", .{
@@ -26529,30 +26523,29 @@ fn unionFieldPtr(
             },
             .@"packed", .@"extern" => {},
         }
-        const field_ptr_val = try union_ptr_val.ptrField(field_index, pt);
-        return Air.internedToRef(field_ptr_val.toIntern());
+        return .fromValue(try union_ptr_val.ptrField(field_index, pt));
     }
 
     // If the union has a tag, we must either set or or safety check it depending on `initializing`.
     tag: {
         if (union_ty.containerLayout(zcu) != .auto) break :tag;
         const tag_ty: Type = .fromInterned(union_obj.enum_tag_type);
-        if (try tag_ty.onePossibleValue(pt) != null) break :tag;
+        if (tag_ty.classify(zcu) == .one_possible_value) break :tag;
         // There is a hypothetical non-trivial tag. We must set it even if not there at runtime, but
         // only emit a safety check if it's available at runtime (i.e. it's safety-tagged).
         const want_tag = try pt.enumValueFieldIndex(tag_ty, enum_field_index);
         if (initializing) {
             const set_tag_inst = try block.addBinOp(.set_union_tag, union_ptr, .fromValue(want_tag));
             try sema.checkComptimeKnownStore(block, set_tag_inst, .unneeded); // `unneeded` since this isn't a "proper" store
-        } else if (block.wantSafety() and union_obj.runtime_tag != .none) {
-            // The tag exists at runtime (safety tag), so emit a safety check.
+        } else if (block.wantSafety() and union_obj.has_runtime_tag) {
+            // The tag exists at runtime (actual or safety tag), so emit a safety check.
             // TODO would it be better if get_union_tag supported pointers to unions?
             const union_val = try block.addTyOp(.load, union_ty, union_ptr);
             const active_tag = try block.addTyOp(.get_union_tag, tag_ty, union_val);
             try sema.addSafetyCheckInactiveUnionField(block, src, active_tag, .fromValue(want_tag));
         }
     }
-    if (field_ty.zigTypeTag(zcu) == .noreturn) {
+    if (field_ty.classify(zcu) == .no_possible_value) {
         _ = try block.addNoOp(.unreach);
         return .unreachable_value;
     }
@@ -26578,57 +26571,40 @@ fn unionFieldVal(
     const union_obj = zcu.typeToUnion(union_ty).?;
     const field_index = try sema.unionFieldIndex(block, union_ty, field_name, field_name_src);
     const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[field_index]);
-    const enum_field_index: u32 = @intCast(Type.fromInterned(union_obj.enum_tag_type).enumFieldIndex(field_name, zcu).?);
+    const enum_tag_ty: Type = .fromInterned(union_obj.enum_tag_type);
 
     if (sema.resolveValue(union_byval)) |union_val| {
         if (union_val.isUndef(zcu)) return pt.undefRef(field_ty);
-
-        const un = ip.indexToKey(union_val.toIntern()).un;
-        const field_tag = try pt.enumValueFieldIndex(.fromInterned(union_obj.enum_tag_type), enum_field_index);
-        const tag_matches = un.tag == field_tag.toIntern();
         switch (union_obj.layout) {
             .auto => {
-                if (tag_matches) {
-                    return Air.internedToRef(un.val);
-                } else {
-                    const msg = msg: {
-                        const active_index = Type.fromInterned(union_obj.enum_tag_type).enumTagFieldIndex(Value.fromInterned(un.tag), zcu).?;
-                        const active_field_name = Type.fromInterned(union_obj.enum_tag_type).enumFieldName(active_index, zcu);
-                        const msg = try sema.errMsg(src, "access of union field '{f}' while field '{f}' is active", .{
-                            field_name.fmt(ip), active_field_name.fmt(ip),
-                        });
-                        errdefer msg.destroy(sema.gpa);
-                        try sema.addDeclaredHereNote(msg, union_ty);
-                        break :msg msg;
-                    };
-                    return sema.failWithOwnedErrorMsg(block, msg);
-                }
+                const active_tag_val = union_val.unionTag(zcu).?;
+                const active_index = enum_tag_ty.enumTagFieldIndex(active_tag_val, zcu).?;
+                if (active_index == field_index) return .fromValue(union_val.unionPayload(zcu));
+                return sema.fail(block, src, "access of union field '{f}' while field '{f}' is active", .{
+                    field_name.fmt(ip), enum_tag_ty.enumFieldName(active_index, zcu).fmt(ip),
+                });
             },
-            .@"extern" => if (tag_matches) {
-                // Fast path - no need to use bitcast logic.
-                return Air.internedToRef(un.val);
-            } else if (try sema.bitCastVal(union_val, field_ty, 0, 0, 0)) |field_val| {
-                return Air.internedToRef(field_val.toIntern());
+            .@"extern" => if (try sema.bitCastVal(union_val, field_ty, 0, 0, 0)) |field_val| {
+                return .fromValue(field_val);
+            } else {
+                // Runtime-known due to a pointer-to-integer conversion.
             },
-            .@"packed" => if (tag_matches) {
-                // Fast path - no need to use bitcast logic.
-                return Air.internedToRef(un.val);
-            } else if (try sema.bitCastVal(union_val, field_ty, 0, union_ty.bitSize(zcu), 0)) |field_val| {
-                return Air.internedToRef(field_val.toIntern());
+            .@"packed" => {
+                const field_val = try sema.bitCastVal(union_val, field_ty, 0, union_ty.bitSize(zcu), 0) orelse {
+                    unreachable; // `null` is only possible if the input value contains a pointer, which a packed union cannot.
+                };
+                return .fromValue(field_val);
             },
         }
     }
 
-    if (union_obj.layout == .auto and block.wantSafety() and
-        union_ty.unionTagTypeSafety(zcu) != null and union_obj.field_types.len > 1)
-    {
-        const wanted_tag_val = try pt.enumValueFieldIndex(.fromInterned(union_obj.enum_tag_type), enum_field_index);
-        const wanted_tag = Air.internedToRef(wanted_tag_val.toIntern());
-        const active_tag = try block.addTyOp(.get_union_tag, .fromInterned(union_obj.enum_tag_type), union_byval);
-        try sema.addSafetyCheckInactiveUnionField(block, src, active_tag, wanted_tag);
+    if (union_obj.layout == .auto and block.wantSafety() and union_obj.has_runtime_tag) {
+        const wanted_tag_val = try pt.enumValueFieldIndex(enum_tag_ty, field_index);
+        const active_tag = try block.addTyOp(.get_union_tag, enum_tag_ty, union_byval);
+        try sema.addSafetyCheckInactiveUnionField(block, src, active_tag, .fromValue(wanted_tag_val));
     }
 
-    if (field_ty.zigTypeTag(zcu) == .noreturn) {
+    if (field_ty.classify(zcu) == .no_possible_value) {
         _ = try block.addNoOp(.unreach);
         return .unreachable_value;
     }
@@ -27767,11 +27743,10 @@ fn coerceExtra(
                 };
                 return Air.internedToRef((try pt.enumValueFieldIndex(dest_ty, @intCast(field_index))).toIntern());
             },
-            .@"union" => blk: {
+            .@"union" => if (inst_ty.unionTagType(zcu)) |enum_tag_ty| {
                 // union to its own tag type
-                const union_tag_ty = inst_ty.unionTagType(zcu) orelse break :blk;
-                if (union_tag_ty.eql(dest_ty, zcu)) {
-                    return sema.unionToTag(block, dest_ty, inst, inst_src);
+                if (enum_tag_ty.toIntern() == dest_ty.toIntern()) {
+                    return sema.unionToTag(block, inst);
                 }
             },
             else => {},
@@ -27857,17 +27832,15 @@ fn coerceExtra(
         else => {},
     }
 
-    const can_coerce_to = switch (dest_ty.zigTypeTag(zcu)) {
-        .noreturn, .@"opaque" => false,
-        else => true,
+    const dest_is_npv = switch (dest_ty.classify(zcu)) {
+        .no_possible_value => true,
+        .one_possible_value => if (inst == .undef) {
+            return .fromValue((try dest_ty.onePossibleValue(pt)).?);
+        } else false,
+        .runtime, .fully_comptime, .partially_comptime => if (inst == .undef) {
+            return .fromValue(try pt.undefValue(dest_ty));
+        } else false,
     };
-
-    if (can_coerce_to and inst == .undef) {
-        // undefined to anything. We do this after the big switch above so that
-        // special logic has a chance to run first, such as `*[N]T` to `[]T` which
-        // should initialize the length field of the slice.
-        return .fromValue(try dest_ty.onePossibleValue(pt) orelse try pt.undefValue(dest_ty));
-    }
 
     if (!opts.report_err) return error.NotCoercible;
 
@@ -27890,8 +27863,8 @@ fn coerceExtra(
         const msg = try sema.typeMismatchErrMsg(inst_src, dest_ty, inst_ty);
         errdefer msg.destroy(sema.gpa);
 
-        if (!can_coerce_to) {
-            try sema.errNote(inst_src, msg, "cannot coerce to '{f}'", .{dest_ty.fmt(pt)});
+        if (dest_is_npv) {
+            try sema.errNote(inst_src, msg, "cannot coerce to uninstantiable type '{f}'", .{dest_ty.fmt(pt)});
         }
 
         // E!T to T
@@ -29099,6 +29072,13 @@ fn storePtr2(
     };
     const maybe_operand_val = sema.resolveValue(operand);
 
+    const comptime_only = switch (elem_ty.classify(zcu)) {
+        .no_possible_value => unreachable, // the coercion should have failed
+        .one_possible_value => return, // no actual store operation is necessary
+        .runtime => false,
+        .partially_comptime, .fully_comptime => true,
+    };
+
     const runtime_src = rs: {
         const ptr_val = try sema.resolveDefinedValue(block, ptr_src, ptr) orelse break :rs ptr_src;
         if (!sema.isComptimeMutablePtr(ptr_val)) break :rs ptr_src;
@@ -29106,16 +29086,9 @@ fn storePtr2(
         return sema.storePtrVal(block, src, ptr_val, operand_val, elem_ty);
     };
 
-    // We do this after the possible comptime store above, for the case of field_ptr stores
-    // to unions because we want the comptime tag to be set, even if the field type is void.
-    // MLUGG TODO: that's insane, the runtime and comptime sematics should be the same. just set the tag at the same damn time
-    if (try elem_ty.onePossibleValue(pt) != null) {
-        return;
-    }
-
     // We're performing the store at runtime; as such, we need to make sure the pointee type
     // is not comptime-only. We can hit this case with a `@ptrFromInt` pointer.
-    if (elem_ty.comptimeOnly(zcu)) {
+    if (comptime_only) {
         return sema.failWithOwnedErrorMsg(block, msg: {
             const msg = try sema.errMsg(src, "cannot store comptime-only type '{f}' at runtime", .{elem_ty.fmt(pt)});
             errdefer msg.destroy(sema.gpa);
@@ -29477,7 +29450,7 @@ fn coerceEnumToUnion(
     const enum_ty: Type = .fromInterned(union_obj.enum_tag_type);
     const enum_obj = ip.loadEnumType(enum_ty.toIntern());
 
-    if (union_obj.runtime_tag != .tagged) return sema.failWithOwnedErrorMsg(block, msg: {
+    if (union_obj.tag_usage != .tagged) return sema.failWithOwnedErrorMsg(block, msg: {
         const msg = try sema.typeMismatchErrMsg(inst_src, union_ty, inst_ty);
         errdefer msg.destroy(sema.gpa);
         try sema.errNote(union_ty_src, msg, "cannot coerce enum to untagged union", .{});
@@ -29495,31 +29468,35 @@ fn coerceEnumToUnion(
 
         const field_name = enum_obj.field_names.get(ip)[field_index];
         const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[field_index]);
-        if (field_ty.zigTypeTag(zcu) == .noreturn) {
-            const msg = msg: {
-                const msg = try sema.errMsg(inst_src, "cannot initialize 'noreturn' field of union", .{});
+        switch (field_ty.classify(zcu)) {
+            .one_possible_value => return .fromValue(try pt.unionValue(
+                union_ty,
+                val,
+                (try field_ty.onePossibleValue(pt)).?,
+            )),
+
+            .no_possible_value => return sema.failWithOwnedErrorMsg(block, msg: {
+                const msg = try sema.errMsg(inst_src, "cannot initialize union field with uninstantiable type '{f}'", .{field_ty.fmt(pt)});
                 errdefer msg.destroy(sema.gpa);
                 try sema.addFieldErrNote(union_ty, field_index, msg, "field '{f}' declared here", .{
                     field_name.fmt(ip),
                 });
                 try sema.addDeclaredHereNote(msg, union_ty);
                 break :msg msg;
-            };
-            return sema.failWithOwnedErrorMsg(block, msg);
+            }),
+
+            else => return sema.failWithOwnedErrorMsg(block, msg: {
+                const msg = try sema.errMsg(inst_src, "coercion from enum '{f}' to union '{f}' must initialize '{f}' field '{f}'", .{
+                    inst_ty.fmt(pt),  union_ty.fmt(pt),
+                    field_ty.fmt(pt), field_name.fmt(ip),
+                });
+                errdefer msg.destroy(sema.gpa);
+
+                try sema.addFieldErrNote(union_ty, field_index, msg, "field '{f}' declared here", .{field_name.fmt(ip)});
+                try sema.addDeclaredHereNote(msg, union_ty);
+                break :msg msg;
+            }),
         }
-        const opv = try field_ty.onePossibleValue(pt) orelse return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(inst_src, "coercion from enum '{f}' to union '{f}' must initialize '{f}' field '{f}'", .{
-                inst_ty.fmt(pt),  union_ty.fmt(pt),
-                field_ty.fmt(pt), field_name.fmt(ip),
-            });
-            errdefer msg.destroy(sema.gpa);
-
-            try sema.addFieldErrNote(union_ty, field_index, msg, "field '{f}' declared here", .{field_name.fmt(ip)});
-            try sema.addDeclaredHereNote(msg, union_ty);
-            break :msg msg;
-        });
-
-        return Air.internedToRef((try pt.unionValue(union_ty, val, opv)).toIntern());
     }
 
     try sema.requireRuntimeBlock(block, inst_src, null);
@@ -29536,32 +29513,14 @@ fn coerceEnumToUnion(
         return sema.failWithOwnedErrorMsg(block, msg);
     }
 
-    {
-        var msg: ?*Zcu.ErrorMsg = null;
-        errdefer if (msg) |some| some.destroy(sema.gpa);
-
-        for (union_obj.field_types.get(ip), 0..) |field_ty, field_index| {
-            if (Type.fromInterned(field_ty).zigTypeTag(zcu) == .noreturn) {
-                const err_msg = msg orelse try sema.errMsg(
-                    inst_src,
-                    "runtime coercion from enum '{f}' to union '{f}' which has a 'noreturn' field",
-                    .{ enum_ty.fmt(pt), union_ty.fmt(pt) },
-                );
-                msg = err_msg;
-
-                try sema.addFieldErrNote(union_ty, field_index, err_msg, "'noreturn' field here", .{});
-            }
-        }
-        if (msg) |some| {
-            msg = null;
-            try sema.addDeclaredHereNote(some, union_ty);
-            return sema.failWithOwnedErrorMsg(block, some);
-        }
-    }
-
-    // If the union has all fields 0 bits, the union value is just the enum value.
     if (union_ty.unionHasAllZeroBitFieldTypes(zcu)) {
-        return block.addBitCast(union_ty, enum_tag);
+        if (try union_ty.onePossibleValue(pt)) |opv| {
+            // The tag had redundant bits, but we've omitted the tag from the union's runtime layout, so the union is OPV and hence runtime-known.
+            return .fromValue(opv);
+        } else {
+            // The union layout is just the tag, so we can bitcast the enum straight to the union.
+            return block.addBitCast(union_ty, enum_tag);
+        }
     }
 
     const msg = msg: {
@@ -29575,9 +29534,15 @@ fn coerceEnumToUnion(
         for (0..union_obj.field_types.len) |field_index| {
             const field_name = enum_obj.field_names.get(ip)[field_index];
             const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[field_index]);
-            if (try field_ty.onePossibleValue(pt) != null) continue;
-            try sema.addFieldErrNote(union_ty, field_index, msg, "field '{f}' has type '{f}'", .{
+            const ty_description: []const u8 = switch (field_ty.classify(zcu)) {
+                .one_possible_value => continue,
+                .no_possible_value => "uninstantiable type",
+                else => "type",
+            };
+            if (field_ty.classify(zcu) == .one_possible_value) continue;
+            try sema.addFieldErrNote(union_ty, field_index, msg, "field '{f}' has {s} '{f}'", .{
                 field_name.fmt(ip),
+                ty_description,
                 field_ty.fmt(pt),
             });
         }
@@ -30345,7 +30310,7 @@ fn resolveIsNonErrFromType(
     assert(ot == .error_union);
 
     const payload_ty = operand_ty.errorUnionPayload(zcu);
-    if (payload_ty.zigTypeTag(zcu) == .noreturn) {
+    if (payload_ty.classify(zcu) == .no_possible_value) {
         return .false;
     }
 
@@ -31348,24 +31313,28 @@ fn wrapErrorUnionSet(
     }
 }
 
-fn unionToTag(
-    sema: *Sema,
-    block: *Block,
-    enum_ty: Type,
-    un: Air.Inst.Ref,
-    un_src: LazySrcLoc,
-) !Air.Inst.Ref {
+/// Returns the enum tag value for the active tag of a tagged union value.
+///
+/// Asserts that the type of `un` is a tagged union type.
+fn unionToTag(sema: *Sema, block: *Block, un: Air.Inst.Ref) !Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
-    if (try enum_ty.onePossibleValue(pt)) |opv| return .fromValue(opv);
+    const ip = &zcu.intern_pool;
+    const union_obj = ip.loadUnionType(sema.typeOf(un).toIntern());
+    assert(union_obj.tag_usage == .tagged);
     if (sema.resolveValue(un)) |un_val| {
-        const tag_val = un_val.unionTag(zcu).?;
-        if (tag_val.isUndef(zcu))
-            return try pt.undefRef(enum_ty);
-        return Air.internedToRef(tag_val.toIntern());
+        return .fromValue(un_val.unionTag(zcu).?);
     }
-    try sema.requireRuntimeBlock(block, un_src, null);
-    return block.addTyOp(.get_union_tag, enum_ty, un);
+    const enum_tag_ty: Type = .fromInterned(union_obj.enum_tag_type);
+    if (!union_obj.has_runtime_tag) {
+        // This means that only one field is possible.
+        const field_index = for (union_obj.field_types.get(ip), 0..) |field_ty_ip, field_index| {
+            const field_ty: Type = .fromInterned(field_ty_ip);
+            if (field_ty.classify(zcu) != .no_possible_value) break field_index;
+        } else unreachable;
+        return .fromValue(try pt.enumValueFieldIndex(enum_tag_ty, @intCast(field_index)));
+    }
+    return block.addTyOp(.get_union_tag, enum_tag_ty, un);
 }
 
 const PeerResolveStrategy = enum {
@@ -33491,15 +33460,6 @@ fn isNoReturn(sema: *Sema, ref: Air.Inst.Ref) bool {
     return sema.typeOf(ref).isNoReturn(sema.pt.zcu);
 }
 
-/// Avoids crashing the compiler when asking if inferred allocations are known to be a certain zig type.
-fn isKnownZigType(sema: *Sema, ref: Air.Inst.Ref, tag: std.builtin.TypeId) bool {
-    if (ref.toIndex()) |inst| switch (sema.air_instructions.items(.tag)[@intFromEnum(inst)]) {
-        .inferred_alloc, .inferred_alloc_comptime => return false,
-        else => {},
-    };
-    return sema.typeOf(ref).zigTypeTag(sema.pt.zcu) == tag;
-}
-
 pub fn declareDependency(sema: *Sema, dependee: InternPool.Dependee) !void {
     const pt = sema.pt;
     if (!pt.zcu.comp.config.incremental) return;
@@ -33744,7 +33704,6 @@ fn anyUndef(sema: *Sema, block: *Block, src: LazySrcLoc, val: Value) !bool {
     const zcu = pt.zcu;
     return switch (zcu.intern_pool.indexToKey(val.toIntern())) {
         .undef => true,
-        .simple_value => |v| v == .undefined,
         .slice => {
             // If the slice contents are runtime-known, reification will fail later on with a
             // specific error message.
@@ -33898,7 +33857,6 @@ const ComptimeLoadResult = @import("Sema/comptime_ptr_access.zig").ComptimeLoadR
 const storeComptimePtr = @import("Sema/comptime_ptr_access.zig").storeComptimePtr;
 const ComptimeStoreResult = @import("Sema/comptime_ptr_access.zig").ComptimeStoreResult;
 
-// MLUGG TODO: decide how to do the namespacing here
 pub const type_resolution = @import("Sema/type_resolution.zig");
 pub const ensureLayoutResolved = type_resolution.ensureLayoutResolved;
 pub const ensureStructDefaultsResolved = type_resolution.ensureStructDefaultsResolved;
@@ -34313,7 +34271,7 @@ fn zirUnionDecl(
         .fields_len = @intCast(union_decl.field_names.len),
         .layout = union_decl.kind.layout(),
         .any_field_aligns = union_decl.field_align_body_lens != null,
-        .runtime_tag = switch (union_decl.kind) {
+        .tag_usage = switch (union_decl.kind) {
             .auto => if (block.wantSafeTypes()) .safety else .none,
 
             .tagged_explicit,

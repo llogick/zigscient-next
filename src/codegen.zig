@@ -343,7 +343,6 @@ pub fn generateSymbol(
 
         .undef => unreachable, // handled above
         .simple_value => |simple_value| switch (simple_value) {
-            .undefined => unreachable, // non-runtime value
             .void => unreachable, // non-runtime value
             .null => unreachable, // non-runtime value
             .@"unreachable" => unreachable, // non-runtime value
@@ -357,7 +356,6 @@ pub fn generateSymbol(
         .@"extern",
         .func,
         .enum_literal,
-        .empty_enum_value,
         => unreachable, // non-runtime values
         .int => {
             const abi_size = math.cast(usize, ty.abiSize(zcu)) orelse return error.Overflow;

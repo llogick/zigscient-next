@@ -171467,7 +171467,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 const union_layout = union_ty.unionGetLayout(zcu);
                 if (union_layout.tag_size > 0) {
                     var tag_temp = try cg.tempFromValue(try pt.enumValueFieldIndex(
-                        union_ty.unionTagTypeSafety(zcu).?,
+                        union_ty.unionTagTypeRuntime(zcu).?,
                         union_init.field_index,
                     ));
                     try res.write(&tag_temp, .{

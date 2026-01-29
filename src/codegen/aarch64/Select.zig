@@ -10588,7 +10588,6 @@ pub const Value = struct {
                     .error_union,
                     .enum_literal,
                     .enum_tag,
-                    .empty_enum_value,
                     .float,
                     .ptr,
                     .slice,
@@ -10711,7 +10710,6 @@ pub const Value = struct {
                                 .inferred_error_set_type,
 
                                 .enum_literal,
-                                .empty_enum_value,
                                 .memoized_call,
                                 => unreachable, // not a runtime value
                                 .undef => break :free try isel.emit(if (mat.ra.isVector()) .movi(switch (size) {
@@ -10732,7 +10730,7 @@ pub const Value = struct {
                                     } }),
                                 }),
                                 .simple_value => |simple_value| switch (simple_value) {
-                                    .undefined, .void, .null, .@"unreachable" => unreachable,
+                                    .void, .null, .@"unreachable" => unreachable,
                                     .true => continue :constant_key .{ .int = .{
                                         .ty = .bool_type,
                                         .storage = .{ .u64 = 1 },
@@ -11408,7 +11406,6 @@ fn writeKeyToMemory(isel: *Select, constant_key: InternPool.Key, buffer: []u8) e
         .inferred_error_set_type,
 
         .enum_literal,
-        .empty_enum_value,
         .memoized_call,
         => unreachable, // not a runtime value
         .err => |err| {
@@ -12085,7 +12082,7 @@ pub const CallAbiIterator = struct {
         const zcu = isel.pt.zcu;
         const ip = &zcu.intern_pool;
 
-        if (ty.isNoReturn(zcu) or !ty.hasRuntimeBitsIgnoreComptime(zcu)) return null;
+        if (!ty.hasRuntimeBitsIgnoreComptime(zcu)) return null;
         try isel.values.ensureUnusedCapacity(zcu.gpa, Value.max_parts);
         const wip_vi = isel.initValue(ty);
         type_key: switch (ip.indexToKey(ty.toIntern())) {
@@ -12326,7 +12323,6 @@ pub const CallAbiIterator = struct {
             .error_union,
             .enum_literal,
             .enum_tag,
-            .empty_enum_value,
             .float,
             .ptr,
             .slice,

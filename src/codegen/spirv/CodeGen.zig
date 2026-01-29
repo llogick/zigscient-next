@@ -814,11 +814,9 @@ fn constant(cg: *CodeGen, ty: Type, val: Value, repr: Repr) Error!Id {
             .@"extern",
             .func,
             .enum_literal,
-            .empty_enum_value,
             => unreachable, // non-runtime values
 
             .simple_value => |simple_value| switch (simple_value) {
-                .undefined,
                 .void,
                 .null,
                 .@"unreachable",
@@ -4482,7 +4480,7 @@ fn airSetUnionTag(cg: *CodeGen, inst: Air.Inst.Index) !void {
 
     if (layout.tag_size == 0) return;
 
-    const tag_ty = un_ty.unionTagTypeSafety(zcu).?;
+    const tag_ty = un_ty.unionTagTypeRuntime(zcu).?;
     const tag_ty_id = try cg.resolveType(tag_ty, .indirect);
     const tag_ptr_ty_id = try cg.module.ptrType(tag_ty_id, cg.module.storageClass(un_ptr_ty.ptrAddressSpace(zcu)));
 
@@ -4508,7 +4506,7 @@ fn airGetUnionTag(cg: *CodeGen, inst: Air.Inst.Index) !?Id {
     const union_handle = try cg.resolve(ty_op.operand);
     if (!layout.has_payload) return union_handle;
 
-    const tag_ty = un_ty.unionTagTypeSafety(zcu).?;
+    const tag_ty = un_ty.unionTagTypeRuntime(zcu).?;
     return try cg.extractField(tag_ty, union_handle, layout.tag_index);
 }
 

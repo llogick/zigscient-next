@@ -1244,7 +1244,7 @@ fn generateInner(cg: *CodeGen, any_returns: bool) InnerError!Mir {
     if (any_returns and cg.air.instructions.len > 0) {
         const inst: Air.Inst.Index = @enumFromInt(cg.air.instructions.len - 1);
         const last_inst_ty = cg.typeOfIndex(inst);
-        if (!last_inst_ty.hasRuntimeBitsIgnoreComptime(zcu) or last_inst_ty.isNoReturn(zcu)) {
+        if (!last_inst_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
             try cg.addTag(.@"unreachable");
         }
     }
@@ -2201,9 +2201,6 @@ fn airCall(cg: *CodeGen, inst: Air.Inst.Index, modifier: std.builtin.CallModifie
     const result_value = result_value: {
         if (!ret_ty.hasRuntimeBitsIgnoreComptime(zcu) and !ret_ty.isError(zcu)) {
             break :result_value .none;
-        } else if (ret_ty.isNoReturn(zcu)) {
-            try cg.addTag(.@"unreachable");
-            break :result_value .none;
         } else if (first_param_sret) {
             break :result_value sret;
         } else if (zcu.typeToFunc(fn_ty).?.cc == .wasm_mvp) {
@@ -3158,7 +3155,6 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
 
         .undef => unreachable, // handled above
         .simple_value => |simple_value| switch (simple_value) {
-            .undefined,
             .void,
             .null,
             .@"unreachable",
@@ -3173,7 +3169,6 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
         .@"extern",
         .func,
         .enum_literal,
-        .empty_enum_value,
         => unreachable, // non-runtime values
         .int => {
             const int_info = ty.intInfo(zcu);
@@ -5340,7 +5335,7 @@ fn airUnionInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         const field_name = union_obj.loadTagType(ip).names.get(ip)[extra.field_index];
 
         const tag_int = blk: {
-            const tag_ty = union_ty.unionTagTypeHypothetical(zcu);
+            const tag_ty = union_ty.unionTagTypeRuntime(zcu).?;
             const enum_field_index = tag_ty.enumFieldIndex(field_name, zcu).?;
             const tag_val = try pt.enumValueFieldIndex(tag_ty, enum_field_index);
             break :blk try cg.lowerConstant(tag_val, tag_ty);
@@ -7108,9 +7103,6 @@ fn callIntrinsic(
     try cg.addInst(.{ .tag = .call_intrinsic, .data = .{ .intrinsic = intrinsic } });
 
     if (!return_type.hasRuntimeBitsIgnoreComptime(zcu)) {
-        return .none;
-    } else if (return_type.isNoReturn(zcu)) {
-        try cg.addTag(.@"unreachable");
         return .none;
     } else if (want_sret_param) {
         return sret;

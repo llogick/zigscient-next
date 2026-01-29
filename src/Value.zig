@@ -348,7 +348,7 @@ pub fn writeToMemory(val: Value, pt: Zcu.PerThread, buffer: []u8) error{
                 } else {
                     const backing_ty = try ty.externUnionBackingType(pt);
                     const byte_count: usize = @intCast(backing_ty.abiSize(zcu));
-                    return writeToMemory(val.unionValue(zcu), pt, buffer[0..byte_count]);
+                    return writeToMemory(val.unionPayload(zcu), pt, buffer[0..byte_count]);
                 }
             },
             .@"packed" => {
@@ -746,7 +746,6 @@ pub fn compareScalar(
 /// Returns `false` if the value or any vector element is undefined.
 ///
 /// Note that `!compareAllWithZero(.eq, ...) != compareAllWithZero(.neq, ...)`
-/// TODO MLUGG: lowkey wanna delete this
 pub fn compareAllWithZero(lhs: Value, op: std.math.CompareOperator, zcu: *Zcu) bool {
     return switch (zcu.intern_pool.indexToKey(lhs.toIntern())) {
         .float => |float| switch (float.storage) {
@@ -919,7 +918,7 @@ pub fn unionTag(val: Value, zcu: *Zcu) ?Value {
     };
 }
 
-pub fn unionValue(val: Value, zcu: *Zcu) Value {
+pub fn unionPayload(val: Value, zcu: *Zcu) Value {
     return switch (zcu.intern_pool.indexToKey(val.toIntern())) {
         .un => |un| Value.fromInterned(un.val),
         else => unreachable,
@@ -2442,7 +2441,7 @@ pub fn interpret(val: Value, comptime T: type, pt: Zcu.PerThread) error{ OutOfMe
                 inline else => |tag_comptime| @unionInit(
                     T,
                     @tagName(tag_comptime),
-                    try val.unionValue(zcu).interpret(@FieldType(T, @tagName(tag_comptime)), pt),
+                    try val.unionPayload(zcu).interpret(@FieldType(T, @tagName(tag_comptime)), pt),
                 ),
             };
         },
