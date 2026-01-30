@@ -2,8 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const common = @import("common.zig");
 
-pub const panic = common.panic;
-
 comptime {
     @export(&__bswapsi2, .{ .name = "__bswapsi2", .linkage = common.linkage, .visibility = common.visibility });
     @export(&__bswapdi2, .{ .name = "__bswapdi2", .linkage = common.linkage, .visibility = common.visibility });
@@ -66,15 +64,15 @@ inline fn bswapXi2(comptime T: type, a: T) T {
     }
 }
 
-pub fn __bswapsi2(a: u32) callconv(.C) u32 {
+pub fn __bswapsi2(a: u32) callconv(.c) u32 {
     return bswapXi2(u32, a);
 }
 
-pub fn __bswapdi2(a: u64) callconv(.C) u64 {
+pub fn __bswapdi2(a: u64) callconv(.c) u64 {
     return bswapXi2(u64, a);
 }
 
-pub fn __bswapti2(a: u128) callconv(.C) u128 {
+pub fn __bswapti2(a: u128) callconv(.c) u128 {
     return bswapXi2(u128, a);
 }
 
