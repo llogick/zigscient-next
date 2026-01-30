@@ -24,12 +24,14 @@ pub fn build(b: *std.Build) !void {
     });
     const optimize = b.standardOptimizeOption(.{});
 
+    const dev_env: DevEnv = b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .sema;
+
     const flat = b.option(bool, "flat", "Put files into the installation prefix in a manner suited for upstream distribution rather than a posix file system hierarchy standard") orelse false;
     const single_threaded = b.option(bool, "single-threaded", "Build artifacts that run in single threaded mode");
     const use_zig_libcxx = b.option(bool, "use-zig-libcxx", "If libc++ is needed, use zig's bundled version, don't try to integrate with the system") orelse false;
 
     const test_step = b.step("test", "Run all the tests");
-    const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse false;
+    const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse true;
     const skip_install_langref = b.option(bool, "no-langref", "skip copying of langref to the installation prefix") orelse skip_install_lib_files;
     const std_docs = b.option(bool, "std-docs", "include standard library autodocs") orelse false;
     const no_bin = b.option(bool, "no-bin", "skip emitting compiler binary") orelse false;
@@ -137,7 +139,7 @@ pub fn build(b: *std.Build) !void {
         b.installDirectory(.{
             .source_dir = b.path("lib"),
             .install_dir = if (flat) .prefix else .lib,
-            .install_subdir = if (flat) "lib" else "zig",
+            .install_subdir = if (flat) "lib" else "zigscient",
             .exclude_extensions = &[_][]const u8{
                 // exclude files from lib/std/compress/testdata
                 ".gz",
@@ -213,6 +215,9 @@ pub fn build(b: *std.Build) !void {
     exe.use_llvm = use_llvm;
     exe.use_lld = use_llvm;
 
+    const check = b.step("check", "Check if it compiles");
+    check.dependOn(&exe.step);
+
     if (no_bin) {
         b.getInstallStep().dependOn(&exe.step);
     } else {
@@ -235,8 +240,11 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(bool, "llvm_has_arc", llvm_has_arc);
     exe_options.addOption(bool, "llvm_has_xtensa", llvm_has_xtensa);
     exe_options.addOption(bool, "debug_gpa", debug_gpa);
-    exe_options.addOption(DevEnv, "dev", b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .full);
+    exe_options.addOption(DevEnv, "dev", dev_env);
     exe_options.addOption(ValueInterpretMode, "value_interpret_mode", value_interpret_mode);
+
+    exe_options.addOption(bool, "enable_failing_allocator", b.option(bool, "enable-failing-allocator", "Whether to use a randomly failing allocator.") orelse false);
+    exe_options.addOption(u32, "enable_failing_allocator_likelihood", b.option(u32, "enable-failing-allocator-likelihood", "The chance that an allocation will fail is `1/likelihood`") orelse 256);
 
     if (link_libc) {
         exe.root_module.link_libc = true;
@@ -271,7 +279,7 @@ pub fn build(b: *std.Build) !void {
             0 => {
                 // Tagged release version (e.g. 0.10.0).
                 if (!mem.eql(u8, git_describe, version_string)) {
-                    std.debug.print("Zig version '{s}' does not match Git tag '{s}'\n", .{ version_string, git_describe });
+                    std.debug.print("Project's version '{s}' does not match Git tag '{s}'\n", .{ version_string, git_describe });
                     std.process.exit(1);
                 }
                 break :v version_string;
@@ -279,15 +287,41 @@ pub fn build(b: *std.Build) !void {
             2 => {
                 // Untagged development build (e.g. 0.10.0-dev.2025+ecf0050a9).
                 var it = mem.splitScalar(u8, git_describe, '-');
-                const tagged_ancestor = it.first();
+                // const tagged_ancestor = it.first();
+                _ = it.first();
                 const commit_height = it.next().?;
                 const commit_id = it.next().?;
 
-                const ancestor_ver = try std.SemanticVersion.parse(tagged_ancestor);
-                if (zig_version.order(ancestor_ver) != .gt) {
-                    std.debug.print("Zig version '{f}' must be greater than tagged ancestor '{f}'\n", .{ zig_version, ancestor_ver });
-                    std.process.exit(1);
+                // const ancestor_ver = try std.SemanticVersion.parse(tagged_ancestor);
+                // if (zig_version.order(ancestor_ver) != .gt) {
+                //     std.debug.print("Project's version '{f}' must be greater than tagged ancestor '{f}'\n", .{ zig_version, ancestor_ver });
+                //     std.process.exit(1);
+                // }
+
+                // Check that the commit hash is prefixed with a 'g' (a Git convention).
+                if (commit_id.len < 1 or commit_id[0] != 'g') {
+                    std.debug.print("Unexpected `git describe` output: {s}\n", .{git_describe});
+                    break :v version_string;
                 }
+
+                // The version is reformatted in accordance with the https://semver.org specification.
+                break :v b.fmt("{s}-dev.{s}+{s}", .{ version_string, commit_height, commit_id[1..] });
+            },
+            4 => { // zigscient-next-0.14.0-1-g15ffe8330
+                // Untagged development build (e.g. 0.10.0-dev.2025+ecf0050a9).
+                var it = mem.splitScalar(u8, git_describe, '-');
+                // const tagged_ancestor = it.first();
+                _ = it.first();
+                _ = it.next().?;
+                _ = it.next().?;
+                const commit_height = it.next().?;
+                const commit_id = it.next().?;
+
+                // const ancestor_ver = try std.SemanticVersion.parse(tagged_ancestor);
+                // if (zig_version.order(ancestor_ver) != .gt) {
+                //     std.debug.print("Project's version '{f}' must be greater than tagged ancestor '{f}'\n", .{ zig_version, ancestor_ver });
+                //     std.process.exit(1);
+                // }
 
                 // Check that the commit hash is prefixed with a 'g' (a Git convention).
                 if (commit_id.len < 1 or commit_id[0] != 'g') {
@@ -385,6 +419,18 @@ pub fn build(b: *std.Build) !void {
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const test_target_filters = b.option([]const []const u8, "test-target-filter", "Skip tests whose target triple do not match any filter") orelse &[0][]const u8{};
     const test_extra_targets = b.option(bool, "test-extra-targets", "Enable running module tests for additional targets") orelse false;
+
+    cfgLspServer(
+        b,
+        exe,
+        target,
+        optimize,
+        test_filters,
+        single_threaded,
+        opt_version_string,
+        use_llvm,
+        pie,
+    );
 
     var chosen_opt_modes_buf: [4]builtin.OptimizeMode = undefined;
     var chosen_mode_index: usize = 0;
@@ -820,7 +866,7 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
 
 fn addCompilerStep(b: *std.Build, options: AddCompilerModOptions) *std.Build.Step.Compile {
     const exe = b.addExecutable(.{
-        .name = "zig",
+        .name = "zigscient",
         .max_rss = 7_900_000_000,
         .root_module = addCompilerMod(b, options),
     });
@@ -1580,4 +1626,401 @@ fn superHtmlCheck(b: *std.Build, html_file: std.Build.LazyPath) *std.Build.Step 
     run_superhtml.addFileArg(html_file);
     run_superhtml.expectExitCode(0);
     return &run_superhtml.step;
+}
+
+// LSP
+
+const proj_version = std.SemanticVersion.parse(@import("build.zig.zon").version) catch unreachable;
+const minimum_build_zig_version = @import("build.zig.zon").minimum_zig_version;
+
+/// Specify the minimum Zig version that the server's build_runner can handle:
+///
+/// A breaking change to the Zig Build System should be handled by updating the LSP server's build runner (see src/Lsp/src/build_runner)
+const minimum_runtime_zig_version = "0.16.0-dev.2365+377bb8f23";
+
+fn cfgLspServer(
+    b: *std.Build,
+    exe: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    test_filters: []const []const u8,
+    single_threaded: ?bool,
+    opt_version_string: ?[]const u8,
+    use_llvm: ?bool,
+    pie: ?bool,
+) void {
+    const resolved_proj_version = getVersion(b, opt_version_string);
+
+    const ls_build_options = blk: {
+        const ls_build_options = b.addOptions();
+        ls_build_options.step.name = "ls_build_options";
+
+        ls_build_options.addOption(std.SemanticVersion, "version", resolved_proj_version);
+        ls_build_options.addOption([]const u8, "version_string", b.fmt("{f}", .{resolved_proj_version}));
+        ls_build_options.addOption([]const u8, "minimum_runtime_zig_version_string", minimum_runtime_zig_version);
+
+        break :blk ls_build_options.createModule();
+    };
+
+    const ls_test_options = blk: {
+        const ls_test_options = b.addOptions();
+        ls_test_options.step.name = "test options";
+
+        ls_test_options.addOptionPath("zig_exe_path", .{ .cwd_relative = b.graph.zig_exe });
+        ls_test_options.addOptionPath("zig_lib_path", .{ .cwd_relative = b.fmt("{f}", .{b.graph.zig_lib_directory}) });
+        ls_test_options.addOptionPath("global_cache_path", .{ .cwd_relative = b.cache_root.join(b.allocator, &.{"zigscient"}) catch @panic("OOM") });
+
+        break :blk ls_test_options.createModule();
+    };
+
+    const gen_exe = b.addExecutable(.{
+        .name = "ls_cfg_gen",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/Lsp/src/tools/config_gen.zig"),
+            .target = b.graph.host,
+            .single_threaded = true,
+        }),
+    });
+
+    const version_data_module = blk: {
+        const gen_version_data_cmd = b.addRunArtifact(gen_exe);
+        const version = if (proj_version.pre == null) b.fmt("{f}", .{proj_version}) else "master";
+        gen_version_data_cmd.addArgs(&.{ "--langref-version", version });
+
+        gen_version_data_cmd.addArg("--langref-path");
+        gen_version_data_cmd.addFileArg(b.path("doc/langref.html.in"));
+
+        gen_version_data_cmd.addArg("--generate-version-data");
+        const version_data_path = gen_version_data_cmd.addOutputFileArg("version_data.zig");
+
+        break :blk b.createModule(.{ .root_source_file = version_data_path });
+    };
+
+    { // zig build gen
+        const gen_step = b.step("gen", "Regenerate config files");
+
+        const gen_cmd = b.addRunArtifact(gen_exe);
+        if (b.args) |args| {
+            gen_cmd.addArgs(args);
+            gen_step.dependOn(&gen_cmd.step);
+        } else {
+            const update_source = b.addUpdateSourceFiles();
+            gen_cmd.addArg("--generate-config");
+            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("Config.zig"), "src/Config.zig");
+            gen_cmd.addArg("--generate-schema");
+            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("schema.json"), "schema.json");
+            gen_step.dependOn(&update_source.step);
+        }
+    }
+
+    const zls_module = createZLSModule(b, .{
+        .target = target,
+        .optimize = optimize,
+        .build_options = ls_build_options,
+        .version_data = version_data_module,
+    });
+    b.modules.put("zls", zls_module) catch @panic("OOM");
+
+    const known_folders_module = b.dependency("known_folders", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("known-folders");
+
+    exe.root_module.addImport("known-folders", known_folders_module);
+    exe.root_module.addImport("zls", zls_module);
+    exe.root_module.addImport("tracy", zls_module.import_table.get("tracy").?);
+
+    const ls_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/Lsp/tests/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .single_threaded = single_threaded,
+            .pic = pie,
+            .imports = &.{
+                .{ .name = "zls", .module = zls_module },
+                .{ .name = "test_options", .module = ls_test_options },
+            },
+        }),
+        .filters = test_filters,
+        .use_llvm = use_llvm,
+        .use_lld = use_llvm,
+    });
+
+    const src_tests = b.addTest(.{
+        .name = "src test",
+        .root_module = zls_module,
+        .filters = test_filters,
+        .use_llvm = use_llvm,
+        .use_lld = use_llvm,
+    });
+
+    if (target.result.cpu.arch.isWasm() and b.enable_wasmtime) {
+        // Zig's build system integration with wasmtime does not support adding custom preopen directories so it is done manually.
+        const args: []const ?[]const u8 = &.{
+            "wasmtime",
+            "--dir=.",
+            b.fmt("--dir={f}::/lib", .{b.graph.zig_lib_directory}),
+            b.fmt("--dir={s}::/cache", .{b.cache_root.join(b.allocator, &.{"zls"}) catch @panic("OOM")}),
+            "--",
+            null,
+        };
+        ls_tests.setExecCmd(args);
+        src_tests.setExecCmd(args);
+    }
+
+    blk: { // zig build test, zig build test-build-runner, zig build test-analysis
+        const test_step = b.step("test-ls", "Run all the tests");
+        const test_build_runner_step = b.step("test-build-runner", "Run all the build runner tests");
+        const test_analysis_step = b.step("test-analysis", "Run all the analysis tests");
+
+        // Create run steps
+        @import("src/Lsp/tests/add_build_runner_cases.zig").addCases(b, test_build_runner_step, test_filters);
+        @import("src/Lsp/tests/add_analysis_cases.zig").addCases(b, target, optimize, test_analysis_step, test_filters);
+
+        const run_tests = b.addRunArtifact(ls_tests);
+        const run_src_tests = b.addRunArtifact(src_tests);
+
+        run_tests.skip_foreign_checks = target.result.cpu.arch.isWasm() and b.enable_wasmtime;
+        run_src_tests.skip_foreign_checks = target.result.cpu.arch.isWasm() and b.enable_wasmtime;
+
+        // Setup dependencies of `zig build test`
+        test_step.dependOn(&run_tests.step);
+        test_step.dependOn(&run_src_tests.step);
+        test_step.dependOn(test_analysis_step);
+        if (target.query.eql(b.graph.host.query)) test_step.dependOn(test_build_runner_step);
+
+        const coverage = b.option(bool, "coverage", "Generate a coverage report with kcov") orelse false;
+        if (!coverage) break :blk;
+
+        // Collect all run steps into one ArrayList
+        var run_test_steps: std.ArrayList(*std.Build.Step.Run) = .empty;
+        run_test_steps.append(b.allocator, run_tests) catch @panic("OOM");
+        run_test_steps.append(b.allocator, run_src_tests) catch @panic("OOM");
+        for (test_build_runner_step.dependencies.items) |step| {
+            run_test_steps.append(b.allocator, step.cast(std.Build.Step.Run).?) catch @panic("OOM");
+        }
+        for (test_analysis_step.dependencies.items) |step| {
+            run_test_steps.append(b.allocator, step.cast(std.Build.Step.Run).?) catch @panic("OOM");
+        }
+
+        const kcov_bin = b.findProgram(&.{"kcov"}, &.{}) catch "kcov";
+
+        const merge_step = std.Build.Step.Run.create(b, "merge coverage");
+        merge_step.addArgs(&.{ kcov_bin, "--merge" });
+        merge_step.rename_step_with_output_arg = false;
+        const merged_coverage_output = merge_step.addOutputFileArg(".");
+
+        for (run_test_steps.items) |run_step| {
+            run_step.setName(b.fmt("{s} (collect coverage)", .{run_step.step.name}));
+
+            // prepend the kcov exec args
+            const argv = run_step.argv.toOwnedSlice(b.allocator) catch @panic("OOM");
+            run_step.addArgs(&.{ kcov_bin, "--collect-only" });
+            run_step.addPrefixedDirectoryArg("--include-pattern=", b.path("src"));
+            merge_step.addDirectoryArg(run_step.addOutputFileArg(run_step.producer.?.name));
+            run_step.argv.appendSlice(b.allocator, argv) catch @panic("OOM");
+        }
+
+        const install_coverage = b.addInstallDirectory(.{
+            .source_dir = merged_coverage_output,
+            .install_dir = .{ .custom = "coverage" },
+            .install_subdir = "",
+        });
+        test_step.dependOn(&install_coverage.step);
+    }
+}
+
+// not ideal
+/// Returns `MAJOR.MINOR.PATCH-dev` when `git describe` failed.
+fn getVersion(b: *std.Build, opt_version_string: ?[]const u8) std.SemanticVersion {
+    if (opt_version_string) |semver_string| {
+        return std.SemanticVersion.parse(semver_string) catch |err| {
+            std.debug.panic("Expected -Dversion-string={s} to be a semantic version: {}", .{ semver_string, err });
+        };
+    }
+
+    if (proj_version.pre == null) return proj_version;
+
+    const argv: []const []const u8 = &.{
+        "git", "--git-dir", ".git", "describe", "--match", "*.*.*", "--tags",
+    };
+    var code: u8 = undefined;
+    const git_describe_untrimmed = b.runAllowFail(argv, &code, .ignore) catch |err| {
+        const argv_joined = std.mem.join(b.allocator, " ", argv) catch @panic("OOM");
+        std.log.warn(
+            \\Failed to run git describe to resolve version: {}
+            \\command: {s}
+            \\
+            \\Consider passing the -Dversion-string flag to specify the version.
+        , .{ err, argv_joined });
+        return proj_version;
+    };
+
+    const git_describe = std.mem.trim(u8, git_describe_untrimmed, " \n\r");
+
+    switch (std.mem.count(u8, git_describe, "-")) {
+        0 => {
+            // Tagged release version (e.g. 0.10.0).
+            std.debug.assert(std.mem.eql(u8, git_describe, b.fmt("{f}", .{proj_version}))); // tagged release must match version string
+            return proj_version;
+        },
+        2 => {
+            // Untagged development build (e.g. 0.10.0-dev.216+34ce200).
+            var it = std.mem.splitScalar(u8, git_describe, '-');
+            // const tagged_ancestor = it.first();
+            _ = it.first();
+            const commit_height = it.next().?;
+            const commit_id = it.next().?;
+
+            // const ancestor_ver = std.SemanticVersion.parse(tagged_ancestor) catch unreachable;
+            // std.debug.assert(proj_version.order(ancestor_ver) == .gt); // version must be greater than its previous version
+            // std.debug.assert(std.mem.startsWith(u8, commit_id, "g")); // commit hash is prefixed with a 'g'
+
+            return .{
+                .major = proj_version.major,
+                .minor = proj_version.minor,
+                .patch = proj_version.patch,
+                .pre = b.fmt("dev.{s}", .{commit_height}),
+                .build = commit_id[1..],
+            };
+        },
+        4 => { // zigscient-next-0.14.0-1-g15ffe8330
+            // Untagged development build (e.g. 0.10.0-dev.2025+ecf0050a9).
+            var it = std.mem.splitScalar(u8, git_describe, '-');
+            // const tagged_ancestor = it.first();
+            _ = it.first();
+            _ = it.next().?;
+            _ = it.next().?;
+            const commit_height = it.next().?;
+            const commit_id = it.next().?;
+
+            // const ancestor_ver = try std.SemanticVersion.parse(tagged_ancestor);
+            // if (zig_version.order(ancestor_ver) != .gt) {
+            //     std.debug.print("Project's version '{f}' must be greater than tagged ancestor '{f}'\n", .{ zig_version, ancestor_ver });
+            //     std.process.exit(1);
+            // }
+
+            // Check that the commit hash is prefixed with a 'g' (a Git convention).
+            if (commit_id.len < 1 or commit_id[0] != 'g') {
+                std.debug.print("Unexpected `git describe` output: {s}\n", .{git_describe});
+                return proj_version;
+            }
+
+            return .{
+                .major = proj_version.major,
+                .minor = proj_version.minor,
+                .patch = proj_version.patch,
+                .pre = b.fmt("dev.{s}", .{commit_height}),
+                .build = commit_id[1..],
+            };
+        },
+        else => {
+            std.debug.print("Unexpected 'git describe' output: '{s}'\n", .{git_describe});
+            std.process.exit(1);
+        },
+    }
+}
+
+fn createZLSModule(
+    b: *std.Build,
+    options: struct {
+        target: std.Build.ResolvedTarget,
+        optimize: std.builtin.OptimizeMode,
+        // tracy_enable: bool,
+        // tracy_options: *std.Build.Module,
+        build_options: *std.Build.Module,
+        version_data: *std.Build.Module,
+    },
+) *std.Build.Module {
+    const diffz_module = b.dependency("diffz", .{
+        .target = options.target,
+        .optimize = options.optimize,
+    }).module("diffz");
+    const lsp_module = b.dependency("lsp_kit", .{
+        .target = options.target,
+        .optimize = options.optimize,
+    }).module("lsp");
+    const tracy_module = createTracyModule(b, .{
+        .target = options.target,
+        .optimize = options.optimize,
+        .enable = false,
+        // .tracy_options = options.tracy_options,
+    });
+    const extended_zccs = b.dependency("extended_zccs", .{
+        .target = options.target,
+        .optimize = options.optimize,
+    }).module("extended-zccs");
+
+    const zls_module = b.createModule(.{
+        .root_source_file = b.path("src/Lsp/src/zls.zig"),
+        .target = options.target,
+        .optimize = options.optimize,
+        .imports = &.{
+            .{ .name = "diffz", .module = diffz_module },
+            .{ .name = "lsp", .module = lsp_module },
+            .{ .name = "tracy", .module = tracy_module },
+            .{ .name = "extended-zccs", .module = extended_zccs },
+            .{ .name = "ls_build_options", .module = options.build_options },
+            .{ .name = "version_data", .module = options.version_data },
+        },
+    });
+
+    if (options.target.result.os.tag == .windows) {
+        zls_module.linkSystemLibrary("advapi32", .{});
+    }
+
+    return zls_module;
+}
+
+fn createTracyModule(
+    b: *std.Build,
+    options: struct {
+        target: std.Build.ResolvedTarget,
+        optimize: std.builtin.OptimizeMode,
+        enable: bool,
+        // tracy_options: *std.Build.Module,
+    },
+) *std.Build.Module {
+    const enable = false;
+    const tracy_module = b.createModule(.{
+        .root_source_file = b.path("src/Lsp/src/tracy.zig"),
+        .target = options.target,
+        .optimize = options.optimize,
+        .imports = &.{
+            .{ .name = "options", .module = blk: {
+                const tracy_options = b.addOptions();
+                tracy_options.step.name = "tracy options";
+                const enable_allocation = b.option(bool, "enable-tracy-allocation", "Enable using TracyAllocator to monitor allocations.") orelse enable;
+                const enable_callstack = b.option(bool, "enable-tracy-callstack", "Enable callstack graphs.") orelse enable;
+                if (!enable) std.debug.assert(!enable_allocation and !enable_callstack);
+                tracy_options.addOption(bool, "enable", enable);
+                tracy_options.addOption(bool, "enable_allocation", enable and enable_allocation);
+                tracy_options.addOption(bool, "enable_callstack", enable and enable_callstack);
+                break :blk tracy_options.createModule();
+            } },
+        },
+        .link_libc = enable,
+        .link_libcpp = enable,
+        .sanitize_c = .off,
+    });
+    if (!enable) return tracy_module;
+
+    const tracy_dependency = b.lazyDependency("tracy", .{
+        .target = options.target,
+        .optimize = options.optimize,
+    }) orelse return tracy_module;
+
+    tracy_module.addCMacro("TRACY_ENABLE", "1");
+    tracy_module.addIncludePath(tracy_dependency.path(""));
+    tracy_module.addCSourceFile(.{
+        .file = tracy_dependency.path("public/TracyClient.cpp"),
+    });
+
+    if (options.target.result.os.tag == .windows) {
+        tracy_module.linkSystemLibrary("dbghelp", .{});
+        tracy_module.linkSystemLibrary("ws2_32", .{});
+    }
+
+    return tracy_module;
 }

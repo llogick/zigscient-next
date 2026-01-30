@@ -1,6 +1,6 @@
-// Not intended to be consumed as a package.
 .{
-    .name = .ZigscientN,
+    .name = .Zigscient,
+    // Remove `-dev` when tagging a new release and add it back on the next development cycle.
     .version = "0.16.0-dev",
     // Specifies the minimum Zig version that is required to compile and test this project.
     // Must be a Zig version that is downloadable from https://ziglang.org/download/ or a mirror.
@@ -29,13 +29,7 @@
             .hash = "N-V-__8AAOncKwEm1F9c5LrT7HMNmRMYX8-fAoqpc6YyTu9X",
             .lazy = true,
         },
-        .standalone_test_cases = .{
-            .path = "test/standalone",
-        },
-        .link_test_cases = .{
-            .path = "test/link",
-        },
     },
     .paths = .{""},
-    .fingerprint = 0x341673aa295adcbd,
+    .fingerprint = 0x77c02601c0deba5e,
 }

@@ -186,7 +186,12 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
 
     if (args.len > 0) crash_report.zig_argv0 = args[0];
 
-    if (args.len <= 1) {
+    if (args.len <= 1 or !mem.eql(u8, args[1], "zig")) {
+        _ = try @import("Lsp/src/main.zig").main(init);
+        return;
+    }
+
+    if (args.len <= 2) {
         std.log.info("{s}", .{usage});
         fatal("expected command argument", .{});
     }
@@ -247,17 +252,17 @@ fn mainArgs(
         // Some programs such as CMake will strip the `cc` and subsequent args from the
         // CC environment variable. We detect and support this scenario here because of
         // the ZIG_IS_DETECTING_LIBC_PATHS environment variable.
-        if (mem.eql(u8, args[1], "cc")) {
+        if (mem.eql(u8, args[2], "cc")) {
             return process.replace(io, .{ .argv = args[1..], .environ_map = environ_map });
         } else {
             const modified_args = try arena.dupe([]const u8, args);
-            modified_args[0] = "cc";
-            return process.replace(io, .{ .argv = modified_args, .environ_map = environ_map });
+            modified_args[1] = "cc";
+            return process.replace(io, .{ .argv = modified_args[1..], .environ_map = environ_map });
         }
     }
 
-    const cmd = args[1];
-    const cmd_args = args[2..];
+    const cmd = args[2];
+    const cmd_args = args[3..];
     if (mem.eql(u8, cmd, "build-exe")) {
         dev.check(.build_exe_command);
         return buildOutputType(gpa, arena, io, args, .{ .build = .Exe }, environ_map);
@@ -806,7 +811,7 @@ const CliModule = struct {
     };
 };
 
-fn buildOutputType(
+pub fn buildOutputType(
     gpa: Allocator,
     arena: Allocator,
     io: Io,
