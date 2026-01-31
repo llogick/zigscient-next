@@ -188,8 +188,8 @@ test "cancel blocked read from pipe" {
         }),
         else => {
             const pipe = try std.Io.Threaded.pipe2(.{});
-            read_end = .{ .handle = pipe[0] };
-            write_end = .{ .handle = pipe[1] };
+            read_end = .{ .handle = pipe[0], .flags = .{ .nonblocking = false } };
+            write_end = .{ .handle = pipe[1], .flags = .{ .nonblocking = false } };
         },
     }
     defer {

@@ -381,10 +381,17 @@ pub fn addError(step: *Step, comptime fmt: []const u8, args: anytype) error{OutO
 
 pub const ZigProcess = struct {
     child: std.process.Child,
-    poller: Io.Poller(StreamEnum),
+    multi_reader_buffer: Io.File.MultiReader.Buffer(2),
+    multi_reader: Io.File.MultiReader,
     progress_ipc_fd: if (std.Progress.have_ipc) ?std.posix.fd_t else void,
 
     pub const StreamEnum = enum { stdout, stderr };
+
+    pub fn deinit(zp: *ZigProcess, io: Io) void {
+        zp.child.kill(io);
+        zp.multi_reader.deinit();
+        zp.* = undefined;
+    }
 };
 
 /// Assumes that argv contains `--listen=-` and that the process being spawned
@@ -409,7 +416,8 @@ pub fn evalZigProcess(
         assert(watch);
         if (std.Progress.have_ipc) if (zp.progress_ipc_fd) |fd| prog_node.setIpcFd(fd);
         const result = zigProcessUpdate(s, zp, watch, web_server, gpa) catch |err| switch (err) {
-            error.BrokenPipe => {
+            error.BrokenPipe, error.EndOfStream => |reason| {
+                std.log.info("{s} restart required: {t}", .{ argv[0], reason });
                 // Process restart required.
                 const term = zp.child.wait(io) catch |e| {
                     return s.fail("unable to wait for {s}: {t}", .{ argv[0], e });
@@ -455,18 +463,18 @@ pub fn evalZigProcess(
         .request_resource_usage_statistics = true,
         .progress_node = prog_node,
     }) catch |err| return s.fail("failed to spawn zig compiler {s}: {t}", .{ argv[0], err });
-    defer if (!watch) zp.child.kill(io);
 
     zp.* = .{
         .child = zp.child,
-        .poller = Io.poll(gpa, ZigProcess.StreamEnum, .{
-            .stdout = zp.child.stdout.?,
-            .stderr = zp.child.stderr.?,
-        }),
+        .multi_reader_buffer = undefined,
+        .multi_reader = undefined,
         .progress_ipc_fd = if (std.Progress.have_ipc) prog_node.getIpcFd() else {},
     };
+    zp.multi_reader.init(gpa, io, zp.multi_reader_buffer.toStreams(), &.{
+        zp.child.stdout.?, zp.child.stderr.?,
+    });
     if (watch) s.setZigProcess(zp);
-    defer if (!watch) zp.poller.deinit();
+    defer if (!watch) zp.deinit(io);
 
     const result = try zigProcessUpdate(s, zp, watch, web_server, gpa);
 
@@ -532,15 +540,26 @@ fn zigProcessUpdate(s: *Step, zp: *ZigProcess, watch: bool, web_server: ?*Build.
     if (!watch) try sendMessage(io, zp.child.stdin.?, .exit);
 
     var result: ?Path = null;
+    var eos_err: error{EndOfStream}!void = {};
 
-    const stdout = zp.poller.reader(.stdout);
+    const stdout = zp.multi_reader.fileReader(0);
 
-    poll: while (true) {
+    while (true) {
         const Header = std.zig.Server.Message.Header;
-        while (stdout.buffered().len < @sizeOf(Header)) if (!try zp.poller.poll()) break :poll;
-        const header = stdout.takeStruct(Header, .little) catch unreachable;
-        while (stdout.buffered().len < header.bytes_len) if (!try zp.poller.poll()) break :poll;
-        const body = stdout.take(header.bytes_len) catch unreachable;
+        const header = stdout.interface.takeStruct(Header, .little) catch |err| switch (err) {
+            error.EndOfStream => break,
+            error.ReadFailed => return stdout.err.?,
+        };
+        const body = stdout.interface.take(header.bytes_len) catch |err| switch (err) {
+            error.EndOfStream => |e| {
+                // Better to report the crash with stderr below, but we set
+                // this in case the child exits successfully while violating
+                // this protocol.
+                eos_err = e;
+                break;
+            },
+            error.ReadFailed => return stdout.err.?,
+        };
         switch (header.tag) {
             .zig_version => {
                 if (!std.mem.eql(u8, builtin.zig_version_string, body)) {
@@ -553,11 +572,11 @@ fn zigProcessUpdate(s: *Step, zp: *ZigProcess, watch: bool, web_server: ?*Build.
             .error_bundle => {
                 s.result_error_bundle = try std.zig.Server.allocErrorBundle(gpa, body);
                 // This message indicates the end of the update.
-                if (watch) break :poll;
+                if (watch) break;
             },
             .emit_digest => {
                 const EmitDigest = std.zig.Server.Message.EmitDigest;
-                const emit_digest = @as(*align(1) const EmitDigest, @ptrCast(body));
+                const emit_digest: *align(1) const EmitDigest = @ptrCast(body);
                 s.result_cached = emit_digest.flags.cache_hit;
                 const digest = body[@sizeOf(EmitDigest)..][0..Cache.bin_digest_len];
                 result = .{
@@ -631,10 +650,12 @@ fn zigProcessUpdate(s: *Step, zp: *ZigProcess, watch: bool, web_server: ?*Build.
 
     s.result_duration_ns = timer.read();
 
-    const stderr_contents = try zp.poller.toOwnedSlice(.stderr);
+    const stderr_contents = zp.multi_reader.reader(1).buffered();
     if (stderr_contents.len > 0) {
         try s.result_error_msgs.append(arena, try arena.dupe(u8, stderr_contents));
     }
+
+    try eos_err;
 
     return result;
 }

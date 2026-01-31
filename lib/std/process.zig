@@ -453,14 +453,16 @@ pub fn spawnPath(io: Io, dir: Io.Dir, options: SpawnOptions) SpawnError!Child {
     return io.vtable.processSpawnPath(io.userdata, dir, options);
 }
 
-pub const RunError = CurrentPathError || posix.ReadError || SpawnError || posix.PollError || error{
-    StdoutStreamTooLong,
-    StderrStreamTooLong,
-};
+pub const RunError = error{
+    StreamTooLong,
+} || SpawnError || Io.File.MultiReader.UnendingError || Io.Timeout.Error;
 
 pub const RunOptions = struct {
     argv: []const []const u8,
-    max_output_bytes: usize = 50 * 1024,
+    stderr_limit: Io.Limit = .unlimited,
+    stdout_limit: Io.Limit = .unlimited,
+    /// How many bytes to initially allocate for stderr and stdout.
+    reserve_amount: usize = 64,
 
     /// Set to change the current working directory when spawning the child process.
     cwd: ?[]const u8 = null,
@@ -486,6 +488,7 @@ pub const RunOptions = struct {
     create_no_window: bool = true,
     /// Darwin-only. Disable ASLR for the child process.
     disable_aslr: bool = false,
+    timeout: Io.Timeout = .none,
 };
 
 pub const RunResult = struct {
@@ -513,22 +516,41 @@ pub fn run(gpa: Allocator, io: Io, options: RunOptions) RunError!RunResult {
     });
     defer child.kill(io);
 
-    var stdout: std.ArrayList(u8) = .empty;
-    defer stdout.deinit(gpa);
-    var stderr: std.ArrayList(u8) = .empty;
-    defer stderr.deinit(gpa);
+    var multi_reader_buffer: Io.File.MultiReader.Buffer(2) = undefined;
+    var multi_reader: Io.File.MultiReader = undefined;
+    multi_reader.init(gpa, io, multi_reader_buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
+    defer multi_reader.deinit();
 
-    try child.collectOutput(gpa, &stdout, &stderr, options.max_output_bytes);
+    const stdout_reader = multi_reader.reader(0);
+    const stderr_reader = multi_reader.reader(1);
+
+    while (multi_reader.fill(options.reserve_amount, options.timeout)) |_| {
+        if (options.stdout_limit.toInt()) |limit| {
+            if (stdout_reader.buffered().len > limit)
+                return error.StreamTooLong;
+        }
+        if (options.stderr_limit.toInt()) |limit| {
+            if (stderr_reader.buffered().len > limit)
+                return error.StreamTooLong;
+        }
+    } else |err| switch (err) {
+        error.EndOfStream => {},
+        else => |e| return e,
+    }
+
+    try multi_reader.checkAnyError();
 
     const term = try child.wait(io);
 
-    const owned_stdout = try stdout.toOwnedSlice(gpa);
-    errdefer gpa.free(owned_stdout);
-    const owned_stderr = try stderr.toOwnedSlice(gpa);
+    const stdout_slice = try multi_reader.toOwnedSlice(0);
+    errdefer gpa.free(stdout_slice);
+
+    const stderr_slice = try multi_reader.toOwnedSlice(1);
+    errdefer gpa.free(stderr_slice);
 
     return .{
-        .stdout = owned_stdout,
-        .stderr = owned_stderr,
+        .stdout = stdout_slice,
+        .stderr = stderr_slice,
         .term = term,
     };
 }

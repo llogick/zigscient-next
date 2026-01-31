@@ -420,7 +420,6 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         error.Canceled => |e| return e,
         error.Unexpected => |e| return e,
         error.WouldBlock => return error.Unexpected,
-        error.BrokenPipe => return error.Unexpected,
         error.ConnectionResetByPeer => return error.Unexpected,
         error.NotOpenForReading => return error.Unexpected,
         error.SocketUnconnected => return error.Unexpected,

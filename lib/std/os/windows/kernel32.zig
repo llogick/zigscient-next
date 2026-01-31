@@ -188,9 +188,6 @@ pub extern "kernel32" fn PostQueuedCompletionStatus(
     lpOverlapped: ?*OVERLAPPED,
 ) callconv(.winapi) BOOL;
 
-// TODO:
-// GetOverlappedResultEx with bAlertable=false, which calls: GetStdHandle + WaitForSingleObjectEx.
-// Uses the SwitchBack system to run implementations for older programs; Do we care about this?
 pub extern "kernel32" fn GetOverlappedResult(
     hFile: HANDLE,
     lpOverlapped: *OVERLAPPED,

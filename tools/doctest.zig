@@ -201,7 +201,6 @@ fn printOutput(
                     .argv = build_args.items,
                     .cwd = tmp_dir_path,
                     .environ_map = environ_map,
-                    .max_output_bytes = max_doc_file_size,
                 });
                 switch (result.term) {
                     .exited => |exit_code| {
@@ -257,7 +256,6 @@ fn printOutput(
                     .argv = run_args,
                     .environ_map = environ_map,
                     .cwd = tmp_dir_path,
-                    .max_output_bytes = max_doc_file_size,
                 });
                 switch (result.term) {
                     .exited => |exit_code| {
@@ -376,7 +374,6 @@ fn printOutput(
                 .argv = test_args.items,
                 .environ_map = environ_map,
                 .cwd = tmp_dir_path,
-                .max_output_bytes = max_doc_file_size,
             });
             switch (result.term) {
                 .exited => |exit_code| {
@@ -432,7 +429,6 @@ fn printOutput(
                 .argv = test_args.items,
                 .environ_map = environ_map,
                 .cwd = tmp_dir_path,
-                .max_output_bytes = max_doc_file_size,
             });
             switch (result.term) {
                 .exited => |exit_code| {
@@ -508,7 +504,6 @@ fn printOutput(
                     .argv = build_args.items,
                     .environ_map = environ_map,
                     .cwd = tmp_dir_path,
-                    .max_output_bytes = max_doc_file_size,
                 });
                 switch (result.term) {
                     .exited => |exit_code| {
@@ -1132,7 +1127,6 @@ fn run(
         .argv = args,
         .environ_map = environ_map,
         .cwd = cwd,
-        .max_output_bytes = max_doc_file_size,
     });
     switch (result.term) {
         .exited => |exit_code| {

@@ -1255,6 +1255,32 @@ const AlertableSyscall = struct {
         assert(is_windows);
     }
 
+    fn start() Io.Cancelable!AlertableSyscall {
+        const thread = Thread.current orelse return .{ .thread = null };
+        switch (thread.cancel_protection) {
+            .blocked => return .{ .thread = null },
+            .unblocked => {},
+        }
+        const old_status = thread.status.fetchOr(.{
+            .cancelation = @enumFromInt(0b010),
+            .awaitable = .null,
+        }, .monotonic);
+        switch (old_status.cancelation) {
+            .parked => unreachable,
+            .blocked => unreachable,
+            .blocked_alertable => unreachable,
+            .blocked_canceling => unreachable,
+            .blocked_alertable_canceling => unreachable,
+            .none => return .{ .thread = thread }, // new status is `.blocked_alertable`
+            .canceling => {
+                // Status is unchanged (still `.canceling`)---change to `.canceled` before return.
+                thread.status.store(.{ .cancelation = .canceled, .awaitable = old_status.awaitable }, .monotonic);
+                return error.Canceled;
+            },
+            .canceled => return .{ .thread = null }, // new status is `.canceled` (unchanged)
+        }
+    }
+
     fn checkCancel(s: AlertableSyscall) Io.Cancelable!void {
         comptime assert(is_windows);
         const thread = s.thread orelse return;
@@ -1314,8 +1340,17 @@ const AlertableSyscall = struct {
     }
 };
 
+fn waitForApcOrAlert() void {
+    const infinite_timeout: windows.LARGE_INTEGER = std.math.minInt(windows.LARGE_INTEGER);
+    _ = windows.ntdll.NtDelayExecution(windows.TRUE, &infinite_timeout);
+}
+
 const max_iovecs_len = 8;
 const splat_buffer_size = 64;
+/// Happens to be the same number that matches maximum number of handles that
+/// NtWaitForMultipleObjects accepts. We use this value also for poll() on
+/// posix systems.
+const poll_buffer_len = 64;
 const default_PATH = "/usr/local/bin:/bin/:/usr/bin";
 
 comptime {
@@ -1579,6 +1614,11 @@ pub fn io(t: *Threaded) Io {
             .futexWaitUncancelable = futexWaitUncancelable,
             .futexWake = futexWake,
 
+            .operate = operate,
+            .batchAwaitAsync = batchAwaitAsync,
+            .batchAwaitConcurrent = batchAwaitConcurrent,
+            .batchCancel = batchCancel,
+
             .dirCreateDir = dirCreateDir,
             .dirCreateDirPath = dirCreateDirPath,
             .dirCreateDirPathOpen = dirCreateDirPathOpen,
@@ -1613,7 +1653,6 @@ pub fn io(t: *Threaded) Io {
             .fileWritePositional = fileWritePositional,
             .fileWriteFileStreaming = fileWriteFileStreaming,
             .fileWriteFilePositional = fileWriteFilePositional,
-            .fileReadStreaming = fileReadStreaming,
             .fileReadPositional = fileReadPositional,
             .fileSeekBy = fileSeekBy,
             .fileSeekTo = fileSeekTo,
@@ -1739,6 +1778,11 @@ pub fn ioBasic(t: *Threaded) Io {
             .futexWaitUncancelable = futexWaitUncancelable,
             .futexWake = futexWake,
 
+            .operate = operate,
+            .batchAwaitAsync = batchAwaitAsync,
+            .batchAwaitConcurrent = batchAwaitConcurrent,
+            .batchCancel = batchCancel,
+
             .dirCreateDir = dirCreateDir,
             .dirCreateDirPath = dirCreateDirPath,
             .dirCreateDirPathOpen = dirCreateDirPathOpen,
@@ -1773,7 +1817,6 @@ pub fn ioBasic(t: *Threaded) Io {
             .fileWritePositional = fileWritePositional,
             .fileWriteFileStreaming = fileWriteFileStreaming,
             .fileWriteFilePositional = fileWriteFilePositional,
-            .fileReadStreaming = fileReadStreaming,
             .fileReadPositional = fileReadPositional,
             .fileSeekBy = fileSeekBy,
             .fileSeekTo = fileSeekTo,
@@ -2440,6 +2483,485 @@ fn futexWake(userdata: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
     Thread.futexWake(ptr, max_waiters);
 }
 
+fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Operation.Result {
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    switch (operation) {
+        .file_read_streaming => |o| return .{
+            .file_read_streaming = fileReadStreaming(t, o.file, o.data) catch |err| switch (err) {
+                error.Canceled => |e| return e,
+                else => |e| e,
+            },
+        },
+    }
+}
+
+fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    if (is_windows) {
+        batchAwaitWindows(b, false) catch |err| switch (err) {
+            error.ConcurrencyUnavailable => unreachable, // passed concurrency=false
+            else => |e| return e,
+        };
+        const alertable_syscall = try AlertableSyscall.start();
+        while (b.pending.head != .none and b.completions.head == .none) waitForApcOrAlert();
+        alertable_syscall.finish();
+        return;
+    }
+    if (native_os == .wasi and !builtin.link_libc) @panic("TODO");
+    var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
+    var poll_len: u32 = 0;
+    {
+        var index = b.submissions.head;
+        while (index != .none and poll_len < poll_buffer_len) {
+            const submission = &b.storage[index.toIndex()].submission;
+            switch (submission.operation) {
+                .file_read_streaming => |o| {
+                    poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.IN, .revents = 0 };
+                    poll_len += 1;
+                },
+            }
+            index = submission.node.next;
+        }
+    }
+    switch (poll_len) {
+        0 => return,
+        1 => {},
+        else => while (true) {
+            const timeout_ms: i32 = t: {
+                if (b.completions.head != .none) {
+                    // It is legal to call batchWait with already completed
+                    // operations in the ring. In such case, we need to avoid
+                    // blocking in the poll syscall, but we can still take this
+                    // opportunity to find additional ready operations.
+                    break :t 0;
+                }
+                const max_poll_ms = std.math.maxInt(i32);
+                break :t max_poll_ms;
+            };
+            const syscall = try Syscall.start();
+            const rc = posix.system.poll(&poll_buffer, poll_len, timeout_ms);
+            syscall.finish();
+            switch (posix.errno(rc)) {
+                .SUCCESS => {
+                    if (rc == 0) {
+                        if (b.completions.head != .none) {
+                            // Since there are already completions available in the
+                            // queue, this is neither a timeout nor a case for
+                            // retrying.
+                            return;
+                        }
+                        continue;
+                    }
+                    var prev_index: Io.Operation.OptionalIndex = .none;
+                    var index = b.submissions.head;
+                    for (poll_buffer[0..poll_len]) |poll_entry| {
+                        const storage = &b.storage[index.toIndex()];
+                        const submission = &storage.submission;
+                        const next_index = submission.node.next;
+                        if (poll_entry.revents != 0) {
+                            const result = try operate(t, submission.operation);
+
+                            switch (prev_index) {
+                                .none => b.submissions.head = next_index,
+                                else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
+                            }
+                            if (next_index == .none) b.submissions.tail = prev_index;
+
+                            switch (b.completions.tail) {
+                                .none => b.completions.head = index,
+                                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
+                            }
+                            storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+                            b.completions.tail = index;
+                        } else prev_index = index;
+                        index = next_index;
+                    }
+                    assert(index == .none);
+                    return;
+                },
+                .INTR => continue,
+                else => break,
+            }
+        },
+    }
+    {
+        var tail_index = b.completions.tail;
+        defer b.completions.tail = tail_index;
+        var index = b.submissions.head;
+        errdefer b.submissions.head = index;
+        while (index != .none) {
+            const storage = &b.storage[index.toIndex()];
+            const submission = &storage.submission;
+            const next_index = submission.node.next;
+            const result = try operate(t, submission.operation);
+
+            switch (tail_index) {
+                .none => b.completions.head = index,
+                else => b.storage[tail_index.toIndex()].completion.node.next = index,
+            }
+            storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+            tail_index = index;
+            index = next_index;
+        }
+        b.submissions = .{ .head = .none, .tail = .none };
+    }
+}
+
+fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    if (is_windows) {
+        const deadline: ?Io.Clock.Timestamp = timeout.toDeadline(ioBasic(t)) catch |err| switch (err) {
+            error.Unexpected => deadline: {
+                recoverableOsBugDetected();
+                break :deadline .{ .raw = .{ .nanoseconds = 0 }, .clock = .awake };
+            },
+            error.UnsupportedClock => |e| return e,
+        };
+        try batchAwaitWindows(b, true);
+        while (b.pending.head != .none and b.completions.head == .none) {
+            var delay_interval: windows.LARGE_INTEGER = interval: {
+                const d = deadline orelse break :interval std.math.minInt(windows.LARGE_INTEGER);
+                break :interval t.deadlineToWindowsInterval(d) catch |err| switch (err) {
+                    error.UnsupportedClock => |e| return e,
+                    error.Unexpected => {
+                        recoverableOsBugDetected();
+                        break :interval -1;
+                    },
+                };
+            };
+            const alertable_syscall = try AlertableSyscall.start();
+            const delay_rc = windows.ntdll.NtDelayExecution(windows.TRUE, &delay_interval);
+            alertable_syscall.finish();
+            switch (delay_rc) {
+                .SUCCESS, .TIMEOUT => {
+                    // The thread woke due to the timeout. Although spurious
+                    // timeouts are OK, when no deadline is passed we must not
+                    // return `error.Timeout`.
+                    if (timeout != .none and b.completions.head == .none) return error.Timeout;
+                },
+                else => {},
+            }
+        }
+        return;
+    }
+    if (native_os == .wasi and !builtin.link_libc) @panic("TODO");
+    var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
+    var poll_storage: struct {
+        gpa: std.mem.Allocator,
+        b: *Io.Batch,
+        slice: []posix.pollfd,
+        len: u32,
+
+        fn add(storage: *@This(), file: Io.File, events: @FieldType(posix.pollfd, "events")) Io.ConcurrentError!void {
+            const len = storage.len;
+            if (len == poll_buffer_len) {
+                const slice: []posix.pollfd = if (storage.b.context) |context|
+                    @as([*]posix.pollfd, @ptrCast(@alignCast(context)))[0..storage.b.storage.len]
+                else allocation: {
+                    const allocation = storage.gpa.alloc(posix.pollfd, storage.b.storage.len) catch
+                        return error.ConcurrencyUnavailable;
+                    storage.b.context = allocation.ptr;
+                    break :allocation allocation;
+                };
+                @memcpy(slice[0..poll_buffer_len], storage.slice);
+            }
+            storage.slice[len] = .{
+                .fd = file.handle,
+                .events = events,
+                .revents = 0,
+            };
+            storage.len = len + 1;
+        }
+    } = .{ .gpa = t.allocator, .b = b, .slice = &poll_buffer, .len = 0 };
+    {
+        var index = b.submissions.head;
+        while (index != .none) {
+            const submission = &b.storage[index.toIndex()].submission;
+            switch (submission.operation) {
+                .file_read_streaming => |o| try poll_storage.add(o.file, posix.POLL.IN),
+            }
+            index = submission.node.next;
+        }
+    }
+    switch (poll_storage.len) {
+        0 => return,
+        1 => if (timeout == .none) {
+            const index = b.submissions.head;
+            const storage = &b.storage[index.toIndex()];
+            const result = try operate(t, storage.submission.operation);
+
+            b.submissions = .{ .head = .none, .tail = .none };
+
+            switch (b.completions.tail) {
+                .none => b.completions.head = index,
+                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
+            }
+            storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+            b.completions.tail = index;
+            return;
+        },
+        else => {},
+    }
+    const t_io = ioBasic(t);
+    const deadline = timeout.toDeadline(t_io) catch return error.UnsupportedClock;
+    while (true) {
+        const timeout_ms: i32 = t: {
+            if (b.completions.head != .none) {
+                // It is legal to call batchWait with already completed
+                // operations in the ring. In such case, we need to avoid
+                // blocking in the poll syscall, but we can still take this
+                // opportunity to find additional ready operations.
+                break :t 0;
+            }
+            const d = deadline orelse break :t -1;
+            const duration = d.durationFromNow(t_io) catch return error.UnsupportedClock;
+            if (duration.raw.nanoseconds <= 0) return error.Timeout;
+            const max_poll_ms = std.math.maxInt(i32);
+            break :t @intCast(@min(max_poll_ms, duration.raw.toMilliseconds()));
+        };
+        const syscall = try Syscall.start();
+        const rc = posix.system.poll(&poll_buffer, poll_storage.len, timeout_ms);
+        syscall.finish();
+        switch (posix.errno(rc)) {
+            .SUCCESS => {
+                if (rc == 0) {
+                    if (b.completions.head != .none) {
+                        // Since there are already completions available in the
+                        // queue, this is neither a timeout nor a case for
+                        // retrying.
+                        return;
+                    }
+                    // Although spurious timeouts are OK, when no deadline is
+                    // passed we must not return `error.Timeout`.
+                    if (deadline == null) continue;
+                    return error.Timeout;
+                }
+                var prev_index: Io.Operation.OptionalIndex = .none;
+                var index = b.submissions.head;
+                for (poll_storage.slice[0..poll_storage.len]) |poll_entry| {
+                    const submission = &b.storage[index.toIndex()].submission;
+                    const next_index = submission.node.next;
+                    if (poll_entry.revents != 0) {
+                        const result = try operate(t, submission.operation);
+
+                        switch (prev_index) {
+                            .none => b.submissions.head = next_index,
+                            else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
+                        }
+                        if (next_index == .none) b.submissions.tail = prev_index;
+
+                        switch (b.completions.tail) {
+                            .none => b.completions.head = index,
+                            else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
+                        }
+                        b.completions.tail = index;
+                        b.storage[index.toIndex()] = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+                    } else prev_index = index;
+                    index = next_index;
+                }
+                assert(index == .none);
+                return;
+            },
+            .INTR => continue,
+            else => return error.ConcurrencyUnavailable,
+        }
+    }
+}
+
+const WindowsBatchPendingOperationContext = extern struct {
+    file: windows.HANDLE,
+    iosb: windows.IO_STATUS_BLOCK,
+
+    const Erased = [3]usize;
+
+    comptime {
+        assert(@sizeOf(Erased) <= @sizeOf(WindowsBatchPendingOperationContext));
+    }
+
+    fn toErased(context: *WindowsBatchPendingOperationContext) *Erased {
+        return @ptrCast(context);
+    }
+
+    fn fromErased(erased: *Erased) *WindowsBatchPendingOperationContext {
+        return @ptrCast(erased);
+    }
+};
+
+fn batchCancel(userdata: ?*anyopaque, b: *Io.Batch) void {
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    {
+        var tail_index = b.unused.tail;
+        defer b.unused.tail = tail_index;
+        var index = b.submissions.head;
+        errdefer b.submissions.head = index;
+        while (index != .none) {
+            const next_index = b.storage[index.toIndex()].submission.node.next;
+            switch (tail_index) {
+                .none => b.unused.head = index,
+                else => b.storage[tail_index.toIndex()].unused.next = index,
+            }
+            b.storage[index.toIndex()] = .{ .unused = .{ .prev = tail_index, .next = .none } };
+            tail_index = index;
+            index = next_index;
+        }
+        b.submissions = .{ .head = .none, .tail = .none };
+    }
+    if (is_windows) {
+        var index = b.pending.head;
+        while (index != .none) {
+            const pending = &b.storage[index.toIndex()].pending;
+            const context: *WindowsBatchPendingOperationContext = .fromErased(&pending.context);
+            var cancel_iosb: windows.IO_STATUS_BLOCK = undefined;
+            _ = windows.ntdll.NtCancelIoFileEx(context.file, &context.iosb, &cancel_iosb);
+            index = pending.node.next;
+        }
+        while (b.pending.head != .none) waitForApcOrAlert();
+    } else if (b.context) |context| {
+        t.allocator.free(@as([*]posix.pollfd, @ptrCast(@alignCast(context)))[0..b.storage.len]);
+        b.context = null;
+    }
+    assert(b.pending.head == .none);
+}
+
+fn batchApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows.ULONG) callconv(.winapi) void {
+    const b: *Io.Batch = @ptrCast(@alignCast(apc_context));
+    const context: *WindowsBatchPendingOperationContext = @fieldParentPtr("iosb", iosb);
+    const erased_context = context.toErased();
+    const pending: *Io.Operation.Storage.Pending = @fieldParentPtr("context", erased_context);
+    switch (pending.node.prev) {
+        .none => b.pending.head = pending.node.next,
+        else => |prev_index| b.storage[prev_index.toIndex()].pending.node.next = pending.node.next,
+    }
+    switch (pending.node.next) {
+        .none => b.pending.tail = pending.node.prev,
+        else => |next_index| b.storage[next_index.toIndex()].pending.node.prev = pending.node.prev,
+    }
+    const storage: *Io.Operation.Storage = @fieldParentPtr("pending", pending);
+    const index = storage - b.storage.ptr;
+    switch (iosb.u.Status) {
+        .CANCELLED => {
+            const tail_index = b.unused.tail;
+            switch (tail_index) {
+                .none => b.unused.head = .fromIndex(index),
+                else => b.storage[tail_index.toIndex()].unused.next = .fromIndex(index),
+            }
+            storage.* = .{ .unused = .{ .prev = tail_index, .next = .none } };
+            b.unused.tail = .fromIndex(index);
+        },
+        else => {
+            switch (b.completions.tail) {
+                .none => b.completions.head = .fromIndex(index),
+                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = .fromIndex(index),
+            }
+            b.completions.tail = .fromIndex(index);
+            const result: Io.Operation.Result = switch (pending.tag) {
+                .file_read_streaming => .{ .file_read_streaming = ntReadFileResult(iosb) },
+            };
+            storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+        },
+    }
+}
+
+/// If `concurrency` is false, `error.ConcurrencyUnavailable` is unreachable.
+fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, ConcurrencyUnavailable }!void {
+    var index = b.submissions.head;
+    errdefer b.submissions.head = index;
+    while (index != .none) {
+        const storage = &b.storage[index.toIndex()];
+        const submission = storage.submission;
+        storage.* = .{ .pending = .{
+            .node = .{ .prev = b.pending.tail, .next = .none },
+            .tag = submission.operation,
+            .context = undefined,
+        } };
+        switch (b.pending.tail) {
+            .none => b.pending.head = index,
+            else => |tail_index| b.storage[tail_index.toIndex()].pending.node.next = index,
+        }
+        b.pending.tail = index;
+        const context: *WindowsBatchPendingOperationContext = .fromErased(&storage.pending.context);
+        errdefer {
+            context.iosb.u.Status = .CANCELLED;
+            batchApc(b, &context.iosb, 0);
+        }
+        switch (submission.operation) {
+            .file_read_streaming => |o| o: {
+                var data_index: usize = 0;
+                while (o.data.len - data_index != 0 and o.data[data_index].len == 0) data_index += 1;
+                if (o.data.len - data_index == 0) {
+                    context.iosb = .{
+                        .u = .{ .Status = .SUCCESS },
+                        .Information = 0,
+                    };
+                    batchApc(b, &context.iosb, 0);
+                    break :o;
+                }
+                const buffer = o.data[data_index];
+                const short_buffer_len = @min(std.math.maxInt(u32), buffer.len);
+
+                if (o.file.flags.nonblocking) {
+                    context.file = o.file.handle;
+                    switch (windows.ntdll.NtReadFile(
+                        o.file.handle,
+                        null, // event
+                        &batchApc,
+                        b,
+                        &context.iosb,
+                        buffer.ptr,
+                        short_buffer_len,
+                        null, // byte offset
+                        null, // key
+                    )) {
+                        .PENDING, .SUCCESS => {},
+                        .CANCELLED => unreachable,
+                        else => |status| {
+                            context.iosb.u.Status = status;
+                            batchApc(b, &context.iosb, 0);
+                        },
+                    }
+                } else {
+                    if (concurrency) return error.ConcurrencyUnavailable;
+
+                    const syscall: Syscall = try .start();
+                    while (true) switch (windows.ntdll.NtReadFile(
+                        o.file.handle,
+                        null, // event
+                        null, // APC routine
+                        null, // APC context
+                        &context.iosb,
+                        buffer.ptr,
+                        short_buffer_len,
+                        null, // byte offset
+                        null, // key
+                    )) {
+                        .PENDING => unreachable, // unrecoverable: wrong File nonblocking flag
+                        .CANCELLED => {
+                            try syscall.checkCancel();
+                            continue;
+                        },
+                        else => |status| {
+                            syscall.finish();
+
+                            context.iosb.u.Status = status;
+                            batchApc(b, &context.iosb, 0);
+                            break;
+                        },
+                    };
+                }
+            },
+        }
+        index = submission.node.next;
+    }
+    b.submissions = .{ .head = .none, .tail = .none };
+}
+
+fn submitComplete(ring: []u32, complete_tail: *Io.Batch.RingIndex, op: u32) void {
+    const ct = complete_tail.*;
+    const len: u31 = @intCast(ring.len);
+    ring[ct.index(len)] = op;
+    complete_tail.* = ct.next(len);
+}
+
 const dirCreateDir = switch (native_os) {
     .windows => dirCreateDirWindows,
     .wasi => dirCreateDirWasi,
@@ -2759,8 +3281,10 @@ fn dirCreateDirPathOpenWasi(
 
 fn dirStat(userdata: ?*anyopaque, dir: Dir) Dir.StatError!Dir.Stat {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    const file: File = .{ .handle = dir.handle };
-    return fileStat(t, file);
+    return fileStat(t, .{
+        .handle = dir.handle,
+        .flags = .{ .nonblocking = false },
+    });
 }
 
 const dirStatFile = switch (native_os) {
@@ -3552,7 +4076,10 @@ fn dirCreateFilePosix(
         }
     }
 
-    return .{ .handle = fd };
+    return .{
+        .handle = fd,
+        .flags = .{ .nonblocking = false },
+    };
 }
 
 fn dirCreateFileWindows(
@@ -3682,7 +4209,10 @@ fn dirCreateFileWindows(
     errdefer windows.CloseHandle(handle);
 
     const exclusive = switch (flags.lock) {
-        .none => return .{ .handle = handle },
+        .none => return .{
+            .handle = handle,
+            .flags = .{ .nonblocking = false },
+        },
         .shared => false,
         .exclusive => true,
     };
@@ -3702,7 +4232,10 @@ fn dirCreateFileWindows(
     )) {
         .SUCCESS => {
             syscall.finish();
-            return .{ .handle = handle };
+            return .{
+                .handle = handle,
+                .flags = .{ .nonblocking = false },
+            };
         },
         .INSUFFICIENT_RESOURCES => return syscall.fail(error.SystemResources),
         .LOCK_NOT_GRANTED => return syscall.fail(error.WouldBlock),
@@ -3751,7 +4284,10 @@ fn dirCreateFileWasi(
         switch (wasi.path_open(dir.handle, lookup_flags, sub_path.ptr, sub_path.len, oflags, base, inheriting, fdflags, &fd)) {
             .SUCCESS => {
                 syscall.finish();
-                return .{ .handle = fd };
+                return .{
+                    .handle = fd,
+                    .flags = .{ .nonblocking = false },
+                };
             },
             .INTR => {
                 try syscall.checkCancel();
@@ -3846,7 +4382,10 @@ fn dirCreateFileAtomic(
                 .SUCCESS => {
                     syscall.finish();
                     return .{
-                        .file = .{ .handle = @intCast(rc) },
+                        .file = .{
+                            .handle = @intCast(rc),
+                            .flags = .{ .nonblocking = false },
+                        },
                         .file_basename_hex = 0,
                         .dest_sub_path = dest_path,
                         .file_open = true,
@@ -4054,7 +4593,10 @@ fn dirOpenFilePosix(
 
     if (!flags.allow_directory) {
         const is_dir = is_dir: {
-            const stat = fileStat(t, .{ .handle = fd }) catch |err| switch (err) {
+            const stat = fileStat(t, .{
+                .handle = fd,
+                .flags = .{ .nonblocking = false },
+            }) catch |err| switch (err) {
                 // The directory-ness is either unknown or unknowable
                 error.Streaming => break :is_dir false,
                 else => |e| return e,
@@ -4140,7 +4682,10 @@ fn dirOpenFilePosix(
         }
     }
 
-    return .{ .handle = fd };
+    return .{
+        .handle = fd,
+        .flags = .{ .nonblocking = false },
+    };
 }
 
 fn dirOpenFileWindows(
@@ -4273,7 +4818,10 @@ pub fn dirOpenFileWtf16(
     errdefer w.CloseHandle(handle);
 
     const exclusive = switch (flags.lock) {
-        .none => return .{ .handle = handle },
+        .none => return .{
+            .handle = handle,
+            .flags = .{ .nonblocking = false },
+        },
         .shared => false,
         .exclusive => true,
     };
@@ -4296,7 +4844,10 @@ pub fn dirOpenFileWtf16(
         .ACCESS_VIOLATION => |err| return syscall.ntstatusBug(err), // bad io_status_block pointer
         else => |status| return syscall.unexpectedNtstatus(status),
     };
-    return .{ .handle = handle };
+    return .{
+        .handle = handle,
+        .flags = .{ .nonblocking = false },
+    };
 }
 
 fn dirOpenFileWasi(
@@ -4378,7 +4929,7 @@ fn dirOpenFileWasi(
 
     if (!flags.allow_directory) {
         const is_dir = is_dir: {
-            const stat = fileStat(t, .{ .handle = fd }) catch |err| switch (err) {
+            const stat = fileStat(t, .{ .handle = fd, .flags = .{ .nonblocking = false } }) catch |err| switch (err) {
                 // The directory-ness is either unknown or unknowable
                 error.Streaming => break :is_dir false,
                 else => |e| return e,
@@ -4388,7 +4939,10 @@ fn dirOpenFileWasi(
         if (is_dir) return error.IsDir;
     }
 
-    return .{ .handle = fd };
+    return .{
+        .handle = fd,
+        .flags = .{ .nonblocking = false },
+    };
 }
 
 const dirOpenDir = switch (native_os) {
@@ -5277,7 +5831,7 @@ fn dirRealPathFileWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8,
 
 fn realPathWindows(h_file: windows.HANDLE, out_buffer: []u8) File.RealPathError!usize {
     var wide_buf: [windows.PATH_MAX_WIDE]u16 = undefined;
-    // TODO move GetFinalPathNameByHandle logic into std.Io.Threaded and add cancel checks
+    // TODO move GetFinalPathNameByHandle logic into Io.Threaded and add cancel checks
     try Thread.checkCancel();
     const wide_slice = try windows.GetFinalPathNameByHandle(h_file, .{}, &wide_buf);
 
@@ -8275,14 +8829,14 @@ fn fileClose(userdata: ?*anyopaque, files: []const File) void {
     for (files) |file| posix.close(file.handle);
 }
 
-fn fileReadStreaming(userdata: ?*anyopaque, file: File, data: []const []u8) File.Reader.Error!usize {
+fn fileReadStreaming(userdata: ?*anyopaque, file: File, data: []const []u8) File.ReadStreamingError!usize {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
     if (is_windows) return fileReadStreamingWindows(file, data);
     return fileReadStreamingPosix(file, data);
 }
 
-fn fileReadStreamingPosix(file: File, data: []const []u8) File.Reader.Error!usize {
+fn fileReadStreamingPosix(file: File, data: []const []u8) File.ReadStreamingError!usize {
     var iovecs_buffer: [max_iovecs_len]posix.iovec = undefined;
     var i: usize = 0;
     for (data) |buf| {
@@ -8303,28 +8857,24 @@ fn fileReadStreamingPosix(file: File, data: []const []u8) File.Reader.Error!usiz
             switch (std.os.wasi.fd_read(file.handle, dest.ptr, dest.len, &nread)) {
                 .SUCCESS => {
                     syscall.finish();
+                    if (nread == 0) return error.EndOfStream;
                     return nread;
                 },
                 .INTR, .TIMEDOUT => {
                     try syscall.checkCancel();
                     continue;
                 },
-                else => |e| {
-                    syscall.finish();
-                    switch (e) {
-                        .INVAL => |err| return errnoBug(err),
-                        .FAULT => |err| return errnoBug(err),
-                        .BADF => return error.IsDir, // File operation on directory.
-                        .IO => return error.InputOutput,
-                        .ISDIR => return error.IsDir,
-                        .NOBUFS => return error.SystemResources,
-                        .NOMEM => return error.SystemResources,
-                        .NOTCONN => return error.SocketUnconnected,
-                        .CONNRESET => return error.ConnectionResetByPeer,
-                        .NOTCAPABLE => return error.AccessDenied,
-                        else => |err| return posix.unexpectedErrno(err),
-                    }
-                },
+                .BADF => return syscall.fail(error.IsDir), // File operation on directory.
+                .IO => return syscall.fail(error.InputOutput),
+                .ISDIR => return syscall.fail(error.IsDir),
+                .NOBUFS => return syscall.fail(error.SystemResources),
+                .NOMEM => return syscall.fail(error.SystemResources),
+                .NOTCONN => return syscall.fail(error.SocketUnconnected),
+                .CONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+                .NOTCAPABLE => return syscall.fail(error.AccessDenied),
+                .INVAL => |err| return syscall.errnoBug(err),
+                .FAULT => |err| return syscall.errnoBug(err),
+                else => |err| return syscall.unexpectedErrno(err),
             }
         }
     }
@@ -8335,75 +8885,115 @@ fn fileReadStreamingPosix(file: File, data: []const []u8) File.Reader.Error!usiz
         switch (posix.errno(rc)) {
             .SUCCESS => {
                 syscall.finish();
+                if (rc == 0) return error.EndOfStream;
                 return @intCast(rc);
             },
             .INTR, .TIMEDOUT => {
                 try syscall.checkCancel();
                 continue;
             },
-            else => |e| {
+            .BADF => {
                 syscall.finish();
-                switch (e) {
-                    .INVAL => |err| return errnoBug(err),
-                    .FAULT => |err| return errnoBug(err),
-                    .AGAIN => return error.WouldBlock,
-                    .BADF => {
-                        if (native_os == .wasi) return error.IsDir; // File operation on directory.
-                        return error.NotOpenForReading;
-                    },
-                    .IO => return error.InputOutput,
-                    .ISDIR => return error.IsDir,
-                    .NOBUFS => return error.SystemResources,
-                    .NOMEM => return error.SystemResources,
-                    .NOTCONN => return error.SocketUnconnected,
-                    .CONNRESET => return error.ConnectionResetByPeer,
-                    else => |err| return posix.unexpectedErrno(err),
-                }
+                if (native_os == .wasi) return error.IsDir; // File operation on directory.
+                return error.NotOpenForReading;
             },
+            .AGAIN => return syscall.fail(error.WouldBlock),
+            .IO => return syscall.fail(error.InputOutput),
+            .ISDIR => return syscall.fail(error.IsDir),
+            .NOBUFS => return syscall.fail(error.SystemResources),
+            .NOMEM => return syscall.fail(error.SystemResources),
+            .NOTCONN => return syscall.fail(error.SocketUnconnected),
+            .CONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .INVAL => |err| return syscall.errnoBug(err),
+            .FAULT => |err| return syscall.errnoBug(err),
+            else => |err| return syscall.unexpectedErrno(err),
         }
     }
 }
 
-fn fileReadStreamingWindows(file: File, data: []const []u8) File.Reader.Error!usize {
-    const DWORD = windows.DWORD;
+fn fileReadStreamingWindows(file: File, data: []const []u8) File.ReadStreamingError!usize {
     var index: usize = 0;
-    while (index < data.len and data[index].len == 0) index += 1;
-    if (index == data.len) return 0;
+    while (data.len - index != 0 and data[index].len == 0) index += 1;
+    if (data.len - index == 0) return 0;
     const buffer = data[index];
-    const want_read_count: DWORD = @min(std.math.maxInt(DWORD), buffer.len);
+    const short_buffer_len = @min(std.math.maxInt(u32), buffer.len);
 
-    const syscall: Syscall = try .start();
-    while (true) {
-        var n: DWORD = undefined;
-        if (windows.kernel32.ReadFile(file.handle, buffer.ptr, want_read_count, &n, null) != 0) {
-            syscall.finish();
-            return n;
-        }
-        switch (windows.GetLastError()) {
-            .IO_PENDING => |err| {
-                syscall.finish();
-                return windows.errorBug(err);
-            },
-            .OPERATION_ABORTED => {
+    var iosb: windows.IO_STATUS_BLOCK = undefined;
+
+    if (!file.flags.nonblocking) {
+        const syscall: Syscall = try .start();
+        while (true) switch (windows.ntdll.NtReadFile(
+            file.handle,
+            null, // event
+            null, // APC routine
+            null, // APC context
+            &iosb,
+            buffer.ptr,
+            short_buffer_len,
+            null, // byte offset
+            null, // key
+        )) {
+            .PENDING => unreachable, // unrecoverable: wrong File nonblocking flag
+            .CANCELLED => {
                 try syscall.checkCancel();
                 continue;
             },
-            .BROKEN_PIPE, .HANDLE_EOF => {
+            else => |status| {
                 syscall.finish();
-                return 0;
+                iosb.u.Status = status;
+                return ntReadFileResult(&iosb);
             },
-            .NETNAME_DELETED => if (is_debug) unreachable else return error.Unexpected,
-            .LOCK_VIOLATION => return syscall.fail(error.LockViolation),
-            .ACCESS_DENIED => return syscall.fail(error.AccessDenied),
-            .INVALID_HANDLE => if (is_debug) unreachable else return error.Unexpected,
-            // TODO: Determine if INVALID_FUNCTION is possible in more scenarios than just passing
-            // a handle to a directory.
-            .INVALID_FUNCTION => return syscall.fail(error.IsDir),
-            else => |err| {
-                syscall.finish();
-                return windows.unexpectedError(err);
-            },
-        }
+        };
+    }
+
+    var done: bool = false;
+
+    switch (windows.ntdll.NtReadFile(
+        file.handle,
+        null, // event
+        flagApc,
+        &done, // APC context
+        &iosb,
+        buffer.ptr,
+        short_buffer_len,
+        null, // byte offset
+        null, // key
+    )) {
+        // We must wait for the APC routine.
+        .PENDING, .SUCCESS => while (!done) {
+            // Once we get here we must not return from the function until the
+            // operation completes, thereby releasing reference to io_status_block.
+            const alertable_syscall = AlertableSyscall.start() catch |err| switch (err) {
+                error.Canceled => |e| {
+                    var cancel_iosb: windows.IO_STATUS_BLOCK = undefined;
+                    _ = windows.ntdll.NtCancelIoFileEx(file.handle, &iosb, &cancel_iosb);
+                    while (!done) waitForApcOrAlert();
+                    return e;
+                },
+            };
+            waitForApcOrAlert();
+            alertable_syscall.finish();
+        },
+        else => |status| iosb.u.Status = status,
+    }
+    return ntReadFileResult(&iosb);
+}
+
+fn flagApc(userdata: ?*anyopaque, _: *windows.IO_STATUS_BLOCK, _: windows.ULONG) callconv(.winapi) void {
+    const flag: *bool = @ptrCast(userdata);
+    flag.* = true;
+}
+
+fn ntReadFileResult(io_status_block: *const windows.IO_STATUS_BLOCK) !usize {
+    switch (io_status_block.u.Status) {
+        .PENDING => unreachable,
+        .CANCELLED => unreachable,
+        .SUCCESS => return io_status_block.Information,
+        .END_OF_FILE, .PIPE_BROKEN => return error.EndOfStream,
+        .INVALID_DEVICE_REQUEST => return error.IsDir,
+        .LOCK_NOT_GRANTED => return error.LockViolation,
+        .ACCESS_DENIED => return error.AccessDenied,
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
@@ -9037,7 +9627,7 @@ fn processExecutablePath(userdata: ?*anyopaque, out_buffer: []u8) process.Execut
             };
             defer w.CloseHandle(h_file);
 
-            // TODO move GetFinalPathNameByHandle logic into std.Io.Threaded and add cancel checks
+            // TODO move GetFinalPathNameByHandle logic into Io.Threaded and add cancel checks
             try Thread.checkCancel();
             const wide_slice = try w.GetFinalPathNameByHandle(h_file, .{}, &path_name_w_buf.data);
 
@@ -9359,6 +9949,7 @@ fn writeFileStreamingWindows(
     handle: windows.HANDLE,
     bytes: []const u8,
 ) File.Writer.Error!usize {
+    assert(bytes.len != 0);
     var bytes_written: windows.DWORD = undefined;
     const adjusted_len = std.math.lossyCast(u32, bytes.len);
     const syscall: Syscall = try .start();
@@ -10075,6 +10666,7 @@ fn nowWasi(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
 
 fn sleep(userdata: ?*anyopaque, timeout: Io.Timeout) Io.SleepError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
+    if (timeout == .none) return;
     if (use_parking_sleep) return parking_sleep.sleep(try timeout.toDeadline(ioBasic(t)));
     if (native_os == .wasi) return sleepWasi(t, timeout);
     if (@TypeOf(posix.system.clock_nanosleep) != void) return sleepPosix(timeout);
@@ -12707,7 +13299,7 @@ fn processSetCurrentDir(userdata: ?*anyopaque, dir: Dir) process.SetCurrentDirEr
 
     if (is_windows) {
         var dir_path_buffer: [windows.PATH_MAX_WIDE]u16 = undefined;
-        // TODO move GetFinalPathNameByHandle logic into std.Io.Threaded and add cancel checks
+        // TODO move GetFinalPathNameByHandle logic into Io.Threaded and add cancel checks
         try Thread.checkCancel();
         const dir_path = try windows.GetFinalPathNameByHandle(dir.handle, .{}, &dir_path_buffer);
         const path_len_bytes = std.math.cast(u16, dir_path.len * 2) orelse return error.NameTooLong;
@@ -13898,15 +14490,15 @@ fn spawnPosix(t: *Threaded, options: process.SpawnOptions) process.SpawnError!Sp
         .pid = pid,
         .err_fd = err_pipe[0],
         .stdin = switch (options.stdin) {
-            .pipe => .{ .handle = stdin_pipe[1] },
+            .pipe => .{ .handle = stdin_pipe[1], .flags = .{ .nonblocking = false } },
             else => null,
         },
         .stdout = switch (options.stdout) {
-            .pipe => .{ .handle = stdout_pipe[0] },
+            .pipe => .{ .handle = stdout_pipe[0], .flags = .{ .nonblocking = false } },
             else => null,
         },
         .stderr = switch (options.stderr) {
-            .pipe => .{ .handle = stderr_pipe[0] },
+            .pipe => .{ .handle = stderr_pipe[0], .flags = .{ .nonblocking = false } },
             else => null,
         },
     };
@@ -14560,9 +15152,9 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
     return .{
         .id = piProcInfo.hProcess,
         .thread_handle = piProcInfo.hThread,
-        .stdin = if (g_hChildStd_IN_Wr) |h| .{ .handle = h } else null,
-        .stdout = if (g_hChildStd_OUT_Rd) |h| .{ .handle = h } else null,
-        .stderr = if (g_hChildStd_ERR_Rd) |h| .{ .handle = h } else null,
+        .stdin = if (g_hChildStd_IN_Wr) |h| .{ .handle = h, .flags = .{ .nonblocking = false } } else null,
+        .stdout = if (g_hChildStd_OUT_Rd) |h| .{ .handle = h, .flags = .{ .nonblocking = true } } else null,
+        .stderr = if (g_hChildStd_ERR_Rd) |h| .{ .handle = h, .flags = .{ .nonblocking = true } } else null,
         .request_resource_usage_statistics = options.request_resource_usage_statistics,
     };
 }
@@ -14607,7 +15199,7 @@ fn getCngHandle(t: *Threaded) Io.RandomSecureError!windows.HANDLE {
             t.mutex.lock(); // Another thread might have won the race.
             defer t.mutex.unlock();
             if (t.random_file.handle) |prev_handle| {
-                _ = windows.ntdll.NtClose(fresh_handle);
+                windows.CloseHandle(fresh_handle);
                 return prev_handle;
             } else {
                 t.random_file.handle = fresh_handle;
@@ -15696,6 +16288,7 @@ fn progressParentFile(userdata: ?*anyopaque) std.Progress.ParentFileError!File {
             .pointer => @ptrFromInt(int),
             else => return error.UnsupportedOperation,
         },
+        .flags = .{ .nonblocking = false },
     };
 }
 
@@ -16375,7 +16968,7 @@ const parking_sleep = struct {
 /// Spurious wakeups are possible.
 ///
 /// `addr_hint` has no semantic effect, but may allow the OS to optimize this operation.
-fn park(opt_deadline: ?std.Io.Clock.Timestamp, addr_hint: ?*const anyopaque) error{Timeout}!void {
+fn park(opt_deadline: ?Io.Clock.Timestamp, addr_hint: ?*const anyopaque) error{Timeout}!void {
     comptime assert(use_parking_futex or use_parking_sleep);
     switch (native_os) {
         .windows => {
@@ -16428,6 +17021,22 @@ fn park(opt_deadline: ?std.Io.Clock.Timestamp, addr_hint: ?*const anyopaque) err
         },
         .illumos => @panic("TODO: illumos lwp_park"),
         else => comptime unreachable,
+    }
+}
+
+fn deadlineToWindowsInterval(t: *Io.Threaded, deadline: Io.Clock.Timestamp) Io.Clock.Error!windows.LARGE_INTEGER {
+    // ntdll only supports two combinations:
+    // * real-time (`.real`) sleeps with absolute deadlines
+    // * monotonic (`.awake`/`.boot`) sleeps with relative durations
+    switch (deadline.clock) {
+        .cpu_process, .cpu_thread => unreachable, // cannot sleep for CPU time
+        .real => {
+            return @intCast(@max(@divTrunc(deadline.raw.nanoseconds, 100), 0));
+        },
+        .awake, .boot => {
+            const duration = try deadline.durationFromNow(ioBasic(t));
+            return @intCast(@min(@divTrunc(-duration.raw.nanoseconds, 100), -1));
+        },
     }
 }
 

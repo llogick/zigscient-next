@@ -126,8 +126,8 @@ test "pipe" {
     const io = testing.io;
 
     const fds = try std.Io.Threaded.pipe2(.{});
-    const out: Io.File = .{ .handle = fds[0] };
-    const in: Io.File = .{ .handle = fds[1] };
+    const out: Io.File = .{ .handle = fds[0], .flags = .{ .nonblocking = false } };
+    const in: Io.File = .{ .handle = fds[1], .flags = .{ .nonblocking = false } };
     try in.writeStreamingAll(io, "hello");
     var buf: [16]u8 = undefined;
     try expect((try out.readStreaming(io, &.{&buf})) == 5);
@@ -150,7 +150,10 @@ test "memfd_create" {
         else => return error.SkipZigTest,
     }
 
-    const file: Io.File = .{ .handle = try posix.memfd_create("test", 0) };
+    const file: Io.File = .{
+        .handle = try posix.memfd_create("test", 0),
+        .flags = .{ .nonblocking = false },
+    };
     defer file.close(io);
     try file.writePositionalAll(io, "test", 0);
 

@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) !void {
     const use_zig_libcxx = b.option(bool, "use-zig-libcxx", "If libc++ is needed, use zig's bundled version, don't try to integrate with the system") orelse false;
 
     const test_step = b.step("test", "Run all the tests");
-    const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse true;
+    const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse only_c or dev_env != .full;
     const skip_install_langref = b.option(bool, "no-langref", "skip copying of langref to the installation prefix") orelse skip_install_lib_files;
     const std_docs = b.option(bool, "std-docs", "include standard library autodocs") orelse false;
     const no_bin = b.option(bool, "no-bin", "skip emitting compiler binary") orelse false;
@@ -518,27 +518,7 @@ pub fn build(b: *std.Build) !void {
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
         .skip_libc = skip_libc,
-        .max_rss = switch (b.graph.host.result.os.tag) {
-            .freebsd => 2_000_000_000,
-            .linux => switch (b.graph.host.result.cpu.arch) {
-                .aarch64 => 659_809_075,
-                .loongarch64 => 598_902_374,
-                .powerpc64le => 627_431_833,
-                .riscv64 => 827_043_430,
-                .s390x => 580_596_121,
-                .x86_64 => 3_290_894_745,
-                else => 3_300_000_000,
-            },
-            .macos => switch (b.graph.host.result.cpu.arch) {
-                .aarch64 => 767_736_217,
-                else => 800_000_000,
-            },
-            .windows => switch (b.graph.host.result.cpu.arch) {
-                .x86_64 => 603_070_054,
-                else => 700_000_000,
-            },
-            else => 3_300_000_000,
-        },
+        .max_rss = 3_300_000_000,
     }));
 
     test_modules_step.dependOn(tests.addModuleTests(b, .{
@@ -564,23 +544,7 @@ pub fn build(b: *std.Build) !void {
         .skip_llvm = skip_llvm,
         .skip_libc = true,
         .no_builtin = true,
-        .max_rss = switch (b.graph.host.result.os.tag) {
-            .freebsd => 800_000_000,
-            .linux => switch (b.graph.host.result.cpu.arch) {
-                .aarch64 => 639_565_414,
-                .loongarch64 => 598_884_352,
-                .powerpc64le => 597_897_625,
-                .riscv64 => 636_429_516,
-                .s390x => 574_166_630,
-                .x86_64 => 978_463_129,
-                else => 900_000_000,
-            },
-            .macos => switch (b.graph.host.result.cpu.arch) {
-                .aarch64 => 701_413_785,
-                else => 800_000_000,
-            },
-            else => 900_000_000,
-        },
+        .max_rss = 900_000_000,
     }));
 
     test_modules_step.dependOn(tests.addModuleTests(b, .{

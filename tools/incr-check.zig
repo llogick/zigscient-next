@@ -28,6 +28,7 @@ fn logImpl(
 }
 
 pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
     const fatal = std.process.fatal;
     const arena = init.arena.allocator();
     const io = init.io;
@@ -224,11 +225,10 @@ pub fn main(init: std.process.Init) !void {
             .enable_darling = enable_darling,
         };
 
-        var poller = Io.poll(arena, Eval.StreamEnum, .{
-            .stdout = child.stdout.?,
-            .stderr = child.stderr.?,
-        });
-        defer poller.deinit();
+        var multi_reader_buffer: Io.File.MultiReader.Buffer(2) = undefined;
+        var multi_reader: Io.File.MultiReader = undefined;
+        multi_reader.init(gpa, io, multi_reader_buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
+        defer multi_reader.deinit();
 
         for (case.updates) |update| {
             var update_node = target_prog_node.start(update.name, 0);
@@ -243,10 +243,10 @@ pub fn main(init: std.process.Init) !void {
 
             eval.write(update);
             try eval.requestUpdate();
-            try eval.check(&poller, update, update_node);
+            try eval.check(&multi_reader, update, update_node);
         }
 
-        try eval.end(&poller);
+        try eval.end(&multi_reader);
 
         waitChild(&child, &eval);
     }
@@ -272,9 +272,6 @@ const Eval = struct {
     enable_wasmtime: bool,
     enable_darling: bool,
 
-    const StreamEnum = enum { stdout, stderr };
-    const Poller = Io.Poller(StreamEnum);
-
     /// Currently this function assumes the previous updates have already been written.
     fn write(eval: *Eval, update: Case.Update) void {
         const io = eval.io;
@@ -293,23 +290,29 @@ const Eval = struct {
         }
     }
 
-    fn check(eval: *Eval, poller: *Poller, update: Case.Update, prog_node: std.Progress.Node) !void {
+    fn check(eval: *Eval, mr: *Io.File.MultiReader, update: Case.Update, prog_node: std.Progress.Node) !void {
         const arena = eval.arena;
-        const stdout = poller.reader(.stdout);
-        const stderr = poller.reader(.stderr);
+        const stdout = mr.fileReader(0);
+        const stderr = &mr.fileReader(1).interface;
+        const Header = std.zig.Server.Message.Header;
 
-        poll: while (true) {
-            const Header = std.zig.Server.Message.Header;
-            while (stdout.buffered().len < @sizeOf(Header)) if (!try poller.poll()) break :poll;
-            const header = stdout.takeStruct(Header, .little) catch unreachable;
-            while (stdout.buffered().len < header.bytes_len) if (!try poller.poll()) break :poll;
-            const body = stdout.take(header.bytes_len) catch unreachable;
+        while (true) {
+            const header = stdout.interface.takeStruct(Header, .little) catch |err| switch (err) {
+                error.EndOfStream => break,
+                error.ReadFailed => return stdout.err.?,
+            };
+            const body = stdout.interface.take(header.bytes_len) catch |err| switch (err) {
+                // If this panic triggers it might be helpful to rework this
+                // code to print the stderr from the abnormally terminated child.
+                error.EndOfStream => @panic("unexpected mid-message end of stream"),
+                error.ReadFailed => return stdout.err.?,
+            };
 
             switch (header.tag) {
                 .error_bundle => {
                     const result_error_bundle = try std.zig.Server.allocErrorBundle(arena, body);
                     if (stderr.bufferedLen() > 0) {
-                        const stderr_data = try poller.toOwnedSlice(.stderr);
+                        const stderr_data = try mr.toOwnedSlice(1);
                         if (eval.allow_stderr) {
                             std.log.info("error_bundle stderr:\n{s}", .{stderr_data});
                         } else {
@@ -326,7 +329,7 @@ const Eval = struct {
                     var r: std.Io.Reader = .fixed(body);
                     _ = r.takeStruct(std.zig.Server.Message.EmitDigest, .little) catch unreachable;
                     if (stderr.bufferedLen() > 0) {
-                        const stderr_data = try poller.toOwnedSlice(.stderr);
+                        const stderr_data = try mr.toOwnedSlice(1);
                         if (eval.allow_stderr) {
                             std.log.info("emit_digest stderr:\n{s}", .{stderr_data});
                         } else {
@@ -358,11 +361,12 @@ const Eval = struct {
             }
         }
 
-        if (stderr.bufferedLen() > 0) {
+        const buffered_stderr = stderr.buffered();
+        if (buffered_stderr.len > 0) {
             if (eval.allow_stderr) {
-                std.log.info("stderr:\n{s}", .{stderr.buffered()});
+                std.log.info("stderr:\n{s}", .{buffered_stderr});
             } else {
-                eval.fatal("unexpected stderr:\n{s}", .{stderr.buffered()});
+                eval.fatal("unexpected stderr:\n{s}", .{buffered_stderr});
             }
         }
 
@@ -588,23 +592,27 @@ const Eval = struct {
         };
     }
 
-    fn end(eval: *Eval, poller: *Poller) !void {
+    fn end(eval: *Eval, mr: *Io.File.MultiReader) !void {
         requestExit(eval.child, eval);
 
-        const stdout = poller.reader(.stdout);
-        const stderr = poller.reader(.stderr);
+        const stdout = mr.fileReader(0);
+        const Header = std.zig.Server.Message.Header;
 
-        poll: while (true) {
-            const Header = std.zig.Server.Message.Header;
-            while (stdout.buffered().len < @sizeOf(Header)) if (!try poller.poll()) break :poll;
-            const header = stdout.takeStruct(Header, .little) catch unreachable;
-            while (stdout.buffered().len < header.bytes_len) if (!try poller.poll()) break :poll;
-            stdout.toss(header.bytes_len);
+        while (true) {
+            const header = stdout.interface.takeStruct(Header, .little) catch |err| switch (err) {
+                error.EndOfStream => break,
+                error.ReadFailed => return stdout.err.?,
+            };
+            stdout.interface.discardAll(header.bytes_len) catch |err| switch (err) {
+                error.ReadFailed => return stdout.err.?,
+                error.EndOfStream => |e| return e,
+            };
         }
 
-        if (stderr.bufferedLen() > 0) {
-            eval.fatal("unexpected stderr:\n{s}", .{stderr.buffered()});
-        }
+        try mr.fillRemaining(.none);
+
+        const stderr = mr.reader(1).buffered();
+        if (stderr.len > 0) eval.fatal("unexpected stderr:\n{s}", .{stderr});
     }
 
     fn buildCOutput(eval: *Eval, c_path: []const u8, out_path: []const u8, prog_node: std.Progress.Node) !void {
