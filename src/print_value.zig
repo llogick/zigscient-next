@@ -25,10 +25,7 @@ pub fn formatSema(ctx: FormatContext, writer: *Writer) Writer.Error!void {
     const sema = ctx.opt_sema.?;
     return print(ctx.val, writer, ctx.depth, ctx.pt, sema) catch |err| switch (err) {
         error.OutOfMemory => @panic("OOM"), // We're not allowed to return this from a format function
-        error.ComptimeBreak, error.ComptimeReturn => unreachable,
-        error.AnalysisFail => unreachable, // TODO: re-evaluate when we use `sema` more fully
-        error.Canceled => @panic("TODO"), // pls stop returning this error mlugg
-        else => |e| return e,
+        error.WriteFailed => |e| return e,
     };
 }
 
@@ -36,9 +33,7 @@ pub fn format(ctx: FormatContext, writer: *Writer) Writer.Error!void {
     std.debug.assert(ctx.opt_sema == null);
     return print(ctx.val, writer, ctx.depth, ctx.pt, null) catch |err| switch (err) {
         error.OutOfMemory => @panic("OOM"), // We're not allowed to return this from a format function
-        error.ComptimeBreak, error.ComptimeReturn, error.AnalysisFail => unreachable,
-        error.Canceled => @panic("TODO"), // pls stop returning this error mlugg
-        else => |e| return e,
+        error.WriteFailed => |e| return e,
     };
 }
 
@@ -48,7 +43,7 @@ pub fn print(
     level: u8,
     pt: Zcu.PerThread,
     opt_sema: ?*Sema,
-) (Writer.Error || Zcu.CompileError)!void {
+) (Writer.Error || Allocator.Error)!void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     switch (ip.indexToKey(val.toIntern())) {
@@ -212,7 +207,7 @@ fn printAggregate(
     level: u8,
     pt: Zcu.PerThread,
     opt_sema: ?*Sema,
-) (Writer.Error || Zcu.CompileError)!void {
+) (Writer.Error || Allocator.Error)!void {
     if (level == 0) {
         if (is_ref) try writer.writeByte('&');
         return writer.writeAll(".{ ... }");
@@ -307,7 +302,7 @@ fn printPtr(
     level: u8,
     pt: Zcu.PerThread,
     opt_sema: ?*Sema,
-) (Writer.Error || Zcu.CompileError)!void {
+) (Writer.Error || Allocator.Error)!void {
     const ptr = switch (pt.zcu.intern_pool.indexToKey(ptr_val.toIntern())) {
         .undef => return writer.writeAll("undefined"),
         .ptr => |ptr| ptr,
@@ -332,10 +327,7 @@ fn printPtr(
 
     var arena = std.heap.ArenaAllocator.init(pt.zcu.gpa);
     defer arena.deinit();
-    const derivation = if (opt_sema) |sema|
-        try ptr_val.pointerDerivationAdvanced(arena.allocator(), pt, true, sema)
-    else
-        try ptr_val.pointerDerivationAdvanced(arena.allocator(), pt, false, null);
+    const derivation = try ptr_val.pointerDerivation(arena.allocator(), pt, opt_sema);
 
     _ = try printPtrDerivation(derivation, writer, pt, want_kind, .{ .print_val = .{
         .level = level,

@@ -3813,9 +3813,9 @@ pub const AtomicPtrAlignmentDiagnostics = struct {
     max_bits: u16 = undefined,
 };
 
-/// If ABI alignment of `ty` is OK for atomic operations, returns 0.
-/// Otherwise returns the alignment required on a pointer for the target
-/// to perform atomic operations.
+/// Returns the alignment required for the target to perform atomic operations on type `ty` (that
+/// is, the required align attribute on the pointer). If the ABI alignment of `ty` is sufficient,
+/// returns `.none`.
 // TODO this function does not take into account CPU features, which can affect
 // this value. Audit this!
 pub fn atomicPtrAlignment(

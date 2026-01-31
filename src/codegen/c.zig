@@ -1215,7 +1215,7 @@ pub const DeclGen = struct {
             .ptr => {
                 var arena = std.heap.ArenaAllocator.init(zcu.gpa);
                 defer arena.deinit();
-                const derivation = try val.pointerDerivation(arena.allocator(), pt);
+                const derivation = try val.pointerDerivation(arena.allocator(), pt, null);
                 try dg.renderPointer(w, derivation, location);
             },
             .opt => |opt| switch (ctype.info(ctype_pool)) {

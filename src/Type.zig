@@ -2337,35 +2337,11 @@ pub fn fieldType(ty: Type, index: usize, zcu: *const Zcu) Type {
     return .fromInterned(types.get(ip)[index]);
 }
 
-// TODO MLUGG: clean up doc comments and usages of `{resolved,explicit}FieldAlignment`
-
-/// Returns the alignment of the given struct, tuple, or union field.
-/// Asserts that the layout of `ty` is resolved. Asserts that `ty` is not packed.
-/// Never returns `.none`, even if the field's alignment was not specified.
-pub fn resolvedFieldAlignment(ty: Type, index: usize, zcu: *const Zcu) Alignment {
-    switch (ty.explicitFieldAlignment(index, zcu)) {
-        .none => {},
-        else => |explicit| return explicit,
-    }
-    const ip = &zcu.intern_pool;
-    return switch (ip.indexToKey(ty.toIntern())) {
-        .tuple_type => |tuple| Type.fromInterned(tuple.types.get(ip)[index]).abiAlignment(zcu),
-        .struct_type => {
-            assertHasLayout(ty, zcu);
-            const struct_obj = ip.loadStructType(ty.toIntern());
-            const field_ty: Type = .fromInterned(struct_obj.field_types.get(ip)[index]);
-            return field_ty.defaultStructFieldAlignment(struct_obj.layout, zcu);
-        },
-        .union_type => {
-            assertHasLayout(ty, zcu);
-            const union_obj = ip.loadUnionType(ty.toIntern());
-            const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[index]);
-            return field_ty.abiAlignment(zcu);
-        },
-        else => unreachable,
-    };
-}
-
+/// If an alignment was explicitly specified for the given field of the struct or union type `ty`,
+/// returns that. Otherwise, returns `.none`. This function also supports tuples, for which it
+/// always returns `.none`.
+///
+/// Asserts that the layout of `ty` is resolved, unless `ty` is a tuple.
 pub fn explicitFieldAlignment(ty: Type, index: usize, zcu: *const Zcu) Alignment {
     const ip = &zcu.intern_pool;
     return switch (ip.indexToKey(ty.toIntern())) {
@@ -2388,7 +2364,10 @@ pub fn explicitFieldAlignment(ty: Type, index: usize, zcu: *const Zcu) Alignment
     };
 }
 
-/// Returns the alignment a struct field will have if not explicitly specified.
+/// Returns the alignment a struct field of type `field_ty` will be given if no alignment is
+/// explicitly specified. However, in an `extern struct`, a higher alignment may be available due
+/// to the struct's full layout (i.e. a field might coincidentally be more aligned).
+///
 /// Asserts that the layout of `field_ty` is resolved. Asserts that `layout` is not `.@"packed"`.
 pub fn defaultStructFieldAlignment(
     field_ty: Type,
@@ -2664,45 +2643,6 @@ pub fn arrayBase(ty: Type, zcu: *const Zcu) struct { Type, u64 } {
     return .{ cur_ty, cur_len };
 }
 
-/// Returns a bit-pointer with the same value and a new packed offset.
-pub fn packedStructFieldPtrInfo(
-    struct_ty: Type,
-    parent_ptr_ty: Type,
-    field_idx: u32,
-    pt: Zcu.PerThread,
-) InternPool.Key.PtrType.PackedOffset {
-    comptime assert(Type.packed_struct_layout_version == 2);
-
-    const zcu = pt.zcu;
-    const parent_ptr_info = parent_ptr_ty.ptrInfo(zcu);
-
-    var bit_offset: u16 = 0;
-    var running_bits: u16 = 0;
-    for (0..struct_ty.structFieldCount(zcu)) |i| {
-        const f_ty = struct_ty.fieldType(i, zcu);
-        if (i == field_idx) {
-            bit_offset = running_bits;
-        }
-        running_bits += @intCast(f_ty.bitSize(zcu));
-    }
-
-    const res_host_size: u16, const res_bit_offset: u16 = if (parent_ptr_info.packed_offset.host_size != 0) .{
-        parent_ptr_info.packed_offset.host_size,
-        parent_ptr_info.packed_offset.bit_offset + bit_offset,
-    } else .{
-        switch (zcu.comp.getZigBackend()) {
-            else => (running_bits + 7) / 8,
-            .stage2_x86_64, .stage2_c => @intCast(struct_ty.abiSize(zcu)),
-        },
-        bit_offset,
-    };
-
-    return .{
-        .host_size = res_host_size,
-        .bit_offset = res_bit_offset,
-    };
-}
-
 pub fn getUnionLayout(loaded_union: InternPool.LoadedUnionType, zcu: *const Zcu) Zcu.UnionLayout {
     const ip = &zcu.intern_pool;
     var most_aligned_field: u32 = 0;
@@ -2770,86 +2710,223 @@ pub fn getUnionLayout(loaded_union: InternPool.LoadedUnionType, zcu: *const Zcu)
     };
 }
 
-/// Returns the type of a pointer to an element.
-/// Asserts that the type is a pointer, and that the element type is indexable.
-/// If the element index is comptime-known, it must be passed in `offset`.
-/// For *@Vector(n, T), return *align(a:b:h:v) T
-/// For *[N]T, return *T
-/// For [*]T, returns *T
-/// For []T, returns *T
-/// Handles const-ness and address spaces in particular.
-/// This code is duplicated in `Sema.analyzePtrArithmetic`.
-/// May perform type resolution and return a transitive `error.AnalysisFail`.
-/// MLUGG TODO audit this shit
-pub fn elemPtrType(ptr_ty: Type, offset: ?usize, pt: Zcu.PerThread) !Type {
+/// Asserts that `ptr_ty` is either a many-item pointer, a slice, a C pointer, or a single pointer
+/// to array (in other words, a pointer which is indexed by pointer arithmetic), and returns the
+/// type of the element pointer at the given index.
+///
+/// Asserts that the layout of the pointer element type is resolved.
+///
+/// If `index` is `null`, the index is an arbitrary runtime-known value.
+pub fn elemPtrType(ptr_ty: Type, index: ?u64, pt: Zcu.PerThread) Allocator.Error!Type {
     const zcu = pt.zcu;
-    const ptr_info = ptr_ty.ptrInfo(zcu);
+    const ip = &zcu.intern_pool;
+    const ptr_info = ip.indexToKey(ptr_ty.toIntern()).ptr_type;
     const elem_ty: Type = switch (ptr_info.flags.size) {
-        .one => switch (Type.fromInterned(ptr_info.child).zigTypeTag(zcu)) {
-            .array, .vector => Type.fromInterned(ptr_info.child).childType(zcu),
-            else => .fromInterned(ptr_info.child),
+        .slice, .many, .c => .fromInterned(ptr_info.child),
+        .one => switch (ip.indexToKey(ptr_info.child)) {
+            .array_type => |array_type| .fromInterned(array_type.child),
+            else => unreachable,
         },
-        .many, .c, .slice => .fromInterned(ptr_info.child),
     };
-    const is_allowzero = ptr_info.flags.is_allowzero and (offset orelse 0) == 0;
-    const parent_ty = ptr_ty.childType(zcu);
+    elem_ty.assertHasLayout(zcu);
+    const elem_align: Alignment = switch (elem_ty.classify(zcu)) {
+        .no_possible_value,
+        .one_possible_value,
+        => ptr_info.flags.alignment,
 
-    const VI = InternPool.Key.PtrType.VectorIndex;
+        .partially_comptime,
+        .fully_comptime,
+        => switch (ptr_info.flags.alignment) {
+            .none => .none,
+            else => |array_align| .minStrict(array_align, elem_ty.abiAlignment(zcu)),
+        },
 
-    const vector_info: struct {
-        host_size: u16 = 0,
-        alignment: Alignment = .none,
-        vector_index: VI = .none,
-    } = if (parent_ty.isVector(zcu) and ptr_info.flags.size == .one) blk: {
-        const elem_bits = elem_ty.bitSize(zcu);
-        if (elem_bits == 0) break :blk .{};
-        const is_packed = elem_bits < 8 or !std.math.isPowerOfTwo(elem_bits);
-        if (!is_packed) break :blk .{};
-
-        break :blk .{
-            .host_size = @intCast(parent_ty.arrayLen(zcu)),
-            .alignment = parent_ty.abiAlignment(zcu),
-            .vector_index = @enumFromInt(offset.?),
-        };
-    } else .{};
-
-    const alignment: Alignment = a: {
-        // Calculate the new pointer alignment.
-        if (ptr_info.flags.alignment == .none) {
-            // In case of an ABI-aligned pointer, any pointer arithmetic
-            // maintains the same ABI-alignedness.
-            break :a vector_info.alignment;
-        }
-        // If the addend is not a comptime-known value we can still count on
-        // it being a multiple of the type size.
-        const elem_size = elem_ty.abiSize(zcu);
-        const addend = if (offset) |off| elem_size * off else elem_size;
-
-        // The resulting pointer is aligned to the lcd between the offset (an
-        // arbitrary number) and the alignment factor (always a power of two,
-        // non zero).
-        const new_align: Alignment = @enumFromInt(@min(
-            @ctz(addend),
-            ptr_info.flags.alignment.toLog2Units(),
-        ));
-        assert(new_align != .none);
-        break :a new_align;
+        .runtime => switch (ptr_info.flags.alignment) {
+            .none => .none,
+            else => |array_align| elem_align: {
+                // If the index is runtime-known, use 1 as it gives the minimum possible alignment.
+                const effective_index = index orelse 1;
+                if (effective_index == 0) break :elem_align array_align;
+                const byte_offset = effective_index * elem_ty.abiSize(zcu);
+                break :elem_align .minStrict(array_align, .fromLog2Units(@ctz(byte_offset)));
+            },
+        },
     };
     return pt.ptrType(.{
         .child = elem_ty.toIntern(),
         .flags = .{
-            .alignment = alignment,
+            .size = .one,
             .is_const = ptr_info.flags.is_const,
             .is_volatile = ptr_info.flags.is_volatile,
-            .is_allowzero = is_allowzero,
+            .is_allowzero = ptr_info.flags.is_allowzero and (index == null or index == 0),
             .address_space = ptr_info.flags.address_space,
-            .vector_index = vector_info.vector_index,
-        },
-        .packed_offset = .{
-            .host_size = vector_info.host_size,
-            .bit_offset = 0,
+            .alignment = elem_align,
         },
     });
+}
+
+/// Asserts that `ptr_ty` is a pointer (single-item or C) to a struct, union, tuple, or slice, and
+/// returns the type of a pointer to the field at `field_index`.
+///
+/// Asserts that the layout of the pointer child type is resolved.
+///
+/// For slices, `Value.slice_ptr_index` and `Value.slice_len_index` are used for the field index.
+pub fn fieldPtrType(ptr_ty: Type, field_index: u32, pt: Zcu.PerThread) Allocator.Error!Type {
+    const zcu = pt.zcu;
+    const ip = &zcu.intern_pool;
+    const ptr_info = ip.indexToKey(ptr_ty.toIntern()).ptr_type;
+    assert(ptr_info.flags.size == .one or ptr_info.flags.size == .c);
+    const aggregate_ty: Type = .fromInterned(ptr_info.child);
+    aggregate_ty.assertHasLayout(zcu);
+    // We only exit this `switch` for default-layout aggregates, where the field pointer alignment
+    // is a simple minimum of the aggregate pointer alignment and the field alignment.
+    // `field_align` is `.none` if there is no explicit alignment annotation.
+    const field_ty: Type, const field_align: Alignment = switch (aggregate_ty.zigTypeTag(zcu)) {
+        .@"struct" => switch (aggregate_ty.containerLayout(zcu)) {
+            .auto => field: {
+                if (aggregate_ty.isTuple(zcu)) {
+                    break :field .{ aggregate_ty.fieldType(field_index, zcu), .none };
+                }
+                const struct_obj = ip.loadStructType(aggregate_ty.toIntern());
+                break :field .{
+                    .fromInterned(struct_obj.field_types.get(ip)[field_index]),
+                    struct_obj.field_aligns.getOrNone(ip, field_index),
+                };
+            },
+            .@"extern" => {
+                // Field alignment is determined based on the actual field offset. For instance, in
+                // `extern struct { x: u32, y: u16 }`, the `y` field is 4-byte aligned.
+                const field_ty = aggregate_ty.fieldType(field_index, zcu);
+                const field_offset = aggregate_ty.structFieldOffset(field_index, zcu);
+                const parent_align = switch (ptr_info.flags.alignment) {
+                    .none => aggregate_ty.abiAlignment(zcu),
+                    else => |a| a,
+                };
+                const actual_field_align = switch (field_offset) {
+                    0 => parent_align,
+                    else => parent_align.minStrict(.fromLog2Units(@ctz(field_offset))),
+                };
+                const field_ptr_align: Alignment = a: {
+                    if (parent_align == .none and
+                        aggregate_ty.explicitFieldAlignment(field_index, zcu) == .none and
+                        actual_field_align == field_ty.abiAlignment(zcu))
+                    {
+                        // There's no user-specified 'align' in sight, and the alignment from the
+                        // field offset matches the field type's natural alignment, so just use a
+                        // default-aligned pointer.
+                        break :a .none;
+                    }
+                    break :a actual_field_align;
+                };
+                var field_ptr_info = ptr_info;
+                field_ptr_info.child = field_ty.toIntern();
+                field_ptr_info.flags.alignment = field_ptr_align;
+                return pt.ptrType(field_ptr_info);
+            },
+            .@"packed" => {
+                var field_ptr_info = ptr_info;
+                if (field_ptr_info.flags.alignment == .none) {
+                    field_ptr_info.flags.alignment = aggregate_ty.abiAlignment(zcu);
+                }
+                field_ptr_info.packed_offset = packed_offset: {
+                    comptime assert(Type.packed_struct_layout_version == 2);
+                    const bit_offset = zcu.structPackedFieldBitOffset(
+                        ip.loadStructType(aggregate_ty.toIntern()),
+                        field_index,
+                    );
+                    break :packed_offset if (ptr_info.packed_offset.host_size != 0) .{
+                        .host_size = ptr_info.packed_offset.host_size,
+                        .bit_offset = ptr_info.packed_offset.bit_offset + bit_offset,
+                    } else .{
+                        .host_size = switch (zcu.comp.getZigBackend()) {
+                            else => @intCast((aggregate_ty.bitSize(zcu) + 7) / 8),
+                            .stage2_x86_64, .stage2_c => @intCast(aggregate_ty.abiSize(zcu)),
+                        },
+                        .bit_offset = ptr_info.packed_offset.bit_offset + bit_offset,
+                    };
+                };
+                field_ptr_info.child = aggregate_ty.fieldType(field_index, zcu).toIntern();
+                return pt.ptrType(field_ptr_info);
+            },
+        },
+        .@"union" => switch (aggregate_ty.containerLayout(zcu)) {
+            .auto => field: {
+                const union_obj = ip.loadUnionType(aggregate_ty.toIntern());
+                break :field .{
+                    .fromInterned(union_obj.field_types.get(ip)[field_index]),
+                    union_obj.field_aligns.getOrNone(ip, field_index),
+                };
+            },
+            .@"extern" => {
+                // The alignment always matches that of the union pointer. If the union pointer is
+                // default aligned (`.none`), we may need to explicitly align the result pointer.
+                const field_ty = aggregate_ty.fieldType(field_index, zcu);
+                var field_ptr_info = ptr_info;
+                field_ptr_info.child = field_ty.toIntern();
+                if (field_ptr_info.flags.alignment == .none and
+                    Alignment.compareStrict(field_ty.abiAlignment(zcu), .neq, aggregate_ty.abiAlignment(zcu)))
+                {
+                    field_ptr_info.flags.alignment = aggregate_ty.abiAlignment(zcu);
+                }
+                return pt.ptrType(field_ptr_info);
+            },
+            .@"packed" => {
+                const field_ty = aggregate_ty.fieldType(field_index, zcu);
+                var field_ptr_info = ptr_info;
+                if (field_ptr_info.flags.alignment == .none) {
+                    const resolved_align = aggregate_ty.abiAlignment(zcu);
+                    if (field_ty.abiAlignment(zcu) != resolved_align) {
+                        field_ptr_info.flags.alignment = resolved_align;
+                    }
+                }
+                field_ptr_info.child = aggregate_ty.fieldType(field_index, zcu).toIntern();
+                return pt.ptrType(field_ptr_info);
+            },
+        },
+        .pointer => field: {
+            assert(aggregate_ty.isSlice(zcu));
+            break :field switch (field_index) {
+                Value.slice_ptr_index => .{ aggregate_ty.slicePtrFieldType(zcu), .none },
+                Value.slice_len_index => .{ .usize, .none },
+                else => unreachable,
+            };
+        },
+        else => unreachable,
+    };
+    const field_ptr_align: Alignment = a: {
+        if (aggregate_ty.zigTypeTag(zcu) == .@"struct" and aggregate_ty.structFieldIsComptime(field_index, zcu)) {
+            // For `comptime` fields, just use exactly what was specified, or ABI alignment if nothing was specified.
+            break :a field_align;
+        }
+        const actual_field_align = switch (field_align) {
+            .none => switch (ip.indexToKey(aggregate_ty.toIntern())) {
+                .tuple_type, .union_type => field_ty.abiAlignment(zcu),
+                .struct_type => field_ty.defaultStructFieldAlignment(.auto, zcu),
+                .ptr_type => Type.usize.abiAlignment(zcu),
+                else => unreachable,
+            },
+            else => |a| a,
+        };
+        const actual_aggregate_align = switch (ptr_info.flags.alignment) {
+            .none => aggregate_ty.abiAlignment(zcu),
+            else => |a| a,
+        };
+        if (actual_aggregate_align.compareStrict(.lt, actual_field_align)) {
+            // Underaligned aggregate; use that alignment.
+            assert(ptr_info.flags.alignment != .none);
+            break :a actual_aggregate_align;
+        }
+        if (field_align == .none and actual_field_align == field_ty.abiAlignment(zcu)) {
+            // No explicit annotation on the field (nor an unusual default), and the aggregate
+            // alignment is irrelevant to us, so return an un-annotated pointer.
+            break :a .none;
+        }
+        break :a actual_field_align;
+    };
+    var field_ptr_info = ptr_info;
+    field_ptr_info.flags.alignment = field_ptr_align;
+    field_ptr_info.child = field_ty.toIntern();
+    return pt.ptrType(field_ptr_info);
 }
 
 pub fn containerTypeName(ty: Type, ip: *const InternPool) InternPool.NullTerminatedString {

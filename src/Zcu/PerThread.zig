@@ -3943,10 +3943,7 @@ pub fn navPtrType(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Allocator.Err
     return pt.ptrType(.{
         .child = ty,
         .flags = .{
-            .alignment = if (alignment == Type.fromInterned(ty).abiAlignment(zcu))
-                .none
-            else
-                alignment,
+            .alignment = alignment,
             .address_space = @"addrspace",
             .is_const = is_const,
         },
@@ -4015,23 +4012,24 @@ pub fn ensureNamespaceUpToDate(pt: Zcu.PerThread, namespace_index: Zcu.Namespace
     namespace.generation = zcu.generation;
 }
 
-pub fn refValue(pt: Zcu.PerThread, val: InternPool.Index) Zcu.SemaError!InternPool.Index {
-    const ptr_ty = (try pt.ptrType(.{
-        .child = pt.zcu.intern_pool.typeOf(val),
+pub fn uavValue(pt: Zcu.PerThread, val: Value) Zcu.SemaError!Value {
+    const zcu = pt.zcu;
+    const ptr_ty = try pt.ptrType(.{
+        .child = val.typeOf(zcu).toIntern(),
         .flags = .{
             .alignment = .none,
             .is_const = true,
             .address_space = .generic,
         },
-    })).toIntern();
-    return pt.intern(.{ .ptr = .{
-        .ty = ptr_ty,
+    });
+    return .fromInterned(try pt.intern(.{ .ptr = .{
+        .ty = ptr_ty.toIntern(),
         .base_addr = .{ .uav = .{
-            .val = val,
-            .orig_ty = ptr_ty,
+            .val = val.toIntern(),
+            .orig_ty = ptr_ty.toIntern(),
         } },
         .byte_offset = 0,
-    } });
+    } }));
 }
 
 pub fn addDependency(pt: Zcu.PerThread, unit: AnalUnit, dependee: InternPool.Dependee) Allocator.Error!void {

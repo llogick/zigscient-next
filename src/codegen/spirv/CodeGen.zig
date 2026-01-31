@@ -1038,7 +1038,7 @@ fn constantPtr(cg: *CodeGen, ptr_val: Value) !Id {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    const derivation = try ptr_val.pointerDerivation(arena.allocator(), pt);
+    const derivation = try ptr_val.pointerDerivation(arena.allocator(), pt, null);
     return cg.derivePtr(derivation);
 }
 

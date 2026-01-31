@@ -1687,9 +1687,6 @@ pub fn makeBool(x: bool) Value {
 /// `parent_ptr` must be a single-pointer or C pointer to some optional.
 ///
 /// Returns a pointer to the payload of the optional.
-///
-/// May perform type resolution.
-/// MLUGG TODO audit
 pub fn ptrOptPayload(parent_ptr: Value, pt: Zcu.PerThread) !Value {
     const zcu = pt.zcu;
     const parent_ptr_ty = parent_ptr.typeOf(zcu);
@@ -1715,7 +1712,7 @@ pub fn ptrOptPayload(parent_ptr: Value, pt: Zcu.PerThread) !Value {
     }
 
     const base_ptr = try parent_ptr.canonicalizeBasePtr(.one, opt_ty, pt);
-    return Value.fromInterned(try pt.intern(.{ .ptr = .{
+    return .fromInterned(try pt.intern(.{ .ptr = .{
         .ty = result_ty.toIntern(),
         .base_addr = .{ .opt_payload = base_ptr.toIntern() },
         .byte_offset = 0,
@@ -1724,8 +1721,6 @@ pub fn ptrOptPayload(parent_ptr: Value, pt: Zcu.PerThread) !Value {
 
 /// `parent_ptr` must be a single-pointer to some error union.
 /// Returns a pointer to the payload of the error union.
-/// May perform type resolution.
-/// MLUGG TODO audit
 pub fn ptrEuPayload(parent_ptr: Value, pt: Zcu.PerThread) !Value {
     const zcu = pt.zcu;
     const parent_ptr_ty = parent_ptr.typeOf(zcu);
@@ -1745,137 +1740,57 @@ pub fn ptrEuPayload(parent_ptr: Value, pt: Zcu.PerThread) !Value {
     if (parent_ptr.isUndef(zcu)) return pt.undefValue(result_ty);
 
     const base_ptr = try parent_ptr.canonicalizeBasePtr(.one, eu_ty, pt);
-    return Value.fromInterned(try pt.intern(.{ .ptr = .{
+    return .fromInterned(try pt.intern(.{ .ptr = .{
         .ty = result_ty.toIntern(),
         .base_addr = .{ .eu_payload = base_ptr.toIntern() },
         .byte_offset = 0,
     } }));
 }
 
-// MLUGG TODO: audit ptrField etc in terms of resolution, and probably move them under sema
-
-/// `parent_ptr` must be a single-pointer or c pointer to a struct, union, or slice.
+/// `parent_ptr` must be a single-item pointer or C pointer to a struct, union, or slice.
 ///
 /// Returns a pointer to the aggregate field at the specified index.
 ///
 /// For slices, uses `slice_ptr_index` and `slice_len_index`.
 ///
-/// May perform type resolution.
+/// Asserts that the layout of the aggregate type is resolved.
 pub fn ptrField(parent_ptr: Value, field_idx: u32, pt: Zcu.PerThread) !Value {
     const zcu = pt.zcu;
     const parent_ptr_ty = parent_ptr.typeOf(zcu);
     const aggregate_ty = parent_ptr_ty.childType(zcu);
+    aggregate_ty.assertHasLayout(zcu);
 
     const parent_ptr_info = parent_ptr_ty.ptrInfo(zcu);
     assert(parent_ptr_info.flags.size == .one or parent_ptr_info.flags.size == .c);
 
-    // Exiting this `switch` indicates that the `field` pointer representation should be used.
-    const field_ty: Type, const new_align: InternPool.Alignment = switch (aggregate_ty.zigTypeTag(zcu)) {
-        .@"struct" => field: {
-            const field_ty = aggregate_ty.fieldType(field_idx, zcu);
-            switch (aggregate_ty.containerLayout(zcu)) {
-                .auto => break :field .{ field_ty, a: {
-                    if (parent_ptr_info.flags.alignment == .none) {
-                        break :a aggregate_ty.explicitFieldAlignment(field_idx, zcu);
-                    }
-                    const field_align = aggregate_ty.resolvedFieldAlignment(field_idx, zcu);
-                    break :a field_align.min(parent_ptr_info.flags.alignment);
-                } },
-                .@"extern" => {
-                    // Well-defined layout, so just offset the pointer appropriately.
-                    const byte_off = aggregate_ty.structFieldOffset(field_idx, zcu);
-                    const field_align: InternPool.Alignment = a: {
-                        if (byte_off == 0) break :a parent_ptr_info.flags.alignment;
-                        const true_field_align: InternPool.Alignment = .fromLog2Units(@ctz(byte_off));
-                        if (parent_ptr_info.flags.alignment == .none and
-                            true_field_align == field_ty.abiAlignment(zcu))
-                        {
-                            break :a .none;
-                        }
-                        const parent_align = if (parent_ptr_info.flags.alignment == .none) pa: {
-                            break :pa aggregate_ty.abiAlignment(zcu);
-                        } else parent_ptr_info.flags.alignment;
-                        break :a .minStrict(true_field_align, parent_align);
-                    };
-                    const result_ty = try pt.ptrType(info: {
-                        var new = parent_ptr_info;
-                        new.child = field_ty.toIntern();
-                        new.flags.alignment = field_align;
-                        break :info new;
-                    });
-                    return parent_ptr.getOffsetPtr(byte_off, result_ty, pt);
-                },
-                .@"packed" => {
-                    const packed_offset = aggregate_ty.packedStructFieldPtrInfo(parent_ptr_ty, field_idx, pt);
-                    const result_ty = try pt.ptrType(info: {
-                        var new = parent_ptr_info;
-                        new.packed_offset = packed_offset;
-                        new.child = field_ty.toIntern();
-                        if (new.flags.alignment == .none) {
-                            new.flags.alignment = aggregate_ty.abiAlignment(zcu);
-                        }
-                        break :info new;
-                    });
-                    return pt.getCoerced(parent_ptr, result_ty);
-                },
-            }
+    const field_ptr_ty = try parent_ptr_ty.fieldPtrType(field_idx, pt);
+
+    switch (aggregate_ty.zigTypeTag(zcu)) {
+        .pointer => assert(aggregate_ty.isSlice(zcu)),
+        .@"struct" => switch (aggregate_ty.containerLayout(zcu)) {
+            .auto => {},
+            .@"extern" => return parent_ptr.getOffsetPtr(
+                aggregate_ty.structFieldOffset(field_idx, zcu),
+                field_ptr_ty,
+                pt,
+            ),
+            .@"packed" => return pt.getCoerced(parent_ptr, field_ptr_ty),
         },
-        .@"union" => field: {
-            const union_obj = zcu.typeToUnion(aggregate_ty).?;
-            const field_ty = Type.fromInterned(union_obj.field_types.get(&zcu.intern_pool)[field_idx]);
-            switch (aggregate_ty.containerLayout(zcu)) {
-                .auto => break :field .{ field_ty, a: {
-                    if (parent_ptr_info.flags.alignment == .none) {
-                        break :a aggregate_ty.explicitFieldAlignment(field_idx, zcu);
-                    }
-                    const field_align = aggregate_ty.resolvedFieldAlignment(field_idx, zcu);
-                    break :a field_align.min(parent_ptr_info.flags.alignment);
-                } },
-                .@"extern" => {
-                    // Point to the same address.
-                    const result_ty = try pt.ptrType(info: {
-                        var new = parent_ptr_info;
-                        new.child = field_ty.toIntern();
-                        break :info new;
-                    });
-                    return pt.getCoerced(parent_ptr, result_ty);
-                },
-                .@"packed" => {
-                    const result_ty = try pt.ptrType(info: {
-                        var new = parent_ptr_info;
-                        new.child = field_ty.toIntern();
-                        break :info new;
-                    });
-                    return pt.getCoerced(parent_ptr, result_ty);
-                },
-            }
-        },
-        .pointer => field_ty: {
-            assert(aggregate_ty.isSlice(zcu));
-            break :field_ty .{ switch (field_idx) {
-                Value.slice_ptr_index => aggregate_ty.slicePtrFieldType(zcu),
-                Value.slice_len_index => Type.usize,
-                else => unreachable,
-            }, switch (parent_ptr_info.flags.alignment) {
-                .none => .none,
-                else => Type.usize.abiAlignment(zcu).min(parent_ptr_info.flags.alignment),
-            } };
+        .@"union" => switch (aggregate_ty.containerLayout(zcu)) {
+            .auto => {},
+            .@"packed", .@"extern" => return pt.getCoerced(parent_ptr, field_ptr_ty),
         },
         else => unreachable,
-    };
+    }
 
-    const result_ty = try pt.ptrType(info: {
-        var new = parent_ptr_info;
-        new.child = field_ty.toIntern();
-        new.flags.alignment = new_align;
-        break :info new;
-    });
+    // If we get here, we need to use the `.field` comptime pointer representation, because the
+    // aggregate does not have a well-defined layout.
 
-    if (parent_ptr.isUndef(zcu)) return pt.undefValue(result_ty);
+    if (parent_ptr.isUndef(zcu)) return pt.undefValue(field_ptr_ty);
 
     const base_ptr = try parent_ptr.canonicalizeBasePtr(.one, aggregate_ty, pt);
-    return Value.fromInterned(try pt.intern(.{ .ptr = .{
-        .ty = result_ty.toIntern(),
+    return .fromInterned(try pt.intern(.{ .ptr = .{
+        .ty = field_ptr_ty.toIntern(),
         .base_addr = .{ .field = .{
             .base = base_ptr.toIntern(),
             .index = field_idx,
@@ -1884,10 +1799,9 @@ pub fn ptrField(parent_ptr: Value, field_idx: u32, pt: Zcu.PerThread) !Value {
     } }));
 }
 
-/// `orig_parent_ptr` must be either a single-pointer to an array or vector, or a many-pointer or C-pointer or slice.
+/// `orig_parent_ptr` must be either a single-pointer to an array, a slice, a many-item pointer, or a C pointer.
 /// Returns a pointer to the element at the specified index.
-/// May perform type resolution.
-/// MLUGG TODO AUDIT
+/// Asserts that the layout of the pointer element type is resolved.
 pub fn ptrElem(orig_parent_ptr: Value, field_idx: u64, pt: Zcu.PerThread) !Value {
     const zcu = pt.zcu;
     const parent_ptr = switch (orig_parent_ptr.typeOf(zcu).ptrSize(zcu)) {
@@ -1896,77 +1810,50 @@ pub fn ptrElem(orig_parent_ptr: Value, field_idx: u64, pt: Zcu.PerThread) !Value
     };
 
     const parent_ptr_ty = parent_ptr.typeOf(zcu);
-    const elem_ty = parent_ptr_ty.childType(zcu);
-    const result_ty = try parent_ptr_ty.elemPtrType(@intCast(field_idx), pt);
+    const result_ty = try parent_ptr_ty.elemPtrType(field_idx, pt);
+    const elem_ty = result_ty.childType(zcu);
+    elem_ty.assertHasLayout(zcu);
 
     if (parent_ptr.isUndef(zcu)) return pt.undefValue(result_ty);
 
-    if (result_ty.ptrInfo(zcu).packed_offset.host_size != 0) {
-        // Since we have a bit-pointer, the pointer address should be unchanged.
-        assert(elem_ty.zigTypeTag(zcu) == .vector);
+    if (!elem_ty.comptimeOnly(zcu)) {
+        const byte_offset = field_idx * elem_ty.abiSize(zcu);
+        return parent_ptr.getOffsetPtr(byte_offset, result_ty, pt);
+    }
+
+    // Comptime-only element type.
+
+    if (field_idx == 0) {
         return pt.getCoerced(parent_ptr, result_ty);
     }
 
-    const PtrStrat = union(enum) {
-        offset: u64,
-        elem_ptr: Type, // many-ptr elem ty
-    };
-
-    const strat: PtrStrat = switch (parent_ptr_ty.ptrSize(zcu)) {
-        .one => switch (elem_ty.zigTypeTag(zcu)) {
-            .vector => .{ .offset = field_idx * @divExact(elem_ty.childType(zcu).bitSize(zcu), 8) },
-            .array => strat: {
-                const arr_elem_ty = elem_ty.childType(zcu);
-                if (arr_elem_ty.comptimeOnly(zcu)) break :strat .{ .elem_ptr = arr_elem_ty };
-                break :strat .{ .offset = field_idx * arr_elem_ty.abiSize(zcu) };
-            },
-            else => unreachable,
-        },
-
-        .many, .c => if (elem_ty.comptimeOnly(zcu))
-            .{ .elem_ptr = elem_ty }
-        else
-            .{ .offset = field_idx * elem_ty.abiSize(zcu) },
-
-        .slice => unreachable,
-    };
-
-    switch (strat) {
-        .offset => |byte_offset| {
-            return parent_ptr.getOffsetPtr(byte_offset, result_ty, pt);
-        },
-        .elem_ptr => |manyptr_elem_ty| if (field_idx == 0) {
-            return pt.getCoerced(parent_ptr, result_ty);
-        } else {
-            const arr_base_ty, const arr_base_len = manyptr_elem_ty.arrayBase(zcu);
-            const base_idx = arr_base_len * field_idx;
-            const parent_info = zcu.intern_pool.indexToKey(parent_ptr.toIntern()).ptr;
-            switch (parent_info.base_addr) {
-                .arr_elem => |arr_elem| {
-                    if (Value.fromInterned(arr_elem.base).typeOf(zcu).childType(zcu).toIntern() == arr_base_ty.toIntern()) {
-                        // We already have a pointer to an element of an array of this type.
-                        // Just modify the index.
-                        return Value.fromInterned(try pt.intern(.{ .ptr = ptr: {
-                            var new = parent_info;
-                            new.base_addr.arr_elem.index += base_idx;
-                            new.ty = result_ty.toIntern();
-                            break :ptr new;
-                        } }));
-                    }
-                },
-                else => {},
+    const arr_base_ty, const arr_base_len = elem_ty.arrayBase(zcu);
+    const base_idx = arr_base_len * field_idx;
+    const parent_info = zcu.intern_pool.indexToKey(parent_ptr.toIntern()).ptr;
+    switch (parent_info.base_addr) {
+        .arr_elem => |arr_elem| {
+            if (Value.fromInterned(arr_elem.base).typeOf(zcu).childType(zcu).toIntern() == arr_base_ty.toIntern()) {
+                // We already have a pointer to an element of an array of this type.
+                // Just modify the index.
+                return .fromInterned(try pt.intern(.{ .ptr = ptr: {
+                    var new = parent_info;
+                    new.base_addr.arr_elem.index += base_idx;
+                    new.ty = result_ty.toIntern();
+                    break :ptr new;
+                } }));
             }
-            const base_ptr = try parent_ptr.canonicalizeBasePtr(.many, arr_base_ty, pt);
-            return Value.fromInterned(try pt.intern(.{ .ptr = .{
-                .ty = result_ty.toIntern(),
-                .base_addr = .{ .arr_elem = .{
-                    .base = base_ptr.toIntern(),
-                    .index = base_idx,
-                } },
-                .byte_offset = 0,
-            } }));
         },
+        else => {},
     }
+    const base_ptr = try parent_ptr.canonicalizeBasePtr(.many, arr_base_ty, pt);
+    return .fromInterned(try pt.intern(.{ .ptr = .{
+        .ty = result_ty.toIntern(),
+        .base_addr = .{ .arr_elem = .{
+            .base = base_ptr.toIntern(),
+            .index = base_idx,
+        } },
+        .byte_offset = 0,
+    } }));
 }
 
 fn canonicalizeBasePtr(base_ptr: Value, want_size: std.builtin.Type.Pointer.Size, want_child: Type, pt: Zcu.PerThread) !Value {
@@ -2062,19 +1949,11 @@ pub const PointerDeriveStep = union(enum) {
     }
 };
 
-pub fn pointerDerivation(ptr_val: Value, arena: Allocator, pt: Zcu.PerThread) Allocator.Error!PointerDeriveStep {
-    return ptr_val.pointerDerivationAdvanced(arena, pt, false, null) catch |err| switch (err) {
-        error.OutOfMemory => |e| return e,
-        error.Canceled => @panic("TODO"), // pls remove from error set mlugg
-        error.AnalysisFail => unreachable,
-    };
-}
-
 /// Given a pointer value, get the sequence of steps to derive it, ideally by taking
 /// only field and element pointers with no casts. This can be used by codegen backends
 /// which prefer field/elem accesses when lowering constant pointer values.
 /// It is also used by the Value printing logic for pointers.
-pub fn pointerDerivationAdvanced(ptr_val: Value, arena: Allocator, pt: Zcu.PerThread, comptime resolve_types: bool, opt_sema: ?*Sema) !PointerDeriveStep {
+pub fn pointerDerivation(ptr_val: Value, arena: Allocator, pt: Zcu.PerThread, opt_sema: ?*Sema) Allocator.Error!PointerDeriveStep {
     // MLUGG TODO: audit tf outta this code
     const zcu = pt.zcu;
     const ptr = zcu.intern_pool.indexToKey(ptr_val.toIntern()).ptr;
@@ -2118,7 +1997,7 @@ pub fn pointerDerivationAdvanced(ptr_val: Value, arena: Allocator, pt: Zcu.PerTh
             const base_ptr = Value.fromInterned(eu_ptr);
             const base_ptr_ty = base_ptr.typeOf(zcu);
             const parent_step = try arena.create(PointerDeriveStep);
-            parent_step.* = try pointerDerivationAdvanced(Value.fromInterned(eu_ptr), arena, pt, resolve_types, opt_sema);
+            parent_step.* = try pointerDerivation(.fromInterned(eu_ptr), arena, pt, opt_sema);
             break :base .{ .eu_payload_ptr = .{
                 .parent = parent_step,
                 .result_ptr_ty = try pt.adjustPtrTypeChild(base_ptr_ty, base_ptr_ty.childType(zcu).errorUnionPayload(zcu)),
@@ -2128,7 +2007,7 @@ pub fn pointerDerivationAdvanced(ptr_val: Value, arena: Allocator, pt: Zcu.PerTh
             const base_ptr = Value.fromInterned(opt_ptr);
             const base_ptr_ty = base_ptr.typeOf(zcu);
             const parent_step = try arena.create(PointerDeriveStep);
-            parent_step.* = try pointerDerivationAdvanced(Value.fromInterned(opt_ptr), arena, pt, resolve_types, opt_sema);
+            parent_step.* = try pointerDerivation(.fromInterned(opt_ptr), arena, pt, opt_sema);
             break :base .{ .opt_payload_ptr = .{
                 .parent = parent_step,
                 .result_ptr_ty = try pt.adjustPtrTypeChild(base_ptr_ty, base_ptr_ty.childType(zcu).optionalChild(zcu)),
@@ -2137,48 +2016,27 @@ pub fn pointerDerivationAdvanced(ptr_val: Value, arena: Allocator, pt: Zcu.PerTh
         .field => |field| base: {
             const base_ptr = Value.fromInterned(field.base);
             const base_ptr_ty = base_ptr.typeOf(zcu);
-            const agg_ty = base_ptr_ty.childType(zcu);
-            if (resolve_types) try opt_sema.?.ensureLayoutResolved(agg_ty, .unneeded); // MLUGG TODO: unneeded is a hack
-            const field_ty: Type, const field_align: InternPool.Alignment = switch (agg_ty.zigTypeTag(zcu)) {
-                .@"struct", .@"union" => .{ agg_ty.fieldType(@intCast(field.index), zcu), agg_ty.resolvedFieldAlignment(@intCast(field.index), pt.zcu) },
-                .pointer => switch (field.index) {
-                    Value.slice_ptr_index => .{ agg_ty.slicePtrFieldType(zcu), Type.ptrAbiAlignment(zcu.getTarget()) },
-                    Value.slice_len_index => .{ .usize, Type.abiAlignment(.usize, zcu) },
-                    else => unreachable,
-                },
-                else => unreachable,
-            };
-            const base_align = base_ptr_ty.ptrAlignment(zcu);
-            const result_align = field_align.minStrict(base_align);
-            const result_ty = try pt.ptrType(.{
-                .child = field_ty.toIntern(),
-                .flags = flags: {
-                    var flags = base_ptr_ty.ptrInfo(zcu).flags;
-                    if (result_align == field_ty.abiAlignment(zcu)) {
-                        flags.alignment = .none;
-                    } else {
-                        flags.alignment = result_align;
-                    }
-                    break :flags flags;
-                },
-            });
             const parent_step = try arena.create(PointerDeriveStep);
-            parent_step.* = try pointerDerivationAdvanced(base_ptr, arena, pt, resolve_types, opt_sema);
+            parent_step.* = try pointerDerivation(base_ptr, arena, pt, opt_sema);
             break :base .{ .field_ptr = .{
                 .parent = parent_step,
                 .field_idx = @intCast(field.index),
-                .result_ptr_ty = result_ty,
+                .result_ptr_ty = try base_ptr_ty.fieldPtrType(@intCast(field.index), pt),
             } };
         },
         .arr_elem => |arr_elem| base: {
             const parent_step = try arena.create(PointerDeriveStep);
-            parent_step.* = try pointerDerivationAdvanced(Value.fromInterned(arr_elem.base), arena, pt, resolve_types, opt_sema);
+            parent_step.* = try pointerDerivation(.fromInterned(arr_elem.base), arena, pt, opt_sema);
             const parent_ptr_info = (try parent_step.ptrType(pt)).ptrInfo(zcu);
             const result_ptr_ty = try pt.ptrType(.{
                 .child = parent_ptr_info.child,
                 .flags = flags: {
                     var flags = parent_ptr_info.flags;
                     flags.size = .one;
+                    if (flags.alignment != .none) flags.alignment = .minStrict(
+                        flags.alignment,
+                        Type.fromInterned(parent_ptr_info.child).abiAlignment(zcu),
+                    );
                     break :flags flags;
                 },
             });
@@ -2299,26 +2157,12 @@ pub fn pointerDerivationAdvanced(ptr_val: Value, arena: Allocator, pt: Zcu.PerTh
                     const end_off = start_off + field_ty.abiSize(zcu);
                     if (cur_offset >= start_off and cur_offset + need_bytes <= end_off) {
                         const old_ptr_ty = try cur_derive.ptrType(pt);
-                        const parent_align = old_ptr_ty.ptrAlignment(zcu);
-                        const field_align = InternPool.Alignment.fromLog2Units(@min(parent_align.toLog2Units(), @ctz(start_off)));
                         const parent = try arena.create(PointerDeriveStep);
                         parent.* = cur_derive;
-                        const new_ptr_ty = try pt.ptrType(.{
-                            .child = field_ty.toIntern(),
-                            .flags = flags: {
-                                var flags = old_ptr_ty.ptrInfo(zcu).flags;
-                                if (field_align == field_ty.abiAlignment(zcu)) {
-                                    flags.alignment = .none;
-                                } else {
-                                    flags.alignment = field_align;
-                                }
-                                break :flags flags;
-                            },
-                        });
                         cur_derive = .{ .field_ptr = .{
                             .parent = parent,
                             .field_idx = @intCast(field_idx),
-                            .result_ptr_ty = new_ptr_ty,
+                            .result_ptr_ty = try old_ptr_ty.fieldPtrType(@intCast(field_idx), pt),
                         } };
                         cur_offset -= start_off;
                         break;
