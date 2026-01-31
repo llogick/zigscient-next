@@ -16796,6 +16796,7 @@ fn createFileMap(
                 .OVERFLOW => return error.Unseekable,
                 .BADF => return errnoBug(err), // Always a race condition.
                 .INVAL => return errnoBug(err), // Invalid parameters to mmap()
+                .OPNOTSUPP => return errnoBug(err), // Bad flags with MAP.SHARED_VALIDATE on Linux.
                 else => return posix.unexpectedErrno(err),
             }
         };

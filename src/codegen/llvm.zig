@@ -12608,8 +12608,7 @@ fn ccAbiPromoteInt(cc: std.builtin.CallingConvention, zcu: *Zcu, ty: Type) ?std.
     }
     const int_info = switch (ty.zigTypeTag(zcu)) {
         .bool => Type.u1.intInfo(zcu),
-        .int, .@"enum", .error_set => ty.intInfo(zcu),
-        else => return null,
+        else => if (ty.isAbiInt(zcu)) ty.intInfo(zcu) else return null,
     };
     return switch (target.os.tag) {
         .driverkit, .ios, .maccatalyst, .macos, .watchos, .tvos, .visionos => switch (int_info.bits) {
