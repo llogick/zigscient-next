@@ -493,65 +493,67 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
     };
     defer block.instructions.deinit(gpa);
 
-    // MLUGG TODO: this is fucking ugly bro
-    const explicit_enum_tag_ty: ?Type = if (union_obj.is_reified) ty: {
-        break :ty switch (union_obj.enum_tag_mode) {
-            .explicit => .fromInterned(union_obj.enum_tag_type),
-            .auto => null,
-        };
-    } else ty: {
-        const zir_union = sema.code.getUnionDecl(zir_index);
-        if (zir_union.kind != .tagged_explicit) {
-            break :ty null; // enum tag type will be automatically generated
-        }
-        // Explicitly specified, so evaluate the enum tag type expression.
-        const tag_type_body = zir_union.arg_type_body.?;
-        const tag_type_src = block.src(.container_arg);
-        block.comptime_reason = .{ .reason = .{
-            .src = tag_type_src,
-            .r = .{ .simple = .union_enum_tag_type },
-        } };
-        const type_ref = try sema.resolveInlineBody(&block, tag_type_body, zir_index);
-        break :ty try sema.analyzeAsType(&block, tag_type_src, .union_enum_tag_type, type_ref);
-    };
-    const enum_tag_ty: Type = if (explicit_enum_tag_ty) |enum_tag_ty| ty: {
-        if (enum_tag_ty.zigTypeTag(zcu) != .@"enum") return sema.fail(
-            &block,
-            block.src(.container_arg),
-            "expected enum tag type, found '{f}'",
-            .{enum_tag_ty.fmt(pt)},
-        );
-        break :ty enum_tag_ty;
-    } else switch (try ip.getGeneratedEnumTagType(gpa, io, pt.tid, .{
-        .union_type = union_ty.toIntern(),
-        // MLUGG TODO: a bit hacky icl
-        .int_tag_mode = mode: {
-            if (union_obj.is_reified) break :mode .auto;
-            const zir_union = sema.code.getUnionDecl(zir_index);
-            if (zir_union.kind != .tagged_enum_explicit) break :mode .auto;
-            break :mode .explicit;
+    const enum_tag_ty: Type = switch (union_obj.enum_tag_mode) {
+        .explicit => validated_tag_ty: {
+            // If the union is reified, its enum tag type is already populated. If the union is
+            // declared, we need to evaluate the enum tag type expression (the `E` in `union(E)`).
+            const tag_ty: Type = switch (union_obj.is_reified) {
+                true => .fromInterned(union_obj.enum_tag_type),
+                false => tag_ty: {
+                    const zir_union = sema.code.getUnionDecl(zir_index);
+                    assert(zir_union.kind == .tagged_explicit); // `Zcu.mapOldZirToNew` guarantees that the ZIR mapping preserves `kind`
+                    const tag_type_body = zir_union.arg_type_body.?;
+                    const tag_type_src = block.src(.container_arg);
+                    block.comptime_reason = .{ .reason = .{
+                        .src = tag_type_src,
+                        .r = .{ .simple = .union_enum_tag_type },
+                    } };
+                    const type_ref = try sema.resolveInlineBody(&block, tag_type_body, zir_index);
+                    break :tag_ty try sema.analyzeAsType(&block, tag_type_src, .union_enum_tag_type, type_ref);
+                },
+            };
+            // Because the type is explicitly specified, we need to validate it.
+            if (tag_ty.zigTypeTag(zcu) != .@"enum") return sema.fail(
+                &block,
+                block.src(.container_arg),
+                "expected enum tag type, found '{f}'",
+                .{tag_ty.fmt(pt)},
+            );
+            break :validated_tag_ty tag_ty;
         },
-        .fields_len = @intCast(union_obj.field_types.len),
-    })) {
-        .existing => |tag_ty| .fromInterned(tag_ty),
-        .wip => |wip| tag_ty: {
-            errdefer wip.cancel(ip, pt.tid);
-            _ = wip.setName(ip, try ip.getOrPutStringFmt(
-                gpa,
-                io,
-                pt.tid,
-                "@typeInfo({f}).@\"union\".tag_type.?",
-                .{union_obj.name.fmt(ip)},
-                .no_embedded_nulls,
-            ), .none);
-            const new_namespace_index: InternPool.NamespaceIndex = try pt.createNamespace(.{
-                .parent = union_obj.namespace.toOptional(),
-                .owner_type = wip.index,
-                .file_scope = zcu.namespacePtr(union_obj.namespace).file_scope,
-                .generation = zcu.generation,
-            });
-            if (comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-            break :tag_ty .fromInterned(wip.finish(ip, new_namespace_index));
+        // If no tag type was specified, we generate one keyed on this union type.
+        .auto => switch (try ip.getGeneratedEnumTagType(gpa, io, pt.tid, .{
+            .union_type = union_ty.toIntern(),
+            // The int tag for this enum is usually inferred---the exception is `union(enum(T))`.
+            .int_tag_mode = switch (union_obj.is_reified) {
+                true => .auto,
+                false => switch (sema.code.getUnionDecl(zir_index).kind) {
+                    .tagged_enum_explicit => .auto,
+                    else => .explicit,
+                },
+            },
+            .fields_len = @intCast(union_obj.field_types.len),
+        })) {
+            .existing => |tag_ty| .fromInterned(tag_ty),
+            .wip => |wip| tag_ty: {
+                errdefer wip.cancel(ip, pt.tid);
+                _ = wip.setName(ip, try ip.getOrPutStringFmt(
+                    gpa,
+                    io,
+                    pt.tid,
+                    "@typeInfo({f}).@\"union\".tag_type.?",
+                    .{union_obj.name.fmt(ip)},
+                    .no_embedded_nulls,
+                ), .none);
+                const new_namespace_index: InternPool.NamespaceIndex = try pt.createNamespace(.{
+                    .parent = union_obj.namespace.toOptional(),
+                    .owner_type = wip.index,
+                    .file_scope = zcu.namespacePtr(union_obj.namespace).file_scope,
+                    .generation = zcu.generation,
+                });
+                if (comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
+                break :tag_ty .fromInterned(wip.finish(ip, new_namespace_index));
+            },
         },
     };
 
