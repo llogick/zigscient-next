@@ -16,7 +16,7 @@ const translate_c = @import("translate_c.zig");
 const DocumentScope = @import("DocumentScope.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
-const zmain = @import("root");
+const zmain = @import("root").buildOutputType;
 
 const DocumentStore = @This();
 
@@ -1351,7 +1351,7 @@ fn loadBuildConfiguration(self: *DocumentStore, build_file_uri: Uri, build_file_
             .{
                 .argv = args,
                 .cwd = cwd,
-                .max_output_bytes = 16 * 1024 * 1024,
+                .reserve_amount = 16 * 1024 * 1024,
             },
         );
     };
