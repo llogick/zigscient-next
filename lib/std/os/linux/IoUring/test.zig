@@ -2736,8 +2736,9 @@ fn send(sockfd: posix.socket_t, buf: []const u8, flags: u32) !usize {
 }
 
 fn connect(sock: posix.socket_t, sock_addr: *const posix.sockaddr, len: posix.socklen_t) !void {
-    switch (posix.errno(posix.system.connect(sock, sock_addr, len))) {
+    while (true) switch (posix.errno(posix.system.connect(sock, sock_addr, len))) {
         .SUCCESS => return,
+        .INTR => continue,
         else => return error.ConnectFailed,
-    }
+    };
 }
