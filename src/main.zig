@@ -265,22 +265,28 @@ fn mainArgs(
     const cmd_args = args[3..];
     if (mem.eql(u8, cmd, "build-exe")) {
         dev.check(.build_exe_command);
-        return buildOutputType(gpa, arena, io, args, .{ .build = .Exe }, environ_map);
+        var cs: CompilationState = .{};
+        return buildOutputType(gpa, arena, io, args, .{ .build = .Exe }, environ_map, &cs);
     } else if (mem.eql(u8, cmd, "build-lib")) {
         dev.check(.build_lib_command);
-        return buildOutputType(gpa, arena, io, args, .{ .build = .Lib }, environ_map);
+        var cs: CompilationState = .{};
+        return buildOutputType(gpa, arena, io, args, .{ .build = .Lib }, environ_map, &cs);
     } else if (mem.eql(u8, cmd, "build-obj")) {
         dev.check(.build_obj_command);
-        return buildOutputType(gpa, arena, io, args, .{ .build = .Obj }, environ_map);
+        var cs: CompilationState = .{};
+        return buildOutputType(gpa, arena, io, args, .{ .build = .Obj }, environ_map, &cs);
     } else if (mem.eql(u8, cmd, "test")) {
         dev.check(.test_command);
-        return buildOutputType(gpa, arena, io, args, .zig_test, environ_map);
+        var cs: CompilationState = .{};
+        return buildOutputType(gpa, arena, io, args, .zig_test, environ_map, &cs);
     } else if (mem.eql(u8, cmd, "test-obj")) {
         dev.check(.test_command);
-        return buildOutputType(gpa, arena, io, args, .zig_test_obj, environ_map);
+        var cs: CompilationState = .{};
+        return buildOutputType(gpa, arena, io, args, .zig_test_obj, environ_map, &cs);
     } else if (mem.eql(u8, cmd, "run")) {
         dev.check(.run_command);
-        return buildOutputType(gpa, arena, io, args, .run, environ_map);
+        var cs: CompilationState = .{};
+        return buildOutputType(gpa, arena, io, args, .run, environ_map, &cs);
     } else if (mem.eql(u8, cmd, "dlltool") or
         mem.eql(u8, cmd, "ranlib") or
         mem.eql(u8, cmd, "lib") or
@@ -811,6 +817,199 @@ const CliModule = struct {
     };
 };
 
+pub const CompilationState = struct {
+    provided_name: ?[]const u8 = null,
+    root_src_file: ?[]const u8 = null,
+    version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 },
+    have_version: bool = false,
+    compatibility_version: ?std.SemanticVersion = null,
+    function_sections: bool = false,
+    data_sections: bool = false,
+    listen: Listen = .none,
+    debug_compile_errors: bool = false,
+    debug_incremental: bool = false,
+    verbose_link: bool = false,
+    verbose_cc: bool = false,
+    verbose_air: bool = false,
+    verbose_intern_pool: bool = false,
+    verbose_generic_instances: bool = false,
+    verbose_llvm_ir: ?[]const u8 = null,
+    verbose_llvm_bc: ?[]const u8 = null,
+    link_depfile: ?[]const u8 = null,
+    verbose_cimport: bool = false,
+    verbose_llvm_cpu_features: bool = false,
+    time_report: bool = false,
+    stack_report: bool = false,
+    show_builtin: bool = false,
+    emit_bin: EmitBin = .yes_default_path,
+    emit_asm: Emit = .no,
+    emit_llvm_ir: Emit = .no,
+    emit_llvm_bc: Emit = .no,
+    emit_docs: Emit = .no,
+    emit_implib: Emit = .yes_default_path,
+    emit_implib_arg_provided: bool = false,
+    target_arch_os_abi: ?[]const u8 = null,
+    target_mcpu: ?[]const u8 = null,
+    emit_h: Emit = .no,
+    soname: SOName = undefined,
+    want_compiler_rt: ?bool = null,
+    want_ubsan_rt: ?bool = null,
+    linker_script: ?[]const u8 = null,
+    version_script: ?[]const u8 = null,
+    linker_repro: ?bool = null,
+    linker_allow_undefined_version: bool = false,
+    linker_enable_new_dtags: ?bool = null,
+    disable_c_depfile: bool = false,
+    linker_sort_section: ?link.File.Lld.Elf.SortSection = null,
+    linker_gc_sections: ?bool = null,
+    linker_compress_debug_sections: ?std.zig.CompressDebugSections = null,
+    linker_allow_shlib_undefined: ?bool = null,
+    allow_so_scripts: bool = false,
+    linker_bind_global_refs_locally: ?bool = null,
+    linker_import_symbols: bool = false,
+    linker_import_table: bool = false,
+    linker_export_table: bool = false,
+    linker_initial_memory: ?u64 = null,
+    linker_max_memory: ?u64 = null,
+    linker_global_base: ?u64 = null,
+    linker_print_gc_sections: bool = false,
+    linker_print_icf_sections: bool = false,
+    linker_print_map: bool = false,
+    llvm_opt_bisect_limit: c_int = -1,
+    linker_z_nocopyreloc: bool = false,
+    linker_z_nodelete: bool = false,
+    linker_z_notext: bool = false,
+    linker_z_defs: bool = false,
+    linker_z_origin: bool = false,
+    linker_z_now: bool = true,
+    linker_z_relro: bool = true,
+    linker_z_common_page_size: ?u64 = null,
+    linker_z_max_page_size: ?u64 = null,
+    linker_tsaware: bool = false,
+    linker_nxcompat: bool = false,
+    linker_dynamicbase: bool = true,
+    linker_optimization: ?[]const u8 = null,
+    linker_module_definition_file: ?[]const u8 = null,
+    test_no_exec: bool = false,
+    test_execve: bool = false,
+    entry: Compilation.CreateOptions.Entry = .default,
+    force_undefined_symbols: std.StringArrayHashMapUnmanaged(void) = .empty,
+    stack_size: ?u64 = null,
+    image_base: ?u64 = null,
+    link_eh_frame_hdr: bool = false,
+    link_emit_relocs: bool = false,
+    build_id: ?std.zig.BuildId = null,
+    runtime_args_start: ?usize = null,
+    test_filters: std.ArrayList([]const u8) = .empty,
+    test_runner_path: ?[]const u8 = null,
+    override_local_cache_dir: ?[]const u8 = null,
+    override_global_cache_dir: ?[]const u8 = null,
+    override_lib_dir: ?[]const u8 = null,
+    clang_preprocessor_mode: Compilation.ClangPreprocessorMode = .no,
+    subsystem: ?std.zig.Subsystem = null,
+    major_subsystem_version: ?u16 = null,
+    minor_subsystem_version: ?u16 = null,
+    mingw_unicode_entry_point: bool = false,
+    enable_link_snapshots: bool = false,
+    debug_compiler_runtime_libs: bool = false,
+    install_name: ?[]const u8 = null,
+    hash_style: link.File.Lld.Elf.HashStyle = .both,
+    entitlements: ?[]const u8 = null,
+    pagezero_size: ?u64 = null,
+    lib_search_strategy: link.UnresolvedInput.SearchStrategy = .paths_first,
+    lib_preferred_mode: std.builtin.LinkMode = .dynamic,
+    headerpad_size: ?u32 = null,
+    headerpad_max_install_names: bool = false,
+    dead_strip_dylibs: bool = false,
+    force_load_objc: bool = false,
+    discard_local_symbols: bool = false,
+    contains_res_file: bool = false,
+    reference_trace: ?u32 = null,
+    pdb_out_path: ?[]const u8 = null,
+    error_limit: ?Zcu.ErrorInt = null,
+    // These are before resolving sysroot.
+    extra_cflags: std.ArrayList([]const u8) = .empty,
+    extra_rcflags: std.ArrayList([]const u8) = .empty,
+    symbol_wrap_set: std.StringArrayHashMapUnmanaged(void) = .empty,
+    rc_includes: std.zig.RcIncludes = .any,
+    manifest_file: ?[]const u8 = null,
+    linker_export_symbol_names: std.ArrayList([]const u8) = .empty,
+
+    // Tracks the position in c_source_files which have already their owner populated.
+    c_source_files_owner_index: usize = 0,
+    // Tracks the position in rc_source_files which have already their owner populated.
+    rc_source_files_owner_index: usize = 0,
+
+    // null means replace with the test executable binary
+    test_exec_args: std.ArrayList(?[]const u8) = .empty,
+
+    // These get set by CLI flags and then snapshotted when a `-M` flag is
+    // encountered.
+    mod_opts: Package.Module.CreateOptions.Inherited = .{},
+
+    // These get appended to by CLI flags and then slurped when a `-M` flag
+    // is encountered.
+    cssan: ClangSearchSanitizer = .{},
+    cc_argv: std.ArrayList([]const u8) = .empty,
+    deps: std.ArrayList(CliModule.Dep) = .empty,
+
+    // Contains every module specified via -M. The dependencies are added
+    // after argument parsing is completed. We use a StringArrayHashMap to make
+    // error output consistent. "root" is special.
+    create_module: CreateModule = .{
+        // Populated just before the call to `createModule`.
+        .dirs = undefined,
+        .object_format = null,
+        .dynamic_linker = null,
+        .modules = .{},
+        .opts = .{
+            .is_test = undefined,
+            // Populated while parsing CLI args.
+            .output_mode = undefined,
+            // Populated in the call to `createModule` for the root module.
+            .resolved_target = undefined,
+            .have_zcu = false,
+            // Populated just before the call to `createModule`.
+            .emit_llvm_ir = undefined,
+            // Populated just before the call to `createModule`.
+            .emit_llvm_bc = undefined,
+            // Populated just before the call to `createModule`.
+            .emit_bin = undefined,
+            // Populated just before the call to `createModule`.
+            .any_c_source_files = undefined,
+        },
+        // Populated in the call to `createModule` for the root module.
+        .resolved_options = undefined,
+
+        .cli_link_inputs = .empty,
+        .windows_libs = .empty,
+        .link_inputs = .empty,
+
+        .c_source_files = .{},
+        .rc_source_files = .{},
+
+        .llvm_m_args = .{},
+        .sysroot = null,
+        .lib_directories = .{}, // populated by createModule()
+        .lib_dir_args = .{}, // populated from CLI arg parsing
+        .libc_installation = null,
+        .want_native_include_dirs = false,
+        .frameworks = .{},
+        .framework_dirs = .{},
+        .rpath_list = .{},
+        .each_lib_rpath = null,
+        .libc_paths_file = undefined,
+        .native_system_include_paths = &.{},
+    },
+
+    // before arg parsing, check for the NO_COLOR and CLICOLOR_FORCE environment variables
+    // if set, default the color setting to .off or .on, respectively
+    // explicit --color arguments will still override this setting.
+    // Disable color on WASI per https://github.com/WebAssembly/WASI/issues/162
+    color: Color = .auto,
+    n_jobs: ?u32 = null,
+};
+
 pub fn buildOutputType(
     gpa: Allocator,
     arena: Allocator,
@@ -818,148 +1017,149 @@ pub fn buildOutputType(
     all_args: []const []const u8,
     arg_mode: ArgMode,
     environ_map: *process.Environ.Map,
+    cs: *CompilationState,
 ) !void {
-    var provided_name: ?[]const u8 = null;
-    var root_src_file: ?[]const u8 = null;
-    var version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 };
-    var have_version = false;
-    var compatibility_version: ?std.SemanticVersion = null;
-    var function_sections = false;
-    var data_sections = false;
-    var listen: Listen = .none;
-    var debug_compile_errors = false;
-    var debug_incremental = false;
-    var verbose_link = (native_os != .wasi or builtin.link_libc) and
+    cs.provided_name = null;
+    cs.root_src_file = null;
+    cs.version = .{ .major = 0, .minor = 0, .patch = 0 };
+    cs.have_version = false;
+    cs.compatibility_version = null;
+    cs.function_sections = false;
+    cs.data_sections = false;
+    cs.listen = .none;
+    cs.debug_compile_errors = false;
+    cs.debug_incremental = false;
+    cs.verbose_link = (native_os != .wasi or builtin.link_libc) and
         EnvVar.ZIG_VERBOSE_LINK.isSet(environ_map);
-    var verbose_cc = (native_os != .wasi or builtin.link_libc) and
+    cs.verbose_cc = (native_os != .wasi or builtin.link_libc) and
         EnvVar.ZIG_VERBOSE_CC.isSet(environ_map);
-    var verbose_air = false;
-    var verbose_intern_pool = false;
-    var verbose_generic_instances = false;
-    var verbose_llvm_ir: ?[]const u8 = null;
-    var verbose_llvm_bc: ?[]const u8 = null;
-    var link_depfile: ?[]const u8 = null;
-    var verbose_cimport = false;
-    var verbose_llvm_cpu_features = false;
-    var time_report = false;
-    var stack_report = false;
-    var show_builtin = false;
-    var emit_bin: EmitBin = .yes_default_path;
-    var emit_asm: Emit = .no;
-    var emit_llvm_ir: Emit = .no;
-    var emit_llvm_bc: Emit = .no;
-    var emit_docs: Emit = .no;
-    var emit_implib: Emit = .yes_default_path;
-    var emit_implib_arg_provided = false;
-    var target_arch_os_abi: ?[]const u8 = null;
-    var target_mcpu: ?[]const u8 = null;
-    var emit_h: Emit = .no;
-    var soname: SOName = undefined;
-    var want_compiler_rt: ?bool = null;
-    var want_ubsan_rt: ?bool = null;
-    var linker_script: ?[]const u8 = null;
-    var version_script: ?[]const u8 = null;
-    var linker_repro: ?bool = null;
-    var linker_allow_undefined_version: bool = false;
-    var linker_enable_new_dtags: ?bool = null;
-    var disable_c_depfile = false;
-    var linker_sort_section: ?link.File.Lld.Elf.SortSection = null;
-    var linker_gc_sections: ?bool = null;
-    var linker_compress_debug_sections: ?std.zig.CompressDebugSections = null;
-    var linker_allow_shlib_undefined: ?bool = null;
-    var allow_so_scripts: bool = false;
-    var linker_bind_global_refs_locally: ?bool = null;
-    var linker_import_symbols: bool = false;
-    var linker_import_table: bool = false;
-    var linker_export_table: bool = false;
-    var linker_initial_memory: ?u64 = null;
-    var linker_max_memory: ?u64 = null;
-    var linker_global_base: ?u64 = null;
-    var linker_print_gc_sections: bool = false;
-    var linker_print_icf_sections: bool = false;
-    var linker_print_map: bool = false;
-    var llvm_opt_bisect_limit: c_int = -1;
-    var linker_z_nocopyreloc = false;
-    var linker_z_nodelete = false;
-    var linker_z_notext = false;
-    var linker_z_defs = false;
-    var linker_z_origin = false;
-    var linker_z_now = true;
-    var linker_z_relro = true;
-    var linker_z_common_page_size: ?u64 = null;
-    var linker_z_max_page_size: ?u64 = null;
-    var linker_tsaware = false;
-    var linker_nxcompat = false;
-    var linker_dynamicbase = true;
-    var linker_optimization: ?[]const u8 = null;
-    var linker_module_definition_file: ?[]const u8 = null;
-    var test_no_exec = false;
-    var test_execve = false;
-    var entry: Compilation.CreateOptions.Entry = .default;
-    var force_undefined_symbols: std.StringArrayHashMapUnmanaged(void) = .empty;
-    var stack_size: ?u64 = null;
-    var image_base: ?u64 = null;
-    var link_eh_frame_hdr = false;
-    var link_emit_relocs = false;
-    var build_id: ?std.zig.BuildId = null;
-    var runtime_args_start: ?usize = null;
-    var test_filters: std.ArrayList([]const u8) = .empty;
-    var test_runner_path: ?[]const u8 = null;
-    var override_local_cache_dir: ?[]const u8 = EnvVar.ZIG_LOCAL_CACHE_DIR.get(environ_map);
-    var override_global_cache_dir: ?[]const u8 = EnvVar.ZIG_GLOBAL_CACHE_DIR.get(environ_map);
-    var override_lib_dir: ?[]const u8 = EnvVar.ZIG_LIB_DIR.get(environ_map);
-    var clang_preprocessor_mode: Compilation.ClangPreprocessorMode = .no;
-    var subsystem: ?std.zig.Subsystem = null;
-    var major_subsystem_version: ?u16 = null;
-    var minor_subsystem_version: ?u16 = null;
-    var mingw_unicode_entry_point: bool = false;
-    var enable_link_snapshots: bool = false;
-    var debug_compiler_runtime_libs = false;
-    var install_name: ?[]const u8 = null;
-    var hash_style: link.File.Lld.Elf.HashStyle = .both;
-    var entitlements: ?[]const u8 = null;
-    var pagezero_size: ?u64 = null;
-    var lib_search_strategy: link.UnresolvedInput.SearchStrategy = .paths_first;
-    var lib_preferred_mode: std.builtin.LinkMode = .dynamic;
-    var headerpad_size: ?u32 = null;
-    var headerpad_max_install_names: bool = false;
-    var dead_strip_dylibs: bool = false;
-    var force_load_objc: bool = false;
-    var discard_local_symbols: bool = false;
-    var contains_res_file: bool = false;
-    var reference_trace: ?u32 = null;
-    var pdb_out_path: ?[]const u8 = null;
-    var error_limit: ?Zcu.ErrorInt = null;
+    cs.verbose_air = false;
+    cs.verbose_intern_pool = false;
+    cs.verbose_generic_instances = false;
+    cs.verbose_llvm_ir = null;
+    cs.verbose_llvm_bc = null;
+    cs.link_depfile = null;
+    cs.verbose_cimport = false;
+    cs.verbose_llvm_cpu_features = false;
+    cs.time_report = false;
+    cs.stack_report = false;
+    cs.show_builtin = false;
+    cs.emit_bin = .yes_default_path;
+    cs.emit_asm = .no;
+    cs.emit_llvm_ir = .no;
+    cs.emit_llvm_bc = .no;
+    cs.emit_docs = .no;
+    cs.emit_implib = .yes_default_path;
+    cs.emit_implib_arg_provided = false;
+    cs.target_arch_os_abi = null;
+    cs.target_mcpu = null;
+    cs.emit_h = .no;
+    cs.soname = undefined;
+    cs.want_compiler_rt = null;
+    cs.want_ubsan_rt = null;
+    cs.linker_script = null;
+    cs.version_script = null;
+    cs.linker_repro = null;
+    cs.linker_allow_undefined_version = false;
+    cs.linker_enable_new_dtags = null;
+    cs.disable_c_depfile = false;
+    cs.linker_sort_section = null;
+    cs.linker_gc_sections = null;
+    cs.linker_compress_debug_sections = null;
+    cs.linker_allow_shlib_undefined = null;
+    cs.allow_so_scripts = false;
+    cs.linker_bind_global_refs_locally = null;
+    cs.linker_import_symbols = false;
+    cs.linker_import_table = false;
+    cs.linker_export_table = false;
+    cs.linker_initial_memory = null;
+    cs.linker_max_memory = null;
+    cs.linker_global_base = null;
+    cs.linker_print_gc_sections = false;
+    cs.linker_print_icf_sections = false;
+    cs.linker_print_map = false;
+    cs.llvm_opt_bisect_limit = -1;
+    cs.linker_z_nocopyreloc = false;
+    cs.linker_z_nodelete = false;
+    cs.linker_z_notext = false;
+    cs.linker_z_defs = false;
+    cs.linker_z_origin = false;
+    cs.linker_z_now = true;
+    cs.linker_z_relro = true;
+    cs.linker_z_common_page_size = null;
+    cs.linker_z_max_page_size = null;
+    cs.linker_tsaware = false;
+    cs.linker_nxcompat = false;
+    cs.linker_dynamicbase = true;
+    cs.linker_optimization = null;
+    cs.linker_module_definition_file = null;
+    cs.test_no_exec = false;
+    cs.test_execve = false;
+    cs.entry = .default;
+    cs.force_undefined_symbols = .empty;
+    cs.stack_size = null;
+    cs.image_base = null;
+    cs.link_eh_frame_hdr = false;
+    cs.link_emit_relocs = false;
+    cs.build_id = null;
+    cs.runtime_args_start = null;
+    cs.test_filters = .empty;
+    cs.test_runner_path = null;
+    cs.override_local_cache_dir = EnvVar.ZIG_LOCAL_CACHE_DIR.get(environ_map);
+    cs.override_global_cache_dir = EnvVar.ZIG_GLOBAL_CACHE_DIR.get(environ_map);
+    cs.override_lib_dir = EnvVar.ZIG_LIB_DIR.get(environ_map);
+    cs.clang_preprocessor_mode = .no;
+    cs.subsystem = null;
+    cs.major_subsystem_version = null;
+    cs.minor_subsystem_version = null;
+    cs.mingw_unicode_entry_point = false;
+    cs.enable_link_snapshots = false;
+    cs.debug_compiler_runtime_libs = false;
+    cs.install_name = null;
+    cs.hash_style = .both;
+    cs.entitlements = null;
+    cs.pagezero_size = null;
+    cs.lib_search_strategy = .paths_first;
+    cs.lib_preferred_mode = .dynamic;
+    cs.headerpad_size = null;
+    cs.headerpad_max_install_names = false;
+    cs.dead_strip_dylibs = false;
+    cs.force_load_objc = false;
+    cs.discard_local_symbols = false;
+    cs.contains_res_file = false;
+    cs.reference_trace = null;
+    cs.pdb_out_path = null;
+    cs.error_limit = null;
     // These are before resolving sysroot.
-    var extra_cflags: std.ArrayList([]const u8) = .empty;
-    var extra_rcflags: std.ArrayList([]const u8) = .empty;
-    var symbol_wrap_set: std.StringArrayHashMapUnmanaged(void) = .empty;
-    var rc_includes: std.zig.RcIncludes = .any;
-    var manifest_file: ?[]const u8 = null;
-    var linker_export_symbol_names: std.ArrayList([]const u8) = .empty;
+    cs.extra_cflags = .empty;
+    cs.extra_rcflags = .empty;
+    cs.symbol_wrap_set = .empty;
+    cs.rc_includes = .any;
+    cs.manifest_file = null;
+    cs.linker_export_symbol_names = .empty;
 
     // Tracks the position in c_source_files which have already their owner populated.
-    var c_source_files_owner_index: usize = 0;
+    cs.c_source_files_owner_index = 0;
     // Tracks the position in rc_source_files which have already their owner populated.
-    var rc_source_files_owner_index: usize = 0;
+    cs.rc_source_files_owner_index = 0;
 
     // null means replace with the test executable binary
-    var test_exec_args: std.ArrayList(?[]const u8) = .empty;
+    cs.test_exec_args = .empty;
 
     // These get set by CLI flags and then snapshotted when a `-M` flag is
     // encountered.
-    var mod_opts: Package.Module.CreateOptions.Inherited = .{};
+    cs.mod_opts = .{};
 
     // These get appended to by CLI flags and then slurped when a `-M` flag
     // is encountered.
-    var cssan: ClangSearchSanitizer = .{};
-    var cc_argv: std.ArrayList([]const u8) = .empty;
-    var deps: std.ArrayList(CliModule.Dep) = .empty;
+    cs.cssan = .{};
+    cs.cc_argv = .empty;
+    cs.deps = .empty;
 
     // Contains every module specified via -M. The dependencies are added
     // after argument parsing is completed. We use a StringArrayHashMap to make
     // error output consistent. "root" is special.
-    var create_module: CreateModule = .{
+    cs.create_module = .{
         // Populated just before the call to `createModule`.
         .dirs = undefined,
         .object_format = null,
@@ -1007,40 +1207,40 @@ pub fn buildOutputType(
         .libc_paths_file = EnvVar.ZIG_LIBC.get(environ_map),
         .native_system_include_paths = &.{},
     };
-    defer create_module.link_inputs.deinit(gpa);
+    defer cs.create_module.link_inputs.deinit(gpa);
 
     // before arg parsing, check for the NO_COLOR and CLICOLOR_FORCE environment variables
     // if set, default the color setting to .off or .on, respectively
     // explicit --color arguments will still override this setting.
     // Disable color on WASI per https://github.com/WebAssembly/WASI/issues/162
-    var color: Color = if (native_os == .wasi or EnvVar.NO_COLOR.isSet(environ_map))
+    cs.color = if (native_os == .wasi or EnvVar.NO_COLOR.isSet(environ_map))
         .off
     else if (EnvVar.CLICOLOR_FORCE.isSet(environ_map))
         .on
     else
         .auto;
-    var n_jobs: ?u32 = null;
+    cs.n_jobs = null;
 
     switch (arg_mode) {
         .build, .translate_c, .zig_test, .zig_test_obj, .run => {
             switch (arg_mode) {
                 .build => |m| {
-                    create_module.opts.output_mode = m;
+                    cs.create_module.opts.output_mode = m;
                 },
                 .translate_c => {
-                    emit_bin = .no;
-                    create_module.opts.output_mode = .Obj;
+                    cs.emit_bin = .no;
+                    cs.create_module.opts.output_mode = .Obj;
                 },
                 .zig_test, .run => {
-                    create_module.opts.output_mode = .Exe;
+                    cs.create_module.opts.output_mode = .Exe;
                 },
                 .zig_test_obj => {
-                    create_module.opts.output_mode = .Obj;
+                    cs.create_module.opts.output_mode = .Obj;
                 },
                 else => unreachable,
             }
 
-            soname = .yes_default_value;
+            cs.soname = .yes_default_value;
 
             var args_iter = ArgsIterator{
                 .args = all_args[2..],
@@ -1061,7 +1261,7 @@ pub fn buildOutputType(
                         if (arg_mode == .run) {
                             // args_iter.i is 1, referring the next arg after "--" in ["--", ...]
                             // Add +2 to the index so it is relative to all_args
-                            runtime_args_start = args_iter.i + 2;
+                            cs.runtime_args_start = args_iter.i + 2;
                             break :args_loop;
                         } else {
                             fatal("unexpected end-of-parameter mark: --", .{});
@@ -1081,7 +1281,7 @@ pub fn buildOutputType(
                                 });
                             }
                         }
-                        try deps.append(arena, .{
+                        try cs.deps.append(arena, .{
                             .key = key,
                             .value = value,
                         });
@@ -1091,52 +1291,52 @@ pub fn buildOutputType(
                             arena,
                             mod_name,
                             root_src_orig,
-                            &create_module,
-                            &mod_opts,
-                            &cc_argv,
-                            &target_arch_os_abi,
-                            &target_mcpu,
-                            &deps,
-                            &c_source_files_owner_index,
-                            &rc_source_files_owner_index,
-                            &cssan,
+                            &cs.create_module,
+                            &cs.mod_opts,
+                            &cs.cc_argv,
+                            &cs.target_arch_os_abi,
+                            &cs.target_mcpu,
+                            &cs.deps,
+                            &cs.c_source_files_owner_index,
+                            &cs.rc_source_files_owner_index,
+                            &cs.cssan,
                         );
                     } else if (mem.eql(u8, arg, "--error-limit")) {
                         const next_arg = args_iter.nextOrFatal();
-                        error_limit = std.fmt.parseUnsigned(Zcu.ErrorInt, next_arg, 0) catch |err| {
+                        cs.error_limit = std.fmt.parseUnsigned(Zcu.ErrorInt, next_arg, 0) catch |err| {
                             fatal("unable to parse error limit '{s}': {s}", .{ next_arg, @errorName(err) });
                         };
                     } else if (mem.eql(u8, arg, "-cflags")) {
-                        extra_cflags.shrinkRetainingCapacity(0);
+                        cs.extra_cflags.shrinkRetainingCapacity(0);
                         while (true) {
                             const next_arg = args_iter.next() orelse {
                                 fatal("expected -- after -cflags", .{});
                             };
                             if (mem.eql(u8, next_arg, "--")) break;
-                            try extra_cflags.append(arena, next_arg);
+                            try cs.extra_cflags.append(arena, next_arg);
                         }
                     } else if (mem.eql(u8, arg, "-rcincludes")) {
-                        rc_includes = parseRcIncludes(args_iter.nextOrFatal());
+                        cs.rc_includes = parseRcIncludes(args_iter.nextOrFatal());
                     } else if (mem.cutPrefix(u8, arg, "-rcincludes=")) |rest| {
-                        rc_includes = parseRcIncludes(rest);
+                        cs.rc_includes = parseRcIncludes(rest);
                     } else if (mem.eql(u8, arg, "-rcflags")) {
-                        extra_rcflags.shrinkRetainingCapacity(0);
+                        cs.extra_rcflags.shrinkRetainingCapacity(0);
                         while (true) {
                             const next_arg = args_iter.next() orelse {
                                 fatal("expected -- after -rcflags", .{});
                             };
                             if (mem.eql(u8, next_arg, "--")) break;
-                            try extra_rcflags.append(arena, next_arg);
+                            try cs.extra_rcflags.append(arena, next_arg);
                         }
                     } else if (mem.eql(u8, arg, "-fstructured-cfg")) {
-                        mod_opts.structured_cfg = true;
+                        cs.mod_opts.structured_cfg = true;
                     } else if (mem.eql(u8, arg, "-fno-structured-cfg")) {
-                        mod_opts.structured_cfg = false;
+                        cs.mod_opts.structured_cfg = false;
                     } else if (mem.eql(u8, arg, "--color")) {
                         const next_arg = args_iter.next() orelse {
                             fatal("expected [auto|on|off] after --color", .{});
                         };
-                        color = std.meta.stringToEnum(Color, next_arg) orelse {
+                        cs.color = std.meta.stringToEnum(Color, next_arg) orelse {
                             fatal("expected [auto|on|off] after --color, found '{s}'", .{next_arg});
                         };
                     } else if (mem.cutPrefix(u8, arg, "-j")) |str| {
@@ -1148,105 +1348,105 @@ pub fn buildOutputType(
                         if (num < 1) {
                             fatal("number of jobs must be at least 1\n", .{});
                         }
-                        n_jobs = num;
+                        cs.n_jobs = num;
                     } else if (mem.eql(u8, arg, "--subsystem")) {
-                        subsystem = try parseSubsystem(args_iter.nextOrFatal());
+                        cs.subsystem = try parseSubsystem(args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "-O")) {
-                        mod_opts.optimize_mode = parseOptimizeMode(args_iter.nextOrFatal());
+                        cs.mod_opts.optimize_mode = parseOptimizeMode(args_iter.nextOrFatal());
                     } else if (mem.cutPrefix(u8, arg, "-fentry=")) |rest| {
-                        entry = .{ .named = rest };
+                        cs.entry = .{ .named = rest };
                     } else if (mem.eql(u8, arg, "--force_undefined")) {
-                        try force_undefined_symbols.put(arena, args_iter.nextOrFatal(), {});
+                        try cs.force_undefined_symbols.put(arena, args_iter.nextOrFatal(), {});
                     } else if (mem.eql(u8, arg, "--discard-all")) {
-                        discard_local_symbols = true;
+                        cs.discard_local_symbols = true;
                     } else if (mem.eql(u8, arg, "--stack")) {
-                        stack_size = parseStackSize(args_iter.nextOrFatal());
+                        cs.stack_size = parseStackSize(args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "--image-base")) {
-                        image_base = parseImageBase(args_iter.nextOrFatal());
+                        cs.image_base = parseImageBase(args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "--name")) {
-                        provided_name = args_iter.nextOrFatal();
-                        if (!mem.eql(u8, provided_name.?, fs.path.basename(provided_name.?)))
-                            fatal("invalid package name '{s}': cannot contain folder separators", .{provided_name.?});
+                        cs.provided_name = args_iter.nextOrFatal();
+                        if (!mem.eql(u8, cs.provided_name.?, fs.path.basename(cs.provided_name.?)))
+                            fatal("invalid package name '{s}': cannot contain folder separators", .{cs.provided_name.?});
                     } else if (mem.eql(u8, arg, "-rpath")) {
-                        try create_module.rpath_list.append(arena, args_iter.nextOrFatal());
+                        try cs.create_module.rpath_list.append(arena, args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "--library-directory") or mem.eql(u8, arg, "-L")) {
-                        try create_module.lib_dir_args.append(arena, args_iter.nextOrFatal());
+                        try cs.create_module.lib_dir_args.append(arena, args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "-F")) {
-                        try create_module.framework_dirs.append(arena, args_iter.nextOrFatal());
+                        try cs.create_module.framework_dirs.append(arena, args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "-framework")) {
-                        try create_module.frameworks.put(arena, args_iter.nextOrFatal(), .{});
+                        try cs.create_module.frameworks.put(arena, args_iter.nextOrFatal(), .{});
                     } else if (mem.eql(u8, arg, "-weak_framework")) {
-                        try create_module.frameworks.put(arena, args_iter.nextOrFatal(), .{ .weak = true });
+                        try cs.create_module.frameworks.put(arena, args_iter.nextOrFatal(), .{ .weak = true });
                     } else if (mem.eql(u8, arg, "-needed_framework")) {
-                        try create_module.frameworks.put(arena, args_iter.nextOrFatal(), .{ .needed = true });
+                        try cs.create_module.frameworks.put(arena, args_iter.nextOrFatal(), .{ .needed = true });
                     } else if (mem.eql(u8, arg, "-install_name")) {
-                        install_name = args_iter.nextOrFatal();
+                        cs.install_name = args_iter.nextOrFatal();
                     } else if (mem.cutPrefix(u8, arg, "--compress-debug-sections=")) |param| {
-                        linker_compress_debug_sections = std.meta.stringToEnum(std.zig.CompressDebugSections, param) orelse {
+                        cs.linker_compress_debug_sections = std.meta.stringToEnum(std.zig.CompressDebugSections, param) orelse {
                             fatal("expected --compress-debug-sections=[none|zlib|zstd], found '{s}'", .{param});
                         };
                     } else if (mem.eql(u8, arg, "--compress-debug-sections")) {
-                        linker_compress_debug_sections = .zlib;
+                        cs.linker_compress_debug_sections = .zlib;
                     } else if (mem.eql(u8, arg, "-pagezero_size")) {
                         const next_arg = args_iter.nextOrFatal();
-                        pagezero_size = std.fmt.parseUnsigned(u64, eatIntPrefix(next_arg, 16), 16) catch |err| {
+                        cs.pagezero_size = std.fmt.parseUnsigned(u64, eatIntPrefix(next_arg, 16), 16) catch |err| {
                             fatal("unable to parse pagezero size'{s}': {s}", .{ next_arg, @errorName(err) });
                         };
                     } else if (mem.eql(u8, arg, "-search_paths_first")) {
-                        lib_search_strategy = .paths_first;
-                        lib_preferred_mode = .dynamic;
+                        cs.lib_search_strategy = .paths_first;
+                        cs.lib_preferred_mode = .dynamic;
                     } else if (mem.eql(u8, arg, "-search_paths_first_static")) {
-                        lib_search_strategy = .paths_first;
-                        lib_preferred_mode = .static;
+                        cs.lib_search_strategy = .paths_first;
+                        cs.lib_preferred_mode = .static;
                     } else if (mem.eql(u8, arg, "-search_dylibs_first")) {
-                        lib_search_strategy = .mode_first;
-                        lib_preferred_mode = .dynamic;
+                        cs.lib_search_strategy = .mode_first;
+                        cs.lib_preferred_mode = .dynamic;
                     } else if (mem.eql(u8, arg, "-search_static_first")) {
-                        lib_search_strategy = .mode_first;
-                        lib_preferred_mode = .static;
+                        cs.lib_search_strategy = .mode_first;
+                        cs.lib_preferred_mode = .static;
                     } else if (mem.eql(u8, arg, "-search_dylibs_only")) {
-                        lib_search_strategy = .no_fallback;
-                        lib_preferred_mode = .dynamic;
+                        cs.lib_search_strategy = .no_fallback;
+                        cs.lib_preferred_mode = .dynamic;
                     } else if (mem.eql(u8, arg, "-search_static_only")) {
-                        lib_search_strategy = .no_fallback;
-                        lib_preferred_mode = .static;
+                        cs.lib_search_strategy = .no_fallback;
+                        cs.lib_preferred_mode = .static;
                     } else if (mem.eql(u8, arg, "-headerpad")) {
                         const next_arg = args_iter.nextOrFatal();
-                        headerpad_size = std.fmt.parseUnsigned(u32, eatIntPrefix(next_arg, 16), 16) catch |err| {
+                        cs.headerpad_size = std.fmt.parseUnsigned(u32, eatIntPrefix(next_arg, 16), 16) catch |err| {
                             fatal("unable to parse headerpad size '{s}': {s}", .{ next_arg, @errorName(err) });
                         };
                     } else if (mem.eql(u8, arg, "-headerpad_max_install_names")) {
-                        headerpad_max_install_names = true;
+                        cs.headerpad_max_install_names = true;
                     } else if (mem.eql(u8, arg, "-dead_strip")) {
-                        linker_gc_sections = true;
+                        cs.linker_gc_sections = true;
                     } else if (mem.eql(u8, arg, "-dead_strip_dylibs")) {
-                        dead_strip_dylibs = true;
+                        cs.dead_strip_dylibs = true;
                     } else if (mem.eql(u8, arg, "-ObjC")) {
-                        force_load_objc = true;
+                        cs.force_load_objc = true;
                     } else if (mem.eql(u8, arg, "-T") or mem.eql(u8, arg, "--script")) {
-                        linker_script = args_iter.nextOrFatal();
+                        cs.linker_script = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "-version-script") or mem.eql(u8, arg, "--version-script")) {
-                        version_script = args_iter.nextOrFatal();
+                        cs.version_script = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "--undefined-version")) {
-                        linker_allow_undefined_version = true;
+                        cs.linker_allow_undefined_version = true;
                     } else if (mem.eql(u8, arg, "--no-undefined-version")) {
-                        linker_allow_undefined_version = false;
+                        cs.linker_allow_undefined_version = false;
                     } else if (mem.eql(u8, arg, "--enable-new-dtags")) {
-                        linker_enable_new_dtags = true;
+                        cs.linker_enable_new_dtags = true;
                     } else if (mem.eql(u8, arg, "--disable-new-dtags")) {
-                        linker_enable_new_dtags = false;
+                        cs.linker_enable_new_dtags = false;
                     } else if (mem.eql(u8, arg, "--library") or mem.eql(u8, arg, "-l")) {
                         // We don't know whether this library is part of libc
                         // or libc++ until we resolve the target, so we append
                         // to the list for now.
-                        try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                             .name = args_iter.nextOrFatal(),
                             .query = .{
                                 .needed = false,
                                 .weak = false,
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
                     } else if (mem.eql(u8, arg, "--needed-library") or
@@ -1254,89 +1454,89 @@ pub fn buildOutputType(
                         mem.eql(u8, arg, "-needed_library"))
                     {
                         const next_arg = args_iter.nextOrFatal();
-                        try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                             .name = next_arg,
                             .query = .{
                                 .needed = true,
                                 .weak = false,
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
                     } else if (mem.eql(u8, arg, "-weak_library") or mem.eql(u8, arg, "-weak-l")) {
-                        try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                             .name = args_iter.nextOrFatal(),
                             .query = .{
                                 .needed = false,
                                 .weak = true,
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
                     } else if (mem.eql(u8, arg, "-D")) {
-                        try cc_argv.appendSlice(arena, &.{ arg, args_iter.nextOrFatal() });
+                        try cs.cc_argv.appendSlice(arena, &.{ arg, args_iter.nextOrFatal() });
                     } else if (mem.eql(u8, arg, "-I")) {
-                        try cssan.addIncludePath(arena, &cc_argv, .I, arg, args_iter.nextOrFatal(), false);
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .I, arg, args_iter.nextOrFatal(), false);
                     } else if (mem.cutPrefix(u8, arg, "--embed-dir=")) |rest| {
-                        try cssan.addIncludePath(arena, &cc_argv, .embed_dir, arg, rest, true);
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .embed_dir, arg, rest, true);
                     } else if (mem.eql(u8, arg, "-isystem")) {
-                        try cssan.addIncludePath(arena, &cc_argv, .isystem, arg, args_iter.nextOrFatal(), false);
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .isystem, arg, args_iter.nextOrFatal(), false);
                     } else if (mem.eql(u8, arg, "-iwithsysroot")) {
-                        try cssan.addIncludePath(arena, &cc_argv, .iwithsysroot, arg, args_iter.nextOrFatal(), false);
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .iwithsysroot, arg, args_iter.nextOrFatal(), false);
                     } else if (mem.eql(u8, arg, "-idirafter")) {
-                        try cssan.addIncludePath(arena, &cc_argv, .idirafter, arg, args_iter.nextOrFatal(), false);
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .idirafter, arg, args_iter.nextOrFatal(), false);
                     } else if (mem.eql(u8, arg, "-iframework")) {
                         const path = args_iter.nextOrFatal();
-                        try cssan.addIncludePath(arena, &cc_argv, .iframework, arg, path, false);
-                        try create_module.framework_dirs.append(arena, path); // Forward to the backend as -F
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .iframework, arg, path, false);
+                        try cs.create_module.framework_dirs.append(arena, path); // Forward to the backend as -F
                     } else if (mem.eql(u8, arg, "-iframeworkwithsysroot")) {
                         const path = args_iter.nextOrFatal();
-                        try cssan.addIncludePath(arena, &cc_argv, .iframeworkwithsysroot, arg, path, false);
-                        try create_module.framework_dirs.append(arena, path); // Forward to the backend as -F
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .iframeworkwithsysroot, arg, path, false);
+                        try cs.create_module.framework_dirs.append(arena, path); // Forward to the backend as -F
                     } else if (mem.eql(u8, arg, "--version")) {
                         const next_arg = args_iter.nextOrFatal();
-                        version = std.SemanticVersion.parse(next_arg) catch |err| {
+                        cs.version = std.SemanticVersion.parse(next_arg) catch |err| {
                             fatal("unable to parse --version '{s}': {s}", .{ next_arg, @errorName(err) });
                         };
-                        have_version = true;
+                        cs.have_version = true;
                     } else if (mem.eql(u8, arg, "-target")) {
-                        target_arch_os_abi = args_iter.nextOrFatal();
+                        cs.target_arch_os_abi = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "-mcpu")) {
-                        target_mcpu = args_iter.nextOrFatal();
+                        cs.target_mcpu = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "-mcmodel")) {
-                        mod_opts.code_model = parseCodeModel(args_iter.nextOrFatal());
+                        cs.mod_opts.code_model = parseCodeModel(args_iter.nextOrFatal());
                     } else if (mem.cutPrefix(u8, arg, "-mcmodel=")) |rest| {
-                        mod_opts.code_model = parseCodeModel(rest);
+                        cs.mod_opts.code_model = parseCodeModel(rest);
                     } else if (mem.cutPrefix(u8, arg, "-ofmt=")) |rest| {
-                        create_module.object_format = rest;
+                        cs.create_module.object_format = rest;
                     } else if (mem.cutPrefix(u8, arg, "-mcpu=")) |rest| {
-                        target_mcpu = rest;
+                        cs.target_mcpu = rest;
                     } else if (mem.cutPrefix(u8, arg, "-O")) |rest| {
-                        mod_opts.optimize_mode = parseOptimizeMode(rest);
+                        cs.mod_opts.optimize_mode = parseOptimizeMode(rest);
                     } else if (mem.eql(u8, arg, "--dynamic-linker")) {
-                        create_module.dynamic_linker = args_iter.nextOrFatal();
+                        cs.create_module.dynamic_linker = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "--no-dynamic-linker")) {
-                        create_module.dynamic_linker = "";
+                        cs.create_module.dynamic_linker = "";
                     } else if (mem.eql(u8, arg, "--sysroot")) {
                         const next_arg = args_iter.nextOrFatal();
-                        create_module.sysroot = next_arg;
-                        try cc_argv.appendSlice(arena, &.{ "-isysroot", next_arg });
+                        cs.create_module.sysroot = next_arg;
+                        try cs.cc_argv.appendSlice(arena, &.{ "-isysroot", next_arg });
                     } else if (mem.eql(u8, arg, "--libc")) {
-                        create_module.libc_paths_file = args_iter.nextOrFatal();
+                        cs.create_module.libc_paths_file = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "--test-filter")) {
-                        try test_filters.append(arena, args_iter.nextOrFatal());
+                        try cs.test_filters.append(arena, args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "--test-runner")) {
-                        test_runner_path = args_iter.nextOrFatal();
+                        cs.test_runner_path = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "--test-cmd")) {
-                        try test_exec_args.append(arena, args_iter.nextOrFatal());
+                        try cs.test_exec_args.append(arena, args_iter.nextOrFatal());
                     } else if (mem.eql(u8, arg, "--cache-dir")) {
-                        override_local_cache_dir = args_iter.nextOrFatal();
+                        cs.override_local_cache_dir = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "--global-cache-dir")) {
-                        override_global_cache_dir = args_iter.nextOrFatal();
+                        cs.override_global_cache_dir = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "--zig-lib-dir")) {
-                        override_lib_dir = args_iter.nextOrFatal();
+                        cs.override_lib_dir = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "--debug-log")) {
                         if (!build_options.enable_logging) {
                             warn("Zig was compiled without logging enabled (-Dlog). --debug-log has no effect.", .{});
@@ -1348,241 +1548,241 @@ pub fn buildOutputType(
                         const next_arg = args_iter.nextOrFatal();
                         if (mem.eql(u8, next_arg, "-")) {
                             dev.check(.stdio_listen);
-                            listen = .stdio;
+                            cs.listen = .stdio;
                         } else {
                             dev.check(.network_listen);
                             // example: --listen 127.0.0.1:9000
                             const host, const port_text = mem.cutScalar(u8, next_arg, ':') orelse .{ next_arg, "14735" };
                             const port = std.fmt.parseInt(u16, port_text, 10) catch |err|
                                 fatal("invalid port number: '{s}': {s}", .{ port_text, @errorName(err) });
-                            listen = .{ .ip4 = Io.net.Ip4Address.parse(host, port) catch |err|
+                            cs.listen = .{ .ip4 = Io.net.Ip4Address.parse(host, port) catch |err|
                                 fatal("invalid host: '{s}': {s}", .{ host, @errorName(err) }) };
                         }
                     } else if (mem.eql(u8, arg, "--listen=-")) {
                         dev.check(.stdio_listen);
-                        listen = .stdio;
+                        cs.listen = .stdio;
                     } else if (mem.eql(u8, arg, "--debug-link-snapshot")) {
                         if (!build_options.enable_link_snapshots) {
                             warn("Zig was compiled without linker snapshots enabled (-Dlink-snapshot). --debug-link-snapshot has no effect.", .{});
                         } else {
-                            enable_link_snapshots = true;
+                            cs.enable_link_snapshots = true;
                         }
                     } else if (mem.eql(u8, arg, "--debug-rt")) {
-                        debug_compiler_runtime_libs = true;
+                        cs.debug_compiler_runtime_libs = true;
                     } else if (mem.eql(u8, arg, "--debug-incremental")) {
                         if (build_options.enable_debug_extensions) {
-                            debug_incremental = true;
+                            cs.debug_incremental = true;
                         } else {
                             warn("Zig was compiled without debug extensions. --debug-incremental has no effect.", .{});
                         }
                     } else if (mem.eql(u8, arg, "-fincremental")) {
                         dev.check(.incremental);
-                        create_module.opts.incremental = true;
+                        cs.create_module.opts.incremental = true;
                     } else if (mem.eql(u8, arg, "-fno-incremental")) {
-                        create_module.opts.incremental = false;
+                        cs.create_module.opts.incremental = false;
                     } else if (mem.eql(u8, arg, "--entitlements")) {
-                        entitlements = args_iter.nextOrFatal();
+                        cs.entitlements = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "-fcompiler-rt")) {
-                        want_compiler_rt = true;
+                        cs.want_compiler_rt = true;
                     } else if (mem.eql(u8, arg, "-fno-compiler-rt")) {
-                        want_compiler_rt = false;
+                        cs.want_compiler_rt = false;
                     } else if (mem.eql(u8, arg, "-fubsan-rt")) {
-                        want_ubsan_rt = true;
+                        cs.want_ubsan_rt = true;
                     } else if (mem.eql(u8, arg, "-fno-ubsan-rt")) {
-                        want_ubsan_rt = false;
+                        cs.want_ubsan_rt = false;
                     } else if (mem.eql(u8, arg, "-feach-lib-rpath")) {
-                        create_module.each_lib_rpath = true;
+                        cs.create_module.each_lib_rpath = true;
                     } else if (mem.eql(u8, arg, "-fno-each-lib-rpath")) {
-                        create_module.each_lib_rpath = false;
+                        cs.create_module.each_lib_rpath = false;
                     } else if (mem.eql(u8, arg, "--test-cmd-bin")) {
-                        try test_exec_args.append(arena, null);
+                        try cs.test_exec_args.append(arena, null);
                     } else if (mem.eql(u8, arg, "--test-no-exec")) {
-                        test_no_exec = true;
+                        cs.test_no_exec = true;
                     } else if (mem.eql(u8, arg, "--time-report")) {
-                        time_report = true;
+                        cs.time_report = true;
                     } else if (mem.eql(u8, arg, "--test-execve")) {
-                        test_execve = true;
+                        cs.test_execve = true;
                     } else if (mem.eql(u8, arg, "-fstack-report")) {
-                        stack_report = true;
+                        cs.stack_report = true;
                     } else if (mem.eql(u8, arg, "-fPIC")) {
-                        mod_opts.pic = true;
+                        cs.mod_opts.pic = true;
                     } else if (mem.eql(u8, arg, "-fno-PIC")) {
-                        mod_opts.pic = false;
+                        cs.mod_opts.pic = false;
                     } else if (mem.eql(u8, arg, "-fPIE")) {
-                        create_module.opts.pie = true;
+                        cs.create_module.opts.pie = true;
                     } else if (mem.eql(u8, arg, "-fno-PIE")) {
-                        create_module.opts.pie = false;
+                        cs.create_module.opts.pie = false;
                     } else if (mem.eql(u8, arg, "-flto")) {
-                        create_module.opts.lto = .full;
+                        cs.create_module.opts.lto = .full;
                     } else if (mem.cutPrefix(u8, arg, "-flto=")) |mode| {
                         if (mem.eql(u8, mode, "full")) {
-                            create_module.opts.lto = .full;
+                            cs.create_module.opts.lto = .full;
                         } else if (mem.eql(u8, mode, "thin")) {
-                            create_module.opts.lto = .thin;
+                            cs.create_module.opts.lto = .thin;
                         } else {
                             fatal("Invalid -flto mode: '{s}'. Must be 'full'or 'thin'.", .{mode});
                         }
                     } else if (mem.eql(u8, arg, "-fno-lto")) {
-                        create_module.opts.lto = .none;
+                        cs.create_module.opts.lto = .none;
                     } else if (mem.eql(u8, arg, "-funwind-tables")) {
-                        mod_opts.unwind_tables = .sync;
+                        cs.mod_opts.unwind_tables = .sync;
                     } else if (mem.eql(u8, arg, "-fasync-unwind-tables")) {
-                        mod_opts.unwind_tables = .async;
+                        cs.mod_opts.unwind_tables = .async;
                     } else if (mem.eql(u8, arg, "-fno-unwind-tables")) {
-                        mod_opts.unwind_tables = .none;
+                        cs.mod_opts.unwind_tables = .none;
                     } else if (mem.eql(u8, arg, "-fstack-check")) {
-                        mod_opts.stack_check = true;
+                        cs.mod_opts.stack_check = true;
                     } else if (mem.eql(u8, arg, "-fno-stack-check")) {
-                        mod_opts.stack_check = false;
+                        cs.mod_opts.stack_check = false;
                     } else if (mem.eql(u8, arg, "-fstack-protector")) {
-                        mod_opts.stack_protector = Compilation.default_stack_protector_buffer_size;
+                        cs.mod_opts.stack_protector = Compilation.default_stack_protector_buffer_size;
                     } else if (mem.eql(u8, arg, "-fno-stack-protector")) {
-                        mod_opts.stack_protector = 0;
+                        cs.mod_opts.stack_protector = 0;
                     } else if (mem.eql(u8, arg, "-mred-zone")) {
-                        mod_opts.red_zone = true;
+                        cs.mod_opts.red_zone = true;
                     } else if (mem.eql(u8, arg, "-mno-red-zone")) {
-                        mod_opts.red_zone = false;
+                        cs.mod_opts.red_zone = false;
                     } else if (mem.eql(u8, arg, "-fomit-frame-pointer")) {
-                        mod_opts.omit_frame_pointer = true;
+                        cs.mod_opts.omit_frame_pointer = true;
                     } else if (mem.eql(u8, arg, "-fno-omit-frame-pointer")) {
-                        mod_opts.omit_frame_pointer = false;
+                        cs.mod_opts.omit_frame_pointer = false;
                     } else if (mem.eql(u8, arg, "-fsanitize-c")) {
-                        mod_opts.sanitize_c = .full;
+                        cs.mod_opts.sanitize_c = .full;
                     } else if (mem.cutPrefix(u8, arg, "-fsanitize-c=")) |mode| {
                         if (mem.eql(u8, mode, "trap")) {
-                            mod_opts.sanitize_c = .trap;
+                            cs.mod_opts.sanitize_c = .trap;
                         } else if (mem.eql(u8, mode, "full")) {
-                            mod_opts.sanitize_c = .full;
+                            cs.mod_opts.sanitize_c = .full;
                         } else {
                             fatal("Invalid -fsanitize-c mode: '{s}'. Must be 'trap' or 'full'.", .{mode});
                         }
                     } else if (mem.eql(u8, arg, "-fno-sanitize-c")) {
-                        mod_opts.sanitize_c = .off;
+                        cs.mod_opts.sanitize_c = .off;
                     } else if (mem.eql(u8, arg, "-fvalgrind")) {
-                        mod_opts.valgrind = true;
+                        cs.mod_opts.valgrind = true;
                     } else if (mem.eql(u8, arg, "-fno-valgrind")) {
-                        mod_opts.valgrind = false;
+                        cs.mod_opts.valgrind = false;
                     } else if (mem.eql(u8, arg, "-fsanitize-thread")) {
-                        mod_opts.sanitize_thread = true;
+                        cs.mod_opts.sanitize_thread = true;
                     } else if (mem.eql(u8, arg, "-fno-sanitize-thread")) {
-                        mod_opts.sanitize_thread = false;
+                        cs.mod_opts.sanitize_thread = false;
                     } else if (mem.eql(u8, arg, "-ffuzz")) {
-                        mod_opts.fuzz = true;
+                        cs.mod_opts.fuzz = true;
                     } else if (mem.eql(u8, arg, "-fno-fuzz")) {
-                        mod_opts.fuzz = false;
+                        cs.mod_opts.fuzz = false;
                     } else if (mem.eql(u8, arg, "-fllvm")) {
-                        create_module.opts.use_llvm = true;
+                        cs.create_module.opts.use_llvm = true;
                     } else if (mem.eql(u8, arg, "-fno-llvm")) {
-                        create_module.opts.use_llvm = false;
+                        cs.create_module.opts.use_llvm = false;
                     } else if (mem.eql(u8, arg, "-flibllvm")) {
-                        create_module.opts.use_lib_llvm = true;
+                        cs.create_module.opts.use_lib_llvm = true;
                     } else if (mem.eql(u8, arg, "-fno-libllvm")) {
-                        create_module.opts.use_lib_llvm = false;
+                        cs.create_module.opts.use_lib_llvm = false;
                     } else if (mem.eql(u8, arg, "-flld")) {
-                        create_module.opts.use_lld = true;
+                        cs.create_module.opts.use_lld = true;
                     } else if (mem.eql(u8, arg, "-fno-lld")) {
-                        create_module.opts.use_lld = false;
+                        cs.create_module.opts.use_lld = false;
                     } else if (mem.eql(u8, arg, "-fnew-linker")) {
-                        create_module.opts.use_new_linker = true;
+                        cs.create_module.opts.use_new_linker = true;
                     } else if (mem.eql(u8, arg, "-fno-new-linker")) {
-                        create_module.opts.use_new_linker = false;
+                        cs.create_module.opts.use_new_linker = false;
                     } else if (mem.eql(u8, arg, "-fclang")) {
-                        create_module.opts.use_clang = true;
+                        cs.create_module.opts.use_clang = true;
                     } else if (mem.eql(u8, arg, "-fno-clang")) {
-                        create_module.opts.use_clang = false;
+                        cs.create_module.opts.use_clang = false;
                     } else if (mem.eql(u8, arg, "-fsanitize-coverage-trace-pc-guard")) {
-                        create_module.opts.san_cov_trace_pc_guard = true;
+                        cs.create_module.opts.san_cov_trace_pc_guard = true;
                     } else if (mem.eql(u8, arg, "-fno-sanitize-coverage-trace-pc-guard")) {
-                        create_module.opts.san_cov_trace_pc_guard = false;
+                        cs.create_module.opts.san_cov_trace_pc_guard = false;
                     } else if (mem.eql(u8, arg, "-freference-trace")) {
-                        reference_trace = 256;
+                        cs.reference_trace = 256;
                     } else if (mem.cutPrefix(u8, arg, "-freference-trace=")) |num| {
-                        reference_trace = std.fmt.parseUnsigned(u32, num, 10) catch |err| {
+                        cs.reference_trace = std.fmt.parseUnsigned(u32, num, 10) catch |err| {
                             fatal("unable to parse reference_trace count '{s}': {s}", .{ num, @errorName(err) });
                         };
                     } else if (mem.eql(u8, arg, "-fno-reference-trace")) {
-                        reference_trace = null;
+                        cs.reference_trace = null;
                     } else if (mem.eql(u8, arg, "-ferror-tracing")) {
-                        mod_opts.error_tracing = true;
+                        cs.mod_opts.error_tracing = true;
                     } else if (mem.eql(u8, arg, "-fno-error-tracing")) {
-                        mod_opts.error_tracing = false;
+                        cs.mod_opts.error_tracing = false;
                     } else if (mem.eql(u8, arg, "-rdynamic")) {
-                        create_module.opts.rdynamic = true;
+                        cs.create_module.opts.rdynamic = true;
                     } else if (mem.eql(u8, arg, "-fsoname")) {
-                        soname = .yes_default_value;
+                        cs.soname = .yes_default_value;
                     } else if (mem.cutPrefix(u8, arg, "-fsoname=")) |rest| {
-                        soname = .{ .yes = rest };
+                        cs.soname = .{ .yes = rest };
                     } else if (mem.eql(u8, arg, "-fno-soname")) {
-                        soname = .no;
+                        cs.soname = .no;
                     } else if (mem.eql(u8, arg, "-femit-bin")) {
-                        emit_bin = .yes_default_path;
+                        cs.emit_bin = .yes_default_path;
                     } else if (mem.cutPrefix(u8, arg, "-femit-bin=")) |rest| {
-                        emit_bin = .{ .yes = rest };
+                        cs.emit_bin = .{ .yes = rest };
                     } else if (mem.eql(u8, arg, "-fno-emit-bin")) {
-                        emit_bin = .no;
+                        cs.emit_bin = .no;
                     } else if (mem.eql(u8, arg, "-femit-h")) {
                         fatal("-femit-h is currently broken, see https://github.com/ziglang/zig/issues/9698", .{});
-                        emit_h = .yes_default_path;
+                        cs.emit_h = .yes_default_path;
                     } else if (mem.cutPrefix(u8, arg, "-femit-h=")) |rest| {
-                        emit_h = .{ .yes = rest };
+                        cs.emit_h = .{ .yes = rest };
                     } else if (mem.eql(u8, arg, "-fno-emit-h")) {
-                        emit_h = .no;
+                        cs.emit_h = .no;
                     } else if (mem.eql(u8, arg, "-femit-asm")) {
-                        emit_asm = .yes_default_path;
+                        cs.emit_asm = .yes_default_path;
                     } else if (mem.cutPrefix(u8, arg, "-femit-asm=")) |rest| {
-                        emit_asm = .{ .yes = rest };
+                        cs.emit_asm = .{ .yes = rest };
                     } else if (mem.eql(u8, arg, "-fno-emit-asm")) {
-                        emit_asm = .no;
+                        cs.emit_asm = .no;
                     } else if (mem.eql(u8, arg, "-femit-llvm-ir")) {
-                        emit_llvm_ir = .yes_default_path;
+                        cs.emit_llvm_ir = .yes_default_path;
                     } else if (mem.cutPrefix(u8, arg, "-femit-llvm-ir=")) |rest| {
-                        emit_llvm_ir = .{ .yes = rest };
+                        cs.emit_llvm_ir = .{ .yes = rest };
                     } else if (mem.eql(u8, arg, "-fno-emit-llvm-ir")) {
-                        emit_llvm_ir = .no;
+                        cs.emit_llvm_ir = .no;
                     } else if (mem.eql(u8, arg, "-femit-llvm-bc")) {
-                        emit_llvm_bc = .yes_default_path;
+                        cs.emit_llvm_bc = .yes_default_path;
                     } else if (mem.cutPrefix(u8, arg, "-femit-llvm-bc=")) |rest| {
-                        emit_llvm_bc = .{ .yes = rest };
+                        cs.emit_llvm_bc = .{ .yes = rest };
                     } else if (mem.eql(u8, arg, "-fno-emit-llvm-bc")) {
-                        emit_llvm_bc = .no;
+                        cs.emit_llvm_bc = .no;
                     } else if (mem.eql(u8, arg, "-femit-docs")) {
-                        emit_docs = .yes_default_path;
+                        cs.emit_docs = .yes_default_path;
                     } else if (mem.cutPrefix(u8, arg, "-femit-docs=")) |rest| {
-                        emit_docs = .{ .yes = rest };
+                        cs.emit_docs = .{ .yes = rest };
                     } else if (mem.eql(u8, arg, "-fno-emit-docs")) {
-                        emit_docs = .no;
+                        cs.emit_docs = .no;
                     } else if (mem.eql(u8, arg, "-femit-implib")) {
-                        emit_implib = .yes_default_path;
-                        emit_implib_arg_provided = true;
+                        cs.emit_implib = .yes_default_path;
+                        cs.emit_implib_arg_provided = true;
                     } else if (mem.cutPrefix(u8, arg, "-femit-implib=")) |rest| {
-                        emit_implib = .{ .yes = rest };
-                        emit_implib_arg_provided = true;
+                        cs.emit_implib = .{ .yes = rest };
+                        cs.emit_implib_arg_provided = true;
                     } else if (mem.eql(u8, arg, "-fno-emit-implib")) {
-                        emit_implib = .no;
-                        emit_implib_arg_provided = true;
+                        cs.emit_implib = .no;
+                        cs.emit_implib_arg_provided = true;
                     } else if (mem.eql(u8, arg, "-dynamic")) {
-                        create_module.opts.link_mode = .dynamic;
-                        lib_preferred_mode = .dynamic;
-                        lib_search_strategy = .mode_first;
+                        cs.create_module.opts.link_mode = .dynamic;
+                        cs.lib_preferred_mode = .dynamic;
+                        cs.lib_search_strategy = .mode_first;
                     } else if (mem.eql(u8, arg, "-static")) {
-                        create_module.opts.link_mode = .static;
-                        lib_preferred_mode = .static;
-                        lib_search_strategy = .no_fallback;
+                        cs.create_module.opts.link_mode = .static;
+                        cs.lib_preferred_mode = .static;
+                        cs.lib_search_strategy = .no_fallback;
                     } else if (mem.eql(u8, arg, "-fdll-export-fns")) {
-                        create_module.opts.dll_export_fns = true;
+                        cs.create_module.opts.dll_export_fns = true;
                     } else if (mem.eql(u8, arg, "-fno-dll-export-fns")) {
-                        create_module.opts.dll_export_fns = false;
+                        cs.create_module.opts.dll_export_fns = false;
                     } else if (mem.eql(u8, arg, "--show-builtin")) {
-                        show_builtin = true;
-                        emit_bin = .no;
+                        cs.show_builtin = true;
+                        cs.emit_bin = .no;
                     } else if (mem.eql(u8, arg, "-fstrip")) {
-                        mod_opts.strip = true;
+                        cs.mod_opts.strip = true;
                     } else if (mem.eql(u8, arg, "-fno-strip")) {
-                        mod_opts.strip = false;
+                        cs.mod_opts.strip = false;
                     } else if (mem.eql(u8, arg, "-gdwarf32")) {
-                        create_module.opts.debug_format = .{ .dwarf = .@"32" };
+                        cs.create_module.opts.debug_format = .{ .dwarf = .@"32" };
                     } else if (mem.eql(u8, arg, "-gdwarf64")) {
-                        create_module.opts.debug_format = .{ .dwarf = .@"64" };
+                        cs.create_module.opts.debug_format = .{ .dwarf = .@"64" };
                     } else if (mem.eql(u8, arg, "-fformatted-panics")) {
                         // Remove this after 0.15.0 is tagged.
                         warn("-fformatted-panics is deprecated and does nothing", .{});
@@ -1590,184 +1790,184 @@ pub fn buildOutputType(
                         // Remove this after 0.15.0 is tagged.
                         warn("-fno-formatted-panics is deprecated and does nothing", .{});
                     } else if (mem.eql(u8, arg, "-fsingle-threaded")) {
-                        mod_opts.single_threaded = true;
+                        cs.mod_opts.single_threaded = true;
                     } else if (mem.eql(u8, arg, "-fno-single-threaded")) {
-                        mod_opts.single_threaded = false;
+                        cs.mod_opts.single_threaded = false;
                     } else if (mem.eql(u8, arg, "-ffunction-sections")) {
-                        function_sections = true;
+                        cs.function_sections = true;
                     } else if (mem.eql(u8, arg, "-fno-function-sections")) {
-                        function_sections = false;
+                        cs.function_sections = false;
                     } else if (mem.eql(u8, arg, "-fdata-sections")) {
-                        data_sections = true;
+                        cs.data_sections = true;
                     } else if (mem.eql(u8, arg, "-fno-data-sections")) {
-                        data_sections = false;
+                        cs.data_sections = false;
                     } else if (mem.eql(u8, arg, "-fbuiltin")) {
-                        mod_opts.no_builtin = false;
+                        cs.mod_opts.no_builtin = false;
                     } else if (mem.eql(u8, arg, "-fno-builtin")) {
-                        mod_opts.no_builtin = true;
+                        cs.mod_opts.no_builtin = true;
                     } else if (mem.cutPrefix(u8, arg, "-fopt-bisect-limit=")) |next_arg| {
-                        llvm_opt_bisect_limit = std.fmt.parseInt(c_int, next_arg, 0) catch |err|
+                        cs.llvm_opt_bisect_limit = std.fmt.parseInt(c_int, next_arg, 0) catch |err|
                             fatal("unable to parse '{s}': {s}", .{ arg, @errorName(err) });
                     } else if (mem.eql(u8, arg, "--eh-frame-hdr")) {
-                        link_eh_frame_hdr = true;
+                        cs.link_eh_frame_hdr = true;
                     } else if (mem.eql(u8, arg, "--no-eh-frame-hdr")) {
-                        link_eh_frame_hdr = false;
+                        cs.link_eh_frame_hdr = false;
                     } else if (mem.eql(u8, arg, "--dynamicbase")) {
-                        linker_dynamicbase = true;
+                        cs.linker_dynamicbase = true;
                     } else if (mem.eql(u8, arg, "--no-dynamicbase")) {
-                        linker_dynamicbase = false;
+                        cs.linker_dynamicbase = false;
                     } else if (mem.eql(u8, arg, "--emit-relocs")) {
-                        link_emit_relocs = true;
+                        cs.link_emit_relocs = true;
                     } else if (mem.eql(u8, arg, "-fallow-shlib-undefined")) {
-                        linker_allow_shlib_undefined = true;
+                        cs.linker_allow_shlib_undefined = true;
                     } else if (mem.eql(u8, arg, "-fno-allow-shlib-undefined")) {
-                        linker_allow_shlib_undefined = false;
+                        cs.linker_allow_shlib_undefined = false;
                     } else if (mem.eql(u8, arg, "-fallow-so-scripts")) {
-                        allow_so_scripts = true;
+                        cs.allow_so_scripts = true;
                     } else if (mem.eql(u8, arg, "-fno-allow-so-scripts")) {
-                        allow_so_scripts = false;
+                        cs.allow_so_scripts = false;
                     } else if (mem.eql(u8, arg, "-z")) {
                         const z_arg = args_iter.nextOrFatal();
                         if (mem.eql(u8, z_arg, "nodelete")) {
-                            linker_z_nodelete = true;
+                            cs.linker_z_nodelete = true;
                         } else if (mem.eql(u8, z_arg, "notext")) {
-                            linker_z_notext = true;
+                            cs.linker_z_notext = true;
                         } else if (mem.eql(u8, z_arg, "defs")) {
-                            linker_z_defs = true;
+                            cs.linker_z_defs = true;
                         } else if (mem.eql(u8, z_arg, "undefs")) {
-                            linker_z_defs = false;
+                            cs.linker_z_defs = false;
                         } else if (mem.eql(u8, z_arg, "origin")) {
-                            linker_z_origin = true;
+                            cs.linker_z_origin = true;
                         } else if (mem.eql(u8, z_arg, "nocopyreloc")) {
-                            linker_z_nocopyreloc = true;
+                            cs.linker_z_nocopyreloc = true;
                         } else if (mem.eql(u8, z_arg, "now")) {
-                            linker_z_now = true;
+                            cs.linker_z_now = true;
                         } else if (mem.eql(u8, z_arg, "lazy")) {
-                            linker_z_now = false;
+                            cs.linker_z_now = false;
                         } else if (mem.eql(u8, z_arg, "relro")) {
-                            linker_z_relro = true;
+                            cs.linker_z_relro = true;
                         } else if (mem.eql(u8, z_arg, "norelro")) {
-                            linker_z_relro = false;
+                            cs.linker_z_relro = false;
                         } else if (prefixedIntArg(z_arg, "common-page-size=")) |int| {
-                            linker_z_common_page_size = int;
+                            cs.linker_z_common_page_size = int;
                         } else if (prefixedIntArg(z_arg, "max-page-size=")) |int| {
-                            linker_z_max_page_size = int;
+                            cs.linker_z_max_page_size = int;
                         } else {
                             fatal("unsupported linker extension flag: -z {s}", .{z_arg});
                         }
                     } else if (mem.eql(u8, arg, "--import-memory")) {
-                        create_module.opts.import_memory = true;
+                        cs.create_module.opts.import_memory = true;
                     } else if (mem.eql(u8, arg, "-fentry")) {
-                        switch (entry) {
-                            .default, .disabled => entry = .enabled,
+                        switch (cs.entry) {
+                            .default, .disabled => cs.entry = .enabled,
                             .enabled, .named => {},
                         }
                     } else if (mem.eql(u8, arg, "-fno-entry")) {
-                        entry = .disabled;
+                        cs.entry = .disabled;
                     } else if (mem.eql(u8, arg, "--export-memory")) {
-                        create_module.opts.export_memory = true;
+                        cs.create_module.opts.export_memory = true;
                     } else if (mem.eql(u8, arg, "--import-symbols")) {
-                        linker_import_symbols = true;
+                        cs.linker_import_symbols = true;
                     } else if (mem.eql(u8, arg, "--import-table")) {
-                        linker_import_table = true;
+                        cs.linker_import_table = true;
                     } else if (mem.eql(u8, arg, "--export-table")) {
-                        linker_export_table = true;
+                        cs.linker_export_table = true;
                     } else if (prefixedIntArg(arg, "--initial-memory=")) |int| {
-                        linker_initial_memory = int;
+                        cs.linker_initial_memory = int;
                     } else if (prefixedIntArg(arg, "--max-memory=")) |int| {
-                        linker_max_memory = int;
+                        cs.linker_max_memory = int;
                     } else if (mem.eql(u8, arg, "--shared-memory")) {
-                        create_module.opts.shared_memory = true;
+                        cs.create_module.opts.shared_memory = true;
                     } else if (prefixedIntArg(arg, "--global-base=")) |int| {
-                        linker_global_base = int;
+                        cs.linker_global_base = int;
                     } else if (mem.cutPrefix(u8, arg, "--export=")) |rest| {
-                        try linker_export_symbol_names.append(arena, rest);
+                        try cs.linker_export_symbol_names.append(arena, rest);
                     } else if (mem.eql(u8, arg, "-Bsymbolic")) {
-                        linker_bind_global_refs_locally = true;
+                        cs.linker_bind_global_refs_locally = true;
                     } else if (mem.eql(u8, arg, "--gc-sections")) {
-                        linker_gc_sections = true;
+                        cs.linker_gc_sections = true;
                     } else if (mem.eql(u8, arg, "--no-gc-sections")) {
-                        linker_gc_sections = false;
+                        cs.linker_gc_sections = false;
                     } else if (mem.eql(u8, arg, "--build-id")) {
-                        build_id = .fast;
+                        cs.build_id = .fast;
                     } else if (mem.cutPrefix(u8, arg, "--build-id=")) |style| {
-                        build_id = std.zig.BuildId.parse(style) catch |err| {
+                        cs.build_id = std.zig.BuildId.parse(style) catch |err| {
                             fatal("unable to parse --build-id style '{s}': {s}", .{
                                 style, @errorName(err),
                             });
                         };
                     } else if (mem.eql(u8, arg, "--debug-compile-errors")) {
                         if (build_options.enable_debug_extensions) {
-                            debug_compile_errors = true;
+                            cs.debug_compile_errors = true;
                         } else {
                             warn("Zig was compiled without debug extensions. --debug-compile-errors has no effect.", .{});
                         }
                     } else if (mem.eql(u8, arg, "--verbose-link")) {
-                        verbose_link = true;
+                        cs.verbose_link = true;
                     } else if (mem.eql(u8, arg, "--verbose-cc")) {
-                        verbose_cc = true;
+                        cs.verbose_cc = true;
                     } else if (mem.eql(u8, arg, "--verbose-air")) {
-                        verbose_air = true;
+                        cs.verbose_air = true;
                     } else if (mem.eql(u8, arg, "--verbose-intern-pool")) {
-                        verbose_intern_pool = true;
+                        cs.verbose_intern_pool = true;
                     } else if (mem.eql(u8, arg, "--verbose-generic-instances")) {
-                        verbose_generic_instances = true;
+                        cs.verbose_generic_instances = true;
                     } else if (mem.eql(u8, arg, "--verbose-llvm-ir")) {
-                        verbose_llvm_ir = "-";
+                        cs.verbose_llvm_ir = "-";
                     } else if (mem.cutPrefix(u8, arg, "--verbose-llvm-ir=")) |rest| {
-                        verbose_llvm_ir = rest;
+                        cs.verbose_llvm_ir = rest;
                     } else if (mem.cutPrefix(u8, arg, "--verbose-llvm-bc=")) |rest| {
-                        verbose_llvm_bc = rest;
+                        cs.verbose_llvm_bc = rest;
                     } else if (mem.eql(u8, arg, "--verbose-cimport")) {
-                        verbose_cimport = true;
+                        cs.verbose_cimport = true;
                     } else if (mem.eql(u8, arg, "--verbose-llvm-cpu-features")) {
-                        verbose_llvm_cpu_features = true;
+                        cs.verbose_llvm_cpu_features = true;
                     } else if (mem.cutPrefix(u8, arg, "-T")) |rest| {
-                        linker_script = rest;
+                        cs.linker_script = rest;
                     } else if (mem.cutPrefix(u8, arg, "-L")) |rest| {
-                        try create_module.lib_dir_args.append(arena, rest);
+                        try cs.create_module.lib_dir_args.append(arena, rest);
                     } else if (mem.cutPrefix(u8, arg, "-F")) |rest| {
-                        try create_module.framework_dirs.append(arena, rest);
+                        try cs.create_module.framework_dirs.append(arena, rest);
                     } else if (mem.cutPrefix(u8, arg, "-l")) |name| {
                         // We don't know whether this library is part of libc
                         // or libc++ until we resolve the target, so we append
                         // to the list for now.
-                        try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                             .name = name,
                             .query = .{
                                 .needed = false,
                                 .weak = false,
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
                     } else if (mem.cutPrefix(u8, arg, "-needed-l")) |name| {
-                        try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                             .name = name,
                             .query = .{
                                 .needed = true,
                                 .weak = false,
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
                     } else if (mem.cutPrefix(u8, arg, "-weak-l")) |name| {
-                        try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                             .name = name,
                             .query = .{
                                 .needed = false,
                                 .weak = true,
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
                     } else if (mem.startsWith(u8, arg, "-D")) {
-                        try cc_argv.append(arena, arg);
+                        try cs.cc_argv.append(arena, arg);
                     } else if (mem.cutPrefix(u8, arg, "-I")) |rest| {
-                        try cssan.addIncludePath(arena, &cc_argv, .I, arg, rest, true);
+                        try cs.cssan.addIncludePath(arena, &cs.cc_argv, .I, arg, rest, true);
                     } else if (mem.cutPrefix(u8, arg, "-x")) |rest| {
                         const lang = if (rest.len == 0) args_iter.nextOrFatal() else rest;
                         if (mem.eql(u8, lang, "none")) {
@@ -1778,20 +1978,20 @@ pub fn buildOutputType(
                             fatal("language not recognized: '{s}'", .{lang});
                         }
                     } else if (mem.cutPrefix(u8, arg, "-mexec-model=")) |rest| {
-                        create_module.opts.wasi_exec_model = parseWasiExecModel(rest);
+                        cs.create_module.opts.wasi_exec_model = parseWasiExecModel(rest);
                     } else if (mem.eql(u8, arg, "-municode")) {
-                        mingw_unicode_entry_point = true;
+                        cs.mingw_unicode_entry_point = true;
                     } else {
                         fatal("unrecognized parameter: '{s}'", .{arg});
                     }
                 } else switch (file_ext orelse Compilation.classifyFileExt(arg)) {
                     .shared_library, .object, .static_library => {
-                        try create_module.cli_link_inputs.append(arena, .{ .path_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .path_query = .{
                             .path = Path.initCwd(arg),
                             .query = .{
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
                         // We do not set `any_dyn_libs` yet because a .so file
@@ -1799,45 +1999,45 @@ pub fn buildOutputType(
                         // up being a static library.
                     },
                     .res => {
-                        try create_module.cli_link_inputs.append(arena, .{ .path_query = .{
+                        try cs.create_module.cli_link_inputs.append(arena, .{ .path_query = .{
                             .path = Path.initCwd(arg),
                             .query = .{
-                                .preferred_mode = lib_preferred_mode,
-                                .search_strategy = lib_search_strategy,
-                                .allow_so_scripts = allow_so_scripts,
+                                .preferred_mode = cs.lib_preferred_mode,
+                                .search_strategy = cs.lib_search_strategy,
+                                .allow_so_scripts = cs.allow_so_scripts,
                             },
                         } });
-                        contains_res_file = true;
+                        cs.contains_res_file = true;
                     },
                     .manifest => {
-                        if (manifest_file) |other| {
+                        if (cs.manifest_file) |other| {
                             fatal("only one manifest file can be specified, found '{s}' after '{s}'", .{ arg, other });
-                        } else manifest_file = arg;
+                        } else cs.manifest_file = arg;
                     },
                     .assembly, .assembly_with_cpp, .c, .cpp, .h, .hpp, .hm, .hmm, .ll, .bc, .m, .mm => {
                         dev.check(.c_compiler);
-                        try create_module.c_source_files.append(arena, .{
+                        try cs.create_module.c_source_files.append(arena, .{
                             // Populated after module creation.
                             .owner = undefined,
                             .src_path = arg,
-                            .extra_flags = try arena.dupe([]const u8, extra_cflags.items),
+                            .extra_flags = try arena.dupe([]const u8, cs.extra_cflags.items),
                             // duped when parsing the args.
                             .ext = file_ext,
                         });
                     },
                     .rc => {
                         dev.check(.win32_resource);
-                        try create_module.rc_source_files.append(arena, .{
+                        try cs.create_module.rc_source_files.append(arena, .{
                             // Populated after module creation.
                             .owner = undefined,
                             .src_path = arg,
-                            .extra_flags = try arena.dupe([]const u8, extra_rcflags.items),
+                            .extra_flags = try arena.dupe([]const u8, cs.extra_rcflags.items),
                         });
                     },
                     .zig => {
-                        if (root_src_file) |other| {
+                        if (cs.root_src_file) |other| {
                             fatal("found another zig file '{s}' after root source file '{s}'", .{ arg, other });
-                        } else root_src_file = arg;
+                        } else cs.root_src_file = arg;
                     },
                     .def, .unknown => {
                         if (std.ascii.eqlIgnoreCase(".xml", fs.path.extension(arg))) {
@@ -1851,17 +2051,17 @@ pub fn buildOutputType(
         .cc, .cpp => {
             dev.check(.cc_command);
 
-            emit_h = .no;
-            soname = .no;
-            create_module.opts.ensure_libc_on_non_freestanding = true;
-            create_module.opts.ensure_libcpp_on_non_freestanding = arg_mode == .cpp;
-            create_module.want_native_include_dirs = true;
+            cs.emit_h = .no;
+            cs.soname = .no;
+            cs.create_module.opts.ensure_libc_on_non_freestanding = true;
+            cs.create_module.opts.ensure_libcpp_on_non_freestanding = arg_mode == .cpp;
+            cs.create_module.want_native_include_dirs = true;
             // Clang's driver enables this switch unconditionally.
             // Disabling the emission of .eh_frame_hdr can unexpectedly break
             // some functionality that depend on it, such as C++ exceptions and
             // DWARF-based stack traces.
-            link_eh_frame_hdr = true;
-            allow_so_scripts = true;
+            cs.link_eh_frame_hdr = true;
+            cs.allow_so_scripts = true;
 
             const COutMode = enum {
                 link,
@@ -1882,13 +2082,13 @@ pub fn buildOutputType(
             while (it.has_next) {
                 it.next(io) catch |err| fatal("unable to parse command line parameters: {t}", .{err});
                 switch (it.zig_equivalent) {
-                    .target => target_arch_os_abi = it.only_arg, // example: -target riscv64-linux-unknown
+                    .target => cs.target_arch_os_abi = it.only_arg, // example: -target riscv64-linux-unknown
                     .o => {
                         // We handle -o /dev/null equivalent to -fno-emit-bin because
                         // otherwise our atomic rename into place will fail. This also
                         // makes Zig do less work, avoiding pointless file system operations.
                         if (mem.eql(u8, it.only_arg, "/dev/null")) {
-                            emit_bin = .no;
+                            cs.emit_bin = .no;
                         } else {
                             out_path = it.only_arg;
                         }
@@ -1908,11 +2108,11 @@ pub fn buildOutputType(
                         }
                     },
                     .other => {
-                        try cc_argv.appendSlice(arena, it.other_args);
+                        try cs.cc_argv.appendSlice(arena, it.other_args);
                     },
                     .positional => switch (file_ext orelse Compilation.classifyFileExt(mem.sliceTo(it.only_arg, 0))) {
                         .assembly, .assembly_with_cpp, .c, .cpp, .ll, .bc, .h, .hpp, .hm, .hmm, .m, .mm => {
-                            try create_module.c_source_files.append(arena, .{
+                            try cs.create_module.c_source_files.append(arena, .{
                                 // Populated after module creation.
                                 .owner = undefined,
                                 .src_path = it.only_arg,
@@ -1920,14 +2120,14 @@ pub fn buildOutputType(
                             });
                         },
                         .unknown, .object, .static_library, .shared_library => {
-                            try create_module.cli_link_inputs.append(arena, .{ .path_query = .{
+                            try cs.create_module.cli_link_inputs.append(arena, .{ .path_query = .{
                                 .path = Path.initCwd(it.only_arg),
                                 .query = .{
                                     .must_link = must_link,
                                     .needed = needed,
-                                    .preferred_mode = lib_preferred_mode,
-                                    .search_strategy = lib_search_strategy,
-                                    .allow_so_scripts = allow_so_scripts,
+                                    .preferred_mode = cs.lib_preferred_mode,
+                                    .search_strategy = cs.lib_search_strategy,
+                                    .allow_so_scripts = cs.allow_so_scripts,
                                 },
                             } });
                             // We do not set `any_dyn_libs` yet because a .so file
@@ -1935,37 +2135,37 @@ pub fn buildOutputType(
                             // up being a static library.
                         },
                         .res => {
-                            try create_module.cli_link_inputs.append(arena, .{ .path_query = .{
+                            try cs.create_module.cli_link_inputs.append(arena, .{ .path_query = .{
                                 .path = Path.initCwd(it.only_arg),
                                 .query = .{
                                     .must_link = must_link,
                                     .needed = needed,
-                                    .preferred_mode = lib_preferred_mode,
-                                    .search_strategy = lib_search_strategy,
-                                    .allow_so_scripts = allow_so_scripts,
+                                    .preferred_mode = cs.lib_preferred_mode,
+                                    .search_strategy = cs.lib_search_strategy,
+                                    .allow_so_scripts = cs.allow_so_scripts,
                                 },
                             } });
-                            contains_res_file = true;
+                            cs.contains_res_file = true;
                         },
                         .manifest => {
-                            if (manifest_file) |other| {
+                            if (cs.manifest_file) |other| {
                                 fatal("only one manifest file can be specified, found '{s}' after previously specified manifest '{s}'", .{ it.only_arg, other });
-                            } else manifest_file = it.only_arg;
+                            } else cs.manifest_file = it.only_arg;
                         },
                         .def => {
-                            linker_module_definition_file = it.only_arg;
+                            cs.linker_module_definition_file = it.only_arg;
                         },
                         .rc => {
-                            try create_module.rc_source_files.append(arena, .{
+                            try cs.create_module.rc_source_files.append(arena, .{
                                 // Populated after module creation.
                                 .owner = undefined,
                                 .src_path = it.only_arg,
                             });
                         },
                         .zig => {
-                            if (root_src_file) |other| {
+                            if (cs.root_src_file) |other| {
                                 fatal("found another zig file '{s}' after root source file '{s}'", .{ it.only_arg, other });
-                            } else root_src_file = it.only_arg;
+                            } else cs.root_src_file = it.only_arg;
                         },
                     },
                     .l => {
@@ -1977,19 +2177,19 @@ pub fn buildOutputType(
                             // more control over what's in the resulting
                             // binary: no extra rpaths and DSO filename exactly
                             // as provided. CGo compilation depends on this.
-                            try create_module.cli_link_inputs.append(arena, .{ .dso_exact = .{
+                            try cs.create_module.cli_link_inputs.append(arena, .{ .dso_exact = .{
                                 .name = it.only_arg,
                             } });
                         } else {
-                            try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                            try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                                 .name = it.only_arg,
                                 .query = .{
                                     .must_link = must_link,
                                     .needed = needed,
                                     .weak = false,
-                                    .preferred_mode = lib_preferred_mode,
-                                    .search_strategy = lib_search_strategy,
-                                    .allow_so_scripts = allow_so_scripts,
+                                    .preferred_mode = cs.lib_preferred_mode,
+                                    .search_strategy = cs.lib_search_strategy,
+                                    .allow_so_scripts = cs.allow_so_scripts,
                                 },
                             } });
                         }
@@ -1999,75 +2199,75 @@ pub fn buildOutputType(
                         // Never mind what we're doing, just pass the args directly. For example --help.
                         return process.exit(try clangMain(arena, all_args));
                     },
-                    .pic => mod_opts.pic = true,
-                    .no_pic => mod_opts.pic = false,
-                    .pie => create_module.opts.pie = true,
-                    .no_pie => create_module.opts.pie = false,
+                    .pic => cs.mod_opts.pic = true,
+                    .no_pic => cs.mod_opts.pic = false,
+                    .pie => cs.create_module.opts.pie = true,
+                    .no_pie => cs.create_module.opts.pie = false,
                     .lto => {
                         if (mem.eql(u8, it.only_arg, "flto") or
                             mem.eql(u8, it.only_arg, "auto") or
                             mem.eql(u8, it.only_arg, "full") or
                             mem.eql(u8, it.only_arg, "jobserver"))
                         {
-                            create_module.opts.lto = .full;
+                            cs.create_module.opts.lto = .full;
                         } else if (mem.eql(u8, it.only_arg, "thin")) {
-                            create_module.opts.lto = .thin;
+                            cs.create_module.opts.lto = .thin;
                         } else {
                             fatal("Invalid -flto mode: '{s}'. Must be 'auto', 'full', 'thin', or 'jobserver'.", .{it.only_arg});
                         }
                     },
-                    .no_lto => create_module.opts.lto = .none,
-                    .red_zone => mod_opts.red_zone = true,
-                    .no_red_zone => mod_opts.red_zone = false,
-                    .omit_frame_pointer => mod_opts.omit_frame_pointer = true,
-                    .no_omit_frame_pointer => mod_opts.omit_frame_pointer = false,
-                    .function_sections => function_sections = true,
-                    .no_function_sections => function_sections = false,
-                    .data_sections => data_sections = true,
-                    .no_data_sections => data_sections = false,
-                    .builtin => mod_opts.no_builtin = false,
-                    .no_builtin => mod_opts.no_builtin = true,
-                    .color_diagnostics => color = .on,
-                    .no_color_diagnostics => color = .off,
-                    .stack_check => mod_opts.stack_check = true,
-                    .no_stack_check => mod_opts.stack_check = false,
+                    .no_lto => cs.create_module.opts.lto = .none,
+                    .red_zone => cs.mod_opts.red_zone = true,
+                    .no_red_zone => cs.mod_opts.red_zone = false,
+                    .omit_frame_pointer => cs.mod_opts.omit_frame_pointer = true,
+                    .no_omit_frame_pointer => cs.mod_opts.omit_frame_pointer = false,
+                    .function_sections => cs.function_sections = true,
+                    .no_function_sections => cs.function_sections = false,
+                    .data_sections => cs.data_sections = true,
+                    .no_data_sections => cs.data_sections = false,
+                    .builtin => cs.mod_opts.no_builtin = false,
+                    .no_builtin => cs.mod_opts.no_builtin = true,
+                    .color_diagnostics => cs.color = .on,
+                    .no_color_diagnostics => cs.color = .off,
+                    .stack_check => cs.mod_opts.stack_check = true,
+                    .no_stack_check => cs.mod_opts.stack_check = false,
                     .stack_protector => {
-                        if (mod_opts.stack_protector == null) {
-                            mod_opts.stack_protector = Compilation.default_stack_protector_buffer_size;
+                        if (cs.mod_opts.stack_protector == null) {
+                            cs.mod_opts.stack_protector = Compilation.default_stack_protector_buffer_size;
                         }
                     },
-                    .no_stack_protector => mod_opts.stack_protector = 0,
+                    .no_stack_protector => cs.mod_opts.stack_protector = 0,
                     // The way these unwind table options are processed in GCC and Clang is crazy
                     // convoluted, and we also don't know the target triple here, so this is all
                     // best-effort.
-                    .unwind_tables => if (mod_opts.unwind_tables) |uwt| switch (uwt) {
+                    .unwind_tables => if (cs.mod_opts.unwind_tables) |uwt| switch (uwt) {
                         .none => {
-                            mod_opts.unwind_tables = .sync;
+                            cs.mod_opts.unwind_tables = .sync;
                         },
                         .sync, .async => {},
                     } else {
-                        mod_opts.unwind_tables = .sync;
+                        cs.mod_opts.unwind_tables = .sync;
                     },
-                    .no_unwind_tables => mod_opts.unwind_tables = .none,
-                    .asynchronous_unwind_tables => mod_opts.unwind_tables = .async,
-                    .no_asynchronous_unwind_tables => if (mod_opts.unwind_tables) |uwt| switch (uwt) {
+                    .no_unwind_tables => cs.mod_opts.unwind_tables = .none,
+                    .asynchronous_unwind_tables => cs.mod_opts.unwind_tables = .async,
+                    .no_asynchronous_unwind_tables => if (cs.mod_opts.unwind_tables) |uwt| switch (uwt) {
                         .none, .sync => {},
                         .async => {
-                            mod_opts.unwind_tables = .sync;
+                            cs.mod_opts.unwind_tables = .sync;
                         },
                     } else {
-                        mod_opts.unwind_tables = .sync;
+                        cs.mod_opts.unwind_tables = .sync;
                     },
                     .nostdlib => {
-                        create_module.opts.ensure_libc_on_non_freestanding = false;
-                        create_module.opts.ensure_libcpp_on_non_freestanding = false;
+                        cs.create_module.opts.ensure_libc_on_non_freestanding = false;
+                        cs.create_module.opts.ensure_libcpp_on_non_freestanding = false;
                     },
-                    .nostdlib_cpp => create_module.opts.ensure_libcpp_on_non_freestanding = false,
+                    .nostdlib_cpp => cs.create_module.opts.ensure_libcpp_on_non_freestanding = false,
                     .shared => {
-                        create_module.opts.link_mode = .dynamic;
+                        cs.create_module.opts.link_mode = .dynamic;
                         is_shared_lib = true;
                     },
-                    .rdynamic => create_module.opts.rdynamic = true,
+                    .rdynamic => cs.create_module.opts.rdynamic = true,
                     .wp => {
                         var split_it = mem.splitScalar(u8, it.only_arg, ',');
                         while (split_it.next()) |preprocessor_arg| {
@@ -2105,7 +2305,7 @@ pub fn buildOutputType(
                                     // if split and added to `linker_args`, as there are argument-less
                                     // variants of them.
                                     if (mem.eql(u8, key, "--build-id")) {
-                                        build_id = std.zig.BuildId.parse(value) catch |err| {
+                                        cs.build_id = std.zig.BuildId.parse(value) catch |err| {
                                             fatal("unable to parse --build-id style '{s}': {s}", .{
                                                 value, @errorName(err),
                                             });
@@ -2141,44 +2341,44 @@ pub fn buildOutputType(
                                 mem.eql(u8, linker_arg, "-dy") or
                                 mem.eql(u8, linker_arg, "-call_shared"))
                             {
-                                lib_search_strategy = .no_fallback;
-                                lib_preferred_mode = .dynamic;
+                                cs.lib_search_strategy = .no_fallback;
+                                cs.lib_preferred_mode = .dynamic;
                             } else if (mem.eql(u8, linker_arg, "-Bstatic") or
                                 mem.eql(u8, linker_arg, "-dn") or
                                 mem.eql(u8, linker_arg, "-non_shared") or
                                 mem.eql(u8, linker_arg, "-static"))
                             {
-                                lib_search_strategy = .no_fallback;
-                                lib_preferred_mode = .static;
+                                cs.lib_search_strategy = .no_fallback;
+                                cs.lib_preferred_mode = .static;
                             } else if (mem.eql(u8, linker_arg, "-search_paths_first")) {
-                                lib_search_strategy = .paths_first;
-                                lib_preferred_mode = .dynamic;
+                                cs.lib_search_strategy = .paths_first;
+                                cs.lib_preferred_mode = .dynamic;
                             } else if (mem.eql(u8, linker_arg, "-search_dylibs_first")) {
-                                lib_search_strategy = .mode_first;
-                                lib_preferred_mode = .dynamic;
+                                cs.lib_search_strategy = .mode_first;
+                                cs.lib_preferred_mode = .dynamic;
                             } else {
                                 try linker_args.append(linker_arg);
                             }
                         }
                     },
-                    .san_cov_trace_pc_guard => create_module.opts.san_cov_trace_pc_guard = true,
+                    .san_cov_trace_pc_guard => cs.create_module.opts.san_cov_trace_pc_guard = true,
                     .san_cov => {
                         var split_it = mem.splitScalar(u8, it.only_arg, ',');
                         while (split_it.next()) |san_arg| {
                             if (std.mem.eql(u8, san_arg, "trace-pc-guard")) {
-                                create_module.opts.san_cov_trace_pc_guard = true;
+                                cs.create_module.opts.san_cov_trace_pc_guard = true;
                             }
                         }
-                        try cc_argv.appendSlice(arena, it.other_args);
+                        try cs.cc_argv.appendSlice(arena, it.other_args);
                     },
                     .no_san_cov => {
                         var split_it = mem.splitScalar(u8, it.only_arg, ',');
                         while (split_it.next()) |san_arg| {
                             if (std.mem.eql(u8, san_arg, "trace-pc-guard")) {
-                                create_module.opts.san_cov_trace_pc_guard = false;
+                                cs.create_module.opts.san_cov_trace_pc_guard = false;
                             }
                         }
-                        try cc_argv.appendSlice(arena, it.other_args);
+                        try cs.cc_argv.appendSlice(arena, it.other_args);
                     },
                     .optimize => {
                         // Alright, what release mode do they want?
@@ -2186,42 +2386,42 @@ pub fn buildOutputType(
                         if (mem.eql(u8, level, "s") or
                             mem.eql(u8, level, "z"))
                         {
-                            mod_opts.optimize_mode = .ReleaseSmall;
+                            cs.mod_opts.optimize_mode = .ReleaseSmall;
                         } else if (mem.eql(u8, level, "1") or
                             mem.eql(u8, level, "2") or
                             mem.eql(u8, level, "3") or
                             mem.eql(u8, level, "4") or
                             mem.eql(u8, level, "fast"))
                         {
-                            mod_opts.optimize_mode = .ReleaseFast;
+                            cs.mod_opts.optimize_mode = .ReleaseFast;
                         } else if (mem.eql(u8, level, "g") or
                             mem.eql(u8, level, "0"))
                         {
-                            mod_opts.optimize_mode = .Debug;
+                            cs.mod_opts.optimize_mode = .Debug;
                         } else {
-                            try cc_argv.appendSlice(arena, it.other_args);
+                            try cs.cc_argv.appendSlice(arena, it.other_args);
                         }
                     },
                     .debug => {
-                        mod_opts.strip = false;
+                        cs.mod_opts.strip = false;
                         if (mem.eql(u8, it.only_arg, "g")) {
                             // We handled with strip = false above.
                         } else if (mem.eql(u8, it.only_arg, "g1") or
                             mem.eql(u8, it.only_arg, "gline-tables-only"))
                         {
                             // We handled with strip = false above. but we also want reduced debug info.
-                            try cc_argv.append(arena, "-gline-tables-only");
+                            try cs.cc_argv.append(arena, "-gline-tables-only");
                         } else {
-                            try cc_argv.appendSlice(arena, it.other_args);
+                            try cs.cc_argv.appendSlice(arena, it.other_args);
                         }
                     },
                     .gdwarf32 => {
-                        mod_opts.strip = false;
-                        create_module.opts.debug_format = .{ .dwarf = .@"32" };
+                        cs.mod_opts.strip = false;
+                        cs.create_module.opts.debug_format = .{ .dwarf = .@"32" };
                     },
                     .gdwarf64 => {
-                        mod_opts.strip = false;
-                        create_module.opts.debug_format = .{ .dwarf = .@"64" };
+                        cs.mod_opts.strip = false;
+                        cs.create_module.opts.debug_format = .{ .dwarf = .@"64" };
                     },
                     .sanitize, .no_sanitize => |t| {
                         const enable = t == .sanitize;
@@ -2229,18 +2429,18 @@ pub fn buildOutputType(
                         var recognized_any = false;
                         while (san_it.next()) |sub_arg| {
                             if (mem.eql(u8, sub_arg, "undefined")) {
-                                mod_opts.sanitize_c = if (enable) .full else .off;
+                                cs.mod_opts.sanitize_c = if (enable) .full else .off;
                                 recognized_any = true;
                             } else if (mem.eql(u8, sub_arg, "thread")) {
-                                mod_opts.sanitize_thread = enable;
+                                cs.mod_opts.sanitize_thread = enable;
                                 recognized_any = true;
                             } else if (mem.eql(u8, sub_arg, "fuzzer") or mem.eql(u8, sub_arg, "fuzzer-no-link")) {
-                                mod_opts.fuzz = enable;
+                                cs.mod_opts.fuzz = enable;
                                 recognized_any = true;
                             }
                         }
                         if (!recognized_any) {
-                            try cc_argv.appendSlice(arena, it.other_args);
+                            try cs.cc_argv.appendSlice(arena, it.other_args);
                         }
                     },
                     .sanitize_trap, .no_sanitize_trap => |t| {
@@ -2251,19 +2451,19 @@ pub fn buildOutputType(
                             // This logic doesn't match Clang 1:1, but it's probably good enough, and avoids
                             // significantly complicating the resolution of the options.
                             if (mem.eql(u8, sub_arg, "undefined")) {
-                                if (mod_opts.sanitize_c) |sc| switch (sc) {
+                                if (cs.mod_opts.sanitize_c) |sc| switch (sc) {
                                     .off => if (enable) {
-                                        mod_opts.sanitize_c = .trap;
+                                        cs.mod_opts.sanitize_c = .trap;
                                     },
                                     .trap => if (!enable) {
-                                        mod_opts.sanitize_c = .full;
+                                        cs.mod_opts.sanitize_c = .full;
                                     },
                                     .full => if (enable) {
-                                        mod_opts.sanitize_c = .trap;
+                                        cs.mod_opts.sanitize_c = .trap;
                                     },
                                 } else {
                                     if (enable) {
-                                        mod_opts.sanitize_c = .trap;
+                                        cs.mod_opts.sanitize_c = .trap;
                                     } else {
                                         // This means we were passed `-fno-sanitize-trap=undefined` and nothing else. In
                                         // this case, ideally, we should use whatever value `sanitize_c` resolves to by
@@ -2276,30 +2476,30 @@ pub fn buildOutputType(
                                         // `Debug`/`ReleaseSafe`, `off` would mean UBSan would unexpectedly be disabled.
                                         //
                                         // `off` seems very slightly less bad, so let's go with that.
-                                        mod_opts.sanitize_c = .off;
+                                        cs.mod_opts.sanitize_c = .off;
                                     }
                                 }
                                 recognized_any = true;
                             }
                         }
                         if (!recognized_any) {
-                            try cc_argv.appendSlice(arena, it.other_args);
+                            try cs.cc_argv.appendSlice(arena, it.other_args);
                         }
                     },
-                    .linker_script => linker_script = it.only_arg,
+                    .linker_script => cs.linker_script = it.only_arg,
                     .verbose => {
-                        verbose_link = true;
+                        cs.verbose_link = true;
                         // Have Clang print more infos, some tools such as CMake
                         // parse this to discover any implicit include and
                         // library dir to look-up into.
-                        try cc_argv.append(arena, "-v");
+                        try cs.cc_argv.append(arena, "-v");
                     },
                     .dry_run => {
                         // This flag means "dry run". Clang will not actually output anything
                         // to the file system.
-                        verbose_link = true;
-                        disable_c_depfile = true;
-                        try cc_argv.append(arena, "-###");
+                        cs.verbose_link = true;
+                        cs.disable_c_depfile = true;
+                        try cs.cc_argv.append(arena, "-###");
                     },
                     .for_linker => blk: {
                         // Unfortunately duplicated with the `wl` handling above.
@@ -2315,7 +2515,7 @@ pub fn buildOutputType(
                                 // if split and added to `linker_args`, as there are argument-less
                                 // variants of them.
                                 if (mem.eql(u8, key, "--build-id")) {
-                                    build_id = std.zig.BuildId.parse(value) catch |err| {
+                                    cs.build_id = std.zig.BuildId.parse(value) catch |err| {
                                         fatal("unable to parse --build-id style '{s}': {s}", .{
                                             value, @errorName(err),
                                         });
@@ -2350,21 +2550,21 @@ pub fn buildOutputType(
                             mem.eql(u8, it.only_arg, "-dy") or
                             mem.eql(u8, it.only_arg, "-call_shared"))
                         {
-                            lib_search_strategy = .no_fallback;
-                            lib_preferred_mode = .dynamic;
+                            cs.lib_search_strategy = .no_fallback;
+                            cs.lib_preferred_mode = .dynamic;
                         } else if (mem.eql(u8, it.only_arg, "-Bstatic") or
                             mem.eql(u8, it.only_arg, "-dn") or
                             mem.eql(u8, it.only_arg, "-non_shared") or
                             mem.eql(u8, it.only_arg, "-static"))
                         {
-                            lib_search_strategy = .no_fallback;
-                            lib_preferred_mode = .static;
+                            cs.lib_search_strategy = .no_fallback;
+                            cs.lib_preferred_mode = .static;
                         } else if (mem.eql(u8, it.only_arg, "-search_paths_first")) {
-                            lib_search_strategy = .paths_first;
-                            lib_preferred_mode = .dynamic;
+                            cs.lib_search_strategy = .paths_first;
+                            cs.lib_preferred_mode = .dynamic;
                         } else if (mem.eql(u8, it.only_arg, "-search_dylibs_first")) {
-                            lib_search_strategy = .mode_first;
-                            lib_preferred_mode = .dynamic;
+                            cs.lib_search_strategy = .mode_first;
+                            cs.lib_preferred_mode = .dynamic;
                         } else {
                             try linker_args.append(it.only_arg);
                         }
@@ -2373,67 +2573,67 @@ pub fn buildOutputType(
                         try linker_args.append("-z");
                         try linker_args.append(it.only_arg);
                     },
-                    .lib_dir => try create_module.lib_dir_args.append(arena, it.only_arg),
-                    .mcpu => target_mcpu = it.only_arg,
-                    .m => try create_module.llvm_m_args.append(arena, it.only_arg),
+                    .lib_dir => try cs.create_module.lib_dir_args.append(arena, it.only_arg),
+                    .mcpu => cs.target_mcpu = it.only_arg,
+                    .m => try cs.create_module.llvm_m_args.append(arena, it.only_arg),
                     .dep_file => {
-                        disable_c_depfile = true;
-                        try cc_argv.appendSlice(arena, it.other_args);
+                        cs.disable_c_depfile = true;
+                        try cs.cc_argv.appendSlice(arena, it.other_args);
                     },
                     .dep_file_to_stdout => { // -M, -MM
                         // "Like -MD, but also implies -E and writes to stdout by default"
                         // "Like -MMD, but also implies -E and writes to stdout by default"
                         c_out_mode = .preprocessor;
-                        disable_c_depfile = true;
-                        try cc_argv.appendSlice(arena, it.other_args);
+                        cs.disable_c_depfile = true;
+                        try cs.cc_argv.appendSlice(arena, it.other_args);
                     },
-                    .framework_dir => try create_module.framework_dirs.append(arena, it.only_arg),
-                    .framework => try create_module.frameworks.put(arena, it.only_arg, .{}),
-                    .nostdlibinc => create_module.want_native_include_dirs = false,
-                    .strip => mod_opts.strip = true,
+                    .framework_dir => try cs.create_module.framework_dirs.append(arena, it.only_arg),
+                    .framework => try cs.create_module.frameworks.put(arena, it.only_arg, .{}),
+                    .nostdlibinc => cs.create_module.want_native_include_dirs = false,
+                    .strip => cs.mod_opts.strip = true,
                     .exec_model => {
-                        create_module.opts.wasi_exec_model = parseWasiExecModel(it.only_arg);
+                        cs.create_module.opts.wasi_exec_model = parseWasiExecModel(it.only_arg);
                     },
                     .sysroot => {
-                        create_module.sysroot = it.only_arg;
+                        cs.create_module.sysroot = it.only_arg;
                     },
                     .entry => {
-                        entry = .{ .named = it.only_arg };
+                        cs.entry = .{ .named = it.only_arg };
                     },
                     .force_undefined_symbol => {
-                        try force_undefined_symbols.put(arena, it.only_arg, {});
+                        try cs.force_undefined_symbols.put(arena, it.only_arg, {});
                     },
-                    .force_load_objc => force_load_objc = true,
-                    .mingw_unicode_entry_point => mingw_unicode_entry_point = true,
-                    .weak_library => try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                    .force_load_objc => cs.force_load_objc = true,
+                    .mingw_unicode_entry_point => cs.mingw_unicode_entry_point = true,
+                    .weak_library => try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                         .name = it.only_arg,
                         .query = .{
                             .needed = false,
                             .weak = true,
-                            .preferred_mode = lib_preferred_mode,
-                            .search_strategy = lib_search_strategy,
-                            .allow_so_scripts = allow_so_scripts,
+                            .preferred_mode = cs.lib_preferred_mode,
+                            .search_strategy = cs.lib_search_strategy,
+                            .allow_so_scripts = cs.allow_so_scripts,
                         },
                     } }),
-                    .weak_framework => try create_module.frameworks.put(arena, it.only_arg, .{ .weak = true }),
-                    .headerpad_max_install_names => headerpad_max_install_names = true,
+                    .weak_framework => try cs.create_module.frameworks.put(arena, it.only_arg, .{ .weak = true }),
+                    .headerpad_max_install_names => cs.headerpad_max_install_names = true,
                     .compress_debug_sections => {
                         if (it.only_arg.len == 0) {
-                            linker_compress_debug_sections = .zlib;
+                            cs.linker_compress_debug_sections = .zlib;
                         } else {
-                            linker_compress_debug_sections = std.meta.stringToEnum(std.zig.CompressDebugSections, it.only_arg) orelse {
+                            cs.linker_compress_debug_sections = std.meta.stringToEnum(std.zig.CompressDebugSections, it.only_arg) orelse {
                                 fatal("expected [none|zlib|zstd] after --compress-debug-sections, found '{s}'", .{it.only_arg});
                             };
                         }
                     },
                     .install_name => {
-                        install_name = it.only_arg;
+                        cs.install_name = it.only_arg;
                     },
                     .undefined => {
                         if (mem.eql(u8, "dynamic_lookup", it.only_arg)) {
-                            linker_allow_shlib_undefined = true;
+                            cs.linker_allow_shlib_undefined = true;
                         } else if (mem.eql(u8, "error", it.only_arg)) {
-                            linker_allow_shlib_undefined = false;
+                            cs.linker_allow_shlib_undefined = false;
                         } else {
                             fatal("unsupported -undefined option '{s}'", .{it.only_arg});
                         }
@@ -2441,25 +2641,25 @@ pub fn buildOutputType(
                     .rtlib => {
                         // Unlike Clang, we support `none` for explicitly omitting compiler-rt.
                         if (mem.eql(u8, "none", it.only_arg)) {
-                            want_compiler_rt = false;
+                            cs.want_compiler_rt = false;
                         } else if (mem.eql(u8, "compiler-rt", it.only_arg) or
                             mem.eql(u8, "libgcc", it.only_arg))
                         {
-                            want_compiler_rt = true;
+                            cs.want_compiler_rt = true;
                         } else {
                             // Note that we don't support `platform`.
                             fatal("unsupported -rtlib option '{s}'", .{it.only_arg});
                         }
                     },
                     .static => {
-                        create_module.opts.link_mode = .static;
-                        lib_preferred_mode = .static;
-                        lib_search_strategy = .no_fallback;
+                        cs.create_module.opts.link_mode = .static;
+                        cs.lib_preferred_mode = .static;
+                        cs.lib_search_strategy = .no_fallback;
                     },
                     .dynamic => {
-                        create_module.opts.link_mode = .dynamic;
-                        lib_preferred_mode = .dynamic;
-                        lib_search_strategy = .mode_first;
+                        cs.create_module.opts.link_mode = .dynamic;
+                        cs.lib_preferred_mode = .dynamic;
+                        cs.lib_search_strategy = .mode_first;
                     },
                 }
             }
@@ -2472,7 +2672,7 @@ pub fn buildOutputType(
                     mem.eql(u8, arg, "--soname"))
                 {
                     const name = linker_args_it.nextOrFatal();
-                    soname = .{ .yes = name };
+                    cs.soname = .{ .yes = name };
                     // Use it as --name.
                     // Example: libsoundio.so.2
                     var prefix: usize = 0;
@@ -2497,126 +2697,126 @@ pub fn buildOutputType(
                             end -= 3;
                         }
                     }
-                    provided_name = name[prefix..end];
+                    cs.provided_name = name[prefix..end];
                 } else if (mem.eql(u8, arg, "--build-id")) {
-                    build_id = .fast;
+                    cs.build_id = .fast;
                 } else if (mem.eql(u8, arg, "-no-pie")) {
-                    create_module.opts.pie = false;
+                    cs.create_module.opts.pie = false;
                 } else if (mem.eql(u8, arg, "--sort-common")) {
                     // from ld.lld(1): --sort-common is ignored for GNU compatibility,
                     // this ignores plain --sort-common
                 } else if (mem.eql(u8, arg, "-rpath") or mem.eql(u8, arg, "--rpath") or mem.eql(u8, arg, "-R")) {
-                    try create_module.rpath_list.append(arena, linker_args_it.nextOrFatal());
+                    try cs.create_module.rpath_list.append(arena, linker_args_it.nextOrFatal());
                 } else if (mem.eql(u8, arg, "-rpath-link") or mem.eql(u8, arg, "--rpath-link")) {
                     _ = linker_args_it.nextOrFatal();
                     warn("rpath-link option is unimplemented and ignored", .{});
                 } else if (mem.eql(u8, arg, "--subsystem")) {
-                    subsystem = try parseSubsystem(linker_args_it.nextOrFatal());
+                    cs.subsystem = try parseSubsystem(linker_args_it.nextOrFatal());
                 } else if (mem.eql(u8, arg, "-I") or
                     mem.eql(u8, arg, "--dynamic-linker") or
                     mem.eql(u8, arg, "-dynamic-linker"))
                 {
-                    create_module.dynamic_linker = linker_args_it.nextOrFatal();
+                    cs.create_module.dynamic_linker = linker_args_it.nextOrFatal();
                 } else if (mem.eql(u8, arg, "-I") or
                     mem.eql(u8, arg, "--no-dynamic-linker") or
                     mem.eql(u8, arg, "-no-dynamic-linker"))
                 {
-                    create_module.dynamic_linker = "";
+                    cs.create_module.dynamic_linker = "";
                 } else if (mem.eql(u8, arg, "-E") or
                     mem.eql(u8, arg, "--export-dynamic") or
                     mem.eql(u8, arg, "-export-dynamic"))
                 {
-                    create_module.opts.rdynamic = true;
+                    cs.create_module.opts.rdynamic = true;
                 } else if (mem.eql(u8, arg, "-version-script") or mem.eql(u8, arg, "--version-script")) {
-                    version_script = linker_args_it.nextOrFatal();
+                    cs.version_script = linker_args_it.nextOrFatal();
                 } else if (mem.eql(u8, arg, "--undefined-version")) {
-                    linker_allow_undefined_version = true;
+                    cs.linker_allow_undefined_version = true;
                 } else if (mem.eql(u8, arg, "--no-undefined-version")) {
-                    linker_allow_undefined_version = false;
+                    cs.linker_allow_undefined_version = false;
                 } else if (mem.eql(u8, arg, "--enable-new-dtags")) {
-                    linker_enable_new_dtags = true;
+                    cs.linker_enable_new_dtags = true;
                 } else if (mem.eql(u8, arg, "--disable-new-dtags")) {
-                    linker_enable_new_dtags = false;
+                    cs.linker_enable_new_dtags = false;
                 } else if (mem.eql(u8, arg, "-O")) {
-                    linker_optimization = linker_args_it.nextOrFatal();
+                    cs.linker_optimization = linker_args_it.nextOrFatal();
                 } else if (mem.cutPrefix(u8, arg, "-O")) |rest| {
-                    linker_optimization = rest;
+                    cs.linker_optimization = rest;
                 } else if (mem.eql(u8, arg, "-pagezero_size")) {
                     const next_arg = linker_args_it.nextOrFatal();
-                    pagezero_size = std.fmt.parseUnsigned(u64, eatIntPrefix(next_arg, 16), 16) catch |err| {
+                    cs.pagezero_size = std.fmt.parseUnsigned(u64, eatIntPrefix(next_arg, 16), 16) catch |err| {
                         fatal("unable to parse pagezero size '{s}': {s}", .{ next_arg, @errorName(err) });
                     };
                 } else if (mem.eql(u8, arg, "-headerpad")) {
                     const next_arg = linker_args_it.nextOrFatal();
-                    headerpad_size = std.fmt.parseUnsigned(u32, eatIntPrefix(next_arg, 16), 16) catch |err| {
+                    cs.headerpad_size = std.fmt.parseUnsigned(u32, eatIntPrefix(next_arg, 16), 16) catch |err| {
                         fatal("unable to parse  headerpad size '{s}': {s}", .{ next_arg, @errorName(err) });
                     };
                 } else if (mem.eql(u8, arg, "-headerpad_max_install_names")) {
-                    headerpad_max_install_names = true;
+                    cs.headerpad_max_install_names = true;
                 } else if (mem.eql(u8, arg, "-dead_strip")) {
-                    linker_gc_sections = true;
+                    cs.linker_gc_sections = true;
                 } else if (mem.eql(u8, arg, "-dead_strip_dylibs")) {
-                    dead_strip_dylibs = true;
+                    cs.dead_strip_dylibs = true;
                 } else if (mem.eql(u8, arg, "-ObjC")) {
-                    force_load_objc = true;
+                    cs.force_load_objc = true;
                 } else if (mem.eql(u8, arg, "--no-undefined")) {
-                    linker_z_defs = true;
+                    cs.linker_z_defs = true;
                 } else if (mem.eql(u8, arg, "--gc-sections")) {
-                    linker_gc_sections = true;
+                    cs.linker_gc_sections = true;
                 } else if (mem.eql(u8, arg, "--no-gc-sections")) {
-                    linker_gc_sections = false;
+                    cs.linker_gc_sections = false;
                 } else if (mem.eql(u8, arg, "--print-gc-sections")) {
-                    linker_print_gc_sections = true;
+                    cs.linker_print_gc_sections = true;
                 } else if (mem.eql(u8, arg, "--print-icf-sections")) {
-                    linker_print_icf_sections = true;
+                    cs.linker_print_icf_sections = true;
                 } else if (mem.eql(u8, arg, "--print-map")) {
-                    linker_print_map = true;
+                    cs.linker_print_map = true;
                 } else if (mem.eql(u8, arg, "--sort-section")) {
                     const arg1 = linker_args_it.nextOrFatal();
-                    linker_sort_section = std.meta.stringToEnum(link.File.Lld.Elf.SortSection, arg1) orelse {
+                    cs.linker_sort_section = std.meta.stringToEnum(link.File.Lld.Elf.SortSection, arg1) orelse {
                         fatal("expected [name|alignment] after --sort-section, found '{s}'", .{arg1});
                     };
                 } else if (mem.eql(u8, arg, "--allow-shlib-undefined") or
                     mem.eql(u8, arg, "-allow-shlib-undefined"))
                 {
-                    linker_allow_shlib_undefined = true;
+                    cs.linker_allow_shlib_undefined = true;
                 } else if (mem.eql(u8, arg, "--no-allow-shlib-undefined") or
                     mem.eql(u8, arg, "-no-allow-shlib-undefined"))
                 {
-                    linker_allow_shlib_undefined = false;
+                    cs.linker_allow_shlib_undefined = false;
                 } else if (mem.eql(u8, arg, "-Bsymbolic")) {
-                    linker_bind_global_refs_locally = true;
+                    cs.linker_bind_global_refs_locally = true;
                 } else if (mem.eql(u8, arg, "--import-memory")) {
-                    create_module.opts.import_memory = true;
+                    cs.create_module.opts.import_memory = true;
                 } else if (mem.eql(u8, arg, "--export-memory")) {
-                    create_module.opts.export_memory = true;
+                    cs.create_module.opts.export_memory = true;
                 } else if (mem.eql(u8, arg, "--import-symbols")) {
-                    linker_import_symbols = true;
+                    cs.linker_import_symbols = true;
                 } else if (mem.eql(u8, arg, "--import-table")) {
-                    linker_import_table = true;
+                    cs.linker_import_table = true;
                 } else if (mem.eql(u8, arg, "--export-table")) {
-                    linker_export_table = true;
+                    cs.linker_export_table = true;
                 } else if (mem.eql(u8, arg, "--no-entry")) {
-                    entry = .disabled;
+                    cs.entry = .disabled;
                 } else if (mem.eql(u8, arg, "--initial-memory")) {
                     const next_arg = linker_args_it.nextOrFatal();
-                    linker_initial_memory = std.fmt.parseUnsigned(u32, next_arg, 10) catch |err| {
+                    cs.linker_initial_memory = std.fmt.parseUnsigned(u32, next_arg, 10) catch |err| {
                         fatal("unable to parse initial memory size '{s}': {s}", .{ next_arg, @errorName(err) });
                     };
                 } else if (mem.eql(u8, arg, "--max-memory")) {
                     const next_arg = linker_args_it.nextOrFatal();
-                    linker_max_memory = std.fmt.parseUnsigned(u32, next_arg, 10) catch |err| {
+                    cs.linker_max_memory = std.fmt.parseUnsigned(u32, next_arg, 10) catch |err| {
                         fatal("unable to parse max memory size '{s}': {s}", .{ next_arg, @errorName(err) });
                     };
                 } else if (mem.eql(u8, arg, "--shared-memory")) {
-                    create_module.opts.shared_memory = true;
+                    cs.create_module.opts.shared_memory = true;
                 } else if (mem.eql(u8, arg, "--global-base")) {
                     const next_arg = linker_args_it.nextOrFatal();
-                    linker_global_base = std.fmt.parseUnsigned(u32, next_arg, 10) catch |err| {
+                    cs.linker_global_base = std.fmt.parseUnsigned(u32, next_arg, 10) catch |err| {
                         fatal("unable to parse global base '{s}': {s}", .{ next_arg, @errorName(err) });
                     };
                 } else if (mem.eql(u8, arg, "--export")) {
-                    try linker_export_symbol_names.append(arena, linker_args_it.nextOrFatal());
+                    try cs.linker_export_symbol_names.append(arena, linker_args_it.nextOrFatal());
                 } else if (mem.eql(u8, arg, "-exported_symbols_list")) {
                     const exported_symbols_list = linker_args_it.nextOrFatal();
                     const content = Io.Dir.cwd().readFileAlloc(io, exported_symbols_list, arena, .limited(10 * 1024 * 1024)) catch |err| {
@@ -2625,68 +2825,68 @@ pub fn buildOutputType(
                     var symbols_it = mem.splitScalar(u8, content, '\n');
                     while (symbols_it.next()) |line| {
                         if (line.len == 0) continue;
-                        try linker_export_symbol_names.append(arena, line);
+                        try cs.linker_export_symbol_names.append(arena, line);
                     }
                 } else if (mem.eql(u8, arg, "--compress-debug-sections")) {
                     const arg1 = linker_args_it.nextOrFatal();
-                    linker_compress_debug_sections = std.meta.stringToEnum(std.zig.CompressDebugSections, arg1) orelse {
+                    cs.linker_compress_debug_sections = std.meta.stringToEnum(std.zig.CompressDebugSections, arg1) orelse {
                         fatal("expected [none|zlib|zstd] after --compress-debug-sections, found '{s}'", .{arg1});
                     };
                 } else if (mem.cutPrefix(u8, arg, "-z")) |z_rest| {
                     const z_arg = if (z_rest.len == 0) linker_args_it.nextOrFatal() else z_rest;
                     if (mem.eql(u8, z_arg, "nodelete")) {
-                        linker_z_nodelete = true;
+                        cs.linker_z_nodelete = true;
                     } else if (mem.eql(u8, z_arg, "notext")) {
-                        linker_z_notext = true;
+                        cs.linker_z_notext = true;
                     } else if (mem.eql(u8, z_arg, "defs")) {
-                        linker_z_defs = true;
+                        cs.linker_z_defs = true;
                     } else if (mem.eql(u8, z_arg, "undefs")) {
-                        linker_z_defs = false;
+                        cs.linker_z_defs = false;
                     } else if (mem.eql(u8, z_arg, "origin")) {
-                        linker_z_origin = true;
+                        cs.linker_z_origin = true;
                     } else if (mem.eql(u8, z_arg, "nocopyreloc")) {
-                        linker_z_nocopyreloc = true;
+                        cs.linker_z_nocopyreloc = true;
                     } else if (mem.eql(u8, z_arg, "noexecstack")) {
                         // noexecstack is the default when linking with LLD
                     } else if (mem.eql(u8, z_arg, "now")) {
-                        linker_z_now = true;
+                        cs.linker_z_now = true;
                     } else if (mem.eql(u8, z_arg, "lazy")) {
-                        linker_z_now = false;
+                        cs.linker_z_now = false;
                     } else if (mem.eql(u8, z_arg, "relro")) {
-                        linker_z_relro = true;
+                        cs.linker_z_relro = true;
                     } else if (mem.eql(u8, z_arg, "norelro")) {
-                        linker_z_relro = false;
+                        cs.linker_z_relro = false;
                     } else if (mem.cutPrefix(u8, z_arg, "stack-size=")) |rest| {
-                        stack_size = parseStackSize(rest);
+                        cs.stack_size = parseStackSize(rest);
                     } else if (prefixedIntArg(z_arg, "common-page-size=")) |int| {
-                        linker_z_common_page_size = int;
+                        cs.linker_z_common_page_size = int;
                     } else if (prefixedIntArg(z_arg, "max-page-size=")) |int| {
-                        linker_z_max_page_size = int;
+                        cs.linker_z_max_page_size = int;
                     } else {
                         fatal("unsupported linker extension flag: -z {s}", .{z_arg});
                     }
                 } else if (mem.eql(u8, arg, "--major-image-version")) {
                     const major = linker_args_it.nextOrFatal();
-                    version.major = std.fmt.parseUnsigned(u32, major, 10) catch |err| {
+                    cs.version.major = std.fmt.parseUnsigned(u32, major, 10) catch |err| {
                         fatal("unable to parse major image version '{s}': {s}", .{ major, @errorName(err) });
                     };
-                    have_version = true;
+                    cs.have_version = true;
                 } else if (mem.eql(u8, arg, "--minor-image-version")) {
                     const minor = linker_args_it.nextOrFatal();
-                    version.minor = std.fmt.parseUnsigned(u32, minor, 10) catch |err| {
+                    cs.version.minor = std.fmt.parseUnsigned(u32, minor, 10) catch |err| {
                         fatal("unable to parse minor image version '{s}': {s}", .{ minor, @errorName(err) });
                     };
-                    have_version = true;
+                    cs.have_version = true;
                 } else if (mem.eql(u8, arg, "-e") or mem.eql(u8, arg, "--entry")) {
-                    entry = .{ .named = linker_args_it.nextOrFatal() };
+                    cs.entry = .{ .named = linker_args_it.nextOrFatal() };
                 } else if (mem.eql(u8, arg, "-u")) {
-                    try force_undefined_symbols.put(arena, linker_args_it.nextOrFatal(), {});
+                    try cs.force_undefined_symbols.put(arena, linker_args_it.nextOrFatal(), {});
                 } else if (mem.eql(u8, arg, "-x") or mem.eql(u8, arg, "--discard-all")) {
-                    discard_local_symbols = true;
+                    cs.discard_local_symbols = true;
                 } else if (mem.eql(u8, arg, "--stack") or mem.eql(u8, arg, "-stack_size")) {
-                    stack_size = parseStackSize(linker_args_it.nextOrFatal());
+                    cs.stack_size = parseStackSize(linker_args_it.nextOrFatal());
                 } else if (mem.eql(u8, arg, "--image-base")) {
-                    image_base = parseImageBase(linker_args_it.nextOrFatal());
+                    cs.image_base = parseImageBase(linker_args_it.nextOrFatal());
                 } else if (mem.eql(u8, arg, "--enable-auto-image-base") or
                     mem.eql(u8, arg, "--disable-auto-image-base"))
                 {
@@ -2702,37 +2902,37 @@ pub fn buildOutputType(
                     // flag, and warn the user that it has no effect.
                     warn("auto-image-base options are unimplemented and ignored", .{});
                 } else if (mem.eql(u8, arg, "-T") or mem.eql(u8, arg, "--script")) {
-                    linker_script = linker_args_it.nextOrFatal();
+                    cs.linker_script = linker_args_it.nextOrFatal();
                 } else if (mem.eql(u8, arg, "--eh-frame-hdr")) {
-                    link_eh_frame_hdr = true;
+                    cs.link_eh_frame_hdr = true;
                 } else if (mem.eql(u8, arg, "--no-eh-frame-hdr")) {
-                    link_eh_frame_hdr = false;
+                    cs.link_eh_frame_hdr = false;
                 } else if (mem.eql(u8, arg, "--tsaware")) {
-                    linker_tsaware = true;
+                    cs.linker_tsaware = true;
                 } else if (mem.eql(u8, arg, "--nxcompat")) {
-                    linker_nxcompat = true;
+                    cs.linker_nxcompat = true;
                 } else if (mem.eql(u8, arg, "--dynamicbase")) {
-                    linker_dynamicbase = true;
+                    cs.linker_dynamicbase = true;
                 } else if (mem.eql(u8, arg, "--no-dynamicbase")) {
-                    linker_dynamicbase = false;
+                    cs.linker_dynamicbase = false;
                 } else if (mem.eql(u8, arg, "--high-entropy-va")) {
                     // This option does not do anything.
                 } else if (mem.eql(u8, arg, "--export-all-symbols")) {
-                    create_module.opts.rdynamic = true;
+                    cs.create_module.opts.rdynamic = true;
                 } else if (mem.eql(u8, arg, "--color-diagnostics") or
                     mem.eql(u8, arg, "--color-diagnostics=always"))
                 {
-                    color = .on;
+                    cs.color = .on;
                 } else if (mem.eql(u8, arg, "--no-color-diagnostics") or
                     mem.eql(u8, arg, "--color-diagnostics=never"))
                 {
-                    color = .off;
+                    cs.color = .off;
                 } else if (mem.eql(u8, arg, "-s") or mem.eql(u8, arg, "--strip-all") or
                     mem.eql(u8, arg, "-S") or mem.eql(u8, arg, "--strip-debug"))
                 {
                     // -s, --strip-all             Strip all symbols
                     // -S, --strip-debug           Strip debugging symbols
-                    mod_opts.strip = true;
+                    cs.mod_opts.strip = true;
                 } else if (mem.eql(u8, arg, "--start-group") or
                     mem.eql(u8, arg, "--end-group"))
                 {
@@ -2746,90 +2946,90 @@ pub fn buildOutputType(
                     _ = linker_args_it.nextOrFatal();
                 } else if (mem.eql(u8, arg, "--major-subsystem-version")) {
                     const major = linker_args_it.nextOrFatal();
-                    major_subsystem_version = std.fmt.parseUnsigned(u16, major, 10) catch |err| {
+                    cs.major_subsystem_version = std.fmt.parseUnsigned(u16, major, 10) catch |err| {
                         fatal("unable to parse major subsystem version '{s}': {s}", .{
                             major, @errorName(err),
                         });
                     };
                 } else if (mem.eql(u8, arg, "--minor-subsystem-version")) {
                     const minor = linker_args_it.nextOrFatal();
-                    minor_subsystem_version = std.fmt.parseUnsigned(u16, minor, 10) catch |err| {
+                    cs.minor_subsystem_version = std.fmt.parseUnsigned(u16, minor, 10) catch |err| {
                         fatal("unable to parse minor subsystem version '{s}': {s}", .{
                             minor, @errorName(err),
                         });
                     };
                 } else if (mem.eql(u8, arg, "-framework")) {
-                    try create_module.frameworks.put(arena, linker_args_it.nextOrFatal(), .{});
+                    try cs.create_module.frameworks.put(arena, linker_args_it.nextOrFatal(), .{});
                 } else if (mem.eql(u8, arg, "-weak_framework")) {
-                    try create_module.frameworks.put(arena, linker_args_it.nextOrFatal(), .{ .weak = true });
+                    try cs.create_module.frameworks.put(arena, linker_args_it.nextOrFatal(), .{ .weak = true });
                 } else if (mem.eql(u8, arg, "-needed_framework")) {
-                    try create_module.frameworks.put(arena, linker_args_it.nextOrFatal(), .{ .needed = true });
+                    try cs.create_module.frameworks.put(arena, linker_args_it.nextOrFatal(), .{ .needed = true });
                 } else if (mem.eql(u8, arg, "-needed_library")) {
-                    try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                    try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                         .name = linker_args_it.nextOrFatal(),
                         .query = .{
                             .weak = false,
                             .needed = true,
-                            .preferred_mode = lib_preferred_mode,
-                            .search_strategy = lib_search_strategy,
-                            .allow_so_scripts = allow_so_scripts,
+                            .preferred_mode = cs.lib_preferred_mode,
+                            .search_strategy = cs.lib_search_strategy,
+                            .allow_so_scripts = cs.allow_so_scripts,
                         },
                     } });
                 } else if (mem.cutPrefix(u8, arg, "-weak-l")) |rest| {
-                    try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                    try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                         .name = rest,
                         .query = .{
                             .weak = true,
                             .needed = false,
-                            .preferred_mode = lib_preferred_mode,
-                            .search_strategy = lib_search_strategy,
-                            .allow_so_scripts = allow_so_scripts,
+                            .preferred_mode = cs.lib_preferred_mode,
+                            .search_strategy = cs.lib_search_strategy,
+                            .allow_so_scripts = cs.allow_so_scripts,
                         },
                     } });
                 } else if (mem.eql(u8, arg, "-weak_library")) {
-                    try create_module.cli_link_inputs.append(arena, .{ .name_query = .{
+                    try cs.create_module.cli_link_inputs.append(arena, .{ .name_query = .{
                         .name = linker_args_it.nextOrFatal(),
                         .query = .{
                             .weak = true,
                             .needed = false,
-                            .preferred_mode = lib_preferred_mode,
-                            .search_strategy = lib_search_strategy,
-                            .allow_so_scripts = allow_so_scripts,
+                            .preferred_mode = cs.lib_preferred_mode,
+                            .search_strategy = cs.lib_search_strategy,
+                            .allow_so_scripts = cs.allow_so_scripts,
                         },
                     } });
                 } else if (mem.eql(u8, arg, "-compatibility_version")) {
                     const compat_version = linker_args_it.nextOrFatal();
-                    compatibility_version = std.SemanticVersion.parse(compat_version) catch |err| {
+                    cs.compatibility_version = std.SemanticVersion.parse(compat_version) catch |err| {
                         fatal("unable to parse -compatibility_version '{s}': {s}", .{ compat_version, @errorName(err) });
                     };
                 } else if (mem.eql(u8, arg, "-current_version")) {
                     const curr_version = linker_args_it.nextOrFatal();
-                    version = std.SemanticVersion.parse(curr_version) catch |err| {
+                    cs.version = std.SemanticVersion.parse(curr_version) catch |err| {
                         fatal("unable to parse -current_version '{s}': {s}", .{ curr_version, @errorName(err) });
                     };
-                    have_version = true;
+                    cs.have_version = true;
                 } else if (mem.eql(u8, arg, "--out-implib") or
                     mem.eql(u8, arg, "-implib"))
                 {
-                    emit_implib = .{ .yes = linker_args_it.nextOrFatal() };
-                    emit_implib_arg_provided = true;
+                    cs.emit_implib = .{ .yes = linker_args_it.nextOrFatal() };
+                    cs.emit_implib_arg_provided = true;
                 } else if (mem.eql(u8, arg, "--dependency-file")) {
-                    link_depfile = linker_args_it.nextOrFatal();
+                    cs.link_depfile = linker_args_it.nextOrFatal();
                 } else if (mem.eql(u8, arg, "-Brepro") or mem.eql(u8, arg, "/Brepro")) {
-                    linker_repro = true;
+                    cs.linker_repro = true;
                 } else if (mem.eql(u8, arg, "-undefined")) {
                     const lookup_type = linker_args_it.nextOrFatal();
                     if (mem.eql(u8, "dynamic_lookup", lookup_type)) {
-                        linker_allow_shlib_undefined = true;
+                        cs.linker_allow_shlib_undefined = true;
                     } else if (mem.eql(u8, "error", lookup_type)) {
-                        linker_allow_shlib_undefined = false;
+                        cs.linker_allow_shlib_undefined = false;
                     } else {
                         fatal("unsupported -undefined option '{s}'", .{lookup_type});
                     }
                 } else if (mem.eql(u8, arg, "-install_name")) {
-                    install_name = linker_args_it.nextOrFatal();
+                    cs.install_name = linker_args_it.nextOrFatal();
                 } else if (mem.eql(u8, arg, "-force_load")) {
-                    try create_module.cli_link_inputs.append(arena, .{ .path_query = .{
+                    try cs.create_module.cli_link_inputs.append(arena, .{ .path_query = .{
                         .path = Path.initCwd(linker_args_it.nextOrFatal()),
                         .query = .{
                             .must_link = true,
@@ -2841,31 +3041,31 @@ pub fn buildOutputType(
                     mem.eql(u8, arg, "--hash-style"))
                 {
                     const next_arg = linker_args_it.nextOrFatal();
-                    hash_style = std.meta.stringToEnum(link.File.Lld.Elf.HashStyle, next_arg) orelse {
+                    cs.hash_style = std.meta.stringToEnum(link.File.Lld.Elf.HashStyle, next_arg) orelse {
                         fatal("expected [sysv|gnu|both] after --hash-style, found '{s}'", .{
                             next_arg,
                         });
                     };
                 } else if (mem.eql(u8, arg, "-wrap")) {
                     const next_arg = linker_args_it.nextOrFatal();
-                    try symbol_wrap_set.put(arena, next_arg, {});
+                    try cs.symbol_wrap_set.put(arena, next_arg, {});
                 } else if (mem.startsWith(u8, arg, "/subsystem:")) {
                     var split_it = mem.splitBackwardsScalar(u8, arg, ':');
-                    subsystem = try parseSubsystem(split_it.first());
+                    cs.subsystem = try parseSubsystem(split_it.first());
                 } else if (mem.startsWith(u8, arg, "/implib:")) {
                     var split_it = mem.splitBackwardsScalar(u8, arg, ':');
-                    emit_implib = .{ .yes = split_it.first() };
-                    emit_implib_arg_provided = true;
+                    cs.emit_implib = .{ .yes = split_it.first() };
+                    cs.emit_implib_arg_provided = true;
                 } else if (mem.startsWith(u8, arg, "/pdb:")) {
                     var split_it = mem.splitBackwardsScalar(u8, arg, ':');
-                    pdb_out_path = split_it.first();
+                    cs.pdb_out_path = split_it.first();
                 } else if (mem.startsWith(u8, arg, "/version:")) {
                     var split_it = mem.splitBackwardsScalar(u8, arg, ':');
                     const version_arg = split_it.first();
-                    version = std.SemanticVersion.parse(version_arg) catch |err| {
+                    cs.version = std.SemanticVersion.parse(version_arg) catch |err| {
                         fatal("unable to parse /version '{s}': {s}", .{ arg, @errorName(err) });
                     };
-                    have_version = true;
+                    cs.have_version = true;
                 } else if (mem.eql(u8, arg, "-V")) {
                     warn("ignoring request for supported emulations: unimplemented", .{});
                 } else if (mem.eql(u8, arg, "-v")) {
@@ -2884,17 +3084,17 @@ pub fn buildOutputType(
             };
             while (preprocessor_args_it.next()) |arg| {
                 if (mem.eql(u8, arg, "-MD") or mem.eql(u8, arg, "-MMD") or mem.eql(u8, arg, "-MT")) {
-                    disable_c_depfile = true;
+                    cs.disable_c_depfile = true;
                     const cc_arg = try std.fmt.allocPrint(arena, "-Wp,{s},{s}", .{ arg, preprocessor_args_it.nextOrFatal() });
-                    try cc_argv.append(arena, cc_arg);
+                    try cs.cc_argv.append(arena, cc_arg);
                 } else {
                     fatal("unsupported preprocessor arg: {s}", .{arg});
                 }
             }
 
-            if (mod_opts.sanitize_c) |wsc| {
-                if (wsc != .off and mod_opts.optimize_mode == .ReleaseFast) {
-                    mod_opts.optimize_mode = .ReleaseSafe;
+            if (cs.mod_opts.sanitize_c) |wsc| {
+                if (wsc != .off and cs.mod_opts.optimize_mode == .ReleaseFast) {
+                    cs.mod_opts.optimize_mode = .ReleaseSafe;
                 }
             }
 
@@ -2905,74 +3105,74 @@ pub fn buildOutputType(
 
             switch (c_out_mode orelse .link) {
                 .link => {
-                    create_module.opts.output_mode = if (is_shared_lib) .Lib else .Exe;
-                    if (emit_bin != .no) {
-                        emit_bin = if (out_path) |p| .{ .yes = p } else .yes_a_out;
+                    cs.create_module.opts.output_mode = if (is_shared_lib) .Lib else .Exe;
+                    if (cs.emit_bin != .no) {
+                        cs.emit_bin = if (out_path) |p| .{ .yes = p } else .yes_a_out;
                     }
                     if (emit_llvm) {
                         fatal("-emit-llvm cannot be used when linking", .{});
                     }
                 },
                 .object => {
-                    create_module.opts.output_mode = .Obj;
+                    cs.create_module.opts.output_mode = .Obj;
                     if (emit_llvm) {
-                        emit_bin = .no;
+                        cs.emit_bin = .no;
                         if (out_path) |p| {
-                            emit_llvm_bc = .{ .yes = p };
+                            cs.emit_llvm_bc = .{ .yes = p };
                         } else {
-                            emit_llvm_bc = .yes_default_path;
+                            cs.emit_llvm_bc = .yes_default_path;
                         }
                     } else {
                         if (out_path) |p| {
-                            emit_bin = .{ .yes = p };
+                            cs.emit_bin = .{ .yes = p };
                         } else {
-                            emit_bin = .yes_default_path;
+                            cs.emit_bin = .yes_default_path;
                         }
                     }
                 },
                 .assembly => {
-                    create_module.opts.output_mode = .Obj;
-                    emit_bin = .no;
+                    cs.create_module.opts.output_mode = .Obj;
+                    cs.emit_bin = .no;
                     if (emit_llvm) {
                         if (out_path) |p| {
-                            emit_llvm_ir = .{ .yes = p };
+                            cs.emit_llvm_ir = .{ .yes = p };
                         } else {
-                            emit_llvm_ir = .yes_default_path;
+                            cs.emit_llvm_ir = .yes_default_path;
                         }
                     } else {
                         if (out_path) |p| {
-                            emit_asm = .{ .yes = p };
+                            cs.emit_asm = .{ .yes = p };
                         } else {
-                            emit_asm = .yes_default_path;
+                            cs.emit_asm = .yes_default_path;
                         }
                     }
                 },
                 .preprocessor => {
-                    create_module.opts.output_mode = .Obj;
+                    cs.create_module.opts.output_mode = .Obj;
                     // An error message is generated when there is more than 1 C source file.
-                    if (create_module.c_source_files.items.len != 1) {
+                    if (cs.create_module.c_source_files.items.len != 1) {
                         // For example `zig cc` and no args should print the "no input files" message.
                         return process.exit(try clangMain(arena, all_args));
                     }
                     if (emit_pch) {
-                        emit_bin = if (out_path) |p| .{ .yes = p } else .yes_default_path;
-                        clang_preprocessor_mode = .pch;
+                        cs.emit_bin = if (out_path) |p| .{ .yes = p } else .yes_default_path;
+                        cs.clang_preprocessor_mode = .pch;
                     } else {
                         // If the output path is "-" (stdout), then we need to emit the preprocessed output to stdout
                         // like "clang -E main.c -o -" does.
                         if (out_path != null and !mem.eql(u8, out_path.?, "-")) {
-                            emit_bin = .{ .yes = out_path.? };
-                            clang_preprocessor_mode = .yes;
+                            cs.emit_bin = .{ .yes = out_path.? };
+                            cs.clang_preprocessor_mode = .yes;
                         } else {
-                            emit_bin = .no;
-                            clang_preprocessor_mode = .stdout;
+                            cs.emit_bin = .no;
+                            cs.clang_preprocessor_mode = .stdout;
                         }
                     }
                 },
             }
-            if (create_module.c_source_files.items.len == 0 and
-                !anyObjectLinkInputs(create_module.cli_link_inputs.items) and
-                root_src_file == null)
+            if (cs.create_module.c_source_files.items.len == 0 and
+                !anyObjectLinkInputs(cs.create_module.cli_link_inputs.items) and
+                cs.root_src_file == null)
             {
                 // For example `zig cc` and no args should print the "no input files" message.
                 // There could be other reasons to punt to clang, for example, --help.
@@ -2981,58 +3181,58 @@ pub fn buildOutputType(
         },
     }
 
-    if (arg_mode == .zig_test_obj and !test_no_exec and listen == .none) {
+    if (arg_mode == .zig_test_obj and !cs.test_no_exec and cs.listen == .none) {
         fatal("test-obj requires --test-no-exec", .{});
     }
 
-    if (time_report and listen == .none) {
+    if (cs.time_report and cs.listen == .none) {
         fatal("--time-report requires --listen", .{});
     }
 
-    if (arg_mode == .translate_c and create_module.c_source_files.items.len != 1) {
-        fatal("translate-c expects exactly 1 source file (found {d})", .{create_module.c_source_files.items.len});
+    if (arg_mode == .translate_c and cs.create_module.c_source_files.items.len != 1) {
+        fatal("translate-c expects exactly 1 source file (found {d})", .{cs.create_module.c_source_files.items.len});
     }
 
-    if (show_builtin and root_src_file == null) {
+    if (cs.show_builtin and cs.root_src_file == null) {
         // Without this, there will be no main module created and no zig
         // compilation unit, and therefore also no builtin.zig contents
         // created.
-        root_src_file = "builtin.zig";
+        cs.root_src_file = "builtin.zig";
     }
 
     implicit_root_mod: {
         const src_path = b: {
-            if (root_src_file) |src_path| {
-                if (create_module.modules.count() != 0) {
+            if (cs.root_src_file) |src_path| {
+                if (cs.create_module.modules.count() != 0) {
                     fatal("main module provided both by '-M{s}={s}{c}{s}' and by positional argument '{s}'", .{
-                        create_module.modules.keys()[0],
-                        create_module.modules.values()[0].root_path,
+                        cs.create_module.modules.keys()[0],
+                        cs.create_module.modules.values()[0].root_path,
                         fs.path.sep,
-                        create_module.modules.values()[0].root_src_path,
+                        cs.create_module.modules.values()[0].root_src_path,
                         src_path,
                     });
                 }
-                create_module.opts.have_zcu = true;
+                cs.create_module.opts.have_zcu = true;
                 break :b src_path;
             }
 
-            if (create_module.modules.count() != 0)
+            if (cs.create_module.modules.count() != 0)
                 break :implicit_root_mod;
 
-            if (create_module.c_source_files.items.len >= 1)
-                break :b create_module.c_source_files.items[0].src_path;
+            if (cs.create_module.c_source_files.items.len >= 1)
+                break :b cs.create_module.c_source_files.items[0].src_path;
 
-            for (create_module.cli_link_inputs.items) |unresolved_link_input| switch (unresolved_link_input) {
+            for (cs.create_module.cli_link_inputs.items) |unresolved_link_input| switch (unresolved_link_input) {
                 // Intentionally includes dynamic libraries provided by file path.
                 .path_query => |pq| break :b pq.path.sub_path,
                 else => continue,
             };
 
-            if (emit_bin == .yes)
-                break :b emit_bin.yes;
+            if (cs.emit_bin == .yes)
+                break :b cs.emit_bin.yes;
 
-            if (create_module.rc_source_files.items.len >= 1)
-                break :b create_module.rc_source_files.items[0].src_path;
+            if (cs.create_module.rc_source_files.items.len >= 1)
+                break :b cs.create_module.rc_source_files.items[0].src_path;
 
             if (arg_mode == .run)
                 fatal("`zig run` expects at least one positional argument", .{});
@@ -3043,68 +3243,68 @@ pub fn buildOutputType(
         };
 
         // See duplicate logic: ModCreationGlobalFlags
-        if (mod_opts.single_threaded == false)
-            create_module.opts.any_non_single_threaded = true;
-        if (mod_opts.sanitize_thread == true)
-            create_module.opts.any_sanitize_thread = true;
-        if (mod_opts.sanitize_c) |sc| switch (sc) {
+        if (cs.mod_opts.single_threaded == false)
+            cs.create_module.opts.any_non_single_threaded = true;
+        if (cs.mod_opts.sanitize_thread == true)
+            cs.create_module.opts.any_sanitize_thread = true;
+        if (cs.mod_opts.sanitize_c) |sc| switch (sc) {
             .off => {},
-            .trap => if (create_module.opts.any_sanitize_c == .off) {
-                create_module.opts.any_sanitize_c = .trap;
+            .trap => if (cs.create_module.opts.any_sanitize_c == .off) {
+                cs.create_module.opts.any_sanitize_c = .trap;
             },
-            .full => create_module.opts.any_sanitize_c = .full,
+            .full => cs.create_module.opts.any_sanitize_c = .full,
         };
-        if (mod_opts.fuzz == true)
-            create_module.opts.any_fuzz = true;
-        if (mod_opts.unwind_tables) |uwt| switch (uwt) {
+        if (cs.mod_opts.fuzz == true)
+            cs.create_module.opts.any_fuzz = true;
+        if (cs.mod_opts.unwind_tables) |uwt| switch (uwt) {
             .none => {},
-            .sync, .async => create_module.opts.any_unwind_tables = true,
+            .sync, .async => cs.create_module.opts.any_unwind_tables = true,
         };
-        if (mod_opts.strip == false)
-            create_module.opts.any_non_stripped = true;
-        if (mod_opts.error_tracing == true)
-            create_module.opts.any_error_tracing = true;
+        if (cs.mod_opts.strip == false)
+            cs.create_module.opts.any_non_stripped = true;
+        if (cs.mod_opts.error_tracing == true)
+            cs.create_module.opts.any_error_tracing = true;
 
         const name = switch (arg_mode) {
             .zig_test => "test",
             .build, .cc, .cpp, .translate_c, .zig_test_obj, .run => fs.path.stem(fs.path.basename(src_path)),
         };
 
-        try create_module.modules.put(arena, name, .{
+        try cs.create_module.modules.put(arena, name, .{
             .root_path = fs.path.dirname(src_path) orelse ".",
             .root_src_path = fs.path.basename(src_path),
-            .cc_argv = try cc_argv.toOwnedSlice(arena),
-            .inherited = mod_opts,
-            .target_arch_os_abi = target_arch_os_abi,
-            .target_mcpu = target_mcpu,
-            .deps = try deps.toOwnedSlice(arena),
+            .cc_argv = try cs.cc_argv.toOwnedSlice(arena),
+            .inherited = cs.mod_opts,
+            .target_arch_os_abi = cs.target_arch_os_abi,
+            .target_mcpu = cs.target_mcpu,
+            .deps = try cs.deps.toOwnedSlice(arena),
             .resolved = null,
-            .c_source_files_start = c_source_files_owner_index,
-            .c_source_files_end = create_module.c_source_files.items.len,
-            .rc_source_files_start = rc_source_files_owner_index,
-            .rc_source_files_end = create_module.rc_source_files.items.len,
+            .c_source_files_start = cs.c_source_files_owner_index,
+            .c_source_files_end = cs.create_module.c_source_files.items.len,
+            .rc_source_files_start = cs.rc_source_files_owner_index,
+            .rc_source_files_end = cs.create_module.rc_source_files.items.len,
         });
-        cssan.reset();
-        mod_opts = .{};
-        target_arch_os_abi = null;
-        target_mcpu = null;
-        c_source_files_owner_index = create_module.c_source_files.items.len;
-        rc_source_files_owner_index = create_module.rc_source_files.items.len;
+        cs.cssan.reset();
+        cs.mod_opts = .{};
+        cs.target_arch_os_abi = null;
+        cs.target_mcpu = null;
+        cs.c_source_files_owner_index = cs.create_module.c_source_files.items.len;
+        cs.rc_source_files_owner_index = cs.create_module.rc_source_files.items.len;
     }
 
-    if (!create_module.opts.have_zcu and create_module.opts.is_test) {
+    if (!cs.create_module.opts.have_zcu and cs.create_module.opts.is_test) {
         fatal("`zig test` expects a zig source file argument", .{});
     }
 
-    if (c_source_files_owner_index != create_module.c_source_files.items.len) {
+    if (cs.c_source_files_owner_index != cs.create_module.c_source_files.items.len) {
         fatal("C source file '{s}' has no parent module", .{
-            create_module.c_source_files.items[c_source_files_owner_index].src_path,
+            cs.create_module.c_source_files.items[cs.c_source_files_owner_index].src_path,
         });
     }
 
-    if (rc_source_files_owner_index != create_module.rc_source_files.items.len) {
+    if (cs.rc_source_files_owner_index != cs.create_module.rc_source_files.items.len) {
         fatal("resource file '{s}' has no parent module", .{
-            create_module.rc_source_files.items[rc_source_files_owner_index].src_path,
+            cs.create_module.rc_source_files.items[cs.rc_source_files_owner_index].src_path,
         });
     }
 
@@ -3117,10 +3317,10 @@ pub fn buildOutputType(
     var dirs: Compilation.Directories = .init(
         arena,
         io,
-        override_lib_dir,
-        override_global_cache_dir,
+        cs.override_lib_dir,
+        cs.override_global_cache_dir,
         s: {
-            if (override_local_cache_dir) |p| break :s .{ .override = p };
+            if (cs.override_local_cache_dir) |p| break :s .{ .override = p };
             break :s switch (arg_mode) {
                 .run => .global,
                 else => .search,
@@ -3132,16 +3332,16 @@ pub fn buildOutputType(
     );
     defer dirs.deinit(io);
 
-    if (linker_optimization) |o| warn("ignoring deprecated linker optimization setting '{s}'", .{o});
+    if (cs.linker_optimization) |o| warn("ignoring deprecated linker optimization setting '{s}'", .{o});
 
-    create_module.dirs = dirs;
-    create_module.opts.emit_llvm_ir = emit_llvm_ir != .no;
-    create_module.opts.emit_llvm_bc = emit_llvm_bc != .no;
-    create_module.opts.emit_bin = emit_bin != .no;
-    create_module.opts.any_c_source_files = create_module.c_source_files.items.len != 0;
+    cs.create_module.dirs = dirs;
+    cs.create_module.opts.emit_llvm_ir = cs.emit_llvm_ir != .no;
+    cs.create_module.opts.emit_llvm_bc = cs.emit_llvm_bc != .no;
+    cs.create_module.opts.emit_bin = cs.emit_bin != .no;
+    cs.create_module.opts.any_c_source_files = cs.create_module.c_source_files.items.len != 0;
 
-    const main_mod = try createModule(gpa, arena, io, &create_module, 0, null, color, environ_map);
-    for (create_module.modules.keys(), create_module.modules.values()) |key, cli_mod| {
+    const main_mod = try createModule(gpa, arena, io, &cs.create_module, 0, null, cs.color, environ_map);
+    for (cs.create_module.modules.keys(), cs.create_module.modules.values()) |key, cli_mod| {
         if (cli_mod.resolved == null)
             fatal("module '{s}' declared but not used", .{key});
     }
@@ -3153,13 +3353,13 @@ pub fn buildOutputType(
 
     const std_mod = m: {
         if (main_mod_is_std) break :m main_mod;
-        if (create_module.modules.get("std")) |cli_mod| break :m cli_mod.resolved.?;
+        if (cs.create_module.modules.get("std")) |cli_mod| break :m cli_mod.resolved.?;
         break :m null;
     };
 
     const root_mod = switch (arg_mode) {
         .zig_test, .zig_test_obj => root_mod: {
-            const test_mod = if (test_runner_path) |test_runner| test_mod: {
+            const test_mod = if (cs.test_runner_path) |test_runner| test_mod: {
                 const test_mod = try Package.Module.create(arena, .{
                     .paths = .{
                         .root = try .fromUnresolved(arena, dirs, &.{fs.path.dirname(test_runner) orelse "."}),
@@ -3168,7 +3368,7 @@ pub fn buildOutputType(
                     .fully_qualified_name = "root",
                     .cc_argv = &.{},
                     .inherited = .{},
-                    .global = create_module.resolved_options,
+                    .global = cs.create_module.resolved_options,
                     .parent = main_mod,
                 });
                 test_mod.deps = try main_mod.deps.clone(arena);
@@ -3181,7 +3381,7 @@ pub fn buildOutputType(
                 .fully_qualified_name = "root",
                 .cc_argv = &.{},
                 .inherited = .{},
-                .global = create_module.resolved_options,
+                .global = cs.create_module.resolved_options,
                 .parent = main_mod,
             });
 
@@ -3193,15 +3393,15 @@ pub fn buildOutputType(
     const target = &main_mod.resolved_target.result;
 
     if (target.cpu.arch == .arc or target.cpu.arch.isNvptx()) {
-        if (emit_bin != .no and create_module.resolved_options.use_llvm) {
+        if (cs.emit_bin != .no and cs.create_module.resolved_options.use_llvm) {
             fatal("cannot emit {s} binary with the LLVM backend; only '-femit-asm' is supported", .{
                 @tagName(target.cpu.arch),
             });
         }
     }
 
-    if (target.os.tag == .windows and major_subsystem_version == null and minor_subsystem_version == null) {
-        major_subsystem_version, minor_subsystem_version = switch (target.os.version_range.windows.min) {
+    if (target.os.tag == .windows and cs.major_subsystem_version == null and cs.minor_subsystem_version == null) {
+        cs.major_subsystem_version, cs.minor_subsystem_version = switch (target.os.version_range.windows.min) {
             .nt4 => .{ 4, 0 },
             .win2k => .{ 5, 0 },
             .xp => if (target.cpu.arch == .x86_64) .{ 5, 2 } else .{ 5, 1 },
@@ -3211,20 +3411,20 @@ pub fn buildOutputType(
     }
 
     if (target.ofmt != .coff) {
-        if (manifest_file != null) {
+        if (cs.manifest_file != null) {
             fatal("manifest file is not allowed unless the target object format is coff (Windows/UEFI)", .{});
         }
-        if (create_module.rc_source_files.items.len != 0) {
+        if (cs.create_module.rc_source_files.items.len != 0) {
             fatal("rc files are not allowed unless the target object format is coff (Windows/UEFI)", .{});
         }
-        if (contains_res_file) {
+        if (cs.contains_res_file) {
             fatal("res files are not allowed unless the target object format is coff (Windows/UEFI)", .{});
         }
     }
 
     var resolved_frameworks = std.array_list.Managed(Compilation.Framework).init(arena);
 
-    if (create_module.frameworks.keys().len > 0) {
+    if (cs.create_module.frameworks.keys().len > 0) {
         var test_path = std.array_list.Managed(u8).init(gpa);
         defer test_path.deinit();
 
@@ -3236,10 +3436,10 @@ pub fn buildOutputType(
             checked_paths: []const u8,
         }).init(arena);
 
-        framework: for (create_module.frameworks.keys(), create_module.frameworks.values()) |framework_name, info| {
+        framework: for (cs.create_module.frameworks.keys(), cs.create_module.frameworks.values()) |framework_name, info| {
             checked_paths.clearRetainingCapacity();
 
-            for (create_module.framework_dirs.items) |framework_dir_path| {
+            for (cs.create_module.framework_dirs.items) |framework_dir_path| {
                 if (try accessFrameworkPath(
                     io,
                     &test_path,
@@ -3275,11 +3475,11 @@ pub fn buildOutputType(
     }
     // After this point, resolved_frameworks is used instead of frameworks.
 
-    if (create_module.resolved_options.output_mode == .Obj and target.ofmt == .coff) {
-        const total_obj_count = create_module.c_source_files.items.len +
-            @intFromBool(root_src_file != null) +
-            create_module.rc_source_files.items.len +
-            link.countObjectInputs(create_module.link_inputs.items);
+    if (cs.create_module.resolved_options.output_mode == .Obj and target.ofmt == .coff) {
+        const total_obj_count = cs.create_module.c_source_files.items.len +
+            @intFromBool(cs.root_src_file != null) +
+            cs.create_module.rc_source_files.items.len +
+            link.countObjectInputs(cs.create_module.link_inputs.items);
         if (total_obj_count > 1) {
             fatal("{s} does not support linking multiple objects into one", .{@tagName(target.ofmt)});
         }
@@ -3290,43 +3490,43 @@ pub fn buildOutputType(
 
     // For `zig run` and `zig test`, we don't want to put the binary in the cwd by default. So, if
     // the binary is requested with no explicit path (as is the default), we emit to the cache.
-    const output_to_cache: ?Emit.OutputToCacheReason = switch (listen) {
+    const output_to_cache: ?Emit.OutputToCacheReason = switch (cs.listen) {
         .stdio, .ip4 => .listen,
-        .none => if (arg_mode == .run and emit_bin == .yes_default_path)
+        .none => if (arg_mode == .run and cs.emit_bin == .yes_default_path)
             .@"zig run"
-        else if (arg_mode == .zig_test and emit_bin == .yes_default_path)
+        else if (arg_mode == .zig_test and cs.emit_bin == .yes_default_path)
             .@"zig test"
         else
             null,
     };
-    const optional_version = if (have_version) version else null;
+    const optional_version = if (cs.have_version) cs.version else null;
 
-    const root_name = if (provided_name) |n| n else main_mod.fully_qualified_name;
+    const root_name = if (cs.provided_name) |n| n else main_mod.fully_qualified_name;
 
-    const resolved_soname: ?[]const u8 = switch (soname) {
+    const resolved_soname: ?[]const u8 = switch (cs.soname) {
         .yes => |explicit| explicit,
         .no => null,
-        .yes_default_value => if (create_module.resolved_options.output_mode == .Lib and
-            create_module.resolved_options.link_mode == .dynamic and target.ofmt == .elf)
-            if (have_version)
-                try std.fmt.allocPrint(arena, "lib{s}.so.{d}", .{ root_name, version.major })
+        .yes_default_value => if (cs.create_module.resolved_options.output_mode == .Lib and
+            cs.create_module.resolved_options.link_mode == .dynamic and target.ofmt == .elf)
+            if (cs.have_version)
+                try std.fmt.allocPrint(arena, "lib{s}.so.{d}", .{ root_name, cs.version.major })
             else
                 try std.fmt.allocPrint(arena, "lib{s}.so", .{root_name})
         else
             null,
     };
 
-    const emit_bin_resolved: Compilation.CreateOptions.Emit = switch (emit_bin) {
+    const emit_bin_resolved: Compilation.CreateOptions.Emit = switch (cs.emit_bin) {
         .no => .no,
         .yes_default_path => emit: {
             if (output_to_cache != null) break :emit .yes_cache;
-            const name = switch (clang_preprocessor_mode) {
+            const name = switch (cs.clang_preprocessor_mode) {
                 .pch => try std.fmt.allocPrint(arena, "{s}.pch", .{root_name}),
                 else => try std.zig.binNameAlloc(arena, .{
                     .root_name = root_name,
                     .target = target,
-                    .output_mode = create_module.resolved_options.output_mode,
-                    .link_mode = create_module.resolved_options.link_mode,
+                    .output_mode = cs.create_module.resolved_options.output_mode,
+                    .link_mode = cs.create_module.resolved_options.link_mode,
                     .version = optional_version,
                 }),
             };
@@ -3355,22 +3555,22 @@ pub fn buildOutputType(
     };
 
     const default_h_basename = try std.fmt.allocPrint(arena, "{s}.h", .{root_name});
-    const emit_h_resolved = emit_h.resolve(io, default_h_basename, output_to_cache);
+    const emit_h_resolved = cs.emit_h.resolve(io, default_h_basename, output_to_cache);
 
     const default_asm_basename = try std.fmt.allocPrint(arena, "{s}.s", .{root_name});
-    const emit_asm_resolved = emit_asm.resolve(io, default_asm_basename, output_to_cache);
+    const emit_asm_resolved = cs.emit_asm.resolve(io, default_asm_basename, output_to_cache);
 
     const default_llvm_ir_basename = try std.fmt.allocPrint(arena, "{s}.ll", .{root_name});
-    const emit_llvm_ir_resolved = emit_llvm_ir.resolve(io, default_llvm_ir_basename, output_to_cache);
+    const emit_llvm_ir_resolved = cs.emit_llvm_ir.resolve(io, default_llvm_ir_basename, output_to_cache);
 
     const default_llvm_bc_basename = try std.fmt.allocPrint(arena, "{s}.bc", .{root_name});
-    const emit_llvm_bc_resolved = emit_llvm_bc.resolve(io, default_llvm_bc_basename, output_to_cache);
+    const emit_llvm_bc_resolved = cs.emit_llvm_bc.resolve(io, default_llvm_bc_basename, output_to_cache);
 
-    const emit_docs_resolved = emit_docs.resolve(io, "docs", output_to_cache);
+    const emit_docs_resolved = cs.emit_docs.resolve(io, "docs", output_to_cache);
 
-    const is_exe_or_dyn_lib = switch (create_module.resolved_options.output_mode) {
+    const is_exe_or_dyn_lib = switch (cs.create_module.resolved_options.output_mode) {
         .Obj => false,
-        .Lib => create_module.resolved_options.link_mode == .dynamic,
+        .Lib => cs.create_module.resolved_options.link_mode == .dynamic,
         .Exe => true,
     };
     // Note that cmake when targeting Windows will try to execute
@@ -3378,16 +3578,16 @@ pub fn buildOutputType(
     const implib_eligible = is_exe_or_dyn_lib and
         emit_bin_resolved != .no and target.os.tag == .windows;
     if (!implib_eligible) {
-        if (!emit_implib_arg_provided) {
-            emit_implib = .no;
-        } else if (emit_implib != .no) {
+        if (!cs.emit_implib_arg_provided) {
+            cs.emit_implib = .no;
+        } else if (cs.emit_implib != .no) {
             fatal("the argument -femit-implib is allowed only when building a Windows DLL", .{});
         }
     }
     const default_implib_basename = try std.fmt.allocPrint(arena, "{s}.lib", .{root_name});
-    const emit_implib_resolved: Compilation.CreateOptions.Emit = switch (emit_implib) {
+    const emit_implib_resolved: Compilation.CreateOptions.Emit = switch (cs.emit_implib) {
         .no => .no,
-        .yes => emit_implib.resolve(io, default_implib_basename, output_to_cache),
+        .yes => cs.emit_implib.resolve(io, default_implib_basename, output_to_cache),
         .yes_default_path => emit: {
             if (output_to_cache != null) break :emit .yes_cache;
             const p = try fs.path.join(arena, &.{
@@ -3399,12 +3599,12 @@ pub fn buildOutputType(
     };
 
     const thread_limit = @min(
-        @max(n_jobs orelse std.Thread.getCpuCount() catch 1, 1),
+        @max(cs.n_jobs orelse std.Thread.getCpuCount() catch 1, 1),
         std.math.maxInt(Zcu.PerThread.IdBacking),
     );
     setThreadLimit(thread_limit);
 
-    for (create_module.c_source_files.items) |*src| {
+    for (cs.create_module.c_source_files.items) |*src| {
         dev.check(.c_compiler);
         if (!mem.eql(u8, src.src_path, "-")) continue;
 
@@ -3462,12 +3662,12 @@ pub fn buildOutputType(
         else => false,
     };
 
-    const incremental = create_module.resolved_options.incremental;
-    if (debug_incremental and !incremental) {
+    const incremental = cs.create_module.resolved_options.incremental;
+    if (cs.debug_incremental and !incremental) {
         fatal("--debug-incremental requires -fincremental", .{});
     }
 
-    if (incremental and create_module.resolved_options.use_llvm) {
+    if (incremental and cs.create_module.resolved_options.use_llvm) {
         warn("-fincremental is currently unsupported by the LLVM backend; crashes or miscompilations are likely", .{});
     }
 
@@ -3486,11 +3686,11 @@ pub fn buildOutputType(
 
     // Deduplicate rpath entries
     var rpath_dedup = std.StringArrayHashMapUnmanaged(void){};
-    for (create_module.rpath_list.items) |rpath| {
+    for (cs.create_module.rpath_list.items) |rpath| {
         try rpath_dedup.put(arena, rpath, {});
     }
-    create_module.rpath_list.clearRetainingCapacity();
-    try create_module.rpath_list.appendSlice(arena, rpath_dedup.keys());
+    cs.create_module.rpath_list.clearRetainingCapacity();
+    try cs.create_module.rpath_list.appendSlice(arena, rpath_dedup.keys());
 
     var create_diag: Compilation.CreateDiagnostic = undefined;
     const comp = Compilation.create(gpa, arena, io, &create_diag, .{
@@ -3500,9 +3700,9 @@ pub fn buildOutputType(
             .wasi => null,
             else => self_exe_path,
         },
-        .config = create_module.resolved_options,
+        .config = cs.create_module.resolved_options,
         .root_name = root_name,
-        .sysroot = create_module.sysroot,
+        .sysroot = cs.create_module.sysroot,
         .main_mod = main_mod,
         .root_mod = root_mod,
         .std_mod = std_mod,
@@ -3513,110 +3713,110 @@ pub fn buildOutputType(
         .emit_llvm_bc = emit_llvm_bc_resolved,
         .emit_docs = emit_docs_resolved,
         .emit_implib = emit_implib_resolved,
-        .lib_directories = create_module.lib_directories.items,
-        .rpath_list = create_module.rpath_list.items,
-        .symbol_wrap_set = symbol_wrap_set,
-        .c_source_files = create_module.c_source_files.items,
-        .rc_source_files = create_module.rc_source_files.items,
-        .manifest_file = manifest_file,
-        .rc_includes = rc_includes,
-        .mingw_unicode_entry_point = mingw_unicode_entry_point,
-        .link_inputs = create_module.link_inputs.items,
-        .framework_dirs = create_module.framework_dirs.items,
+        .lib_directories = cs.create_module.lib_directories.items,
+        .rpath_list = cs.create_module.rpath_list.items,
+        .symbol_wrap_set = cs.symbol_wrap_set,
+        .c_source_files = cs.create_module.c_source_files.items,
+        .rc_source_files = cs.create_module.rc_source_files.items,
+        .manifest_file = cs.manifest_file,
+        .rc_includes = cs.rc_includes,
+        .mingw_unicode_entry_point = cs.mingw_unicode_entry_point,
+        .link_inputs = cs.create_module.link_inputs.items,
+        .framework_dirs = cs.create_module.framework_dirs.items,
         .frameworks = resolved_frameworks.items,
-        .windows_lib_names = create_module.windows_libs.keys(),
-        .want_compiler_rt = want_compiler_rt,
-        .want_ubsan_rt = want_ubsan_rt,
-        .hash_style = hash_style,
-        .linker_script = linker_script,
-        .version_script = version_script,
-        .linker_allow_undefined_version = linker_allow_undefined_version,
-        .linker_enable_new_dtags = linker_enable_new_dtags,
-        .disable_c_depfile = disable_c_depfile,
+        .windows_lib_names = cs.create_module.windows_libs.keys(),
+        .want_compiler_rt = cs.want_compiler_rt,
+        .want_ubsan_rt = cs.want_ubsan_rt,
+        .hash_style = cs.hash_style,
+        .linker_script = cs.linker_script,
+        .version_script = cs.version_script,
+        .linker_allow_undefined_version = cs.linker_allow_undefined_version,
+        .linker_enable_new_dtags = cs.linker_enable_new_dtags,
+        .disable_c_depfile = cs.disable_c_depfile,
         .soname = resolved_soname,
-        .linker_sort_section = linker_sort_section,
-        .linker_gc_sections = linker_gc_sections,
-        .linker_repro = linker_repro,
-        .linker_allow_shlib_undefined = linker_allow_shlib_undefined,
-        .linker_bind_global_refs_locally = linker_bind_global_refs_locally,
-        .linker_import_symbols = linker_import_symbols,
-        .linker_import_table = linker_import_table,
-        .linker_export_table = linker_export_table,
-        .linker_initial_memory = linker_initial_memory,
-        .linker_max_memory = linker_max_memory,
-        .linker_print_gc_sections = linker_print_gc_sections,
-        .linker_print_icf_sections = linker_print_icf_sections,
-        .linker_print_map = linker_print_map,
-        .llvm_opt_bisect_limit = llvm_opt_bisect_limit,
-        .linker_global_base = linker_global_base,
-        .linker_export_symbol_names = linker_export_symbol_names.items,
-        .linker_z_nocopyreloc = linker_z_nocopyreloc,
-        .linker_z_nodelete = linker_z_nodelete,
-        .linker_z_notext = linker_z_notext,
-        .linker_z_defs = linker_z_defs,
-        .linker_z_origin = linker_z_origin,
-        .linker_z_now = linker_z_now,
-        .linker_z_relro = linker_z_relro,
-        .linker_z_common_page_size = linker_z_common_page_size,
-        .linker_z_max_page_size = linker_z_max_page_size,
-        .linker_tsaware = linker_tsaware,
-        .linker_nxcompat = linker_nxcompat,
-        .linker_dynamicbase = linker_dynamicbase,
-        .linker_compress_debug_sections = linker_compress_debug_sections,
-        .linker_module_definition_file = linker_module_definition_file,
-        .major_subsystem_version = major_subsystem_version,
-        .minor_subsystem_version = minor_subsystem_version,
-        .link_eh_frame_hdr = link_eh_frame_hdr,
-        .link_emit_relocs = link_emit_relocs,
-        .entry = entry,
-        .force_undefined_symbols = force_undefined_symbols,
-        .stack_size = stack_size,
-        .image_base = image_base,
-        .function_sections = function_sections,
-        .data_sections = data_sections,
+        .linker_sort_section = cs.linker_sort_section,
+        .linker_gc_sections = cs.linker_gc_sections,
+        .linker_repro = cs.linker_repro,
+        .linker_allow_shlib_undefined = cs.linker_allow_shlib_undefined,
+        .linker_bind_global_refs_locally = cs.linker_bind_global_refs_locally,
+        .linker_import_symbols = cs.linker_import_symbols,
+        .linker_import_table = cs.linker_import_table,
+        .linker_export_table = cs.linker_export_table,
+        .linker_initial_memory = cs.linker_initial_memory,
+        .linker_max_memory = cs.linker_max_memory,
+        .linker_print_gc_sections = cs.linker_print_gc_sections,
+        .linker_print_icf_sections = cs.linker_print_icf_sections,
+        .linker_print_map = cs.linker_print_map,
+        .llvm_opt_bisect_limit = cs.llvm_opt_bisect_limit,
+        .linker_global_base = cs.linker_global_base,
+        .linker_export_symbol_names = cs.linker_export_symbol_names.items,
+        .linker_z_nocopyreloc = cs.linker_z_nocopyreloc,
+        .linker_z_nodelete = cs.linker_z_nodelete,
+        .linker_z_notext = cs.linker_z_notext,
+        .linker_z_defs = cs.linker_z_defs,
+        .linker_z_origin = cs.linker_z_origin,
+        .linker_z_now = cs.linker_z_now,
+        .linker_z_relro = cs.linker_z_relro,
+        .linker_z_common_page_size = cs.linker_z_common_page_size,
+        .linker_z_max_page_size = cs.linker_z_max_page_size,
+        .linker_tsaware = cs.linker_tsaware,
+        .linker_nxcompat = cs.linker_nxcompat,
+        .linker_dynamicbase = cs.linker_dynamicbase,
+        .linker_compress_debug_sections = cs.linker_compress_debug_sections,
+        .linker_module_definition_file = cs.linker_module_definition_file,
+        .major_subsystem_version = cs.major_subsystem_version,
+        .minor_subsystem_version = cs.minor_subsystem_version,
+        .link_eh_frame_hdr = cs.link_eh_frame_hdr,
+        .link_emit_relocs = cs.link_emit_relocs,
+        .entry = cs.entry,
+        .force_undefined_symbols = cs.force_undefined_symbols,
+        .stack_size = cs.stack_size,
+        .image_base = cs.image_base,
+        .function_sections = cs.function_sections,
+        .data_sections = cs.data_sections,
         .clang_passthrough_mode = clang_passthrough_mode,
-        .clang_preprocessor_mode = clang_preprocessor_mode,
+        .clang_preprocessor_mode = cs.clang_preprocessor_mode,
         .version = optional_version,
-        .compatibility_version = compatibility_version,
-        .libc_installation = if (create_module.libc_installation) |*lci| lci else null,
-        .verbose_cc = verbose_cc,
-        .verbose_link = verbose_link,
-        .verbose_air = verbose_air,
-        .verbose_intern_pool = verbose_intern_pool,
-        .verbose_generic_instances = verbose_generic_instances,
-        .verbose_llvm_ir = verbose_llvm_ir,
-        .verbose_llvm_bc = verbose_llvm_bc,
-        .link_depfile = link_depfile,
-        .verbose_cimport = verbose_cimport,
-        .verbose_llvm_cpu_features = verbose_llvm_cpu_features,
-        .time_report = time_report,
-        .stack_report = stack_report,
-        .build_id = build_id,
-        .test_filters = test_filters.items,
-        .test_runner_path = test_runner_path,
+        .compatibility_version = cs.compatibility_version,
+        .libc_installation = if (cs.create_module.libc_installation) |*lci| lci else null,
+        .verbose_cc = cs.verbose_cc,
+        .verbose_link = cs.verbose_link,
+        .verbose_air = cs.verbose_air,
+        .verbose_intern_pool = cs.verbose_intern_pool,
+        .verbose_generic_instances = cs.verbose_generic_instances,
+        .verbose_llvm_ir = cs.verbose_llvm_ir,
+        .verbose_llvm_bc = cs.verbose_llvm_bc,
+        .link_depfile = cs.link_depfile,
+        .verbose_cimport = cs.verbose_cimport,
+        .verbose_llvm_cpu_features = cs.verbose_llvm_cpu_features,
+        .time_report = cs.time_report,
+        .stack_report = cs.stack_report,
+        .build_id = cs.build_id,
+        .test_filters = cs.test_filters.items,
+        .test_runner_path = cs.test_runner_path,
         .cache_mode = cache_mode,
-        .subsystem = subsystem,
-        .debug_compile_errors = debug_compile_errors,
-        .debug_incremental = debug_incremental,
-        .enable_link_snapshots = enable_link_snapshots,
-        .install_name = install_name,
-        .entitlements = entitlements,
-        .pagezero_size = pagezero_size,
-        .headerpad_size = headerpad_size,
-        .headerpad_max_install_names = headerpad_max_install_names,
-        .dead_strip_dylibs = dead_strip_dylibs,
-        .force_load_objc = force_load_objc,
-        .discard_local_symbols = discard_local_symbols,
-        .reference_trace = reference_trace,
-        .pdb_out_path = pdb_out_path,
-        .error_limit = error_limit,
-        .native_system_include_paths = create_module.native_system_include_paths,
+        .subsystem = cs.subsystem,
+        .debug_compile_errors = cs.debug_compile_errors,
+        .debug_incremental = cs.debug_incremental,
+        .enable_link_snapshots = cs.enable_link_snapshots,
+        .install_name = cs.install_name,
+        .entitlements = cs.entitlements,
+        .pagezero_size = cs.pagezero_size,
+        .headerpad_size = cs.headerpad_size,
+        .headerpad_max_install_names = cs.headerpad_max_install_names,
+        .dead_strip_dylibs = cs.dead_strip_dylibs,
+        .force_load_objc = cs.force_load_objc,
+        .discard_local_symbols = cs.discard_local_symbols,
+        .reference_trace = cs.reference_trace,
+        .pdb_out_path = cs.pdb_out_path,
+        .error_limit = cs.error_limit,
+        .native_system_include_paths = cs.create_module.native_system_include_paths,
         // Any leftover C compilation args (such as -I) apply globally rather
         // than to any particular module. This feature can greatly reduce CLI
         // noise when --search-prefix and -M are combined.
-        .global_cc_argv = try cc_argv.toOwnedSlice(arena),
+        .global_cc_argv = try cs.cc_argv.toOwnedSlice(arena),
         .file_system_inputs = &file_system_inputs,
-        .debug_compiler_runtime_libs = debug_compiler_runtime_libs,
+        .debug_compiler_runtime_libs = cs.debug_compiler_runtime_libs,
         .environ_map = environ_map,
     }) catch |err| switch (err) {
         error.CreateFail => switch (create_diag) {
@@ -3662,12 +3862,12 @@ pub fn buildOutputType(
     var comp_destroyed = false;
     defer if (!comp_destroyed) comp.destroy();
 
-    if (show_builtin) {
+    if (cs.show_builtin) {
         const builtin_opts = comp.root_mod.getBuiltinOptions(comp.config);
         const source = try builtin_opts.generate(arena);
         return Io.File.stdout().writeStreamingAll(io, source);
     }
-    switch (listen) {
+    switch (cs.listen) {
         .none => {},
         .stdio => {
             var stdin_reader = Io.File.stdin().reader(io, &stdin_buffer);
@@ -3676,11 +3876,11 @@ pub fn buildOutputType(
                 comp,
                 &stdin_reader.interface,
                 &stdout_writer.interface,
-                test_exec_args.items,
+                cs.test_exec_args.items,
                 self_exe_path,
                 arg_mode,
                 all_args,
-                runtime_args_start,
+                cs.runtime_args_start,
                 environ_map,
             );
             return cleanExit(io);
@@ -3703,11 +3903,11 @@ pub fn buildOutputType(
                 comp,
                 &input.interface,
                 &output.interface,
-                test_exec_args.items,
+                cs.test_exec_args.items,
                 self_exe_path,
                 arg_mode,
                 all_args,
-                runtime_args_start,
+                cs.runtime_args_start,
                 environ_map,
             );
             return cleanExit(io);
@@ -3716,7 +3916,7 @@ pub fn buildOutputType(
 
     {
         const root_prog_node = std.Progress.start(io, .{
-            .disable_printing = (color == .off),
+            .disable_printing = (cs.color == .off),
         });
         defer root_prog_node.end();
 
@@ -3724,9 +3924,9 @@ pub fn buildOutputType(
             return cmdTranslateC(comp, arena, null, null, root_prog_node, environ_map);
         }
 
-        updateModule(comp, color, root_prog_node) catch |err| switch (err) {
+        updateModule(comp, cs.color, root_prog_node) catch |err| switch (err) {
             error.CompileErrorsReported => {
-                assert(listen == .none);
+                assert(cs.listen == .none);
                 saveState(comp, incremental);
                 process.exit(1);
             },
@@ -3738,42 +3938,42 @@ pub fn buildOutputType(
 
     if (switch (arg_mode) {
         .run => true,
-        .zig_test => !test_no_exec,
+        .zig_test => !cs.test_no_exec,
         else => false,
     }) {
         dev.checkAny(&.{ .run_command, .test_command });
 
-        if (test_exec_args.items.len == 0 and target.ofmt == .c and emit_bin_resolved != .no) {
+        if (cs.test_exec_args.items.len == 0 and target.ofmt == .c and emit_bin_resolved != .no) {
             // Default to using `zig run` to execute the produced .c code from `zig test`.
-            try test_exec_args.appendSlice(arena, &.{ self_exe_path, "run" });
+            try cs.test_exec_args.appendSlice(arena, &.{ self_exe_path, "run" });
             if (dirs.zig_lib.path) |p| {
-                try test_exec_args.appendSlice(arena, &.{ "-I", p });
+                try cs.test_exec_args.appendSlice(arena, &.{ "-I", p });
             }
 
-            if (create_module.resolved_options.link_libc) {
-                try test_exec_args.append(arena, "-lc");
+            if (cs.create_module.resolved_options.link_libc) {
+                try cs.test_exec_args.append(arena, "-lc");
             } else if (target.os.tag == .windows) {
-                try test_exec_args.appendSlice(arena, &.{
+                try cs.test_exec_args.appendSlice(arena, &.{
                     "--subsystem", "console",
                     "-lkernel32",  "-lntdll",
                 });
             }
 
-            const first_cli_mod = create_module.modules.values()[0];
+            const first_cli_mod = cs.create_module.modules.values()[0];
             if (first_cli_mod.target_arch_os_abi) |triple| {
-                try test_exec_args.appendSlice(arena, &.{ "-target", triple });
+                try cs.test_exec_args.appendSlice(arena, &.{ "-target", triple });
             }
             if (first_cli_mod.target_mcpu) |mcpu| {
-                try test_exec_args.append(arena, try std.fmt.allocPrint(arena, "-mcpu={s}", .{mcpu}));
+                try cs.test_exec_args.append(arena, try std.fmt.allocPrint(arena, "-mcpu={s}", .{mcpu}));
             }
-            if (create_module.dynamic_linker) |dl| {
+            if (cs.create_module.dynamic_linker) |dl| {
                 if (dl.len > 0) {
-                    try test_exec_args.appendSlice(arena, &.{ "--dynamic-linker", dl });
+                    try cs.test_exec_args.appendSlice(arena, &.{ "--dynamic-linker", dl });
                 } else {
-                    try test_exec_args.append(arena, "--no-dynamic-linker");
+                    try cs.test_exec_args.append(arena, "--no-dynamic-linker");
                 }
             }
-            try test_exec_args.append(arena, null); // placeholder for the path of the emitted C source file
+            try cs.test_exec_args.append(arena, null); // placeholder for the path of the emitted C source file
         }
 
         try runOrTest(
@@ -3781,15 +3981,15 @@ pub fn buildOutputType(
             gpa,
             arena,
             io,
-            test_exec_args.items,
+            cs.test_exec_args.items,
             self_exe_path,
             arg_mode,
             target,
             &comp_destroyed,
             all_args,
-            runtime_args_start,
-            create_module.resolved_options.link_libc,
-            test_execve,
+            cs.runtime_args_start,
+            cs.create_module.resolved_options.link_libc,
+            cs.test_execve,
             environ_map,
         );
     }
