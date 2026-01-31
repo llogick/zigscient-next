@@ -369,7 +369,9 @@ pub const Batch = struct {
     context: ?*anyopaque,
 
     /// After calling this, it is safe to unconditionally defer a call to
-    /// `cancel`.
+    /// `cancel`. `storage` is a pre-allocated buffer of undefined memory that
+    /// determines the maximum number of active operations that can be
+    /// submitted via `add` and `addAt`.
     pub fn init(storage: []Operation.Storage) Batch {
         var prev: Operation.OptionalIndex = .none;
         for (storage, 0..) |*operation, index| {
@@ -422,12 +424,20 @@ pub const Batch = struct {
         b.submissions.tail = .fromIndex(index);
     }
 
+    pub const Completion = struct {
+        /// The element within the provided operation storage that completed.
+        /// `addAt` can be used to re-arm the `Batch` using this `index`.
+        index: u32,
+        /// The return value of the operation.
+        result: Operation.Result,
+    };
+
     /// After calling `awaitAsync`, `awaitConcurrent`, or `cancel`, this
     /// function iterates over the completed operations.
     ///
     /// Each completion returned from this function dequeues from the `Batch`.
     /// It is not required to dequeue all completions before awaiting again.
-    pub fn next(b: *Batch) ?struct { index: u32, result: Operation.Result } {
+    pub fn next(b: *Batch) ?Completion {
         const index = b.completions.head;
         if (index == .none) return null;
         const storage = &b.storage[index.toIndex()];

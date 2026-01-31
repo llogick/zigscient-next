@@ -656,3 +656,63 @@ test "memory mapping" {
         try expectEqualStrings("this9is9my data123\x00\x00", mm.memory[0.."this9is9my data123\x00\x00".len]);
     }
 }
+
+test "read from a file using Batch.awaitAsync API" {
+    const io = testing.io;
+
+    var tmp = tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "eyes.txt",
+        .data = "Heaven's been cheating the Hell out of me",
+    });
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "saviour.txt",
+        .data = "Burn your thoughts, erase your will / to gods of suffering and tears",
+    });
+
+    var eyes_file = try tmp.dir.openFile(io, "eyes.txt", .{});
+    defer eyes_file.close(io);
+
+    var saviour_file = try tmp.dir.openFile(io, "saviour.txt", .{});
+    defer saviour_file.close(io);
+
+    var eyes_buf: [100]u8 = undefined;
+    var saviour_buf: [100]u8 = undefined;
+    var storage: [2]Io.Operation.Storage = undefined;
+    var batch: Io.Batch = .init(&storage);
+
+    batch.addAt(0, .{ .file_read_streaming = .{
+        .file = eyes_file,
+        .data = &.{&eyes_buf},
+    } });
+    batch.addAt(1, .{ .file_read_streaming = .{
+        .file = saviour_file,
+        .data = &.{&saviour_buf},
+    } });
+
+    // This API is supposed to *always* work even if the target has no
+    // concurrency primitives available.
+    try batch.awaitAsync(io);
+
+    while (batch.next()) |completion| {
+        switch (completion.index) {
+            0 => {
+                const n = try completion.result.file_read_streaming;
+                try expectEqualStrings(
+                    "Heaven's been cheating the Hell out of me"[0..n],
+                    eyes_buf[0..n],
+                );
+            },
+            1 => {
+                const n = try completion.result.file_read_streaming;
+                try expectEqualStrings(
+                    "Burn your thoughts, erase your will / to gods of suffering and tears"[0..n],
+                    saviour_buf[0..n],
+                );
+            },
+            else => return error.TestFailure,
+        }
+    }
+}

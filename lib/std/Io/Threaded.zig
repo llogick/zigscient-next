@@ -1938,6 +1938,10 @@ const have_mmap = switch (native_os) {
     .wasi, .windows => false,
     else => true,
 };
+const have_poll = switch (native_os) {
+    .wasi, .windows => false,
+    else => true,
+};
 
 const open_sym = if (posix.lfs64_abi) posix.system.open64 else posix.system.open;
 const openat_sym = if (posix.lfs64_abi) posix.system.openat64 else posix.system.openat;
@@ -2507,104 +2511,104 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
         alertable_syscall.finish();
         return;
     }
-    if (native_os == .wasi and !builtin.link_libc) @panic("TODO");
-    var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
-    var poll_len: u32 = 0;
-    {
-        var index = b.submissions.head;
-        while (index != .none and poll_len < poll_buffer_len) {
-            const submission = &b.storage[index.toIndex()].submission;
-            switch (submission.operation) {
-                .file_read_streaming => |o| {
-                    poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.IN, .revents = 0 };
-                    poll_len += 1;
-                },
-            }
-            index = submission.node.next;
-        }
-    }
-    switch (poll_len) {
-        0 => return,
-        1 => {},
-        else => while (true) {
-            const timeout_ms: i32 = t: {
-                if (b.completions.head != .none) {
-                    // It is legal to call batchWait with already completed
-                    // operations in the ring. In such case, we need to avoid
-                    // blocking in the poll syscall, but we can still take this
-                    // opportunity to find additional ready operations.
-                    break :t 0;
+    if (have_poll) {
+        var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
+        var poll_len: u32 = 0;
+        {
+            var index = b.submissions.head;
+            while (index != .none and poll_len < poll_buffer_len) {
+                const submission = &b.storage[index.toIndex()].submission;
+                switch (submission.operation) {
+                    .file_read_streaming => |o| {
+                        poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.IN, .revents = 0 };
+                        poll_len += 1;
+                    },
                 }
-                const max_poll_ms = std.math.maxInt(i32);
-                break :t max_poll_ms;
-            };
-            const syscall = try Syscall.start();
-            const rc = posix.system.poll(&poll_buffer, poll_len, timeout_ms);
-            syscall.finish();
-            switch (posix.errno(rc)) {
-                .SUCCESS => {
-                    if (rc == 0) {
-                        if (b.completions.head != .none) {
-                            // Since there are already completions available in the
-                            // queue, this is neither a timeout nor a case for
-                            // retrying.
-                            return;
-                        }
-                        continue;
-                    }
-                    var prev_index: Io.Operation.OptionalIndex = .none;
-                    var index = b.submissions.head;
-                    for (poll_buffer[0..poll_len]) |poll_entry| {
-                        const storage = &b.storage[index.toIndex()];
-                        const submission = &storage.submission;
-                        const next_index = submission.node.next;
-                        if (poll_entry.revents != 0) {
-                            const result = try operate(t, submission.operation);
-
-                            switch (prev_index) {
-                                .none => b.submissions.head = next_index,
-                                else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
-                            }
-                            if (next_index == .none) b.submissions.tail = prev_index;
-
-                            switch (b.completions.tail) {
-                                .none => b.completions.head = index,
-                                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
-                            }
-                            storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
-                            b.completions.tail = index;
-                        } else prev_index = index;
-                        index = next_index;
-                    }
-                    assert(index == .none);
-                    return;
-                },
-                .INTR => continue,
-                else => break,
+                index = submission.node.next;
             }
-        },
-    }
-    {
-        var tail_index = b.completions.tail;
-        defer b.completions.tail = tail_index;
-        var index = b.submissions.head;
-        errdefer b.submissions.head = index;
-        while (index != .none) {
-            const storage = &b.storage[index.toIndex()];
-            const submission = &storage.submission;
-            const next_index = submission.node.next;
-            const result = try operate(t, submission.operation);
-
-            switch (tail_index) {
-                .none => b.completions.head = index,
-                else => b.storage[tail_index.toIndex()].completion.node.next = index,
-            }
-            storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
-            tail_index = index;
-            index = next_index;
         }
-        b.submissions = .{ .head = .none, .tail = .none };
+        switch (poll_len) {
+            0 => return,
+            1 => {},
+            else => while (true) {
+                const timeout_ms: i32 = t: {
+                    if (b.completions.head != .none) {
+                        // It is legal to call batchWait with already completed
+                        // operations in the ring. In such case, we need to avoid
+                        // blocking in the poll syscall, but we can still take this
+                        // opportunity to find additional ready operations.
+                        break :t 0;
+                    }
+                    const max_poll_ms = std.math.maxInt(i32);
+                    break :t max_poll_ms;
+                };
+                const syscall = try Syscall.start();
+                const rc = posix.system.poll(&poll_buffer, poll_len, timeout_ms);
+                syscall.finish();
+                switch (posix.errno(rc)) {
+                    .SUCCESS => {
+                        if (rc == 0) {
+                            if (b.completions.head != .none) {
+                                // Since there are already completions available in the
+                                // queue, this is neither a timeout nor a case for
+                                // retrying.
+                                return;
+                            }
+                            continue;
+                        }
+                        var prev_index: Io.Operation.OptionalIndex = .none;
+                        var index = b.submissions.head;
+                        for (poll_buffer[0..poll_len]) |poll_entry| {
+                            const storage = &b.storage[index.toIndex()];
+                            const submission = &storage.submission;
+                            const next_index = submission.node.next;
+                            if (poll_entry.revents != 0) {
+                                const result = try operate(t, submission.operation);
+
+                                switch (prev_index) {
+                                    .none => b.submissions.head = next_index,
+                                    else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
+                                }
+                                if (next_index == .none) b.submissions.tail = prev_index;
+
+                                switch (b.completions.tail) {
+                                    .none => b.completions.head = index,
+                                    else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
+                                }
+                                storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+                                b.completions.tail = index;
+                            } else prev_index = index;
+                            index = next_index;
+                        }
+                        assert(index == .none);
+                        return;
+                    },
+                    .INTR => continue,
+                    else => break,
+                }
+            },
+        }
     }
+
+    var tail_index = b.completions.tail;
+    defer b.completions.tail = tail_index;
+    var index = b.submissions.head;
+    errdefer b.submissions.head = index;
+    while (index != .none) {
+        const storage = &b.storage[index.toIndex()];
+        const submission = &storage.submission;
+        const next_index = submission.node.next;
+        const result = try operate(t, submission.operation);
+
+        switch (tail_index) {
+            .none => b.completions.head = index,
+            else => b.storage[tail_index.toIndex()].completion.node.next = index,
+        }
+        storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+        tail_index = index;
+        index = next_index;
+    }
+    b.submissions = .{ .head = .none, .tail = .none };
 }
 
 fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
@@ -2644,7 +2648,11 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
         }
         return;
     }
-    if (native_os == .wasi and !builtin.link_libc) @panic("TODO");
+    if (native_os == .wasi) {
+        // TODO call poll_oneoff
+        return error.ConcurrencyUnavailable;
+    }
+    if (!have_poll) return error.ConcurrencyUnavailable;
     var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
     var poll_storage: struct {
         gpa: std.mem.Allocator,
