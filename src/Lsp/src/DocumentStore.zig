@@ -16,10 +16,25 @@ const translate_c = @import("translate_c.zig");
 const DocumentScope = @import("DocumentScope.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
-const compiler_main = @import("root");
-const Compilation = compiler_main.Compilation;
-const CompilationState = compiler_main.CompilationState;
-const buildOutputType = compiler_main.buildOutputType;
+const compiler_main = if (!builtin.is_test) @import("root") else void;
+const Compilation = if (!builtin.is_test and @hasDecl(compiler_main, "Compilation")) compiler_main.Compilation else struct {
+    pub fn destroy(_: anytype) void {}
+};
+const CompilationState = if (!builtin.is_test and @hasDecl(compiler_main, "CompilationState")) compiler_main.CompilationState else struct {
+    pub fn deinit(_: anytype, _: anytype) void {}
+};
+const buildOutputType = if (!builtin.is_test and @hasDecl(compiler_main, "CompilationState")) compiler_main.buildOutputType else falsebuildOutputType;
+pub fn falsebuildOutputType(
+    _: anytype,
+    _: anytype,
+    _: anytype,
+    _: anytype,
+    _: anytype,
+    _: anytype,
+    _: anytype,
+    _: anytype,
+    _: anytype,
+) !void {}
 
 const DocumentStore = @This();
 

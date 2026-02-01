@@ -21,6 +21,7 @@ const Uri = @import("uri.zig");
 const InternPool = @import("analyser/analyser.zig").InternPool;
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const build_runner_shared = @import("build_runner/shared.zig");
+const compiler_main = @import("root");
 
 const signature_help = @import("features/signature_help.zig");
 const references = @import("features/references.zig");
@@ -334,6 +335,7 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
             }
 
             if (!DocumentStore.isBuildFile(param_handle.uri)) comp: {
+                if (!@hasDecl(compiler_main, "Compilation")) break :comp;
                 const bfile_uri = param_handle.closest_build_file_uri orelse break :comp;
                 const bfile = param_server.document_store.getBuildFile(bfile_uri) orelse break :comp;
 
