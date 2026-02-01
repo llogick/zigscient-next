@@ -12600,46 +12600,76 @@ fn iterateParamTypes(object: *Object, pt: Zcu.PerThread, fn_info: InternPool.Key
     };
 }
 
+/// This function deliberately does not handle `_BitInt` because it typically
+/// has different ABI than regular integer types, and there is no currently no
+/// way to determine whether a Zig integer type is meant to represent e.g. `int`
+/// or `_BitInt(32)`.
 fn ccAbiPromoteInt(cc: std.builtin.CallingConvention, zcu: *Zcu, ty: Type) ?std.builtin.Signedness {
-    const target = zcu.getTarget();
     switch (cc) {
         .auto, .@"inline", .async => return null,
         else => {},
     }
+
     const int_info = switch (ty.zigTypeTag(zcu)) {
         .bool => Type.u1.intInfo(zcu),
         else => if (ty.isAbiInt(zcu)) ty.intInfo(zcu) else return null,
     };
-    return switch (target.os.tag) {
-        .driverkit, .ios, .maccatalyst, .macos, .watchos, .tvos, .visionos => switch (int_info.bits) {
-            0...16 => int_info.signedness,
+    assert(int_info.bits >= 0);
+
+    const target = zcu.getTarget();
+    return switch (target.cpu.arch) {
+        .aarch64,
+        .aarch64_be,
+        => switch (target.os.tag) {
+            .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => switch (int_info.bits) {
+                8, 16 => int_info.signedness,
+                else => null,
+            },
             else => null,
         },
-        else => switch (target.cpu.arch) {
-            .loongarch64, .riscv64, .riscv64be => switch (int_info.bits) {
-                0...16 => int_info.signedness,
-                32 => .signed, // LLVM always signextends 32 bit ints, unsure if bug.
-                17...31, 33...63 => int_info.signedness,
-                else => null,
-            },
 
-            .sparc64,
-            .powerpc64,
-            .powerpc64le,
-            .s390x,
-            => switch (int_info.bits) {
-                0...63 => int_info.signedness,
-                else => null,
-            },
+        .avr,
+        => switch (int_info.bits) {
+            8 => int_info.signedness,
+            else => null,
+        },
 
-            .aarch64,
-            .aarch64_be,
-            => null,
+        .lanai,
+        => null,
 
-            else => switch (int_info.bits) {
-                0...16 => int_info.signedness,
-                else => null,
-            },
+        .loongarch64,
+        .riscv64,
+        .riscv64be,
+        => switch (int_info.bits) {
+            8, 16 => int_info.signedness,
+            32 => .signed,
+            else => null,
+        },
+
+        .mips,
+        .mipsel,
+        .mips64,
+        .mips64el,
+        => switch (int_info.bits) {
+            8, 16, 64 => int_info.signedness,
+            // https://github.com/llvm/llvm-project/issues/179088
+            // 32 => .signed,
+            else => null,
+        },
+
+        .powerpc64,
+        .powerpc64le,
+        .s390x,
+        .sparc64,
+        .ve,
+        => switch (int_info.bits) {
+            8, 16, 32 => int_info.signedness,
+            else => null,
+        },
+
+        else => switch (int_info.bits) {
+            8, 16 => int_info.signedness,
+            else => null,
         },
     };
 }
