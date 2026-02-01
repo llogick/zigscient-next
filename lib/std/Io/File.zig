@@ -572,16 +572,16 @@ pub fn setTimestampsNow(file: File, io: Io) SetTimestampsError!void {
 
 pub const ReadStreamingError = error{EndOfStream} || Reader.Error;
 
-/// Returns 0 on stream end or if `buffer` has no space available for data.
+/// May return fewer bytes than buffer space available, including 0.
+/// End-of-stream is indicated by `error.EndOfStream`.
 ///
 /// See also:
 /// * `reader`
 pub fn readStreaming(file: File, io: Io, buffer: []const []u8) ReadStreamingError!usize {
-    const result = try io.operate(.{ .file_read_streaming = .{
+    return (try io.operate(.{ .file_read_streaming = .{
         .file = file,
         .data = buffer,
-    } });
-    return result.file_read_streaming;
+    } })).file_read_streaming;
 }
 
 pub const ReadPositionalError = error{
@@ -714,11 +714,22 @@ pub fn writerStreaming(file: File, io: Io, buffer: []u8) Writer {
     return .initStreaming(file, io, buffer);
 }
 
+/// This is a low-level API that calls the `Io` interface function directly.
+/// For a higher level API, see `writerStreaming`.
+pub fn writeStreaming(file: File, io: Io, header: []const u8, data: []const []const u8, splat: usize) Writer.Error!usize {
+    return (try io.operate(.{ .file_write_streaming = .{
+        .file = file,
+        .header = header,
+        .data = data,
+        .splat = splat,
+    } })).file_write_streaming;
+}
+
 /// Equivalent to creating a streaming writer, writing `bytes`, and then flushing.
 pub fn writeStreamingAll(file: File, io: Io, bytes: []const u8) Writer.Error!void {
     var index: usize = 0;
     while (index < bytes.len) {
-        index += try io.vtable.fileWriteStreaming(io.userdata, file, &.{}, &.{bytes[index..]}, 1);
+        index += try writeStreaming(file, io, &.{}, &.{bytes[index..]}, 1);
     }
 }
 

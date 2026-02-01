@@ -1437,7 +1437,7 @@ fn writeIpc(io: Io, file: Io.File, serialized: Serialized) error{BrokenPipe}!voi
         // We do this in a separate write call to give a better chance for the
         // writev below to be in a single packet.
         const n = @min(parents.len, remaining_write_trash_bytes);
-        if (io.vtable.fileWriteStreaming(io.userdata, file, &.{}, &.{parents[0..n]}, 1)) |written| {
+        if (file.writeStreaming(io, &.{}, &.{parents[0..n]}, 1)) |written| {
             remaining_write_trash_bytes -= written;
             continue;
         } else |err| switch (err) {
@@ -1478,7 +1478,7 @@ fn writevNonblock(io: Io, file: Io.File, iov: [][]const u8) Io.File.Writer.Error
             return total_written) : (iov_index += 1) written -= iov[iov_index].len;
         iov[iov_index].ptr += written;
         iov[iov_index].len -= written;
-        written = try io.vtable.fileWriteStreaming(io.userdata, file, &.{}, iov, 1);
+        written = try file.writeStreaming(io, &.{}, iov, 1);
         if (written == 0) return total_written;
         total_written += written;
     }

@@ -1649,7 +1649,6 @@ pub fn io(t: *Threaded) Io {
             .fileStat = fileStat,
             .fileLength = fileLength,
             .fileClose = fileClose,
-            .fileWriteStreaming = fileWriteStreaming,
             .fileWritePositional = fileWritePositional,
             .fileWriteFileStreaming = fileWriteFileStreaming,
             .fileWriteFilePositional = fileWriteFilePositional,
@@ -1813,7 +1812,6 @@ pub fn ioBasic(t: *Threaded) Io {
             .fileStat = fileStat,
             .fileLength = fileLength,
             .fileClose = fileClose,
-            .fileWriteStreaming = fileWriteStreaming,
             .fileWritePositional = fileWritePositional,
             .fileWriteFileStreaming = fileWriteFileStreaming,
             .fileWriteFilePositional = fileWriteFilePositional,
@@ -2496,6 +2494,12 @@ fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Oper
                 else => |e| e,
             },
         },
+        .file_write_streaming => |o| return .{
+            .file_write_streaming = fileWriteStreaming(t, o.file, o.header, o.data, o.splat) catch |err| switch (err) {
+                error.Canceled => |e| return e,
+                else => |e| e,
+            },
+        },
     }
 }
 
@@ -2521,6 +2525,10 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
                 switch (submission.operation) {
                     .file_read_streaming => |o| {
                         poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.IN, .revents = 0 };
+                        poll_len += 1;
+                    },
+                    .file_write_streaming => |o| {
+                        poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.OUT, .revents = 0 };
                         poll_len += 1;
                     },
                 }
@@ -2687,6 +2695,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
             const submission = &b.storage[index.toIndex()].submission;
             switch (submission.operation) {
                 .file_read_streaming => |o| try poll_storage.add(o.file, posix.POLL.IN),
+                .file_write_streaming => |o| try poll_storage.add(o.file, posix.POLL.OUT),
             }
             index = submission.node.next;
         }
@@ -2864,6 +2873,7 @@ fn batchApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows
             b.completions.tail = .fromIndex(index);
             const result: Io.Operation.Result = switch (pending.tag) {
                 .file_read_streaming => .{ .file_read_streaming = ntReadFileResult(iosb) },
+                .file_write_streaming => .{ .file_write_streaming = ntWriteFileResult(iosb) },
             };
             storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
         },
@@ -2957,10 +2967,85 @@ fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, Concurren
                     };
                 }
             },
+            .file_write_streaming => |o| o: {
+                const buffer = windowsWriteBuffer(o.header, o.data, o.splat);
+                if (buffer.len == 0) {
+                    context.iosb = .{
+                        .u = .{ .Status = .SUCCESS },
+                        .Information = 0,
+                    };
+                    batchApc(b, &context.iosb, 0);
+                    break :o;
+                }
+                if (o.file.flags.nonblocking) {
+                    context.file = o.file.handle;
+                    switch (windows.ntdll.NtWriteFile(
+                        o.file.handle,
+                        null, // event
+                        &batchApc,
+                        b,
+                        &context.iosb,
+                        buffer.ptr,
+                        @intCast(buffer.len),
+                        null, // byte offset
+                        null, // key
+                    )) {
+                        .PENDING, .SUCCESS => {},
+                        .CANCELLED => unreachable,
+                        else => |status| {
+                            context.iosb.u.Status = status;
+                            batchApc(b, &context.iosb, 0);
+                        },
+                    }
+                } else {
+                    if (concurrency) return error.ConcurrencyUnavailable;
+
+                    const syscall: Syscall = try .start();
+                    while (true) switch (windows.ntdll.NtWriteFile(
+                        o.file.handle,
+                        null, // event
+                        null, // APC routine
+                        null, // APC context
+                        &context.iosb,
+                        buffer.ptr,
+                        @intCast(buffer.len),
+                        null, // byte offset
+                        null, // key
+                    )) {
+                        .PENDING => unreachable, // unrecoverable: wrong File nonblocking flag
+                        .CANCELLED => {
+                            try syscall.checkCancel();
+                            continue;
+                        },
+                        else => |status| {
+                            syscall.finish();
+
+                            context.iosb.u.Status = status;
+                            batchApc(b, &context.iosb, 0);
+                            break;
+                        },
+                    };
+                }
+            },
         }
         index = submission.node.next;
     }
     b.submissions = .{ .head = .none, .tail = .none };
+}
+
+/// Since Windows only supports writing one contiguous buffer, returns the
+/// first one, while also limiting it to a length representable by 32-bit
+/// unsigned integer.
+fn windowsWriteBuffer(header: []const u8, data: []const []const u8, splat: usize) []const u8 {
+    const buffer = b: {
+        if (header.len != 0) break :b header;
+        for (data[0 .. data.len - 1]) |buffer| {
+            if (buffer.len != 0) break :b buffer;
+        }
+        if (splat == 0) return &.{};
+        break :b data[data.len - 1];
+    };
+    return buffer[0..@min(buffer.len, std.math.maxInt(u32))];
 }
 
 fn submitComplete(ring: []u32, complete_tail: *Io.Batch.RingIndex, op: u32) void {
@@ -9005,6 +9090,24 @@ fn ntReadFileResult(io_status_block: *const windows.IO_STATUS_BLOCK) !usize {
     }
 }
 
+fn ntWriteFileResult(io_status_block: *const windows.IO_STATUS_BLOCK) !usize {
+    switch (io_status_block.u.Status) {
+        .PENDING => unreachable,
+        .CANCELLED => unreachable,
+        .SUCCESS => return io_status_block.Information,
+        .INVALID_USER_BUFFER => return error.SystemResources,
+        .NO_MEMORY => return error.SystemResources,
+        .QUOTA_EXCEEDED => return error.SystemResources,
+        .PIPE_BROKEN => return error.BrokenPipe,
+        .INVALID_HANDLE => return error.NotOpenForWriting,
+        .LOCK_NOT_GRANTED => return error.LockViolation,
+        .ACCESS_DENIED => return error.AccessDenied,
+        .WORKING_SET_QUOTA => return error.SystemResources,
+        .DISK_FULL => return error.NoSpaceLeft,
+        else => |status| return windows.unexpectedStatus(status),
+    }
+}
+
 fn fileReadPositionalPosix(file: File, data: []const []u8, offset: u64) File.ReadPositionalError!usize {
     if (!have_preadv) @compileError("TODO implement fileReadPositionalPosix for cursed operating systems that don't support preadv (it's only Haiku)");
 
@@ -9837,16 +9940,9 @@ fn fileWriteStreaming(
     _ = t;
 
     if (is_windows) {
-        if (header.len != 0) {
-            return writeFileStreamingWindows(file.handle, header);
-        }
-        for (data[0 .. data.len - 1]) |buf| {
-            if (buf.len == 0) continue;
-            return writeFileStreamingWindows(file.handle, buf);
-        }
-        const pattern = data[data.len - 1];
-        if (pattern.len == 0 or splat == 0) return 0;
-        return writeFileStreamingWindows(file.handle, pattern);
+        const buffer = windowsWriteBuffer(header, data, splat);
+        if (buffer.len == 0) return 0;
+        return fileWriteStreamingWindows(file, buffer);
     }
 
     var iovecs: [max_iovecs_len]posix.iovec_const = undefined;
@@ -9953,38 +10049,66 @@ fn fileWriteStreaming(
     }
 }
 
-fn writeFileStreamingWindows(
-    handle: windows.HANDLE,
-    bytes: []const u8,
-) File.Writer.Error!usize {
-    assert(bytes.len != 0);
-    var bytes_written: windows.DWORD = undefined;
-    const adjusted_len = std.math.lossyCast(u32, bytes.len);
-    const syscall: Syscall = try .start();
-    while (true) {
-        if (windows.kernel32.WriteFile(handle, bytes.ptr, adjusted_len, &bytes_written, null) != 0) {
-            syscall.finish();
-            return bytes_written;
+fn fileWriteStreamingWindows(file: File, buffer: []const u8) File.Writer.Error!usize {
+    assert(buffer.len != 0);
+
+    var iosb: windows.IO_STATUS_BLOCK = undefined;
+
+    if (file.flags.nonblocking) {
+        var done: bool = false;
+        switch (windows.ntdll.NtWriteFile(
+            file.handle,
+            null, // event
+            flagApc,
+            &done, // APC context
+            &iosb,
+            buffer.ptr,
+            @intCast(buffer.len),
+            null, // byte offset
+            null, // key
+        )) {
+            // We must wait for the APC routine.
+            .PENDING, .SUCCESS => while (!done) {
+                // Once we get here we must not return from the function until the
+                // operation completes, thereby releasing reference to io_status_block.
+                const alertable_syscall = AlertableSyscall.start() catch |err| switch (err) {
+                    error.Canceled => |e| {
+                        var cancel_iosb: windows.IO_STATUS_BLOCK = undefined;
+                        _ = windows.ntdll.NtCancelIoFileEx(file.handle, &iosb, &cancel_iosb);
+                        while (!done) waitForApcOrAlert();
+                        return e;
+                    },
+                };
+                waitForApcOrAlert();
+                alertable_syscall.finish();
+            },
+            else => |status| iosb.u.Status = status,
         }
-        switch (windows.GetLastError()) {
-            .OPERATION_ABORTED => {
+        return ntWriteFileResult(&iosb);
+    } else {
+        const syscall: Syscall = try .start();
+        while (true) switch (windows.ntdll.NtWriteFile(
+            file.handle,
+            null, // event
+            null, // APC routine
+            null, // APC context
+            &iosb,
+            buffer.ptr,
+            @intCast(buffer.len),
+            null, // byte offset
+            null, // key
+        )) {
+            .PENDING => unreachable, // unrecoverable: wrong File nonblocking flag
+            .CANCELLED => {
                 try syscall.checkCancel();
                 continue;
             },
-            .INVALID_USER_BUFFER => return syscall.fail(error.SystemResources),
-            .NOT_ENOUGH_MEMORY => return syscall.fail(error.SystemResources),
-            .NOT_ENOUGH_QUOTA => return syscall.fail(error.SystemResources),
-            .NO_DATA => return syscall.fail(error.BrokenPipe),
-            .INVALID_HANDLE => return syscall.fail(error.NotOpenForWriting),
-            .LOCK_VIOLATION => return syscall.fail(error.LockViolation),
-            .ACCESS_DENIED => return syscall.fail(error.AccessDenied),
-            .WORKING_SET_QUOTA => return syscall.fail(error.SystemResources),
-            .DISK_FULL => return syscall.fail(error.NoSpaceLeft),
-            else => |err| {
+            else => |status| {
                 syscall.finish();
-                return windows.unexpectedError(err);
+                iosb.u.Status = status;
+                return ntWriteFileResult(&iosb);
             },
-        }
+        };
     }
 }
 

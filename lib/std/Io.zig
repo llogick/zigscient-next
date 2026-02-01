@@ -184,7 +184,6 @@ pub const VTable = struct {
     fileStat: *const fn (?*anyopaque, File) File.StatError!File.Stat,
     fileLength: *const fn (?*anyopaque, File) File.LengthError!u64,
     fileClose: *const fn (?*anyopaque, []const File) void,
-    fileWriteStreaming: *const fn (?*anyopaque, File, header: []const u8, data: []const []const u8, splat: usize) File.Writer.Error!usize,
     fileWritePositional: *const fn (?*anyopaque, File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) File.WritePositionalError!usize,
     fileWriteFileStreaming: *const fn (?*anyopaque, File, header: []const u8, *Io.File.Reader, Io.Limit) File.Writer.WriteFileError!usize,
     fileWriteFilePositional: *const fn (?*anyopaque, File, header: []const u8, *Io.File.Reader, Io.Limit, offset: u64) File.WriteFilePositionalError!usize,
@@ -257,6 +256,7 @@ pub const VTable = struct {
 
 pub const Operation = union(enum) {
     file_read_streaming: FileReadStreaming,
+    file_write_streaming: FileWriteStreaming,
 
     pub const Tag = @typeInfo(Operation).@"union".tag_type.?;
 
@@ -287,7 +287,41 @@ pub const Operation = union(enum) {
             LockViolation,
         } || Io.UnexpectedError;
 
-        pub const Result = usize;
+        pub const Result = Error!usize;
+    };
+
+    pub const FileWriteStreaming = struct {
+        file: File,
+        header: []const u8 = &.{},
+        data: []const []const u8,
+        splat: usize = 1,
+
+        pub const Error = error{
+            DiskQuota,
+            FileTooBig,
+            InputOutput,
+            NoSpaceLeft,
+            DeviceBusy,
+            /// File descriptor does not hold the required rights to write to it.
+            AccessDenied,
+            PermissionDenied,
+            /// File is an unconnected socket, or closed its read end.
+            BrokenPipe,
+            /// Insufficient kernel memory to read from in_fd.
+            SystemResources,
+            NotOpenForWriting,
+            /// The process cannot access the file because another process has locked
+            /// a portion of the file. Windows-only.
+            LockViolation,
+            /// Non-blocking has been enabled and this operation would block.
+            WouldBlock,
+            /// This error occurs when a device gets disconnected before or mid-flush
+            /// while it's being written to - errno(6): No such device or address.
+            NoDevice,
+            FileBusy,
+        } || Io.UnexpectedError;
+
+        pub const Result = Error!usize;
     };
 
     pub const Result = Result: {
@@ -296,7 +330,7 @@ pub const Operation = union(enum) {
         var field_types: [operation_fields.len]type = undefined;
         for (operation_fields, &field_names, &field_types) |field, *field_name, *field_type| {
             field_name.* = field.name;
-            field_type.* = field.type.Error!field.type.Result;
+            field_type.* = field.type.Result;
         }
         break :Result @Union(.auto, Tag, &field_names, &field_types, &@splat(.{}));
     };
