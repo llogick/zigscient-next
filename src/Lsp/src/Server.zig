@@ -362,7 +362,19 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                     global.compilation_cycle,
                     bfile.impl.compilation_state.project_root_path.?,
                     error_bundle,
-                ) catch {};
+                ) catch break :comp;
+                param_server.diagnostics_collection.collectNotVisibleErrMessages(
+                    &param_server.document_store,
+                    .compilation,
+                    global.compilation_cycle,
+                    bfile.impl.compilation_state.project_root_path.?,
+                    error_bundle,
+                ) catch break :comp;
+                diagnostics_gen.generateOptionalDiagnostics(param_server, param_handle) catch |err| switch (err) {
+                    error.Canceled => return error.Canceled,
+                    error.OutOfMemory => {},
+                };
+                return;
             }
 
             diagnostics_gen.generateDiagnostics(param_server, param_handle) catch |err| switch (err) {
