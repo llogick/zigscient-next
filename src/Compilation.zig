@@ -1809,6 +1809,9 @@ pub const CreateOptions = struct {
 
     environ_map: *const std.process.Environ.Map,
 
+    project_root_path: ?[]const u8 = null,
+    lsps_ds: ?*@import("zls").DocumentStore = null,
+
     pub const Entry = link.File.OpenOptions.Entry;
 
     /// Which fields are valid depends on the `cache_mode` given.
@@ -2280,6 +2283,8 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 .analysis_roots_buffer = undefined,
                 .analysis_roots_len = 0,
                 .codegen_task_pool = try .init(arena),
+                .lsps_ds = options.lsps_ds,
+                .project_root_path = options.project_root_path,
             };
             try zcu.init(gpa, io, options.thread_limit);
             break :blk zcu;

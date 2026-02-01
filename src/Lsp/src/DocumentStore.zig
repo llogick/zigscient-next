@@ -5,7 +5,7 @@ const builtin = @import("builtin");
 const URI = @import("uri.zig");
 const analysis = @import("analysis.zig");
 const offsets = @import("offsets.zig");
-const log = std.log.scoped(.store);
+const log = std.log.scoped(.lspc_store);
 const lsp = @import("lsp");
 const Ast = std.zig.Ast;
 const extd_zccs = @import("extended-zccs");
@@ -16,7 +16,10 @@ const translate_c = @import("translate_c.zig");
 const DocumentScope = @import("DocumentScope.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
-const zmain = @import("root").buildOutputType;
+const compiler_main = @import("root");
+const Compilation = compiler_main.Compilation;
+const CompilationState = compiler_main.CompilationState;
+const buildOutputType = compiler_main.buildOutputType;
 
 const DocumentStore = @This();
 
@@ -55,7 +58,7 @@ pub fn computeHash(bytes: []const u8) Hash {
 }
 
 pub const Config = struct {
-    environ_map: *const std.process.Environ.Map,
+    environ_map: *std.process.Environ.Map,
     zig_exe_path: ?[]const u8,
     zig_lib_dir: ?std.Build.Cache.Directory,
     build_runner_path: ?[]const u8,
@@ -84,6 +87,11 @@ pub const BuildFile = struct {
         /// TODO this field should not be nullable, callsites should await the build config to be resolved
         /// and then continue instead of dealing with missing information.
         config: ?std.json.Parsed(BuildConfig) = null,
+        // Compilation
+        arena_instance: std.heap.ArenaAllocator = undefined,
+        compilation_state: *CompilationState = undefined,
+        compilation: ?*Compilation = null,
+        args: []const []const u8 = undefined,
     } = .{},
 
     const BuildRunnerState = enum {
@@ -172,11 +180,113 @@ pub const BuildFile = struct {
         return true;
     }
 
+    fn redoCompilation(self: *BuildFile, ds: *DocumentStore) void {
+        if (self.impl.compilation) |comp| {
+            comp.destroy();
+            self.impl.compilation_state.deinit(ds.allocator);
+            self.impl.compilation = null;
+            self.impl.compilation_state = undefined;
+            _ = self.impl.arena_instance.reset(.retain_capacity);
+        }
+        const cfg = self.impl.config orelse return;
+        if (cfg.value.roots.len == 0) return;
+
+        var cleanup: bool = false;
+        defer if (cleanup) {
+            self.impl.compilation_state.deinit(ds.allocator);
+            self.impl.compilation = null;
+            self.impl.compilation_state = undefined;
+            _ = self.impl.arena_instance.reset(.retain_capacity);
+            log.err("Failed to create a compilation for: {s}", .{self.uri});
+        };
+
+        const root_id = if (!(self.roots_index < cfg.value.roots.len)) 0 else self.roots_index;
+        const arena = self.impl.arena_instance.allocator();
+        var args_dups: std.ArrayList([]const u8) = .empty;
+        for (cfg.value.roots[root_id].args) |item| args_dups.append(
+            arena,
+            arena.dupe(
+                u8,
+                item,
+            ) catch @panic("OOM"),
+        ) catch @panic("OOM");
+        self.impl.args = args_dups.toOwnedSlice(arena) catch @panic("OOM"); //arena.dupe([]const u8, cfg.value.roots[root_id].args) catch @panic("OOM");
+        log.info("Creating a compilation for: {s}\n{s}", .{ self.uri, std.json.Stringify.valueAlloc(arena, self.impl.args, .{}) catch @panic("OOM") });
+        const cmd = self.impl.args[1];
+        self.impl.compilation_state = arena.create(CompilationState) catch return;
+        self.impl.compilation_state.* = .{};
+        if (std.mem.eql(u8, cmd, "build-exe")) {
+            buildOutputType(
+                ds.allocator,
+                arena,
+                ds.io,
+                self.impl.args,
+                .{ .build = .Exe },
+                ds.config.environ_map,
+                self.impl.compilation_state,
+                ds,
+                &self.impl.compilation,
+            ) catch {
+                cleanup = true;
+            };
+        } else if (std.mem.eql(u8, cmd, "build-lib")) {
+            buildOutputType(
+                ds.allocator,
+                arena,
+                ds.io,
+                self.impl.args,
+                .{ .build = .Lib },
+                ds.config.environ_map,
+                self.impl.compilation_state,
+                ds,
+                &self.impl.compilation,
+            ) catch {
+                cleanup = true;
+            };
+        } else if (std.mem.eql(u8, cmd, "build-obj")) {
+            buildOutputType(
+                ds.allocator,
+                arena,
+                ds.io,
+                self.impl.args,
+                .{ .build = .Obj },
+                ds.config.environ_map,
+                self.impl.compilation_state,
+                ds,
+                &self.impl.compilation,
+            ) catch {
+                cleanup = true;
+            };
+        }
+        // if (self.impl.compilation) |c| log.debug("new comp: {*}", .{c});
+        // var eb = self.impl.compilation.?.getAllErrorsAlloc() catch @panic("OOM");
+        // defer eb.deinit(ds.allocator);
+        // std.debug.print("initial comp errorMsgCount: {}\n", .{eb.errorMessageCount()});
+        // {
+        //     self.impl.compilation.?.update(.none) catch {};
+        //     std.debug.print("upd comp done\n", .{});
+        //     var eb2 = self.impl.compilation.?.getAllErrorsAlloc() catch @panic("OOM");
+        //     defer eb2.deinit(ds.allocator);
+        //     std.debug.print("updated comp errorMsgCount: {}\n", .{eb2.errorMessageCount()});
+        // }
+        // for (self.impl.comp_state.create_module.modules.keys(), self.impl.comp_state.create_module.modules.values()) |key, cli_mod| {
+        //     _ = cli_mod;
+        //     std.debug.print("redoComp mod: {s}\n", .{key});
+        // }
+
+    }
+
     fn deinit(self: *BuildFile, allocator: std.mem.Allocator) void {
         allocator.free(self.uri);
         if (self.impl.config) |cfg| cfg.deinit();
         if (self.builtin_uri) |builtin_uri| allocator.free(builtin_uri);
         if (self.build_associated_config) |cfg| cfg.deinit();
+
+        if (self.impl.compilation) |comp| {
+            self.impl.compilation_state.deinit(allocator);
+            comp.destroy();
+        }
+        self.impl.arena_instance.deinit();
     }
 };
 
@@ -196,6 +306,8 @@ pub const Handle = struct {
 
     /// First build.zig up the dir tree
     closest_build_file_uri: ?[]const u8 = null,
+
+    stat: ?std.Io.File.Stat = null,
 
     /// private field
     impl: struct {
@@ -731,7 +843,7 @@ pub const Handle = struct {
     }
 
     // IF this handle is also a BuildFile scan for `$ls root_id N` and apply
-    pub fn handleRootIdComment(handle: *Handle, ds: *DocumentStore, send_notification: bool) void {
+    pub fn handleRootIdComment(handle: *Handle, ds: *DocumentStore, send_notification: bool) error{Canceled}!void {
         if (handle.tree.errors.len != 0) return;
         const build_file = ds.getBuildFile(handle.uri) orelse return;
 
@@ -766,6 +878,14 @@ pub const Handle = struct {
                 }
                 build_file.roots_index = roots_index;
                 send_noti = true;
+                for (ds.workspaces.items) |wrkspc_item| {
+                    if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
+                        try build_file.impl.mutex.lock(ds.io);
+                        defer build_file.impl.mutex.unlock(ds.io);
+                        build_file.redoCompilation(ds);
+                        break;
+                    }
+                }
             }
         }
 
@@ -1207,9 +1327,20 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
             log.err("Failed to getHandle for: '{s}'", .{build_file.uri});
             break :blk;
         };
-        bf_handle.handleRootIdComment(self, true);
+        bf_handle.handleRootIdComment(self, true) catch |err| switch (err) {
+            error.Canceled => return error.Canceled,
+        };
     }
     _ = self.io.swapCancelProtection(old_cancel_protect);
+
+    for (self.workspaces.items) |wrkspc_item| {
+        if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
+            try build_file.impl.mutex.lock(self.io);
+            defer build_file.impl.mutex.unlock(self.io);
+            build_file.redoCompilation(self);
+            break;
+        }
+    }
 
     if (self.transport) |transport| {
         if (self.lsp_capabilities.supports_semantic_tokens_refresh) {
@@ -1517,6 +1648,7 @@ fn createBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory 
 
     var build_file: BuildFile = .{
         .uri = try self.allocator.dupe(u8, uri),
+        .impl = .{ .arena_instance = .init(self.allocator) },
     };
 
     errdefer build_file.deinit(self.allocator);
@@ -1623,13 +1755,28 @@ fn createAndStoreDocument(
     defer tracy_zone.end();
 
     const old_cancel_protect = self.io.swapCancelProtection(.blocked);
-    _ = self.io.swapCancelProtection(old_cancel_protect);
+    defer _ = self.io.swapCancelProtection(old_cancel_protect);
 
     var new_handle = Handle.init(self, uri, text, lsp_synced) catch |err| {
         self.allocator.free(text);
         return err;
     };
     errdefer new_handle.deinit();
+
+    stat: {
+        const file_path = URI.toFsPath(self.allocator, uri) catch break :stat;
+        defer self.allocator.free(file_path);
+        if (!std.fs.path.isAbsolute(file_path)) {
+            log.err("stat: path is not absolute '{s}'", .{file_path});
+            break :stat;
+        }
+        const file = std.Io.Dir.openFileAbsolute(self.io, file_path, .{}) catch break :stat;
+        defer file.close(self.io);
+        new_handle.stat = file.stat(self.io) catch |err| switch (err) {
+            error.Canceled => return error.Canceled,
+            else => break :stat,
+        };
+    }
 
     if (supports_build_system and isBuildFile(uri) and !isInStd(uri)) {
         _ = try self.getOrLoadBuildFile(uri);

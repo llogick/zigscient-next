@@ -22,7 +22,7 @@ const ZonGen = std.zig.ZonGen;
 const Server = std.zig.Server;
 
 const tracy = @import("tracy.zig");
-const Compilation = @import("Compilation.zig");
+pub const Compilation = @import("Compilation.zig");
 const link = @import("link.zig");
 const Package = @import("Package.zig");
 const build_options = @import("build_options");
@@ -41,15 +41,23 @@ test {
 
 const thread_stack_size = 60 << 20;
 
-pub const std_options: std.Options = .{
-    .logFn = log,
+// pub const std_options: std.Options = .{
+//     .logFn = log,
 
-    .log_level = switch (builtin.mode) {
-        .Debug => .debug,
-        .ReleaseSafe, .ReleaseFast => .info,
-        .ReleaseSmall => .err,
-    },
+//     .log_level = switch (builtin.mode) {
+//         .Debug => .debug,
+//         .ReleaseSafe, .ReleaseFast => .info,
+//         .ReleaseSmall => .err,
+//     },
+// };
+
+pub const std_options: std.Options = .{
+    // Always set this to debug to make std.log call into our handler, then control the runtime
+    // value in logFn itself
+    .log_level = .debug,
+    .logFn = @import("Lsp/src/main.zig").std_options.logFn,
 };
+
 pub const std_options_cwd = if (native_os == .wasi) wasi_cwd else null;
 
 pub const panic = crash_report.panic;
@@ -186,16 +194,6 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
 
     if (args.len > 0) crash_report.zig_argv0 = args[0];
 
-    if (args.len <= 1 or !mem.eql(u8, args[1], "zig")) {
-        _ = try @import("Lsp/src/main.zig").main(init);
-        return;
-    }
-
-    if (args.len <= 2) {
-        std.log.info("{s}", .{usage});
-        fatal("expected command argument", .{});
-    }
-
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
     Compilation.setMainThread();
@@ -208,6 +206,16 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     threaded_impl_ptr = &threaded;
     threaded.stack_size = thread_stack_size;
     const io = threaded.io();
+
+    if (args.len <= 1 or !mem.eql(u8, args[1], "zig")) {
+        _ = try @import("Lsp/src/main.zig").main(init);
+        return;
+    }
+
+    if (args.len <= 2) {
+        std.log.info("{s}", .{usage});
+        fatal("expected command argument", .{});
+    }
 
     if (tracy.enable_allocation) {
         var gpa_tracy = tracy.tracyAllocator(gpa);
@@ -266,27 +274,33 @@ fn mainArgs(
     if (mem.eql(u8, cmd, "build-exe")) {
         dev.check(.build_exe_command);
         var cs: CompilationState = .{};
-        return buildOutputType(gpa, arena, io, args, .{ .build = .Exe }, environ_map, &cs);
+        defer cs.deinit(gpa);
+        return buildOutputType(gpa, arena, io, args[1..], .{ .build = .Exe }, environ_map, &cs, null, null);
     } else if (mem.eql(u8, cmd, "build-lib")) {
         dev.check(.build_lib_command);
         var cs: CompilationState = .{};
-        return buildOutputType(gpa, arena, io, args, .{ .build = .Lib }, environ_map, &cs);
+        defer cs.deinit(gpa);
+        return buildOutputType(gpa, arena, io, args[1..], .{ .build = .Lib }, environ_map, &cs, null, null);
     } else if (mem.eql(u8, cmd, "build-obj")) {
         dev.check(.build_obj_command);
         var cs: CompilationState = .{};
-        return buildOutputType(gpa, arena, io, args, .{ .build = .Obj }, environ_map, &cs);
+        defer cs.deinit(gpa);
+        return buildOutputType(gpa, arena, io, args[1..], .{ .build = .Obj }, environ_map, &cs, null, null);
     } else if (mem.eql(u8, cmd, "test")) {
         dev.check(.test_command);
         var cs: CompilationState = .{};
-        return buildOutputType(gpa, arena, io, args, .zig_test, environ_map, &cs);
+        defer cs.deinit(gpa);
+        return buildOutputType(gpa, arena, io, args[1..], .zig_test, environ_map, &cs, null, null);
     } else if (mem.eql(u8, cmd, "test-obj")) {
         dev.check(.test_command);
         var cs: CompilationState = .{};
-        return buildOutputType(gpa, arena, io, args, .zig_test_obj, environ_map, &cs);
+        defer cs.deinit(gpa);
+        return buildOutputType(gpa, arena, io, args[1..], .zig_test_obj, environ_map, &cs, null, null);
     } else if (mem.eql(u8, cmd, "run")) {
         dev.check(.run_command);
         var cs: CompilationState = .{};
-        return buildOutputType(gpa, arena, io, args, .run, environ_map, &cs);
+        defer cs.deinit(gpa);
+        return buildOutputType(gpa, arena, io, args[1..], .run, environ_map, &cs, null, null);
     } else if (mem.eql(u8, cmd, "dlltool") or
         mem.eql(u8, cmd, "ranlib") or
         mem.eql(u8, cmd, "lib") or
@@ -818,6 +832,7 @@ const CliModule = struct {
 };
 
 pub const CompilationState = struct {
+    project_root_path: ?[]const u8 = null,
     provided_name: ?[]const u8 = null,
     root_src_file: ?[]const u8 = null,
     version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 },
@@ -889,6 +904,8 @@ pub const CompilationState = struct {
     linker_nxcompat: bool = false,
     linker_dynamicbase: bool = true,
     linker_optimization: ?[]const u8 = null,
+    self_exe_path: []const u8 = undefined,
+    dirs: Compilation.Directories = undefined,
     linker_module_definition_file: ?[]const u8 = null,
     test_no_exec: bool = false,
     test_execve: bool = false,
@@ -1008,6 +1025,19 @@ pub const CompilationState = struct {
     // Disable color on WASI per https://github.com/WebAssembly/WASI/issues/162
     color: Color = .auto,
     n_jobs: ?u32 = null,
+
+    cache_mode: Compilation.CacheMode = .incremental,
+    root_name: []const u8 = undefined,
+
+    io: std.Io = undefined,
+
+    file_system_inputs: std.ArrayList(u8) = .empty,
+
+    pub fn deinit(self: *CompilationState, gpa: std.mem.Allocator) void {
+        self.dirs.deinit(self.io);
+        self.file_system_inputs.deinit(gpa);
+        self.create_module.link_inputs.deinit(gpa);
+    }
 };
 
 pub fn buildOutputType(
@@ -1018,7 +1048,10 @@ pub fn buildOutputType(
     arg_mode: ArgMode,
     environ_map: *process.Environ.Map,
     cs: *CompilationState,
+    ds: ?*@import("zls").DocumentStore,
+    compilation: ?*?*Compilation,
 ) !void {
+    cs.io = io;
     cs.provided_name = null;
     cs.root_src_file = null;
     cs.version = .{ .major = 0, .minor = 0, .patch = 0 };
@@ -1207,7 +1240,6 @@ pub fn buildOutputType(
         .libc_paths_file = EnvVar.ZIG_LIBC.get(environ_map),
         .native_system_include_paths = &.{},
     };
-    defer cs.create_module.link_inputs.deinit(gpa);
 
     // before arg parsing, check for the NO_COLOR and CLICOLOR_FORCE environment variables
     // if set, default the color setting to .off or .on, respectively
@@ -1301,6 +1333,9 @@ pub fn buildOutputType(
                             &cs.rc_source_files_owner_index,
                             &cs.cssan,
                         );
+                    } else if (mem.eql(u8, arg, "--proj-path")) {
+                        var it = mem.splitScalar(u8, args_iter.nextOrFatal(), '=');
+                        cs.project_root_path = it.next();
                     } else if (mem.eql(u8, arg, "--error-limit")) {
                         const next_arg = args_iter.nextOrFatal();
                         cs.error_limit = std.fmt.parseUnsigned(Zcu.ErrorInt, next_arg, 0) catch |err| {
@@ -3308,13 +3343,13 @@ pub fn buildOutputType(
         });
     }
 
-    const self_exe_path = switch (native_os) {
+    cs.self_exe_path = switch (native_os) {
         .wasi => {},
-        else => process.executablePathAlloc(io, arena) catch |err| fatal("unable to find zig self exe path: {t}", .{err}),
+        else => if (std.fs.path.isAbsolute(all_args[0])) all_args[0] else process.executablePathAlloc(io, arena) catch |err| fatal("unable to find zig self exe path: {t}", .{err}),
     };
 
     // This `init` calls `fatal` on error.
-    var dirs: Compilation.Directories = .init(
+    cs.dirs = .init(
         arena,
         io,
         cs.override_lib_dir,
@@ -3327,14 +3362,13 @@ pub fn buildOutputType(
             };
         },
         preopens,
-        self_exe_path,
+        cs.self_exe_path,
         environ_map,
     );
-    defer dirs.deinit(io);
 
     if (cs.linker_optimization) |o| warn("ignoring deprecated linker optimization setting '{s}'", .{o});
 
-    cs.create_module.dirs = dirs;
+    cs.create_module.dirs = cs.dirs;
     cs.create_module.opts.emit_llvm_ir = cs.emit_llvm_ir != .no;
     cs.create_module.opts.emit_llvm_bc = cs.emit_llvm_bc != .no;
     cs.create_module.opts.emit_bin = cs.emit_bin != .no;
@@ -3362,7 +3396,7 @@ pub fn buildOutputType(
             const test_mod = if (cs.test_runner_path) |test_runner| test_mod: {
                 const test_mod = try Package.Module.create(arena, .{
                     .paths = .{
-                        .root = try .fromUnresolved(arena, dirs, &.{fs.path.dirname(test_runner) orelse "."}),
+                        .root = try .fromUnresolved(arena, cs.dirs, &.{fs.path.dirname(test_runner) orelse "."}),
                         .root_src_path = fs.path.basename(test_runner),
                     },
                     .fully_qualified_name = "root",
@@ -3375,7 +3409,7 @@ pub fn buildOutputType(
                 break :test_mod test_mod;
             } else try Package.Module.create(arena, .{
                 .paths = .{
-                    .root = try .fromRoot(arena, dirs, .zig_lib, "compiler"),
+                    .root = try .fromRoot(arena, cs.dirs, .zig_lib, "compiler"),
                     .root_src_path = "test_runner.zig",
                 },
                 .fully_qualified_name = "root",
@@ -3501,7 +3535,7 @@ pub fn buildOutputType(
     };
     const optional_version = if (cs.have_version) cs.version else null;
 
-    const root_name = if (cs.provided_name) |n| n else main_mod.fully_qualified_name;
+    cs.root_name = if (cs.provided_name) |n| n else main_mod.fully_qualified_name;
 
     const resolved_soname: ?[]const u8 = switch (cs.soname) {
         .yes => |explicit| explicit,
@@ -3509,9 +3543,9 @@ pub fn buildOutputType(
         .yes_default_value => if (cs.create_module.resolved_options.output_mode == .Lib and
             cs.create_module.resolved_options.link_mode == .dynamic and target.ofmt == .elf)
             if (cs.have_version)
-                try std.fmt.allocPrint(arena, "lib{s}.so.{d}", .{ root_name, cs.version.major })
+                try std.fmt.allocPrint(arena, "lib{s}.so.{d}", .{ cs.root_name, cs.version.major })
             else
-                try std.fmt.allocPrint(arena, "lib{s}.so", .{root_name})
+                try std.fmt.allocPrint(arena, "lib{s}.so", .{cs.root_name})
         else
             null,
     };
@@ -3521,9 +3555,9 @@ pub fn buildOutputType(
         .yes_default_path => emit: {
             if (output_to_cache != null) break :emit .yes_cache;
             const name = switch (cs.clang_preprocessor_mode) {
-                .pch => try std.fmt.allocPrint(arena, "{s}.pch", .{root_name}),
+                .pch => try std.fmt.allocPrint(arena, "{s}.pch", .{cs.root_name}),
                 else => try std.zig.binNameAlloc(arena, .{
-                    .root_name = root_name,
+                    .root_name = cs.root_name,
                     .target = target,
                     .output_mode = cs.create_module.resolved_options.output_mode,
                     .link_mode = cs.create_module.resolved_options.link_mode,
@@ -3554,16 +3588,16 @@ pub fn buildOutputType(
         },
     };
 
-    const default_h_basename = try std.fmt.allocPrint(arena, "{s}.h", .{root_name});
+    const default_h_basename = try std.fmt.allocPrint(arena, "{s}.h", .{cs.root_name});
     const emit_h_resolved = cs.emit_h.resolve(io, default_h_basename, output_to_cache);
 
-    const default_asm_basename = try std.fmt.allocPrint(arena, "{s}.s", .{root_name});
+    const default_asm_basename = try std.fmt.allocPrint(arena, "{s}.s", .{cs.root_name});
     const emit_asm_resolved = cs.emit_asm.resolve(io, default_asm_basename, output_to_cache);
 
-    const default_llvm_ir_basename = try std.fmt.allocPrint(arena, "{s}.ll", .{root_name});
+    const default_llvm_ir_basename = try std.fmt.allocPrint(arena, "{s}.ll", .{cs.root_name});
     const emit_llvm_ir_resolved = cs.emit_llvm_ir.resolve(io, default_llvm_ir_basename, output_to_cache);
 
-    const default_llvm_bc_basename = try std.fmt.allocPrint(arena, "{s}.bc", .{root_name});
+    const default_llvm_bc_basename = try std.fmt.allocPrint(arena, "{s}.bc", .{cs.root_name});
     const emit_llvm_bc_resolved = cs.emit_llvm_bc.resolve(io, default_llvm_bc_basename, output_to_cache);
 
     const emit_docs_resolved = cs.emit_docs.resolve(io, "docs", output_to_cache);
@@ -3584,7 +3618,7 @@ pub fn buildOutputType(
             fatal("the argument -femit-implib is allowed only when building a Windows DLL", .{});
         }
     }
-    const default_implib_basename = try std.fmt.allocPrint(arena, "{s}.lib", .{root_name});
+    const default_implib_basename = try std.fmt.allocPrint(arena, "{s}.lib", .{cs.root_name});
     const emit_implib_resolved: Compilation.CreateOptions.Emit = switch (cs.emit_implib) {
         .no => .no,
         .yes => cs.emit_implib.resolve(io, default_implib_basename, output_to_cache),
@@ -3616,14 +3650,14 @@ pub fn buildOutputType(
         const dump_path = try std.fmt.allocPrint(arena, "tmp" ++ sep ++ "{x}-dump-stdin{s}", .{
             randInt(io, u64), ext.canonicalName(target),
         });
-        try dirs.local_cache.handle.createDirPath(io, "tmp");
+        try cs.dirs.local_cache.handle.createDirPath(io, "tmp");
 
         // Note that in one of the happy paths, execve() is used to switch to
         // clang in which case any cleanup logic that exists for this temporary
         // file will not run and this temp file will be leaked. The filename
         // will be a hash of its contents — so multiple invocations of
         // `zig cc -` will result in the same temp file name.
-        var f = try dirs.local_cache.handle.createFile(io, dump_path, .{});
+        var f = try cs.dirs.local_cache.handle.createFile(io, dump_path, .{});
         defer f.close(io);
 
         // Re-using the hasher from Cache, since the functional requirements
@@ -3645,10 +3679,10 @@ pub fn buildOutputType(
         const sub_path = try std.fmt.allocPrint(arena, "tmp" ++ sep ++ "{x}-stdin{s}", .{
             &bin_digest, ext.canonicalName(target),
         });
-        try dirs.local_cache.handle.rename(dump_path, dirs.local_cache.handle, sub_path, io);
+        try cs.dirs.local_cache.handle.rename(dump_path, cs.dirs.local_cache.handle, sub_path, io);
 
         // Convert `sub_path` to be relative to current working directory.
-        src.src_path = try dirs.local_cache.join(arena, &.{sub_path});
+        src.src_path = try cs.dirs.local_cache.join(arena, &.{sub_path});
     }
 
     if (build_options.have_llvm and emit_asm_resolved != .no) {
@@ -3671,7 +3705,7 @@ pub fn buildOutputType(
         warn("-fincremental is currently unsupported by the LLVM backend; crashes or miscompilations are likely", .{});
     }
 
-    const cache_mode: Compilation.CacheMode = b: {
+    cs.cache_mode = b: {
         // Once incremental compilation is the default, we'll want some smarter logic here,
         // considering things like the backend in use and whether there's a ZCU.
         if (output_to_cache == null) break :b .none;
@@ -3680,9 +3714,6 @@ pub fn buildOutputType(
     };
 
     process.raiseFileDescriptorLimit();
-
-    var file_system_inputs: std.ArrayList(u8) = .empty;
-    defer file_system_inputs.deinit(gpa);
 
     // Deduplicate rpath entries
     var rpath_dedup = std.StringArrayHashMapUnmanaged(void){};
@@ -3694,14 +3725,14 @@ pub fn buildOutputType(
 
     var create_diag: Compilation.CreateDiagnostic = undefined;
     const comp = Compilation.create(gpa, arena, io, &create_diag, .{
-        .dirs = dirs,
+        .dirs = cs.dirs,
         .thread_limit = thread_limit,
         .self_exe_path = switch (native_os) {
             .wasi => null,
-            else => self_exe_path,
+            else => cs.self_exe_path,
         },
         .config = cs.create_module.resolved_options,
-        .root_name = root_name,
+        .root_name = cs.root_name,
         .sysroot = cs.create_module.sysroot,
         .main_mod = main_mod,
         .root_mod = root_mod,
@@ -3794,7 +3825,7 @@ pub fn buildOutputType(
         .build_id = cs.build_id,
         .test_filters = cs.test_filters.items,
         .test_runner_path = cs.test_runner_path,
-        .cache_mode = cache_mode,
+        .cache_mode = cs.cache_mode,
         .subsystem = cs.subsystem,
         .debug_compile_errors = cs.debug_compile_errors,
         .debug_incremental = cs.debug_incremental,
@@ -3815,9 +3846,11 @@ pub fn buildOutputType(
         // than to any particular module. This feature can greatly reduce CLI
         // noise when --search-prefix and -M are combined.
         .global_cc_argv = try cs.cc_argv.toOwnedSlice(arena),
-        .file_system_inputs = &file_system_inputs,
+        .file_system_inputs = &cs.file_system_inputs,
         .debug_compiler_runtime_libs = cs.debug_compiler_runtime_libs,
         .environ_map = environ_map,
+        .project_root_path = cs.project_root_path,
+        .lsps_ds = ds,
     }) catch |err| switch (err) {
         error.CreateFail => switch (create_diag) {
             .cross_libc_unavailable => {
@@ -3859,6 +3892,12 @@ pub fn buildOutputType(
         },
         else => fatal("failed to create compilation: {s}", .{@errorName(err)}),
     };
+
+    if (compilation) |c| {
+        c.* = comp;
+        return;
+    }
+
     var comp_destroyed = false;
     defer if (!comp_destroyed) comp.destroy();
 
@@ -3877,7 +3916,7 @@ pub fn buildOutputType(
                 &stdin_reader.interface,
                 &stdout_writer.interface,
                 cs.test_exec_args.items,
-                self_exe_path,
+                cs.self_exe_path,
                 arg_mode,
                 all_args,
                 cs.runtime_args_start,
@@ -3904,7 +3943,7 @@ pub fn buildOutputType(
                 &input.interface,
                 &output.interface,
                 cs.test_exec_args.items,
-                self_exe_path,
+                cs.self_exe_path,
                 arg_mode,
                 all_args,
                 cs.runtime_args_start,
@@ -3945,8 +3984,8 @@ pub fn buildOutputType(
 
         if (cs.test_exec_args.items.len == 0 and target.ofmt == .c and emit_bin_resolved != .no) {
             // Default to using `zig run` to execute the produced .c code from `zig test`.
-            try cs.test_exec_args.appendSlice(arena, &.{ self_exe_path, "run" });
-            if (dirs.zig_lib.path) |p| {
+            try cs.test_exec_args.appendSlice(arena, &.{ cs.self_exe_path, "run" });
+            if (cs.dirs.zig_lib.path) |p| {
                 try cs.test_exec_args.appendSlice(arena, &.{ "-I", p });
             }
 
@@ -3982,7 +4021,7 @@ pub fn buildOutputType(
             arena,
             io,
             cs.test_exec_args.items,
-            self_exe_path,
+            cs.self_exe_path,
             arg_mode,
             target,
             &comp_destroyed,

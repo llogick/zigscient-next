@@ -98,7 +98,25 @@ pub fn updateFile(
     };
     defer source_file.close(io);
 
-    const stat = try source_file.stat(io);
+    var file_path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
+    if (!std.fs.path.isAbsolute(file_path)) blk: {
+        const prp = zcu.project_root_path orelse break :blk;
+        const absfp = std.fs.path.join(gpa, &.{ prp, file_path }) catch break :blk;
+        file_path = absfp;
+    }
+    defer gpa.free(file_path);
+    const uri = try @import("zls").URI.fromPath(gpa, file_path);
+    defer gpa.free(uri);
+
+    const lsps_file = if (zcu.lsps_ds) |ds| ds.getHandle(uri) else null;
+
+    var stat = try source_file.stat(io);
+
+    if (lsps_file) |lsps_f| {
+        if (lsps_f.stat) |lsps_fstat| {
+            stat.mtime = lsps_fstat.mtime;
+        }
+    }
 
     const want_local_cache = switch (file.path.root) {
         .none, .local_cache => true,
@@ -249,20 +267,25 @@ pub fn updateFile(
         if (stat.size > std.math.maxInt(u32))
             return error.FileTooBig;
 
-        const source = try gpa.allocSentinel(u8, @intCast(stat.size), 0);
-        defer if (file.source == null) gpa.free(source);
-        var source_fr = source_file.reader(io, &.{});
-        source_fr.size = stat.size;
-        source_fr.interface.readSliceAll(source) catch |err| switch (err) {
-            error.ReadFailed => return source_fr.err.?,
-            error.EndOfStream => return error.UnexpectedEndOfFile,
+        const source = if (lsps_file) |lsps_f| lsps_f.tree.source else src: {
+            const src = try gpa.allocSentinel(u8, @intCast(stat.size), 0);
+            var source_fr = source_file.reader(io, &.{});
+            source_fr.size = stat.size;
+            source_fr.interface.readSliceAll(src) catch |err| switch (err) {
+                error.ReadFailed => return source_fr.err.?,
+                error.EndOfStream => return error.UnexpectedEndOfFile,
+            };
+            break :src src;
         };
+        defer if (lsps_file == null and file.source == null) gpa.free(source);
 
         file.source = source;
 
+        if (lsps_file != null) file.owned_by_comp = false;
+
         var timer = comp.startTimer();
         // Any potential AST errors are converted to ZIR errors when we run AstGen/ZonGen.
-        file.tree = try Ast.parse(gpa, source, file.getMode());
+        file.tree = if (lsps_file) |lsps_f| lsps_f.tree else try Ast.parse(gpa, source, file.getMode());
         if (timer.finish()) |ns_parse| {
             comp.mutex.lockUncancelable(io);
             defer comp.mutex.unlock(io);

@@ -1811,7 +1811,8 @@ const copied_from_zig = struct {
 
         if (b.reference_trace) |some| {
             try zig_args.append(try std.fmt.allocPrint(arena, "-freference-trace={d}", .{some}));
-        }
+        } else try zig_args.append(try std.fmt.allocPrint(arena, "-freference-trace=12", .{}));
+
         try addFlag(&zig_args, "allow-so-scripts", compile.allow_so_scripts orelse b.graph.allow_so_scripts);
 
         try addFlag(&zig_args, "llvm", compile.use_llvm);
@@ -2502,9 +2503,9 @@ const copied_from_zig = struct {
             "--error-limit", b.fmt("{d}", .{err_limit}),
         });
 
-        try addFlag(&zig_args, "incremental", b.graph.incremental);
+        // try addFlag(&zig_args, "incremental", b.graph.incremental);
 
-        try zig_args.append("--listen=-");
+        // try zig_args.append("--listen=-");
 
         // Windows has an argument length limit of 32,766 characters, macOS 262,144 and Linux
         // 2,097,152. If our args exceed 30 KiB, we instead write them to a "response file" and
@@ -2588,6 +2589,20 @@ const copied_from_zig = struct {
             zig_args.shrinkRetainingCapacity(2);
             try zig_args.append(resolved_args_file);
         }
+
+        try zig_args.appendSlice(&.{
+            // "-fllvm",
+            "-fincremental",
+            "-fno-emit-bin",
+            "-fno-emit-asm",
+            "-fno-emit-llvm-ir",
+            "-fno-emit-llvm-bc",
+            "-fno-emit-h",
+            "-fno-emit-docs",
+            "-fno-emit-implib",
+            "--proj-path",
+            b.fmt("{s}", .{build_root}),
+        });
 
         return try zig_args.toOwnedSlice();
     }

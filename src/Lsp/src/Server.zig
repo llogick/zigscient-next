@@ -38,7 +38,7 @@ const diagnostics_gen = @import("features/diagnostics.zig");
 const BuildOnSave = diagnostics_gen.BuildOnSave;
 const BuildOnSaveSupport = build_runner_shared.BuildOnSaveSupport;
 
-const log = std.log.scoped(.server);
+const log = std.log.scoped(.lspc_server);
 
 // public fields
 io: std.Io,
@@ -329,9 +329,40 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
     const do = struct {
         fn do(param_server: *Server, param_handle: *DocumentStore.Handle) std.Io.Cancelable!void {
             if (param_handle.getChangePending() == true) {
-                log.err("!genDiag  : early exit", .{});
+                // log.err("!genDiag  : early exit", .{});
                 return;
             }
+
+            if (!DocumentStore.isBuildFile(param_handle.uri)) comp: {
+                const bfile_uri = param_handle.closest_build_file_uri orelse break :comp;
+                const bfile = param_server.document_store.getBuildFile(bfile_uri) orelse break :comp;
+
+                if (!bfile.impl.mutex.tryLock()) break :comp;
+                // bfile.impl.mutex.lockUncancelable(param_server.io);
+                defer bfile.impl.mutex.unlock(param_server.io);
+
+                // log.debug("Triggering a compilation update for: {s}", .{bfile_uri});
+
+                const comp = bfile.impl.compilation orelse break :comp;
+                comp.file_system_inputs.?.clearRetainingCapacity();
+                @import("root").Compilation.setMainThread();
+                comp.update(.none) catch break :comp;
+
+                var error_bundle = comp.getAllErrorsAlloc() catch break :comp;
+                defer error_bundle.deinit(param_server.document_store.allocator);
+
+                const global = struct {
+                    var compilation_cycle: u32 = 0;
+                };
+                global.compilation_cycle += 1;
+                param_server.diagnostics_collection.pushErrorBundle(
+                    .compilation,
+                    global.compilation_cycle,
+                    bfile.impl.compilation_state.project_root_path.?,
+                    error_bundle,
+                ) catch {};
+            }
+
             diagnostics_gen.generateDiagnostics(param_server, param_handle) catch |err| switch (err) {
                 error.Canceled => return error.Canceled,
                 error.OutOfMemory => {},
@@ -871,17 +902,17 @@ fn addWorkspace(server: *Server, uri: types.URI) error{ Canceled, OutOfMemory }!
 
     log.info("added Workspace Folder: {s}", .{uri});
 
-    if (BuildOnSaveSupport.isSupportedComptime() and
-        // Don't initialize build on save until initialization finished.
-        // If the client supports the `workspace/configuration` request, wait
-        // until we have received workspace configuration from the server.
-        (server.status == .initialized and !server.client_capabilities.supports_configuration))
-    {
-        try server.workspaces.items[server.workspaces.items.len - 1].refreshBuildOnSave(.{
-            .server = server,
-            .restart = false,
-        });
-    }
+    // if (BuildOnSaveSupport.isSupportedComptime() and
+    //     // Don't initialize build on save until initialization finished.
+    //     // If the client supports the `workspace/configuration` request, wait
+    //     // until we have received workspace configuration from the server.
+    //     (server.status == .initialized and !server.client_capabilities.supports_configuration))
+    // {
+    //     try server.workspaces.items[server.workspaces.items.len - 1].refreshBuildOnSave(.{
+    //         .server = server,
+    //         .restart = false,
+    //     });
+    // }
 }
 
 fn removeWorkspace(server: *Server, uri: types.URI) void {
@@ -995,32 +1026,32 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
     const new_zig_exe_path: bool = result.did_change.zig_exe_path;
     const new_zig_lib_path: bool = result.did_change.zig_lib_path;
     const new_build_runner_path: bool = result.did_change.build_runner_path;
-    const new_enable_build_on_save: bool = result.did_change.enable_build_on_save;
-    const new_build_on_save_args: bool = result.did_change.build_on_save_args;
+    // const new_enable_build_on_save: bool = result.did_change.enable_build_on_save;
+    // const new_build_on_save_args: bool = result.did_change.build_on_save_args;
     const new_force_autofix: bool = result.did_change.force_autofix;
 
     server.document_store.config = createDocumentStoreConfig(server.config_manager);
 
-    if (BuildOnSaveSupport.isSupportedComptime() and
-        // If the client supports the `workspace/configuration` request, defer
-        // build on save initialization until after we have received workspace
-        // configuration from the server
-        (!server.client_capabilities.supports_configuration or server.status == .initialized))
-    {
-        const should_restart =
-            new_zig_exe_path or
-            new_zig_lib_path or
-            new_build_runner_path or
-            new_enable_build_on_save or
-            new_build_on_save_args;
+    // if (BuildOnSaveSupport.isSupportedComptime() and
+    //     // If the client supports the `workspace/configuration` request, defer
+    //     // build on save initialization until after we have received workspace
+    //     // configuration from the server
+    //     (!server.client_capabilities.supports_configuration or server.status == .initialized))
+    // {
+    //     const should_restart =
+    //         new_zig_exe_path or
+    //         new_zig_lib_path or
+    //         new_build_runner_path or
+    //         new_enable_build_on_save or
+    //         new_build_on_save_args;
 
-        for (server.workspaces.items) |*workspace| {
-            try workspace.refreshBuildOnSave(.{
-                .server = server,
-                .restart = should_restart,
-            });
-        }
-    }
+    //     for (server.workspaces.items) |*workspace| {
+    //         try workspace.refreshBuildOnSave(.{
+    //             .server = server,
+    //             .restart = should_restart,
+    //         });
+    //     }
+    // }
 
     if (DocumentStore.supports_build_system) {
         if (new_zig_exe_path or new_zig_lib_path or new_build_runner_path) {
@@ -1167,7 +1198,12 @@ fn changeDocumentHandler(server: *Server, _: std.mem.Allocator, notification: ty
         server.offset_encoding,
         &server.diagnostics_collection,
     );
-    handle.handleRootIdComment(&server.document_store, false);
+    handle.handleRootIdComment(&server.document_store, false) catch |err| switch (err) {
+        error.Canceled => return error.Canceled,
+    };
+    if (handle.stat) |*stat| {
+        stat.*.mtime.nanoseconds += 1;
+    }
     handle.setChangePending(false);
 
     server.generateDiagnostics(handle);

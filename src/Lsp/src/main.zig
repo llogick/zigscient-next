@@ -6,7 +6,7 @@ const exe_options = @import("build_options");
 const tracy = @import("tracy");
 const known_folders = @import("known-folders");
 
-const log = std.log.scoped(.main);
+const log = std.log.scoped(.lspc_main);
 
 const usage =
     \\Zigscient - A non-official language server for Zig
@@ -56,6 +56,9 @@ fn logFn(
     var buffer: [4096]u8 = undefined;
     comptime std.debug.assert(buffer.len >= zls.lsp.minimum_logging_buffer_size);
 
+    const scope_txt: []const u8 = comptime @tagName(scope);
+    if (!std.mem.startsWith(u8, scope_txt, "lspc_") and level != .err) return;
+
     const io = std.Options.debug_io;
     const prev = io.swapCancelProtection(.blocked);
     defer _ = io.swapCancelProtection(prev);
@@ -83,7 +86,6 @@ fn logFn(
         .info => "info ",
         .debug => "debug",
     };
-    const scope_txt: []const u8 = comptime @tagName(scope);
 
     var writer: std.Io.Writer = .fixed(&buffer);
     const no_space_left = blk: {

@@ -322,6 +322,9 @@ codegen_task_pool: CodegenTaskPool,
 
 generation: u32 = 0,
 
+project_root_path: ?[]const u8 = null,
+lsps_ds: ?*@import("zls").DocumentStore = null,
+
 pub const IncrementalDebugState = struct {
     /// All container types in the ZCU, even dead ones.
     /// Value is the generation the type was created on.
@@ -987,6 +990,8 @@ pub const File = struct {
     /// we invalidate the corresponding `zon_file` dependency, and reset it to `false`.
     zoir_invalidated: bool,
 
+    owned_by_comp: bool = true,
+
     pub const Path = struct {
         root: enum {
             cwd,
@@ -1033,14 +1038,14 @@ pub const File = struct {
 
     pub fn unloadTree(file: *File, gpa: Allocator) void {
         if (file.tree) |*tree| {
-            tree.deinit(gpa);
+            if (file.owned_by_comp) tree.deinit(gpa);
             file.tree = null;
         }
     }
 
     pub fn unloadSource(file: *File, gpa: Allocator) void {
         if (file.source) |source| {
-            gpa.free(source);
+            if (file.owned_by_comp) gpa.free(source);
             file.source = null;
         }
     }

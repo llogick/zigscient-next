@@ -10,7 +10,7 @@ const log = std.log.scoped(.config);
 pub const Manager = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
-    environ_map: *const std.process.Environ.Map,
+    environ_map: *std.process.Environ.Map,
     config: Config,
     zig_exe: ?struct {
         /// Same as `Manager.config.zig_exe_path.?`
@@ -42,7 +42,7 @@ pub const Manager = struct {
         arena: std.heap.ArenaAllocator.State,
     },
 
-    pub fn init(io: std.Io, allocator: std.mem.Allocator, environ_map: *const std.process.Environ.Map) error{ OutOfMemory, Unexpected }!Manager {
+    pub fn init(io: std.Io, allocator: std.mem.Allocator, environ_map: *std.process.Environ.Map) error{ OutOfMemory, Unexpected }!Manager {
         var arena_allocator: std.heap.ArenaAllocator = .init(allocator);
         errdefer arena_allocator.deinit();
         return .{
