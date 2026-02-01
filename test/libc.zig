@@ -296,8 +296,8 @@ pub fn addCases(cases: *tests.LibcContext) void {
     // cases.addLibcTestCase("math/rint.c", true, .{});
     cases.addLibcTestCase("math/rintf.c", true, .{});
     // cases.addLibcTestCase("math/rintl.c", true, .{});
-    // cases.addLibcTestCase("math/round.c", true, .{});
-    // cases.addLibcTestCase("math/roundf.c", true, .{});
+    cases.addLibcTestCase("math/round.c", true, .{});
+    cases.addLibcTestCase("math/roundf.c", true, .{});
     cases.addLibcTestCase("math/roundl.c", true, .{});
     cases.addLibcTestCase("math/scalb.c", true, .{});
     cases.addLibcTestCase("math/scalbf.c", true, .{});
