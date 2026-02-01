@@ -24,7 +24,7 @@ jobs:
 
       - name: Run zig fmt
         if: matrix.os == 'ubuntu-22.04'
-        run: zig fmt --check .
+        run: zig build test-fmt
 
       - name: Run zig build check test
-        run: zig build check test --summary all
+        run: zig build check test-ls --summary all --zig-lib-dir ./lib/
