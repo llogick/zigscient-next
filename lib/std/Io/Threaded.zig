@@ -2500,6 +2500,9 @@ fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Oper
                 else => |e| e,
             },
         },
+        .device_io_control => |*o| return .{
+            .device_io_control = try deviceIoControl(t, o),
+        },
     }
 }
 
@@ -2529,6 +2532,14 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
                     },
                     .file_write_streaming => |o| {
                         poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.OUT, .revents = 0 };
+                        poll_len += 1;
+                    },
+                    .device_io_control => |o| {
+                        poll_buffer[poll_len] = .{
+                            .fd = o.file.handle,
+                            .events = posix.POLL.OUT | posix.POLL.IN | posix.POLL.ERR,
+                            .revents = 0,
+                        };
                         poll_len += 1;
                     },
                 }
@@ -2696,6 +2707,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
             switch (submission.operation) {
                 .file_read_streaming => |o| try poll_storage.add(o.file, posix.POLL.IN),
                 .file_write_streaming => |o| try poll_storage.add(o.file, posix.POLL.OUT),
+                .device_io_control => |o| try poll_storage.add(o.file, posix.POLL.IN | posix.POLL.OUT | posix.POLL.ERR),
             }
             index = submission.node.next;
         }
@@ -2874,6 +2886,7 @@ fn batchApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows
             const result: Io.Operation.Result = switch (pending.tag) {
                 .file_read_streaming => .{ .file_read_streaming = ntReadFileResult(iosb) },
                 .file_write_streaming => .{ .file_write_streaming = ntWriteFileResult(iosb) },
+                .device_io_control => .{ .device_io_control = iosb.* },
             };
             storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
         },
@@ -3011,6 +3024,59 @@ fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, Concurren
                         @intCast(buffer.len),
                         null, // byte offset
                         null, // key
+                    )) {
+                        .PENDING => unreachable, // unrecoverable: wrong File nonblocking flag
+                        .CANCELLED => {
+                            try syscall.checkCancel();
+                            continue;
+                        },
+                        else => |status| {
+                            syscall.finish();
+
+                            context.iosb.u.Status = status;
+                            batchApc(b, &context.iosb, 0);
+                            break;
+                        },
+                    };
+                }
+            },
+            .device_io_control => |o| {
+                if (o.file.flags.nonblocking) {
+                    context.file = o.file.handle;
+                    switch (windows.ntdll.NtDeviceIoControlFile(
+                        o.file.handle,
+                        null, // event
+                        &batchApc,
+                        b,
+                        &context.iosb,
+                        o.IoControlCode,
+                        o.InputBuffer,
+                        o.InputBufferLength,
+                        o.OutputBuffer,
+                        o.OutputBufferLength,
+                    )) {
+                        .PENDING, .SUCCESS => {},
+                        .CANCELLED => unreachable,
+                        else => |status| {
+                            context.iosb.u.Status = status;
+                            batchApc(b, &context.iosb, 0);
+                        },
+                    }
+                } else {
+                    if (concurrency) return error.ConcurrencyUnavailable;
+
+                    const syscall: Syscall = try .start();
+                    while (true) switch (windows.ntdll.NtDeviceIoControlFile(
+                        o.file.handle,
+                        null, // event
+                        null, // APC routine
+                        null, // APC context
+                        &context.iosb,
+                        o.IoControlCode,
+                        o.InputBuffer,
+                        o.InputBufferLength,
+                        o.OutputBuffer,
+                        o.OutputBufferLength,
                     )) {
                         .PENDING => unreachable, // unrecoverable: wrong File nonblocking flag
                         .CANCELLED => {
@@ -12986,31 +13052,18 @@ fn netInterfaceNameResolve(
         };
 
         const syscall: Syscall = try .start();
-        while (true) {
-            switch (posix.errno(posix.system.ioctl(sock_fd, posix.SIOCGIFINDEX, @intFromPtr(&ifr)))) {
-                .SUCCESS => {
-                    syscall.finish();
-                    return .{ .index = @bitCast(ifr.ifru.ivalue) };
-                },
-                .INTR => {
-                    try syscall.checkCancel();
-                    continue;
-                },
-                else => |e| {
-                    syscall.finish();
-                    switch (e) {
-                        .INVAL => |err| return errnoBug(err), // Bad parameters.
-                        .NOTTY => |err| return errnoBug(err),
-                        .NXIO => |err| return errnoBug(err),
-                        .BADF => |err| return errnoBug(err), // File descriptor used after closed.
-                        .FAULT => |err| return errnoBug(err), // Bad pointer parameter.
-                        .IO => |err| return errnoBug(err), // sock_fd is not a file descriptor
-                        .NODEV => return error.InterfaceNotFound,
-                        else => |err| return posix.unexpectedErrno(err),
-                    }
-                },
-            }
-        }
+        while (true) switch (posix.errno(posix.system.ioctl(sock_fd, posix.SIOCGIFINDEX, @intFromPtr(&ifr)))) {
+            .SUCCESS => {
+                syscall.finish();
+                return .{ .index = @bitCast(ifr.ifru.ivalue) };
+            },
+            .INTR => {
+                try syscall.checkCancel();
+                continue;
+            },
+            .NODEV => return syscall.fail(error.InterfaceNotFound),
+            else => |err| return syscall.unexpectedErrno(err),
+        };
     }
 
     if (is_windows) {
@@ -17845,6 +17898,91 @@ fn mmSyncWrite(file: File, memory: []u8, offset: u64) File.WritePositionalError!
                 .SPIPE => return syscall.fail(error.Unseekable),
                 .OVERFLOW => return syscall.fail(error.Unseekable),
                 else => |err| return syscall.unexpectedErrno(err),
+            }
+        }
+    }
+}
+
+fn deviceIoControl(t: *Threaded, o: *const Io.Operation.DeviceIoControl) Io.Cancelable!Io.Operation.DeviceIoControl.Result {
+    _ = t;
+    if (is_windows) {
+        var iosb: windows.IO_STATUS_BLOCK = undefined;
+        if (o.file.flags.nonblocking) {
+            var done: bool = false;
+            switch (windows.ntdll.NtDeviceIoControlFile(
+                o.file.handle,
+                null, // event
+                flagApc,
+                &done, // APC context
+                &iosb,
+                o.IoControlCode,
+                o.InputBuffer,
+                o.InputBufferLength,
+                o.OutputBuffer,
+                o.OutputBufferLength,
+            )) {
+                // We must wait for the APC routine.
+                .PENDING, .SUCCESS => while (!done) {
+                    // Once we get here we must not return from the function until the
+                    // operation completes, thereby releasing reference to io_status_block.
+                    const alertable_syscall = AlertableSyscall.start() catch |err| switch (err) {
+                        error.Canceled => |e| {
+                            var cancel_iosb: windows.IO_STATUS_BLOCK = undefined;
+                            _ = windows.ntdll.NtCancelIoFileEx(o.file.handle, &iosb, &cancel_iosb);
+                            while (!done) waitForApcOrAlert();
+                            return e;
+                        },
+                    };
+                    waitForApcOrAlert();
+                    alertable_syscall.finish();
+                },
+                else => |status| iosb.u.Status = status,
+            }
+        } else {
+            const syscall: Syscall = try .start();
+            while (true) switch (windows.ntdll.NtDeviceIoControlFile(
+                o.file.handle,
+                null, // event
+                null, // APC routine
+                null, // APC context
+                &iosb,
+                o.IoControlCode,
+                o.InputBuffer,
+                o.InputBufferLength,
+                o.OutputBuffer,
+                o.OutputBufferLength,
+            )) {
+                .PENDING => unreachable, // unrecoverable: wrong asynchronous flag
+                .CANCELLED => {
+                    try syscall.checkCancel();
+                    continue;
+                },
+                else => |status| {
+                    syscall.finish();
+                    iosb.u.Status = status;
+                    break;
+                },
+            };
+        }
+        return iosb;
+    } else {
+        const syscall: Syscall = try .start();
+        while (true) {
+            const rc = posix.system.ioctl(o.file.handle, @bitCast(o.code), @intFromPtr(o.arg));
+            switch (posix.errno(rc)) {
+                .SUCCESS => {
+                    syscall.finish();
+                    if (@TypeOf(rc) == usize) return @bitCast(@as(u32, @truncate(rc)));
+                    return rc;
+                },
+                .INTR => {
+                    try syscall.checkCancel();
+                    continue;
+                },
+                else => |err| {
+                    syscall.finish();
+                    return -@as(i32, @intFromEnum(err));
+                },
             }
         }
     }

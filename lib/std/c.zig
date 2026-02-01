@@ -10731,7 +10731,6 @@ pub extern "c" fn sysctlnametomib(name: [*:0]const u8, mibp: ?*c_int, sizep: ?*u
 pub extern "c" fn tcgetattr(fd: fd_t, termios_p: *termios) c_int;
 pub extern "c" fn tcsetattr(fd: fd_t, optional_action: TCSA, termios_p: *const termios) c_int;
 pub extern "c" fn fcntl(fd: fd_t, cmd: c_int, ...) c_int;
-pub extern "c" fn ioctl(fd: fd_t, request: c_int, ...) c_int;
 pub extern "c" fn uname(buf: *utsname) c_int;
 
 pub extern "c" fn gethostname(name: [*]u8, len: usize) c_int;
@@ -11106,6 +11105,11 @@ pub const TIMER = switch (native_os) {
 pub const clock_nanosleep = switch (native_os) {
     .linux, .emscripten, .netbsd, .wasi, .windows, .freebsd, .serenity => private.clock_nanosleep,
     else => {},
+};
+
+pub const ioctl = switch (native_os) {
+    .windows, .wasi => {},
+    else => private.ioctl,
 };
 
 // OS-specific bits. These are protected from being used on the wrong OS by
@@ -11495,6 +11499,7 @@ const private = struct {
     };
     extern "c" fn getrusage(who: c_int, usage: *rusage) c_int;
     extern "c" fn gettimeofday(noalias tv: ?*timeval, noalias tz: ?*timezone) c_int;
+    extern "c" fn ioctl(fd: fd_t, request: c_int, ...) c_int;
     extern "c" fn msync(addr: *align(page_size) const anyopaque, len: usize, flags: c_int) c_int;
     extern "c" fn nanosleep(rqtp: *const timespec, rmtp: ?*timespec) c_int;
     extern "c" fn clock_nanosleep(clockid: clockid_t, flags: TIMER, t: *const timespec, remain: ?*timespec) c_int;

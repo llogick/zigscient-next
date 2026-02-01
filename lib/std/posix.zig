@@ -1800,28 +1800,6 @@ pub fn name_to_handle_atZ(
     }
 }
 
-pub const IoCtl_SIOCGIFINDEX_Error = error{
-    FileSystem,
-    InterfaceNotFound,
-} || UnexpectedError;
-
-pub fn ioctl_SIOCGIFINDEX(fd: fd_t, ifr: *ifreq) IoCtl_SIOCGIFINDEX_Error!void {
-    while (true) {
-        switch (errno(system.ioctl(fd, SIOCGIFINDEX, @intFromPtr(ifr)))) {
-            .SUCCESS => return,
-            .INVAL => unreachable, // Bad parameters.
-            .NOTTY => unreachable,
-            .NXIO => unreachable,
-            .BADF => unreachable, // Always a race condition.
-            .FAULT => unreachable, // Bad pointer parameter.
-            .INTR => continue,
-            .IO => return error.FileSystem,
-            .NODEV => return error.InterfaceNotFound,
-            else => |err| return unexpectedErrno(err),
-        }
-    }
-}
-
 pub const lfs64_abi = native_os == .linux and builtin.link_libc and (builtin.abi.isGnu() or builtin.abi.isAndroid());
 
 /// Whether or not `error.Unexpected` will print its value and a stack trace.

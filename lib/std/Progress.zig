@@ -573,7 +573,7 @@ fn updateTask(io: Io) void {
     {
         const resize_flag = wait(io, global_progress.initial_delay_ns);
         if (@atomicLoad(bool, &global_progress.done, .monotonic)) return;
-        maybeUpdateSize(resize_flag);
+        maybeUpdateSize(io, resize_flag) catch return;
 
         const buffer, _ = computeRedraw(&serialized_buffer);
         if (io.vtable.tryLockStderr(io.userdata, null) catch return) |locked_stderr| {
@@ -592,7 +592,7 @@ fn updateTask(io: Io) void {
             return clearWrittenWithEscapeCodes(stderr.file_writer) catch {};
         }
 
-        maybeUpdateSize(resize_flag);
+        maybeUpdateSize(io, resize_flag) catch return;
 
         const buffer, _ = computeRedraw(&serialized_buffer);
         if (io.vtable.tryLockStderr(io.userdata, null) catch return) |locked_stderr| {
@@ -622,7 +622,7 @@ fn windowsApiUpdateTask(io: Io) void {
     {
         const resize_flag = wait(io, global_progress.initial_delay_ns);
         if (@atomicLoad(bool, &global_progress.done, .monotonic)) return;
-        maybeUpdateSize(resize_flag);
+        maybeUpdateSize(io, resize_flag) catch return;
 
         const buffer, const nl_n = computeRedraw(&serialized_buffer);
         if (io.vtable.tryLockStderr(io.userdata, null) catch return) |locked_stderr| {
@@ -643,7 +643,7 @@ fn windowsApiUpdateTask(io: Io) void {
             return clearWrittenWindowsApi() catch {};
         }
 
-        maybeUpdateSize(resize_flag);
+        maybeUpdateSize(io, resize_flag) catch return;
 
         const buffer, const nl_n = computeRedraw(&serialized_buffer);
         if (io.vtable.tryLockStderr(io.userdata, null) catch return) |locked_stderr| {
@@ -1484,15 +1484,15 @@ fn writevNonblock(io: Io, file: Io.File, iov: [][]const u8) Io.File.Writer.Error
     }
 }
 
-fn maybeUpdateSize(resize_flag: bool) void {
+fn maybeUpdateSize(io: Io, resize_flag: bool) !void {
     if (!resize_flag) return;
 
-    const fd = global_progress.terminal.handle;
+    const file = global_progress.terminal;
 
     if (is_windows) {
         var info: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
 
-        if (windows.kernel32.GetConsoleScreenBufferInfo(fd, &info) != windows.FALSE) {
+        if (windows.kernel32.GetConsoleScreenBufferInfo(file.handle, &info) != windows.FALSE) {
             // In the old Windows console, dwSize.Y is the line count of the
             // entire scrollback buffer, so we use this instead so that we
             // always get the size of the screen.
@@ -1512,8 +1512,13 @@ fn maybeUpdateSize(resize_flag: bool) void {
             .ypixel = 0,
         };
 
-        const err = posix.system.ioctl(fd, posix.T.IOCGWINSZ, @intFromPtr(&winsize));
-        if (posix.errno(err) == .SUCCESS) {
+        const err = (try io.operate(.{ .device_io_control = .{
+            .file = file,
+            .code = posix.T.IOCGWINSZ,
+            .arg = &winsize,
+        } })).device_io_control;
+
+        if (err >= 0) {
             global_progress.rows = winsize.row;
             global_progress.cols = winsize.col;
         } else {

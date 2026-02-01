@@ -257,6 +257,9 @@ pub const VTable = struct {
 pub const Operation = union(enum) {
     file_read_streaming: FileReadStreaming,
     file_write_streaming: FileWriteStreaming,
+    /// On Windows this is NtDeviceIoControlFile. On POSIX this is ioctl. On
+    /// other systems this tag is unreachable.
+    device_io_control: DeviceIoControl,
 
     pub const Tag = @typeInfo(Operation).@"union".tag_type.?;
 
@@ -324,13 +327,37 @@ pub const Operation = union(enum) {
         pub const Result = Error!usize;
     };
 
+    pub const DeviceIoControl = switch (builtin.os.tag) {
+        .wasi => noreturn,
+        .windows => struct {
+            file: File,
+            IoControlCode: std.os.windows.CTL_CODE,
+            InputBuffer: ?*const anyopaque,
+            InputBufferLength: u32,
+            OutputBuffer: ?*anyopaque,
+            OutputBufferLength: u32,
+
+            pub const Result = std.os.windows.IO_STATUS_BLOCK;
+        },
+        else => struct {
+            file: File,
+            /// Device-dependent operation code.
+            code: u32,
+            arg: ?*anyopaque,
+
+            /// Device and operation dependent result. Negative values are
+            /// negative errno.
+            pub const Result = i32;
+        },
+    };
+
     pub const Result = Result: {
         const operation_fields = @typeInfo(Operation).@"union".fields;
         var field_names: [operation_fields.len][]const u8 = undefined;
         var field_types: [operation_fields.len]type = undefined;
         for (operation_fields, &field_names, &field_types) |field, *field_name, *field_type| {
             field_name.* = field.name;
-            field_type.* = field.type.Result;
+            field_type.* = if (field.type == noreturn) noreturn else field.type.Result;
         }
         break :Result @Union(.auto, Tag, &field_names, &field_types, &@splat(.{}));
     };
