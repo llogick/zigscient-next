@@ -87,12 +87,14 @@ pub fn map(n: usize, alignment: mem.Alignment) ?[*]u8 {
     }
 
     const aligned_len = mem.alignForward(usize, n, page_size);
-    const max_drop_len = alignment_bytes - @min(alignment_bytes, page_size);
-    const overalloc_len = if (max_drop_len <= aligned_len - n)
-        aligned_len
-    else
-        mem.alignForward(usize, aligned_len + max_drop_len, page_size);
-    const hint = @atomicLoad(@TypeOf(std.heap.next_mmap_addr_hint), &std.heap.next_mmap_addr_hint, .unordered);
+    const max_drop_len = alignment_bytes -| page_size;
+    const overalloc_len = aligned_len + max_drop_len;
+    const maybe_unaligned_hint = @atomicLoad(@TypeOf(std.heap.next_mmap_addr_hint), &std.heap.next_mmap_addr_hint, .unordered);
+
+    // Aligning hint does not use mem.alignPointer, because it is slow.
+    // Aligning hint does not use mem.alignForward, because it asserts that there will be no overflow.
+    const hint: ?[*]align(page_size_min) u8 = @ptrFromInt(((@intFromPtr(maybe_unaligned_hint)) +% (alignment_bytes - 1)) & ~(alignment_bytes - 1));
+
     const slice = posix.mmap(
         hint,
         overalloc_len,
@@ -110,7 +112,7 @@ pub fn map(n: usize, alignment: mem.Alignment) ?[*]u8 {
     const remaining_len = overalloc_len - drop_len;
     if (remaining_len > aligned_len) posix.munmap(@alignCast(result_ptr[aligned_len..remaining_len]));
     const new_hint: [*]align(page_size_min) u8 = @alignCast(result_ptr + aligned_len);
-    _ = @cmpxchgStrong(@TypeOf(std.heap.next_mmap_addr_hint), &std.heap.next_mmap_addr_hint, hint, new_hint, .monotonic, .monotonic);
+    _ = @cmpxchgStrong(@TypeOf(std.heap.next_mmap_addr_hint), &std.heap.next_mmap_addr_hint, maybe_unaligned_hint, new_hint, .monotonic, .monotonic);
     return result_ptr;
 }
 
