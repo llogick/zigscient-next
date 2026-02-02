@@ -10849,9 +10849,40 @@ fn nowWindows(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
             const result = (@as(u96, qpc) * scale) >> 32;
             return .{ .nanoseconds = @intCast(result) };
         },
-        .cpu_process,
-        .cpu_thread,
-        => return error.UnsupportedClock,
+        .cpu_process => {
+            const handle = windows.GetCurrentProcess();
+            var times: windows.KERNEL_USER_TIMES = undefined;
+
+            // https://github.com/reactos/reactos/blob/master/ntoskrnl/ps/query.c#L442-L485
+            if (windows.ntdll.NtQueryInformationProcess(
+                handle,
+                windows.PROCESSINFOCLASS.Times,
+                &times,
+                @sizeOf(windows.KERNEL_USER_TIMES),
+                null,
+            ) != .SUCCESS)
+                return error.Unexpected;
+
+            const sum = @as(i96, times.UserTime) + @as(i96, times.KernelTime);
+            return .{ .nanoseconds = sum * 100 };
+        },
+        .cpu_thread => {
+            const handle = windows.GetCurrentThread();
+            var times: windows.KERNEL_USER_TIMES = undefined;
+
+            // https://github.com/reactos/reactos/blob/master/ntoskrnl/ps/query.c#L2971-L3019
+            if (windows.ntdll.NtQueryInformationThread(
+                handle,
+                windows.THREADINFOCLASS.Times,
+                &times,
+                @sizeOf(windows.KERNEL_USER_TIMES),
+                null,
+            ) != .SUCCESS)
+                return error.Unexpected;
+
+            const sum = @as(i96, times.UserTime) + @as(i96, times.KernelTime);
+            return .{ .nanoseconds = sum * 100 };
+        },
     }
 }
 

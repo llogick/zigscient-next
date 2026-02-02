@@ -6191,6 +6191,14 @@ pub const PROCESS_BASIC_INFORMATION = extern struct {
     InheritedFromUniqueProcessId: ULONG_PTR,
 };
 
+// https://github.com/reactos/reactos/blob/master/sdk/include/ndk/pstypes.h#L977-L983
+pub const KERNEL_USER_TIMES = extern struct {
+    CreationTime: LARGE_INTEGER,
+    ExitTime: LARGE_INTEGER,
+    KernelTime: LARGE_INTEGER,
+    UserTime: LARGE_INTEGER,
+};
+
 pub const ReadMemoryError = error{
     Unexpected,
 };
