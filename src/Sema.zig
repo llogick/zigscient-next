@@ -2308,6 +2308,7 @@ pub fn resolveConstValue(
     /// being comptime-resolved is that the block is being comptime-evaluated.
     reason: ?ComptimeReason,
 ) CompileError!Value {
+    assert(reason != null or block.isComptime());
     return sema.resolveValue(inst) orelse {
         return sema.failWithNeededComptime(block, src, reason);
     };
@@ -12927,6 +12928,8 @@ fn zirImport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
             try pt.ensureFileAnalyzed(file_index);
             const ty: Type = .fromInterned(zcu.fileRootType(file_index));
             try sema.addTypeReferenceEntry(operand_src, ty);
+            // No need for `ensureNamespaceUpToDate`, because `Zcu.PerThread.updateFileNamespace`
+            // already made sure that all root file structs have up-to-date namespaces.
             return .fromType(ty);
         },
         .zon => {
@@ -16342,7 +16345,6 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             const alignment_val = try pt.intValue(.comptime_int, bytes: {
                 if (info.flags.alignment.toByteUnits()) |b| break :bytes b;
                 const elem_ty: Type = .fromInterned(info.child);
-                // MLUGG TODO: this resolution is sus, but i doubt i'll solve it in this branch
                 try sema.ensureLayoutResolved(elem_ty, src);
                 break :bytes elem_ty.abiAlignment(zcu).toByteUnits().?;
             });
@@ -18942,12 +18944,13 @@ fn structInitAnon(
                 .file_scope = block.getFileScopeIndex(zcu),
                 .generation = zcu.generation,
             });
+            errdefer pt.destroyNamespace(new_namespace_index);
             if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-
             break :ty .fromInterned(wip.finish(ip, new_namespace_index));
         },
     };
     try sema.addTypeReferenceEntry(src, struct_ty);
+    // No need for `ensureNamespaceUpToDate` because this type's namespace is always empty.
     try sema.ensureLayoutResolved(struct_ty, src);
 
     _ = opt_runtime_index orelse {
@@ -20150,6 +20153,7 @@ fn zirReifyStruct(
     })) {
         .existing => |ty| {
             try sema.addTypeReferenceEntry(src, .fromInterned(ty));
+            // No need for `ensureNamespaceUpToDate` because this type's namespace is always empty.
             return .fromIntern(ty);
         },
         .wip => |wip| {
@@ -20210,9 +20214,9 @@ fn zirReifyStruct(
                 .file_scope = block.getFileScopeIndex(zcu),
                 .generation = zcu.generation,
             });
-            try sema.addTypeReferenceEntry(src, .fromInterned(wip.index));
+            errdefer pt.destroyNamespace(new_namespace_index);
             if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-
+            try sema.addTypeReferenceEntry(src, .fromInterned(wip.index));
             return .fromIntern(wip.finish(ip, new_namespace_index));
         },
     }
@@ -20393,6 +20397,7 @@ fn zirReifyUnion(
     })) {
         .existing => |ty| {
             try sema.addTypeReferenceEntry(src, .fromInterned(ty));
+            // No need for `ensureNamespaceUpToDate` because this type's namespace is always empty.
             return .fromIntern(ty);
         },
         .wip => |wip| {
@@ -20430,9 +20435,9 @@ fn zirReifyUnion(
                 .file_scope = block.getFileScopeIndex(zcu),
                 .generation = zcu.generation,
             });
+            errdefer pt.destroyNamespace(new_namespace_index);
             if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
             try sema.addTypeReferenceEntry(src, .fromInterned(wip.index));
-
             return .fromIntern(wip.finish(ip, new_namespace_index));
         },
     }
@@ -20557,6 +20562,7 @@ fn zirReifyEnum(
     })) {
         .existing => |ty| {
             try sema.addTypeReferenceEntry(src, .fromInterned(ty));
+            // No need for `ensureNamespaceUpToDate` because this type's namespace is always empty.
             return .fromIntern(ty);
         },
         .wip => |wip| {
@@ -20581,10 +20587,9 @@ fn zirReifyEnum(
                 .file_scope = block.getFileScopeIndex(zcu),
                 .generation = zcu.generation,
             });
-
-            try sema.addTypeReferenceEntry(src, .fromInterned(wip.index));
+            errdefer pt.destroyNamespace(new_namespace_index);
             if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-
+            try sema.addTypeReferenceEntry(src, .fromInterned(wip.index));
             return .fromIntern(wip.finish(ip, new_namespace_index));
         },
     }
@@ -33861,7 +33866,7 @@ pub fn resolveNavPtrModifiers(
     };
 }
 
-pub fn analyzeMemoizedState(sema: *Sema, block: *Block, simple_src: LazySrcLoc, builtin_namespace: InternPool.NamespaceIndex, stage: InternPool.MemoizedStateStage) CompileError!bool {
+pub fn analyzeMemoizedState(sema: *Sema, stage: InternPool.MemoizedStateStage) CompileError!bool {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const comp = zcu.comp;
@@ -33869,53 +33874,87 @@ pub fn analyzeMemoizedState(sema: *Sema, block: *Block, simple_src: LazySrcLoc, 
     const io = comp.io;
     const ip = &zcu.intern_pool;
 
+    // This `Block` acts kind of like it's evaluating a `comptime` declaration in the root source
+    // file of the standard library. In particular, its namespace is the root std namespace.
+    var block: Block = block: {
+        // Get the main struct type of the root source file of `std`. No need for a reference entry
+        // because `std` is always an analysis root.
+        const std_file_index = zcu.module_roots.get(zcu.std_mod).?.unwrap().?;
+        try pt.ensureFileAnalyzed(std_file_index);
+        const std_type: Type = .fromInterned(zcu.fileRootType(std_file_index));
+        break :block .{
+            .parent = null,
+            .sema = sema,
+            .namespace = std_type.getNamespaceIndex(zcu),
+            .instructions = .empty,
+            .inlining = null,
+            .comptime_reason = null,
+            .src_base_inst = std_type.typeDeclInst(zcu).?,
+            .type_name_ctx = .empty,
+        };
+    };
+    defer block.instructions.deinit(gpa);
+
+    const std_builtin_ty: Type = ty: {
+        const std_src = block.nodeOffset(.zero);
+        const decl_name = try ip.getOrPutString(gpa, io, pt.tid, "builtin", .no_embedded_nulls);
+        const nav = try sema.namespaceLookup(&block, std_src, block.namespace, decl_name) orelse {
+            return sema.fail(&block, std_src, "'std' missing 'builtin'", .{});
+        };
+        const uncoerced_val = try sema.analyzeNavVal(&block, std_src, nav);
+        const decl_src: LazySrcLoc = .{
+            .base_node_inst = ip.getNav(nav).srcInst(ip),
+            .offset = .nodeOffset(.zero),
+        };
+        break :ty try sema.analyzeAsType(&block, decl_src, .std_builtin_decl, uncoerced_val);
+    };
+
     var any_changed = false;
 
     inline for (comptime std.enums.values(Zcu.BuiltinDecl)) |builtin_decl| {
         if (stage == comptime builtin_decl.stage()) {
-            const parent_ns: Zcu.Namespace.Index, const parent_name: []const u8, const name: []const u8 = switch (comptime builtin_decl.access()) {
-                .direct => |name| .{ builtin_namespace, "std.builtin", name },
+            const parent_ns_ty: Type, const parent_name: []const u8, const name: []const u8 = switch (comptime builtin_decl.access()) {
+                .direct => |name| .{ std_builtin_ty, "std.builtin", name },
                 .nested => |nested| access: {
-                    const parent_ty: Type = .fromInterned(zcu.builtin_decl_values.get(nested[0]));
-                    const parent_ns = parent_ty.getNamespace(zcu).unwrap() orelse {
-                        return sema.fail(block, simple_src, "std.builtin.{s} is not a container type", .{@tagName(nested[0])});
-                    };
-                    break :access .{ parent_ns, "std.builtin." ++ @tagName(nested[0]), nested[1] };
+                    const parent_decl, const name = nested;
+                    const parent_ty: Type = .fromInterned(zcu.builtin_decl_values.get(parent_decl));
+                    break :access .{ parent_ty, "std.builtin." ++ @tagName(parent_decl), name };
                 },
             };
 
+            const parent_ns = parent_ns_ty.getNamespace(zcu).unwrap() orelse {
+                return sema.fail(&block, block.nodeOffset(.zero), "'{s}' is not a container type", .{parent_name});
+            };
+            const parent_ty_src = parent_ns_ty.srcLoc(zcu);
             const name_nts = try ip.getOrPutString(gpa, io, pt.tid, name, .no_embedded_nulls);
-            const nav = try sema.namespaceLookup(block, simple_src, parent_ns, name_nts) orelse
-                return sema.fail(block, simple_src, "{s} missing {s}", .{ parent_name, name });
+            const nav = try sema.namespaceLookup(&block, parent_ty_src, parent_ns, name_nts) orelse {
+                return sema.fail(&block, parent_ty_src, "'{s}' missing '{s}'", .{ parent_name, name });
+            };
+            const uncoerced_val = try sema.analyzeNavVal(&block, parent_ty_src, nav);
 
-            const src: LazySrcLoc = .{
+            const decl_src: LazySrcLoc = .{
                 .base_node_inst = ip.getNav(nav).srcInst(ip),
                 .offset = .nodeOffset(.zero),
             };
 
-            const result = try sema.analyzeNavVal(block, src, nav);
-
-            const uncoerced_val = try sema.resolveConstDefinedValue(block, src, result, null);
             const val: Value = switch (builtin_decl.kind()) {
-                .type => if (uncoerced_val.typeOf(zcu).zigTypeTag(zcu) != .type) {
-                    return sema.fail(block, src, "{s}.{s} is not a type", .{ parent_name, name });
-                } else val: {
-                    try sema.ensureLayoutResolved(uncoerced_val.toType(), src);
-                    break :val uncoerced_val;
+                .type => val: {
+                    const ty = try sema.analyzeAsType(&block, decl_src, .std_builtin_decl, uncoerced_val);
+                    try sema.ensureLayoutResolved(ty, decl_src);
+                    break :val ty.toValue();
                 },
                 .func => val: {
                     const func_ty = try sema.getExpectedBuiltinFnType(builtin_decl);
-                    const coerced = try sema.coerce(block, func_ty, Air.internedToRef(uncoerced_val.toIntern()), src);
-                    break :val .fromInterned(coerced.toInterned().?);
+                    const coerced = try sema.coerce(&block, func_ty, uncoerced_val, decl_src);
+                    break :val try sema.resolveConstDefinedValue(&block, decl_src, coerced, .{ .simple = .std_builtin_decl });
                 },
                 .string => val: {
-                    const coerced = try sema.coerce(block, .slice_const_u8, Air.internedToRef(uncoerced_val.toIntern()), src);
-                    break :val .fromInterned(coerced.toInterned().?);
+                    const coerced = try sema.coerce(&block, .slice_const_u8, uncoerced_val, decl_src);
+                    break :val try sema.resolveConstDefinedValue(&block, decl_src, coerced, .{ .simple = .std_builtin_decl });
                 },
             };
 
-            const prev = zcu.builtin_decl_values.get(builtin_decl);
-            if (val.toIntern() != prev) {
+            if (zcu.builtin_decl_values.get(builtin_decl) != val.toIntern()) {
                 zcu.builtin_decl_values.set(builtin_decl, val.toIntern());
                 any_changed = true;
             }
@@ -34147,21 +34186,15 @@ fn zirStructDecl(
             });
             errdefer pt.destroyNamespace(new_namespace_index);
             try pt.scanNamespace(new_namespace_index, struct_decl.decls);
-
             if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-
             break :ty .fromInterned(wip.finish(ip, new_namespace_index));
         },
     };
 
     try sema.addTypeReferenceEntry(src, ty);
-
-    // Make sure we update the namespace if the declaration is re-analyzed, to pick
-    // up on e.g. changed comptime decls.
-    // TODO MLUGG: me no likey, maybe model namespaces less badly idk
     try pt.ensureNamespaceUpToDate(ty.getNamespaceIndex(zcu));
 
-    return .fromIntern(ty.toIntern());
+    return .fromType(ty);
 }
 fn zirUnionDecl(
     sema: *Sema,
@@ -34218,7 +34251,6 @@ fn zirUnionDecl(
         .wip => |wip| ty: {
             errdefer wip.cancel(ip, pt.tid);
             try sema.setTypeName(block, &wip, union_decl.name_strategy, "union", inst);
-
             const new_namespace_index: InternPool.NamespaceIndex = try pt.createNamespace(.{
                 .parent = block.namespace.toOptional(),
                 .owner_type = wip.index,
@@ -34226,23 +34258,16 @@ fn zirUnionDecl(
                 .generation = zcu.generation,
             });
             errdefer pt.destroyNamespace(new_namespace_index);
-
             try pt.scanNamespace(new_namespace_index, union_decl.decls);
-
             if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-
             break :ty .fromInterned(wip.finish(ip, new_namespace_index));
         },
     };
 
     try sema.addTypeReferenceEntry(src, ty);
-
-    // Make sure we update the namespace if the declaration is re-analyzed, to pick
-    // up on e.g. changed comptime decls.
-    // TODO MLUGG: me no likey, maybe model namespaces less badly idk
     try pt.ensureNamespaceUpToDate(ty.getNamespaceIndex(zcu));
 
-    return .fromIntern(ty.toIntern());
+    return .fromType(ty);
 }
 fn zirEnumDecl(
     sema: *Sema,
@@ -34277,9 +34302,7 @@ fn zirEnumDecl(
         .existing => |ty| .fromInterned(ty),
         .wip => |wip| ty: {
             errdefer wip.cancel(ip, pt.tid);
-
             try sema.setTypeName(block, &wip, enum_decl.name_strategy, "enum", inst);
-
             const new_namespace_index: InternPool.NamespaceIndex = try pt.createNamespace(.{
                 .parent = block.namespace.toOptional(),
                 .owner_type = wip.index,
@@ -34287,23 +34310,16 @@ fn zirEnumDecl(
                 .generation = zcu.generation,
             });
             errdefer pt.destroyNamespace(new_namespace_index);
-
             try pt.scanNamespace(new_namespace_index, enum_decl.decls);
-
             if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-
             break :ty .fromInterned(wip.finish(ip, new_namespace_index));
         },
     };
 
     try sema.addTypeReferenceEntry(src, ty);
-
-    // Make sure we update the namespace if the declaration is re-analyzed, to pick
-    // up on e.g. changed comptime decls.
-    // TODO MLUGG: me no likey, maybe model namespaces less badly idk
     try pt.ensureNamespaceUpToDate(ty.getNamespaceIndex(zcu));
 
-    return .fromIntern(ty.toIntern());
+    return .fromType(ty);
 }
 fn zirOpaqueDecl(
     sema: *Sema,
@@ -34350,11 +34366,7 @@ fn zirOpaqueDecl(
     };
 
     try sema.addTypeReferenceEntry(src, ty);
-
-    // Make sure we update the namespace if the declaration is re-analyzed, to pick
-    // up on e.g. changed comptime decls.
-    // TODO MLUGG: me no likey, maybe model namespaces less badly idk
     try pt.ensureNamespaceUpToDate(ty.getNamespaceIndex(zcu));
 
-    return .fromIntern(ty.toIntern());
+    return .fromType(ty);
 }

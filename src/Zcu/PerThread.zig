@@ -688,6 +688,8 @@ pub fn ensureFileAnalyzed(pt: Zcu.PerThread, file_index: Zcu.File.Index) (Alloca
 
     if (zcu.fileRootType(file_index) != .none) return; // already good
 
+    if (zcu.comp.time_report) |*tr| tr.stats.n_imported_files += 1;
+
     const file = zcu.fileByIndex(file_index);
     assert(file.getMode() == .zig);
     const struct_decl = file.zir.?.getStructDecl(.main_struct_inst);
@@ -719,13 +721,8 @@ pub fn ensureFileAnalyzed(pt: Zcu.PerThread, file_index: Zcu.File.Index) (Alloca
     });
     errdefer pt.destroyNamespace(new_namespace_index);
     try pt.scanNamespace(new_namespace_index, struct_decl.decls);
-
     if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
-
-    const file_root_type: Type = .fromInterned(wip.finish(ip, new_namespace_index));
-
-    zcu.setFileRootType(file_index, file_root_type.toIntern());
-    if (zcu.comp.time_report) |*tr| tr.stats.n_imported_files += 1;
+    zcu.setFileRootType(file_index, wip.finish(ip, new_namespace_index));
 }
 
 /// Ensures that all memoized state on `Zcu` is up-to-date, performing re-analysis if necessary.
@@ -810,36 +807,13 @@ pub fn ensureMemoizedStateUpToDate(pt: Zcu.PerThread, stage: InternPool.Memoized
 
 fn analyzeMemoizedState(pt: Zcu.PerThread, stage: InternPool.MemoizedStateStage) Zcu.CompileError!bool {
     const zcu = pt.zcu;
-    const ip = &zcu.intern_pool;
     const comp = zcu.comp;
     const gpa = comp.gpa;
-    const io = comp.io;
 
     const unit: AnalUnit = .wrap(.{ .memoized_state = stage });
 
     try zcu.analysis_in_progress.putNoClobber(gpa, unit, {});
     defer assert(zcu.analysis_in_progress.swapRemove(unit));
-
-    // Before we begin, collect:
-    // * The type `std`, and its namespace
-    // * The type `std.builtin`, and its namespace
-    // * A semi-reasonable source location
-    const std_file_index = zcu.module_roots.get(zcu.std_mod).?.unwrap().?;
-    try pt.ensureFileAnalyzed(std_file_index);
-    const std_type: Type = .fromInterned(zcu.fileRootType(std_file_index));
-    const std_namespace = std_type.getNamespaceIndex(zcu);
-    try pt.ensureNamespaceUpToDate(std_namespace);
-    const builtin_str = try ip.getOrPutString(gpa, io, pt.tid, "builtin", .no_embedded_nulls);
-    const builtin_nav = zcu.namespacePtr(std_namespace).pub_decls.getKeyAdapted(builtin_str, Zcu.Namespace.NameAdapter{ .zcu = zcu }) orelse
-        @panic("lib/std.zig is corrupt and missing 'builtin'");
-    try pt.ensureNavValUpToDate(builtin_nav);
-    const builtin_type: Type = .fromInterned(ip.getNav(builtin_nav).status.fully_resolved.val);
-    const builtin_namespace = builtin_type.getNamespaceIndex(zcu);
-    try pt.ensureNamespaceUpToDate(builtin_namespace);
-    const src: Zcu.LazySrcLoc = .{
-        .base_node_inst = builtin_type.typeDeclInst(zcu).?,
-        .offset = .{ .byte_abs = 0 },
-    };
 
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
@@ -861,22 +835,7 @@ fn analyzeMemoizedState(pt: Zcu.PerThread, stage: InternPool.MemoizedStateStage)
     };
     defer sema.deinit();
 
-    var block: Sema.Block = .{
-        .parent = null,
-        .sema = &sema,
-        .namespace = std_namespace,
-        .instructions = .empty,
-        .inlining = null,
-        .comptime_reason = .{ .reason = .{
-            .src = src,
-            .r = .{ .simple = .type },
-        } },
-        .src_base_inst = src.base_node_inst,
-        .type_name_ctx = .empty,
-    };
-    defer block.instructions.deinit(gpa);
-
-    return sema.analyzeMemoizedState(&block, src, builtin_namespace, stage);
+    return sema.analyzeMemoizedState(stage);
 }
 
 /// Ensures that the state of the given `ComptimeUnit` is fully up-to-date, performing re-analysis
@@ -1966,7 +1925,6 @@ fn analyzeFuncBody(
 /// If the file's root struct type is not populated (the file is unreferenced), nothing is done.
 /// This is called by `updateZirRefs` for all updated files before the main work loop.
 /// This function does not perform any semantic analysis.
-/// MLUGG TODO: mmmmm i have no idea if this makes sense... tbhwy i just want to update all *changed* namespaces at the start of an update or something lol
 fn updateFileNamespace(pt: Zcu.PerThread, file_index: Zcu.File.Index) Allocator.Error!void {
     const zcu = pt.zcu;
 

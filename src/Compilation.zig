@@ -986,7 +986,9 @@ const Job = union(enum) {
     /// If the unit is a *test* function, an `analyze_func` job will also be queued.
     analyze_unit: InternPool.AnalUnit,
     /// The main source file for the module needs to be analyzed.
-    analyze_mod: *Package.Module,
+    /// For every module which is an analysis root, analyze the main struct type of the module's
+    /// root source file. This is how semantic analysis begins.
+    analyze_roots,
 
     /// The value is the index into `windows_libs`.
     windows_import_lib: usize,
@@ -1396,7 +1398,6 @@ pub const MiscTask = enum {
     wasi_libc_crt_file,
     compiler_rt,
     libzigc,
-    analyze_mod,
     link_depfile,
     docs_copy,
     docs_wasm,
@@ -4840,9 +4841,7 @@ fn performAllTheWork(
         try zcu.flushRetryableFailures();
 
         // It's analysis time! Queue up our initial analysis.
-        for (zcu.analysisRoots()) |mod| {
-            try comp.queueJob(.{ .analyze_mod = mod });
-        }
+        try comp.queueJob(.analyze_roots);
 
         zcu.sema_prog_node = main_progress_node.start("Semantic Analysis", 0);
         if (comp.bin_file != null) {
@@ -5275,15 +5274,17 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 try pt.zcu.ensureFuncBodyAnalysisQueued(ip.getNav(nav).status.fully_resolved.val);
             }
         },
-        .analyze_mod => |mod| {
-            const tracy_trace = traceNamed(@src(), "analyze_mod");
+        .analyze_roots => {
+            const tracy_trace = traceNamed(@src(), "analyze_roots");
             defer tracy_trace.end();
 
-            const pt: Zcu.PerThread = .activate(comp.zcu.?, tid);
+            const zcu = comp.zcu.?;
+            const pt: Zcu.PerThread = .activate(zcu, tid);
             defer pt.deactivate();
-
-            const mod_root_file = pt.zcu.module_roots.get(mod).?.unwrap().?;
-            try pt.ensureFileAnalyzed(mod_root_file);
+            for (zcu.analysisRoots()) |analysis_root_mod| {
+                const analysis_root_file = zcu.module_roots.get(analysis_root_mod).?.unwrap().?;
+                try pt.ensureFileAnalyzed(analysis_root_file);
+            }
         },
         .windows_import_lib => |index| {
             const tracy_trace = traceNamed(@src(), "windows_import_lib");
