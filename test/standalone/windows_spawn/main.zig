@@ -207,10 +207,20 @@ fn testExecError(err: anyerror, gpa: Allocator, io: Io, command: []const u8) !vo
 }
 
 fn testExec(gpa: Allocator, io: Io, command: []const u8, expected_stdout: []const u8) !void {
-    return testExecWithCwd(gpa, io, command, null, expected_stdout);
+    return testExecWithCwdInner(gpa, io, command, .inherit, expected_stdout);
 }
 
-fn testExecWithCwd(gpa: Allocator, io: Io, command: []const u8, cwd: ?[]const u8, expected_stdout: []const u8) !void {
+fn testExecWithCwd(gpa: Allocator, io: Io, command: []const u8, cwd: []const u8, expected_stdout: []const u8) !void {
+    // Test by passing CWD as both a path and a Dir
+    try testExecWithCwdInner(gpa, io, command, .{ .path = cwd }, expected_stdout);
+
+    var cwd_dir = try Io.Dir.cwd().openDir(io, cwd, .{});
+    defer cwd_dir.close(io);
+
+    try testExecWithCwdInner(gpa, io, command, .{ .dir = cwd_dir }, expected_stdout);
+}
+
+fn testExecWithCwdInner(gpa: Allocator, io: Io, command: []const u8, cwd: std.process.Child.Cwd, expected_stdout: []const u8) !void {
     const result = try std.process.run(gpa, io, .{
         .argv = &[_][]const u8{command},
         .cwd = cwd,

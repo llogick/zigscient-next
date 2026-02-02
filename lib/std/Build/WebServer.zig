@@ -652,7 +652,7 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
             if (code != 0) {
                 log.err(
                     "the following command exited with error code {d}:\n{s}",
-                    .{ code, try Build.Step.allocPrintCmd(arena, null, null, argv.items) },
+                    .{ code, try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
                 );
                 return error.WasmCompilationFailed;
             }
@@ -660,14 +660,14 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
         .signal => |sig| {
             log.err(
                 "the following command terminated with signal {t}:\n{s}",
-                .{ sig, try Build.Step.allocPrintCmd(arena, null, null, argv.items) },
+                .{ sig, try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
             );
             return error.WasmCompilationFailed;
         },
         .stopped, .unknown => {
             log.err(
                 "the following command terminated unexpectedly:\n{s}",
-                .{try Build.Step.allocPrintCmd(arena, null, null, argv.items)},
+                .{try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items)},
             );
             return error.WasmCompilationFailed;
         },
@@ -677,14 +677,14 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
         try result_error_bundle.renderToStderr(io, .{}, .auto);
         log.err("the following command failed with {d} compilation errors:\n{s}", .{
             result_error_bundle.errorMessageCount(),
-            try Build.Step.allocPrintCmd(arena, null, null, argv.items),
+            try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
         });
         return error.WasmCompilationFailed;
     }
 
     const base_path = result orelse {
         log.err("child process failed to report result\n{s}", .{
-            try Build.Step.allocPrintCmd(arena, null, null, argv.items),
+            try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
         });
         return error.WasmCompilationFailed;
     };

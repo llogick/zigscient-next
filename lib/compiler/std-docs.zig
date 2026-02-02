@@ -398,7 +398,7 @@ fn buildWasmBinary(
             if (code != 0) {
                 std.log.err(
                     "the following command exited with error code {d}:\n{s}",
-                    .{ code, try std.Build.Step.allocPrintCmd(arena, null, null, argv.items) },
+                    .{ code, try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
                 );
                 return error.WasmCompilationFailed;
             }
@@ -406,14 +406,14 @@ fn buildWasmBinary(
         .signal => |sig| {
             std.log.err(
                 "the following command terminated with signal {t}:\n{s}",
-                .{ sig, try std.Build.Step.allocPrintCmd(arena, null, null, argv.items) },
+                .{ sig, try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
             );
             return error.WasmCompilationFailed;
         },
         .stopped, .unknown => {
             std.log.err(
                 "the following command terminated unexpectedly:\n{s}",
-                .{try std.Build.Step.allocPrintCmd(arena, null, null, argv.items)},
+                .{try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items)},
             );
             return error.WasmCompilationFailed;
         },
@@ -423,14 +423,14 @@ fn buildWasmBinary(
         try result_error_bundle.renderToStderr(io, .{}, .auto);
         std.log.err("the following command failed with {d} compilation errors:\n{s}", .{
             result_error_bundle.errorMessageCount(),
-            try std.Build.Step.allocPrintCmd(arena, null, null, argv.items),
+            try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
         });
         return error.WasmCompilationFailed;
     }
 
     return result orelse {
         std.log.err("child process failed to report result\n{s}", .{
-            try std.Build.Step.allocPrintCmd(arena, null, null, argv.items),
+            try std.Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
         });
         return error.WasmCompilationFailed;
     };

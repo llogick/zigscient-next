@@ -1868,7 +1868,7 @@ pub fn runAllowFail(
     const io = graph.io;
 
     const max_output_size = 400 * 1024;
-    try Step.handleVerbose2(b, null, &graph.environ_map, argv);
+    try Step.handleVerbose2(b, .inherit, &graph.environ_map, argv);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -1911,7 +1911,7 @@ pub fn run(b: *Build, argv: []const []const u8) []u8 {
     var code: u8 = undefined;
     return b.runAllowFail(argv, &code, .inherit) catch |err| process.fatal(
         "the following command failed with {t}:\n{s}",
-        .{ err, Step.allocPrintCmd(b.allocator, null, null, argv) catch @panic("OOM") },
+        .{ err, Step.allocPrintCmd(b.allocator, .inherit, null, argv) catch @panic("OOM") },
     );
 }
 

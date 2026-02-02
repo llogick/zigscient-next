@@ -1227,7 +1227,7 @@ fn runCommand(
     const gpa = options.gpa;
     const io = b.graph.io;
 
-    const cwd: ?[]const u8 = if (run.cwd) |lazy_cwd| lazy_cwd.getPath2(b, step) else null;
+    const cwd: process.Child.Cwd = if (run.cwd) |lazy_cwd| .{ .path = lazy_cwd.getPath2(b, step) } else .inherit;
 
     try step.handleChildProcUnsupported();
     try Step.handleVerbose2(step.owner, cwd, run.environ_map, argv);
@@ -1549,7 +1549,7 @@ fn spawnChildAndCollect(
         assert(run.stdio == .zig_test);
     }
 
-    const child_cwd = if (run.cwd) |lazy_cwd| lazy_cwd.getPath2(b, &run.step) else null;
+    const child_cwd: process.Child.Cwd = if (run.cwd) |lazy_cwd| .{ .path = lazy_cwd.getPath2(b, &run.step) } else .inherit;
 
     // If an error occurs, it's caused by this command:
     assert(run.step.result_failed_command == null);

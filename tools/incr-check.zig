@@ -202,8 +202,7 @@ pub fn main(init: std.process.Init) !void {
             .stdout = .pipe,
             .stderr = .pipe,
             .progress_node = zig_prog_node,
-            .cwd_dir = tmp_dir,
-            .cwd = tmp_dir_path,
+            .cwd = .{ .path = tmp_dir_path },
         });
         defer child.kill(io);
 
@@ -533,8 +532,7 @@ const Eval = struct {
 
         const result = std.process.run(eval.arena, io, .{
             .argv = argv,
-            .cwd_dir = eval.tmp_dir,
-            .cwd = eval.tmp_dir_path,
+            .cwd = .{ .path = eval.tmp_dir_path },
         }) catch |err| {
             if (is_foreign) {
                 // Chances are the foreign executor isn't available. Skip this evaluation.
@@ -626,8 +624,7 @@ const Eval = struct {
 
         const result = std.process.run(eval.arena, eval.io, .{
             .argv = eval.cc_child_args.items,
-            .cwd_dir = eval.tmp_dir,
-            .cwd = eval.tmp_dir_path,
+            .cwd = .{ .path = eval.tmp_dir_path },
             .progress_node = child_prog_node,
         }) catch |err| {
             eval.fatal("failed to spawn zig cc for '{s}': {t}", .{ c_path, err });

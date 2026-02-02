@@ -350,10 +350,10 @@ pub fn captureChildProcess(
 
     // If an error occurs, it's happened in this command:
     assert(s.result_failed_command == null);
-    s.result_failed_command = try allocPrintCmd(gpa, null, null, argv);
+    s.result_failed_command = try allocPrintCmd(gpa, .inherit, null, argv);
 
     try handleChildProcUnsupported(s);
-    try handleVerbose(s.owner, null, argv);
+    try handleVerbose(s.owner, .inherit, argv);
 
     const result = std.process.run(arena, io, .{
         .argv = argv,
@@ -410,7 +410,7 @@ pub fn evalZigProcess(
 
     // If an error occurs, it's happened in this command:
     assert(s.result_failed_command == null);
-    s.result_failed_command = try allocPrintCmd(gpa, null, null, argv);
+    s.result_failed_command = try allocPrintCmd(gpa, .inherit, null, argv);
 
     if (s.getZigProcess()) |zp| update: {
         assert(watch);
@@ -449,7 +449,7 @@ pub fn evalZigProcess(
     assert(argv.len != 0);
 
     try handleChildProcUnsupported(s);
-    try handleVerbose(s.owner, null, argv);
+    try handleVerbose(s.owner, .inherit, argv);
 
     const zp = try gpa.create(ZigProcess);
     defer if (!watch) gpa.destroy(zp);
@@ -515,7 +515,7 @@ pub fn installFile(s: *Step, src_lazy_path: Build.LazyPath, dest_path: []const u
     const b = s.owner;
     const io = b.graph.io;
     const src_path = src_lazy_path.getPath3(b, s);
-    try handleVerbose(b, null, &.{ "install", "-C", b.fmt("{f}", .{src_path}), dest_path });
+    try handleVerbose(b, .inherit, &.{ "install", "-C", b.fmt("{f}", .{src_path}), dest_path });
     return Io.Dir.updateFile(src_path.root_dir.handle, io, src_path.sub_path, .cwd(), dest_path, .{}) catch |err|
         return s.fail("unable to update file from '{f}' to '{s}': {t}", .{ src_path, dest_path, err });
 }
@@ -524,7 +524,7 @@ pub fn installFile(s: *Step, src_lazy_path: Build.LazyPath, dest_path: []const u
 pub fn installDir(s: *Step, dest_path: []const u8) !Io.Dir.CreatePathStatus {
     const b = s.owner;
     const io = b.graph.io;
-    try handleVerbose(b, null, &.{ "install", "-d", dest_path });
+    try handleVerbose(b, .inherit, &.{ "install", "-d", dest_path });
     return Io.Dir.cwd().createDirPathStatus(io, dest_path, .default_dir) catch |err|
         return s.fail("unable to create dir '{s}': {t}", .{ dest_path, err });
 }
@@ -700,15 +700,15 @@ fn sendMessage(io: Io, file: Io.File, tag: std.zig.Client.Message.Tag) !void {
 
 pub fn handleVerbose(
     b: *Build,
-    opt_cwd: ?[]const u8,
+    cwd: std.process.Child.Cwd,
     argv: []const []const u8,
 ) error{OutOfMemory}!void {
-    return handleVerbose2(b, opt_cwd, null, argv);
+    return handleVerbose2(b, cwd, null, argv);
 }
 
 pub fn handleVerbose2(
     b: *Build,
-    opt_cwd: ?[]const u8,
+    cwd: std.process.Child.Cwd,
     opt_env: ?*const std.process.Environ.Map,
     argv: []const []const u8,
 ) error{OutOfMemory}!void {
@@ -716,7 +716,7 @@ pub fn handleVerbose2(
         const graph = b.graph;
         // Intention of verbose is to print all sub-process command lines to
         // stderr before spawning them.
-        const text = try allocPrintCmd(b.allocator, opt_cwd, if (opt_env) |env| .{
+        const text = try allocPrintCmd(b.allocator, cwd, if (opt_env) |env| .{
             .child = env,
             .parent = &graph.environ_map,
         } else null, argv);
@@ -751,7 +751,7 @@ pub fn handleChildProcessTerm(s: *Step, term: std.process.Child.Term) error{ Mak
 
 pub fn allocPrintCmd(
     gpa: Allocator,
-    opt_cwd: ?[]const u8,
+    cwd: std.process.Child.Cwd,
     opt_env: ?struct {
         child: *const std.process.Environ.Map,
         parent: *const std.process.Environ.Map,
@@ -796,7 +796,11 @@ pub fn allocPrintCmd(
     var aw: Io.Writer.Allocating = .init(gpa);
     defer aw.deinit();
     const writer = &aw.writer;
-    if (opt_cwd) |cwd| writer.print("cd {s} && ", .{cwd}) catch return error.OutOfMemory;
+    switch (cwd) {
+        .inherit => {},
+        .path => |path| writer.print("cd {s} && ", .{path}) catch return error.OutOfMemory,
+        .dir => @panic("TODO"),
+    }
     if (opt_env) |env| {
         var it = env.child.iterator();
         while (it.next()) |entry| {

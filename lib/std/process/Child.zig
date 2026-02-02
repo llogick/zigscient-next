@@ -98,6 +98,17 @@ pub const Term = union(enum) {
     unknown: u32,
 };
 
+pub const Cwd = union(enum) {
+    /// CWD of the child is the same as the current CWD.
+    inherit,
+    /// On POSIX systems, `fchdir` is called after `fork` using this handle.
+    /// On Windows, the path is inferred from the provided handle and that path is used when calling `CreateProcessW`.
+    dir: Io.Dir,
+    /// On POSIX systems, `chdir` is called after `fork` using this path.
+    /// On Windows, this path is used when calling `CreateProcessW`.
+    path: []const u8,
+};
+
 /// Requests for the operating system to forcibly terminate the child process,
 /// then blocks until it terminates, then cleans up all resources.
 ///
