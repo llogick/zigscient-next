@@ -532,7 +532,7 @@ pub const BuildOnSave = struct {
             .stdin = .pipe,
             .stdout = .pipe,
             .stderr = .pipe,
-            .cwd = options.workspace_path,
+            .cwd = .{ .path = options.workspace_path },
         }) catch |err| switch (err) {
             error.Canceled => return error.Canceled,
             else => {
