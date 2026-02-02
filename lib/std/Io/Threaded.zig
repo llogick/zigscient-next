@@ -35,7 +35,7 @@ run_queue: std.SinglyLinkedList = .{},
 join_requested: bool = false,
 stack_size: usize,
 /// All threads are spawned detached; this is how we wait until they all exit.
-wait_group: std.Thread.WaitGroup = .{},
+wait_group: WaitGroup = .init,
 async_limit: Io.Limit,
 concurrent_limit: Io.Limit = .unlimited,
 /// Error from calling `std.Thread.getCpuCount` in `init`.
@@ -2461,7 +2461,10 @@ fn cancel(
 }
 
 fn futexWait(userdata: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Io.Timeout) Io.Cancelable!void {
-    if (builtin.single_threaded) unreachable; // Deadlock.
+    if (builtin.single_threaded) {
+        assert(timeout != .none); // Deadlock.
+        return;
+    }
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     const t_io = ioBasic(t);
     const timeout_ns: ?u64 = ns: {
@@ -2479,7 +2482,7 @@ fn futexWaitUncancelable(userdata: ?*anyopaque, ptr: *const u32, expected: u32) 
 }
 
 fn futexWake(userdata: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
-    if (builtin.single_threaded) unreachable; // Nothing to wake up.
+    if (builtin.single_threaded) return; // Nothing to wake up.
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
     Thread.futexWake(ptr, max_waiters);
@@ -18038,5 +18041,64 @@ fn deviceIoControl(t: *Threaded, o: *const Io.Operation.DeviceIoControl) Io.Canc
                 },
             }
         }
+    }
+}
+
+const WaitGroup = struct {
+    state: std.atomic.Value(usize),
+    event: Io.Event,
+
+    const init: WaitGroup = .{ .state = .{ .raw = 0 }, .event = .unset };
+
+    const is_waiting: usize = 1 << 0;
+    const one_pending: usize = 1 << 1;
+
+    fn start(wg: *WaitGroup) void {
+        const prev_state = wg.state.fetchAdd(one_pending, .monotonic);
+        assert((prev_state / one_pending) < (std.math.maxInt(usize) / one_pending));
+    }
+
+    fn value(wg: *WaitGroup) usize {
+        return wg.state.load(.monotonic) / one_pending;
+    }
+
+    fn wait(wg: *WaitGroup) void {
+        const prev_state = wg.state.fetchAdd(is_waiting, .acquire);
+        assert(prev_state & is_waiting == 0);
+        if ((prev_state / one_pending) > 0) eventWait(&wg.event);
+    }
+
+    fn finish(wg: *WaitGroup) void {
+        const state = wg.state.fetchSub(one_pending, .acq_rel);
+        assert((state / one_pending) > 0);
+
+        if (state == (one_pending | is_waiting)) {
+            eventSet(&wg.event);
+        }
+    }
+};
+
+/// Same as `Io.Event.wait` but avoids the VTable.
+fn eventWait(event: *Io.Event) void {
+    if (@cmpxchgStrong(Io.Event, event, .unset, .waiting, .acquire, .acquire)) |prev| switch (prev) {
+        .unset => unreachable,
+        .waiting => {},
+        .is_set => return,
+    };
+    while (true) {
+        Thread.futexWaitUncancelable(@ptrCast(event), @intFromEnum(Io.Event.waiting), null);
+        switch (@atomicLoad(Io.Event, event, .acquire)) {
+            .unset => unreachable, // `reset` called before pending `wait` returned
+            .waiting => continue,
+            .is_set => return,
+        }
+    }
+}
+
+/// Same as `Io.Event.set` but avoids the VTable.
+fn eventSet(event: *Io.Event) void {
+    switch (@atomicRmw(Io.Event, event, .Xchg, .is_set, .release)) {
+        .unset, .is_set => {},
+        .waiting => Thread.futexWake(@ptrCast(event), std.math.maxInt(u32)),
     }
 }

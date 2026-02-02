@@ -716,3 +716,136 @@ test "read from a file using Batch.awaitAsync API" {
         }
     }
 }
+
+test "Event smoke test" {
+    const io = testing.io;
+
+    var event: Io.Event = .unset;
+    try testing.expectEqual(false, event.isSet());
+
+    // make sure the event gets set
+    event.set(io);
+    try testing.expectEqual(true, event.isSet());
+
+    // make sure the event gets unset again
+    event.reset();
+    try testing.expectEqual(false, event.isSet());
+
+    // waits should timeout as there's no other thread to set the event
+    try testing.expectError(error.Timeout, event.waitTimeout(io, .{ .duration = .{
+        .raw = .zero,
+        .clock = .awake,
+    } }));
+    try testing.expectError(error.Timeout, event.waitTimeout(io, .{ .duration = .{
+        .raw = .fromMilliseconds(1),
+        .clock = .awake,
+    } }));
+
+    // set the event again and make sure waits complete
+    event.set(io);
+    try event.wait(io);
+    try event.waitTimeout(io, .{ .duration = .{ .raw = .fromMilliseconds(1), .clock = .awake } });
+    try testing.expectEqual(true, event.isSet());
+}
+
+test "Event signaling" {
+    if (builtin.single_threaded) {
+        // This test requires spawning threads.
+        return error.SkipZigTest;
+    }
+
+    const io = testing.io;
+
+    const Context = struct {
+        in: Io.Event = .unset,
+        out: Io.Event = .unset,
+        value: usize = 0,
+
+        fn input(self: *@This()) !void {
+            // wait for the value to become 1
+            try self.in.wait(io);
+            self.in.reset();
+            try testing.expectEqual(self.value, 1);
+
+            // bump the value and wake up output()
+            self.value = 2;
+            self.out.set(io);
+
+            // wait for output to receive 2, bump the value and wake us up with 3
+            try self.in.wait(io);
+            self.in.reset();
+            try testing.expectEqual(self.value, 3);
+
+            // bump the value and wake up output() for it to see 4
+            self.value = 4;
+            self.out.set(io);
+        }
+
+        fn output(self: *@This()) !void {
+            // start with 0 and bump the value for input to see 1
+            try testing.expectEqual(self.value, 0);
+            self.value = 1;
+            self.in.set(io);
+
+            // wait for input to receive 1, bump the value to 2 and wake us up
+            try self.out.wait(io);
+            self.out.reset();
+            try testing.expectEqual(self.value, 2);
+
+            // bump the value to 3 for input to see (rhymes)
+            self.value = 3;
+            self.in.set(io);
+
+            // wait for input to bump the value to 4 and receive no more (rhymes)
+            try self.out.wait(io);
+            self.out.reset();
+            try testing.expectEqual(self.value, 4);
+        }
+    };
+
+    var ctx = Context{};
+
+    const thread = try std.Thread.spawn(.{}, Context.output, .{&ctx});
+    defer thread.join();
+
+    try ctx.input();
+}
+
+test "Event broadcast" {
+    if (builtin.single_threaded) {
+        // This test requires spawning threads.
+        return error.SkipZigTest;
+    }
+
+    const io = testing.io;
+
+    const num_threads = 10;
+    const Barrier = struct {
+        event: Io.Event = .unset,
+        counter: std.atomic.Value(usize) = std.atomic.Value(usize).init(num_threads),
+
+        fn wait(self: *@This()) void {
+            if (self.counter.fetchSub(1, .acq_rel) == 1) {
+                self.event.set(io);
+            }
+        }
+    };
+
+    const Context = struct {
+        start_barrier: Barrier = .{},
+        finish_barrier: Barrier = .{},
+
+        fn run(self: *@This()) void {
+            self.start_barrier.wait();
+            self.finish_barrier.wait();
+        }
+    };
+
+    var ctx = Context{};
+    var threads: [num_threads - 1]std.Thread = undefined;
+
+    for (&threads) |*t| t.* = try std.Thread.spawn(.{}, Context.run, .{&ctx});
+    defer for (threads) |t| t.join();
+
+    ctx.run();
+}

@@ -1236,15 +1236,7 @@ pub const Mutex = extern struct {
     };
 
     pub fn tryLock(m: *Mutex) bool {
-        switch (m.state.cmpxchgWeak(
-            .unlocked,
-            .locked_once,
-            .acquire,
-            .monotonic,
-        ) orelse return true) {
-            .unlocked => unreachable,
-            .locked_once, .contended => return false,
-        }
+        return m.state.cmpxchgWeak(.unlocked, .locked_once, .acquire, .monotonic) == null;
     }
 
     pub fn lock(m: *Mutex, io: Io) Cancelable!void {
@@ -1475,7 +1467,7 @@ pub const Event = enum(u32) {
     pub fn waitTimeout(event: *Event, io: Io, timeout: Timeout) WaitTimeoutError!void {
         if (@cmpxchgStrong(Event, event, .unset, .waiting, .acquire, .acquire)) |prev| switch (prev) {
             .unset => unreachable,
-            .waiting => assert(!builtin.single_threaded), // invalid state
+            .waiting => {},
             .is_set => return,
         };
         errdefer {
