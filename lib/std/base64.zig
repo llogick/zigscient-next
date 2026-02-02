@@ -108,29 +108,12 @@ pub const Base64Encoder = struct {
         }
     }
 
-    // dest must be compatible with std.io.Writer's writeAll interface
-    pub fn encodeWriter(encoder: *const Base64Encoder, dest: anytype, source: []const u8) !void {
+    pub fn encodeWriter(encoder: *const Base64Encoder, dest: *std.Io.Writer, source: []const u8) !void {
         var chunker = window(u8, source, 3, 3);
         while (chunker.next()) |chunk| {
             var temp: [5]u8 = undefined;
             const s = encoder.encode(&temp, chunk);
             try dest.writeAll(s);
-        }
-    }
-
-    // destWriter must be compatible with std.io.Writer's writeAll interface
-    // sourceReader must be compatible with std.io.Reader's read interface
-    pub fn encodeFromReaderToWriter(encoder: *const Base64Encoder, destWriter: anytype, sourceReader: anytype) !void {
-        while (true) {
-            var tempSource: [3]u8 = undefined;
-            const bytesRead = try sourceReader.read(&tempSource);
-            if (bytesRead == 0) {
-                break;
-            }
-
-            var temp: [5]u8 = undefined;
-            const s = encoder.encode(&temp, tempSource[0..bytesRead]);
-            try destWriter.writeAll(s);
         }
     }
 
@@ -330,9 +313,9 @@ pub const Base64DecoderWithIgnore = struct {
         return result;
     }
 
-    /// Return the maximum possible decoded size for a given input length - The actual length may be less if the input includes padding.
-    /// `InvalidPadding` is returned if the input length is not valid.
-    pub fn calcSizeUpperBound(decoder_with_ignore: *const Base64DecoderWithIgnore, source_len: usize) Error!usize {
+    /// Return the maximum possible decoded size for a given input length - The actual length may be
+    /// less if the input includes padding or ignored characters.
+    pub fn calcSizeUpperBound(decoder_with_ignore: *const Base64DecoderWithIgnore, source_len: usize) usize {
         var result = source_len / 4 * 3;
         if (decoder_with_ignore.decoder.pad_char == null) {
             const leftover = source_len % 4;
@@ -517,17 +500,13 @@ fn testAllApis(codecs: Codecs, expected_decoded: []const u8, expected_encoded: [
         var buffer: [0x100]u8 = undefined;
         const encoded = codecs.Encoder.encode(&buffer, expected_decoded);
         try testing.expectEqualSlices(u8, expected_encoded, encoded);
-
+    }
+    {
         // stream encode
-        var list = try std.BoundedArray(u8, 0x100).init(0);
-        try codecs.Encoder.encodeWriter(list.writer(), expected_decoded);
-        try testing.expectEqualSlices(u8, expected_encoded, list.slice());
-
-        // reader to writer encode
-        var stream = std.io.fixedBufferStream(expected_decoded);
-        list = try std.BoundedArray(u8, 0x100).init(0);
-        try codecs.Encoder.encodeFromReaderToWriter(list.writer(), stream.reader());
-        try testing.expectEqualSlices(u8, expected_encoded, list.slice());
+        var buffer: [0x100]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buffer);
+        try codecs.Encoder.encodeWriter(&writer, expected_decoded);
+        try testing.expectEqualSlices(u8, expected_encoded, writer.buffered());
     }
 
     // Base64Decoder
@@ -542,7 +521,7 @@ fn testAllApis(codecs: Codecs, expected_decoded: []const u8, expected_encoded: [
     {
         const decoder_ignore_nothing = codecs.decoderWithIgnore("");
         var buffer: [0x100]u8 = undefined;
-        const decoded = buffer[0..try decoder_ignore_nothing.calcSizeUpperBound(expected_encoded.len)];
+        const decoded = buffer[0..decoder_ignore_nothing.calcSizeUpperBound(expected_encoded.len)];
         const written = try decoder_ignore_nothing.decode(decoded, expected_encoded);
         try testing.expect(written <= decoded.len);
         try testing.expectEqualSlices(u8, expected_decoded, decoded[0..written]);
@@ -552,7 +531,7 @@ fn testAllApis(codecs: Codecs, expected_decoded: []const u8, expected_encoded: [
 fn testDecodeIgnoreSpace(codecs: Codecs, expected_decoded: []const u8, encoded: []const u8) !void {
     const decoder_ignore_space = codecs.decoderWithIgnore(" ");
     var buffer: [0x100]u8 = undefined;
-    const decoded = buffer[0..try decoder_ignore_space.calcSizeUpperBound(encoded.len)];
+    const decoded = buffer[0..decoder_ignore_space.calcSizeUpperBound(encoded.len)];
     const written = try decoder_ignore_space.decode(decoded, encoded);
     try testing.expectEqualSlices(u8, expected_decoded, decoded[0..written]);
 }

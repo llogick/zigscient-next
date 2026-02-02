@@ -6,8 +6,6 @@ const target = builtin.target;
 const arch = builtin.cpu.arch;
 const common = @import("common.zig");
 
-pub const panic = common.panic;
-
 comptime {
     if (!builtin.is_test) {
         if (arch.isArm()) {
@@ -15,11 +13,16 @@ comptime {
             @export(&__aeabi_unwind_cpp_pr1, .{ .name = "__aeabi_unwind_cpp_pr1", .linkage = common.linkage, .visibility = common.visibility });
             @export(&__aeabi_unwind_cpp_pr2, .{ .name = "__aeabi_unwind_cpp_pr2", .linkage = common.linkage, .visibility = common.visibility });
 
-            @export(&__aeabi_ldivmod, .{ .name = if (common.want_windows_arm_abi) "__rt_sdiv64" else "__aeabi_ldivmod", .linkage = common.linkage, .visibility = common.visibility });
-            @export(&__aeabi_uldivmod, .{ .name = if (common.want_windows_arm_abi) "__rt_udiv64" else "__aeabi_uldivmod", .linkage = common.linkage, .visibility = common.visibility });
-
-            @export(&__aeabi_idivmod, .{ .name = if (common.want_windows_arm_abi) "__rt_sdiv" else "__aeabi_idivmod", .linkage = common.linkage, .visibility = common.visibility });
-            @export(&__aeabi_uidivmod, .{ .name = if (common.want_windows_arm_abi) "__rt_udiv" else "__aeabi_uidivmod", .linkage = common.linkage, .visibility = common.visibility });
+            if (common.want_windows_arm_abi) {
+                @export(&__aeabi_ldivmod, .{ .name = "__rt_sdiv64", .linkage = common.linkage, .visibility = common.visibility });
+                @export(&__aeabi_uldivmod, .{ .name = "__rt_udiv64", .linkage = common.linkage, .visibility = common.visibility });
+                @export(&__aeabi_idivmod, .{ .name = "__rt_sdiv", .linkage = common.linkage, .visibility = common.visibility });
+                @export(&__aeabi_uidivmod, .{ .name = "__rt_udiv", .linkage = common.linkage, .visibility = common.visibility });
+            }
+            @export(&__aeabi_ldivmod, .{ .name = "__aeabi_ldivmod", .linkage = common.linkage, .visibility = common.visibility });
+            @export(&__aeabi_uldivmod, .{ .name = "__aeabi_uldivmod", .linkage = common.linkage, .visibility = common.visibility });
+            @export(&__aeabi_idivmod, .{ .name = "__aeabi_idivmod", .linkage = common.linkage, .visibility = common.visibility });
+            @export(&__aeabi_uidivmod, .{ .name = "__aeabi_uidivmod", .linkage = common.linkage, .visibility = common.visibility });
 
             @export(&__aeabi_memcpy, .{ .name = "__aeabi_memcpy", .linkage = common.linkage, .visibility = common.visibility });
             @export(&__aeabi_memcpy4, .{ .name = "__aeabi_memcpy4", .linkage = common.linkage, .visibility = common.visibility });
@@ -37,7 +40,7 @@ comptime {
             @export(&__aeabi_memclr4, .{ .name = "__aeabi_memclr4", .linkage = common.linkage, .visibility = common.visibility });
             @export(&__aeabi_memclr8, .{ .name = "__aeabi_memclr8", .linkage = common.linkage, .visibility = common.visibility });
 
-            if (builtin.os.tag == .linux) {
+            if (builtin.os.tag == .linux or builtin.os.tag == .freebsd) {
                 @export(&__aeabi_read_tp, .{ .name = "__aeabi_read_tp", .linkage = common.linkage, .visibility = common.visibility });
             }
 
@@ -57,67 +60,67 @@ extern fn memset(dest: ?[*]u8, c: i32, n: usize) ?[*]u8;
 extern fn memcpy(noalias dest: ?[*]u8, noalias src: ?[*]const u8, n: usize) ?[*]u8;
 extern fn memmove(dest: ?[*]u8, src: ?[*]const u8, n: usize) ?[*]u8;
 
-pub fn __aeabi_memcpy(dest: [*]u8, src: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memcpy(dest: [*]u8, src: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memcpy(dest, src, n);
 }
-pub fn __aeabi_memcpy4(dest: [*]u8, src: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memcpy4(dest: [*]u8, src: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memcpy(dest, src, n);
 }
-pub fn __aeabi_memcpy8(dest: [*]u8, src: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memcpy8(dest: [*]u8, src: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memcpy(dest, src, n);
 }
 
-pub fn __aeabi_memmove(dest: [*]u8, src: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memmove(dest: [*]u8, src: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memmove(dest, src, n);
 }
-pub fn __aeabi_memmove4(dest: [*]u8, src: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memmove4(dest: [*]u8, src: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memmove(dest, src, n);
 }
-pub fn __aeabi_memmove8(dest: [*]u8, src: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memmove8(dest: [*]u8, src: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memmove(dest, src, n);
 }
 
-pub fn __aeabi_memset(dest: [*]u8, n: usize, c: i32) callconv(.AAPCS) void {
+pub fn __aeabi_memset(dest: [*]u8, n: usize, c: i32) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     // This is dentical to the standard `memset` definition but with the last
     // two arguments swapped
     _ = memset(dest, c, n);
 }
-pub fn __aeabi_memset4(dest: [*]u8, n: usize, c: i32) callconv(.AAPCS) void {
+pub fn __aeabi_memset4(dest: [*]u8, n: usize, c: i32) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memset(dest, c, n);
 }
-pub fn __aeabi_memset8(dest: [*]u8, n: usize, c: i32) callconv(.AAPCS) void {
+pub fn __aeabi_memset8(dest: [*]u8, n: usize, c: i32) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memset(dest, c, n);
 }
 
-pub fn __aeabi_memclr(dest: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memclr(dest: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memset(dest, 0, n);
 }
-pub fn __aeabi_memclr4(dest: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memclr4(dest: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memset(dest, 0, n);
 }
-pub fn __aeabi_memclr8(dest: [*]u8, n: usize) callconv(.AAPCS) void {
+pub fn __aeabi_memclr8(dest: [*]u8, n: usize) callconv(.{ .arm_aapcs = .{} }) void {
     @setRuntimeSafety(false);
     _ = memset(dest, 0, n);
 }
 
 // Dummy functions to avoid errors during the linking phase
-pub fn __aeabi_unwind_cpp_pr0() callconv(.AAPCS) void {}
-pub fn __aeabi_unwind_cpp_pr1() callconv(.AAPCS) void {}
-pub fn __aeabi_unwind_cpp_pr2() callconv(.AAPCS) void {}
+pub fn __aeabi_unwind_cpp_pr0() callconv(.{ .arm_aapcs = .{} }) void {}
+pub fn __aeabi_unwind_cpp_pr1() callconv(.{ .arm_aapcs = .{} }) void {}
+pub fn __aeabi_unwind_cpp_pr2() callconv(.{ .arm_aapcs = .{} }) void {}
 
 // This function can only clobber r0 according to the ABI
-pub fn __aeabi_read_tp() callconv(.Naked) void {
+pub fn __aeabi_read_tp() callconv(.naked) void {
     @setRuntimeSafety(false);
     asm volatile (
         \\ mrc p15, 0, r0, c13, c0, 3
@@ -129,7 +132,7 @@ pub fn __aeabi_read_tp() callconv(.Naked) void {
 // The following functions are wrapped in an asm block to ensure the required
 // calling convention is always respected
 
-pub fn __aeabi_uidivmod() callconv(.Naked) void {
+pub fn __aeabi_uidivmod() callconv(.naked) void {
     @setRuntimeSafety(false);
     // Divide r0 by r1; the quotient goes in r0, the remainder in r1
     asm volatile (
@@ -142,12 +145,11 @@ pub fn __aeabi_uidivmod() callconv(.Naked) void {
         \\ pop {pc}
         :
         : [__udivmodsi4] "X" (&__udivmodsi4),
-        : "memory"
-    );
+        : .{ .memory = true });
     unreachable;
 }
 
-pub fn __aeabi_uldivmod() callconv(.Naked) void {
+pub fn __aeabi_uldivmod() callconv(.naked) void {
     @setRuntimeSafety(false);
     // Divide r1:r0 by r3:r2; the quotient goes in r1:r0, the remainder in r3:r2
     asm volatile (
@@ -162,12 +164,11 @@ pub fn __aeabi_uldivmod() callconv(.Naked) void {
         \\ pop {r4, pc}
         :
         : [__udivmoddi4] "X" (&__udivmoddi4),
-        : "memory"
-    );
+        : .{ .memory = true });
     unreachable;
 }
 
-pub fn __aeabi_idivmod() callconv(.Naked) void {
+pub fn __aeabi_idivmod() callconv(.naked) void {
     @setRuntimeSafety(false);
     // Divide r0 by r1; the quotient goes in r0, the remainder in r1
     asm volatile (
@@ -180,12 +181,11 @@ pub fn __aeabi_idivmod() callconv(.Naked) void {
         \\ pop {pc}
         :
         : [__divmodsi4] "X" (&__divmodsi4),
-        : "memory"
-    );
+        : .{ .memory = true });
     unreachable;
 }
 
-pub fn __aeabi_ldivmod() callconv(.Naked) void {
+pub fn __aeabi_ldivmod() callconv(.naked) void {
     @setRuntimeSafety(false);
     // Divide r1:r0 by r3:r2; the quotient goes in r1:r0, the remainder in r3:r2
     asm volatile (
@@ -200,19 +200,18 @@ pub fn __aeabi_ldivmod() callconv(.Naked) void {
         \\ pop {r4, pc}
         :
         : [__divmoddi4] "X" (&__divmoddi4),
-        : "memory"
-    );
+        : .{ .memory = true });
     unreachable;
 }
 
 // Float Arithmetic
 
-fn __aeabi_frsub(a: f32, b: f32) callconv(.AAPCS) f32 {
+fn __aeabi_frsub(a: f32, b: f32) callconv(.{ .arm_aapcs = .{} }) f32 {
     const neg_a: f32 = @bitCast(@as(u32, @bitCast(a)) ^ (@as(u32, 1) << 31));
     return b + neg_a;
 }
 
-fn __aeabi_drsub(a: f64, b: f64) callconv(.AAPCS) f64 {
+fn __aeabi_drsub(a: f64, b: f64) callconv(.{ .arm_aapcs = .{} }) f64 {
     const neg_a: f64 = @bitCast(@as(u64, @bitCast(a)) ^ (@as(u64, 1) << 63));
     return b + neg_a;
 }

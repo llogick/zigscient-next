@@ -6,13 +6,11 @@ const common = @import("common.zig");
 const normalize = common.normalize;
 const wideMultiply = common.wideMultiply;
 
-pub const panic = common.panic;
-
 comptime {
     @export(&__divxf3, .{ .name = "__divxf3", .linkage = common.linkage, .visibility = common.visibility });
 }
 
-pub fn __divxf3(a: f80, b: f80) callconv(.C) f80 {
+pub fn __divxf3(a: f80, b: f80) callconv(.c) f80 {
     const T = f80;
     const Z = std.meta.Int(.unsigned, @bitSizeOf(T));
 

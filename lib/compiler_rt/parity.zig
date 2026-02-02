@@ -5,23 +5,21 @@ const std = @import("std");
 const builtin = @import("builtin");
 const common = @import("common.zig");
 
-pub const panic = common.panic;
-
 comptime {
     @export(&__paritysi2, .{ .name = "__paritysi2", .linkage = common.linkage, .visibility = common.visibility });
     @export(&__paritydi2, .{ .name = "__paritydi2", .linkage = common.linkage, .visibility = common.visibility });
     @export(&__parityti2, .{ .name = "__parityti2", .linkage = common.linkage, .visibility = common.visibility });
 }
 
-pub fn __paritysi2(a: i32) callconv(.C) i32 {
+pub fn __paritysi2(a: i32) callconv(.c) i32 {
     return parityXi2(i32, a);
 }
 
-pub fn __paritydi2(a: i64) callconv(.C) i32 {
+pub fn __paritydi2(a: i64) callconv(.c) i32 {
     return parityXi2(i64, a);
 }
 
-pub fn __parityti2(a: i128) callconv(.C) i32 {
+pub fn __parityti2(a: i128) callconv(.c) i32 {
     return parityXi2(i128, a);
 }
 

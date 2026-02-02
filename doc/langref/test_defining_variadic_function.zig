@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const builtin = @import("builtin");
 
-fn add(count: c_int, ...) callconv(.C) c_int {
+fn add(count: c_int, ...) callconv(.c) c_int {
     var ap = @cVaStart();
     defer @cVaEnd(&ap);
     var i: usize = 0;
@@ -20,6 +20,10 @@ test "defining a variadic function" {
     }
     if (builtin.cpu.arch == .x86_64 and builtin.os.tag == .windows) {
         // https://github.com/ziglang/zig/issues/16961
+        return error.SkipZigTest;
+    }
+    if (builtin.cpu.arch == .s390x) {
+        // https://github.com/ziglang/zig/issues/21350#issuecomment-3543006475
         return error.SkipZigTest;
     }
 
