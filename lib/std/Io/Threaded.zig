@@ -10858,14 +10858,15 @@ fn clockResolution(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.ResolutionEr
                 const result = scale >> 32;
                 return .fromNanoseconds(result);
             },
-            .cpu_process, .cpu_thread => return .zero,
+            .cpu_process, .cpu_thread => return error.ClockUnavailable,
         },
         .wasi => {
             if (builtin.link_libc) return clockResolutionPosix(clock);
             var ns: std.os.wasi.timestamp_t = undefined;
             return switch (std.os.wasi.clock_res_get(clockToWasi(clock), &ns)) {
                 .SUCCESS => .fromNanoseconds(ns),
-                else => .zero,
+                .INVAL => return error.ClockUnavailable,
+                else => |err| return posix.unexpectedErrno(err),
             };
         },
         else => return clockResolutionPosix(clock),
@@ -10877,7 +10878,8 @@ fn clockResolutionPosix(clock: Io.Clock) Io.Clock.ResolutionError!Io.Duration {
     var timespec: posix.timespec = undefined;
     return switch (posix.errno(posix.system.clock_getres(clock_id, &timespec))) {
         .SUCCESS => .fromNanoseconds(nanosecondsFromPosix(&timespec)),
-        else => .zero,
+        .INVAL => return error.ClockUnavailable,
+        else => |err| return posix.unexpectedErrno(err),
     };
 }
 
