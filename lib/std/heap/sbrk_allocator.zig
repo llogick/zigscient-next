@@ -1,5 +1,7 @@
-const std = @import("../std.zig");
 const builtin = @import("builtin");
+
+const std = @import("../std.zig");
+const Io = std.Io;
 const math = std.math;
 const Allocator = std.mem.Allocator;
 const mem = std.mem;
@@ -39,12 +41,12 @@ pub fn SbrkAllocator(comptime sbrk: *const fn (n: usize) usize) type {
         var big_frees = [1]usize{0} ** big_size_class_count;
 
         // TODO don't do the naive locking strategy
-        var lock: std.Thread.Mutex = .{};
+        var mutex: Io.Mutex = .{};
         fn alloc(ctx: *anyopaque, len: usize, alignment: mem.Alignment, return_address: usize) ?[*]u8 {
             _ = ctx;
             _ = return_address;
-            lock.lock();
-            defer lock.unlock();
+            Io.Threaded.mutexLock(&mutex);
+            defer Io.Threaded.mutexUnlock(&mutex);
             // Make room for the freelist next pointer.
             const actual_len = @max(len +| @sizeOf(usize), alignment.toByteUnits());
             const slot_size = math.ceilPowerOfTwo(usize, actual_len) catch return null;
@@ -88,8 +90,8 @@ pub fn SbrkAllocator(comptime sbrk: *const fn (n: usize) usize) type {
         ) bool {
             _ = ctx;
             _ = return_address;
-            lock.lock();
-            defer lock.unlock();
+            Io.Threaded.mutexLock(&mutex);
+            defer Io.Threaded.mutexUnlock(&mutex);
             // We don't want to move anything from one size class to another, but we
             // can recover bytes in between powers of two.
             const buf_align = alignment.toByteUnits();
@@ -127,8 +129,8 @@ pub fn SbrkAllocator(comptime sbrk: *const fn (n: usize) usize) type {
         ) void {
             _ = ctx;
             _ = return_address;
-            lock.lock();
-            defer lock.unlock();
+            Io.Threaded.mutexLock(&mutex);
+            defer Io.Threaded.mutexUnlock(&mutex);
             const buf_align = alignment.toByteUnits();
             const actual_len = @max(buf.len + @sizeOf(usize), buf_align);
             const slot_size = math.ceilPowerOfTwoAssert(usize, actual_len);

@@ -1126,6 +1126,25 @@ const Thread = struct {
             return @ptrFromInt(@as(usize, @bitCast(split)));
         }
     };
+
+    /// Same as `Io.Mutex.lock` but avoids the VTable.
+    fn mutexLock(m: *Io.Mutex) Io.Cancelable!void {
+        const initial_state = m.state.cmpxchgWeak(
+            .unlocked,
+            .locked_once,
+            .acquire,
+            .monotonic,
+        ) orelse {
+            @branchHint(.likely);
+            return;
+        };
+        if (initial_state == .contended) {
+            try Thread.futexWait(@ptrCast(&m.state.raw), @intFromEnum(Io.Mutex.State.contended), null);
+        }
+        while (m.state.swap(.contended, .acquire) != .unlocked) {
+            try Thread.futexWait(@ptrCast(&m.state.raw), @intFromEnum(Io.Mutex.State.contended), null);
+        }
+    }
 };
 
 const Syscall = struct {
@@ -1486,8 +1505,8 @@ var global_single_threaded_instance: Threaded = .init_single_threaded;
 pub const global_single_threaded: *Threaded = &global_single_threaded_instance;
 
 pub fn setAsyncLimit(t: *Threaded, new_limit: Io.Limit) void {
-    mutexLockUncancelable(&t.mutex);
-    defer mutexUnlock(&t.mutex);
+    mutexLockInternal(&t.mutex);
+    defer mutexUnlockInternal(&t.mutex);
     t.async_limit = new_limit;
 }
 
@@ -1508,8 +1527,8 @@ pub fn deinit(t: *Threaded) void {
 fn join(t: *Threaded) void {
     if (builtin.single_threaded) return;
     {
-        mutexLockUncancelable(&t.mutex);
-        defer mutexUnlock(&t.mutex);
+        mutexLockInternal(&t.mutex);
+        defer mutexUnlockInternal(&t.mutex);
         t.join_requested = true;
     }
     condBroadcast(&t.cond);
@@ -1574,16 +1593,16 @@ fn worker(t: *Threaded) void {
 
     defer t.wait_group.finish();
 
-    mutexLockUncancelable(&t.mutex);
-    defer mutexUnlock(&t.mutex);
+    mutexLockInternal(&t.mutex);
+    defer mutexUnlockInternal(&t.mutex);
 
     while (true) {
         while (t.run_queue.popFirst()) |runnable_node| {
-            mutexUnlock(&t.mutex);
+            mutexUnlockInternal(&t.mutex);
             thread.cancel_protection = .unblocked;
             const runnable: *Runnable = @fieldParentPtr("node", runnable_node);
             runnable.startFn(runnable, &thread, t);
-            mutexLockUncancelable(&t.mutex);
+            mutexLockInternal(&t.mutex);
             t.busy_count -= 1;
         }
         if (t.join_requested) break;
@@ -2004,12 +2023,12 @@ fn async(
         },
     };
 
-    mutexLockUncancelable(&t.mutex);
+    mutexLockInternal(&t.mutex);
 
     const busy_count = t.busy_count;
 
     if (busy_count >= @intFromEnum(t.async_limit)) {
-        mutexUnlock(&t.mutex);
+        mutexUnlockInternal(&t.mutex);
         future.destroy(gpa);
         start(context.ptr, result.ptr);
         return null;
@@ -2023,7 +2042,7 @@ fn async(
         const thread = std.Thread.spawn(.{ .stack_size = t.stack_size }, worker, .{t}) catch {
             t.wait_group.finish();
             t.busy_count = busy_count;
-            mutexUnlock(&t.mutex);
+            mutexUnlockInternal(&t.mutex);
             future.destroy(gpa);
             start(context.ptr, result.ptr);
             return null;
@@ -2033,7 +2052,7 @@ fn async(
 
     t.run_queue.prepend(&future.runnable.node);
 
-    mutexUnlock(&t.mutex);
+    mutexUnlockInternal(&t.mutex);
     condSignal(&t.cond);
     return @ptrCast(future);
 }
@@ -2056,8 +2075,8 @@ fn concurrent(
     };
     errdefer future.destroy(gpa);
 
-    mutexLockUncancelable(&t.mutex);
-    defer mutexUnlock(&t.mutex);
+    mutexLockInternal(&t.mutex);
+    defer mutexUnlockInternal(&t.mutex);
 
     const busy_count = t.busy_count;
 
@@ -2101,12 +2120,12 @@ fn groupAsync(
         error.OutOfMemory => return groupAsyncEager(start, context.ptr),
     };
 
-    mutexLockUncancelable(&t.mutex);
+    mutexLockInternal(&t.mutex);
 
     const busy_count = t.busy_count;
 
     if (busy_count >= @intFromEnum(t.async_limit)) {
-        mutexUnlock(&t.mutex);
+        mutexUnlockInternal(&t.mutex);
         task.destroy(gpa);
         return groupAsyncEager(start, context.ptr);
     }
@@ -2119,7 +2138,7 @@ fn groupAsync(
         const thread = std.Thread.spawn(.{ .stack_size = t.stack_size }, worker, .{t}) catch {
             t.wait_group.finish();
             t.busy_count = busy_count;
-            mutexUnlock(&t.mutex);
+            mutexUnlockInternal(&t.mutex);
             task.destroy(gpa);
             return groupAsyncEager(start, context.ptr);
         };
@@ -2136,7 +2155,7 @@ fn groupAsync(
     }, .monotonic);
     t.run_queue.prepend(&task.runnable.node);
 
-    mutexUnlock(&t.mutex);
+    mutexUnlockInternal(&t.mutex);
     condSignal(&t.cond);
 }
 fn groupAsyncEager(
@@ -2201,8 +2220,8 @@ fn groupConcurrent(
     };
     errdefer task.destroy(gpa);
 
-    mutexLockUncancelable(&t.mutex);
-    defer mutexUnlock(&t.mutex);
+    mutexLockInternal(&t.mutex);
+    defer mutexUnlockInternal(&t.mutex);
 
     const busy_count = t.busy_count;
 
@@ -2636,7 +2655,7 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
 fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (is_windows) {
-        const deadline: ?Io.Clock.Timestamp = timeout.toDeadline(ioBasic(t)) catch |err| switch (err) {
+        const deadline: ?Io.Clock.Timestamp = timeout.toTimestamp(ioBasic(t)) catch |err| switch (err) {
             error.Unexpected => deadline: {
                 recoverableOsBugDetected();
                 break :deadline .{ .raw = .{ .nanoseconds = 0 }, .clock = .awake };
@@ -2735,7 +2754,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
         else => {},
     }
     const t_io = ioBasic(t);
-    const deadline = timeout.toDeadline(t_io) catch return error.UnsupportedClock;
+    const deadline = timeout.toTimestamp(t_io) catch return error.UnsupportedClock;
     while (true) {
         const timeout_ms: i32 = t: {
             if (b.completions.head != .none) {
@@ -3838,8 +3857,8 @@ fn fileStatWindows(userdata: ?*anyopaque, file: File) File.StatError!File.Stat {
 
 fn systemBasicInformation(t: *Threaded) ?*const windows.SYSTEM_BASIC_INFORMATION {
     if (!t.system_basic_information.initialized.load(.acquire)) {
-        mutexLockUncancelable(&t.mutex);
-        defer mutexUnlock(&t.mutex);
+        mutexLockInternal(&t.mutex);
+        defer mutexUnlockInternal(&t.mutex);
 
         switch (windows.ntdll.NtQuerySystemInformation(
             .SystemBasicInformation,
@@ -10899,7 +10918,7 @@ fn nowWasi(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
 fn sleep(userdata: ?*anyopaque, timeout: Io.Timeout) Io.SleepError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (timeout == .none) return;
-    if (use_parking_sleep) return parking_sleep.sleep(try timeout.toDeadline(ioBasic(t)));
+    if (use_parking_sleep) return parking_sleep.sleep(try timeout.toTimestamp(ioBasic(t)));
     if (native_os == .wasi) return sleepWasi(t, timeout);
     if (@TypeOf(posix.system.clock_nanosleep) != void) return sleepPosix(timeout);
     return sleepNanosleep(t, timeout);
@@ -12611,7 +12630,7 @@ fn netReceivePosix(
     var message_i: usize = 0;
     var data_i: usize = 0;
 
-    const deadline = timeout.toDeadline(t_io) catch |err| return .{ err, message_i };
+    const deadline = timeout.toTimestamp(t_io) catch |err| return .{ err, message_i };
 
     recv: while (true) {
         if (message_buffer.len - message_i == 0) return .{ null, message_i };
@@ -14373,8 +14392,8 @@ const WindowsEnvironStrings = struct {
 };
 
 fn scanEnviron(t: *Threaded) void {
-    mutexLockUncancelable(&t.mutex);
-    defer mutexUnlock(&t.mutex);
+    mutexLockInternal(&t.mutex);
+    defer mutexUnlockInternal(&t.mutex);
 
     if (t.environ.initialized) return;
     t.environ.initialized = true;
@@ -14729,8 +14748,8 @@ fn spawnPosix(t: *Threaded, options: process.SpawnOptions) process.SpawnError!Sp
 
 fn getDevNullFd(t: *Threaded) !posix.fd_t {
     {
-        mutexLockUncancelable(&t.mutex);
-        defer mutexUnlock(&t.mutex);
+        mutexLockInternal(&t.mutex);
+        defer mutexUnlockInternal(&t.mutex);
         if (t.null_file.fd != -1) return t.null_file.fd;
     }
     const mode: u32 = 0;
@@ -14741,8 +14760,8 @@ fn getDevNullFd(t: *Threaded) !posix.fd_t {
             .SUCCESS => {
                 syscall.finish();
                 const fresh_fd: posix.fd_t = @intCast(rc);
-                mutexLockUncancelable(&t.mutex); // Another thread might have won the race.
-                defer mutexUnlock(&t.mutex);
+                mutexLockInternal(&t.mutex); // Another thread might have won the race.
+                defer mutexUnlockInternal(&t.mutex);
                 if (t.null_file.fd != -1) {
                     posix.close(fresh_fd);
                     return t.null_file.fd;
@@ -15402,8 +15421,8 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
 
 fn getCngHandle(t: *Threaded) Io.RandomSecureError!windows.HANDLE {
     {
-        mutexLockUncancelable(&t.mutex);
-        defer mutexUnlock(&t.mutex);
+        mutexLockInternal(&t.mutex);
+        defer mutexUnlockInternal(&t.mutex);
         if (t.random_file.handle) |handle| return handle;
     }
 
@@ -15437,8 +15456,8 @@ fn getCngHandle(t: *Threaded) Io.RandomSecureError!windows.HANDLE {
     )) {
         .SUCCESS => {
             syscall.finish();
-            mutexLockUncancelable(&t.mutex); // Another thread might have won the race.
-            defer mutexUnlock(&t.mutex);
+            mutexLockInternal(&t.mutex); // Another thread might have won the race.
+            defer mutexUnlockInternal(&t.mutex);
             if (t.random_file.handle) |prev_handle| {
                 windows.CloseHandle(fresh_handle);
                 return prev_handle;
@@ -15458,8 +15477,8 @@ fn getCngHandle(t: *Threaded) Io.RandomSecureError!windows.HANDLE {
 
 fn getNulHandle(t: *Threaded) !windows.HANDLE {
     {
-        mutexLockUncancelable(&t.mutex);
-        defer mutexUnlock(&t.mutex);
+        mutexLockInternal(&t.mutex);
+        defer mutexUnlockInternal(&t.mutex);
         if (t.null_file.handle) |handle| return handle;
     }
 
@@ -15505,8 +15524,8 @@ fn getNulHandle(t: *Threaded) !windows.HANDLE {
     )) {
         .SUCCESS => {
             syscall.finish();
-            mutexLockUncancelable(&t.mutex); // Another thread might have won the race.
-            defer mutexUnlock(&t.mutex);
+            mutexLockInternal(&t.mutex); // Another thread might have won the race.
+            defer mutexUnlockInternal(&t.mutex);
             if (t.null_file.handle) |prev_handle| {
                 windows.CloseHandle(fresh_handle);
                 return prev_handle;
@@ -16551,15 +16570,15 @@ fn random(userdata: ?*anyopaque, buffer: []u8) void {
 }
 
 fn randomMainThread(t: *Threaded, buffer: []u8) void {
-    mutexLockUncancelable(&t.mutex);
-    defer mutexUnlock(&t.mutex);
+    mutexLockInternal(&t.mutex);
+    defer mutexUnlockInternal(&t.mutex);
 
     if (!t.csprng.isInitialized()) {
         @branchHint(.unlikely);
         var seed: [Csprng.seed_len]u8 = undefined;
         {
-            mutexUnlock(&t.mutex);
-            defer mutexLockUncancelable(&t.mutex);
+            mutexUnlockInternal(&t.mutex);
+            defer mutexLockInternal(&t.mutex);
 
             const prev = swapCancelProtection(t, .blocked);
             defer _ = swapCancelProtection(t, prev);
@@ -16744,8 +16763,8 @@ fn randomSecure(userdata: ?*anyopaque, buffer: []u8) Io.RandomSecureError!void {
 
 fn getRandomFd(t: *Threaded) Io.RandomSecureError!posix.fd_t {
     {
-        mutexLockUncancelable(&t.mutex);
-        defer mutexUnlock(&t.mutex);
+        mutexLockInternal(&t.mutex);
+        defer mutexUnlockInternal(&t.mutex);
 
         if (t.random_file.fd == -2) return error.EntropyUnavailable;
         if (t.random_file.fd != -1) return t.random_file.fd;
@@ -16785,8 +16804,8 @@ fn getRandomFd(t: *Threaded) Io.RandomSecureError!posix.fd_t {
                     .SUCCESS => {
                         syscall.finish();
                         if (!statx.mask.TYPE) return error.EntropyUnavailable;
-                        mutexLockUncancelable(&t.mutex); // Another thread might have won the race.
-                        defer mutexUnlock(&t.mutex);
+                        mutexLockInternal(&t.mutex); // Another thread might have won the race.
+                        defer mutexUnlockInternal(&t.mutex);
                         if (t.random_file.fd >= 0) {
                             posix.close(fd);
                             return t.random_file.fd;
@@ -16813,8 +16832,8 @@ fn getRandomFd(t: *Threaded) Io.RandomSecureError!posix.fd_t {
                 switch (posix.errno(fstat_sym(fd, &stat))) {
                     .SUCCESS => {
                         syscall.finish();
-                        mutexLockUncancelable(&t.mutex); // Another thread might have won the race.
-                        defer mutexUnlock(&t.mutex);
+                        mutexLockInternal(&t.mutex); // Another thread might have won the race.
+                        defer mutexUnlockInternal(&t.mutex);
                         if (t.random_file.fd >= 0) {
                             posix.close(fd);
                             return t.random_file.fd;
@@ -16947,8 +16966,8 @@ const parking_futex = struct {
         var status_buf: std.atomic.Value(Thread.Status) = undefined;
 
         {
-            mutexLockUncancelable(&bucket.mutex);
-            defer mutexUnlock(&bucket.mutex);
+            mutexLockInternal(&bucket.mutex);
+            defer mutexUnlockInternal(&bucket.mutex);
 
             _ = bucket.num_waiters.fetchAdd(1, .acquire);
 
@@ -17017,8 +17036,8 @@ const parking_futex = struct {
                 .parked => {
                     // We saw a timeout and updated our own status from `.parked` to `.none`. It is
                     // our responsibility to remove `waiter` from `bucket`.
-                    mutexLockUncancelable(&bucket.mutex);
-                    defer mutexUnlock(&bucket.mutex);
+                    mutexLockInternal(&bucket.mutex);
+                    defer mutexUnlockInternal(&bucket.mutex);
                     bucket.waiters.remove(&waiter.node);
                     assert(bucket.num_waiters.fetchSub(1, .monotonic) > 0);
                 },
@@ -17057,8 +17076,8 @@ const parking_futex = struct {
         // of the critical section. This forms a singly-linked list of waiters using `Waiter.node.next`.
         var waking_head: ?*std.DoublyLinkedList.Node = null;
         {
-            mutexLockUncancelable(&bucket.mutex);
-            defer mutexUnlock(&bucket.mutex);
+            mutexLockInternal(&bucket.mutex);
+            defer mutexUnlockInternal(&bucket.mutex);
 
             var num_removed: u32 = 0;
             var it = bucket.waiters.first;
@@ -17113,8 +17132,8 @@ const parking_futex = struct {
 
     fn removeCanceledWaiter(waiter: *Waiter) void {
         const bucket = bucketForAddress(waiter.address);
-        mutexLockUncancelable(&bucket.mutex);
-        defer mutexUnlock(&bucket.mutex);
+        mutexLockInternal(&bucket.mutex);
+        defer mutexUnlockInternal(&bucket.mutex);
         bucket.waiters.remove(&waiter.node);
         assert(bucket.num_waiters.fetchSub(1, .monotonic) > 0);
         waiter.done.store(true, .release); // potentially invalidates `waiter.*`
@@ -18163,8 +18182,8 @@ fn condWait(cond: *Condition, mutex: *Mutex) void {
         assert(prev_state.waiters < std.math.maxInt(u16)); // overflow caused by too many waiters
     }
 
-    mutexUnlock(mutex);
-    defer mutexLockUncancelable(mutex);
+    mutexUnlockInternal(mutex);
+    defer mutexLockInternal(mutex);
 
     while (true) {
         Thread.futexWaitUncancelable(&cond.epoch.raw, epoch, null);
@@ -18189,28 +18208,13 @@ const Mutex = if (!is_windows) Io.Mutex else struct {
     const init: @This() = .{ .srwlock = .{} };
 };
 
-/// Same as `Io.Mutex.lockUncancelable` but avoids the VTable.
-fn mutexLock(m: *Io.Mutex) Io.Cancelable!void {
-    const initial_state = m.state.cmpxchgWeak(
-        .unlocked,
-        .locked_once,
-        .acquire,
-        .monotonic,
-    ) orelse {
-        @branchHint(.likely);
-        return;
-    };
-    if (initial_state == .contended) {
-        try Thread.futexWait(@ptrCast(&m.state.raw), @intFromEnum(Io.Mutex.State.contended), null);
-    }
-    while (m.state.swap(.contended, .acquire) != .unlocked) {
-        try Thread.futexWait(@ptrCast(&m.state.raw), @intFromEnum(Io.Mutex.State.contended), null);
-    }
+fn mutexLockInternal(m: *Mutex) void {
+    if (is_windows) return windows.ntdll.RtlAcquireSRWLockExclusive(&m.srwlock);
+    return mutexLock(m);
 }
 
 /// Same as `Io.Mutex.lockUncancelable` but avoids the VTable.
-fn mutexLockUncancelable(m: *Mutex) void {
-    if (is_windows) return windows.ntdll.RtlAcquireSRWLockExclusive(&m.srwlock);
+pub fn mutexLock(m: *Io.Mutex) void {
     const initial_state = m.state.cmpxchgWeak(
         .unlocked,
         .locked_once,
@@ -18226,11 +18230,15 @@ fn mutexLockUncancelable(m: *Mutex) void {
     while (m.state.swap(.contended, .acquire) != .unlocked) {
         Thread.futexWaitUncancelable(@ptrCast(&m.state.raw), @intFromEnum(Io.Mutex.State.contended), null);
     }
+}
+
+fn mutexUnlockInternal(m: *Mutex) void {
+    if (is_windows) return windows.ntdll.RtlReleaseSRWLockExclusive(&m.srwlock);
+    return mutexUnlock(m);
 }
 
 /// Same as `Io.Mutex.unlock` but avoids the VTable.
-fn mutexUnlock(m: *Mutex) void {
-    if (is_windows) return windows.ntdll.RtlReleaseSRWLockExclusive(&m.srwlock);
+pub fn mutexUnlock(m: *Io.Mutex) void {
     switch (m.state.swap(.unlocked, .release)) {
         .unlocked => unreachable,
         .locked_once => {},

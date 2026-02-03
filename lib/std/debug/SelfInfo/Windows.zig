@@ -1,9 +1,9 @@
-mutex: std.Thread.Mutex,
+mutex: Io.Mutex,
 modules: std.ArrayList(Module),
 module_name_arena: std.heap.ArenaAllocator.State,
 
 pub const init: SelfInfo = .{
-    .mutex = .{},
+    .mutex = .init,
     .modules = .empty,
     .module_name_arena = .{},
 };
@@ -21,21 +21,21 @@ pub fn deinit(si: *SelfInfo, gpa: Allocator) void {
 }
 
 pub fn getSymbol(si: *SelfInfo, gpa: Allocator, io: Io, address: usize) Error!std.debug.Symbol {
-    si.mutex.lock();
-    defer si.mutex.unlock();
+    try si.mutex.lock(io);
+    defer si.mutex.unlock(io);
     const module = try si.findModule(gpa, address);
     const di = try module.getDebugInfo(gpa, io);
     return di.getSymbol(gpa, address - module.base_address);
 }
-pub fn getModuleName(si: *SelfInfo, gpa: Allocator, address: usize) Error![]const u8 {
-    si.mutex.lock();
-    defer si.mutex.unlock();
+pub fn getModuleName(si: *SelfInfo, gpa: Allocator, io: Io, address: usize) Error![]const u8 {
+    try si.mutex.lock(io);
+    defer si.mutex.unlock(io);
     const module = try si.findModule(gpa, address);
     return module.name;
 }
-pub fn getModuleSlide(si: *SelfInfo, gpa: Allocator, address: usize) Error!usize {
-    si.mutex.lock();
-    defer si.mutex.unlock();
+pub fn getModuleSlide(si: *SelfInfo, gpa: Allocator, io: Io, address: usize) Error!usize {
+    try si.mutex.lock(io);
+    defer si.mutex.unlock(io);
     const module = try si.findModule(gpa, address);
     return module.base_address;
 }

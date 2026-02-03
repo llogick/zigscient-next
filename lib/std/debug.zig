@@ -696,7 +696,7 @@ pub noinline fn writeCurrentStackTrace(options: StackUnwindOptions, t: Io.Termin
                 .useless, .unsafe => {},
                 .safe, .ideal => continue, // no need to even warn
             }
-            const module_name = di.getModuleName(di_gpa, unwind_error.address) catch "???";
+            const module_name = di.getModuleName(di_gpa, io, unwind_error.address) catch "???";
             const caption: []const u8 = switch (unwind_error.err) {
                 error.MissingDebugInfo => "unwind info unavailable",
                 error.InvalidDebugInfo => "unwind info invalid",
@@ -1141,7 +1141,7 @@ fn printSourceAtAddress(
         symbol.source_location,
         address,
         symbol.name orelse "???",
-        symbol.compile_unit_name orelse debug_info.getModuleName(gpa, address) catch "???",
+        symbol.compile_unit_name orelse debug_info.getModuleName(gpa, io, address) catch "???",
     );
 }
 fn printLineInfo(
@@ -1356,7 +1356,10 @@ pub fn getDebugInfoAllocator() Allocator {
     // Otherwise, use a global arena backed by the page allocator
     const S = struct {
         var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-        var ts_arena: std.heap.ThreadSafeAllocator = .{ .child_allocator = arena.allocator() };
+        var ts_arena: std.heap.ThreadSafeAllocator = .{
+            .child_allocator = arena.allocator(),
+            .io = std.Options.debug_io,
+        };
     };
     return S.ts_arena.allocator();
 }

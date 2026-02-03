@@ -7,18 +7,18 @@
 //! A recursive mutex is an abstraction layer on top of a regular mutex;
 //! therefore it is recommended to use instead `std.Mutex` unless there is a
 //! specific reason a recursive mutex is warranted.
+const Recursive = @This();
 
 const std = @import("../../std.zig");
-const Recursive = @This();
-const Mutex = std.Thread.Mutex;
+const Io = std.Io;
 const assert = std.debug.assert;
 
-mutex: Mutex,
+mutex: Io.Mutex,
 thread_id: std.Thread.Id,
 lock_count: usize,
 
 pub const init: Recursive = .{
-    .mutex = .{},
+    .mutex = .init,
     .thread_id = invalid_thread_id,
     .lock_count = 0,
 };
@@ -49,7 +49,7 @@ pub fn tryLock(r: *Recursive) bool {
 pub fn lock(r: *Recursive) void {
     const current_thread_id = std.Thread.getCurrentId();
     if (@atomicLoad(std.Thread.Id, &r.thread_id, .unordered) != current_thread_id) {
-        r.mutex.lock();
+        Io.Threaded.mutexLock(&r.mutex);
         assert(r.lock_count == 0);
         @atomicStore(std.Thread.Id, &r.thread_id, current_thread_id, .unordered);
     }
@@ -64,7 +64,7 @@ pub fn unlock(r: *Recursive) void {
     r.lock_count -= 1;
     if (r.lock_count == 0) {
         @atomicStore(std.Thread.Id, &r.thread_id, invalid_thread_id, .unordered);
-        r.mutex.unlock();
+        Io.Threaded.mutexUnlock(&r.mutex);
     }
 }
 

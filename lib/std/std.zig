@@ -86,7 +86,6 @@ pub const math = @import("math.zig");
 pub const mem = @import("mem.zig");
 pub const meta = @import("meta.zig");
 pub const os = @import("os.zig");
-pub const once = @import("once.zig").once;
 pub const pdb = @import("pdb.zig");
 pub const pie = @import("pie.zig");
 pub const posix = @import("posix.zig");

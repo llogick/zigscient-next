@@ -47,6 +47,9 @@ pub const Dir = @import("Io/Dir.zig");
 pub const File = @import("Io/File.zig");
 pub const Terminal = @import("Io/Terminal.zig");
 
+pub const RwLock = @import("Io/RwLock.zig");
+pub const Semaphore = @import("Io/Semaphore.zig");
+
 pub const VTable = struct {
     /// If it returns `null` it means `result` has been already populated and
     /// `await` will be a no-op.
@@ -882,11 +885,19 @@ pub const Timeout = union(enum) {
 
     pub const Error = error{ Timeout, UnsupportedClock };
 
-    pub fn toDeadline(t: Timeout, io: Io) Clock.Error!?Clock.Timestamp {
+    pub fn toTimestamp(t: Timeout, io: Io) Clock.Error!?Clock.Timestamp {
         return switch (t) {
             .none => null,
             .duration => |d| try .fromNow(io, d),
             .deadline => |d| d,
+        };
+    }
+
+    pub fn toDeadline(t: Timeout, io: Io) Timeout {
+        return switch (t) {
+            .none => .none,
+            .duration => |d| .{ .deadline = Clock.Timestamp.fromNow(io, d) catch @panic("TODO") },
+            .deadline => |d| .{ .deadline = d },
         };
     }
 
@@ -2153,5 +2164,7 @@ test {
     _ = Writer;
     _ = Evented;
     _ = Threaded;
+    _ = RwLock;
+    _ = Semaphore;
     _ = @import("Io/test.zig");
 }

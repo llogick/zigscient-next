@@ -62,7 +62,7 @@ const Thread = struct {
     ///
     /// Threads lock this before accessing their own state in order
     /// to support freelist reclamation.
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.atomic.Mutex = .unlocked,
 
     /// For each size class, tracks the next address to be returned from
     /// `alloc` when the freelist is empty.

@@ -14,13 +14,9 @@ const posix = std.posix;
 const windows = std.os.windows;
 const testing = std.testing;
 
-pub const Futex = @import("Thread/Futex.zig");
-pub const Mutex = @import("Thread/Mutex.zig");
-pub const Semaphore = @import("Thread/Semaphore.zig");
-pub const Condition = @import("Thread/Condition.zig");
-pub const RwLock = @import("Thread/RwLock.zig");
-
-pub const Pool = @compileError("deprecated; consider using 'std.Io.Group' with 'std.Io.Threaded'");
+pub const Mutex = struct {
+    pub const Recursive = @import("Thread/Mutex/Recursive.zig");
+};
 
 pub const use_pthreads = native_os != .windows and native_os != .wasi and builtin.link_libc;
 
@@ -1609,11 +1605,7 @@ test "setName, getName" {
 }
 
 test {
-    _ = Futex;
     _ = Mutex;
-    _ = Semaphore;
-    _ = Condition;
-    _ = RwLock;
 }
 
 fn testIncrementNotify(io: Io, value: *usize, event: *Io.Event) void {

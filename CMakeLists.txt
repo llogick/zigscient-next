@@ -408,8 +408,6 @@ set(ZIG_STAGE2_SOURCES
     lib/std/Target/wasm.zig
     lib/std/Target/x86.zig
     lib/std/Thread.zig
-    lib/std/Thread/Futex.zig
-    lib/std/Thread/Mutex.zig
     lib/std/array_hash_map.zig
     lib/std/array_list.zig
     lib/std/ascii.zig
