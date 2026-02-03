@@ -1,6 +1,7 @@
 *.zig text eol=lf
 *.zon text eol=lf
 *.txt text eol=lf
+*.json text=auto eol=lf
 langref.html.in text eol=lf
 
 lib/libc/*/abilists binary
