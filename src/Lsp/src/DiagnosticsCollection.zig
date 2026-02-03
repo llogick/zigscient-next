@@ -243,11 +243,9 @@ pub fn collectNotVisibleErrMessages(
                         .src_path = try wip_eb.addString(eb_note_src_path),
                         .line = eb_note_src_loc.line,
                         .column = eb_note_src_loc.column,
-                        // The following four values are tailored as such that DiagnosticsCollection.errorBundleSourceLocationToRange
-                        // will emit a lsp.types.Range that underlines line:0 to line:column . See the ^ fn for more info
-                        .span_start = 0,
-                        .span_main = eb_note_src_loc.column,
-                        .span_end = eb_note_src_loc.column,
+                        .span_start = eb_note_src_loc.span_start,
+                        .span_main = eb_note_src_loc.span_main,
+                        .span_end = eb_note_src_loc.span_end,
                         .source_line = 0,
                     },
                 ),
