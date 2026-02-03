@@ -243,7 +243,7 @@ pub fn finishBuild(ws: *WebServer, opts: struct {
 
 pub fn now(s: *const WebServer) i64 {
     const io = s.graph.io;
-    const ts = base_clock.now(io) catch s.base_timestamp;
+    const ts = base_clock.now(io);
     return @intCast(s.base_timestamp.durationTo(ts).toNanoseconds());
 }
 
@@ -761,7 +761,7 @@ pub fn updateTimeReportCompile(ws: *WebServer, opts: struct {
     ws.notifyUpdate();
 }
 
-pub fn updateTimeReportGeneric(ws: *WebServer, step: *Build.Step, ns_total: u64) void {
+pub fn updateTimeReportGeneric(ws: *WebServer, step: *Build.Step, duration: Io.Duration) void {
     const gpa = ws.gpa;
     const io = ws.graph.io;
 
@@ -780,7 +780,7 @@ pub fn updateTimeReportGeneric(ws: *WebServer, step: *Build.Step, ns_total: u64)
     const out: *align(1) abi.time_report.GenericResult = @ptrCast(buf);
     out.* = .{
         .step_idx = step_idx,
-        .ns_total = ns_total,
+        .ns_total = @intCast(duration.toNanoseconds()),
     };
     {
         ws.time_report_mutex.lock(io) catch return;

@@ -1137,7 +1137,7 @@ pub const Socket = struct {
         const maybe_err, const count = io.vtable.netReceive(io.userdata, s.handle, (&message)[0..1], buffer, .{}, .none);
         if (maybe_err) |err| switch (err) {
             // No timeout is passed to `netReceieve`, so it must not return timeout related errors.
-            error.Timeout, error.UnsupportedClock => unreachable,
+            error.Timeout => unreachable,
             else => |e| return e,
         };
         assert(1 == count);

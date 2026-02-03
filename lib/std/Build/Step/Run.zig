@@ -1587,12 +1587,12 @@ fn spawnChildAndCollect(
     };
 
     if (run.stdio == .zig_test) {
-        const started: Io.Clock.Timestamp = try .now(io, .awake);
+        const started: Io.Clock.Timestamp = .now(io, .awake);
         const result = evalZigTest(run, spawn_options, options, fuzz_context) catch |err| switch (err) {
             error.Canceled => |e| return e,
             else => |e| e,
         };
-        run.step.result_duration_ns = @intCast((try started.untilNow(io)).raw.nanoseconds);
+        run.step.result_duration_ns = @intCast(started.untilNow(io).raw.nanoseconds);
         try result;
         return null;
     } else {
@@ -1607,12 +1607,12 @@ fn spawnChildAndCollect(
         defer if (inherit) io.unlockStderr();
         try setColorEnvironmentVariables(run, environ_map, terminal_mode);
 
-        const started: Io.Clock.Timestamp = try .now(io, .awake);
+        const started: Io.Clock.Timestamp = .now(io, .awake);
         const result = evalGeneric(run, spawn_options) catch |err| switch (err) {
             error.Canceled => |e| return e,
             else => |e| e,
         };
-        run.step.result_duration_ns = @intCast((try started.untilNow(io)).raw.nanoseconds);
+        run.step.result_duration_ns = @intCast(started.untilNow(io).raw.nanoseconds);
         return try result;
     }
 }
@@ -1869,7 +1869,7 @@ fn waitZigTest(
 
     var active_test_index: ?u32 = null;
 
-    var last_update: Io.Clock.Timestamp = try .now(io, .awake);
+    var last_update: Io.Clock.Timestamp = .now(io, .awake);
 
     var coverage_id: ?u64 = null;
 
@@ -1908,11 +1908,11 @@ fn waitZigTest(
             multi_reader.fill(64, timeout) catch |err| switch (err) {
                 error.Timeout => return .{ .timeout = .{
                     .active_test_index = active_test_index,
-                    .ns_elapsed = @intCast((try last_update.untilNow(io)).raw.nanoseconds),
+                    .ns_elapsed = @intCast(last_update.untilNow(io).raw.nanoseconds),
                 } },
                 error.EndOfStream => return .{ .no_poll = .{
                     .active_test_index = active_test_index,
-                    .ns_elapsed = @intCast((try last_update.untilNow(io)).raw.nanoseconds),
+                    .ns_elapsed = @intCast(last_update.untilNow(io).raw.nanoseconds),
                 } },
                 else => |e| return e,
             };
@@ -1926,11 +1926,11 @@ fn waitZigTest(
             multi_reader.fill(64, timeout) catch |err| switch (err) {
                 error.Timeout => return .{ .timeout = .{
                     .active_test_index = active_test_index,
-                    .ns_elapsed = @intCast((try last_update.untilNow(io)).raw.nanoseconds),
+                    .ns_elapsed = @intCast(last_update.untilNow(io).raw.nanoseconds),
                 } },
                 error.EndOfStream => return .{ .no_poll = .{
                     .active_test_index = active_test_index,
-                    .ns_elapsed = @intCast((try last_update.untilNow(io)).raw.nanoseconds),
+                    .ns_elapsed = @intCast(last_update.untilNow(io).raw.nanoseconds),
                 } },
                 else => |e| return e,
             };
@@ -1976,13 +1976,13 @@ fn waitZigTest(
                 @memset(opt_metadata.*.?.ns_per_test, std.math.maxInt(u64));
 
                 active_test_index = null;
-                last_update = try .now(io, .awake);
+                last_update = .now(io, .awake);
 
                 requestNextTest(io, child.stdin.?, &opt_metadata.*.?, &sub_prog_node) catch |err| return .{ .write_failed = err };
             },
             .test_started => {
                 active_test_index = opt_metadata.*.?.next_index - 1;
-                last_update = try .now(io, .awake);
+                last_update = .now(io, .awake);
             },
             .test_results => {
                 assert(fuzz_context == null);
@@ -2026,7 +2026,7 @@ fn waitZigTest(
 
                 active_test_index = null;
 
-                const now: Io.Clock.Timestamp = try .now(io, .awake);
+                const now: Io.Clock.Timestamp = .now(io, .awake);
                 md.ns_per_test[tr_hdr.index] = @intCast(last_update.durationTo(now).raw.nanoseconds);
                 last_update = now;
 
@@ -2239,7 +2239,7 @@ fn evalGeneric(run: *Run, spawn_options: process.SpawnOptions) !EvalGenericResul
                         return error.StderrStreamTooLong;
                 }
             } else |err| switch (err) {
-                error.UnsupportedClock, error.Timeout => unreachable,
+                error.Timeout => unreachable,
                 error.EndOfStream => {},
                 else => |e| return e,
             }

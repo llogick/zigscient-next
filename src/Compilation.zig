@@ -331,48 +331,42 @@ const QueuedJobs = struct {
 pub const Timer = union(enum) {
     unused,
     active: struct {
-        start: std.time.Instant,
+        start: Io.Timestamp,
         saved_ns: u64,
     },
     paused: u64,
     stopped,
 
-    pub fn pause(t: *Timer) void {
+    pub fn pause(t: *Timer, io: Io) void {
         switch (t.*) {
             .unused => return,
             .active => |a| {
-                const current = std.time.Instant.now() catch unreachable;
-                const new_ns = switch (current.order(a.start)) {
-                    .lt, .eq => 0,
-                    .gt => current.since(a.start),
-                };
+                const current: Io.Timestamp = .now(io, .awake);
+                const new_ns: u64 = @intCast(current.nanoseconds -| a.start.nanoseconds);
                 t.* = .{ .paused = a.saved_ns + new_ns };
             },
             .paused => unreachable,
             .stopped => unreachable,
         }
     }
-    pub fn @"resume"(t: *Timer) void {
+    pub fn @"resume"(t: *Timer, io: Io) void {
         switch (t.*) {
             .unused => return,
             .active => unreachable,
             .paused => |saved_ns| t.* = .{ .active = .{
-                .start = std.time.Instant.now() catch unreachable,
+                .start = .now(io, .awake),
                 .saved_ns = saved_ns,
             } },
             .stopped => unreachable,
         }
     }
-    pub fn finish(t: *Timer) ?u64 {
+    pub fn finish(t: *Timer, io: Io) ?u64 {
         defer t.* = .stopped;
         switch (t.*) {
             .unused => return null,
             .active => |a| {
-                const current = std.time.Instant.now() catch unreachable;
-                const new_ns = switch (current.order(a.start)) {
-                    .lt, .eq => 0,
-                    .gt => current.since(a.start),
-                };
+                const current: Io.Timestamp = .now(io, .awake);
+                const new_ns: u64 = @intCast(current.nanoseconds -| a.start.nanoseconds);
                 return a.saved_ns + new_ns;
             },
             .paused => |ns| return ns,
@@ -387,7 +381,8 @@ pub const Timer = union(enum) {
 /// is set.
 pub fn startTimer(comp: *Compilation) Timer {
     if (comp.time_report == null) return .unused;
-    const now = std.time.Instant.now() catch @panic("std.time.Timer unsupported; cannot emit time report");
+    const io = comp.io;
+    const now: Io.Timestamp = .now(io, .awake);
     return .{ .active = .{
         .start = now,
         .saved_ns = 0,
@@ -3413,7 +3408,7 @@ fn flush(comp: *Compilation, arena: Allocator, tid: Zcu.PerThread.Id) (Io.Cancel
             defer sub_prog_node.end();
 
             var timer = comp.startTimer();
-            defer if (timer.finish()) |ns| {
+            defer if (timer.finish(io)) |ns| {
                 comp.mutex.lockUncancelable(io);
                 defer comp.mutex.unlock(io);
                 comp.time_report.?.stats.real_ns_llvm_emit = ns;
@@ -3458,7 +3453,7 @@ fn flush(comp: *Compilation, arena: Allocator, tid: Zcu.PerThread.Id) (Io.Cancel
     }
     if (comp.bin_file) |lf| {
         var timer = comp.startTimer();
-        defer if (timer.finish()) |ns| {
+        defer if (timer.finish(io)) |ns| {
             comp.mutex.lockUncancelable(io);
             defer comp.mutex.unlock(io);
             comp.time_report.?.stats.real_ns_link_flush = ns;
@@ -4691,7 +4686,7 @@ fn performAllTheWork(
     var decl_work_timer: ?Timer = null;
     defer commit_timer: {
         const t = &(decl_work_timer orelse break :commit_timer);
-        const ns = t.finish() orelse break :commit_timer;
+        const ns = t.finish(io) orelse break :commit_timer;
         comp.mutex.lockUncancelable(io);
         defer comp.mutex.unlock(io);
         comp.time_report.?.stats.real_ns_decls = ns;
@@ -4724,7 +4719,7 @@ fn performAllTheWork(
         defer zir_prog_node.end();
 
         var timer = comp.startTimer();
-        defer if (timer.finish()) |ns| {
+        defer if (timer.finish(io)) |ns| {
             comp.mutex.lockUncancelable(io);
             defer comp.mutex.unlock(io);
             comp.time_report.?.stats.real_ns_files = ns;

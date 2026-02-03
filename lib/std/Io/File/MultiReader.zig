@@ -179,7 +179,7 @@ fn rebase(r: *Io.Reader, capacity: usize) Io.Reader.RebaseError!void {
 
 fn fillUntimed(context: *Context, capacity: usize) Io.Reader.Error!void {
     fill(context.mr, capacity, .none) catch |err| switch (err) {
-        error.Timeout, error.UnsupportedClock => unreachable,
+        error.Timeout => unreachable,
         error.Canceled, error.ConcurrencyUnavailable => |e| {
             context.err = e;
             return error.ReadFailed;

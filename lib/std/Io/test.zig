@@ -216,14 +216,12 @@ test "Group.cancel" {
             defer result.* = 1;
             io.sleep(.fromSeconds(100_000), .awake) catch |err| switch (err) {
                 error.Canceled => |e| return e,
-                else => {},
             };
         }
 
         fn sleepRecancel(io: Io, result: *usize) void {
             io.sleep(.fromSeconds(100_000), .awake) catch |err| switch (err) {
                 error.Canceled => io.recancel(),
-                else => {},
             };
             result.* = 1;
         }
@@ -523,8 +521,6 @@ test "cancel sleep" {
         fn blockUntilCanceled(io: Io) void {
             while (true) io.sleep(.fromSeconds(100_000), .awake) catch |err| switch (err) {
                 error.Canceled => return,
-                error.UnsupportedClock => @panic("unsupported clock"),
-                error.Unexpected => @panic("unexpected"),
             };
         }
     };
@@ -552,8 +548,6 @@ test "tasks spawned in group after Group.cancel are canceled" {
         fn blockUntilCanceled(io: Io) Io.Cancelable!void {
             while (true) io.sleep(.fromSeconds(100_000), .awake) catch |err| switch (err) {
                 error.Canceled => |e| return e,
-                error.UnsupportedClock => @panic("unsupported clock"),
-                error.Unexpected => @panic("unexpected"),
             };
         }
     };

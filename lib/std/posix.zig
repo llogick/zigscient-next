@@ -864,58 +864,6 @@ pub fn dl_iterate_phdr(
     }
 }
 
-pub const ClockGetTimeError = error{UnsupportedClock} || UnexpectedError;
-
-pub fn clock_gettime(clock_id: clockid_t) ClockGetTimeError!timespec {
-    var tp: timespec = undefined;
-
-    if (native_os == .windows) {
-        @compileError("Windows does not support POSIX; use Windows-specific API or cross-platform std.time API");
-    } else if (native_os == .wasi and !builtin.link_libc) {
-        var ts: timestamp_t = undefined;
-        switch (system.clock_time_get(clock_id, 1, &ts)) {
-            .SUCCESS => {
-                tp = .{
-                    .sec = @intCast(ts / std.time.ns_per_s),
-                    .nsec = @intCast(ts % std.time.ns_per_s),
-                };
-            },
-            .INVAL => return error.UnsupportedClock,
-            else => |err| return unexpectedErrno(err),
-        }
-        return tp;
-    }
-
-    switch (errno(system.clock_gettime(clock_id, &tp))) {
-        .SUCCESS => return tp,
-        .FAULT => unreachable,
-        .INVAL => return error.UnsupportedClock,
-        else => |err| return unexpectedErrno(err),
-    }
-}
-
-pub fn clock_getres(clock_id: clockid_t, res: *timespec) ClockGetTimeError!void {
-    if (native_os == .wasi and !builtin.link_libc) {
-        var ts: timestamp_t = undefined;
-        switch (system.clock_res_get(@bitCast(clock_id), &ts)) {
-            .SUCCESS => res.* = .{
-                .sec = @intCast(ts / std.time.ns_per_s),
-                .nsec = @intCast(ts % std.time.ns_per_s),
-            },
-            .INVAL => return error.UnsupportedClock,
-            else => |err| return unexpectedErrno(err),
-        }
-        return;
-    }
-
-    switch (errno(system.clock_getres(clock_id, res))) {
-        .SUCCESS => return,
-        .FAULT => unreachable,
-        .INVAL => return error.UnsupportedClock,
-        else => |err| return unexpectedErrno(err),
-    }
-}
-
 pub const SchedGetAffinityError = error{PermissionDenied} || UnexpectedError;
 
 pub fn sched_getaffinity(pid: pid_t) SchedGetAffinityError!cpu_set_t {

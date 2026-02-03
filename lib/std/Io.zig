@@ -231,8 +231,9 @@ pub const VTable = struct {
 
     progressParentFile: *const fn (?*anyopaque) std.Progress.ParentFileError!File,
 
-    now: *const fn (?*anyopaque, Clock) Clock.Error!Timestamp,
-    sleep: *const fn (?*anyopaque, Timeout) SleepError!void,
+    now: *const fn (?*anyopaque, Clock) Timestamp,
+    clockResolution: *const fn (?*anyopaque, Clock) Clock.ResolutionError!Duration,
+    sleep: *const fn (?*anyopaque, Timeout) Cancelable!void,
 
     random: *const fn (?*anyopaque, buffer: []u8) void,
     randomSecure: *const fn (?*anyopaque, buffer: []u8) RandomSecureError!void,
@@ -701,30 +702,53 @@ pub const Clock = enum {
     /// thread.
     cpu_thread,
 
-    pub const Error = error{UnsupportedClock} || UnexpectedError;
-
-    /// This function is not cancelable because first of all it does not block,
-    /// but more importantly, the cancelation logic itself may want to check
-    /// the time.
-    pub fn now(clock: Clock, io: Io) Error!Io.Timestamp {
+    /// This function is not cancelable because it does not block.
+    ///
+    /// Resolution is determined by `resolution` which may be 0 if the
+    /// clock is unsupported.
+    ///
+    /// See also:
+    /// * `Clock.Timestamp.now`
+    pub fn now(clock: Clock, io: Io) Io.Timestamp {
         return io.vtable.now(io.userdata, clock);
+    }
+
+    pub const ResolutionError = error{
+        ClockUnavailable,
+        Unexpected,
+    };
+
+    /// Reveals the granularity of `clock`. May be zero, indicating
+    /// unsupported clock.
+    pub fn resolution(clock: Clock, io: Io) ResolutionError!Io.Duration {
+        return io.vtable.clockResolution(io.userdata, clock);
     }
 
     pub const Timestamp = struct {
         raw: Io.Timestamp,
         clock: Clock,
 
-        /// This function is not cancelable because first of all it does not block,
-        /// but more importantly, the cancelation logic itself may want to check
-        /// the time.
-        pub fn now(io: Io, clock: Clock) Error!Clock.Timestamp {
+        /// This function is not cancelable because it does not block.
+        ///
+        /// Resolution is determined by `resolution` which may be 0 if
+        /// the clock is unsupported.
+        ///
+        /// See also:
+        /// * `Clock.now`
+        pub fn now(io: Io, clock: Clock) Clock.Timestamp {
             return .{
-                .raw = try io.vtable.now(io.userdata, clock),
+                .raw = io.vtable.now(io.userdata, clock),
                 .clock = clock,
             };
         }
 
-        pub fn wait(t: Clock.Timestamp, io: Io) SleepError!void {
+        /// Sleeps until the timestamp arrives.
+        ///
+        /// See also:
+        /// * `Io.sleep`
+        /// * `Clock.Duration.sleep`
+        /// * `Timeout.sleep`
+        pub fn wait(t: Clock.Timestamp, io: Io) Cancelable!void {
             return io.vtable.sleep(io.userdata, .{ .deadline = t });
         }
 
@@ -752,30 +776,38 @@ pub const Clock = enum {
             };
         }
 
-        pub fn fromNow(io: Io, duration: Clock.Duration) Error!Clock.Timestamp {
+        /// Resolution is determined by `resolution` which may be 0 if
+        /// the clock is unsupported.
+        pub fn fromNow(io: Io, duration: Clock.Duration) Clock.Timestamp {
             return .{
                 .clock = duration.clock,
-                .raw = (try duration.clock.now(io)).addDuration(duration.raw),
+                .raw = duration.clock.now(io).addDuration(duration.raw),
             };
         }
 
-        pub fn untilNow(timestamp: Clock.Timestamp, io: Io) Error!Clock.Duration {
-            const now_ts = try Clock.Timestamp.now(io, timestamp.clock);
+        /// Resolution is determined by `resolution` which may be 0 if
+        /// the clock is unsupported.
+        pub fn untilNow(timestamp: Clock.Timestamp, io: Io) Clock.Duration {
+            const now_ts = Clock.Timestamp.now(io, timestamp.clock);
             return timestamp.durationTo(now_ts);
         }
 
-        pub fn durationFromNow(timestamp: Clock.Timestamp, io: Io) Error!Clock.Duration {
-            const now_ts = try timestamp.clock.now(io);
+        /// Resolution is determined by `resolution` which may be 0 if
+        /// the clock is unsupported.
+        pub fn durationFromNow(timestamp: Clock.Timestamp, io: Io) Clock.Duration {
+            const now_ts = timestamp.clock.now(io);
             return .{
                 .clock = timestamp.clock,
                 .raw = now_ts.durationTo(timestamp.raw),
             };
         }
 
-        pub fn toClock(t: Clock.Timestamp, io: Io, clock: Clock) Error!Clock.Timestamp {
+        /// Resolution is determined by `resolution` which may be 0 if
+        /// the clock is unsupported.
+        pub fn toClock(t: Clock.Timestamp, io: Io, clock: Clock) Clock.Timestamp {
             if (t.clock == clock) return t;
-            const now_old = try t.clock.now(io);
-            const now_new = try clock.now(io);
+            const now_old = t.clock.now(io);
+            const now_new = clock.now(io);
             const duration = now_old.durationTo(t);
             return .{
                 .clock = clock,
@@ -793,7 +825,13 @@ pub const Clock = enum {
         raw: Io.Duration,
         clock: Clock,
 
-        pub fn sleep(duration: Clock.Duration, io: Io) SleepError!void {
+        /// Waits until a specified amount of time has passed on `clock`.
+        ///
+        /// See also:
+        /// * `Io.sleep`
+        /// * `Clock.Timestamp.wait`
+        /// * `Timeout.sleep`
+        pub fn sleep(duration: Clock.Duration, io: Io) Cancelable!void {
             return io.vtable.sleep(io.userdata, .{ .duration = duration });
         }
     };
@@ -801,6 +839,10 @@ pub const Clock = enum {
 
 pub const Timestamp = struct {
     nanoseconds: i96,
+
+    pub fn now(io: Io, clock: Clock) Io.Timestamp {
+        return io.vtable.now(io.userdata, clock);
+    }
 
     pub const zero: Timestamp = .{ .nanoseconds = 0 };
 
@@ -844,6 +886,13 @@ pub const Timestamp = struct {
             .fill = n.fill,
         });
     }
+
+    /// Resolution is determined by `Clock.resolution` which may be 0 if
+    /// the clock is unsupported.
+    pub fn untilNow(t: Timestamp, io: Io, clock: Clock) Duration {
+        const now_ts = clock.now(io);
+        return t.durationTo(now_ts);
+    }
 };
 
 pub const Duration = struct {
@@ -883,12 +932,12 @@ pub const Timeout = union(enum) {
     duration: Clock.Duration,
     deadline: Clock.Timestamp,
 
-    pub const Error = error{ Timeout, UnsupportedClock };
+    pub const Error = error{Timeout};
 
-    pub fn toTimestamp(t: Timeout, io: Io) Clock.Error!?Clock.Timestamp {
+    pub fn toTimestamp(t: Timeout, io: Io) ?Clock.Timestamp {
         return switch (t) {
             .none => null,
-            .duration => |d| try .fromNow(io, d),
+            .duration => |d| .fromNow(io, d),
             .deadline => |d| d,
         };
     }
@@ -896,20 +945,26 @@ pub const Timeout = union(enum) {
     pub fn toDeadline(t: Timeout, io: Io) Timeout {
         return switch (t) {
             .none => .none,
-            .duration => |d| .{ .deadline = Clock.Timestamp.fromNow(io, d) catch @panic("TODO") },
+            .duration => |d| .{ .deadline = .fromNow(io, d) },
             .deadline => |d| .{ .deadline = d },
         };
     }
 
-    pub fn toDurationFromNow(t: Timeout, io: Io) Clock.Error!?Clock.Duration {
+    pub fn toDurationFromNow(t: Timeout, io: Io) ?Clock.Duration {
         return switch (t) {
             .none => null,
             .duration => |d| d,
-            .deadline => |d| try d.durationFromNow(io),
+            .deadline => |d| d.durationFromNow(io),
         };
     }
 
-    pub fn sleep(timeout: Timeout, io: Io) SleepError!void {
+    /// Waits until the timeout has passed.
+    ///
+    /// See also:
+    /// * `Io.sleep`
+    /// * `Clock.Duration.sleep`
+    /// * `Clock.Timestamp.wait`
+    pub fn sleep(timeout: Timeout, io: Io) Cancelable!void {
         return io.vtable.sleep(io.userdata, timeout);
     }
 };
@@ -2027,9 +2082,13 @@ pub fn concurrent(
     return future;
 }
 
-pub const SleepError = error{UnsupportedClock} || UnexpectedError || Cancelable;
-
-pub fn sleep(io: Io, duration: Duration, clock: Clock) SleepError!void {
+/// Waits until a specified amount of time has passed on `clock`.
+///
+/// See also:
+/// * `Clock.Duration.sleep`
+/// * `Clock.Timestamp.wait`
+/// * `Timeout.sleep`
+pub fn sleep(io: Io, duration: Duration, clock: Clock) Cancelable!void {
     return io.vtable.sleep(io.userdata, .{ .duration = .{
         .raw = duration,
         .clock = clock,

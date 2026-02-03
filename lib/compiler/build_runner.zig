@@ -548,7 +548,7 @@ pub fn main(init: process.Init.Minimal) !void {
         break :w try .init(graph.cache.cwd);
     };
 
-    const now = Io.Clock.Timestamp.now(io, .awake) catch |err| fatal("failed to collect timestamp: {t}", .{err});
+    const now = Io.Clock.Timestamp.now(io, .awake);
 
     run.web_server = if (webui_listen) |listen_address| ws: {
         if (builtin.single_threaded) unreachable; // `fatal` above

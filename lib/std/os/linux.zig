@@ -1914,21 +1914,21 @@ fn init_vdso_clock_gettime(clk: clockid_t, ts: *timespec) callconv(.c) usize {
     @atomicStore(?VdsoClockGettime, &vdso_clock_gettime, ptr, .monotonic);
     // Call into the VDSO if available
     if (ptr) |f| return f(clk, ts);
-    return @as(usize, @bitCast(-@as(isize, @intFromEnum(E.NOSYS))));
+    return @bitCast(-@as(isize, @intFromEnum(E.NOSYS)));
 }
 
-pub fn clock_getres(clk_id: i32, tp: *timespec) usize {
+pub fn clock_getres(clk_id: clockid_t, tp: *timespec) usize {
     return syscall2(
         if (@hasField(SYS, "clock_getres") and native_arch != .hexagon) .clock_getres else .clock_getres_time64,
-        @as(usize, @bitCast(@as(isize, clk_id))),
+        @as(usize, @intFromEnum(clk_id)),
         @intFromPtr(tp),
     );
 }
 
-pub fn clock_settime(clk_id: i32, tp: *const timespec) usize {
+pub fn clock_settime(clk_id: clockid_t, tp: *const timespec) usize {
     return syscall2(
         if (@hasField(SYS, "clock_settime") and native_arch != .hexagon) .clock_settime else .clock_settime64,
-        @as(usize, @bitCast(@as(isize, clk_id))),
+        @as(usize, @intFromEnum(clk_id)),
         @intFromPtr(tp),
     );
 }

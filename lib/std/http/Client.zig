@@ -1700,7 +1700,7 @@ pub fn request(
             defer client.ca_bundle_mutex.unlock(io);
 
             if (client.now == null) {
-                const now = try Io.Clock.real.now(io);
+                const now = Io.Clock.real.now(io);
                 client.now = now;
                 client.ca_bundle.rescan(client.allocator, io, now) catch
                     return error.CertificateBundleLoadFailure;

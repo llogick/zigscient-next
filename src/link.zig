@@ -1388,7 +1388,7 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
     };
 
     var timer = comp.startTimer();
-    defer if (timer.finish()) |ns| {
+    defer if (timer.finish(io)) |ns| {
         comp.mutex.lockUncancelable(io);
         defer comp.mutex.unlock(io);
         comp.time_report.?.stats.cpu_ns_link += ns;
@@ -1535,12 +1535,12 @@ pub fn doZcuTask(comp: *Compilation, tid: usize, task: ZcuTask) void {
             break :nav nav_index;
         },
         .link_func => |codegen_task| nav: {
-            timer.pause();
+            timer.pause(io);
             const func, var mir = codegen_task.wait(&zcu.codegen_task_pool, io) catch |err| switch (err) {
                 error.Canceled, error.AlreadyReported => return,
             };
             defer mir.deinit(zcu);
-            timer.@"resume"();
+            timer.@"resume"(io);
 
             const nav = zcu.funcInfo(func).owner_nav;
             const fqn_slice = ip.getNav(nav).fqn.toSlice(ip);
@@ -1592,7 +1592,7 @@ pub fn doZcuTask(comp: *Compilation, tid: usize, task: ZcuTask) void {
         },
     };
 
-    if (timer.finish()) |ns_link| report_time: {
+    if (timer.finish(io)) |ns_link| report_time: {
         comp.mutex.lockUncancelable(io);
         defer comp.mutex.unlock(io);
         const tr = &zcu.comp.time_report.?;

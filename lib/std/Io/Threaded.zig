@@ -1712,6 +1712,7 @@ pub fn io(t: *Threaded) Io {
             .progressParentFile = progressParentFile,
 
             .now = now,
+            .clockResolution = clockResolution,
             .sleep = sleep,
 
             .random = random,
@@ -1875,6 +1876,7 @@ pub fn ioBasic(t: *Threaded) Io {
             .progressParentFile = progressParentFile,
 
             .now = now,
+            .clockResolution = clockResolution,
             .sleep = sleep,
 
             .random = random,
@@ -2487,7 +2489,7 @@ fn futexWait(userdata: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Io.
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     const t_io = ioBasic(t);
     const timeout_ns: ?u64 = ns: {
-        const d = (timeout.toDurationFromNow(t_io) catch break :ns 10) orelse break :ns null;
+        const d = timeout.toDurationFromNow(t_io) orelse break :ns null;
         break :ns std.math.lossyCast(u64, d.raw.toNanoseconds());
     };
     return Thread.futexWait(ptr, expected, timeout_ns);
@@ -2655,24 +2657,12 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
 fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (is_windows) {
-        const deadline: ?Io.Clock.Timestamp = timeout.toTimestamp(ioBasic(t)) catch |err| switch (err) {
-            error.Unexpected => deadline: {
-                recoverableOsBugDetected();
-                break :deadline .{ .raw = .{ .nanoseconds = 0 }, .clock = .awake };
-            },
-            error.UnsupportedClock => |e| return e,
-        };
+        const deadline: ?Io.Clock.Timestamp = timeout.toTimestamp(ioBasic(t));
         try batchAwaitWindows(b, true);
         while (b.pending.head != .none and b.completions.head == .none) {
             var delay_interval: windows.LARGE_INTEGER = interval: {
                 const d = deadline orelse break :interval std.math.minInt(windows.LARGE_INTEGER);
-                break :interval t.deadlineToWindowsInterval(d) catch |err| switch (err) {
-                    error.UnsupportedClock => |e| return e,
-                    error.Unexpected => {
-                        recoverableOsBugDetected();
-                        break :interval -1;
-                    },
-                };
+                break :interval t.deadlineToWindowsInterval(d);
             };
             const alertable_syscall = try AlertableSyscall.start();
             const delay_rc = windows.ntdll.NtDelayExecution(windows.TRUE, &delay_interval);
@@ -2754,7 +2744,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
         else => {},
     }
     const t_io = ioBasic(t);
-    const deadline = timeout.toTimestamp(t_io) catch return error.UnsupportedClock;
+    const deadline = timeout.toTimestamp(t_io);
     while (true) {
         const timeout_ms: i32 = t: {
             if (b.completions.head != .none) {
@@ -2765,7 +2755,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
                 break :t 0;
             }
             const d = deadline orelse break :t -1;
-            const duration = d.durationFromNow(t_io) catch return error.UnsupportedClock;
+            const duration = d.durationFromNow(t_io);
             if (duration.raw.nanoseconds <= 0) return error.Timeout;
             const max_poll_ms = std.math.maxInt(i32);
             break :t @intCast(@min(max_poll_ms, duration.raw.toMilliseconds()));
@@ -10821,22 +10811,21 @@ fn fileWriteFilePositional(
     return error.Unimplemented;
 }
 
-fn nowPosix(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
+fn nowPosix(clock: Io.Clock) Io.Timestamp {
     const clock_id: posix.clockid_t = clockToPosix(clock);
-    var tp: posix.timespec = undefined;
-    switch (posix.errno(posix.system.clock_gettime(clock_id, &tp))) {
-        .SUCCESS => return timestampFromPosix(&tp),
-        .INVAL => return error.UnsupportedClock,
-        else => |err| return posix.unexpectedErrno(err),
+    var timespec: posix.timespec = undefined;
+    switch (posix.errno(posix.system.clock_gettime(clock_id, &timespec))) {
+        .SUCCESS => return timestampFromPosix(&timespec),
+        else => return .zero,
     }
 }
 
-fn now(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
+fn now(userdata: ?*anyopaque, clock: Io.Clock) Io.Timestamp {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
     return nowInner(clock);
 }
-fn nowInner(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
+fn nowInner(clock: Io.Clock) Io.Timestamp {
     return switch (native_os) {
         .windows => nowWindows(clock),
         .wasi => nowWasi(clock),
@@ -10844,7 +10833,55 @@ fn nowInner(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
     };
 }
 
-fn nowWindows(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
+fn clockResolution(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.ResolutionError!Io.Duration {
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
+    return switch (native_os) {
+        .windows => switch (clock) {
+            .awake, .boot, .real => {
+                // We don't need to cache QPF as it's internally just a memory read to KUSER_SHARED_DATA
+                // (a read-only page of info updated and mapped by the kernel to all processes):
+                // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-kuser_shared_data
+                // https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/ntexapi_x/kuser_shared_data/index.htm
+                var qpf: windows.LARGE_INTEGER = undefined;
+                if (windows.ntdll.RtlQueryPerformanceFrequency(&qpf) != 0) {
+                    recoverableOsBugDetected();
+                    return .zero;
+                }
+                // 10Mhz (1 qpc tick every 100ns) is a common enough QPF value that we can optimize on it.
+                // https://github.com/microsoft/STL/blob/785143a0c73f030238ef618890fd4d6ae2b3a3a0/stl/inc/chrono#L694-L701
+                const common_qpf = 10_000_000;
+                if (qpf == common_qpf) return .fromNanoseconds(std.time.ns_per_s / common_qpf);
+
+                // Convert to ns using fixed point.
+                const scale = @as(u64, std.time.ns_per_s << 32) / @as(u32, @intCast(qpf));
+                const result = scale >> 32;
+                return .fromNanoseconds(result);
+            },
+            .cpu_process, .cpu_thread => return .zero,
+        },
+        .wasi => {
+            if (builtin.link_libc) return clockResolutionPosix(clock);
+            var ns: std.os.wasi.timestamp_t = undefined;
+            return switch (std.os.wasi.clock_res_get(clockToWasi(clock), &ns)) {
+                .SUCCESS => .fromNanoseconds(ns),
+                else => .zero,
+            };
+        },
+        else => return clockResolutionPosix(clock),
+    };
+}
+
+fn clockResolutionPosix(clock: Io.Clock) Io.Clock.ResolutionError!Io.Duration {
+    const clock_id: posix.clockid_t = clockToPosix(clock);
+    var timespec: posix.timespec = undefined;
+    return switch (posix.errno(posix.system.clock_getres(clock_id, &timespec))) {
+        .SUCCESS => .fromNanoseconds(nanosecondsFromPosix(&timespec)),
+        else => .zero,
+    };
+}
+
+fn nowWindows(clock: Io.Clock) Io.Timestamp {
     switch (clock) {
         .real => {
             // RtlGetSystemTimePrecise() has a granularity of 100 nanoseconds
@@ -10882,8 +10919,7 @@ fn nowWindows(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
                 &times,
                 @sizeOf(windows.KERNEL_USER_TIMES),
                 null,
-            ) != .SUCCESS)
-                return error.Unexpected;
+            ) != .SUCCESS) return .zero;
 
             const sum = @as(i96, times.UserTime) + @as(i96, times.KernelTime);
             return .{ .nanoseconds = sum * 100 };
@@ -10899,8 +10935,7 @@ fn nowWindows(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
                 &times,
                 @sizeOf(windows.KERNEL_USER_TIMES),
                 null,
-            ) != .SUCCESS)
-                return error.Unexpected;
+            ) != .SUCCESS) return .zero;
 
             const sum = @as(i96, times.UserTime) + @as(i96, times.KernelTime);
             return .{ .nanoseconds = sum * 100 };
@@ -10908,23 +10943,23 @@ fn nowWindows(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
     }
 }
 
-fn nowWasi(clock: Io.Clock) Io.Clock.Error!Io.Timestamp {
+fn nowWasi(clock: Io.Clock) Io.Timestamp {
     var ns: std.os.wasi.timestamp_t = undefined;
     const err = std.os.wasi.clock_time_get(clockToWasi(clock), 1, &ns);
-    if (err != .SUCCESS) return error.Unexpected;
+    if (err != .SUCCESS) return .zero;
     return .fromNanoseconds(ns);
 }
 
-fn sleep(userdata: ?*anyopaque, timeout: Io.Timeout) Io.SleepError!void {
+fn sleep(userdata: ?*anyopaque, timeout: Io.Timeout) Io.Cancelable!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (timeout == .none) return;
-    if (use_parking_sleep) return parking_sleep.sleep(try timeout.toTimestamp(ioBasic(t)));
+    if (use_parking_sleep) return parking_sleep.sleep(timeout.toTimestamp(ioBasic(t)));
     if (native_os == .wasi) return sleepWasi(t, timeout);
     if (@TypeOf(posix.system.clock_nanosleep) != void) return sleepPosix(timeout);
     return sleepNanosleep(t, timeout);
 }
 
-fn sleepPosix(timeout: Io.Timeout) Io.SleepError!void {
+fn sleepPosix(timeout: Io.Timeout) Io.Cancelable!void {
     const clock_id: posix.clockid_t = clockToPosix(switch (timeout) {
         .none => .awake,
         .duration => |d| d.clock,
@@ -10944,25 +10979,27 @@ fn sleepPosix(timeout: Io.Timeout) Io.SleepError!void {
         } }, &timespec, &timespec);
         // POSIX-standard libc clock_nanosleep() returns *positive* errno values directly
         switch (if (builtin.link_libc) @as(posix.E, @enumFromInt(rc)) else posix.errno(rc)) {
-            .SUCCESS => {
-                syscall.finish();
-                return;
-            },
             .INTR => {
                 try syscall.checkCancel();
                 continue;
             },
-            .INVAL => return syscall.fail(error.UnsupportedClock),
-            else => |err| return syscall.unexpectedErrno(err),
+            // Handles SUCCESS as well as clock not available and unexpected
+            // errors. The user had a chance to check clock resolution before
+            // getting here, which would have reported 0, making this a legal
+            // amount of time to sleep.
+            else => {
+                syscall.finish();
+                return;
+            },
         }
     }
 }
 
-fn sleepWasi(t: *Threaded, timeout: Io.Timeout) Io.SleepError!void {
+fn sleepWasi(t: *Threaded, timeout: Io.Timeout) Io.Cancelable!void {
     const t_io = ioBasic(t);
     const w = std.os.wasi;
 
-    const clock: w.subscription_clock_t = if (try timeout.toDurationFromNow(t_io)) |d| .{
+    const clock: w.subscription_clock_t = if (timeout.toDurationFromNow(t_io)) |d| .{
         .id = clockToWasi(d.clock),
         .timeout = std.math.lossyCast(u64, d.raw.nanoseconds),
         .precision = 0,
@@ -10987,13 +11024,13 @@ fn sleepWasi(t: *Threaded, timeout: Io.Timeout) Io.SleepError!void {
     syscall.finish();
 }
 
-fn sleepNanosleep(t: *Threaded, timeout: Io.Timeout) Io.SleepError!void {
+fn sleepNanosleep(t: *Threaded, timeout: Io.Timeout) Io.Cancelable!void {
     const t_io = ioBasic(t);
     const sec_type = @typeInfo(posix.timespec).@"struct".fields[0].type;
     const nsec_type = @typeInfo(posix.timespec).@"struct".fields[1].type;
 
     var timespec: posix.timespec = t: {
-        const d = (try timeout.toDurationFromNow(t_io)) orelse break :t .{
+        const d = timeout.toDurationFromNow(t_io) orelse break :t .{
             .sec = std.math.maxInt(sec_type),
             .nsec = std.math.maxInt(nsec_type),
         };
@@ -12630,7 +12667,7 @@ fn netReceivePosix(
     var message_i: usize = 0;
     var data_i: usize = 0;
 
-    const deadline = timeout.toTimestamp(t_io) catch |err| return .{ err, message_i };
+    const deadline = timeout.toTimestamp(t_io);
 
     recv: while (true) {
         if (message_buffer.len - message_i == 0) return .{ null, message_i };
@@ -12678,7 +12715,7 @@ fn netReceivePosix(
 
                 const max_poll_ms = std.math.maxInt(u31);
                 const timeout_ms: u31 = if (deadline) |d| t: {
-                    const duration = d.durationFromNow(t_io) catch |err| return .{ err, message_i };
+                    const duration = d.durationFromNow(t_io);
                     if (duration.raw.nanoseconds <= 0) return .{ error.Timeout, message_i };
                     break :t @intCast(@min(max_poll_ms, duration.raw.toMilliseconds()));
                 } else max_poll_ms;
@@ -13875,7 +13912,11 @@ fn statFromWasi(st: *const std.os.wasi.filestat_t) File.Stat {
 }
 
 fn timestampFromPosix(timespec: *const posix.timespec) Io.Timestamp {
-    return .{ .nanoseconds = @intCast(@as(i128, timespec.sec) * std.time.ns_per_s + timespec.nsec) };
+    return .{ .nanoseconds = nanosecondsFromPosix(timespec) };
+}
+
+fn nanosecondsFromPosix(timespec: *const posix.timespec) i96 {
+    return @intCast(@as(i128, timespec.sec) * std.time.ns_per_s + timespec.nsec);
 }
 
 fn timestampToPosix(nanoseconds: i96) posix.timespec {
@@ -14013,13 +14054,13 @@ fn lookupDns(
     // boot clock is chosen because time the computer is suspended should count
     // against time spent waiting for external messages to arrive.
     const clock: Io.Clock = .boot;
-    var now_ts = try clock.now(t_io);
+    var now_ts = clock.now(t_io);
     const final_ts = now_ts.addDuration(.fromSeconds(rc.timeout_seconds));
     const attempt_duration: Io.Duration = .{
         .nanoseconds = (std.time.ns_per_s / rc.attempts) * @as(i96, rc.timeout_seconds),
     };
 
-    send: while (now_ts.nanoseconds < final_ts.nanoseconds) : (now_ts = try clock.now(t_io)) {
+    send: while (now_ts.nanoseconds < final_ts.nanoseconds) : (now_ts = clock.now(t_io)) {
         const max_messages = queries_buffer.len * HostName.ResolvConf.max_nameservers;
         {
             var message_buffer: [max_messages]Io.net.OutgoingMessage = undefined;
@@ -17021,7 +17062,7 @@ const parking_futex = struct {
         const deadline: ?Io.Clock.Timestamp = switch (timeout) {
             .none => null,
             .duration => |d| .{
-                .raw = (nowInner(d.clock) catch unreachable).addDuration(d.raw),
+                .raw = nowInner(d.clock).addDuration(d.raw),
                 .clock = d.clock,
             },
             .deadline => |d| d,
@@ -17143,7 +17184,7 @@ const parking_sleep = struct {
     comptime {
         assert(use_parking_sleep);
     }
-    fn sleep(deadline: ?Io.Clock.Timestamp) Io.SleepError!void {
+    fn sleep(deadline: ?Io.Clock.Timestamp) Io.Cancelable!void {
         const opt_thread = Thread.current;
         cancelable: {
             const thread = opt_thread orelse break :cancelable;
@@ -17216,12 +17257,9 @@ const parking_sleep = struct {
     }
     /// Sleep for approximately `ms` awake milliseconds in an attempt to work around Windows kernel bugs.
     fn windowsRetrySleep(ms: u32) (Io.Cancelable || Io.UnexpectedError)!void {
-        const now_timestamp = nowWindows(.awake) catch unreachable; // '.awake' is supported on Windows
+        const now_timestamp = nowWindows(.awake); // '.awake' is supported on Windows
         const deadline = now_timestamp.addDuration(.fromMilliseconds(ms));
-        parking_sleep.sleep(.{ .raw = deadline, .clock = .awake }) catch |err| switch (err) {
-            error.UnsupportedClock => unreachable,
-            else => |e| return e,
-        };
+        try parking_sleep.sleep(.{ .raw = deadline, .clock = .awake });
     }
 };
 
@@ -17234,7 +17272,7 @@ fn park(opt_deadline: ?Io.Clock.Timestamp, addr_hint: ?*const anyopaque) error{T
         .windows => {
             var timeout_buf: windows.LARGE_INTEGER = undefined;
             const raw_timeout: ?*windows.LARGE_INTEGER = if (opt_deadline) |deadline| timeout: {
-                const now_timestamp = nowWindows(deadline.clock) catch unreachable;
+                const now_timestamp = nowWindows(deadline.clock);
                 const nanoseconds = now_timestamp.durationTo(deadline.raw).nanoseconds;
                 timeout_buf = @intCast(@divTrunc(-nanoseconds, 100));
                 break :timeout &timeout_buf;
@@ -17284,17 +17322,17 @@ fn park(opt_deadline: ?Io.Clock.Timestamp, addr_hint: ?*const anyopaque) error{T
     }
 }
 
-fn deadlineToWindowsInterval(t: *Io.Threaded, deadline: Io.Clock.Timestamp) Io.Clock.Error!windows.LARGE_INTEGER {
+fn deadlineToWindowsInterval(t: *Io.Threaded, deadline: Io.Clock.Timestamp) windows.LARGE_INTEGER {
     // ntdll only supports two combinations:
     // * real-time (`.real`) sleeps with absolute deadlines
     // * monotonic (`.awake`/`.boot`) sleeps with relative durations
     switch (deadline.clock) {
-        .cpu_process, .cpu_thread => unreachable, // cannot sleep for CPU time
+        .cpu_process, .cpu_thread => return 0,
         .real => {
             return @intCast(@max(@divTrunc(deadline.raw.nanoseconds, 100), 0));
         },
         .awake, .boot => {
-            const duration = try deadline.durationFromNow(ioBasic(t));
+            const duration = deadline.durationFromNow(ioBasic(t));
             return @intCast(@min(@divTrunc(-duration.raw.nanoseconds, 100), -1));
         },
     }

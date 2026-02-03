@@ -266,16 +266,19 @@ pub fn init(options: StepOptions) Step {
 /// here.
 pub fn make(s: *Step, options: MakeOptions) error{ MakeFailed, MakeSkipped }!void {
     const arena = s.owner.allocator;
+    const graph = s.owner.graph;
+    const io = graph.io;
 
-    var timer: ?std.time.Timer = t: {
-        if (!s.owner.graph.time_report) break :t null;
+    var start_ts: ?Io.Timestamp = t: {
+        if (!graph.time_report) break :t null;
         if (s.id == .compile) break :t null;
         if (s.id == .run and s.cast(Run).?.stdio == .zig_test) break :t null;
-        break :t std.time.Timer.start() catch @panic("--time-report not supported on this host");
+        break :t Io.Clock.awake.now(io);
     };
     const make_result = s.makeFn(s, options);
-    if (timer) |*t| {
-        options.web_server.?.updateTimeReportGeneric(s, t.read());
+    if (start_ts) |*ts| {
+        const duration = ts.untilNow(io, .awake);
+        options.web_server.?.updateTimeReportGeneric(s, duration);
     }
 
     make_result catch |err| switch (err) {
@@ -534,7 +537,7 @@ fn zigProcessUpdate(s: *Step, zp: *ZigProcess, watch: bool, web_server: ?*Build.
     const arena = b.allocator;
     const io = b.graph.io;
 
-    var timer = try std.time.Timer.start();
+    const start_ts = Io.Clock.awake.now(io);
 
     try sendMessage(io, zp.child.stdin.?, .update);
     if (!watch) try sendMessage(io, zp.child.stdin.?, .exit);
@@ -637,7 +640,7 @@ fn zigProcessUpdate(s: *Step, zp: *ZigProcess, watch: bool, web_server: ?*Build.
                     .compile = s.cast(Step.Compile).?,
                     .use_llvm = tr.flags.use_llvm,
                     .stats = tr.stats,
-                    .ns_total = timer.read(),
+                    .ns_total = @intCast(start_ts.untilNow(io, .awake).toNanoseconds()),
                     .llvm_pass_timings_len = tr.llvm_pass_timings_len,
                     .files_len = tr.files_len,
                     .decls_len = tr.decls_len,
@@ -648,7 +651,7 @@ fn zigProcessUpdate(s: *Step, zp: *ZigProcess, watch: bool, web_server: ?*Build.
         }
     }
 
-    s.result_duration_ns = timer.read();
+    s.result_duration_ns = @intCast(start_ts.untilNow(io, .awake).toNanoseconds());
 
     const stderr_contents = zp.multi_reader.reader(1).buffered();
     if (stderr_contents.len > 0) {
