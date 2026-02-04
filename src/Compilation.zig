@@ -4189,6 +4189,7 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
                 }
             }
         }
+        try zcu.addDependencyLoopErrors(&bundle);
         for (zcu.failed_codegen.values()) |error_msg| {
             try addModuleErrorMsg(zcu, &bundle, error_msg.*, false);
         }
@@ -4208,7 +4209,7 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
                 .notes_len = 1,
             });
             const notes_start = try bundle.reserveNotes(1);
-            bundle.extra.items[notes_start] = @intFromEnum(try bundle.addErrorMessage(.{
+            bundle.extra.items[notes_start] = @intFromEnum(bundle.addErrorMessageAssumeCapacity(.{
                 .msg = try bundle.printString("use '--error-limit {d}' to increase limit", .{
                     actual_error_count,
                 }),
@@ -4230,10 +4231,10 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
             .notes_len = 2,
         });
         const notes_start = try bundle.reserveNotes(2);
-        bundle.extra.items[notes_start + 0] = @intFromEnum(try bundle.addErrorMessage(.{
+        bundle.extra.items[notes_start + 0] = @intFromEnum(bundle.addErrorMessageAssumeCapacity(.{
             .msg = try bundle.addString("run 'zig libc -h' to learn about libc installations"),
         }));
-        bundle.extra.items[notes_start + 1] = @intFromEnum(try bundle.addErrorMessage(.{
+        bundle.extra.items[notes_start + 1] = @intFromEnum(bundle.addErrorMessageAssumeCapacity(.{
             .msg = try bundle.addString("run 'zig targets' to see the targets for which zig can always provide libc"),
         }));
     }
@@ -4428,7 +4429,6 @@ pub fn addModuleErrorMsg(
     already_added_error: bool,
 ) Allocator.Error!void {
     const gpa = eb.gpa;
-    const ip = &zcu.intern_pool;
     const err_src_loc = module_err_msg.src_loc.upgrade(zcu);
     const err_source = err_src_loc.file_scope.getSource(zcu) catch |err| {
         return unableToLoadZcuFile(zcu, eb, err_src_loc.file_scope, err);
@@ -4441,66 +4441,12 @@ pub fn addModuleErrorMsg(
     var ref_traces: std.ArrayList(ErrorBundle.ReferenceTrace) = .empty;
     defer ref_traces.deinit(gpa);
 
-    rt: {
-        const rt_root = module_err_msg.reference_trace_root.unwrap() orelse break :rt;
-        const max_references = zcu.comp.reference_trace orelse refs: {
-            if (already_added_error) break :rt;
+    if (module_err_msg.reference_trace_root.unwrap()) |root| {
+        const frame_limit: u32 = zcu.comp.reference_trace orelse refs: {
+            if (already_added_error) break :refs 0;
             break :refs default_reference_trace_len;
         };
-
-        const all_references = try zcu.resolveReferences();
-
-        var seen: std.AutoHashMapUnmanaged(InternPool.AnalUnit, void) = .empty;
-        defer seen.deinit(gpa);
-
-        var referenced_by = rt_root;
-        while (all_references.get(referenced_by)) |maybe_ref| {
-            const ref = maybe_ref orelse break;
-            const gop = try seen.getOrPut(gpa, ref.referencer);
-            if (gop.found_existing) break;
-            if (ref_traces.items.len < max_references) {
-                var last_call_src = ref.src;
-                var opt_inline_frame = ref.inline_frame;
-                while (opt_inline_frame.unwrap()) |inline_frame| {
-                    const f = inline_frame.ptr(zcu).*;
-                    const func_nav = ip.indexToKey(f.callee).func.owner_nav;
-                    const func_name = ip.getNav(func_nav).name.toSlice(ip);
-                    addReferenceTraceFrame(zcu, eb, &ref_traces, func_name, last_call_src, true) catch |err| switch (err) {
-                        error.OutOfMemory => |e| return e,
-                        error.AlreadyReported => {
-                            // An incomplete reference trace isn't the end of the world; just cut it off.
-                            break :rt;
-                        },
-                    };
-                    last_call_src = f.call_src;
-                    opt_inline_frame = f.parent;
-                }
-                const root_name: ?[]const u8 = switch (ref.referencer.unwrap()) {
-                    .@"comptime" => "comptime",
-                    .nav_val, .nav_ty => |nav| ip.getNav(nav).name.toSlice(ip),
-                    .type_layout => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
-                    .func => |f| ip.getNav(zcu.funcInfo(f).owner_nav).name.toSlice(ip),
-                    .memoized_state => null,
-                };
-                if (root_name) |n| {
-                    addReferenceTraceFrame(zcu, eb, &ref_traces, n, last_call_src, false) catch |err| switch (err) {
-                        error.OutOfMemory => |e| return e,
-                        error.AlreadyReported => {
-                            // An incomplete reference trace isn't the end of the world; just cut it off.
-                            break :rt;
-                        },
-                    };
-                }
-            }
-            referenced_by = ref.referencer;
-        }
-
-        if (seen.count() > ref_traces.items.len) {
-            try ref_traces.append(gpa, .{
-                .decl_name = @intCast(seen.count() - ref_traces.items.len),
-                .src_loc = .none,
-            });
-        }
+        try zcu.populateReferenceTrace(root, frame_limit, eb, &ref_traces);
     }
 
     const src_loc = try eb.addSourceLocation(.{
@@ -4565,41 +4511,8 @@ pub fn addModuleErrorMsg(
     const notes_start = try eb.reserveNotes(notes_len);
 
     for (notes_start.., notes.keys()) |i, note| {
-        eb.extra.items[i] = @intFromEnum(try eb.addErrorMessage(note));
+        eb.extra.items[i] = @intFromEnum(eb.addErrorMessageAssumeCapacity(note));
     }
-}
-
-fn addReferenceTraceFrame(
-    zcu: *Zcu,
-    eb: *ErrorBundle.Wip,
-    ref_traces: *std.ArrayList(ErrorBundle.ReferenceTrace),
-    name: []const u8,
-    lazy_src: Zcu.LazySrcLoc,
-    inlined: bool,
-) error{ OutOfMemory, AlreadyReported }!void {
-    const gpa = zcu.gpa;
-    const src = lazy_src.upgrade(zcu);
-    const source = src.file_scope.getSource(zcu) catch |err| {
-        try unableToLoadZcuFile(zcu, eb, src.file_scope, err);
-        return error.AlreadyReported;
-    };
-    const span = src.span(zcu) catch |err| {
-        try unableToLoadZcuFile(zcu, eb, src.file_scope, err);
-        return error.AlreadyReported;
-    };
-    const loc = std.zig.findLineColumn(source, span.main);
-    try ref_traces.append(gpa, .{
-        .decl_name = try eb.printString("{s}{s}", .{ name, if (inlined) " [inlined]" else "" }),
-        .src_loc = try eb.addSourceLocation(.{
-            .src_path = try eb.printString("{f}", .{src.file_scope.path.fmt(zcu.comp)}),
-            .span_start = span.start,
-            .span_main = span.main,
-            .span_end = span.end,
-            .line = @intCast(loc.line),
-            .column = @intCast(loc.column),
-            .source_line = 0,
-        }),
-    });
 }
 
 fn addWholeFileError(
@@ -5243,11 +5156,11 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
 
             const maybe_err: Zcu.SemaError!void = switch (unit.unwrap()) {
                 .@"comptime" => |cu| pt.ensureComptimeUnitUpToDate(cu),
-                .nav_ty => |nav| pt.ensureNavTypeUpToDate(nav),
-                .nav_val => |nav| pt.ensureNavValUpToDate(nav),
-                .type_layout => |ty| pt.ensureTypeLayoutUpToDate(.fromInterned(ty)),
-                .memoized_state => |stage| pt.ensureMemoizedStateUpToDate(stage),
-                .func => |func| pt.ensureFuncBodyUpToDate(func),
+                .nav_ty => |nav| pt.ensureNavTypeUpToDate(nav, null),
+                .nav_val => |nav| pt.ensureNavValUpToDate(nav, null),
+                .type_layout => |ty| pt.ensureTypeLayoutUpToDate(.fromInterned(ty), null),
+                .memoized_state => |stage| pt.ensureMemoizedStateUpToDate(stage, null),
+                .func => |func| pt.ensureFuncBodyUpToDate(func, null),
             };
             maybe_err catch |err| switch (err) {
                 error.OutOfMemory => |e| return e,

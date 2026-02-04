@@ -728,7 +728,12 @@ pub fn ensureFileAnalyzed(pt: Zcu.PerThread, file_index: Zcu.File.Index) (Alloca
 /// Ensures that all memoized state on `Zcu` is up-to-date, performing re-analysis if necessary.
 /// Returns `error.AnalysisFail` if an analysis error is encountered; the caller is free to ignore
 /// this, since the error is already registered, but it must not use the value of memoized fields.
-pub fn ensureMemoizedStateUpToDate(pt: Zcu.PerThread, stage: InternPool.MemoizedStateStage) Zcu.SemaError!void {
+pub fn ensureMemoizedStateUpToDate(
+    pt: Zcu.PerThread,
+    stage: InternPool.MemoizedStateStage,
+    /// `null` is valid only for the "root" analysis, i.e. called from `Compilation.processOneJob`.
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.SemaError!void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -748,12 +753,7 @@ pub fn ensureMemoizedStateUpToDate(pt: Zcu.PerThread, stage: InternPool.Memoized
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(unit);
         // No need for `deleteUnitExports` because we never export anything.
-        zcu.deleteUnitReferences(unit);
-        zcu.deleteUnitCompileLogs(unit);
-        if (zcu.failed_analysis.fetchSwapRemove(unit)) |kv| {
-            kv.value.destroy(gpa);
-        }
-        _ = zcu.transitive_failed_analysis.swapRemove(unit);
+        zcu.resetUnit(unit);
     } else {
         if (prev_failed) return error.AnalysisFail;
         // We use an arbitrary element to check if the state has been resolved yet.
@@ -772,7 +772,7 @@ pub fn ensureMemoizedStateUpToDate(pt: Zcu.PerThread, stage: InternPool.Memoized
         info.deps.clearRetainingCapacity();
     }
 
-    const any_changed: bool, const new_failed: bool = if (pt.analyzeMemoizedState(stage)) |any_changed|
+    const any_changed: bool, const new_failed: bool = if (pt.analyzeMemoizedState(stage, reason)) |any_changed|
         .{ any_changed or prev_failed, false }
     else |err| switch (err) {
         error.AnalysisFail => res: {
@@ -805,14 +805,18 @@ pub fn ensureMemoizedStateUpToDate(pt: Zcu.PerThread, stage: InternPool.Memoized
     if (new_failed) return error.AnalysisFail;
 }
 
-fn analyzeMemoizedState(pt: Zcu.PerThread, stage: InternPool.MemoizedStateStage) Zcu.CompileError!bool {
+fn analyzeMemoizedState(
+    pt: Zcu.PerThread,
+    stage: InternPool.MemoizedStateStage,
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.CompileError!bool {
     const zcu = pt.zcu;
     const comp = zcu.comp;
     const gpa = comp.gpa;
 
     const unit: AnalUnit = .wrap(.{ .memoized_state = stage });
 
-    try zcu.analysis_in_progress.putNoClobber(gpa, unit, {});
+    try zcu.analysis_in_progress.putNoClobber(gpa, unit, reason);
     defer assert(zcu.analysis_in_progress.swapRemove(unit));
 
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
@@ -871,13 +875,7 @@ pub fn ensureComptimeUnitUpToDate(pt: Zcu.PerThread, cu_id: InternPool.ComptimeU
         // `was_outdated` can be true in the initial update for comptime units, so this isn't a `dev.check`.
         if (dev.env.supports(.incremental)) {
             zcu.deleteUnitExports(anal_unit);
-            zcu.deleteUnitReferences(anal_unit);
-            zcu.deleteUnitCompileLogs(anal_unit);
-            if (zcu.failed_analysis.fetchSwapRemove(anal_unit)) |kv| {
-                kv.value.destroy(gpa);
-            }
-            _ = zcu.transitive_failed_analysis.swapRemove(anal_unit);
-            zcu.intern_pool.removeDependenciesForDepender(gpa, anal_unit);
+            zcu.resetUnit(anal_unit);
         }
     } else {
         // We can trust the current information about this unit.
@@ -943,7 +941,7 @@ fn analyzeComptimeUnit(pt: Zcu.PerThread, cu_id: InternPool.ComptimeUnit.Id) Zcu
     const file = zcu.fileByIndex(inst_resolved.file);
     const zir = file.zir.?;
 
-    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, {});
+    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, null);
     defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
 
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
@@ -1009,7 +1007,12 @@ fn analyzeComptimeUnit(pt: Zcu.PerThread, cu_id: InternPool.ComptimeUnit.Id) Zcu
 /// re-analysis if necessary. Asserts that `ty` is a struct (not a tuple!) or union. Returns
 /// `error.AnalysisFail` if an analysis error is encountered during type resolution; the caller is
 /// free to ignore this, since the error is already registered.
-pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
+pub fn ensureTypeLayoutUpToDate(
+    pt: Zcu.PerThread,
+    ty: Type,
+    /// `null` is valid only for the "root" analysis, i.e. called from `Compilation.processOneJob`.
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.SemaError!void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1031,13 +1034,7 @@ pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void 
         // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
         if (dev.env.supports(.incremental)) {
             zcu.deleteUnitExports(anal_unit);
-            zcu.deleteUnitReferences(anal_unit);
-            zcu.deleteUnitCompileLogs(anal_unit);
-            if (zcu.failed_analysis.fetchSwapRemove(anal_unit)) |kv| {
-                kv.value.destroy(gpa);
-            }
-            _ = zcu.transitive_failed_analysis.swapRemove(anal_unit);
-            zcu.intern_pool.removeDependenciesForDepender(gpa, anal_unit);
+            zcu.resetUnit(anal_unit);
         }
         // For types, we already know that we have to invalidate all dependees.
         // TODO: we actually *could* detect whether everything was the same. should we bother?
@@ -1058,7 +1055,7 @@ pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void 
     const unit_tracking = zcu.trackUnitSema(ty.containerTypeName(&zcu.intern_pool).toSlice(&zcu.intern_pool), null);
     defer unit_tracking.end(zcu);
 
-    try zcu.analysis_in_progress.put(gpa, anal_unit, {});
+    try zcu.analysis_in_progress.put(gpa, anal_unit, reason);
     defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
 
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
@@ -1114,7 +1111,12 @@ pub fn ensureTypeLayoutUpToDate(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void 
 /// Ensures that the resolved value of the given `Nav` is fully up-to-date, performing re-analysis
 /// if necessary. Returns `error.AnalysisFail` if an analysis error is encountered; the caller is
 /// free to ignore this, since the error is already registered.
-pub fn ensureNavValUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.SemaError!void {
+pub fn ensureNavValUpToDate(
+    pt: Zcu.PerThread,
+    nav_id: InternPool.Nav.Index,
+    /// `null` is valid only for the "root" analysis, i.e. called from `Compilation.processOneJob`.
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.SemaError!void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1150,13 +1152,7 @@ pub fn ensureNavValUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(anal_unit);
         zcu.deleteUnitExports(anal_unit);
-        zcu.deleteUnitReferences(anal_unit);
-        zcu.deleteUnitCompileLogs(anal_unit);
-        if (zcu.failed_analysis.fetchSwapRemove(anal_unit)) |kv| {
-            kv.value.destroy(gpa);
-        }
-        _ = zcu.transitive_failed_analysis.swapRemove(anal_unit);
-        ip.removeDependenciesForDepender(gpa, anal_unit);
+        zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
         if (prev_failed) return error.AnalysisFail;
@@ -1173,7 +1169,7 @@ pub fn ensureNavValUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu
     const unit_tracking = zcu.trackUnitSema(nav.fqn.toSlice(ip), nav.srcInst(ip));
     defer unit_tracking.end(zcu);
 
-    const invalidate_value: bool, const new_failed: bool = if (pt.analyzeNavVal(nav_id)) |result| res: {
+    const invalidate_value: bool, const new_failed: bool = if (pt.analyzeNavVal(nav_id, reason)) |result| res: {
         break :res .{
             // If the unit has gone from failed to success, we still need to invalidate the dependencies.
             result.val_changed or prev_failed,
@@ -1217,39 +1213,14 @@ pub fn ensureNavValUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu
         }
     }
 
-    // If there isn't a type annotation, then we have also just resolved the type. That means the
-    // the type is up-to-date, so it won't have the chance to mark its own dependency on the value;
-    // we must do that ourselves.
-    type_deps_on_val: {
-        const inst_resolved = nav.analysis.?.zir_index.resolveFull(ip) orelse break :type_deps_on_val;
-        const file = zcu.fileByIndex(inst_resolved.file);
-        const zir_decl = file.zir.?.getDeclaration(inst_resolved.inst);
-        if (zir_decl.type_body != null) break :type_deps_on_val;
-        // The type does indeed depend on the value. We are responsible for populating all state of
-        // the `nav_ty`, including exports, references, errors, and dependencies.
-        const ty_unit: AnalUnit = .wrap(.{ .nav_ty = nav_id });
-        const ty_was_outdated = zcu.outdated.swapRemove(ty_unit) or
-            zcu.potentially_outdated.swapRemove(ty_unit);
-        if (ty_was_outdated) {
-            _ = zcu.outdated_ready.swapRemove(ty_unit);
-            zcu.deleteUnitExports(ty_unit);
-            zcu.deleteUnitReferences(ty_unit);
-            zcu.deleteUnitCompileLogs(ty_unit);
-            if (zcu.failed_analysis.fetchSwapRemove(ty_unit)) |kv| {
-                kv.value.destroy(gpa);
-            }
-            _ = zcu.transitive_failed_analysis.swapRemove(ty_unit);
-            ip.removeDependenciesForDepender(gpa, ty_unit);
-        }
-        try pt.addDependency(ty_unit, .{ .nav_val = nav_id });
-        if (new_failed) try zcu.transitive_failed_analysis.put(gpa, ty_unit, {});
-        if (ty_was_outdated) try zcu.markDependeeOutdated(.marked_po, .{ .nav_ty = nav_id });
-    }
-
     if (new_failed) return error.AnalysisFail;
 }
 
-fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileError!struct { val_changed: bool } {
+fn analyzeNavVal(
+    pt: Zcu.PerThread,
+    nav_id: InternPool.Nav.Index,
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.CompileError!struct { val_changed: bool } {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     const comp = zcu.comp;
@@ -1266,16 +1237,8 @@ fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileErr
     const zir = file.zir.?;
     const zir_decl = zir.getDeclaration(inst_resolved.inst);
 
-    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, {});
+    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, reason);
     errdefer _ = zcu.analysis_in_progress.swapRemove(anal_unit);
-
-    // If there's no type body, we are also resolving the type here.
-    if (zir_decl.type_body == null) {
-        try zcu.analysis_in_progress.putNoClobber(gpa, .wrap(.{ .nav_ty = nav_id }), {});
-    }
-    errdefer if (zir_decl.type_body == null) {
-        _ = zcu.analysis_in_progress.swapRemove(.wrap(.{ .nav_ty = nav_id }));
-    };
 
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
@@ -1351,9 +1314,6 @@ fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileErr
     } else null;
 
     const nav_ty: Type = maybe_ty orelse final_val.?.typeOf(zcu);
-
-    // First, we must resolve the declaration's type. To do this, we analyze the type body if available,
-    // or otherwise, we analyze the value body, populating `early_val` in the process.
 
     const is_const = is_const: switch (zir_decl.kind) {
         .@"comptime" => unreachable, // this is not a Nav
@@ -1441,7 +1401,7 @@ fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileErr
 
     // This resolves the type of the resolved value, not that value itself. If `nav_val` is a struct type,
     // this resolves the type `type` (which needs no resolution), not the struct itself.
-    try sema.ensureLayoutResolved(nav_ty, init_src);
+    try sema.ensureLayoutResolved(nav_ty, block.nodeOffset(.zero), if (zir_decl.kind == .@"var") .variable else .constant);
 
     const queue_linker_work, const is_owned_fn = switch (ip.indexToKey(nav_val.toIntern())) {
         .func => |f| .{ true, f.owner_nav == nav_id }, // note that this lets function aliases reach codegen
@@ -1460,18 +1420,18 @@ fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileErr
         }
     } else if (nav_ty.comptimeOnly(zcu)) {
         // alignment, linksection, addrspace annotations are not allowed for comptime-only types.
-        const reason: []const u8 = switch (ip.indexToKey(nav_val.toIntern())) {
+        const cannot_align_reason: []const u8 = switch (ip.indexToKey(nav_val.toIntern())) {
             .func => "function alias", // slightly clearer message, since you *can* specify these on function *declarations*
             else => "comptime-only type",
         };
         if (zir_decl.align_body != null) {
-            return sema.fail(&block, align_src, "cannot specify alignment of {s}", .{reason});
+            return sema.fail(&block, align_src, "cannot specify alignment of {s}", .{cannot_align_reason});
         }
         if (zir_decl.linksection_body != null) {
-            return sema.fail(&block, section_src, "cannot specify linksection of {s}", .{reason});
+            return sema.fail(&block, section_src, "cannot specify linksection of {s}", .{cannot_align_reason});
         }
         if (zir_decl.addrspace_body != null) {
-            return sema.fail(&block, addrspace_src, "cannot specify addrspace of {s}", .{reason});
+            return sema.fail(&block, addrspace_src, "cannot specify addrspace of {s}", .{cannot_align_reason});
         }
     }
 
@@ -1484,10 +1444,8 @@ fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileErr
     });
 
     // Mark the unit as completed before evaluating the export!
+    // MLUGG TODO: do we really need to do this?
     assert(zcu.analysis_in_progress.swapRemove(anal_unit));
-    if (zir_decl.type_body == null) {
-        assert(zcu.analysis_in_progress.swapRemove(.wrap(.{ .nav_ty = nav_id })));
-    }
 
     if (zir_decl.linkage == .@"export") {
         const export_src = block.src(.{ .token_offset = @enumFromInt(@intFromBool(zir_decl.is_pub)) });
@@ -1516,7 +1474,12 @@ fn analyzeNavVal(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileErr
     }
 }
 
-pub fn ensureNavTypeUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.SemaError!void {
+pub fn ensureNavTypeUpToDate(
+    pt: Zcu.PerThread,
+    nav_id: InternPool.Nav.Index,
+    /// `null` is valid only for the "root" analysis, i.e. called from `Compilation.processOneJob`.
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.SemaError!void {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -1532,18 +1495,6 @@ pub fn ensureNavTypeUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zc
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
     try zcu.ensureNavValAnalysisQueued(nav_id);
-
-    const type_resolved_by_value: bool = from_val: {
-        const analysis = nav.analysis orelse break :from_val false;
-        const inst_resolved = analysis.zir_index.resolveFull(ip) orelse break :from_val false;
-        const file = zcu.fileByIndex(inst_resolved.file);
-        const zir_decl = file.zir.?.getDeclaration(inst_resolved.inst);
-        break :from_val zir_decl.type_body == null;
-    };
-    if (type_resolved_by_value) {
-        // Logic at the end of `ensureNavValUpToDate` is directly responsible for populating our state.
-        return pt.ensureNavValUpToDate(nav_id);
-    }
 
     // Determine whether or not this `Nav`'s type is outdated. This also includes checking if the
     // status is `.unresolved`, which indicates that the value is outdated because it has *never*
@@ -1564,13 +1515,7 @@ pub fn ensureNavTypeUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zc
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(anal_unit);
         zcu.deleteUnitExports(anal_unit);
-        zcu.deleteUnitReferences(anal_unit);
-        zcu.deleteUnitCompileLogs(anal_unit);
-        if (zcu.failed_analysis.fetchSwapRemove(anal_unit)) |kv| {
-            kv.value.destroy(gpa);
-        }
-        _ = zcu.transitive_failed_analysis.swapRemove(anal_unit);
-        ip.removeDependenciesForDepender(gpa, anal_unit);
+        zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
         if (prev_failed) return error.AnalysisFail;
@@ -1587,7 +1532,7 @@ pub fn ensureNavTypeUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zc
     const unit_tracking = zcu.trackUnitSema(nav.fqn.toSlice(ip), nav.srcInst(ip));
     defer unit_tracking.end(zcu);
 
-    const invalidate_type: bool, const new_failed: bool = if (pt.analyzeNavType(nav_id)) |result| res: {
+    const invalidate_type: bool, const new_failed: bool = if (pt.analyzeNavType(nav_id, reason)) |result| res: {
         break :res .{
             // If the unit has gone from failed to success, we still need to invalidate the dependencies.
             result.type_changed or prev_failed,
@@ -1634,7 +1579,11 @@ pub fn ensureNavTypeUpToDate(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zc
     if (new_failed) return error.AnalysisFail;
 }
 
-fn analyzeNavType(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileError!struct { type_changed: bool } {
+fn analyzeNavType(
+    pt: Zcu.PerThread,
+    nav_id: InternPool.Nav.Index,
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.CompileError!struct { type_changed: bool } {
     const zcu = pt.zcu;
     const comp = zcu.comp;
     const gpa = comp.gpa;
@@ -1650,11 +1599,10 @@ fn analyzeNavType(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileEr
     const file = zcu.fileByIndex(inst_resolved.file);
     const zir = file.zir.?;
 
-    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, {});
+    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, reason);
     defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
 
     const zir_decl = zir.getDeclaration(inst_resolved.inst);
-    const type_body = zir_decl.type_body.?;
 
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
@@ -1696,6 +1644,17 @@ fn analyzeNavType(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileEr
     defer block.instructions.deinit(gpa);
 
     const ty_src = block.src(.{ .node_offset_var_decl_ty = .zero });
+    const init_src = block.src(.{ .node_offset_var_decl_init = .zero });
+
+    const type_body = zir_decl.type_body orelse {
+        // There is no type annotation, so we just need to use the declaration's value.
+        try sema.ensureNavResolved(&block, init_src, nav_id, .fully);
+        // We don't actually know what the type of this Nav was before it was resolved, so we just
+        // have to assume we were outdated. This isn't too bad, because assuming there was also no
+        // type annotation last update, we should only be re-analyzed if the value changes (it's our
+        // only dependency), or if there was a dependency loop.
+        return .{ .type_changed = true };
+    };
 
     block.comptime_reason = .{ .reason = .{
         .src = ty_src,
@@ -1708,7 +1667,7 @@ fn analyzeNavType(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileEr
         break :ty .fromInterned(type_ref.toInterned().?);
     };
 
-    try sema.ensureLayoutResolved(resolved_ty, ty_src);
+    try sema.ensureLayoutResolved(resolved_ty, block.nodeOffset(.zero), if (zir_decl.kind == .@"var") .variable else .constant);
 
     // In the case where the type is specified, this function is also responsible for resolving
     // the pointer modifiers, i.e. alignment, linksection, addrspace.
@@ -1758,7 +1717,12 @@ fn analyzeNavType(pt: Zcu.PerThread, nav_id: InternPool.Nav.Index) Zcu.CompileEr
     return .{ .type_changed = true };
 }
 
-pub fn ensureFuncBodyUpToDate(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.SemaError!void {
+pub fn ensureFuncBodyUpToDate(
+    pt: Zcu.PerThread,
+    func_index: InternPool.Index,
+    /// `null` is valid only for the "root" analysis, i.e. called from `Compilation.processOneJob`.
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.SemaError!void {
     dev.check(.sema);
 
     const tracy = trace(@src());
@@ -1788,12 +1752,7 @@ pub fn ensureFuncBodyUpToDate(pt: Zcu.PerThread, func_index: InternPool.Index) Z
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(anal_unit);
         zcu.deleteUnitExports(anal_unit);
-        zcu.deleteUnitReferences(anal_unit);
-        zcu.deleteUnitCompileLogs(anal_unit);
-        if (zcu.failed_analysis.fetchSwapRemove(anal_unit)) |kv| {
-            kv.value.destroy(gpa);
-        }
-        _ = zcu.transitive_failed_analysis.swapRemove(anal_unit);
+        zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this function.
         if (prev_failed) return error.AnalysisFail;
@@ -1813,7 +1772,7 @@ pub fn ensureFuncBodyUpToDate(pt: Zcu.PerThread, func_index: InternPool.Index) Z
     );
     defer unit_tracking.end(zcu);
 
-    const ies_outdated, const new_failed = if (pt.analyzeFuncBody(func_index)) |result|
+    const ies_outdated, const new_failed = if (pt.analyzeFuncBody(func_index, reason)) |result|
         .{ prev_failed or result.ies_outdated, false }
     else |err| switch (err) {
         error.AnalysisFail => res: {
@@ -1854,6 +1813,7 @@ pub fn ensureFuncBodyUpToDate(pt: Zcu.PerThread, func_index: InternPool.Index) Z
 fn analyzeFuncBody(
     pt: Zcu.PerThread,
     func_index: InternPool.Index,
+    reason: ?*const Zcu.DependencyReason,
 ) Zcu.SemaError!struct { ies_outdated: bool } {
     const zcu = pt.zcu;
     const gpa = zcu.gpa;
@@ -1868,7 +1828,7 @@ fn analyzeFuncBody(
 
     if (func.generic_owner == .none) {
         // Among another things, this ensures that the function's `zir_body_inst` is correct.
-        try pt.ensureNavValUpToDate(func.owner_nav);
+        try pt.ensureNavValUpToDate(func.owner_nav, reason);
         if (ip.getNav(func.owner_nav).status.fully_resolved.val != func_index) {
             // This function is no longer referenced! There's no point in re-analyzing it.
             // Just mark a transitive failure and move on.
@@ -1877,7 +1837,7 @@ fn analyzeFuncBody(
     } else {
         const go_nav = zcu.funcInfo(func.generic_owner).owner_nav;
         // Among another things, this ensures that the function's `zir_body_inst` is correct.
-        try pt.ensureNavValUpToDate(go_nav);
+        try pt.ensureNavValUpToDate(go_nav, reason);
         if (ip.getNav(go_nav).status.fully_resolved.val != func.generic_owner) {
             // The generic owner is no longer referenced, so this function is also unreferenced.
             // There's no point in re-analyzing it. Just mark a transitive failure and move on.
@@ -1894,7 +1854,7 @@ fn analyzeFuncBody(
 
     log.debug("analyze and generate fn body {f}", .{zcu.fmtAnalUnit(anal_unit)});
 
-    var air = try pt.analyzeFuncBodyInner(func_index);
+    var air = try pt.analyzeFuncBodyInner(func_index, reason);
     errdefer air.deinit(gpa);
 
     const ies_outdated = !func.analysisUnordered(ip).inferred_error_set or
@@ -2842,7 +2802,11 @@ const ScanDeclIter = struct {
     }
 };
 
-fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.SemaError!Air {
+fn analyzeFuncBodyInner(
+    pt: Zcu.PerThread,
+    func_index: InternPool.Index,
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.SemaError!Air {
     const tracy = trace(@src());
     defer tracy.end();
 
@@ -2858,7 +2822,7 @@ fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.Sem
     const file = zcu.fileByIndex(inst_info.file);
     const zir = file.zir.?;
 
-    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, {});
+    try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, reason);
     defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
 
     if (func.analysisUnordered(ip).inferred_error_set) {
@@ -2878,8 +2842,6 @@ fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.Sem
         zcu.funcInfo(func.generic_owner).owner_nav);
 
     const func_nav = ip.getNav(func.owner_nav);
-
-    zcu.intern_pool.removeDependenciesForDepender(gpa, anal_unit);
 
     var analysis_arena = std.heap.ArenaAllocator.init(gpa);
     defer analysis_arena.deinit();
@@ -2978,7 +2940,7 @@ fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.Sem
         const param_ty: Type = .fromInterned(fn_ty_info.param_types.get(ip)[runtime_param_index]);
         runtime_param_index += 1;
 
-        try sema.ensureLayoutResolved(param_ty, inner_block.src(.{ .func_decl_param_ty = @intCast(zir_param_index) }));
+        try sema.ensureLayoutResolved(param_ty, inner_block.src(.{ .func_decl_param_ty = @intCast(zir_param_index) }), .parameter);
         if (try param_ty.onePossibleValue(pt)) |opv| {
             gop.value_ptr.* = .fromValue(opv);
             continue;
@@ -2995,7 +2957,7 @@ fn analyzeFuncBodyInner(pt: Zcu.PerThread, func_index: InternPool.Index) Zcu.Sem
         });
     }
 
-    try sema.ensureLayoutResolved(sema.fn_ret_ty, inner_block.src(.{ .node_offset_fn_type_ret_ty = .zero }));
+    try sema.ensureLayoutResolved(sema.fn_ret_ty, inner_block.src(.{ .node_offset_fn_type_ret_ty = .zero }), .return_type);
 
     const last_arg_index = inner_block.instructions.items.len;
 
@@ -4206,7 +4168,7 @@ pub fn resolveTypeForCodegen(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
         },
 
         .@"struct" => switch (ip.indexToKey(ty.toIntern())) {
-            .struct_type => try pt.ensureTypeLayoutUpToDate(ty),
+            .struct_type => try pt.ensureTypeLayoutUpToDate(ty, null),
             .tuple_type => |tuple| for (0..tuple.types.len) |i| {
                 const field_is_comptime = tuple.values.get(ip)[i] != .none;
                 if (field_is_comptime) continue;
@@ -4216,8 +4178,8 @@ pub fn resolveTypeForCodegen(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
             else => unreachable,
         },
 
-        .@"union" => try pt.ensureTypeLayoutUpToDate(ty),
-        .@"enum" => try pt.ensureTypeLayoutUpToDate(ty),
+        .@"union" => try pt.ensureTypeLayoutUpToDate(ty, null),
+        .@"enum" => try pt.ensureTypeLayoutUpToDate(ty, null),
     }
 }
 pub fn resolveValueTypesForCodegen(pt: Zcu.PerThread, val: Value) Zcu.SemaError!void {

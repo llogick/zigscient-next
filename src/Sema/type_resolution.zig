@@ -14,12 +14,64 @@ const InternPool = @import("../InternPool.zig");
 const Alignment = InternPool.Alignment;
 const arith = @import("arith.zig");
 
+pub const LayoutResolveReason = enum {
+    variable,
+    constant,
+    parameter,
+    return_type,
+    field,
+    backing_enum,
+    init,
+    coerce,
+    ptr_access,
+    ptr_offset,
+    field_used,
+    field_queried,
+    size_of,
+    align_of,
+    type_info,
+    align_check,
+    bit_ptr_child,
+    builtin_type,
+
+    /// Written after string: "while resolving type 'T' "
+    /// e.g. "while resolving type 'MyStruct' for variable declared here"
+    pub fn msg(r: LayoutResolveReason) []const u8 {
+        return switch (r) {
+            // zig fmt: off
+            .variable      => "for variable declared here",
+            .constant      => "for constant declared here",
+            .parameter     => "for function parameter declared here",
+            .return_type   => "for function return type declared here",
+            .field         => "for field declared here",
+            .backing_enum  => "for backing enum type declared here",
+            .init          => "for initialization performed here",
+            .coerce        => "for coercion performed here",
+            .ptr_access    => "for pointer access here",
+            .ptr_offset    => "for pointer offset here",
+            .field_used    => "for field usage here",
+            .field_queried => "for field query here",
+            .size_of       => "for size query here",
+            .align_of      => "for alignment query here",
+            .type_info     => "for type information query here",
+            .align_check   => "for alignment check here",
+            .bit_ptr_child => "for bit size check here",
+            .builtin_type  => "from 'std.builtin'",
+            // zig fmt: on
+        };
+    }
+};
+
 /// Ensures that `ty` has known layout, including alignment, size, and (where relevant) field offsets.
 /// `ty` may be any type; its layout is resolved *recursively* if necessary.
 /// Adds incremental dependencies tracking any required type resolution.
-/// MLUGG TODO: to make the langspec non-stupid, we need to call this from WAY fewer places (the conditions need to be less specific).
-/// MLUGG TODO: to be clear, i should audit EVERY use of this before PRing
-pub fn ensureLayoutResolved(sema: *Sema, ty: Type, src: LazySrcLoc) SemaError!void {
+pub fn ensureLayoutResolved(sema: *Sema, ty: Type, src: LazySrcLoc, reason: LayoutResolveReason) SemaError!void {
+    return ensureLayoutResolvedInner(sema, ty, ty, &.{
+        .src = src,
+        .type_layout_reason = reason,
+    });
+}
+fn ensureLayoutResolvedInner(sema: *Sema, ty: Type, orig_ty: Type, reason: *const Zcu.DependencyReason) SemaError!void {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
@@ -35,30 +87,25 @@ pub fn ensureLayoutResolved(sema: *Sema, ty: Type, src: LazySrcLoc) SemaError!vo
 
         .func_type => |func_type| {
             for (func_type.param_types.get(ip)) |param_ty| {
-                try ensureLayoutResolved(sema, .fromInterned(param_ty), src);
+                try ensureLayoutResolvedInner(sema, .fromInterned(param_ty), orig_ty, reason);
             }
-            try ensureLayoutResolved(sema, .fromInterned(func_type.return_type), src);
+            try ensureLayoutResolvedInner(sema, .fromInterned(func_type.return_type), orig_ty, reason);
         },
 
-        .array_type => |arr| return ensureLayoutResolved(sema, .fromInterned(arr.child), src),
-        .vector_type => |vec| return ensureLayoutResolved(sema, .fromInterned(vec.child), src),
-        .opt_type => |child| return ensureLayoutResolved(sema, .fromInterned(child), src),
-        .error_union_type => |eu| return ensureLayoutResolved(sema, .fromInterned(eu.payload_type), src),
+        .array_type => |arr| return ensureLayoutResolvedInner(sema, .fromInterned(arr.child), orig_ty, reason),
+        .vector_type => |vec| return ensureLayoutResolvedInner(sema, .fromInterned(vec.child), orig_ty, reason),
+        .opt_type => |child| return ensureLayoutResolvedInner(sema, .fromInterned(child), orig_ty, reason),
+        .error_union_type => |eu| return ensureLayoutResolvedInner(sema, .fromInterned(eu.payload_type), orig_ty, reason),
         .tuple_type => |tuple| for (tuple.types.get(ip)) |field_ty| {
-            try ensureLayoutResolved(sema, .fromInterned(field_ty), src);
+            try ensureLayoutResolvedInner(sema, .fromInterned(field_ty), orig_ty, reason);
         },
         .struct_type, .union_type, .enum_type => {
             try sema.declareDependency(.{ .type_layout = ty.toIntern() });
-            try sema.addReferenceEntry(null, src, .wrap(.{ .type_layout = ty.toIntern() }));
+            try sema.addReferenceEntry(null, reason.src, .wrap(.{ .type_layout = ty.toIntern() }));
             if (zcu.analysis_in_progress.contains(.wrap(.{ .type_layout = ty.toIntern() }))) {
-                // TODO: better error message
-                return sema.failWithOwnedErrorMsg(null, try sema.errMsg(
-                    ty.srcLoc(zcu),
-                    "{s} '{f}' depends on itself",
-                    .{ @tagName(ty.zigTypeTag(zcu)), ty.fmt(pt) },
-                ));
+                return sema.failWithDependencyLoop(.wrap(.{ .type_layout = ty.toIntern() }), reason);
             }
-            try pt.ensureTypeLayoutUpToDate(ty);
+            try pt.ensureTypeLayoutUpToDate(ty, reason);
         },
 
         // values, not types
@@ -228,7 +275,7 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty, field_ty_src);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src, .field);
 
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(&block, msg: {
@@ -387,7 +434,7 @@ fn resolvePackedStructLayout(
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty, field_ty_src);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src, .field);
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "cannot directly embed opaque type '{f}' in struct", .{field_ty.fmt(pt)});
@@ -557,7 +604,7 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         },
     };
 
-    try sema.ensureLayoutResolved(enum_tag_ty, block.src(.container_arg));
+    try sema.ensureLayoutResolved(enum_tag_ty, block.src(.container_arg), .backing_enum);
     const enum_obj = ip.loadEnumType(enum_tag_ty.toIntern());
 
     if (union_obj.is_reified) {
@@ -652,7 +699,7 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty, field_ty_src);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src, .field);
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(&block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "cannot directly embed opaque type '{f}' in union", .{field_ty.fmt(pt)});
@@ -832,7 +879,7 @@ fn resolvePackedUnionLayout(
         const field_ty: Type = .fromInterned(field_ty_ip);
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
-        try sema.ensureLayoutResolved(field_ty, field_ty_src);
+        try sema.ensureLayoutResolved(field_ty, field_ty_src, .field);
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "cannot directly embed opaque type '{f}' in union", .{field_ty.fmt(pt)});

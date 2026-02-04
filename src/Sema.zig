@@ -3260,7 +3260,7 @@ fn zirAllocExtended(
     } else .none;
 
     if (small.has_type) {
-        try sema.ensureLayoutResolved(var_ty, ty_src);
+        try sema.ensureLayoutResolved(var_ty, var_src, if (small.is_const) .constant else .variable);
         if (block.isComptime() or small.is_comptime or var_ty.comptimeOnly(zcu)) {
             return sema.analyzeComptimeAlloc(block, var_src, var_ty, alignment);
         }
@@ -3324,7 +3324,7 @@ fn zirAllocComptime(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErr
     const ty_src = block.src(.{ .node_offset_var_decl_ty = inst_data.src_node });
     const var_src = block.nodeOffset(inst_data.src_node);
     const var_ty = try sema.resolveType(block, ty_src, inst_data.operand);
-    try sema.ensureLayoutResolved(var_ty, ty_src);
+    try sema.ensureLayoutResolved(var_ty, var_src, .variable);
     return sema.analyzeComptimeAlloc(block, var_src, var_ty, .none);
 }
 
@@ -3758,7 +3758,7 @@ fn zirAlloc(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.I
     const var_src = block.nodeOffset(inst_data.src_node);
 
     const var_ty = try sema.resolveType(block, ty_src, inst_data.operand);
-    try sema.ensureLayoutResolved(var_ty, ty_src);
+    try sema.ensureLayoutResolved(var_ty, var_src, .constant);
     if (block.isComptime() or var_ty.comptimeOnly(zcu)) {
         return sema.analyzeComptimeAlloc(block, var_src, var_ty, .none);
     }
@@ -3790,7 +3790,7 @@ fn zirAllocMut(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     const var_src = block.nodeOffset(inst_data.src_node);
 
     const var_ty = try sema.resolveType(block, ty_src, inst_data.operand);
-    try sema.ensureLayoutResolved(var_ty, ty_src);
+    try sema.ensureLayoutResolved(var_ty, var_src, .variable);
     if (block.isComptime()) {
         return sema.analyzeComptimeAlloc(block, var_src, var_ty, .none);
     }
@@ -4148,7 +4148,7 @@ fn zirOptEuBasePtrInit(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Compile
     const un_node = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const ptr = sema.resolveInst(un_node.operand);
     const src = block.nodeOffset(un_node.src_node);
-    try sema.ensureLayoutResolved(sema.typeOf(ptr).childType(sema.pt.zcu), src);
+    try sema.ensureLayoutResolved(sema.typeOf(ptr).childType(sema.pt.zcu), src, .init);
     return sema.optEuBasePtrInit(block, ptr, src);
 }
 
@@ -4651,7 +4651,7 @@ fn zirValidateDeref(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErr
     }
 
     const elem_ty = operand_ty.childType(zcu);
-    try sema.ensureLayoutResolved(elem_ty, src);
+    try sema.ensureLayoutResolved(elem_ty, src, .ptr_access);
 
     const need_comptime = switch (elem_ty.classify(zcu)) {
         .no_possible_value => return sema.fail(block, src, "cannot load {s} type '{f}'", .{
@@ -7037,7 +7037,7 @@ fn analyzeCall(
 
         break :ret_ty full_ty;
     };
-    try sema.ensureLayoutResolved(resolved_ret_ty, func_ret_ty_src);
+    try sema.ensureLayoutResolved(resolved_ret_ty, func_ret_ty_src, .return_type);
 
     // If we've discovered after evaluating arguments that a generic function instantiation is
     // comptime-only, then we can mark the block as comptime *now*.
@@ -7134,7 +7134,6 @@ fn analyzeCall(
                 .generic_owner = func_val.?.toIntern(),
                 .comptime_args = comptime_args,
             });
-            try sema.ensureLayoutResolved(.fromInterned(ip.typeOf(func_instance)), call_src);
             if (zcu.comp.debugIncremental()) {
                 const nav = ip.indexToKey(func_instance).func.owner_nav;
                 const gop = try zcu.incremental_debug_state.navs.getOrPut(gpa, nav);
@@ -7169,7 +7168,7 @@ fn analyzeCall(
         };
 
         try sema.air_extra.ensureUnusedCapacity(gpa, @typeInfo(Air.Call).@"struct".fields.len + runtime_args.len);
-        const maybe_opv = try block.addInst(.{
+        const call_ref = try block.addInst(.{
             .tag = call_tag,
             .data = .{ .pl_op = .{
                 .operand = runtime_func,
@@ -7180,8 +7179,10 @@ fn analyzeCall(
         });
         sema.appendRefsAssumeCapacity(runtime_args);
 
+        const actual_ret_ty = sema.typeOf(call_ref);
+
         if (ensure_result_used) {
-            try sema.ensureResultUsed(block, sema.typeOf(maybe_opv), call_src);
+            try sema.ensureResultUsed(block, actual_ret_ty, call_src);
         }
 
         if (call_tag == .call_always_tail) {
@@ -7191,28 +7192,31 @@ fn analyzeCall(
                 .pointer => func_or_ptr_ty.childType(zcu),
                 else => unreachable,
             };
-            return sema.handleTailCall(block, call_src, runtime_func_ty, maybe_opv);
+            return sema.handleTailCall(block, call_src, runtime_func_ty, call_ref);
         }
 
-        if (resolved_ret_ty.isNoReturn(zcu)) {
-            const want_check = c: {
-                if (!block.wantSafety()) break :c false;
-                if (func_val != null) break :c false;
-                break :c true;
-            };
-            if (want_check) {
-                try sema.safetyPanic(block, call_src, .noreturn_returned);
-            } else {
-                _ = try block.addNoOp(.unreach);
-            }
-            return .unreachable_value;
-        }
-
-        try sema.ensureLayoutResolved(sema.typeOf(maybe_opv), func_ret_ty_src);
-        if (try sema.typeOf(maybe_opv).onePossibleValue(pt)) |opv| {
-            return .fromValue(opv);
-        } else {
-            return maybe_opv;
+        switch (actual_ret_ty.classify(zcu)) {
+            .no_possible_value => {
+                const want_check = c: {
+                    if (!block.wantSafety()) break :c false;
+                    if (func_val != null) break :c false;
+                    break :c true;
+                };
+                if (want_check) {
+                    try sema.safetyPanic(block, call_src, .noreturn_returned);
+                } else {
+                    _ = try block.addNoOp(.unreach);
+                }
+                return .unreachable_value;
+            },
+            .one_possible_value => {
+                return .fromValue((try actual_ret_ty.onePossibleValue(pt)).?);
+            },
+            .runtime => {
+                return call_ref;
+            },
+            .partially_comptime => unreachable,
+            .fully_comptime => unreachable,
         }
     }
 
@@ -7278,11 +7282,6 @@ fn analyzeCall(
             }
         }
     }
-
-    // We're about to do an inline call; if the return type expression was generic, the return type
-    // may not be resolved yet. It's correct to resolve it because the function is going to return a
-    // value of this type.
-    try sema.ensureLayoutResolved(resolved_ret_ty, func_ret_ty_src);
 
     // For an inline call, we depend on the source code of the whole function definition.
     try sema.declareDependency(.{ .src_hash = fn_nav.analysis.?.zir_index });
@@ -8051,7 +8050,7 @@ fn zirEnumFromInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError
     if (dest_ty.zigTypeTag(zcu) != .@"enum") {
         return sema.fail(block, src, "expected enum, found '{f}'", .{dest_ty.fmt(pt)});
     }
-    try sema.ensureLayoutResolved(dest_ty, src);
+    try sema.ensureLayoutResolved(dest_ty, src, .init);
     _ = try sema.checkIntType(block, operand_src, operand_ty);
 
     if (sema.resolveValue(operand)) |int_val| {
@@ -8114,7 +8113,7 @@ fn zirOptionalPayloadPtr(
 
     const ptr_ty = sema.typeOf(optional_ptr);
     assert(ptr_ty.zigTypeTag(sema.pt.zcu) == .pointer);
-    try sema.ensureLayoutResolved(ptr_ty.childType(sema.pt.zcu), src);
+    try sema.ensureLayoutResolved(ptr_ty.childType(sema.pt.zcu), src, .ptr_access);
 
     return sema.analyzeOptionalPayloadPtr(block, src, optional_ptr, safety_check, false);
 }
@@ -8311,7 +8310,7 @@ fn zirErrUnionPayloadPtr(
 
     const ptr_ty = sema.typeOf(operand);
     assert(ptr_ty.zigTypeTag(sema.pt.zcu) == .pointer);
-    try sema.ensureLayoutResolved(ptr_ty.childType(sema.pt.zcu), src);
+    try sema.ensureLayoutResolved(ptr_ty.childType(sema.pt.zcu), src, .ptr_access);
 
     return sema.analyzeErrUnionPayloadPtr(block, src, operand, false, false);
 }
@@ -9020,7 +9019,6 @@ fn funcCommon(
     const io = comp.io;
     const ip = &zcu.intern_pool;
 
-    const src = block.nodeOffset(src_node_offset);
     const ret_ty_src = block.src(.{ .node_offset_fn_type_ret_ty = src_node_offset });
     const cc_src = block.src(.{ .node_offset_fn_type_cc = src_node_offset });
 
@@ -9090,7 +9088,7 @@ fn funcCommon(
             .lbrace_column = @as(u16, @truncate(src_locs.columns)),
             .rbrace_column = @as(u16, @truncate(src_locs.columns >> 16)),
         }));
-        try sema.ensureLayoutResolved(func_val.typeOf(zcu), src);
+        try sema.ensureLayoutResolved(func_val.typeOf(zcu), ret_ty_src, .return_type);
         return .fromValue(func_val);
     }
 
@@ -9105,7 +9103,7 @@ fn funcCommon(
     });
 
     if (has_body) {
-        try sema.ensureLayoutResolved(.fromInterned(func_ty), src);
+        try sema.ensureLayoutResolved(.fromInterned(func_ty), ret_ty_src, .return_type);
         return .fromIntern(try ip.getFuncDecl(gpa, io, pt.tid, .{
             .owner_nav = sema.owner.unwrap().nav_val,
             .ty = func_ty,
@@ -9761,7 +9759,7 @@ fn zirElemPtr(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
         return sema.failWithOwnedErrorMsg(block, msg);
     }
     try sema.checkIndexable(block, src, indexable_ty);
-    try sema.ensureLayoutResolved(indexable_ty.childType(zcu), src);
+    try sema.ensureLayoutResolved(indexable_ty.childType(zcu), src, .ptr_access);
     return sema.elemPtrOneLayerOnly(block, src, array_ptr, elem_index, src, false, false);
 }
 
@@ -9975,14 +9973,15 @@ fn zirSwitchBlockErrUnion(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
             const raw_operand_ty = sema.typeOf(eu_maybe_ptr);
             if (!non_err_case.operand_is_ref) break :err_union_ty raw_operand_ty;
             try sema.checkPtrOperand(block, operand_src, raw_operand_ty);
-            break :err_union_ty raw_operand_ty.childType(zcu);
+            const child_ty = raw_operand_ty.childType(zcu);
+            try sema.ensureLayoutResolved(child_ty, operand_src, .ptr_access);
+            break :err_union_ty child_ty;
         };
         if (err_union_ty.zigTypeTag(zcu) != .error_union) {
             return sema.fail(block, operand_src, "expected error union type, found '{f}'", .{
                 err_union_ty.fmt(pt),
             });
         }
-        try sema.ensureLayoutResolved(err_union_ty, operand_src);
 
         const non_err_cond = if (non_err_case.operand_is_ref)
             try sema.analyzePtrIsNonErr(block, operand_src, eu_maybe_ptr)
@@ -11281,11 +11280,12 @@ fn validateSwitchBlock(
         const raw_operand_ty = sema.typeOf(raw_operand);
         if (operand_is_ref) {
             try sema.checkPtrType(block, operand_src, raw_operand_ty, false);
-            break :operand_ty raw_operand_ty.childType(zcu);
+            const child_ty = raw_operand_ty.childType(zcu);
+            try sema.ensureLayoutResolved(child_ty, operand_src, .ptr_access);
+            break :operand_ty child_ty;
         }
         break :operand_ty raw_operand_ty;
     };
-    try sema.ensureLayoutResolved(operand_ty, operand_src);
 
     const item_ty: Type = item_ty: {
         switch (operand_ty.zigTypeTag(zcu)) {
@@ -12844,7 +12844,7 @@ fn zirHasField(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     const name_src = block.builtinCallArgSrc(inst_data.src_node, 1);
     const ty = try sema.resolveType(block, ty_src, extra.lhs);
     const field_name = try sema.resolveConstStringIntern(block, name_src, extra.rhs, .{ .simple = .field_name });
-    try sema.ensureLayoutResolved(ty, ty_src);
+    try sema.ensureLayoutResolved(ty, ty_src, .field_queried);
     const ip = &zcu.intern_pool;
 
     const has_field = hf: {
@@ -15194,6 +15194,7 @@ fn analyzeArithmetic(
                     });
                 }
 
+                try sema.ensureLayoutResolved(lhs_ty.childType(zcu), src, .ptr_offset);
                 const elem_size = lhs_ty.childType(zcu).abiSize(zcu);
                 if (elem_size == 0) {
                     return sema.fail(block, src, "pointer subtraction requires element type '{f}' to have runtime bits", .{
@@ -15246,7 +15247,7 @@ fn analyzeArithmetic(
                         else => return sema.failWithInvalidPtrArithmetic(block, src, "pointer-integer", "addition and subtraction"),
                     };
 
-                    try sema.ensureLayoutResolved(lhs_ty.childType(zcu), src);
+                    try sema.ensureLayoutResolved(lhs_ty.childType(zcu), src, .ptr_offset);
                     return sema.analyzePtrArithmetic(block, src, lhs, rhs, air_tag, rhs_src);
                 },
             }
@@ -15879,7 +15880,7 @@ fn zirSizeOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const ty = try sema.resolveType(block, operand_src, inst_data.operand);
-    try sema.ensureLayoutResolved(ty, operand_src);
+    try sema.ensureLayoutResolved(ty, operand_src, .size_of);
     switch (ty.classify(zcu)) {
         .no_possible_value,
         => return sema.fail(block, operand_src, "no size available for uninstantiable type '{f}'", .{ty.fmt(pt)}),
@@ -15934,7 +15935,7 @@ fn zirBitSizeOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
         .@"anyframe",
         => {},
     }
-    try sema.ensureLayoutResolved(operand_ty, operand_src);
+    try sema.ensureLayoutResolved(operand_ty, operand_src, .size_of);
     return .fromValue(try pt.intValue(.comptime_int, operand_ty.bitSize(zcu)));
 }
 
@@ -16185,7 +16186,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     const type_info_ty = try sema.getBuiltinType(src, .Type);
     const type_info_tag_ty = type_info_ty.unionTagType(zcu).?;
 
-    try sema.ensureLayoutResolved(ty, src);
+    try sema.ensureLayoutResolved(ty, src, .type_info);
 
     if (ty.typeDeclInst(zcu)) |type_decl_inst| {
         try sema.declareDependency(.{ .namespace = type_decl_inst });
@@ -16345,7 +16346,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             const alignment_val = try pt.intValue(.comptime_int, bytes: {
                 if (info.flags.alignment.toByteUnits()) |b| break :bytes b;
                 const elem_ty: Type = .fromInterned(info.child);
-                try sema.ensureLayoutResolved(elem_ty, src);
+                try sema.ensureLayoutResolved(elem_ty, src, .type_info);
                 break :bytes elem_ty.abiAlignment(zcu).toByteUnits().?;
             });
 
@@ -18233,7 +18234,7 @@ fn zirPtrType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
                 elem_ty.fmt(pt), bit_offset, bit_offset - host_size * 8, host_size,
             });
         }
-        try sema.ensureLayoutResolved(elem_ty, elem_ty_src);
+        try sema.ensureLayoutResolved(elem_ty, elem_ty_src, .bit_ptr_child);
         const elem_bit_size = elem_ty.bitSize(zcu);
         if (elem_bit_size > host_size * 8 - bit_offset) {
             return sema.fail(block, bitoffset_src, "packed type '{f}' at bit offset {d} ends {d} bits after the end of a {d} byte host integer", .{
@@ -18302,7 +18303,7 @@ fn zirStructInitEmpty(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileE
     const pt = sema.pt;
     const zcu = pt.zcu;
 
-    try sema.ensureLayoutResolved(obj_ty, ty_src);
+    try sema.ensureLayoutResolved(obj_ty, ty_src, .init);
 
     switch (obj_ty.zigTypeTag(zcu)) {
         .@"struct" => return sema.structInitEmpty(block, obj_ty, src, src),
@@ -18367,7 +18368,7 @@ fn zirStructInitEmptyResult(sema: *Sema, block: *Block, inst: Zir.Inst.Index, is
         });
     } else ty_operand;
 
-    try sema.ensureLayoutResolved(init_ty, src);
+    try sema.ensureLayoutResolved(init_ty, src, .init);
 
     const obj_ty = init_ty.optEuBaseType(zcu);
 
@@ -18486,7 +18487,7 @@ fn zirStructInit(
         // The type wasn't actually known, so treat this as an anon struct init.
         return sema.structInitAnon(block, src, inst, .typed_init, extra.data, extra.end, is_ref);
     };
-    try sema.ensureLayoutResolved(result_ty, src);
+    try sema.ensureLayoutResolved(result_ty, src, .init);
     const resolved_ty = result_ty.optEuBaseType(zcu);
 
     if (resolved_ty.zigTypeTag(zcu) == .@"struct") {
@@ -18951,7 +18952,7 @@ fn structInitAnon(
     };
     try sema.addTypeReferenceEntry(src, struct_ty);
     // No need for `ensureNamespaceUpToDate` because this type's namespace is always empty.
-    try sema.ensureLayoutResolved(struct_ty, src);
+    try sema.ensureLayoutResolved(struct_ty, src, .init);
 
     _ = opt_runtime_index orelse {
         const struct_val = try pt.aggregateValue(struct_ty, values);
@@ -19270,7 +19271,7 @@ fn zirFieldTypeRef(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErro
     const field_src = block.builtinCallArgSrc(inst_data.src_node, 1);
     const aggregate_ty = try sema.resolveType(block, ty_src, extra.container_type);
     const field_name = try sema.resolveConstStringIntern(block, field_src, extra.field_name, .{ .simple = .field_name });
-    try sema.ensureLayoutResolved(aggregate_ty, ty_src);
+    try sema.ensureLayoutResolved(aggregate_ty, ty_src, .field_queried);
     return sema.fieldType(block, aggregate_ty, field_name, field_src, ty_src);
 }
 
@@ -19290,7 +19291,7 @@ fn zirStructInitFieldType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
     const aggregate_ty = wrapped_aggregate_ty.optEuBaseType(zcu);
     const zir_field_name = sema.code.nullTerminatedString(extra.name_start);
     const field_name = try ip.getOrPutString(gpa, io, pt.tid, zir_field_name, .no_embedded_nulls);
-    try sema.ensureLayoutResolved(aggregate_ty, ty_src);
+    try sema.ensureLayoutResolved(aggregate_ty, ty_src, .init);
     return sema.fieldType(block, aggregate_ty, field_name, field_name_src, ty_src);
 }
 
@@ -19390,7 +19391,7 @@ fn zirAlignOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const ty = try sema.resolveType(block, operand_src, inst_data.operand);
-    try sema.ensureLayoutResolved(ty, operand_src);
+    try sema.ensureLayoutResolved(ty, operand_src, .align_of);
     if (ty.isNoReturn(zcu)) {
         return sema.fail(block, operand_src, "no align available for type '{f}'", .{ty.fmt(sema.pt)});
     }
@@ -19874,7 +19875,6 @@ fn zirReifyFn(
     const param_attrs_arr = try sema.derefSliceAsArray(block, param_attrs_src, param_attrs_slice, .{ .simple = .fn_param_attrs });
 
     const ret_ty = try sema.resolveType(block, ret_ty_src, extra.ret_ty);
-    try sema.ensureLayoutResolved(ret_ty, ret_ty_src);
 
     const fn_attrs_uncoerced = sema.resolveInst(extra.fn_attrs);
     const fn_attrs_coerced = try sema.coerce(block, fn_attrs_ty, fn_attrs_uncoerced, fn_attrs_src);
@@ -19899,10 +19899,6 @@ fn zirReifyFn(
             param_types_src,
             fn_attrs.@"callconv",
         );
-        try sema.ensureLayoutResolved(param_ty, param_types_src);
-        if (param_ty.comptimeOnly(zcu)) {
-            return sema.fail(block, param_attrs_src, "cannot reify function type with comptime-only parameter type '{f}'", .{param_ty.fmt(pt)});
-        }
         if (param_attrs.@"noalias") {
             if (param_idx > 31) {
                 return sema.fail(block, param_attrs_src, "this compiler implementation only supports 'noalias' on the first 32 parameters", .{});
@@ -20811,8 +20807,7 @@ fn zirPtrFromInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!
 
     const elem_ty = ptr_ty.nullablePtrElem(zcu);
 
-    // We'll need to validate the pointer alignment.
-    try sema.ensureLayoutResolved(elem_ty, src);
+    try sema.ensureLayoutResolved(elem_ty, src, .align_check);
     const ptr_align = ptr_ty.ptrAlignment(zcu);
 
     if (ptr_ty.isSlice(zcu)) {
@@ -21155,8 +21150,8 @@ fn ptrCastFull(
     const src_info = operand_ty.ptrInfo(zcu);
     const dest_info = dest_ty.ptrInfo(zcu);
 
-    try sema.ensureLayoutResolved(.fromInterned(src_info.child), operand_src);
-    try sema.ensureLayoutResolved(.fromInterned(dest_info.child), src);
+    try sema.ensureLayoutResolved(.fromInterned(src_info.child), operand_src, .align_check);
+    try sema.ensureLayoutResolved(.fromInterned(dest_info.child), src, .align_check);
 
     const DestSliceLen = union(enum) {
         undef,
@@ -21927,7 +21922,7 @@ fn bitOffsetOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!u6
     const ty = try sema.resolveType(block, ty_src, extra.lhs);
     const field_name = try sema.resolveConstStringIntern(block, field_name_src, extra.rhs, .{ .simple = .field_name });
 
-    try sema.ensureLayoutResolved(ty, ty_src);
+    try sema.ensureLayoutResolved(ty, ty_src, .field_queried);
 
     const pt = sema.pt;
     const zcu = pt.zcu;
@@ -23010,7 +23005,7 @@ fn zirAtomicLoad(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!
     const ptr = try sema.checkAtomicPtrOperand(block, elem_ty, elem_ty_src, uncasted_ptr, ptr_src, true);
     const order = try sema.resolveAtomicOrder(block, order_src, extra.ordering, .{ .simple = .atomic_order });
 
-    try sema.ensureLayoutResolved(elem_ty, elem_ty_src);
+    try sema.ensureLayoutResolved(elem_ty, elem_ty_src, .ptr_access);
 
     switch (order) {
         .release, .acq_rel => {
@@ -23330,7 +23325,7 @@ fn zirFieldParentPtr(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.Ins
         return sema.fail(block, inst_src, "expected single pointer type, found '{f}'", .{parent_ptr_ty.fmt(pt)});
     }
     const parent_ty: Type = .fromInterned(parent_ptr_info.child);
-    try sema.ensureLayoutResolved(parent_ty, inst_src);
+    try sema.ensureLayoutResolved(parent_ty, inst_src, .field_used);
     switch (parent_ty.zigTypeTag(zcu)) {
         .@"struct", .@"union" => {},
         else => return sema.fail(block, inst_src, "expected pointer to struct or union type, found '{f}'", .{parent_ptr_ty.fmt(pt)}),
@@ -23938,8 +23933,8 @@ fn zirMemcpy(
     const dest_elem_ty = dest_ty.indexableElem(zcu);
     const src_elem_ty = src_ty.indexableElem(zcu);
 
-    try sema.ensureLayoutResolved(dest_elem_ty, dest_src);
-    try sema.ensureLayoutResolved(src_elem_ty, src_src);
+    try sema.ensureLayoutResolved(dest_elem_ty, dest_src, .ptr_access);
+    try sema.ensureLayoutResolved(src_elem_ty, src_src, .ptr_access);
 
     const imc = try sema.coerceInMemoryAllowed(
         block,
@@ -25470,7 +25465,7 @@ fn fieldPtrLoad(
     const object_ptr_ty = sema.typeOf(object_ptr);
     assert(object_ptr_ty.zigTypeTag(zcu) == .pointer);
     const pointee_ty = object_ptr_ty.childType(zcu);
-    try sema.ensureLayoutResolved(pointee_ty, src);
+    try sema.ensureLayoutResolved(pointee_ty, src, .ptr_access);
     if (try pointee_ty.onePossibleValue(pt)) |opv| {
         const object: Air.Inst.Ref = .fromValue(opv);
         return fieldVal(sema, block, src, object, field_name, field_name_src);
@@ -25606,7 +25601,7 @@ fn fieldVal(
                     if (try sema.namespaceLookupVal(block, src, child_type.getNamespaceIndex(zcu), field_name)) |inst| {
                         return inst;
                     }
-                    try sema.ensureLayoutResolved(child_type, src);
+                    try sema.ensureLayoutResolved(child_type, src, .field_used);
                     if (child_type.unionTagType(zcu)) |enum_ty| {
                         if (enum_ty.enumFieldIndex(field_name, zcu)) |field_index_usize| {
                             const field_index: u32 = @intCast(field_index_usize);
@@ -25619,7 +25614,7 @@ fn fieldVal(
                     if (try sema.namespaceLookupVal(block, src, child_type.getNamespaceIndex(zcu), field_name)) |inst| {
                         return inst;
                     }
-                    try sema.ensureLayoutResolved(child_type, src);
+                    try sema.ensureLayoutResolved(child_type, src, .field_used);
                     const field_index_usize = child_type.enumFieldIndex(field_name, zcu) orelse
                         return sema.failWithBadMemberAccess(block, child_type, field_name_src, field_name);
                     const field_index: u32 = @intCast(field_index_usize);
@@ -25645,7 +25640,7 @@ fn fieldVal(
         },
         .@"struct" => if (is_pointer_to) {
             // Avoid loading the entire struct by fetching a pointer and loading that
-            try sema.ensureLayoutResolved(inner_ty, src);
+            try sema.ensureLayoutResolved(inner_ty, src, .ptr_access);
             const field_ptr = try sema.structFieldPtr(block, src, object, field_name, field_name_src, inner_ty);
             return sema.analyzeLoad(block, src, field_ptr, object_src);
         } else {
@@ -25653,7 +25648,7 @@ fn fieldVal(
         },
         .@"union" => if (is_pointer_to) {
             // Avoid loading the entire union by fetching a pointer and loading that
-            try sema.ensureLayoutResolved(inner_ty, src);
+            try sema.ensureLayoutResolved(inner_ty, src, .ptr_access);
             const field_ptr = try sema.unionFieldPtr(block, src, object, field_name, field_name_src, inner_ty, false);
             return sema.analyzeLoad(block, src, field_ptr, object_src);
         } else {
@@ -25837,7 +25832,7 @@ fn fieldPtr(
                     if (try sema.namespaceLookupRef(block, src, child_type.getNamespaceIndex(zcu), field_name)) |inst| {
                         return inst;
                     }
-                    try sema.ensureLayoutResolved(child_type, src);
+                    try sema.ensureLayoutResolved(child_type, src, .field_used);
                     if (child_type.unionTagType(zcu)) |enum_ty| {
                         if (enum_ty.enumFieldIndex(field_name, zcu)) |field_index| {
                             const field_index_u32: u32 = @intCast(field_index);
@@ -25851,7 +25846,7 @@ fn fieldPtr(
                     if (try sema.namespaceLookupRef(block, src, child_type.getNamespaceIndex(zcu), field_name)) |inst| {
                         return inst;
                     }
-                    try sema.ensureLayoutResolved(child_type, src);
+                    try sema.ensureLayoutResolved(child_type, src, .field_used);
                     const field_index = child_type.enumFieldIndex(field_name, zcu) orelse {
                         return sema.failWithBadMemberAccess(block, child_type, field_name_src, field_name);
                     };
@@ -25873,7 +25868,7 @@ fn fieldPtr(
                 try sema.analyzeLoad(block, src, object_ptr, object_ptr_src)
             else
                 object_ptr;
-            try sema.ensureLayoutResolved(inner_ty, src);
+            try sema.ensureLayoutResolved(inner_ty, src, .ptr_access);
             const field_ptr = try sema.structFieldPtr(block, src, inner_ptr, field_name, field_name_src, inner_ty);
             try sema.checkKnownAllocPtr(block, inner_ptr, field_ptr);
             return field_ptr;
@@ -25883,7 +25878,7 @@ fn fieldPtr(
                 try sema.analyzeLoad(block, src, object_ptr, object_ptr_src)
             else
                 object_ptr;
-            try sema.ensureLayoutResolved(inner_ty, src);
+            try sema.ensureLayoutResolved(inner_ty, src, .ptr_access);
             const field_ptr = try sema.unionFieldPtr(block, src, inner_ptr, field_name, field_name_src, inner_ty, initializing);
             try sema.checkKnownAllocPtr(block, inner_ptr, field_ptr);
             return field_ptr;
@@ -25927,7 +25922,7 @@ fn fieldCallBind(
     // Optionally dereference a second pointer to get the concrete type.
     const is_double_ptr = inner_ty.zigTypeTag(zcu) == .pointer and inner_ty.ptrSize(zcu) == .one;
     const concrete_ty = if (is_double_ptr) inner_ty.childType(zcu) else inner_ty;
-    try sema.ensureLayoutResolved(concrete_ty, src);
+    try sema.ensureLayoutResolved(concrete_ty, src, .ptr_access);
     const ptr_ty = if (is_double_ptr) inner_ty else raw_ptr_ty;
     const object_ptr = if (is_double_ptr)
         try sema.analyzeLoad(block, src, raw_ptr, src)
@@ -26514,7 +26509,7 @@ fn elemPtr(
         else => return sema.fail(block, indexable_ptr_src, "expected pointer, found '{f}'", .{indexable_ptr_ty.fmt(pt)}),
     };
     try sema.checkIndexable(block, src, indexable_ty);
-    try sema.ensureLayoutResolved(indexable_ty, src);
+    try sema.ensureLayoutResolved(indexable_ty, src, .ptr_access);
 
     const elem_ptr = switch (indexable_ty.zigTypeTag(zcu)) {
         .vector => try sema.elemPtrVector(block, indexable_ptr_src, indexable_ptr, elem_index_src, elem_index, init),
@@ -26522,7 +26517,7 @@ fn elemPtr(
         .@"struct" => try sema.tupleElemPtr(block, src, indexable_ptr, elem_index, elem_index_src),
         else => {
             const indexable = try sema.analyzeLoad(block, indexable_ptr_src, indexable_ptr, indexable_ptr_src);
-            try sema.ensureLayoutResolved(sema.typeOf(indexable).childType(zcu), src);
+            try sema.ensureLayoutResolved(sema.typeOf(indexable).childType(zcu), src, .ptr_access);
             return elemPtrOneLayerOnly(sema, block, src, indexable, elem_index, elem_index_src, init, oob_safety);
         },
     };
@@ -26614,7 +26609,7 @@ fn elemVal(
     switch (indexable_ty.zigTypeTag(zcu)) {
         .pointer => {
             const child_ty = indexable_ty.childType(zcu);
-            try sema.ensureLayoutResolved(child_ty, src);
+            try sema.ensureLayoutResolved(child_ty, src, .ptr_access);
             switch (indexable_ty.ptrSize(zcu)) {
                 .slice => return sema.elemValSlice(block, src, indexable_src, indexable, elem_index_src, elem_index, oob_safety),
                 .many, .c => {
@@ -27192,7 +27187,7 @@ fn coerceExtra(
     const target = zcu.getTarget();
 
     inst_ty.assertHasLayout(zcu);
-    try sema.ensureLayoutResolved(dest_ty, inst_src);
+    try sema.ensureLayoutResolved(dest_ty, inst_src, .coerce);
 
     // If the types are the same, we can return the operand.
     if (dest_ty.eql(inst_ty, zcu))
@@ -28552,8 +28547,8 @@ fn coerceInMemoryAllowedFns(
             } };
         }
 
-        try sema.ensureLayoutResolved(src_ty, src_src);
-        try sema.ensureLayoutResolved(dest_ty, dest_src);
+        try sema.ensureLayoutResolved(src_ty, src_src, .coerce);
+        try sema.ensureLayoutResolved(dest_ty, dest_src, .coerce);
         const src_is_runtime = src_ty.fnHasRuntimeBits(zcu);
         const dest_is_runtime = dest_ty.fnHasRuntimeBits(zcu);
         if (src_is_runtime != dest_is_runtime) return .{ .fn_generic = !dest_is_runtime };
@@ -28607,7 +28602,6 @@ fn coerceInMemoryAllowedFns(
             const src_is_comptime = src_info.paramIsComptime(@intCast(param_i));
             const dest_is_comptime = dest_info.paramIsComptime(@intCast(param_i));
             if (src_is_comptime == dest_is_comptime) break :comptime_param;
-            try sema.ensureLayoutResolved(dest_param_ty, dest_src);
             if (!dest_is_mut and src_is_comptime and !dest_is_comptime and dest_param_ty.comptimeOnly(zcu)) {
                 // A parameter which is marked `comptime` can drop that annotation if the type is comptime-only.
                 // The function remains generic, and the parameter is going to be comptime-resolved either way,
@@ -28835,11 +28829,11 @@ fn coerceInMemoryAllowedPtrs(
         dest_info.child != src_info.child)
     {
         const src_align = if (src_info.flags.alignment == .none) a: {
-            try sema.ensureLayoutResolved(src_child, src_src);
+            try sema.ensureLayoutResolved(src_child, src_src, .align_check);
             break :a src_child.abiAlignment(zcu);
         } else src_info.flags.alignment;
         const dest_align = if (dest_info.flags.alignment == .none) a: {
-            try sema.ensureLayoutResolved(dest_child, dest_src);
+            try sema.ensureLayoutResolved(dest_child, dest_src, .align_check);
             break :a dest_child.abiAlignment(zcu);
         } else dest_info.flags.alignment;
         if (dest_align.compare(if (dest_is_mut) .neq else .gt, src_align)) {
@@ -29189,7 +29183,7 @@ fn bitCast(
     const old_ty = sema.typeOf(inst);
 
     old_ty.assertHasLayout(zcu);
-    try sema.ensureLayoutResolved(dest_ty, inst_src);
+    try sema.ensureLayoutResolved(dest_ty, inst_src, .init);
 
     const dest_bits = dest_ty.bitSize(zcu);
     const old_bits = old_ty.bitSize(zcu);
@@ -29837,10 +29831,11 @@ fn ensureMemoizedStateResolved(sema: *Sema, src: LazySrcLoc, stage: InternPool.M
     try sema.addReferenceEntry(null, src, unit);
     try sema.declareDependency(.{ .memoized_state = stage });
 
+    const reason: Zcu.DependencyReason = .{ .src = src, .type_layout_reason = undefined };
     if (pt.zcu.analysis_in_progress.contains(unit)) {
-        return sema.failWithOwnedErrorMsg(null, try sema.errMsg(src, "dependency loop detected", .{}));
+        return sema.failWithDependencyLoop(unit, &reason);
     }
-    try pt.ensureMemoizedStateUpToDate(stage);
+    try pt.ensureMemoizedStateUpToDate(stage, &reason);
 }
 
 pub fn ensureNavResolved(sema: *Sema, block: *Block, src: LazySrcLoc, nav_index: InternPool.Nav.Index, kind: enum { type, fully }) CompileError!void {
@@ -29854,11 +29849,6 @@ pub fn ensureNavResolved(sema: *Sema, block: *Block, src: LazySrcLoc, nav_index:
         return;
     }
 
-    try sema.declareDependency(switch (kind) {
-        .type => .{ .nav_ty = nav_index },
-        .fully => .{ .nav_val = nav_index },
-    });
-
     // Note that even if `nav.status == .resolved`, we must still trigger `ensureNavValUpToDate`
     // to make sure the value is up-to-date on incremental updates.
 
@@ -29867,20 +29857,23 @@ pub fn ensureNavResolved(sema: *Sema, block: *Block, src: LazySrcLoc, nav_index:
         .fully => .{ .nav_val = nav_index },
     });
     try sema.addReferenceEntry(block, src, anal_unit);
+    try sema.declareDependency(switch (kind) {
+        .type => .{ .nav_ty = nav_index },
+        .fully => .{ .nav_val = nav_index },
+    });
+
+    const reason: Zcu.DependencyReason = .{ .src = src, .type_layout_reason = undefined };
 
     if (zcu.analysis_in_progress.contains(anal_unit)) {
-        return sema.failWithOwnedErrorMsg(null, try sema.errMsg(.{
-            .base_node_inst = nav.analysis.?.zir_index,
-            .offset = LazySrcLoc.Offset.nodeOffset(.zero),
-        }, "dependency loop detected", .{}));
+        return sema.failWithDependencyLoop(anal_unit, &reason);
     }
 
     switch (kind) {
         .type => {
             try zcu.ensureNavValAnalysisQueued(nav_index);
-            return pt.ensureNavTypeUpToDate(nav_index);
+            return pt.ensureNavTypeUpToDate(nav_index, &reason);
         },
-        .fully => return pt.ensureNavValUpToDate(nav_index),
+        .fully => return pt.ensureNavValUpToDate(nav_index, &reason),
     }
 }
 
@@ -30065,7 +30058,7 @@ fn analyzeLoad(
         return sema.fail(block, ptr_src, "cannot load opaque type '{f}'", .{elem_ty.fmt(pt)});
     }
 
-    try sema.ensureLayoutResolved(elem_ty, src);
+    try sema.ensureLayoutResolved(elem_ty, src, .ptr_access);
     if (try elem_ty.onePossibleValue(pt)) |opv| return .fromValue(opv);
 
     if (try sema.resolveDefinedValue(block, ptr_src, ptr)) |ptr_val| {
@@ -30249,7 +30242,7 @@ fn resolveIsNonErrFromType(
             // This is *our* error set; that is, we're currently analyzing the function
             // which owns it. Trying to resolve it now would cause a dependency loop.
             // Instead, accept that we don't know.
-            if (true) return null;
+            return null;
         },
         else => |set_ty| switch (ip.indexToKey(set_ty)) {
             .error_set_type => |error_set_type| switch (error_set_type.names.len) {
@@ -30450,7 +30443,7 @@ fn analyzeSlice(
         else => return sema.fail(block, src, "slice of non-array type '{f}'", .{ptr_ptr_child_ty.fmt(pt)}),
     }
 
-    try sema.ensureLayoutResolved(elem_ty, src);
+    try sema.ensureLayoutResolved(elem_ty, src, .ptr_access);
 
     const ptr = if (slice_ty.isSlice(zcu))
         try sema.analyzeSlicePtr(block, ptr_src, ptr_or_slice, slice_ty)
@@ -32831,11 +32824,13 @@ fn ensureFuncIesResolved(
     try sema.declareDependency(.{ .func_ies = func_index });
     try sema.addReferenceEntry(block, src, .wrap(.{ .func = func_index }));
 
+    const reason: Zcu.DependencyReason = .{ .src = src, .type_layout_reason = undefined };
+
     if (zcu.analysis_in_progress.contains(.wrap(.{ .func = func_index }))) {
-        return sema.fail(block, src, "unable to resolve inferred error set", .{});
+        return sema.failWithDependencyLoop(.wrap(.{ .func = func_index }), &reason);
     }
 
-    try pt.ensureFuncBodyUpToDate(func_index);
+    try pt.ensureFuncBodyUpToDate(func_index, &reason);
 }
 
 pub fn resolveInferredErrorSetPtr(
@@ -33749,6 +33744,8 @@ pub fn flushExports(sema: *Sema) !void {
     //
     // So, pick up and delete any existing exports. This strategy performs
     // redundant work, but that's okay, because this case is exceedingly rare.
+    //
+    // MLUGG TODO: is this still possible? if not, delete this logic and combine deleteUnitExports into resetUnit
     if (zcu.single_exports.get(sema.owner)) |export_idx| {
         try sema.exports.append(gpa, export_idx.ptr(zcu).*);
     } else if (zcu.multi_exports.get(sema.owner)) |info| {
@@ -33940,7 +33937,7 @@ pub fn analyzeMemoizedState(sema: *Sema, stage: InternPool.MemoizedStateStage) C
             const val: Value = switch (builtin_decl.kind()) {
                 .type => val: {
                     const ty = try sema.analyzeAsType(&block, decl_src, .std_builtin_decl, uncoerced_val);
-                    try sema.ensureLayoutResolved(ty, decl_src);
+                    try sema.ensureLayoutResolved(ty, decl_src, .builtin_type);
                     break :val ty.toValue();
                 },
                 .func => val: {
@@ -34369,4 +34366,43 @@ fn zirOpaqueDecl(
     try pt.ensureNamespaceUpToDate(ty.getNamespaceIndex(zcu));
 
     return .fromType(ty);
+}
+
+/// Registers an error indicating a dependency loop: we have introduced a dependency on `want` (with
+/// reason `want_reason`) but have learnt that `want` is already in `zcu.analysis_in_progress`.
+pub fn failWithDependencyLoop(
+    sema: *Sema,
+    want: AnalUnit,
+    want_reason: *const Zcu.DependencyReason,
+) SemaError {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const gpa = zcu.comp.gpa;
+
+    const in_progress_len = zcu.analysis_in_progress.count();
+    var index = zcu.analysis_in_progress.getIndex(want).? + 1;
+
+    try zcu.dependency_loops.ensureUnusedCapacity(gpa, 1);
+    try zcu.dependency_loop_nodes.ensureUnusedCapacity(gpa, in_progress_len - index + 1);
+
+    zcu.dependency_loops.putAssumeCapacityNoClobber(want, {});
+
+    while (index <= in_progress_len) : (index += 1) {
+        const parent_unit = zcu.analysis_in_progress.keys()[index - 1];
+        const unit, const reason = if (index == in_progress_len) .{
+            want,
+            want_reason,
+        } else .{
+            zcu.analysis_in_progress.keys()[index],
+            zcu.analysis_in_progress.values()[index],
+        };
+
+        zcu.dependency_loop_nodes.putAssumeCapacityNoClobber(parent_unit, .{
+            .unit = unit,
+            .reason = reason.?.*,
+        });
+    }
+
+    // A dependency loop error will be reported. Mark us all as transitive failures.
+    return error.AnalysisFail;
 }

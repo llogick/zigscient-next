@@ -119,7 +119,7 @@ module_roots: std.AutoArrayHashMapUnmanaged(*Package.Module, File.Index.Optional
 ///
 /// Always accessed through `ImportTableAdapter`, where keys are fully resolved
 /// file paths in order to ensure files are properly deduplicated. This table owns
-/// the keys and values.
+/// the keysand values.
 ///
 /// Protected by Compilation's mutex.
 ///
@@ -177,7 +177,9 @@ embed_table: std.ArrayHashMapUnmanaged(
 /// is not yet implemented.
 intern_pool: InternPool = .empty,
 
-analysis_in_progress: std.AutoArrayHashMapUnmanaged(AnalUnit, void) = .empty,
+/// Value explains why this `AnalUnit` is being analyzed. It is `null` for the topmost analysis
+/// (index 0), and non-`null` for all others.
+analysis_in_progress: std.AutoArrayHashMapUnmanaged(AnalUnit, ?*const DependencyReason) = .empty,
 /// The ErrorMsg memory is owned by the `AnalUnit`, using Module's general purpose allocator.
 failed_analysis: std.AutoArrayHashMapUnmanaged(AnalUnit, *ErrorMsg) = .empty,
 /// This `AnalUnit` failed semantic analysis because it required analysis of another `AnalUnit` which itself failed.
@@ -189,6 +191,19 @@ transitive_failed_analysis: std.AutoArrayHashMapUnmanaged(AnalUnit, void) = .emp
 /// codegen and linking run on a separate thread.
 failed_codegen: std.AutoArrayHashMapUnmanaged(InternPool.Nav.Index, *ErrorMsg) = .empty,
 failed_types: std.AutoArrayHashMapUnmanaged(InternPool.Index, *ErrorMsg) = .empty,
+
+/// Key is an `AnalUnit` which is in `dependency_loop_nodes`. For each dependency loop, exactly one
+/// unit in the loop is in this map, though the choice is arbitrary and not necessarily reproducible
+/// between compilations. So, instead of (for instance) defining where the dependency loop "starts",
+/// this map simply exists to allow easily iterating all dependency loops exactly once.
+dependency_loops: std.AutoArrayHashMapUnmanaged(AnalUnit, void) = .empty,
+/// Key is an `AnalUnit`, value is the `AnalUnit` which the key references and why it does so.
+/// All units in here form loops. To iterate loops, see `dependency_loops`.
+dependency_loop_nodes: std.AutoArrayHashMapUnmanaged(AnalUnit, struct {
+    unit: AnalUnit,
+    reason: DependencyReason,
+}) = .empty,
+
 /// Keep track of `@compileLog`s per `AnalUnit`.
 /// We track the source location of the first `@compileLog` call, and all logged lines as a linked list.
 /// The list is singly linked, but we do track its tail for fast appends (optimizing many logs in one unit).
@@ -320,6 +335,12 @@ cur_analysis_timer: ?Compilation.Timer = null,
 codegen_task_pool: CodegenTaskPool,
 
 generation: u32 = 0,
+
+pub const DependencyReason = struct {
+    src: LazySrcLoc,
+    /// Only populated if this is for a `.type_layout` unit.
+    type_layout_reason: Sema.type_resolution.LayoutResolveReason,
+};
 
 pub const IncrementalDebugState = struct {
     /// All container types in the ZCU, even dead ones.
@@ -2778,6 +2799,8 @@ pub fn deinit(zcu: *Zcu) void {
         zcu.analysis_in_progress.deinit(gpa);
         zcu.failed_analysis.deinit(gpa);
         zcu.transitive_failed_analysis.deinit(gpa);
+        zcu.dependency_loops.deinit(gpa);
+        zcu.dependency_loop_nodes.deinit(gpa);
         zcu.failed_codegen.deinit(gpa);
         zcu.failed_types.deinit(gpa);
 
@@ -3536,15 +3559,47 @@ pub fn deleteUnitExports(zcu: *Zcu, anal_unit: AnalUnit) void {
     }
 }
 
-/// Delete all references in `reference_table` which are caused by this `AnalUnit`.
+/// Prepares `unit` for re-analysis by clearing all of the following state:
+/// * Compile errors associated with `unit`
+/// * Compile logs associated with `unit`
+/// * Dependencies from `unit` on other things
+/// * References from `unit` to other units
+/// Delete all references in `reference_table` which are caused by `unit`, and all dependencies it
+/// has. Called in preparation for re-analysis, which will recreate references and dependencies.
 /// Re-analysis of the `AnalUnit` will cause appropriate references to be recreated.
-pub fn deleteUnitReferences(zcu: *Zcu, anal_unit: AnalUnit) void {
-    const gpa = zcu.gpa;
+pub fn resetUnit(zcu: *Zcu, unit: AnalUnit) void {
+    const gpa = zcu.comp.gpa;
 
+    // Compile errors
+    if (zcu.failed_analysis.fetchSwapRemove(unit)) |kv| {
+        kv.value.destroy(gpa);
+    } else if (zcu.dependency_loop_nodes.swapRemove(unit)) {
+        _ = zcu.dependency_loops.swapRemove(unit);
+        _ = zcu.transitive_failed_analysis.swapRemove(unit);
+    } else {
+        _ = zcu.transitive_failed_analysis.swapRemove(unit);
+    }
+
+    // Compile logs
+    if (zcu.compile_logs.fetchSwapRemove(unit)) |kv| {
+        var opt_line_idx = kv.value.first_line.toOptional();
+        while (opt_line_idx.unwrap()) |line_idx| {
+            zcu.free_compile_log_lines.append(gpa, line_idx) catch {
+                // This space will be reused eventually, so we need not propagate this error.
+                // Just leak it for now, and let GC reclaim it later on.
+                break;
+            };
+            opt_line_idx = line_idx.get(zcu).next;
+        }
+    }
+
+    // Dependencies
+    zcu.intern_pool.removeDependenciesForDepender(gpa, unit);
+
+    // References
     zcu.clearCachedResolvedReferences();
-
     unit_refs: {
-        const kv = zcu.reference_table.fetchSwapRemove(anal_unit) orelse break :unit_refs;
+        const kv = zcu.reference_table.fetchSwapRemove(unit) orelse break :unit_refs;
         var idx = kv.value;
 
         while (idx != std.math.maxInt(u32)) {
@@ -3572,9 +3627,8 @@ pub fn deleteUnitReferences(zcu: *Zcu, anal_unit: AnalUnit) void {
             }
         }
     }
-
     type_refs: {
-        const kv = zcu.type_reference_table.fetchSwapRemove(anal_unit) orelse break :type_refs;
+        const kv = zcu.type_reference_table.fetchSwapRemove(unit) orelse break :type_refs;
         var idx = kv.value;
 
         while (idx != std.math.maxInt(u32)) {
@@ -3585,22 +3639,6 @@ pub fn deleteUnitReferences(zcu: *Zcu, anal_unit: AnalUnit) void {
             };
             idx = zcu.all_type_references.items[idx].next;
         }
-    }
-}
-
-/// Delete all compile logs performed by this `AnalUnit`.
-/// Re-analysis of the `AnalUnit` will cause logs to be rediscovered.
-pub fn deleteUnitCompileLogs(zcu: *Zcu, anal_unit: AnalUnit) void {
-    const kv = zcu.compile_logs.fetchSwapRemove(anal_unit) orelse return;
-    const gpa = zcu.gpa;
-    var opt_line_idx = kv.value.first_line.toOptional();
-    while (opt_line_idx.unwrap()) |line_idx| {
-        zcu.free_compile_log_lines.append(gpa, line_idx) catch {
-            // This space will be reused eventually, so we need not propagate this error.
-            // Just leak it for now, and let GC reclaim it later on.
-            return;
-        };
-        opt_line_idx = line_idx.get(zcu).next;
     }
 }
 
@@ -4252,11 +4290,7 @@ pub fn fmtDependee(zcu: *Zcu, d: InternPool.Dependee) std.fmt.Alt(FormatDependee
     return .{ .data = .{ .dependee = d, .zcu = zcu } };
 }
 
-const FormatAnalUnit = struct {
-    unit: AnalUnit,
-    zcu: *Zcu,
-};
-
+const FormatAnalUnit = struct { unit: AnalUnit, zcu: *const Zcu };
 fn formatAnalUnit(data: FormatAnalUnit, writer: *Io.Writer) Io.Writer.Error!void {
     const zcu = data.zcu;
     const ip = &zcu.intern_pool;
@@ -4280,8 +4314,7 @@ fn formatAnalUnit(data: FormatAnalUnit, writer: *Io.Writer) Io.Writer.Error!void
     }
 }
 
-const FormatDependee = struct { dependee: InternPool.Dependee, zcu: *Zcu };
-
+const FormatDependee = struct { dependee: InternPool.Dependee, zcu: *const Zcu };
 fn formatDependee(data: FormatDependee, writer: *Io.Writer) Io.Writer.Error!void {
     const zcu = data.zcu;
     const ip = &zcu.intern_pool;
@@ -4664,6 +4697,273 @@ fn explainWhyFileIsInModule(
 
         import = importer_ref.import;
     }
+}
+
+pub fn addDependencyLoopErrors(zcu: *Zcu, eb: *std.zig.ErrorBundle.Wip) Allocator.Error!void {
+    const gpa = zcu.comp.gpa;
+
+    const all_references = try zcu.resolveReferences();
+
+    var units: std.ArrayList(AnalUnit) = .empty;
+    defer units.deinit(gpa);
+
+    // TODO: sort the dependency loops somehow to make the error bundle reproducible
+    for (zcu.dependency_loops.keys()) |arbitrary_unit| {
+        units.clearRetainingCapacity();
+
+        var cur = arbitrary_unit;
+        while (true) {
+            try units.append(gpa, cur);
+            cur = zcu.dependency_loop_nodes.get(cur).?.unit;
+            if (cur == arbitrary_unit) break;
+        }
+
+        // `units` now contains all units in the loop. We need to pick a starting point somewhere
+        // along that loop to begin. We will pick whichever node has the shortest reference trace,
+        // because the other units may well just be referenced *by* that one! This is also likely
+        // to match the user's intuition for where the loop "starts".
+        var start_index: usize = 0;
+        var start_depth: u32 = depth: {
+            var depth: u32 = 0;
+            var opt_ref = all_references.get(units.items[0]) orelse {
+                // This dependency loop is actually unreferenced, so we don't need to emit a compile
+                // error at all! Move onto the next dependency loop.
+                continue;
+            };
+            while (opt_ref) |ref| : (opt_ref = all_references.get(ref.referencer).?) depth += 1;
+            break :depth depth;
+        };
+        for (units.items[1..], 1..) |unit, index| {
+            var depth: u32 = 0;
+            var opt_ref = all_references.get(unit).?;
+            while (opt_ref) |ref| : (opt_ref = all_references.get(ref.referencer).?) depth += 1;
+            if (depth < start_depth) {
+                start_index = index;
+                start_depth = depth;
+            }
+        }
+
+        // Collect a reference trace for the start of the loop.
+        var ref_trace: std.ArrayList(std.zig.ErrorBundle.ReferenceTrace) = .empty;
+        defer ref_trace.deinit(gpa);
+        const frame_limit = zcu.comp.reference_trace orelse 0;
+        try zcu.populateReferenceTrace(units.items[start_index], frame_limit, eb, &ref_trace);
+
+        // Collect all notes first so we don't leave an incomplete root error message on `error.AlreadyReported`.
+        const note_buf = try gpa.alloc(std.zig.ErrorBundle.MessageIndex, units.items.len + 1);
+        defer gpa.free(note_buf);
+        note_buf[0] = addDependencyLoopNote(zcu, eb, units.items[start_index], ref_trace.items) catch |err| switch (err) {
+            error.AlreadyReported => return, // give up on the dep loop error
+            error.OutOfMemory => |e| return e,
+        };
+        for (units.items[start_index + 1 ..], note_buf[1 .. units.items.len - start_index]) |unit, *note| {
+            note.* = addDependencyLoopNote(zcu, eb, unit, &.{}) catch |err| switch (err) {
+                error.AlreadyReported => return, // give up on the dep loop error
+                error.OutOfMemory => |e| return e,
+            };
+        }
+        for (units.items[0..start_index], note_buf[units.items.len - start_index .. units.items.len]) |unit, *note| {
+            note.* = addDependencyLoopNote(zcu, eb, unit, &.{}) catch |err| switch (err) {
+                error.AlreadyReported => return, // give up on the dep loop error
+                error.OutOfMemory => |e| return e,
+            };
+        }
+        note_buf[units.items.len] = try eb.addErrorMessage(.{
+            .msg = try eb.addString("eliminate any one of these dependencies to break the loop"),
+            .src_loc = .none,
+        });
+
+        try eb.addRootErrorMessage(.{
+            .msg = try eb.printString("dependency loop with length {d}", .{units.items.len}),
+            .src_loc = .none,
+            .notes_len = @intCast(units.items.len + 1),
+        });
+        const notes_start = try eb.reserveNotes(@intCast(units.items.len + 1));
+        const notes: []std.zig.ErrorBundle.MessageIndex = @ptrCast(eb.extra.items[notes_start..]);
+        @memcpy(notes, note_buf);
+    }
+}
+fn addDependencyLoopNote(
+    zcu: *Zcu,
+    eb: *std.zig.ErrorBundle.Wip,
+    source_unit: AnalUnit,
+    ref_trace: []const std.zig.ErrorBundle.ReferenceTrace,
+) (Allocator.Error || error{AlreadyReported})!std.zig.ErrorBundle.MessageIndex {
+    const ip = &zcu.intern_pool;
+    const comp = zcu.comp;
+
+    const fmt_source: std.fmt.Alt(FormatAnalUnit, formatDependencyLoopSourceUnit) = .{ .data = .{
+        .unit = source_unit,
+        .zcu = zcu,
+    } };
+
+    const dep_node = zcu.dependency_loop_nodes.get(source_unit).?;
+
+    const msg: std.zig.ErrorBundle.String = switch (dep_node.unit.unwrap()) {
+        .@"comptime" => unreachable, // cannot be involved in a dependency loop
+        .nav_val => |nav| try eb.printString("{f} uses value of declaration '{f}' here", .{
+            fmt_source, ip.getNav(nav).fqn.fmt(ip),
+        }),
+        .nav_ty => |nav| try eb.printString("{f} uses type of declaration '{f}' here", .{
+            fmt_source, ip.getNav(nav).fqn.fmt(ip),
+        }),
+        .memoized_state => |stage| switch (stage) {
+            .panic => try eb.printString("{f} requires panic handler for call here", .{fmt_source}),
+            else => try eb.printString("{f} requires 'std.builtin' declarations here", .{fmt_source}),
+        },
+        .func => |func| try eb.printString("{f} uses inferred error set of function '{f}' here", .{
+            fmt_source, ip.getNav(zcu.funcInfo(func).owner_nav).fqn.fmt(ip),
+        }),
+        .type_layout => |ty| try eb.printString("{f} depends on type '{f}' {s}", .{
+            fmt_source,
+            Type.fromInterned(ty).containerTypeName(ip).fmt(ip),
+            dep_node.reason.type_layout_reason.msg(),
+        }),
+    };
+
+    const src_loc = dep_node.reason.src.upgrade(zcu);
+    const source = src_loc.file_scope.getSource(zcu) catch |err| {
+        try Compilation.unableToLoadZcuFile(zcu, eb, src_loc.file_scope, err);
+        return error.AlreadyReported;
+    };
+    const span = src_loc.span(zcu) catch |err| {
+        try Compilation.unableToLoadZcuFile(zcu, eb, src_loc.file_scope, err);
+        return error.AlreadyReported;
+    };
+    const loc = std.zig.findLineColumn(source, span.main);
+    const eb_src = try eb.addSourceLocation(.{
+        .src_path = try eb.printString("{f}", .{src_loc.file_scope.path.fmt(comp)}),
+        .span_start = span.start,
+        .span_main = span.main,
+        .span_end = span.end,
+        .line = @intCast(loc.line),
+        .column = @intCast(loc.column),
+        .source_line = try eb.addString(loc.source_line),
+        .reference_trace_len = @intCast(ref_trace.len),
+    });
+    for (ref_trace) |rt| try eb.addReferenceTrace(rt);
+    return eb.addErrorMessage(.{
+        .msg = msg,
+        .src_loc = eb_src,
+    });
+}
+fn formatDependencyLoopSourceUnit(data: FormatAnalUnit, w: *Io.Writer) Io.Writer.Error!void {
+    const zcu = data.zcu;
+    const ip = &zcu.intern_pool;
+    switch (data.unit.unwrap()) {
+        .@"comptime" => unreachable, // cannot be involved in a dependency loop
+        .nav_val => |nav| try w.print("value of declaration '{f}'", .{ip.getNav(nav).fqn.fmt(ip)}),
+        .nav_ty => |nav| try w.print("type of declaration '{f}'", .{ip.getNav(nav).fqn.fmt(ip)}),
+        .memoized_state => |stage| switch (stage) {
+            .panic => try w.writeAll("panic handler"),
+            else => try w.writeAll("'std.builtin' declarations"),
+        },
+        .type_layout => |ty| try w.print("type '{f}'", .{
+            Type.fromInterned(ty).containerTypeName(ip).fmt(ip),
+        }),
+        .func => |func| try w.print("function '{f}'", .{
+            ip.getNav(zcu.funcInfo(func).owner_nav).fqn.fmt(ip),
+        }),
+    }
+}
+
+pub fn populateReferenceTrace(
+    zcu: *Zcu,
+    root: AnalUnit,
+    frame_limit: u32,
+    eb: *std.zig.ErrorBundle.Wip,
+    ref_trace: *std.ArrayList(std.zig.ErrorBundle.ReferenceTrace),
+) Allocator.Error!void {
+    const ip = &zcu.intern_pool;
+    const gpa = zcu.comp.gpa;
+
+    if (frame_limit == 0) return;
+
+    const all_references = try zcu.resolveReferences();
+
+    var seen: std.AutoHashMapUnmanaged(InternPool.AnalUnit, void) = .empty;
+    defer seen.deinit(gpa);
+
+    var referenced_by = root;
+    while (all_references.get(referenced_by)) |maybe_ref| {
+        const ref = maybe_ref orelse break;
+        const gop = try seen.getOrPut(gpa, ref.referencer);
+        if (gop.found_existing) break;
+        if (ref_trace.items.len < frame_limit) {
+            var last_call_src = ref.src;
+            var opt_inline_frame = ref.inline_frame;
+            while (opt_inline_frame.unwrap()) |inline_frame| {
+                const f = inline_frame.ptr(zcu).*;
+                const func_nav = ip.indexToKey(f.callee).func.owner_nav;
+                const func_name = ip.getNav(func_nav).name.toSlice(ip);
+                addReferenceTraceFrame(zcu, eb, ref_trace, func_name, last_call_src, true) catch |err| switch (err) {
+                    error.OutOfMemory => |e| return e,
+                    error.AlreadyReported => {
+                        // An incomplete reference trace isn't the end of the world; just cut it off.
+                        return;
+                    },
+                };
+                last_call_src = f.call_src;
+                opt_inline_frame = f.parent;
+            }
+            const root_name: ?[]const u8 = switch (ref.referencer.unwrap()) {
+                .@"comptime" => "comptime",
+                .nav_val, .nav_ty => |nav| ip.getNav(nav).name.toSlice(ip),
+                .type_layout => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
+                .func => |f| ip.getNav(zcu.funcInfo(f).owner_nav).name.toSlice(ip),
+                .memoized_state => null,
+            };
+            if (root_name) |n| {
+                addReferenceTraceFrame(zcu, eb, ref_trace, n, last_call_src, false) catch |err| switch (err) {
+                    error.OutOfMemory => |e| return e,
+                    error.AlreadyReported => {
+                        // An incomplete reference trace isn't the end of the world; just cut it off.
+                        return;
+                    },
+                };
+            }
+        }
+        referenced_by = ref.referencer;
+    }
+
+    if (seen.count() > ref_trace.items.len) {
+        try ref_trace.append(gpa, .{
+            .decl_name = @intCast(seen.count() - ref_trace.items.len),
+            .src_loc = .none,
+        });
+    }
+}
+fn addReferenceTraceFrame(
+    zcu: *Zcu,
+    eb: *std.zig.ErrorBundle.Wip,
+    ref_trace: *std.ArrayList(std.zig.ErrorBundle.ReferenceTrace),
+    name: []const u8,
+    lazy_src: Zcu.LazySrcLoc,
+    inlined: bool,
+) error{ OutOfMemory, AlreadyReported }!void {
+    const gpa = zcu.gpa;
+    const src = lazy_src.upgrade(zcu);
+    const source = src.file_scope.getSource(zcu) catch |err| {
+        try Compilation.unableToLoadZcuFile(zcu, eb, src.file_scope, err);
+        return error.AlreadyReported;
+    };
+    const span = src.span(zcu) catch |err| {
+        try Compilation.unableToLoadZcuFile(zcu, eb, src.file_scope, err);
+        return error.AlreadyReported;
+    };
+    const loc = std.zig.findLineColumn(source, span.main);
+    try ref_trace.append(gpa, .{
+        .decl_name = try eb.printString("{s}{s}", .{ name, if (inlined) " [inlined]" else "" }),
+        .src_loc = try eb.addSourceLocation(.{
+            .src_path = try eb.printString("{f}", .{src.file_scope.path.fmt(zcu.comp)}),
+            .span_start = span.start,
+            .span_main = span.main,
+            .span_end = span.end,
+            .line = @intCast(loc.line),
+            .column = @intCast(loc.column),
+            .source_line = 0,
+        }),
+    });
 }
 
 const TrackedUnitSema = struct {

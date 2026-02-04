@@ -417,29 +417,32 @@ const Eval = struct {
         is_note: bool,
         err_idx: std.zig.ErrorBundle.MessageIndex,
     ) Allocator.Error!void {
+        const io = eval.io;
         const err = eb.getErrorMessage(err_idx);
-        if (err.src_loc == .none) @panic("TODO error message with no source location");
         if (err.count != 1) @panic("TODO error message with count>1");
         const msg = eb.nullTerminatedString(err.msg);
-        const src = eb.getSourceLocation(err.src_loc);
-        const raw_filename = eb.nullTerminatedString(src.src_path);
-
-        const io = eval.io;
-
-        // We need to replace backslashes for consistency between platforms.
-        const filename = name: {
-            if (std.mem.indexOfScalar(u8, raw_filename, '\\') == null) break :name raw_filename;
-            const copied = try eval.arena.dupe(u8, raw_filename);
-            std.mem.replaceScalar(u8, copied, '\\', '/');
-            break :name copied;
+        const matches = matches: {
+            if (expected.is_note != is_note) break :matches false;
+            if (!std.mem.eql(u8, expected.msg, msg)) break :matches false;
+            if (err.src_loc == .none) {
+                break :matches expected.src == null;
+            }
+            const expected_src = expected.src orelse break :matches false;
+            const src = eb.getSourceLocation(err.src_loc);
+            const raw_filename = eb.nullTerminatedString(src.src_path);
+            // We need to replace backslashes for consistency between platforms.
+            const filename = name: {
+                if (std.mem.indexOfScalar(u8, raw_filename, '\\') == null) break :name raw_filename;
+                const copied = try eval.arena.dupe(u8, raw_filename);
+                std.mem.replaceScalar(u8, copied, '\\', '/');
+                break :name copied;
+            };
+            if (!std.mem.eql(u8, expected_src.filename, filename)) break :matches false;
+            if (expected_src.line != src.line + 1) break :matches false;
+            if (expected_src.column != src.column + 1) break :matches false;
+            break :matches true;
         };
-
-        if (expected.is_note != is_note or
-            !std.mem.eql(u8, expected.filename, filename) or
-            expected.line != src.line + 1 or
-            expected.column != src.column + 1 or
-            !std.mem.eql(u8, expected.msg, msg))
-        {
+        if (!matches) {
             eb.renderToStderr(io, .{}, .auto) catch {};
             eval.fatal("compile error did not match expected error", .{});
         }
@@ -714,10 +717,12 @@ const Case = struct {
 
     const ExpectedError = struct {
         is_note: bool,
-        filename: []const u8,
-        line: u32,
-        column: u32,
         msg: []const u8,
+        src: ?struct {
+            filename: []const u8,
+            line: u32,
+            column: u32,
+        },
     };
 
     fn parse(arena: Allocator, io: Io, bytes: []const u8) !Case {
@@ -930,16 +935,16 @@ fn parseExpectedError(str: []const u8, l: usize) Case.ExpectedError {
 
     var it = std.mem.splitScalar(u8, str, ':');
     const filename = it.first();
-    const line_str = it.next() orelse fatal("line {d}: incomplete error specification", .{l});
-    const column_str = it.next() orelse fatal("line {d}: incomplete error specification", .{l});
+    const line_str, const column_str = if (filename.len > 0) .{
+        it.next() orelse fatal("line {d}: incomplete error specification", .{l}),
+        it.next() orelse fatal("line {d}: incomplete error specification", .{l}),
+    } else .{ undefined, undefined };
     const error_or_note_str = std.mem.trim(
         u8,
         it.next() orelse fatal("line {d}: incomplete error specification", .{l}),
         " ",
     );
-    const message = std.mem.trim(u8, it.rest(), " ");
-    if (filename.len == 0) fatal("line {d}: empty filename", .{l});
-    if (message.len == 0) fatal("line {d}: empty error message", .{l});
+
     const is_note = if (std.mem.eql(u8, error_or_note_str, "error"))
         false
     else if (std.mem.eql(u8, error_or_note_str, "note"))
@@ -947,18 +952,19 @@ fn parseExpectedError(str: []const u8, l: usize) Case.ExpectedError {
     else
         fatal("line {d}: expeted 'error' or 'note', found '{s}'", .{ l, error_or_note_str });
 
-    const line = std.fmt.parseInt(u32, line_str, 10) catch
-        fatal("line {d}: invalid line number '{s}'", .{ l, line_str });
-
-    const column = std.fmt.parseInt(u32, column_str, 10) catch
-        fatal("line {d}: invalid column number '{s}'", .{ l, column_str });
+    const message = std.mem.trim(u8, it.rest(), " ");
+    if (message.len == 0) fatal("line {d}: empty error message", .{l});
 
     return .{
         .is_note = is_note,
-        .filename = filename,
-        .line = line,
-        .column = column,
         .msg = message,
+        .src = if (filename.len == 0) null else .{
+            .filename = filename,
+            .line = std.fmt.parseInt(u32, line_str, 10) catch
+                fatal("line {d}: invalid line number '{s}'", .{ l, line_str }),
+            .column = std.fmt.parseInt(u32, column_str, 10) catch
+                fatal("line {d}: invalid column number '{s}'", .{ l, column_str }),
+        },
     };
 }
 
