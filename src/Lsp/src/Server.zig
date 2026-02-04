@@ -339,18 +339,20 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 const bfile_uri = param_handle.closest_build_file_uri orelse break :comp;
                 const bfile = param_server.document_store.getBuildFile(bfile_uri) orelse break :comp;
 
-                if (!bfile.impl.mutex.tryLock()) break :comp;
-                // bfile.impl.mutex.lockUncancelable(param_server.io);
+                try bfile.impl.mutex.lock(param_server.io);
                 defer bfile.impl.mutex.unlock(param_server.io);
 
-                // log.debug("Triggering a compilation update for: {s}", .{bfile_uri});
-
                 const comp = bfile.impl.compilation orelse break :comp;
+                // log.debug("Triggering a compilation update for: {s}", .{bfile_uri});
                 comp.file_system_inputs.?.clearRetainingCapacity();
                 @import("root").Compilation.setMainThread();
-                comp.update(.none) catch break :comp;
+                comp.update(.none) catch |err| switch (err) {
+                    error.Canceled => return error.Canceled,
+                    error.OutOfMemory => @panic("OOM"),
+                    else => break :comp,
+                };
 
-                var error_bundle = comp.getAllErrorsAlloc() catch break :comp;
+                var error_bundle = comp.getAllErrorsAlloc() catch @panic("OOM");
                 defer error_bundle.deinit(param_server.document_store.allocator);
 
                 const global = struct {
@@ -362,24 +364,24 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                     global.compilation_cycle,
                     bfile.impl.compilation_state.project_root_path.?,
                     error_bundle,
-                ) catch break :comp;
+                ) catch @panic("OOM");
                 param_server.diagnostics_collection.collectNotVisibleErrMessages(
                     &param_server.document_store,
                     .compilation,
                     global.compilation_cycle,
                     bfile.impl.compilation_state.project_root_path.?,
                     error_bundle,
-                ) catch break :comp;
+                ) catch @panic("OOM");
                 diagnostics_gen.generateOptionalDiagnostics(param_server, param_handle) catch |err| switch (err) {
                     error.Canceled => return error.Canceled,
-                    error.OutOfMemory => {},
+                    error.OutOfMemory => @panic("OOM"),
                 };
                 return;
             }
 
             diagnostics_gen.generateDiagnostics(param_server, param_handle) catch |err| switch (err) {
                 error.Canceled => return error.Canceled,
-                error.OutOfMemory => {},
+                error.OutOfMemory => @panic("OOM"),
             };
         }
     }.do;
@@ -1205,6 +1207,10 @@ fn openDocumentHandler(server: *Server, _: std.mem.Allocator, notification: type
 
 fn changeDocumentHandler(server: *Server, _: std.mem.Allocator, notification: types.TextDocument.DidChangeParams) Error!void {
     if (notification.contentChanges.len == 0) return;
+
+    const old_cancel_protect = server.io.swapCancelProtection(.blocked);
+    defer _ = server.io.swapCancelProtection(old_cancel_protect);
+
     const handle = server.document_store.getHandle(notification.textDocument.uri) orelse return;
 
     try handle.applyContentChanges(
@@ -1212,12 +1218,16 @@ fn changeDocumentHandler(server: *Server, _: std.mem.Allocator, notification: ty
         server.offset_encoding,
         &server.diagnostics_collection,
     );
+
     handle.handleRootIdComment(&server.document_store, false) catch |err| switch (err) {
         error.Canceled => return error.Canceled,
+        error.OutOfMemory => return error.InternalError,
     };
+
     if (handle.stat) |*stat| {
         stat.*.mtime.nanoseconds += 1;
     }
+
     handle.setChangePending(false);
 
     server.generateDiagnostics(handle);

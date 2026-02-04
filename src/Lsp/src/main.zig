@@ -2,7 +2,7 @@ const std = @import("std");
 const zig_builtin = @import("builtin");
 const zls = @import("zls");
 const exe_options = @import("build_options");
-
+const root = @import("root");
 const tracy = @import("tracy");
 const known_folders = @import("known-folders");
 
@@ -541,11 +541,14 @@ pub fn main(init: std.process.Init.Minimal) !u8 {
     // const allocator: std.mem.Allocator = if (exe_options.enable_failing_allocator) failing_allocator_state.allocator() else inner_allocator;
     const allocator = base_allocator;
 
-    var threaded: std.Io.Threaded = .init(allocator, .{
-        .environ = init.environ,
-        .argv0 = .init(init.args),
-    });
-    defer threaded.deinit();
+    var threaded: std.Io.Threaded = if (@hasDecl(root, "threaded_impl_ptr"))
+        root.threaded_impl_ptr
+    else
+        .init(allocator, .{
+            .environ = init.environ,
+            .argv0 = .init(init.args),
+        });
+    defer if (!@hasDecl(root, "threaded_impl_ptr")) threaded.deinit();
     const io = threaded.ioBasic();
 
     var environ_map = try init.environ.createMap(allocator);

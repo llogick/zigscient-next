@@ -1040,6 +1040,37 @@ pub const CompilationState = struct {
     }
 };
 
+const BuildError = error{
+    OutOfMemory,
+    AccessDenied,
+    BrokenPipe,
+    Canceled,
+    DeviceBusy,
+    DiskQuota,
+    FileBusy,
+    FileTooBig,
+    InputOutput,
+    LockViolation,
+    NoDevice,
+    NoSpaceLeft,
+    NotOpenForWriting,
+    PermissionDenied,
+    SystemResources,
+    Unexpected,
+    WouldBlock,
+    ValgrindUnsupportedOnTarget,
+    TargetRequiresSingleThreaded,
+    BackendRequiresSingleThreaded,
+    TargetRequiresPic,
+    PieRequiresPic,
+    DynamicLinkingRequiresPic,
+    TargetHasNoRedZone,
+    StackCheckUnsupportedByTarget,
+    StackProtectorUnsupportedByTarget,
+    StackProtectorUnavailableWithoutLibC,
+    PrintingErrorsFailed,
+};
+
 pub fn buildOutputType(
     gpa: Allocator,
     arena: Allocator,
@@ -1050,7 +1081,7 @@ pub fn buildOutputType(
     cs: *CompilationState,
     ds: ?*@import("zls").DocumentStore,
     compilation: ?*?*Compilation,
-) !void {
+) BuildError!void {
     cs.io = io;
     cs.provided_name = null;
     cs.root_src_file = null;

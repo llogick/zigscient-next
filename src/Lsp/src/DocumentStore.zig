@@ -195,7 +195,7 @@ pub const BuildFile = struct {
         return true;
     }
 
-    fn redoCompilation(self: *BuildFile, ds: *DocumentStore) void {
+    fn redoCompilation(self: *BuildFile, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
         if (self.impl.compilation) |comp| {
             comp.destroy();
             self.impl.compilation_state.deinit(ds.allocator);
@@ -218,17 +218,11 @@ pub const BuildFile = struct {
         const root_id = if (!(self.roots_index < cfg.value.roots.len)) 0 else self.roots_index;
         const arena = self.impl.arena_instance.allocator();
         var args_dups: std.ArrayList([]const u8) = .empty;
-        for (cfg.value.roots[root_id].args) |item| args_dups.append(
-            arena,
-            arena.dupe(
-                u8,
-                item,
-            ) catch @panic("OOM"),
-        ) catch @panic("OOM");
-        self.impl.args = args_dups.toOwnedSlice(arena) catch @panic("OOM"); //arena.dupe([]const u8, cfg.value.roots[root_id].args) catch @panic("OOM");
-        log.info("Creating a compilation for: {s}\n{s}", .{ self.uri, std.json.Stringify.valueAlloc(arena, self.impl.args, .{}) catch @panic("OOM") });
+        for (cfg.value.roots[root_id].args) |item| try args_dups.append(arena, try arena.dupe(u8, item));
+        self.impl.args = try args_dups.toOwnedSlice(arena);
+        log.info("Creating a compilation for: {s}\n{s}", .{ self.uri, try std.json.Stringify.valueAlloc(arena, self.impl.args, .{}) });
         const cmd = self.impl.args[1];
-        self.impl.compilation_state = arena.create(CompilationState) catch return;
+        self.impl.compilation_state = try arena.create(CompilationState);
         self.impl.compilation_state.* = .{};
         if (std.mem.eql(u8, cmd, "build-exe")) {
             buildOutputType(
@@ -241,8 +235,9 @@ pub const BuildFile = struct {
                 self.impl.compilation_state,
                 ds,
                 &self.impl.compilation,
-            ) catch {
-                cleanup = true;
+            ) catch |err| switch (err) {
+                error.Canceled, error.OutOfMemory => |e| return e,
+                else => cleanup = true,
             };
         } else if (std.mem.eql(u8, cmd, "build-lib")) {
             buildOutputType(
@@ -255,8 +250,9 @@ pub const BuildFile = struct {
                 self.impl.compilation_state,
                 ds,
                 &self.impl.compilation,
-            ) catch {
-                cleanup = true;
+            ) catch |err| switch (err) {
+                error.Canceled, error.OutOfMemory => |e| return e,
+                else => cleanup = true,
             };
         } else if (std.mem.eql(u8, cmd, "build-obj")) {
             buildOutputType(
@@ -269,26 +265,11 @@ pub const BuildFile = struct {
                 self.impl.compilation_state,
                 ds,
                 &self.impl.compilation,
-            ) catch {
-                cleanup = true;
+            ) catch |err| switch (err) {
+                error.Canceled, error.OutOfMemory => |e| return e,
+                else => cleanup = true,
             };
         }
-        // if (self.impl.compilation) |c| log.debug("new comp: {*}", .{c});
-        // var eb = self.impl.compilation.?.getAllErrorsAlloc() catch @panic("OOM");
-        // defer eb.deinit(ds.allocator);
-        // std.debug.print("initial comp errorMsgCount: {}\n", .{eb.errorMessageCount()});
-        // {
-        //     self.impl.compilation.?.update(.none) catch {};
-        //     std.debug.print("upd comp done\n", .{});
-        //     var eb2 = self.impl.compilation.?.getAllErrorsAlloc() catch @panic("OOM");
-        //     defer eb2.deinit(ds.allocator);
-        //     std.debug.print("updated comp errorMsgCount: {}\n", .{eb2.errorMessageCount()});
-        // }
-        // for (self.impl.comp_state.create_module.modules.keys(), self.impl.comp_state.create_module.modules.values()) |key, cli_mod| {
-        //     _ = cli_mod;
-        //     std.debug.print("redoComp mod: {s}\n", .{key});
-        // }
-
     }
 
     fn deinit(self: *BuildFile, allocator: std.mem.Allocator) void {
@@ -858,7 +839,7 @@ pub const Handle = struct {
     }
 
     // IF this handle is also a BuildFile scan for `$ls root_id N` and apply
-    pub fn handleRootIdComment(handle: *Handle, ds: *DocumentStore, send_notification: bool) error{Canceled}!void {
+    pub fn handleRootIdComment(handle: *Handle, ds: *DocumentStore, send_notification: bool) error{ Canceled, OutOfMemory }!void {
         if (handle.tree.errors.len != 0) return;
         const build_file = ds.getBuildFile(handle.uri) orelse return;
 
@@ -897,7 +878,7 @@ pub const Handle = struct {
                     if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
                         try build_file.impl.mutex.lock(ds.io);
                         defer build_file.impl.mutex.unlock(ds.io);
-                        build_file.redoCompilation(ds);
+                        try build_file.redoCompilation(ds);
                         break;
                     }
                 }
@@ -1337,6 +1318,8 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
     }
 
     const old_cancel_protect = self.io.swapCancelProtection(.blocked);
+    defer _ = self.io.swapCancelProtection(old_cancel_protect);
+
     blk: {
         const bf_handle = (self.getOrLoadHandle(build_file.uri) catch break :blk) orelse {
             log.err("Failed to getHandle for: '{s}'", .{build_file.uri});
@@ -1344,15 +1327,18 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
         };
         bf_handle.handleRootIdComment(self, true) catch |err| switch (err) {
             error.Canceled => return error.Canceled,
+            error.OutOfMemory => @panic("OOM"),
         };
     }
-    _ = self.io.swapCancelProtection(old_cancel_protect);
 
     for (self.workspaces.items) |wrkspc_item| {
         if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
             try build_file.impl.mutex.lock(self.io);
             defer build_file.impl.mutex.unlock(self.io);
-            build_file.redoCompilation(self);
+            build_file.redoCompilation(self) catch |err| switch (err) {
+                error.Canceled => return error.Canceled,
+                error.OutOfMemory => @panic("OOM"),
+            };
             break;
         }
     }
