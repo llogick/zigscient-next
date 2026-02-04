@@ -1,6 +1,5 @@
-//! This struct represents a kernel thread, and acts as a namespace for
-//! concurrency primitives that operate on kernel threads. For concurrency
-//! primitives that interact with the I/O interface, see `std.Io`.
+//! This struct represents a kernel thread.
+const Thread = @This();
 
 const builtin = @import("builtin");
 const target = builtin.target;
@@ -14,13 +13,8 @@ const posix = std.posix;
 const windows = std.os.windows;
 const testing = std.testing;
 
-pub const Mutex = struct {
-    pub const Recursive = @import("Thread/Mutex/Recursive.zig");
-};
-
 pub const use_pthreads = native_os != .windows and native_os != .wasi and builtin.link_libc;
 
-const Thread = @This();
 const Impl = if (native_os == .windows)
     WindowsThreadImpl
 else if (use_pthreads)
@@ -1602,10 +1596,6 @@ test "setName, getName" {
 
     context.thread_done_event.set(io);
     thread.join();
-}
-
-test {
-    _ = Mutex;
 }
 
 fn testIncrementNotify(io: Io, value: *usize, event: *Io.Event) void {

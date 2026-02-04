@@ -67,6 +67,9 @@ stderr_writer: File.Writer = .{
 },
 stderr_mode: Io.Terminal.Mode = .no_color,
 stderr_writer_initialized: bool = false,
+stderr_mutex: Io.Mutex = .init,
+stderr_mutex_locker: std.Thread.Id = Thread.invalid_id,
+stderr_mutex_lock_count: usize = 0,
 
 argv0: Argv0,
 environ: Environ,
@@ -688,6 +691,13 @@ const Thread = struct {
     const SignaleeId = if (std.Thread.use_pthreads) std.c.pthread_t else std.Thread.Id;
 
     threadlocal var current: ?*Thread = null;
+
+    /// A value that does not alias any other thread id.
+    const invalid_id: std.Thread.Id = std.math.maxInt(std.Thread.Id);
+
+    fn currentId() std.Thread.Id {
+        return if (current) |t| t.id else std.Thread.getCurrentId();
+    }
 
     /// The thread is neither in a syscall nor entering one, but we want to check for cancelation
     /// anyway. If there is a pending cancel request, acknowledge it and return `error.Canceled`.
@@ -13502,15 +13512,29 @@ fn netLookupFallible(
 
 fn lockStderr(userdata: ?*anyopaque, terminal_mode: ?Io.Terminal.Mode) Io.Cancelable!Io.LockedStderr {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    // Only global mutex since this is Threaded.
-    process.stderr_thread_mutex.lock();
+    const current_thread_id = Thread.currentId();
+
+    if (@atomicLoad(std.Thread.Id, &t.stderr_mutex_locker, .unordered) != current_thread_id) {
+        mutexLock(&t.stderr_mutex);
+        assert(t.stderr_mutex_lock_count == 0);
+        @atomicStore(std.Thread.Id, &t.stderr_mutex_locker, current_thread_id, .unordered);
+    }
+    t.stderr_mutex_lock_count += 1;
+
     return initLockedStderr(t, terminal_mode);
 }
 
 fn tryLockStderr(userdata: ?*anyopaque, terminal_mode: ?Io.Terminal.Mode) Io.Cancelable!?Io.LockedStderr {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    // Only global mutex since this is Threaded.
-    if (!process.stderr_thread_mutex.tryLock()) return null;
+    const current_thread_id = Thread.currentId();
+
+    if (@atomicLoad(std.Thread.Id, &t.stderr_mutex_locker, .unordered) != current_thread_id) {
+        if (!t.stderr_mutex.tryLock()) return null;
+        assert(t.stderr_mutex_lock_count == 0);
+        @atomicStore(std.Thread.Id, &t.stderr_mutex_locker, current_thread_id, .unordered);
+    }
+    t.stderr_mutex_lock_count += 1;
+
     return try initLockedStderr(t, terminal_mode);
 }
 
@@ -13541,7 +13565,12 @@ fn unlockStderr(userdata: ?*anyopaque) void {
     };
     t.stderr_writer.interface.end = 0;
     t.stderr_writer.interface.buffer = &.{};
-    process.stderr_thread_mutex.unlock();
+
+    t.stderr_mutex_lock_count -= 1;
+    if (t.stderr_mutex_lock_count == 0) {
+        @atomicStore(std.Thread.Id, &t.stderr_mutex_locker, Thread.invalid_id, .unordered);
+        mutexUnlock(&t.stderr_mutex);
+    }
 }
 
 fn processCurrentPath(userdata: ?*anyopaque, buffer: []u8) process.CurrentPathError!usize {

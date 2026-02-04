@@ -10,7 +10,7 @@ const IoUring = std.os.linux.IoUring;
 
 /// Must be a thread-safe allocator.
 gpa: Allocator,
-mutex: std.Thread.Mutex,
+mutex: Io.Mutex,
 main_fiber_buffer: [@sizeOf(Fiber) + Fiber.max_result_size]u8 align(@alignOf(Fiber)),
 threads: Thread.List,
 

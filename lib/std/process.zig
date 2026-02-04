@@ -20,13 +20,6 @@ pub const Args = @import("process/Args.zig");
 pub const Environ = @import("process/Environ.zig");
 pub const Preopens = @import("process/Preopens.zig");
 
-/// This is the global, process-wide protection to coordinate stderr writes.
-///
-/// The primary motivation for recursive mutex here is so that a panic while
-/// stderr mutex is held still dumps the stack trace and other debug
-/// information.
-pub var stderr_thread_mutex: std.Thread.Mutex.Recursive = .init;
-
 /// A standard set of pre-initialized useful APIs for programs to take
 /// advantage of. This is the type of the first parameter of the main function.
 /// Applications wanting more flexibility can accept `Init.Minimal` instead.

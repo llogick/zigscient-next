@@ -2160,8 +2160,7 @@ pub const LockedStderr = struct {
 
 /// For doing application-level writes to the standard error stream.
 /// Coordinates also with debug-level writes that are ignorant of Io interface
-/// and implementations. When this returns, `std.process.stderr_thread_mutex`
-/// will be locked.
+/// and implementations.
 ///
 /// See also:
 /// * `tryLockStderr`
