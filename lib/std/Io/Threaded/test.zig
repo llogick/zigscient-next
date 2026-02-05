@@ -181,13 +181,17 @@ test "cancel blocked read from pipe" {
     var write_end: Io.File = undefined;
     switch (builtin.target.os.tag) {
         .wasi => return error.SkipZigTest,
-        .windows => try std.os.windows.CreatePipe(&read_end.handle, &write_end.handle, &.{
-            .nLength = @sizeOf(std.os.windows.SECURITY_ATTRIBUTES),
-            .lpSecurityDescriptor = null,
-            .bInheritHandle = std.os.windows.FALSE,
-        }),
+        .windows => {
+            const pipe = try threaded.windowsCreatePipe(.{
+                .server = .{ .mode = .{ .IO = .SYNCHRONOUS_NONALERT } },
+                .client = .{ .mode = .{ .IO = .SYNCHRONOUS_NONALERT } },
+                .inbound = true,
+            });
+            read_end = .{ .handle = pipe[0], .flags = .{ .nonblocking = false } };
+            write_end = .{ .handle = pipe[1], .flags = .{ .nonblocking = false } };
+        },
         else => {
-            const pipe = try std.Io.Threaded.pipe2(.{});
+            const pipe = try std.Io.Threaded.pipe2(.{ .CLOEXEC = true });
             read_end = .{ .handle = pipe[0], .flags = .{ .nonblocking = false } };
             write_end = .{ .handle = pipe[1], .flags = .{ .nonblocking = false } };
         },

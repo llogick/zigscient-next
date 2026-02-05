@@ -1544,6 +1544,7 @@ fn generateLangRef(b: *std.Build) std.Build.LazyPath {
     defer dir.close(io);
 
     var wf = b.addWriteFiles();
+    b.step("test-docs", "Test code snippets from the docs").dependOn(&wf.step);
 
     var it = dir.iterateAssumeFirstIteration();
     while (it.next(io) catch @panic("failed to read dir")) |entry| {

@@ -407,6 +407,11 @@ pub extern "ntdll" fn NtCreateNamedPipeFile(
     DefaultTimeout: ?*const LARGE_INTEGER,
 ) callconv(.winapi) NTSTATUS;
 
+pub extern "ntdll" fn NtFlushBuffersFile(
+    FileHandle: HANDLE,
+    IoStatusBlock: *IO_STATUS_BLOCK,
+) callconv(.winapi) NTSTATUS;
+
 pub extern "ntdll" fn NtMapViewOfSection(
     SectionHandle: HANDLE,
     ProcessHandle: HANDLE,
@@ -590,7 +595,7 @@ pub extern "ntdll" fn NtOpenThread(
 
 pub extern "ntdll" fn NtCancelSynchronousIoFile(
     ThreadHandle: HANDLE,
-    RequestToCancel: ?*IO_STATUS_BLOCK,
+    IoRequestToCancel: ?*IO_STATUS_BLOCK,
     IoStatusBlock: *IO_STATUS_BLOCK,
 ) callconv(.winapi) NTSTATUS;
 
@@ -606,13 +611,13 @@ pub extern "ntdll" fn NtDelayExecution(
     DelayInterval: *const LARGE_INTEGER,
 ) callconv(.winapi) NTSTATUS;
 
-pub extern "ntdll" fn NtCancelIoFileEx(
+pub extern "ntdll" fn NtCancelIoFile(
     FileHandle: HANDLE,
-    IoRequestToCancel: *const IO_STATUS_BLOCK,
     IoStatusBlock: *IO_STATUS_BLOCK,
 ) callconv(.winapi) NTSTATUS;
 
-pub extern "ntdll" fn NtCancelIoFile(
+pub extern "ntdll" fn NtCancelIoFileEx(
     FileHandle: HANDLE,
+    IoRequestToCancel: *const IO_STATUS_BLOCK,
     IoStatusBlock: *IO_STATUS_BLOCK,
 ) callconv(.winapi) NTSTATUS;

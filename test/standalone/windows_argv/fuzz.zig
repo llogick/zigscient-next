@@ -125,7 +125,7 @@ fn spawnVerify(verify_path: [:0]const u16, cmd_line: [:0]const u16) !windows.DWO
             .lpReserved2 = null,
             .hStdInput = null,
             .hStdOutput = null,
-            .hStdError = windows.GetStdHandle(windows.STD_ERROR_HANDLE) catch null,
+            .hStdError = windows.peb().ProcessParameters.hStdError,
         };
         var proc_info: windows.PROCESS_INFORMATION = undefined;
 
@@ -149,7 +149,12 @@ fn spawnVerify(verify_path: [:0]const u16, cmd_line: [:0]const u16) !windows.DWO
         break :spawn proc_info.hProcess;
     };
     defer windows.CloseHandle(child_proc);
-    try windows.WaitForSingleObjectEx(child_proc, windows.INFINITE, false);
+    const infinite_timeout: windows.LARGE_INTEGER = std.math.minInt(windows.LARGE_INTEGER);
+    switch (windows.ntdll.NtWaitForSingleObject(child_proc, windows.FALSE, &infinite_timeout)) {
+        windows.NTSTATUS.WAIT_0 => {},
+        .TIMEOUT => return error.WaitTimeOut,
+        else => |status| return windows.unexpectedStatus(status),
+    }
 
     var exit_code: windows.DWORD = undefined;
     if (windows.kernel32.GetExitCodeProcess(child_proc, &exit_code) == 0) {

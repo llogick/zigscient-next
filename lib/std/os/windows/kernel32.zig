@@ -12,8 +12,6 @@ const FILETIME = windows.FILETIME;
 const HANDLE = windows.HANDLE;
 const HANDLER_ROUTINE = windows.HANDLER_ROUTINE;
 const HMODULE = windows.HMODULE;
-const INIT_ONCE = windows.INIT_ONCE;
-const INIT_ONCE_FN = windows.INIT_ONCE_FN;
 const LARGE_INTEGER = windows.LARGE_INTEGER;
 const LPCSTR = windows.LPCSTR;
 const LPCVOID = windows.LPCVOID;
@@ -24,7 +22,6 @@ const LPWSTR = windows.LPWSTR;
 const MODULEENTRY32 = windows.MODULEENTRY32;
 const OVERLAPPED = windows.OVERLAPPED;
 const OVERLAPPED_ENTRY = windows.OVERLAPPED_ENTRY;
-const PMEMORY_BASIC_INFORMATION = windows.PMEMORY_BASIC_INFORMATION;
 const PROCESS_INFORMATION = windows.PROCESS_INFORMATION;
 const SECURITY_ATTRIBUTES = windows.SECURITY_ATTRIBUTES;
 const SIZE_T = windows.SIZE_T;
@@ -37,7 +34,6 @@ const ULONG = windows.ULONG;
 const ULONG_PTR = windows.ULONG_PTR;
 const va_list = windows.va_list;
 const WCHAR = windows.WCHAR;
-const WIN32_FIND_DATAW = windows.WIN32_FIND_DATAW;
 const Win32Error = windows.Win32Error;
 const WORD = windows.WORD;
 
@@ -58,39 +54,6 @@ pub extern "kernel32" fn ReadDirectoryChangesW(
 pub extern "kernel32" fn CancelIo(
     hFile: HANDLE,
 ) callconv(.winapi) BOOL;
-
-// TODO: Wrapper around NtCancelIoFileEx.
-pub extern "kernel32" fn CancelIoEx(
-    hFile: HANDLE,
-    lpOverlapped: ?*OVERLAPPED,
-) callconv(.winapi) BOOL;
-
-pub extern "kernel32" fn CreateFileW(
-    lpFileName: LPCWSTR,
-    dwDesiredAccess: ACCESS_MASK,
-    dwShareMode: DWORD,
-    lpSecurityAttributes: ?*SECURITY_ATTRIBUTES,
-    dwCreationDisposition: DWORD,
-    dwFlagsAndAttributes: DWORD,
-    hTemplateFile: ?HANDLE,
-) callconv(.winapi) HANDLE;
-
-// TODO A bunch of logic around NtCreateNamedPipe
-pub extern "kernel32" fn CreateNamedPipeW(
-    lpName: LPCWSTR,
-    dwOpenMode: DWORD,
-    dwPipeMode: DWORD,
-    nMaxInstances: DWORD,
-    nOutBufferSize: DWORD,
-    nInBufferSize: DWORD,
-    nDefaultTimeOut: DWORD,
-    lpSecurityAttributes: ?*const SECURITY_ATTRIBUTES,
-) callconv(.winapi) HANDLE;
-
-// TODO: Matches `STD_*_HANDLE` to peb().ProcessParameters.Standard*
-pub extern "kernel32" fn GetStdHandle(
-    nStdHandle: DWORD,
-) callconv(.winapi) ?HANDLE;
 
 // TODO: Wrapper around NtSetInformationFile + `FILE_POSITION_INFORMATION`.
 //  `FILE_STANDARD_INFORMATION` is also used if dwMoveMethod is `FILE_END`
@@ -117,11 +80,6 @@ pub extern "kernel32" fn WriteFile(
     in_out_lpOverlapped: ?*OVERLAPPED,
 ) callconv(.winapi) BOOL;
 
-// TODO: Wrapper around GetStdHandle + NtFlushBuffersFile.
-pub extern "kernel32" fn FlushFileBuffers(
-    hFile: HANDLE,
-) callconv(.winapi) BOOL;
-
 // TODO: Wrapper around NtSetInformationFile + `FILE_IO_COMPLETION_NOTIFICATION_INFORMATION`.
 pub extern "kernel32" fn SetFileCompletionNotificationModes(
     FileHandle: HANDLE,
@@ -142,24 +100,6 @@ pub extern "kernel32" fn GetSystemDirectoryW(
 ) callconv(.winapi) UINT;
 
 // I/O - Kernel Objects
-
-// TODO: Wrapper around GetStdHandle + NtDuplicateObject.
-pub extern "kernel32" fn DuplicateHandle(
-    hSourceProcessHandle: HANDLE,
-    hSourceHandle: HANDLE,
-    hTargetProcessHandle: HANDLE,
-    lpTargetHandle: *HANDLE,
-    dwDesiredAccess: ACCESS_MASK,
-    bInheritHandle: BOOL,
-    dwOptions: DWORD,
-) callconv(.winapi) BOOL;
-
-// TODO: Wrapper around GetStdHandle + NtQueryObject + NtSetInformationObject with .ObjectHandleFlagInformation.
-pub extern "kernel32" fn SetHandleInformation(
-    hObject: HANDLE,
-    dwMask: DWORD,
-    dwFlags: DWORD,
-) callconv(.winapi) BOOL;
 
 // TODO: Wrapper around NtRemoveIoCompletion.
 pub extern "kernel32" fn GetQueuedCompletionStatus(
@@ -210,37 +150,6 @@ pub extern "kernel32" fn TerminateProcess(
     uExitCode: UINT,
 ) callconv(.winapi) BOOL;
 
-// TODO: WaitForSingleObjectEx with bAlertable=false.
-pub extern "kernel32" fn WaitForSingleObject(
-    hHandle: HANDLE,
-    dwMilliseconds: DWORD,
-) callconv(.winapi) DWORD;
-
-// TODO: Wrapper for GetStdHandle + NtWaitForSingleObject.
-// Sets up an activation context before calling NtWaitForSingleObject.
-pub extern "kernel32" fn WaitForSingleObjectEx(
-    hHandle: HANDLE,
-    dwMilliseconds: DWORD,
-    bAlertable: BOOL,
-) callconv(.winapi) DWORD;
-
-// TODO: WaitForMultipleObjectsEx with alertable=false
-pub extern "kernel32" fn WaitForMultipleObjects(
-    nCount: DWORD,
-    lpHandle: [*]const HANDLE,
-    bWaitAll: BOOL,
-    dwMilliseconds: DWORD,
-) callconv(.winapi) DWORD;
-
-// TODO: Wrapper around NtWaitForMultipleObjects.
-pub extern "kernel32" fn WaitForMultipleObjectsEx(
-    nCount: DWORD,
-    lpHandle: [*]const HANDLE,
-    bWaitAll: BOOL,
-    dwMilliseconds: DWORD,
-    bAlertable: BOOL,
-) callconv(.winapi) DWORD;
-
 // Process Management
 
 pub extern "kernel32" fn CreateProcessW(
@@ -255,12 +164,6 @@ pub extern "kernel32" fn CreateProcessW(
     lpStartupInfo: *STARTUPINFOW,
     lpProcessInformation: *PROCESS_INFORMATION,
 ) callconv(.winapi) BOOL;
-
-// TODO: implement via ntdll instead
-pub extern "kernel32" fn SleepEx(
-    dwMilliseconds: DWORD,
-    bAlertable: BOOL,
-) callconv(.winapi) DWORD;
 
 // TODO: Wrapper around NtQueryInformationProcess with `PROCESS_BASIC_INFORMATION`.
 pub extern "kernel32" fn GetExitCodeProcess(
@@ -436,14 +339,3 @@ pub extern "kernel32" fn FormatMessageW(
 
 // TODO: Getter for teb().LastErrorValue.
 pub extern "kernel32" fn GetLastError() callconv(.winapi) Win32Error;
-
-// TODO: Wrapper around RtlSetLastWin32Error.
-pub extern "kernel32" fn SetLastError(
-    dwErrCode: Win32Error,
-) callconv(.winapi) void;
-
-// Everything Else
-
-pub extern "kernel32" fn GetSystemInfo(
-    lpSystemInfo: *SYSTEM_INFO,
-) callconv(.winapi) void;

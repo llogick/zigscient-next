@@ -1848,6 +1848,24 @@ pub const F = struct {
     pub const RDLCK = if (is_sparc) 1 else 0;
     pub const WRLCK = if (is_sparc) 2 else 1;
     pub const UNLCK = if (is_sparc) 3 else 2;
+
+    pub const LINUX_SPECIFIC_BASE = 1024;
+
+    pub const SETLEASE = LINUX_SPECIFIC_BASE + 0;
+    pub const GETLEASE = LINUX_SPECIFIC_BASE + 1;
+    pub const NOTIFY = LINUX_SPECIFIC_BASE + 2;
+    pub const DUPFD_QUERY = LINUX_SPECIFIC_BASE + 3;
+    pub const CREATED_QUERY = LINUX_SPECIFIC_BASE + 4;
+    pub const CANCELLK = LINUX_SPECIFIC_BASE + 5;
+    pub const DUPFD_CLOEXEC = LINUX_SPECIFIC_BASE + 6;
+    pub const SETPIPE_SZ = LINUX_SPECIFIC_BASE + 7;
+    pub const GETPIPE_SZ = LINUX_SPECIFIC_BASE + 8;
+    pub const ADD_SEALS = LINUX_SPECIFIC_BASE + 9;
+    pub const GET_SEALS = LINUX_SPECIFIC_BASE + 10;
+    pub const GET_RW_HINT = LINUX_SPECIFIC_BASE + 11;
+    pub const SET_RW_HINT = LINUX_SPECIFIC_BASE + 12;
+    pub const GET_FILE_RW_HINT = LINUX_SPECIFIC_BASE + 13;
+    pub const SET_FILE_RW_HINT = LINUX_SPECIFIC_BASE + 14;
 };
 
 pub const F_OWNER = enum(i32) {

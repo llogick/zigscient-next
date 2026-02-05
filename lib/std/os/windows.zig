@@ -521,7 +521,7 @@ pub const FILE = struct {
             _,
 
             pub const VALID_FLAGS: @This() = @enumFromInt(0b11);
-        } = .ASYNCHRONOUS,
+        },
         /// The file being opened must not be a directory file or this call
         /// fails. The file object being opened can represent a data file, a
         /// logical, virtual, or physical device, or a volume.
@@ -2324,12 +2324,12 @@ pub fn GetProcessHeap() ?*HEAP {
 // ref: um/winternl.h
 
 pub const OBJECT_ATTRIBUTES = extern struct {
-    Length: ULONG,
-    RootDirectory: ?HANDLE,
-    ObjectName: ?*UNICODE_STRING,
-    Attributes: ATTRIBUTES,
-    SecurityDescriptor: ?*anyopaque,
-    SecurityQualityOfService: ?*anyopaque,
+    Length: ULONG = @sizeOf(OBJECT_ATTRIBUTES),
+    RootDirectory: ?HANDLE = null,
+    ObjectName: ?*UNICODE_STRING = @constCast(&UNICODE_STRING.empty),
+    Attributes: ATTRIBUTES = .{},
+    SecurityDescriptor: ?*anyopaque = null,
+    SecurityQualityOfService: ?*anyopaque = null,
 
     // Valid values for the Attributes field
     pub const ATTRIBUTES = packed struct(ULONG) {
@@ -2420,14 +2420,10 @@ pub fn OpenFile(sub_path_w: []const u16, options: OpenFileOptions) OpenError!HAN
         .Buffer = @constCast(sub_path_w.ptr),
     };
     const attr: OBJECT_ATTRIBUTES = .{
-        .Length = @sizeOf(OBJECT_ATTRIBUTES),
         .RootDirectory = if (std.fs.path.isAbsoluteWindowsWtf16(sub_path_w)) null else options.dir,
-        .Attributes = .{
-            .INHERIT = if (options.sa) |sa| sa.bInheritHandle != FALSE else false,
-        },
+        .Attributes = .{ .INHERIT = if (options.sa) |sa| sa.bInheritHandle != FALSE else false },
         .ObjectName = &nt_name,
         .SecurityDescriptor = if (options.sa) |ptr| ptr.lpSecurityDescriptor else null,
-        .SecurityQualityOfService = null,
     };
     var io: IO_STATUS_BLOCK = undefined;
     while (true) {
@@ -2475,7 +2471,8 @@ pub fn OpenFile(sub_path_w: []const u16, options: OpenFileOptions) OpenError!HAN
                 // call has failed. There is not really a sane way to handle
                 // this other than retrying the creation after the OS finishes
                 // the deletion.
-                _ = kernel32.SleepEx(1, TRUE);
+                const delay_one_ms: LARGE_INTEGER = -(std.time.ns_per_ms / 100);
+                _ = ntdll.NtDelayExecution(TRUE, &delay_one_ms);
                 continue;
             },
             .VIRUS_INFECTED, .VIRUS_DELETED => return error.AntivirusInterference,
@@ -2506,151 +2503,6 @@ pub fn GetCurrentThreadId() DWORD {
 pub fn GetLastError() Win32Error {
     return @enumFromInt(teb().LastErrorValue);
 }
-
-pub const CreatePipeError = error{ Unexpected, SystemResources };
-
-var npfs: ?HANDLE = null;
-
-/// A Zig wrapper around `NtCreateNamedPipeFile` and `NtCreateFile` syscalls.
-/// It implements similar behavior to `CreatePipe` and is meant to serve
-/// as a direct substitute for that call.
-pub fn CreatePipe(rd: *HANDLE, wr: *HANDLE, sattr: *const SECURITY_ATTRIBUTES) CreatePipeError!void {
-    // Up to NT 5.2 (Windows XP/Server 2003), `CreatePipe` would generate a pipe similar to:
-    //
-    //      \??\pipe\Win32Pipes.{pid}.{count}
-    //
-    // where `pid` is the process id and count is a incrementing counter.
-    // The implementation was changed after NT 6.0 (Vista) to open a handle to the Named Pipe File System
-    // and use that as the root directory for `NtCreateNamedPipeFile`.
-    // This object is visible under the NPFS but has no filename attached to it.
-    //
-    // This implementation replicates how `CreatePipe` works in modern Windows versions.
-    const opt_dev_handle = @atomicLoad(?HANDLE, &npfs, .seq_cst);
-    const dev_handle = opt_dev_handle orelse blk: {
-        const str = std.unicode.utf8ToUtf16LeStringLiteral("\\Device\\NamedPipe\\");
-        const len: u16 = @truncate(str.len * @sizeOf(u16));
-        const name: UNICODE_STRING = .{
-            .Length = len,
-            .MaximumLength = len,
-            .Buffer = @ptrCast(@constCast(str)),
-        };
-        const attrs: OBJECT_ATTRIBUTES = .{
-            .ObjectName = @constCast(&name),
-            .Length = @sizeOf(OBJECT_ATTRIBUTES),
-            .RootDirectory = null,
-            .Attributes = .{},
-            .SecurityDescriptor = null,
-            .SecurityQualityOfService = null,
-        };
-
-        var iosb: IO_STATUS_BLOCK = undefined;
-        var handle: HANDLE = undefined;
-        switch (ntdll.NtCreateFile(
-            &handle,
-            .{
-                .STANDARD = .{ .SYNCHRONIZE = true },
-                .GENERIC = .{ .READ = true },
-            },
-            @constCast(&attrs),
-            &iosb,
-            null,
-            .{},
-            .VALID_FLAGS,
-            .OPEN,
-            .{ .IO = .SYNCHRONOUS_NONALERT },
-            null,
-            0,
-        )) {
-            .SUCCESS => {},
-            // Judging from the ReactOS sources this is technically possible.
-            .INSUFFICIENT_RESOURCES => return error.SystemResources,
-            .INVALID_PARAMETER => unreachable,
-            else => |e| return unexpectedStatus(e),
-        }
-        if (@cmpxchgStrong(?HANDLE, &npfs, null, handle, .seq_cst, .seq_cst)) |xchg| {
-            CloseHandle(handle);
-            break :blk xchg.?;
-        } else break :blk handle;
-    };
-
-    const name: UNICODE_STRING = .{ .Buffer = null, .Length = 0, .MaximumLength = 0 };
-    var attrs: OBJECT_ATTRIBUTES = .{
-        .ObjectName = @constCast(&name),
-        .Length = @sizeOf(OBJECT_ATTRIBUTES),
-        .RootDirectory = dev_handle,
-        .Attributes = .{ .INHERIT = sattr.bInheritHandle != FALSE },
-        .SecurityDescriptor = sattr.lpSecurityDescriptor,
-        .SecurityQualityOfService = null,
-    };
-
-    // 120 second relative timeout in 100ns units.
-    const default_timeout: LARGE_INTEGER = (-120 * std.time.ns_per_s) / 100;
-    var iosb: IO_STATUS_BLOCK = undefined;
-    var read: HANDLE = undefined;
-    switch (ntdll.NtCreateNamedPipeFile(
-        &read,
-        .{
-            .SPECIFIC = .{ .FILE_PIPE = .{
-                .WRITE_ATTRIBUTES = true,
-            } },
-            .STANDARD = .{ .SYNCHRONIZE = true },
-            .GENERIC = .{ .READ = true },
-        },
-        &attrs,
-        &iosb,
-        .{ .READ = true, .WRITE = true },
-        .CREATE,
-        .{ .IO = .SYNCHRONOUS_NONALERT },
-        .{ .TYPE = .BYTE_STREAM },
-        .{ .MODE = .BYTE_STREAM },
-        .{ .OPERATION = .QUEUE },
-        1,
-        4096,
-        4096,
-        @constCast(&default_timeout),
-    )) {
-        .SUCCESS => {},
-        .INVALID_PARAMETER => unreachable,
-        .INSUFFICIENT_RESOURCES => return error.SystemResources,
-        else => |e| return unexpectedStatus(e),
-    }
-    errdefer CloseHandle(read);
-
-    attrs.RootDirectory = read;
-
-    var write: HANDLE = undefined;
-    switch (ntdll.NtCreateFile(
-        &write,
-        .{
-            .SPECIFIC = .{ .FILE_PIPE = .{
-                .READ_ATTRIBUTES = true,
-            } },
-            .STANDARD = .{ .SYNCHRONIZE = true },
-            .GENERIC = .{ .WRITE = true },
-        },
-        &attrs,
-        &iosb,
-        null,
-        .{},
-        .VALID_FLAGS,
-        .OPEN,
-        .{
-            .IO = .SYNCHRONOUS_NONALERT,
-            .NON_DIRECTORY_FILE = true,
-        },
-        null,
-        0,
-    )) {
-        .SUCCESS => {},
-        .INVALID_PARAMETER => unreachable,
-        .INSUFFICIENT_RESOURCES => return error.SystemResources,
-        else => |e| return unexpectedStatus(e),
-    }
-
-    rd.* = read;
-    wr.* = write;
-}
-
 /// A Zig wrapper around `NtDeviceIoControlFile` and `NtFsControlFile` syscalls.
 /// It implements similar behavior to `DeviceIoControl` and is meant to serve
 /// as a direct substitute for that call.
@@ -2705,66 +2557,6 @@ pub fn GetOverlappedResult(h: HANDLE, overlapped: *OVERLAPPED, wait: bool) !DWOR
         }
     }
     return bytes;
-}
-
-pub const SetHandleInformationError = error{Unexpected};
-
-pub fn SetHandleInformation(h: HANDLE, mask: DWORD, flags: DWORD) SetHandleInformationError!void {
-    if (kernel32.SetHandleInformation(h, mask, flags) == 0) {
-        switch (GetLastError()) {
-            else => |err| return unexpectedError(err),
-        }
-    }
-}
-
-pub const WaitForSingleObjectError = error{
-    WaitAbandoned,
-    WaitTimeOut,
-    Unexpected,
-};
-
-pub fn WaitForSingleObject(handle: HANDLE, milliseconds: DWORD) WaitForSingleObjectError!void {
-    return WaitForSingleObjectEx(handle, milliseconds, false);
-}
-
-pub fn WaitForSingleObjectEx(handle: HANDLE, milliseconds: DWORD, alertable: bool) WaitForSingleObjectError!void {
-    switch (kernel32.WaitForSingleObjectEx(handle, milliseconds, @intFromBool(alertable))) {
-        WAIT_ABANDONED => return error.WaitAbandoned,
-        WAIT_OBJECT_0 => return,
-        WAIT_TIMEOUT => return error.WaitTimeOut,
-        WAIT_FAILED => switch (GetLastError()) {
-            else => |err| return unexpectedError(err),
-        },
-        else => return error.Unexpected,
-    }
-}
-
-pub fn WaitForMultipleObjectsEx(handles: []const HANDLE, waitAll: bool, milliseconds: DWORD, alertable: bool) !u32 {
-    assert(handles.len > 0 and handles.len <= MAXIMUM_WAIT_OBJECTS);
-    const nCount: DWORD = @as(DWORD, @intCast(handles.len));
-    switch (kernel32.WaitForMultipleObjectsEx(
-        nCount,
-        handles.ptr,
-        @intFromBool(waitAll),
-        milliseconds,
-        @intFromBool(alertable),
-    )) {
-        WAIT_OBJECT_0...WAIT_OBJECT_0 + MAXIMUM_WAIT_OBJECTS => |n| {
-            const handle_index = n - WAIT_OBJECT_0;
-            assert(handle_index < nCount);
-            return handle_index;
-        },
-        WAIT_ABANDONED_0...WAIT_ABANDONED_0 + MAXIMUM_WAIT_OBJECTS => |n| {
-            const handle_index = n - WAIT_ABANDONED_0;
-            assert(handle_index < nCount);
-            return error.WaitAbandoned;
-        },
-        WAIT_TIMEOUT => return error.WaitTimeOut,
-        WAIT_FAILED => switch (GetLastError()) {
-            else => |err| return unexpectedError(err),
-        },
-        else => return error.Unexpected,
-    }
 }
 
 pub const CreateIoCompletionPortError = error{Unexpected};
@@ -2876,21 +2668,6 @@ pub fn GetQueuedCompletionStatusEx(
 
 pub fn CloseHandle(hObject: HANDLE) void {
     assert(ntdll.NtClose(hObject) == .SUCCESS);
-}
-
-pub const GetStdHandleError = error{
-    NoStandardHandleAttached,
-    Unexpected,
-};
-
-pub fn GetStdHandle(handle_id: DWORD) GetStdHandleError!HANDLE {
-    const handle = kernel32.GetStdHandle(handle_id) orelse return error.NoStandardHandleAttached;
-    if (handle == INVALID_HANDLE_VALUE) {
-        switch (GetLastError()) {
-            else => |err| return unexpectedError(err),
-        }
-    }
-    return handle;
 }
 
 pub const QueryObjectNameError = error{
@@ -3545,6 +3322,12 @@ pub fn nanoSecondsToFileTime(ns: Io.Timestamp) FILETIME {
     };
 }
 
+/// Use RtlUpcaseUnicodeChar on Windows when not in comptime to avoid including a
+/// redundant copy of the uppercase data.
+pub inline fn toUpperWtf16(c: u16) u16 {
+    return (if (builtin.os.tag != .windows or @inComptime()) nls.upcaseW else ntdll.RtlUpcaseUnicodeChar)(c);
+}
+
 /// Compares two WTF16 strings using the equivalent functionality of
 /// `RtlEqualUnicodeString` (with case insensitive comparison enabled).
 /// This function can be called on any target.
@@ -3598,19 +3381,12 @@ pub fn eqlIgnoreCaseWtf8(a: []const u8, b: []const u8) bool {
     var a_wtf8_it = std.unicode.Wtf8View.initUnchecked(a).iterator();
     var b_wtf8_it = std.unicode.Wtf8View.initUnchecked(b).iterator();
 
-    // Use RtlUpcaseUnicodeChar on Windows when not in comptime to avoid including a
-    // redundant copy of the uppercase data.
-    const upcaseImpl = switch (builtin.os.tag) {
-        .windows => if (@inComptime()) nls.upcaseW else ntdll.RtlUpcaseUnicodeChar,
-        else => nls.upcaseW,
-    };
-
     while (true) {
         const a_cp = a_wtf8_it.nextCodepoint() orelse break;
         const b_cp = b_wtf8_it.nextCodepoint() orelse return false;
 
         if (a_cp <= maxInt(u16) and b_cp <= maxInt(u16)) {
-            if (a_cp != b_cp and upcaseImpl(@intCast(a_cp)) != upcaseImpl(@intCast(b_cp))) {
+            if (a_cp != b_cp and toUpperWtf16(@intCast(a_cp)) != toUpperWtf16(@intCast(b_cp))) {
                 return false;
             }
         } else if (a_cp != b_cp) {
@@ -4097,15 +3873,6 @@ pub fn errorBug(err: Win32Error) UnexpectedError {
 pub const Win32Error = @import("windows/win32error.zig").Win32Error;
 pub const LANG = @import("windows/lang.zig");
 pub const SUBLANG = @import("windows/sublang.zig");
-
-/// The standard input device. Initially, this is the console input buffer, CONIN$.
-pub const STD_INPUT_HANDLE = maxInt(DWORD) - 10 + 1;
-
-/// The standard output device. Initially, this is the active console screen buffer, CONOUT$.
-pub const STD_OUTPUT_HANDLE = maxInt(DWORD) - 11 + 1;
-
-/// The standard error device. Initially, this is the active console screen buffer, CONOUT$.
-pub const STD_ERROR_HANDLE = maxInt(DWORD) - 12 + 1;
 
 pub const BOOL = c_int;
 pub const BOOLEAN = BYTE;
@@ -5244,6 +5011,8 @@ pub const UNICODE_STRING = extern struct {
     Length: c_ushort,
     MaximumLength: c_ushort,
     Buffer: ?[*]WCHAR,
+
+    pub const empty: UNICODE_STRING = .{ .Length = 0, .MaximumLength = 0, .Buffer = null };
 };
 
 pub const ACTIVATION_CONTEXT_DATA = opaque {};

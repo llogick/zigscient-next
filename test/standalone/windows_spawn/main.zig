@@ -233,12 +233,13 @@ fn testExecWithCwdInner(gpa: Allocator, io: Io, command: []const u8, cwd: std.pr
 }
 
 fn renameExe(dir: Io.Dir, io: Io, old_sub_path: []const u8, new_sub_path: []const u8) !void {
-    var attempt: u5 = 0;
+    var attempt: u5 = 10;
     while (true) break dir.rename(old_sub_path, dir, new_sub_path, io) catch |err| switch (err) {
         error.AccessDenied => {
-            if (attempt == 13) return error.AccessDenied;
+            if (attempt == 26) return error.AccessDenied;
             // give the kernel a chance to finish closing the executable handle
-            _ = std.os.windows.kernel32.SleepEx(@as(u32, 1) << attempt >> 1, std.os.windows.FALSE);
+            const interval = @as(std.os.windows.LARGE_INTEGER, -1) << attempt;
+            _ = std.os.windows.ntdll.NtDelayExecution(std.os.windows.FALSE, &interval);
             attempt += 1;
             continue;
         },
