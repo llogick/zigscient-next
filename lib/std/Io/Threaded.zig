@@ -1404,6 +1404,8 @@ const splat_buffer_size = 64;
 /// posix systems.
 const poll_buffer_len = 64;
 const default_PATH = "/usr/local/bin:/bin/:/usr/bin";
+/// There are multiple kernel bugs being worked around with retries.
+const max_windows_kernel_bug_retries = 13;
 
 comptime {
     if (@TypeOf(posix.IOV_MAX) != void) assert(max_iovecs_len <= posix.IOV_MAX);
@@ -3256,35 +3258,109 @@ fn dirCreateDirWasi(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, permi
 fn dirCreateDirWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, permissions: Dir.Permissions) Dir.CreateDirError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-
-    const sub_path_w = try windows.sliceToPrefixedFileW(dir.handle, sub_path);
     _ = permissions; // TODO use this value
 
-    const syscall: Syscall = try .start();
-    const sub_dir_handle = while (true) {
-        break windows.OpenFile(sub_path_w.span(), .{
-            .dir = dir.handle,
-            .access_mask = .{
-                .GENERIC = .{ .READ = true },
-                .STANDARD = .{ .SYNCHRONIZE = true },
-            },
-            .creation = .CREATE,
-            .filter = .dir_only,
-        }) catch |err| switch (err) {
-            error.IsDir => return syscall.fail(error.Unexpected),
-            error.PipeBusy => return syscall.fail(error.Unexpected),
-            error.NoDevice => return syscall.fail(error.Unexpected),
-            error.WouldBlock => return syscall.fail(error.Unexpected),
-            error.AntivirusInterference => return syscall.fail(error.Unexpected),
-            error.OperationCanceled => {
-                try syscall.checkCancel();
-                continue;
-            },
-            else => |e| return syscall.fail(e),
-        };
+    const sub_path_w_array = try sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w = sub_path_w_array.span();
+    const path_len_bytes = std.math.cast(u16, sub_path_w.len * 2) orelse return error.NameTooLong;
+
+    var nt_name: windows.UNICODE_STRING = .{
+        .Length = path_len_bytes,
+        .MaximumLength = path_len_bytes,
+        .Buffer = @constCast(sub_path_w.ptr),
     };
-    syscall.finish();
-    windows.CloseHandle(sub_dir_handle);
+    const attr: windows.OBJECT_ATTRIBUTES = .{
+        .Length = @sizeOf(windows.OBJECT_ATTRIBUTES),
+        .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w)) null else dir.handle,
+        .Attributes = .{
+            .INHERIT = false,
+        },
+        .ObjectName = &nt_name,
+        .SecurityDescriptor = null,
+        .SecurityQualityOfService = null,
+    };
+
+    var sub_dir_handle: windows.HANDLE = undefined;
+    var io_status_block: windows.IO_STATUS_BLOCK = undefined;
+    var attempt: u5 = 0;
+    var syscall: Syscall = try .start();
+    while (true) switch (windows.ntdll.NtCreateFile(
+        &sub_dir_handle,
+        .{
+            .GENERIC = .{ .READ = true },
+            .STANDARD = .{ .SYNCHRONIZE = true },
+        },
+        &attr,
+        &io_status_block,
+        null,
+        .{ .NORMAL = true },
+        .VALID_FLAGS,
+        .CREATE,
+        .{
+            .DIRECTORY_FILE = true,
+            .NON_DIRECTORY_FILE = false,
+            .IO = .SYNCHRONOUS_NONALERT,
+            .OPEN_REPARSE_POINT = false,
+        },
+        null,
+        0,
+    )) {
+        .SUCCESS => {
+            syscall.finish();
+            windows.CloseHandle(sub_dir_handle);
+            return;
+        },
+        .CANCELLED => {
+            try syscall.checkCancel();
+            continue;
+        },
+        .SHARING_VIOLATION => {
+            // This occurs if the file attempting to be opened is a running
+            // executable. However, there's a kernel bug: the error may be
+            // incorrectly returned for an indeterminate amount of time
+            // after an executable file is closed. Here we work around the
+            // kernel bug with retry attempts.
+            syscall.finish();
+            if (max_windows_kernel_bug_retries - attempt == 0) return error.Unexpected;
+            try parking_sleep.sleep(.{ .duration = .{
+                .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
+                .clock = .awake,
+            } });
+            attempt += 1;
+            syscall = try .start();
+            continue;
+        },
+        .DELETE_PENDING => {
+            // This error means that there *was* a file in this location on
+            // the file system, but it was deleted. However, the OS is not
+            // finished with the deletion operation, and so this CreateFile
+            // call has failed. There is not really a sane way to handle
+            // this other than retrying the creation after the OS finishes
+            // the deletion.
+            syscall.finish();
+            if (max_windows_kernel_bug_retries - attempt == 0) return error.Unexpected;
+            try parking_sleep.sleep(.{ .duration = .{
+                .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
+                .clock = .awake,
+            } });
+            attempt += 1;
+            syscall = try .start();
+            continue;
+        },
+        .OBJECT_NAME_INVALID => return syscall.fail(error.BadPathName),
+        .OBJECT_NAME_NOT_FOUND => return syscall.fail(error.FileNotFound),
+        .OBJECT_PATH_NOT_FOUND => return syscall.fail(error.FileNotFound),
+        .BAD_NETWORK_PATH => return syscall.fail(error.NetworkNotFound), // \\server was not found
+        .BAD_NETWORK_NAME => return syscall.fail(error.NetworkNotFound), // \\server was found but \\server\share wasn't
+        .ACCESS_DENIED => return syscall.fail(error.AccessDenied),
+        .OBJECT_NAME_COLLISION => return syscall.fail(error.PathAlreadyExists),
+        .NOT_A_DIRECTORY => return syscall.fail(error.NotDir),
+        .USER_MAPPED_FILE => return syscall.fail(error.AccessDenied),
+        .INVALID_PARAMETER => |status| return syscall.ntstatusBug(status),
+        .OBJECT_PATH_SYNTAX_BAD => |status| return syscall.ntstatusBug(status),
+        .INVALID_HANDLE => |status| return syscall.ntstatusBug(status),
+        else => |status| return syscall.unexpectedNtstatus(status),
+    };
 }
 
 fn dirCreateDirPath(
@@ -3363,7 +3439,7 @@ fn dirCreateDirPathOpenWindows(
     };
 
     components: while (true) {
-        const sub_path_w_array = try w.sliceToPrefixedFileW(dir.handle, component.path);
+        const sub_path_w_array = try sliceToPrefixedFileW(dir.handle, component.path);
         const sub_path_w = sub_path_w_array.span();
         const is_last = it.peekNext() == null;
         const create_disposition: w.FILE.CREATE_DISPOSITION = if (is_last) .OPEN_IF else .CREATE;
@@ -4064,7 +4140,7 @@ fn dirAccessWindows(
 
     _ = options; // TODO
 
-    const sub_path_w_array = try windows.sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w_array = try sliceToPrefixedFileW(dir.handle, sub_path);
     const sub_path_w = sub_path_w_array.span();
 
     if (sub_path_w[0] == '.' and sub_path_w[1] == 0) return;
@@ -4285,7 +4361,7 @@ fn dirCreateFileWindows(
     if (std.mem.eql(u8, sub_path, ".")) return error.IsDir;
     if (std.mem.eql(u8, sub_path, "..")) return error.IsDir;
 
-    const sub_path_w_array = try windows.sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w_array = try sliceToPrefixedFileW(dir.handle, sub_path);
     const sub_path_w = sub_path_w_array.span();
     const path_len_bytes = std.math.cast(u16, sub_path_w.len * 2) orelse return error.NameTooLong;
 
@@ -4314,11 +4390,7 @@ fn dirCreateFileWindows(
     };
 
     var io_status_block: windows.IO_STATUS_BLOCK = undefined;
-
-    // There are multiple kernel bugs being worked around with retries.
-    const max_attempts = 13;
     var attempt: u5 = 0;
-
     var handle: windows.HANDLE = undefined;
     var syscall: Syscall = try .start();
     while (true) switch (windows.ntdll.NtCreateFile(
@@ -4352,7 +4424,7 @@ fn dirCreateFileWindows(
             // after an executable file is closed. Here we work around the
             // kernel bug with retry attempts.
             syscall.finish();
-            if (max_attempts - attempt == 0) return error.FileBusy;
+            if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
             try parking_sleep.sleep(.{ .duration = .{
                 .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
                 .clock = .awake,
@@ -4368,7 +4440,7 @@ fn dirCreateFileWindows(
             // call has failed. Here, we simulate the kernel bug being
             // fixed by sleeping and retrying until the error goes away.
             syscall.finish();
-            if (max_attempts - attempt == 0) return error.FileBusy;
+            if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
             try parking_sleep.sleep(.{ .duration = .{
                 .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
                 .clock = .awake,
@@ -4887,7 +4959,7 @@ fn dirOpenFileWindows(
 ) File.OpenError!File {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    const sub_path_w_array = try windows.sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w_array = try sliceToPrefixedFileW(dir.handle, sub_path);
     const sub_path_w = sub_path_w_array.span();
     const dir_handle = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w)) null else dir.handle;
     return dirOpenFileWtf16(dir_handle, sub_path_w, flags);
@@ -4910,11 +4982,7 @@ pub fn dirOpenFileWtf16(
         .Buffer = @constCast(sub_path_w.ptr),
     };
     var io_status_block: w.IO_STATUS_BLOCK = undefined;
-
-    // There are multiple kernel bugs being worked around with retries.
-    const max_attempts = 13;
     var attempt: u5 = 0;
-
     var syscall: Syscall = try .start();
     const handle = while (true) {
         var result: w.HANDLE = undefined;
@@ -4966,7 +5034,7 @@ pub fn dirOpenFileWtf16(
                 // after an executable file is closed. Here we work around the
                 // kernel bug with retry attempts.
                 syscall.finish();
-                if (max_attempts - attempt == 0) return error.FileBusy;
+                if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
                 try parking_sleep.sleep(.{ .duration = .{
                     .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
                     .clock = .awake,
@@ -4991,7 +5059,7 @@ pub fn dirOpenFileWtf16(
                 // call has failed. Here, we simulate the kernel bug being
                 // fixed by sleeping and retrying until the error goes away.
                 syscall.finish();
-                if (max_attempts - attempt == 0) return error.FileBusy;
+                if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
                 try parking_sleep.sleep(.{ .duration = .{
                     .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
                     .clock = .awake,
@@ -5151,7 +5219,7 @@ fn dirOpenDirPosix(
     _ = t;
 
     if (is_windows) {
-        const sub_path_w = try windows.sliceToPrefixedFileW(dir.handle, sub_path);
+        const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path);
         return dirOpenDirWindows(dir, sub_path_w.span(), options);
     }
 
@@ -5984,30 +6052,22 @@ fn dirRealPathFileWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8,
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
 
-    var path_name_w = try windows.sliceToPrefixedFileW(dir.handle, sub_path);
+    var path_name_w = try sliceToPrefixedFileW(dir.handle, sub_path);
 
     const h_file = handle: {
-        const syscall: Syscall = try .start();
-        while (true) {
-            if (windows.OpenFile(path_name_w.span(), .{
-                .dir = dir.handle,
-                .access_mask = .{
-                    .GENERIC = .{ .READ = true },
-                    .STANDARD = .{ .SYNCHRONIZE = true },
-                },
-                .creation = .OPEN,
-                .filter = .any,
-            })) |handle| {
-                syscall.finish();
-                break :handle handle;
-            } else |err| switch (err) {
-                error.WouldBlock => unreachable,
-                error.OperationCanceled => {
-                    try syscall.checkCancel();
-                    continue;
-                },
-                else => |e| return syscall.fail(e),
-            }
+        if (OpenFile(path_name_w.span(), .{
+            .dir = dir.handle,
+            .access_mask = .{
+                .GENERIC = .{ .READ = true },
+                .STANDARD = .{ .SYNCHRONIZE = true },
+            },
+            .creation = .OPEN,
+            .filter = .any,
+        })) |handle| {
+            break :handle handle;
+        } else |err| switch (err) {
+            error.WouldBlock => unreachable,
+            else => |e| return e,
         }
     };
     defer windows.CloseHandle(h_file);
@@ -6016,9 +6076,7 @@ fn dirRealPathFileWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8,
 
 fn realPathWindows(h_file: windows.HANDLE, out_buffer: []u8) File.RealPathError!usize {
     var wide_buf: [windows.PATH_MAX_WIDE]u16 = undefined;
-    // TODO move GetFinalPathNameByHandle logic into Io.Threaded and add cancel checks
-    try Thread.checkCancel();
-    const wide_slice = try windows.GetFinalPathNameByHandle(h_file, .{}, &wide_buf);
+    const wide_slice = try GetFinalPathNameByHandle(h_file, .{}, &wide_buf);
 
     const len = std.unicode.calcWtf8Len(wide_slice);
     if (len > out_buffer.len)
@@ -6026,6 +6084,552 @@ fn realPathWindows(h_file: windows.HANDLE, out_buffer: []u8) File.RealPathError!
 
     return std.unicode.wtf16LeToWtf8(out_buffer, wide_slice);
 }
+
+/// Specifies how to format volume path in the result of `GetFinalPathNameByHandle`.
+/// Defaults to DOS volume names.
+pub const GetFinalPathNameByHandleFormat = struct {
+    volume_name: enum {
+        /// Format as DOS volume name
+        Dos,
+        /// Format as NT volume name
+        Nt,
+    } = .Dos,
+};
+
+pub const GetFinalPathNameByHandleError = error{
+    AccessDenied,
+    FileNotFound,
+    NameTooLong,
+    /// The volume does not contain a recognized file system. File system
+    /// drivers might not be loaded, or the volume may be corrupt.
+    UnrecognizedVolume,
+} || Io.Cancelable || Io.UnexpectedError;
+
+/// Returns canonical (normalized) path of handle.
+/// Use `GetFinalPathNameByHandleFormat` to specify whether the path is meant to include
+/// NT or DOS volume name (e.g., `\Device\HarddiskVolume0\foo.txt` versus `C:\foo.txt`).
+/// If DOS volume name format is selected, note that this function does *not* prepend
+/// `\\?\` prefix to the resultant path.
+pub fn GetFinalPathNameByHandle(
+    hFile: windows.HANDLE,
+    fmt: GetFinalPathNameByHandleFormat,
+    out_buffer: []u16,
+) GetFinalPathNameByHandleError![]u16 {
+    const final_path = QueryObjectName(hFile, out_buffer) catch |err| switch (err) {
+        // we assume InvalidHandle is close enough to FileNotFound in semantics
+        // to not further complicate the error set
+        error.InvalidHandle => return error.FileNotFound,
+        else => |e| return e,
+    };
+
+    switch (fmt.volume_name) {
+        .Nt => {
+            // the returned path is already in .Nt format
+            return final_path;
+        },
+        .Dos => {
+            // parse the string to separate volume path from file path
+            const device_prefix = std.unicode.utf8ToUtf16LeStringLiteral("\\Device\\");
+
+            // We aren't entirely sure of the structure of the path returned by
+            // QueryObjectName in all contexts/environments.
+            // This code is written to cover the various cases that have
+            // been encountered and solved appropriately. But note that there's
+            // no easy way to verify that they have all been tackled!
+            // (Unless you, the reader knows of one then please do action that!)
+            if (!std.mem.startsWith(u16, final_path, device_prefix)) {
+                // Wine seems to return NT namespaced paths starting with \??\ from QueryObjectName
+                // (e.g. `\??\Z:\some\path\to\a\file.txt`), in which case we can just strip the
+                // prefix to turn it into an absolute path.
+                // https://github.com/ziglang/zig/issues/26029
+                // https://bugs.winehq.org/show_bug.cgi?id=39569
+                return windows.ntToWin32Namespace(final_path, out_buffer) catch |err| switch (err) {
+                    error.NotNtPath => return error.Unexpected,
+                    error.NameTooLong => |e| return e,
+                };
+            }
+
+            const file_path_begin_index = std.mem.findPos(u16, final_path, device_prefix.len, &[_]u16{'\\'}) orelse unreachable;
+            const volume_name_u16 = final_path[0..file_path_begin_index];
+            const device_name_u16 = volume_name_u16[device_prefix.len..];
+            const file_name_u16 = final_path[file_path_begin_index..];
+
+            // MUP is Multiple UNC Provider, and indicates that the path is a UNC
+            // path. In this case, the canonical UNC path can be gotten by just
+            // dropping the \Device\Mup\ and making sure the path begins with \\
+            if (std.mem.eql(u16, device_name_u16, std.unicode.utf8ToUtf16LeStringLiteral("Mup"))) {
+                out_buffer[0] = '\\';
+                @memmove(out_buffer[1..][0..file_name_u16.len], file_name_u16);
+                return out_buffer[0 .. 1 + file_name_u16.len];
+            }
+
+            // Get DOS volume name. DOS volume names are actually symbolic link objects to the
+            // actual NT volume. For example:
+            // (NT) \Device\HarddiskVolume4 => (DOS) \DosDevices\C: == (DOS) C:
+            const MIN_SIZE = @sizeOf(windows.MOUNTMGR_MOUNT_POINT) + windows.MAX_PATH;
+            // We initialize the input buffer to all zeros for convenience since
+            // `DeviceIoControl` with `IOCTL_MOUNTMGR_QUERY_POINTS` expects this.
+            var input_buf: [MIN_SIZE]u8 align(@alignOf(windows.MOUNTMGR_MOUNT_POINT)) = [_]u8{0} ** MIN_SIZE;
+            var output_buf: [MIN_SIZE * 4]u8 align(@alignOf(windows.MOUNTMGR_MOUNT_POINTS)) = undefined;
+
+            // This surprising path is a filesystem path to the mount manager on Windows.
+            // Source: https://stackoverflow.com/questions/3012828/using-ioctl-mountmgr-query-points
+            // This is the NT namespaced version of \\.\MountPointManager
+            const mgmt_path_u16 = std.unicode.utf8ToUtf16LeStringLiteral("\\??\\MountPointManager");
+            const mgmt_handle = OpenFile(mgmt_path_u16, .{
+                .access_mask = .{ .STANDARD = .{ .SYNCHRONIZE = true } },
+                .creation = .OPEN,
+            }) catch |err| switch (err) {
+                error.IsDir => return error.Unexpected,
+                error.NotDir => return error.Unexpected,
+                error.NoDevice => return error.Unexpected,
+                error.AccessDenied => return error.Unexpected,
+                error.PipeBusy => return error.Unexpected,
+                error.FileBusy => return error.Unexpected,
+                error.PathAlreadyExists => return error.Unexpected,
+                error.WouldBlock => return error.Unexpected,
+                error.NetworkNotFound => return error.Unexpected,
+                error.AntivirusInterference => return error.Unexpected,
+                error.BadPathName => return error.Unexpected,
+                else => |e| return e,
+            };
+            defer windows.CloseHandle(mgmt_handle);
+
+            var input_struct: *windows.MOUNTMGR_MOUNT_POINT = @ptrCast(&input_buf[0]);
+            input_struct.DeviceNameOffset = @sizeOf(windows.MOUNTMGR_MOUNT_POINT);
+            input_struct.DeviceNameLength = @intCast(volume_name_u16.len * 2);
+            @memcpy(input_buf[@sizeOf(windows.MOUNTMGR_MOUNT_POINT)..][0 .. volume_name_u16.len * 2], @as([*]const u8, @ptrCast(volume_name_u16.ptr)));
+
+            {
+                const rc = windows.DeviceIoControl(mgmt_handle, windows.IOCTL.MOUNTMGR.QUERY_POINTS, .{ .in = &input_buf, .out = &output_buf });
+                switch (rc) {
+                    .SUCCESS => {},
+                    .OBJECT_NAME_NOT_FOUND => return error.FileNotFound,
+                    else => return windows.unexpectedStatus(rc),
+                }
+            }
+            const mount_points_struct: *const windows.MOUNTMGR_MOUNT_POINTS = @ptrCast(&output_buf[0]);
+
+            const mount_points = @as(
+                [*]const windows.MOUNTMGR_MOUNT_POINT,
+                @ptrCast(&mount_points_struct.MountPoints[0]),
+            )[0..mount_points_struct.NumberOfMountPoints];
+
+            for (mount_points) |mount_point| {
+                const symlink = @as(
+                    [*]const u16,
+                    @ptrCast(@alignCast(&output_buf[mount_point.SymbolicLinkNameOffset])),
+                )[0 .. mount_point.SymbolicLinkNameLength / 2];
+
+                // Look for `\DosDevices\` prefix. We don't really care if there are more than one symlinks
+                // with traditional DOS drive letters, so pick the first one available.
+                var prefix_buf = std.unicode.utf8ToUtf16LeStringLiteral("\\DosDevices\\");
+                const prefix = prefix_buf[0..prefix_buf.len];
+
+                if (std.mem.startsWith(u16, symlink, prefix)) {
+                    const drive_letter = symlink[prefix.len..];
+
+                    if (out_buffer.len < drive_letter.len + file_name_u16.len) return error.NameTooLong;
+
+                    @memcpy(out_buffer[0..drive_letter.len], drive_letter);
+                    @memmove(out_buffer[drive_letter.len..][0..file_name_u16.len], file_name_u16);
+                    const total_len = drive_letter.len + file_name_u16.len;
+
+                    // Validate that DOS does not contain any spurious nul bytes.
+                    assert(std.mem.findScalar(u16, out_buffer[0..total_len], 0) == null);
+
+                    return out_buffer[0..total_len];
+                } else if (mountmgrIsVolumeName(symlink)) {
+                    // If the symlink is a volume GUID like \??\Volume{383da0b0-717f-41b6-8c36-00500992b58d},
+                    // then it is a volume mounted as a path rather than a drive letter. We need to
+                    // query the mount manager again to get the DOS path for the volume.
+
+                    // 49 is the maximum length accepted by mountmgrIsVolumeName
+                    const vol_input_size = @sizeOf(windows.MOUNTMGR_TARGET_NAME) + (49 * 2);
+                    var vol_input_buf: [vol_input_size]u8 align(@alignOf(windows.MOUNTMGR_TARGET_NAME)) = [_]u8{0} ** vol_input_size;
+                    // Note: If the path exceeds MAX_PATH, the Disk Management GUI doesn't accept the full path,
+                    // and instead if must be specified using a shortened form (e.g. C:\FOO~1\BAR~1\<...>).
+                    // However, just to be sure we can handle any path length, we use PATH_MAX_WIDE here.
+                    const min_output_size = @sizeOf(windows.MOUNTMGR_VOLUME_PATHS) + (windows.PATH_MAX_WIDE * 2);
+                    var vol_output_buf: [min_output_size]u8 align(@alignOf(windows.MOUNTMGR_VOLUME_PATHS)) = undefined;
+
+                    var vol_input_struct: *windows.MOUNTMGR_TARGET_NAME = @ptrCast(&vol_input_buf[0]);
+                    vol_input_struct.DeviceNameLength = @intCast(symlink.len * 2);
+                    @memcpy(@as([*]windows.WCHAR, &vol_input_struct.DeviceName)[0..symlink.len], symlink);
+
+                    const rc = windows.DeviceIoControl(mgmt_handle, windows.IOCTL.MOUNTMGR.QUERY_DOS_VOLUME_PATH, .{ .in = &vol_input_buf, .out = &vol_output_buf });
+                    switch (rc) {
+                        .SUCCESS => {},
+                        .UNRECOGNIZED_VOLUME => return error.UnrecognizedVolume,
+                        else => return windows.unexpectedStatus(rc),
+                    }
+                    const volume_paths_struct: *const windows.MOUNTMGR_VOLUME_PATHS = @ptrCast(&vol_output_buf[0]);
+                    const volume_path = std.mem.sliceTo(@as(
+                        [*]const u16,
+                        &volume_paths_struct.MultiSz,
+                    )[0 .. volume_paths_struct.MultiSzLength / 2], 0);
+
+                    if (out_buffer.len < volume_path.len + file_name_u16.len) return error.NameTooLong;
+
+                    // `out_buffer` currently contains the memory of `file_name_u16`, so it can overlap with where
+                    // we want to place the filename before returning. Here are the possible overlapping cases:
+                    //
+                    // out_buffer:       [filename]
+                    //       dest: [___(a)___] [___(b)___]
+                    //
+                    // In the case of (a), we need to copy forwards, and in the case of (b) we need
+                    // to copy backwards. We also need to do this before copying the volume path because
+                    // it could overwrite the file_name_u16 memory.
+                    const file_name_dest = out_buffer[volume_path.len..][0..file_name_u16.len];
+                    @memmove(file_name_dest, file_name_u16);
+                    @memcpy(out_buffer[0..volume_path.len], volume_path);
+                    const total_len = volume_path.len + file_name_u16.len;
+
+                    // Validate that DOS does not contain any spurious nul bytes.
+                    assert(std.mem.findScalar(u16, out_buffer[0..total_len], 0) == null);
+
+                    return out_buffer[0..total_len];
+                }
+            }
+
+            // If we've ended up here, then something went wrong/is corrupted in the OS,
+            // so error out!
+            return error.FileNotFound;
+        },
+    }
+}
+
+test GetFinalPathNameByHandle {
+    if (builtin.os.tag != .windows)
+        return;
+
+    //any file will do
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const handle = tmp.dir.handle;
+    var buffer: [windows.PATH_MAX_WIDE]u16 = undefined;
+
+    //check with sufficient size
+    const nt_path = try GetFinalPathNameByHandle(handle, .{ .volume_name = .Nt }, &buffer);
+    _ = try GetFinalPathNameByHandle(handle, .{ .volume_name = .Dos }, &buffer);
+
+    const required_len_in_u16 = nt_path.len + @divExact(@intFromPtr(nt_path.ptr) - @intFromPtr(&buffer), 2) + 1;
+    //check with insufficient size
+    try std.testing.expectError(error.NameTooLong, GetFinalPathNameByHandle(handle, .{ .volume_name = .Nt }, buffer[0 .. required_len_in_u16 - 1]));
+    try std.testing.expectError(error.NameTooLong, GetFinalPathNameByHandle(handle, .{ .volume_name = .Dos }, buffer[0 .. required_len_in_u16 - 1]));
+
+    //check with exactly-sufficient size
+    _ = try GetFinalPathNameByHandle(handle, .{ .volume_name = .Nt }, buffer[0..required_len_in_u16]);
+    _ = try GetFinalPathNameByHandle(handle, .{ .volume_name = .Dos }, buffer[0..required_len_in_u16]);
+}
+
+/// Equivalent to the MOUNTMGR_IS_VOLUME_NAME macro in mountmgr.h
+fn mountmgrIsVolumeName(name: []const u16) bool {
+    return (name.len == 48 or (name.len == 49 and name[48] == std.mem.nativeToLittle(u16, '\\'))) and
+        name[0] == std.mem.nativeToLittle(u16, '\\') and
+        (name[1] == std.mem.nativeToLittle(u16, '?') or name[1] == std.mem.nativeToLittle(u16, '\\')) and
+        name[2] == std.mem.nativeToLittle(u16, '?') and
+        name[3] == std.mem.nativeToLittle(u16, '\\') and
+        std.mem.startsWith(u16, name[4..], std.unicode.utf8ToUtf16LeStringLiteral("Volume{")) and
+        name[19] == std.mem.nativeToLittle(u16, '-') and
+        name[24] == std.mem.nativeToLittle(u16, '-') and
+        name[29] == std.mem.nativeToLittle(u16, '-') and
+        name[34] == std.mem.nativeToLittle(u16, '-') and
+        name[47] == std.mem.nativeToLittle(u16, '}');
+}
+
+test mountmgrIsVolumeName {
+    @setEvalBranchQuota(2000);
+    const L = std.unicode.utf8ToUtf16LeStringLiteral;
+    try std.testing.expect(mountmgrIsVolumeName(L("\\\\?\\Volume{383da0b0-717f-41b6-8c36-00500992b58d}")));
+    try std.testing.expect(mountmgrIsVolumeName(L("\\??\\Volume{383da0b0-717f-41b6-8c36-00500992b58d}")));
+    try std.testing.expect(mountmgrIsVolumeName(L("\\\\?\\Volume{383da0b0-717f-41b6-8c36-00500992b58d}\\")));
+    try std.testing.expect(mountmgrIsVolumeName(L("\\??\\Volume{383da0b0-717f-41b6-8c36-00500992b58d}\\")));
+    try std.testing.expect(!mountmgrIsVolumeName(L("\\\\.\\Volume{383da0b0-717f-41b6-8c36-00500992b58d}")));
+    try std.testing.expect(!mountmgrIsVolumeName(L("\\??\\Volume{383da0b0-717f-41b6-8c36-00500992b58d}\\foo")));
+    try std.testing.expect(!mountmgrIsVolumeName(L("\\??\\Volume{383da0b0-717f-41b6-8c36-00500992b58}")));
+}
+
+pub const QueryObjectNameError = error{
+    AccessDenied,
+    InvalidHandle,
+    NameTooLong,
+    Unexpected,
+};
+
+pub fn QueryObjectName(handle: windows.HANDLE, out_buffer: []u16) QueryObjectNameError![]u16 {
+    const out_buffer_aligned = std.mem.alignInSlice(out_buffer, @alignOf(windows.OBJECT_NAME_INFORMATION)) orelse return error.NameTooLong;
+
+    const info: *windows.OBJECT_NAME_INFORMATION = @ptrCast(out_buffer_aligned);
+    // buffer size is specified in bytes
+    const out_buffer_len = std.math.cast(windows.ULONG, out_buffer_aligned.len * 2) orelse std.math.maxInt(windows.ULONG);
+    // last argument would return the length required for full_buffer, not exposed here
+    return switch (windows.ntdll.NtQueryObject(handle, .ObjectNameInformation, info, out_buffer_len, null)) {
+        .SUCCESS => blk: {
+            // info.Name.Buffer from ObQueryNameString is documented to be null (and MaximumLength == 0)
+            // if the object was "unnamed", not sure if this can happen for file handles
+            if (info.Name.MaximumLength == 0) break :blk error.Unexpected;
+            // resulting string length is specified in bytes
+            const path_length_unterminated = @divExact(info.Name.Length, 2);
+            break :blk info.Name.Buffer.?[0..path_length_unterminated];
+        },
+        .ACCESS_DENIED => error.AccessDenied,
+        .INVALID_HANDLE => error.InvalidHandle,
+        // triggered when the buffer is too small for the OBJECT_NAME_INFORMATION object (.INFO_LENGTH_MISMATCH),
+        // or if the buffer is too small for the file path returned (.BUFFER_OVERFLOW, .BUFFER_TOO_SMALL)
+        .INFO_LENGTH_MISMATCH, .BUFFER_OVERFLOW, .BUFFER_TOO_SMALL => error.NameTooLong,
+        else => |e| windows.unexpectedStatus(e),
+    };
+}
+
+test QueryObjectName {
+    if (builtin.os.tag != .windows)
+        return;
+
+    //any file will do; canonicalization works on NTFS junctions and symlinks, hardlinks remain separate paths.
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const handle = tmp.dir.handle;
+    var out_buffer: [windows.PATH_MAX_WIDE]u16 = undefined;
+
+    const result_path = try QueryObjectName(handle, &out_buffer);
+    const required_len_in_u16 = result_path.len + @divExact(@intFromPtr(result_path.ptr) - @intFromPtr(&out_buffer), 2) + 1;
+    //insufficient size
+    try std.testing.expectError(error.NameTooLong, QueryObjectName(handle, out_buffer[0 .. required_len_in_u16 - 1]));
+    //exactly-sufficient size
+    _ = try QueryObjectName(handle, out_buffer[0..required_len_in_u16]);
+}
+
+const Wtf16ToPrefixedFileWError = error{
+    AccessDenied,
+    FileNotFound,
+} || Dir.PathNameError || Io.Cancelable || Io.UnexpectedError;
+
+/// Converts the `path` to WTF16, null-terminated. If the path contains any
+/// namespace prefix, or is anything but a relative path (rooted, drive relative,
+/// etc) the result will have the NT-style prefix `\??\`.
+///
+/// Similar to RtlDosPathNameToNtPathName_U with a few differences:
+/// - Does not allocate on the heap.
+/// - Relative paths are kept as relative unless they contain too many ..
+///   components, in which case they are resolved against the `dir` if it
+///   is non-null, or the CWD if it is null.
+/// - Special case device names like COM1, NUL, etc are not handled specially (TODO)
+/// - . and space are not stripped from the end of relative paths (potential TODO)
+pub fn wToPrefixedFileW(dir: ?windows.HANDLE, path: [:0]const u16) Wtf16ToPrefixedFileWError!WindowsPathSpace {
+    const nt_prefix = [_]u16{ '\\', '?', '?', '\\' };
+    if (windows.hasCommonNtPrefix(u16, path)) {
+        // TODO: Figure out a way to design an API that can avoid the copy for NT,
+        //       since it is always returned fully unmodified.
+        var path_space: WindowsPathSpace = undefined;
+        path_space.data[0..nt_prefix.len].* = nt_prefix;
+        const len_after_prefix = path.len - nt_prefix.len;
+        @memcpy(path_space.data[nt_prefix.len..][0..len_after_prefix], path[nt_prefix.len..]);
+        path_space.len = path.len;
+        path_space.data[path_space.len] = 0;
+        return path_space;
+    } else {
+        const path_type = Dir.path.getWin32PathType(u16, path);
+        var path_space: WindowsPathSpace = undefined;
+        if (path_type == .local_device) {
+            switch (getLocalDevicePathType(u16, path)) {
+                .verbatim => {
+                    path_space.data[0..nt_prefix.len].* = nt_prefix;
+                    const len_after_prefix = path.len - nt_prefix.len;
+                    @memcpy(path_space.data[nt_prefix.len..][0..len_after_prefix], path[nt_prefix.len..]);
+                    path_space.len = path.len;
+                    path_space.data[path_space.len] = 0;
+                    return path_space;
+                },
+                .local_device, .fake_verbatim => {
+                    const path_byte_len = windows.ntdll.RtlGetFullPathName_U(
+                        path.ptr,
+                        path_space.data.len * 2,
+                        &path_space.data,
+                        null,
+                    );
+                    if (path_byte_len == 0) {
+                        // TODO: This may not be the right error
+                        return error.BadPathName;
+                    } else if (path_byte_len / 2 > path_space.data.len) {
+                        return error.NameTooLong;
+                    }
+                    path_space.len = path_byte_len / 2;
+                    // Both prefixes will be normalized but retained, so all
+                    // we need to do now is replace them with the NT prefix
+                    path_space.data[0..nt_prefix.len].* = nt_prefix;
+                    return path_space;
+                },
+            }
+        }
+        relative: {
+            if (path_type == .relative) {
+                // TODO: Handle special case device names like COM1, AUX, NUL, CONIN$, CONOUT$, etc.
+                //       See https://googleprojectzero.blogspot.com/2016/02/the-definitive-guide-on-win32-to-nt.html
+
+                // TODO: Potentially strip all trailing . and space characters from the
+                //       end of the path. This is something that both RtlDosPathNameToNtPathName_U
+                //       and RtlGetFullPathName_U do. Technically, trailing . and spaces
+                //       are allowed, but such paths may not interact well with Windows (i.e.
+                //       files with these paths can't be deleted from explorer.exe, etc).
+                //       This could be something that normalizePath may want to do.
+
+                @memcpy(path_space.data[0..path.len], path);
+                // Try to normalize, but if we get too many parent directories,
+                // then we need to start over and use RtlGetFullPathName_U instead.
+                path_space.len = windows.normalizePath(u16, path_space.data[0..path.len]) catch |err| switch (err) {
+                    error.TooManyParentDirs => break :relative,
+                };
+                path_space.data[path_space.len] = 0;
+                return path_space;
+            }
+        }
+        // We now know we are going to return an absolute NT path, so
+        // we can unconditionally prefix it with the NT prefix.
+        path_space.data[0..nt_prefix.len].* = nt_prefix;
+        if (path_type == .root_local_device) {
+            // `\\.` and `\\?` always get converted to `\??\` exactly, so
+            // we can just stop here
+            path_space.len = nt_prefix.len;
+            path_space.data[path_space.len] = 0;
+            return path_space;
+        }
+        const path_buf_offset = switch (path_type) {
+            // UNC paths will always start with `\\`. However, we want to
+            // end up with something like `\??\UNC\server\share`, so to get
+            // RtlGetFullPathName to write into the spot we want the `server`
+            // part to end up, we need to provide an offset such that
+            // the `\\` part gets written where the `C\` of `UNC\` will be
+            // in the final NT path.
+            .unc_absolute => nt_prefix.len + 2,
+            else => nt_prefix.len,
+        };
+        const buf_len: u32 = @intCast(path_space.data.len - path_buf_offset);
+        const path_to_get: [:0]const u16 = path_to_get: {
+            // If dir is null, then we don't need to bother with GetFinalPathNameByHandle because
+            // RtlGetFullPathName_U will resolve relative paths against the CWD for us.
+            if (path_type != .relative or dir == null) {
+                break :path_to_get path;
+            }
+            // We can also skip GetFinalPathNameByHandle if the handle matches
+            // the handle returned by Io.Dir.cwd()
+            if (dir.? == Io.Dir.cwd().handle) {
+                break :path_to_get path;
+            }
+            // At this point, we know we have a relative path that had too many
+            // `..` components to be resolved by normalizePath, so we need to
+            // convert it into an absolute path and let RtlGetFullPathName_U
+            // canonicalize it. We do this by getting the path of the `dir`
+            // and appending the relative path to it.
+            var dir_path_buf: [windows.PATH_MAX_WIDE:0]u16 = undefined;
+            const dir_path = GetFinalPathNameByHandle(dir.?, .{}, &dir_path_buf) catch |err| switch (err) {
+                // This mapping is not correct; it is actually expected
+                // that calling GetFinalPathNameByHandle might return
+                // error.UnrecognizedVolume, and in fact has been observed
+                // in the wild. The problem is that wToPrefixedFileW was
+                // never intended to make *any* OS syscall APIs. It's only
+                // supposed to convert a string to one that is eligible to
+                // be used in the ntdll syscalls.
+                //
+                // To solve this, this function needs to no longer call
+                // GetFinalPathNameByHandle under any conditions, or the
+                // calling function needs to get reworked to not need to
+                // call this function.
+                //
+                // This may involve making breaking API changes.
+                error.UnrecognizedVolume => return error.Unexpected,
+                else => |e| return e,
+            };
+            if (dir_path.len + 1 + path.len > windows.PATH_MAX_WIDE) {
+                return error.NameTooLong;
+            }
+            // We don't have to worry about potentially doubling up path separators
+            // here since RtlGetFullPathName_U will handle canonicalizing it.
+            dir_path_buf[dir_path.len] = '\\';
+            @memcpy(dir_path_buf[dir_path.len + 1 ..][0..path.len], path);
+            const full_len = dir_path.len + 1 + path.len;
+            dir_path_buf[full_len] = 0;
+            break :path_to_get dir_path_buf[0..full_len :0];
+        };
+        const path_byte_len = windows.ntdll.RtlGetFullPathName_U(
+            path_to_get.ptr,
+            buf_len * 2,
+            path_space.data[path_buf_offset..].ptr,
+            null,
+        );
+        if (path_byte_len == 0) {
+            // TODO: This may not be the right error
+            return error.BadPathName;
+        } else if (path_byte_len / 2 > buf_len) {
+            return error.NameTooLong;
+        }
+        path_space.len = path_buf_offset + (path_byte_len / 2);
+        if (path_type == .unc_absolute) {
+            // Now add in the UNC, the `C` should overwrite the first `\` of the
+            // FullPathName, ultimately resulting in `\??\UNC\<the rest of the path>`
+            assert(path_space.data[path_buf_offset] == '\\');
+            assert(path_space.data[path_buf_offset + 1] == '\\');
+            const unc = [_]u16{ 'U', 'N', 'C' };
+            path_space.data[nt_prefix.len..][0..unc.len].* = unc;
+        }
+        return path_space;
+    }
+}
+
+const LocalDevicePathType = enum {
+    /// `\\.\` (path separators can be `\` or `/`)
+    local_device,
+    /// `\\?\`
+    /// When converted to an NT path, everything past the prefix is left
+    /// untouched and `\\?\` is replaced by `\??\`.
+    verbatim,
+    /// `\\?\` without all path separators being `\`.
+    /// This seems to be recognized as a prefix, but the 'verbatim' aspect
+    /// is not respected (i.e. if `//?/C:/foo` is converted to an NT path,
+    /// it will become `\??\C:\foo` [it will be canonicalized and the //?/ won't
+    /// be treated as part of the final path])
+    fake_verbatim,
+};
+
+/// Only relevant for Win32 -> NT path conversion.
+/// Asserts `path` is of type `Dir.path.Win32PathType.local_device`.
+fn getLocalDevicePathType(comptime T: type, path: []const T) LocalDevicePathType {
+    if (std.debug.runtime_safety) {
+        assert(Dir.path.getWin32PathType(T, path) == .local_device);
+    }
+
+    const backslash = std.mem.nativeToLittle(T, '\\');
+    const all_backslash = path[0] == backslash and
+        path[1] == backslash and
+        path[3] == backslash;
+    return switch (path[2]) {
+        std.mem.nativeToLittle(T, '?') => if (all_backslash) .verbatim else .fake_verbatim,
+        std.mem.nativeToLittle(T, '.') => .local_device,
+        else => unreachable,
+    };
+}
+
+pub const Wtf8ToPrefixedFileWError = Wtf16ToPrefixedFileWError;
+
+/// Same as `wToPrefixedFileW` but accepts a WTF-8 encoded path.
+/// https://wtf-8.codeberg.page/
+pub fn sliceToPrefixedFileW(dir: ?windows.HANDLE, path: []const u8) Wtf8ToPrefixedFileWError!WindowsPathSpace {
+    var temp_path: WindowsPathSpace = undefined;
+    temp_path.len = std.unicode.wtf8ToWtf16Le(&temp_path.data, path) catch |err| switch (err) {
+        error.InvalidWtf8 => return error.BadPathName,
+    };
+    temp_path.data[temp_path.len] = 0;
+    return wToPrefixedFileW(dir, temp_path.span());
+}
+
+pub const WindowsPathSpace = struct {
+    data: [windows.PATH_MAX_WIDE:0]u16,
+    len: usize,
+
+    pub fn span(self: *const WindowsPathSpace) [:0]const u16 {
+        return self.data[0..self.len :0];
+    }
+};
 
 fn dirRealPathFilePosix(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, out_buffer: []u8) Dir.RealPathFileError!usize {
     if (native_os == .wasi) return error.OperationUnsupported;
@@ -6478,7 +7082,7 @@ fn dirDeleteWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, remov
     _ = t;
     const w = windows;
 
-    const sub_path_w_buf = try w.sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w_buf = try sliceToPrefixedFileW(dir.handle, sub_path);
     const sub_path_w = sub_path_w_buf.span();
 
     const path_len_bytes = @as(u16, @intCast(sub_path_w.len * 2));
@@ -6759,37 +7363,29 @@ fn dirRenameWindowsInner(
     replace_if_exists: bool,
 ) Dir.RenamePreserveError!void {
     const w = windows;
-    const old_path_w_buf = try windows.sliceToPrefixedFileW(old_dir.handle, old_sub_path);
+    const old_path_w_buf = try sliceToPrefixedFileW(old_dir.handle, old_sub_path);
     const old_path_w = old_path_w_buf.span();
-    const new_path_w_buf = try windows.sliceToPrefixedFileW(new_dir.handle, new_sub_path);
+    const new_path_w_buf = try sliceToPrefixedFileW(new_dir.handle, new_sub_path);
     const new_path_w = new_path_w_buf.span();
 
     const src_fd = src_fd: {
-        const syscall: Syscall = try .start();
-        while (true) {
-            if (w.OpenFile(old_path_w, .{
-                .dir = old_dir.handle,
-                .access_mask = .{
-                    .GENERIC = .{ .WRITE = true },
-                    .STANDARD = .{
-                        .RIGHTS = .{ .DELETE = true },
-                        .SYNCHRONIZE = true,
-                    },
+        if (OpenFile(old_path_w, .{
+            .dir = old_dir.handle,
+            .access_mask = .{
+                .GENERIC = .{ .WRITE = true },
+                .STANDARD = .{
+                    .RIGHTS = .{ .DELETE = true },
+                    .SYNCHRONIZE = true,
                 },
-                .creation = .OPEN,
-                .filter = .any, // This function is supposed to rename both files and directories.
-                .follow_symlinks = false,
-            })) |handle| {
-                syscall.finish();
-                break :src_fd handle;
-            } else |err| switch (err) {
-                error.WouldBlock => unreachable, // Not possible without `.share_access_nonblocking = true`.
-                error.OperationCanceled => {
-                    try syscall.checkCancel();
-                    continue;
-                },
-                else => |e| return e,
-            }
+            },
+            .creation = .OPEN,
+            .filter = .any, // This function is supposed to rename both files and directories.
+            .follow_symlinks = false,
+        })) |handle| {
+            break :src_fd handle;
+        } else |err| switch (err) {
+            error.WouldBlock => unreachable, // Not possible without `.share_access_nonblocking = true`.
+            else => |e| return e,
         }
     };
     defer w.CloseHandle(src_fd);
@@ -7092,7 +7688,7 @@ fn dirSymLinkWindows(
     // Target path does not use sliceToPrefixedFileW because certain paths
     // are handled differently when creating a symlink than they would be
     // when converting to an NT namespaced path.
-    var target_path_w: w.PathSpace = undefined;
+    var target_path_w: WindowsPathSpace = undefined;
     target_path_w.len = try w.wtf8ToWtf16Le(&target_path_w.data, target_path);
     target_path_w.data[target_path_w.len] = 0;
     // However, we need to canonicalize any path separators to `\`, since if
@@ -7104,7 +7700,7 @@ fn dirSymLinkWindows(
         std.mem.nativeToLittle(u16, '\\'),
     );
 
-    const sym_link_path_w = try w.sliceToPrefixedFileW(dir.handle, sym_link_path);
+    const sym_link_path_w = try sliceToPrefixedFileW(dir.handle, sym_link_path);
 
     const SYMLINK_DATA = extern struct {
         ReparseTag: w.IO_REPARSE_TAG,
@@ -7118,32 +7714,25 @@ fn dirSymLinkWindows(
     };
 
     const symlink_handle = handle: {
-        const syscall: Syscall = try .start();
-        while (true) {
-            if (w.OpenFile(sym_link_path_w.span(), .{
-                .access_mask = .{
-                    .GENERIC = .{ .READ = true, .WRITE = true },
-                    .STANDARD = .{ .SYNCHRONIZE = true },
-                },
-                .dir = dir.handle,
-                .creation = .CREATE,
-                .filter = if (flags.is_directory) .dir_only else .non_directory_only,
-            })) |handle| {
-                syscall.finish();
-                break :handle handle;
-            } else |err| switch (err) {
-                error.IsDir => return syscall.fail(error.PathAlreadyExists),
-                error.NotDir => return syscall.fail(error.Unexpected),
-                error.WouldBlock => return syscall.fail(error.Unexpected),
-                error.PipeBusy => return syscall.fail(error.Unexpected),
-                error.NoDevice => return syscall.fail(error.Unexpected),
-                error.AntivirusInterference => return syscall.fail(error.Unexpected),
-                error.OperationCanceled => {
-                    try syscall.checkCancel();
-                    continue;
-                },
-                else => |e| return e,
-            }
+        if (OpenFile(sym_link_path_w.span(), .{
+            .access_mask = .{
+                .GENERIC = .{ .READ = true, .WRITE = true },
+                .STANDARD = .{ .SYNCHRONIZE = true },
+            },
+            .dir = dir.handle,
+            .creation = .CREATE,
+            .filter = if (flags.is_directory) .dir_only else .non_directory_only,
+        })) |handle| {
+            break :handle handle;
+        } else |err| switch (err) {
+            error.IsDir => return error.PathAlreadyExists,
+            error.NotDir => return error.Unexpected,
+            error.WouldBlock => return error.Unexpected,
+            error.PipeBusy => return error.Unexpected,
+            error.FileBusy => return error.Unexpected,
+            error.NoDevice => return error.Unexpected,
+            error.AntivirusInterference => return error.Unexpected,
+            else => |e| return e,
         }
     };
     defer w.CloseHandle(symlink_handle);
@@ -7158,7 +7747,7 @@ fn dirSymLinkWindows(
     // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw
     var is_target_absolute = false;
     const final_target_path = target_path: {
-        if (w.hasCommonNtPrefix(u16, target_path_w.span())) {
+        if (windows.hasCommonNtPrefix(u16, target_path_w.span())) {
             // Already an NT path, no need to do anything to it
             break :target_path target_path_w.span();
         } else {
@@ -7176,7 +7765,7 @@ fn dirSymLinkWindows(
                     break :target_path target_path_w.span(),
             }
         }
-        var prefixed_target_path = try w.wToPrefixedFileW(dir.handle, target_path_w.span());
+        var prefixed_target_path = try wToPrefixedFileW(dir.handle, target_path_w.span());
         // We do this after prefixing to ensure that drive-relative paths are treated as absolute
         is_target_absolute = Dir.path.isAbsoluteWindowsWtf16(prefixed_target_path.span());
         break :target_path prefixed_target_path.span();
@@ -7322,7 +7911,7 @@ fn dirReadLink(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, buffer: []
 fn dirReadLinkWindows(dir: Dir, sub_path: []const u8, buffer: []u8) Dir.ReadLinkError!usize {
     // This gets used once for `sub_path` and then reused again temporarily
     // before converting back to `buffer`.
-    var sub_path_w_buf = try windows.sliceToPrefixedFileW(dir.handle, sub_path);
+    var sub_path_w_buf = try sliceToPrefixedFileW(dir.handle, sub_path);
     const sub_path_w = sub_path_w_buf.span();
     const path_len_bytes = std.math.cast(u16, sub_path_w.len * 2) orelse return error.NameTooLong;
     var nt_name: windows.UNICODE_STRING = .{
@@ -7336,11 +7925,7 @@ fn dirReadLinkWindows(dir: Dir, sub_path: []const u8, buffer: []u8) Dir.ReadLink
     };
     var io_status_block: windows.IO_STATUS_BLOCK = undefined;
     var result_handle: windows.HANDLE = undefined;
-
-    // There are multiple kernel bugs being worked around with retries.
-    const max_attempts = 13;
     var attempt: u5 = 0;
-
     var syscall: Syscall = try .start();
     while (true) switch (windows.ntdll.NtCreateFile(
         &result_handle,
@@ -7380,7 +7965,7 @@ fn dirReadLinkWindows(dir: Dir, sub_path: []const u8, buffer: []u8) Dir.ReadLink
             // after an executable file is closed. Here we work around the
             // kernel bug with retry attempts.
             syscall.finish();
-            if (max_attempts - attempt == 0) return error.FileBusy;
+            if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
             try parking_sleep.sleep(.{ .duration = .{
                 .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
                 .clock = .awake,
@@ -7396,7 +7981,7 @@ fn dirReadLinkWindows(dir: Dir, sub_path: []const u8, buffer: []u8) Dir.ReadLink
             // call has failed. Here, we simulate the kernel bug being
             // fixed by sleeping and retrying until the error goes away.
             syscall.finish();
-            if (max_attempts - attempt == 0) return error.FileBusy;
+            if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
             try parking_sleep.sleep(.{ .duration = .{
                 .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
                 .clock = .awake,
@@ -9586,7 +10171,7 @@ fn processExecutableOpen(userdata: ?*anyopaque, flags: File.OpenFlags) process.O
             // the file, we can let the openFileW call follow the symlink for us.
             const image_path_unicode_string = &windows.peb().ProcessParameters.ImagePathName;
             const image_path_name = image_path_unicode_string.Buffer.?[0 .. image_path_unicode_string.Length / 2 :0];
-            const prefixed_path_w = try windows.wToPrefixedFileW(null, image_path_name);
+            const prefixed_path_w = try wToPrefixedFileW(null, image_path_name);
             return dirOpenFileWtf16(null, prefixed_path_w.span(), flags);
         },
         .driverkit,
@@ -9794,37 +10379,28 @@ fn processExecutablePath(userdata: ?*anyopaque, out_buffer: []u8) process.Execut
             // If ImagePathName is a symlink, then it will contain the path of the
             // symlink, not the path that the symlink points to. We want the path
             // that the symlink points to, though, so we need to get the realpath.
-            var path_name_w_buf = try w.wToPrefixedFileW(null, image_path_name);
+            var path_name_w_buf = try wToPrefixedFileW(null, image_path_name);
 
             const h_file = handle: {
-                const syscall: Syscall = try .start();
-                while (true) {
-                    if (w.OpenFile(path_name_w_buf.span(), .{
-                        .dir = null,
-                        .access_mask = .{
-                            .GENERIC = .{ .READ = true },
-                            .STANDARD = .{ .SYNCHRONIZE = true },
-                        },
-                        .creation = .OPEN,
-                        .filter = .any,
-                    })) |handle| {
-                        syscall.finish();
-                        break :handle handle;
-                    } else |err| switch (err) {
-                        error.WouldBlock => unreachable,
-                        error.OperationCanceled => {
-                            try syscall.checkCancel();
-                            continue;
-                        },
-                        else => |e| return e,
-                    }
+                if (OpenFile(path_name_w_buf.span(), .{
+                    .dir = null,
+                    .access_mask = .{
+                        .GENERIC = .{ .READ = true },
+                        .STANDARD = .{ .SYNCHRONIZE = true },
+                    },
+                    .creation = .OPEN,
+                    .filter = .any,
+                })) |handle| {
+                    break :handle handle;
+                } else |err| switch (err) {
+                    error.WouldBlock => unreachable,
+                    error.FileBusy => unreachable,
+                    else => |e| return e,
                 }
             };
             defer w.CloseHandle(h_file);
 
-            // TODO move GetFinalPathNameByHandle logic into Io.Threaded and add cancel checks
-            try Thread.checkCancel();
-            const wide_slice = try w.GetFinalPathNameByHandle(h_file, .{}, &path_name_w_buf.data);
+            const wide_slice = try GetFinalPathNameByHandle(h_file, .{}, &path_name_w_buf.data);
 
             const len = std.unicode.calcWtf8Len(wide_slice);
             if (len > out_buffer.len)
@@ -13598,9 +14174,7 @@ fn processSetCurrentDir(userdata: ?*anyopaque, dir: Dir) process.SetCurrentDirEr
 
     if (is_windows) {
         var dir_path_buffer: [windows.PATH_MAX_WIDE]u16 = undefined;
-        // TODO move GetFinalPathNameByHandle logic into Io.Threaded and add cancel checks
-        try Thread.checkCancel();
-        const dir_path = try windows.GetFinalPathNameByHandle(dir.handle, .{}, &dir_path_buffer);
+        const dir_path = try GetFinalPathNameByHandle(dir.handle, .{}, &dir_path_buffer);
         const path_len_bytes = std.math.cast(u16, dir_path.len * 2) orelse return error.NameTooLong;
         var nt_name: windows.UNICODE_STRING = .{
             .Length = path_len_bytes,
@@ -15326,9 +15900,7 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
             .inherit => break :cwd_w null,
             .dir => |cwd_dir| {
                 var dir_path_buffer = try arena.alloc(u16, windows.PATH_MAX_WIDE + 1);
-                // TODO move GetFinalPathNameByHandle logic into std.Io.Threaded and add cancel checks
-                try Thread.checkCancel();
-                const dir_path = try windows.GetFinalPathNameByHandle(
+                const dir_path = try GetFinalPathNameByHandle(
                     cwd_dir.handle,
                     .{},
                     dir_path_buffer[0..windows.PATH_MAX_WIDE],
@@ -15752,7 +16324,7 @@ fn windowsCreateProcessPathExt(
         try dir_buf.append(arena, 0);
         defer dir_buf.shrinkRetainingCapacity(dir_path_len);
         const dir_path_z = dir_buf.items[0 .. dir_buf.items.len - 1 :0];
-        const prefixed_path = try windows.wToPrefixedFileW(null, dir_path_z);
+        const prefixed_path = try wToPrefixedFileW(null, dir_path_z);
         break :dir dirOpenDirWindows(.cwd(), prefixed_path.span(), .{
             .iterate = true,
         }) catch |err| switch (err) {
@@ -18515,5 +19087,149 @@ pub fn mutexUnlock(m: *Io.Mutex) void {
             @branchHint(.unlikely);
             Thread.futexWake(@ptrCast(&m.state.raw), 1);
         },
+    }
+}
+
+const OpenError = error{
+    IsDir,
+    NotDir,
+    FileNotFound,
+    NoDevice,
+    AccessDenied,
+    PipeBusy,
+    PathAlreadyExists,
+    WouldBlock,
+    NetworkNotFound,
+    AntivirusInterference,
+    FileBusy,
+} || Dir.PathNameError || Io.Cancelable || Io.UnexpectedError;
+
+const OpenFileOptions = struct {
+    access_mask: windows.ACCESS_MASK,
+    dir: ?windows.HANDLE = null,
+    sa: ?*windows.SECURITY_ATTRIBUTES = null,
+    share_access: windows.FILE.SHARE = .VALID_FLAGS,
+    creation: windows.FILE.CREATE_DISPOSITION,
+    filter: Filter = .non_directory_only,
+    /// If false, tries to open path as a reparse point without dereferencing it.
+    /// Defaults to true.
+    follow_symlinks: bool = true,
+
+    pub const Filter = enum {
+        /// Causes `OpenFile` to return `error.IsDir` if the opened handle would be a directory.
+        non_directory_only,
+        /// Causes `OpenFile` to return `error.NotDir` if the opened handle is not a directory.
+        dir_only,
+        /// `OpenFile` does not discriminate between opening files and directories.
+        any,
+    };
+};
+
+/// TODO: inline this logic everywhere and delete this function
+fn OpenFile(sub_path_w: []const u16, options: OpenFileOptions) OpenError!windows.HANDLE {
+    if (std.mem.eql(u16, sub_path_w, &[_]u16{'.'}) and options.filter == .non_directory_only) {
+        return error.IsDir;
+    }
+    if (std.mem.eql(u16, sub_path_w, &[_]u16{ '.', '.' }) and options.filter == .non_directory_only) {
+        return error.IsDir;
+    }
+
+    var result: windows.HANDLE = undefined;
+
+    const path_len_bytes = std.math.cast(u16, sub_path_w.len * 2) orelse return error.NameTooLong;
+    var nt_name: windows.UNICODE_STRING = .{
+        .Length = path_len_bytes,
+        .MaximumLength = path_len_bytes,
+        .Buffer = @constCast(sub_path_w.ptr),
+    };
+    const attr: windows.OBJECT_ATTRIBUTES = .{
+        .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w)) null else options.dir,
+        .Attributes = .{ .INHERIT = if (options.sa) |sa| sa.bInheritHandle != windows.FALSE else false },
+        .ObjectName = &nt_name,
+        .SecurityDescriptor = if (options.sa) |ptr| ptr.lpSecurityDescriptor else null,
+    };
+
+    var iosb: windows.IO_STATUS_BLOCK = undefined;
+    var attempt: u5 = 0;
+    var syscall: Syscall = try .start();
+    while (true) {
+        switch (windows.ntdll.NtCreateFile(
+            &result,
+            options.access_mask,
+            &attr,
+            &iosb,
+            null,
+            .{ .NORMAL = true },
+            options.share_access,
+            options.creation,
+            .{
+                .DIRECTORY_FILE = options.filter == .dir_only,
+                .NON_DIRECTORY_FILE = options.filter == .non_directory_only,
+                .IO = if (options.follow_symlinks) .SYNCHRONOUS_NONALERT else .ASYNCHRONOUS,
+                .OPEN_REPARSE_POINT = !options.follow_symlinks,
+            },
+            null,
+            0,
+        )) {
+            .SUCCESS => {
+                syscall.finish();
+                return result;
+            },
+            .CANCELLED => {
+                try syscall.checkCancel();
+                continue;
+            },
+            .SHARING_VIOLATION => {
+                // This occurs if the file attempting to be opened is a running
+                // executable. However, there's a kernel bug: the error may be
+                // incorrectly returned for an indeterminate amount of time
+                // after an executable file is closed. Here we work around the
+                // kernel bug with retry attempts.
+                syscall.finish();
+                if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
+                try parking_sleep.sleep(.{ .duration = .{
+                    .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
+                    .clock = .awake,
+                } });
+                attempt += 1;
+                syscall = try .start();
+                continue;
+            },
+            .DELETE_PENDING => {
+                // This error means that there *was* a file in this location on
+                // the file system, but it was deleted. However, the OS is not
+                // finished with the deletion operation, and so this CreateFile
+                // call has failed. There is not really a sane way to handle
+                // this other than retrying the creation after the OS finishes
+                // the deletion.
+                syscall.finish();
+                if (max_windows_kernel_bug_retries - attempt == 0) return error.FileBusy;
+                try parking_sleep.sleep(.{ .duration = .{
+                    .raw = .fromMilliseconds((@as(u32, 1) << attempt) >> 1),
+                    .clock = .awake,
+                } });
+                attempt += 1;
+                syscall = try .start();
+                continue;
+            },
+            .OBJECT_NAME_INVALID => return syscall.fail(error.BadPathName),
+            .OBJECT_NAME_NOT_FOUND => return syscall.fail(error.FileNotFound),
+            .OBJECT_PATH_NOT_FOUND => return syscall.fail(error.FileNotFound),
+            .BAD_NETWORK_PATH => return syscall.fail(error.NetworkNotFound), // \\server was not found
+            .BAD_NETWORK_NAME => return syscall.fail(error.NetworkNotFound), // \\server was found but \\server\share wasn't
+            .NO_MEDIA_IN_DEVICE => return syscall.fail(error.NoDevice),
+            .ACCESS_DENIED => return syscall.fail(error.AccessDenied),
+            .PIPE_BUSY => return syscall.fail(error.PipeBusy),
+            .PIPE_NOT_AVAILABLE => return syscall.fail(error.NoDevice),
+            .OBJECT_NAME_COLLISION => return syscall.fail(error.PathAlreadyExists),
+            .FILE_IS_A_DIRECTORY => return syscall.fail(error.IsDir),
+            .NOT_A_DIRECTORY => return syscall.fail(error.NotDir),
+            .USER_MAPPED_FILE => return syscall.fail(error.AccessDenied),
+            .VIRUS_INFECTED, .VIRUS_DELETED => return syscall.fail(error.AntivirusInterference),
+            .INVALID_PARAMETER => |status| return syscall.ntstatusBug(status),
+            .OBJECT_PATH_SYNTAX_BAD => |status| return syscall.ntstatusBug(status),
+            .INVALID_HANDLE => |status| return syscall.ntstatusBug(status),
+            else => |status| return syscall.unexpectedNtstatus(status),
+        }
     }
 }

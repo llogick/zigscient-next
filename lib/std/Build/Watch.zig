@@ -358,7 +358,7 @@ const Os = switch (builtin.os.tag) {
                 var dir_handle: windows.HANDLE = undefined;
                 const root_fd = path.root_dir.handle.handle;
                 const sub_path = path.subPathOrDot();
-                const sub_path_w = try windows.sliceToPrefixedFileW(root_fd, sub_path);
+                const sub_path_w = try std.Io.Threaded.sliceToPrefixedFileW(root_fd, sub_path); // TODO eliminate this call
                 const path_len_bytes = std.math.cast(u16, sub_path_w.len * 2) orelse return error.NameTooLong;
 
                 var nt_name = windows.UNICODE_STRING{

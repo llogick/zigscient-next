@@ -671,10 +671,7 @@ pub fn build(b: *std.Build) !void {
                 .aarch64 => 1_813_612_134,
                 else => 1_900_000_000,
             },
-            .windows => switch (b.graph.host.result.cpu.arch) {
-                .x86_64 => 386_287_616,
-                else => 400_000_000,
-            },
+            .windows => 400_000_000,
             else => 2_200_000_000,
         },
     }));
