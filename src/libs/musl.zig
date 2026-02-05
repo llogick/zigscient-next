@@ -1579,7 +1579,6 @@ const src_files = [_][]const u8{
     "musl/src/string/strndup.c",
     "musl/src/string/strsignal.c",
     "musl/src/string/strverscmp.c",
-    "musl/src/string/swab.c",
     "musl/src/string/wcscasecmp.c",
     "musl/src/string/wcscasecmp_l.c",
     "musl/src/string/wcsdup.c",

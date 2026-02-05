@@ -43,6 +43,9 @@ comptime {
 
         @export(&execveLinux, .{ .name = "execve", .linkage = common.linkage, .visibility = common.visibility });
     }
+    if (builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
+        @export(&swab, .{ .name = "swab", .linkage = common.linkage, .visibility = common.visibility });
+    }
 }
 
 fn _exit(exit_code: c_int) callconv(.c) noreturn {
@@ -180,4 +183,43 @@ fn unlinkatLinux(fd: c_int, path: [*:0]const c_char, flags: c_int) callconv(.c) 
 
 fn execveLinux(path: [*:0]const c_char, argv: [*:null]const ?[*:0]c_char, envp: [*:null]const ?[*:0]c_char) callconv(.c) c_int {
     return common.errno(linux.execve(@ptrCast(path), @ptrCast(argv), @ptrCast(envp)));
+}
+
+fn swab(noalias src_ptr: *const anyopaque, noalias dest_ptr: *anyopaque, n: isize) callconv(.c) void {
+    var src: [*]const u8 = @ptrCast(src_ptr);
+    var dest: [*]u8 = @ptrCast(dest_ptr);
+    var i = n;
+
+    while (i > 1) : (i -= 2) {
+        dest[0] = src[1];
+        dest[1] = src[0];
+        dest += 2;
+        src += 2;
+    }
+}
+
+test swab {
+    var a: [4]u8 = undefined;
+    @memset(a[0..], '\x00');
+    swab("abcd", &a, 4);
+    try std.testing.expectEqualSlices(u8, "badc", &a);
+
+    // Partial copy
+    @memset(a[0..], '\x00');
+    swab("abcd", &a, 2);
+    try std.testing.expectEqualSlices(u8, "ba\x00\x00", &a);
+
+    // n < 1
+    @memset(a[0..], '\x00');
+    swab("abcd", &a, 0);
+    try std.testing.expectEqualSlices(u8, "\x00" ** 4, &a);
+    swab("abcd", &a, -1);
+    try std.testing.expectEqualSlices(u8, "\x00" ** 4, &a);
+
+    // Odd n
+    @memset(a[0..], '\x00');
+    swab("abcd", &a, 1);
+    try std.testing.expectEqualSlices(u8, "\x00" ** 4, &a);
+    swab("abcd", &a, 3);
+    try std.testing.expectEqualSlices(u8, "ba\x00\x00", &a);
 }

@@ -957,7 +957,6 @@ const libc_top_half_src_files = [_][]const u8{
     "musl/src/string/strerror_r.c",
     "musl/src/string/strndup.c",
     "musl/src/string/strverscmp.c",
-    "musl/src/string/swab.c",
     "musl/src/string/wcscasecmp.c",
     "musl/src/string/wcscasecmp_l.c",
     "musl/src/string/wcsdup.c",
