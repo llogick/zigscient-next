@@ -12,10 +12,14 @@ pub fn main(init: std.process.Init) !void {
     // containsUnempty
     {
         try std.testing.expect(try environ.containsUnempty(allocator, "FOO"));
+        try std.testing.expect(!(try environ.containsUnempty(allocator, "FOO=")));
+        try std.testing.expect(!(try environ.containsUnempty(allocator, "FO")));
+        try std.testing.expect(!(try environ.containsUnempty(allocator, "FOOO")));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(try environ.containsUnempty(allocator, "foo"));
         }
         try std.testing.expect(try environ.containsUnempty(allocator, "EQUALS"));
+        try std.testing.expect(!(try environ.containsUnempty(allocator, "EQUALS=ABC")));
         try std.testing.expect(try environ.containsUnempty(allocator, "КИРиллИЦА"));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(try environ.containsUnempty(allocator, "кирИЛЛица"));
@@ -31,10 +35,14 @@ pub fn main(init: std.process.Init) !void {
     // containsUnemptyConstant
     {
         try std.testing.expect(environ.containsUnemptyConstant("FOO"));
+        try std.testing.expect(!environ.containsUnemptyConstant("FOO="));
+        try std.testing.expect(!environ.containsUnemptyConstant("FO"));
+        try std.testing.expect(!environ.containsUnemptyConstant("FOOO"));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(environ.containsUnemptyConstant("foo"));
         }
         try std.testing.expect(environ.containsUnemptyConstant("EQUALS"));
+        try std.testing.expect(!environ.containsUnemptyConstant("EQUALS=ABC"));
         try std.testing.expect(environ.containsUnemptyConstant("КИРиллИЦА"));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(environ.containsUnemptyConstant("кирИЛЛица"));
@@ -50,10 +58,14 @@ pub fn main(init: std.process.Init) !void {
     // contains
     {
         try std.testing.expect(try environ.contains(allocator, "FOO"));
+        try std.testing.expect(!(try environ.contains(allocator, "FOO=")));
+        try std.testing.expect(!(try environ.contains(allocator, "FO")));
+        try std.testing.expect(!(try environ.contains(allocator, "FOOO")));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(try environ.contains(allocator, "foo"));
         }
         try std.testing.expect(try environ.contains(allocator, "EQUALS"));
+        try std.testing.expect(!(try environ.contains(allocator, "EQUALS=ABC")));
         try std.testing.expect(try environ.contains(allocator, "КИРиллИЦА"));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(try environ.contains(allocator, "кирИЛЛица"));
@@ -69,10 +81,14 @@ pub fn main(init: std.process.Init) !void {
     // containsConstant
     {
         try std.testing.expect(environ.containsConstant("FOO"));
+        try std.testing.expect(!environ.containsConstant("FOO="));
+        try std.testing.expect(!environ.containsConstant("FO"));
+        try std.testing.expect(!environ.containsConstant("FOOO"));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(environ.containsConstant("foo"));
         }
         try std.testing.expect(environ.containsConstant("EQUALS"));
+        try std.testing.expect(!environ.containsConstant("EQUALS=ABC"));
         try std.testing.expect(environ.containsConstant("КИРиллИЦА"));
         if (builtin.os.tag == .windows) {
             try std.testing.expect(environ.containsConstant("кирИЛЛица"));
@@ -88,10 +104,14 @@ pub fn main(init: std.process.Init) !void {
     // getAlloc
     {
         try std.testing.expectEqualSlices(u8, "123", try environ.getAlloc(arena, "FOO"));
+        try std.testing.expectError(error.EnvironmentVariableMissing, environ.getAlloc(arena, "FOO="));
+        try std.testing.expectError(error.EnvironmentVariableMissing, environ.getAlloc(arena, "FO"));
+        try std.testing.expectError(error.EnvironmentVariableMissing, environ.getAlloc(arena, "FOOO"));
         if (builtin.os.tag == .windows) {
             try std.testing.expectEqualSlices(u8, "123", try environ.getAlloc(arena, "foo"));
         }
         try std.testing.expectEqualSlices(u8, "ABC=123", try environ.getAlloc(arena, "EQUALS"));
+        try std.testing.expectError(error.EnvironmentVariableMissing, environ.getAlloc(arena, "EQUALS=ABC"));
         try std.testing.expectEqualSlices(u8, "non-ascii አማርኛ \u{10FFFF}", try environ.getAlloc(arena, "КИРиллИЦА"));
         if (builtin.os.tag == .windows) {
             try std.testing.expectEqualSlices(u8, "non-ascii አማርኛ \u{10FFFF}", try environ.getAlloc(arena, "кирИЛЛица"));
@@ -110,10 +130,13 @@ pub fn main(init: std.process.Init) !void {
         defer environ_map.deinit();
 
         try std.testing.expectEqualSlices(u8, "123", environ_map.get("FOO").?);
+        try std.testing.expectEqual(null, environ_map.get("FO"));
+        try std.testing.expectEqual(null, environ_map.get("FOOO"));
         if (builtin.os.tag == .windows) {
             try std.testing.expectEqualSlices(u8, "123", environ_map.get("foo").?);
         }
         try std.testing.expectEqualSlices(u8, "ABC=123", environ_map.get("EQUALS").?);
+        try std.testing.expectEqual(null, environ_map.get("EQUALS=ABC"));
         try std.testing.expectEqualSlices(u8, "non-ascii አማርኛ \u{10FFFF}", environ_map.get("КИРиллИЦА").?);
         if (builtin.os.tag == .windows) {
             try std.testing.expectEqualSlices(u8, "non-ascii አማርኛ \u{10FFFF}", environ_map.get("кирИЛЛица").?);

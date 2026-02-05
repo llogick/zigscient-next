@@ -129,23 +129,19 @@ pub const Map = struct {
         };
     }
 
-    pub fn validateKey(key: []const u8) bool {
+    pub fn validateKeyForPut(key: []const u8) bool {
         switch (native_os) {
             else => return key.len > 0 and mem.findAny(u8, key, &.{ 0, '=' }) == null,
             .windows => {
                 if (!unicode.wtf8ValidateSlice(key)) return false;
-                var it = unicode.Wtf8View.initUnchecked(key).iterator();
-                switch (it.nextCodepoint() orelse return false) {
-                    0 => return false,
-                    else => {},
-                }
-                while (it.nextCodepoint()) |cp| switch (cp) {
-                    0, '=' => return false,
-                    else => {},
-                };
-                return true;
+                return key.len > 0 and key[0] != 0 and mem.findAnyPos(u8, key, 1, &.{ 0, '=' }) == null;
             },
         }
+    }
+
+    pub fn validateKeyForFetch(key: []const u8) bool {
+        if (native_os == .windows and !unicode.wtf8ValidateSlice(key)) return false;
+        return true;
     }
 
     /// Create a Map backed by a specific allocator.
@@ -220,9 +216,14 @@ pub const Map = struct {
     /// Same as `put` but the key and value become owned by the Map rather
     /// than being copied.
     /// If `putMove` fails, the ownership of key and value does not transfer.
-    /// On Windows `key` must be a valid [WTF-8](https://wtf-8.codeberg.page/) string.
+    ///
+    /// Asserts that `key` is valid:
+    /// - It cannot contain a NUL (`'\x00') byte.
+    /// - It must have a length > 0.
+    /// - It cannot contain `=`, except on Windows where only the first code point is allowed to be `=`.
+    /// - On Windows, it must be valid [WTF-8](https://wtf-8.codeberg.page/).
     pub fn putMove(self: *Map, key: []u8, value: []u8) Allocator.Error!void {
-        assert(validateKey(key));
+        assert(validateKeyForPut(key));
         const gpa = self.allocator;
         const get_or_put = try self.array_hash_map.getOrPut(gpa, key);
         if (get_or_put.found_existing) {
@@ -234,9 +235,14 @@ pub const Map = struct {
     }
 
     /// `key` and `value` are copied into the Map.
-    /// On Windows `key` must be a valid [WTF-8](https://wtf-8.codeberg.page/) string.
+    ///
+    /// Asserts that `key` is valid:
+    /// - It cannot contain a NUL (`'\x00') byte.
+    /// - It must have a length > 0.
+    /// - It cannot contain `=`, except on Windows where only the first code point is allowed to be `=`.
+    /// - On Windows, it must be valid [WTF-8](https://wtf-8.codeberg.page/).
     pub fn put(self: *Map, key: []const u8, value: []const u8) Allocator.Error!void {
-        assert(validateKey(key));
+        assert(validateKeyForPut(key));
         const gpa = self.allocator;
         const value_copy = try gpa.dupe(u8, value);
         errdefer gpa.free(value_copy);
@@ -254,23 +260,24 @@ pub const Map = struct {
 
     /// Find the address of the value associated with a key.
     /// The returned pointer is invalidated if the map resizes.
-    /// On Windows `key` must be a valid [WTF-8](https://wtf-8.codeberg.page/) string.
+    /// On Windows, asserts that `key` is valid [WTF-8](https://wtf-8.codeberg.page/).
     pub fn getPtr(self: Map, key: []const u8) ?*[]const u8 {
-        assert(validateKey(key));
+        assert(validateKeyForFetch(key));
         return self.array_hash_map.getPtr(key);
     }
 
     /// Return the map's copy of the value associated with
     /// a key.  The returned string is invalidated if this
     /// key is removed from the map.
-    /// On Windows `key` must be a valid [WTF-8](https://wtf-8.codeberg.page/) string.
+    /// On Windows, asserts that `key` is valid [WTF-8](https://wtf-8.codeberg.page/).
     pub fn get(self: Map, key: []const u8) ?[]const u8 {
-        assert(validateKey(key));
+        assert(validateKeyForFetch(key));
         return self.array_hash_map.get(key);
     }
 
+    /// On Windows, asserts that `key` is valid [WTF-8](https://wtf-8.codeberg.page/).
     pub fn contains(m: *const Map, key: []const u8) bool {
-        assert(validateKey(key));
+        assert(validateKeyForFetch(key));
         return m.array_hash_map.contains(key);
     }
 
@@ -281,9 +288,9 @@ pub const Map = struct {
     /// Returns true if an entry was removed, false otherwise.
     ///
     /// This invalidates the value returned by get() for this key.
-    /// On Windows `key` must be a valid [WTF-8](https://wtf-8.codeberg.page/) string.
+    /// On Windows, asserts that `key` is valid [WTF-8](https://wtf-8.codeberg.page/).
     pub fn swapRemove(self: *Map, key: []const u8) bool {
-        assert(validateKey(key));
+        assert(validateKeyForFetch(key));
         const kv = self.array_hash_map.fetchSwapRemove(key) orelse return false;
         const gpa = self.allocator;
         gpa.free(kv.key);
@@ -298,9 +305,9 @@ pub const Map = struct {
     /// Returns true if an entry was removed, false otherwise.
     ///
     /// This invalidates the value returned by get() for this key.
-    /// On Windows `key` must be a valid [WTF-8](https://wtf-8.codeberg.page/) string.
+    /// On Windows, asserts that `key` is valid [WTF-8](https://wtf-8.codeberg.page/).
     pub fn orderedRemove(self: *Map, key: []const u8) bool {
-        assert(validateKey(key));
+        assert(validateKeyForFetch(key));
         const kv = self.array_hash_map.fetchOrderedRemove(key) orelse return false;
         const gpa = self.allocator;
         gpa.free(kv.key);
@@ -612,7 +619,7 @@ pub fn getPosix(environ: Environ, key: []const u8) ?[:0]const u8 {
 pub fn getWindows(environ: Environ, key: [*:0]const u16) ?[:0]const u16 {
     // '=' anywhere but the start makes this an invalid environment variable name.
     const key_slice = mem.sliceTo(key, 0);
-    assert(key_slice.len > 0 and mem.findScalar(u16, key_slice[1..], '=') == null);
+    if (key_slice.len == 0 or mem.findScalar(u16, key_slice[1..], '=') != null) return null;
 
     if (!environ.block.use_global) return null;
 
