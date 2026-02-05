@@ -1693,6 +1693,7 @@ fn cfgLspServer(
     exe.root_module.addImport("known-folders", known_folders_module);
     exe.root_module.addImport("zls", zls_module);
     exe.root_module.addImport("tracy", zls_module.import_table.get("tracy").?);
+    exe.root_module.addImport("std", b.dependency("zig_std", .{}).module("zig-std"));
 
     const ls_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -1704,6 +1705,7 @@ fn cfgLspServer(
             .imports = &.{
                 .{ .name = "zls", .module = zls_module },
                 .{ .name = "test_options", .module = ls_test_options },
+                .{ .name = "std", .module = b.dependency("zig_std", .{}).module("zig-std") },
             },
         }),
         .filters = test_filters,
@@ -1927,6 +1929,7 @@ fn createZLSModule(
             .{ .name = "extended-zccs", .module = extended_zccs },
             .{ .name = "ls_build_options", .module = options.build_options },
             .{ .name = "version_data", .module = options.version_data },
+            .{ .name = "std", .module = b.dependency("zig_std", .{}).module("zig-std") },
         },
     });
 
