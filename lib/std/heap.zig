@@ -110,11 +110,11 @@ pub fn defaultQueryPageSize() usize {
             break :size @intCast(vm_info.page_size);
         },
         .windows => {
-            var sbi: windows.SYSTEM_BASIC_INFORMATION = undefined;
+            var sbi: windows.SYSTEM.BASIC_INFORMATION = undefined;
             switch (windows.ntdll.NtQuerySystemInformation(
-                .SystemBasicInformation,
+                .Basic,
                 &sbi,
-                @sizeOf(windows.SYSTEM_BASIC_INFORMATION),
+                @sizeOf(windows.SYSTEM.BASIC_INFORMATION),
                 null,
             )) {
                 .SUCCESS => break :size sbi.PageSize,

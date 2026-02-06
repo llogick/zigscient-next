@@ -24,6 +24,66 @@ pub const nls = @import("windows/nls.zig");
 
 pub const current_process: HANDLE = @ptrFromInt(@as(usize, @bitCast(@as(isize, -1))));
 
+pub const OBJECT = struct {
+    // ref: um/winternl.h
+
+    pub const ATTRIBUTES = extern struct {
+        Length: ULONG = @sizeOf(ATTRIBUTES),
+        RootDirectory: ?HANDLE = null,
+        ObjectName: ?*UNICODE_STRING = @constCast(&UNICODE_STRING.empty),
+        Attributes: Flags = .{},
+        SecurityDescriptor: ?*anyopaque = null,
+        SecurityQualityOfService: ?*anyopaque = null,
+
+        // Valid values for the Attributes field
+        pub const Flags = packed struct(ULONG) {
+            Reserved0: u1 = 0,
+            INHERIT: bool = false,
+            Reserved2: u2 = 0,
+            PERMANENT: bool = false,
+            EXCLUSIVE: bool = false,
+            /// If name-lookup code should ignore the case of the ObjectName member rather than performing an exact-match search.
+            CASE_INSENSITIVE: bool = true,
+            OPENIF: bool = false,
+            OPENLINK: bool = false,
+            KERNEL_HANDLE: bool = false,
+            FORCE_ACCESS_CHECK: bool = false,
+            IGNORE_IMPERSONATED_DEVICEMAP: bool = false,
+            DONT_REPARSE: bool = false,
+            Reserved13: u19 = 0,
+
+            pub const VALID_ATTRIBUTES: ATTRIBUTES = .{
+                .INHERIT = true,
+                .PERMANENT = true,
+                .EXCLUSIVE = true,
+                .CASE_INSENSITIVE = true,
+                .OPENIF = true,
+                .OPENLINK = true,
+                .KERNEL_HANDLE = true,
+                .FORCE_ACCESS_CHECK = true,
+                .IGNORE_IMPERSONATED_DEVICEMAP = true,
+                .DONT_REPARSE = true,
+            };
+        };
+    };
+
+    pub const INFORMATION_CLASS = enum(c_int) {
+        Basic = 0,
+        Name = 1,
+        Type = 2,
+        Types = 3,
+        HandleFlag = 4,
+        Session = 5,
+        _,
+
+        pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".fields.len;
+    };
+
+    pub const NAME_INFORMATION = extern struct {
+        Name: UNICODE_STRING,
+    };
+};
+
 pub const FILE = struct {
     // ref: km/ntddk.h
 
@@ -72,6 +132,94 @@ pub const FILE = struct {
     };
 
     // ref: km/ntifs.h
+
+    pub const NAME_FLAGS = packed struct(UCHAR) {
+        NTFS: bool = false,
+        DOS: bool = false,
+        Reserved2: u5 = 0,
+        UNSPECIFIED: bool = false,
+    };
+
+    pub const NOTIFY = struct {
+        pub const CHANGE = packed struct(ULONG) {
+            FILE_NAME: bool = false,
+            DIR_NAME: bool = false,
+            ATTRIBUTES: bool = false,
+            SIZE: bool = false,
+            LAST_WRITE: bool = false,
+            LAST_ACCESS: bool = false,
+            CREATION: bool = false,
+            EA: bool = false,
+            SECURITY: bool = false,
+            STREAM_NAME: bool = false,
+            STREAM_SIZE: bool = false,
+            STREAM_WRITE: bool = false,
+            Reserved12: u20 = 0,
+        };
+
+        pub const INFORMATION = extern struct {
+            NextEntryOffset: ULONG,
+            Action: ULONG,
+            FileNameLength: ULONG,
+            FileName: [0]WCHAR,
+
+            pub fn fileName(info: *INFORMATION) []WCHAR {
+                const ptr: [*]WCHAR = @ptrCast(&info.FileName);
+                return ptr[0..@divExact(info.FileNameLength, @sizeOf(WCHAR))];
+            }
+        };
+
+        pub const EXTENDED_INFORMATION = extern struct {
+            NextEntryOffset: ULONG,
+            Action: ULONG,
+            CreationTime: LARGE_INTEGER,
+            LastModificationTime: LARGE_INTEGER,
+            LastChangeTime: LARGE_INTEGER,
+            LastAccessTime: LARGE_INTEGER,
+            AllocatedLength: LARGE_INTEGER,
+            FileSize: LARGE_INTEGER,
+            FileAttributes: ATTRIBUTE,
+            u: extern union {
+                ReparsePointTag: ULONG,
+                EaSize: ULONG,
+            },
+            FileId: LARGE_INTEGER,
+            ParentFileId: LARGE_INTEGER,
+            FileNameLength: ULONG,
+            FileName: [0]WCHAR,
+
+            pub fn fileName(info: *INFORMATION) []WCHAR {
+                const ptr: [*]WCHAR = @ptrCast(&info.FileName);
+                return ptr[0..@divExact(info.FileNameLength, @sizeOf(WCHAR))];
+            }
+        };
+
+        pub const FULL_INFORMATION = extern struct {
+            NextEntryOffset: ULONG,
+            Action: ULONG,
+            CreationTime: LARGE_INTEGER,
+            LastModificationTime: LARGE_INTEGER,
+            LastChangeTime: LARGE_INTEGER,
+            LastAccessTime: LARGE_INTEGER,
+            AllocatedLength: LARGE_INTEGER,
+            FileSize: LARGE_INTEGER,
+            FileAttributes: ATTRIBUTE,
+            u: extern union {
+                ReparsePointTag: ULONG,
+                EaSize: ULONG,
+            },
+            FileId: LARGE_INTEGER,
+            ParentFileId: LARGE_INTEGER,
+            FileNameLength: ULONG,
+            FileNameFlags: NAME_FLAGS,
+            FileName: [0]WCHAR,
+
+            pub fn fileName(info: *INFORMATION) []WCHAR {
+                const ptr: [*]WCHAR = @ptrCast(&info.FileName);
+                return ptr[0..@divExact(info.FileNameLength, @sizeOf(WCHAR))];
+            }
+        };
+    };
 
     pub const PIPE = struct {
         /// Define the `NamedPipeType` flags for `NtCreateNamedPipeFile`
@@ -357,6 +505,7 @@ pub const FILE = struct {
         IdAllExtdBothDirectory = 81,
         StreamReservation = 82,
         MupProvider = 83,
+        _,
 
         pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".fields.len;
     };
@@ -647,145 +796,475 @@ pub const FILE = struct {
             Mode: MODE,
         };
     };
+
+    // ref: km/
+};
+
+pub const DIRECTORY = struct {
+    pub const NOTIFY_INFORMATION_CLASS = enum(c_int) {
+        Notify = 1,
+        NotifyExtended = 2,
+        NotifyFull = 3,
+        _,
+
+        pub const Maximum: @typeInfo(@This()).@"enum".tag_type = 1 + @typeInfo(@This()).@"enum".fields.len;
+    };
+};
+
+pub const CONSOLE = struct {
+    pub const USER_IO = struct {
+        pub const INFO = struct {
+            pub const CP = extern struct {
+                /// GetCP: output
+                /// SetCP: input
+                CodePage: UINT,
+                /// input
+                Mode: MODE,
+
+                pub const MODE = enum(BOOLEAN) {
+                    Input = FALSE,
+                    Output = TRUE,
+                };
+            };
+
+            pub const WRITE = extern struct {
+                /// output, in bytes
+                Size: DWORD,
+                /// input
+                Mode: MODE,
+
+                pub const MODE = enum(BOOLEAN) {
+                    Character = FALSE,
+                    WideCharacter = TRUE,
+                };
+            };
+
+            pub const FILL = extern struct {
+                /// input
+                dwWriteCoord: COORD,
+                /// input
+                Tag: WITH.Tag,
+                /// input
+                With: WITH.Payload,
+                /// input/output, in characters
+                nLength: DWORD,
+
+                pub const WITH = union(enum(DWORD)) {
+                    Character: CHAR = 1,
+                    WideCharacter: WCHAR = 2,
+                    Attribute: WORD = 3,
+
+                    pub const Tag = @typeInfo(WITH).@"union".tag_type.?;
+                    pub const Payload = PAYLOAD: {
+                        const with_fields = @typeInfo(WITH).@"union".fields;
+                        var field_names: [with_fields.len][]const u8 = undefined;
+                        var field_types: [with_fields.len]type = undefined;
+                        for (with_fields, &field_names, &field_types) |field, *field_name, *field_type| {
+                            field_name.* = field.name;
+                            field_type.* = field.type;
+                        }
+                        break :PAYLOAD @Union(.@"extern", null, &field_names, &field_types, &@splat(.{}));
+                    };
+                };
+            };
+
+            /// all output
+            pub const SCREEN_BUFFER = extern struct {
+                dwSize: COORD,
+                dwCursorPosition: COORD,
+                dwWindowPosition: COORD,
+                wAttributes: WORD,
+                dwWindowSize: COORD,
+                dwMaximumWindowSize: COORD,
+                wPopupAttributes: WORD,
+                bFullscreenSupported: BOOL,
+                ColorTable: [16]COLORREF,
+            };
+
+            pub const READ_OUTPUT_CHARACTER = extern struct {
+                /// input
+                dwReadCoord: COORD,
+                Mode: MODE,
+                /// output, in characters
+                nLength: DWORD,
+
+                pub const MODE = enum(DWORD) {
+                    Character = 1,
+                    WideCharacter = 2,
+                };
+            };
+        };
+
+        pub fn GET_CP(mode: INFO.CP.MODE) Header.With(INFO.CP) {
+            return .init(.GetCP, .{ .CodePage = undefined, .Mode = mode });
+        }
+        pub const GET_MODE: Header.With(DWORD) = .init(.GetMode, undefined);
+        pub fn SET_MODE(mode: DWORD) Header.With(DWORD) {
+            return .init(.SetMode, mode);
+        }
+        pub fn WRITE(mode: INFO.WRITE.MODE) Header.With(INFO.WRITE) {
+            return .init(.Write, .{ .Size = undefined, .Mode = mode });
+        }
+        pub fn FILL(with: INFO.FILL.WITH, len: DWORD, coord: COORD) Header.With(INFO.FILL) {
+            return .init(.Fill, .{
+                .dwWriteCoord = coord,
+                .Tag = with,
+                .With = switch (with) {
+                    inline else => |payload, tag| @unionInit(
+                        INFO.FILL.WITH.Payload,
+                        @tagName(tag),
+                        payload,
+                    ),
+                },
+                .nLength = len,
+            });
+        }
+        pub fn SET_CP(mode: INFO.CP.MODE, cp: UINT) Header.With(INFO.CP) {
+            return .init(.SetCP, .{ .CodePage = cp, .Mode = mode });
+        }
+        pub const GET_SCREEN_BUFFER_INFO: Header.With(INFO.SCREEN_BUFFER) =
+            .init(.GetScreenBufferInfo, undefined);
+        pub fn SET_CURSOR_POSITION(coord: COORD) Header.With(COORD) {
+            return .init(.SetCursorPosition, coord);
+        }
+        pub fn SET_TEXT_ATTRIBUTE(attribute: WORD) Header.With(WORD) {
+            return .init(.SetTextAttribute, attribute);
+        }
+        pub fn READ_OUTPUT_CHARACTER(
+            coord: COORD,
+            mode: INFO.READ_OUTPUT_CHARACTER.MODE,
+        ) Header.With(INFO.READ_OUTPUT_CHARACTER) {
+            return .init(.ReadOutputCharacter, .{
+                .dwReadCoord = coord,
+                .Mode = mode,
+                .nLength = undefined,
+            });
+        }
+
+        pub const InputBuffer = extern struct {
+            Size: u32,
+            Pointer: *const anyopaque,
+        };
+
+        pub const OutputBuffer = extern struct {
+            Size: u32,
+            Pointer: *anyopaque,
+        };
+
+        pub fn Request(comptime in_len: u32, comptime out_len: u32) type {
+            return extern struct {
+                Handle: ?HANDLE,
+                InputBuffersLength: u32,
+                OutputBuffersLength: u32,
+                InputBuffers: [in_len]InputBuffer,
+                OutputBuffers: [out_len]OutputBuffer,
+
+                pub fn init(
+                    handle: ?HANDLE,
+                    in: [in_len]InputBuffer,
+                    out: [out_len]OutputBuffer,
+                ) @This() {
+                    return .{
+                        .Handle = handle,
+                        .InputBuffersLength = in_len,
+                        .OutputBuffersLength = out_len,
+                        .InputBuffers = in,
+                        .OutputBuffers = out,
+                    };
+                }
+            };
+        }
+
+        pub const Header = extern struct {
+            Operation: Operation,
+            Size: u32,
+
+            pub fn With(comptime Data: type) type {
+                return extern struct {
+                    Header: Header,
+                    Data: Data,
+
+                    pub fn init(operation: Operation, data: Data) @This() {
+                        return .{
+                            .Header = .{ .Operation = operation, .Size = @sizeOf(Data) },
+                            .Data = data,
+                        };
+                    }
+
+                    pub fn request(
+                        with: *@This(),
+                        file: ?Io.File,
+                        comptime in_len: u32,
+                        in: [in_len]InputBuffer,
+                        comptime out_len: u32,
+                        out: [out_len]OutputBuffer,
+                    ) Request(1 + in_len, 1 + out_len) {
+                        return .init(
+                            if (file) |f| f.handle else null,
+                            [1]InputBuffer{.{
+                                .Size = @offsetOf(@This(), "Data") + @sizeOf(Data),
+                                .Pointer = with,
+                            }} ++ in,
+                            [1]OutputBuffer{.{ .Size = @sizeOf(Data), .Pointer = &with.Data }} ++ out,
+                        );
+                    }
+
+                    pub fn operate(with: *@This(), io: Io, file: ?Io.File) Io.Cancelable!NTSTATUS {
+                        return (try io.operate(.{ .device_io_control = .{
+                            .file = .{
+                                .handle = peb().ProcessParameters.ConsoleHandle,
+                                .flags = .{ .nonblocking = false },
+                            },
+                            .code = IOCTL.CONDRV.ISSUE_USER_IO,
+                            .in = @ptrCast(&with.request(file, 0, .{}, 0, .{})),
+                        } })).device_io_control.u.Status;
+                    }
+                };
+            }
+        };
+
+        pub const Operation = enum(u32) {
+            GetCP = 0x1000000,
+            GetMode = 0x1000001,
+            SetMode = 0x1000002,
+            Read = 0x1000005,
+            Write = 0x1000006,
+            Fill = 0x2000000,
+            SetCP = 0x2000004,
+            GetScreenBufferInfo = 0x2000007,
+            SetCursorPosition = 0x200000a,
+            SetTextAttribute = 0x200000d,
+            ReadOutputCharacter = 0x200000f,
+            _,
+        };
+    };
 };
 
 // ref: km/ntddk.h
 
-pub const PROCESSINFOCLASS = enum(c_int) {
-    BasicInformation = 0,
-    QuotaLimits = 1,
-    IoCounters = 2,
-    VmCounters = 3,
-    Times = 4,
-    BasePriority = 5,
-    RaisePriority = 6,
-    DebugPort = 7,
-    ExceptionPort = 8,
-    AccessToken = 9,
-    LdtInformation = 10,
-    LdtSize = 11,
-    DefaultHardErrorMode = 12,
-    IoPortHandlers = 13,
-    PooledUsageAndLimits = 14,
-    WorkingSetWatch = 15,
-    UserModeIOPL = 16,
-    EnableAlignmentFaultFixup = 17,
-    PriorityClass = 18,
-    Wx86Information = 19,
-    HandleCount = 20,
-    AffinityMask = 21,
-    PriorityBoost = 22,
-    DeviceMap = 23,
-    SessionInformation = 24,
-    ForegroundInformation = 25,
-    Wow64Information = 26,
-    ImageFileName = 27,
-    LUIDDeviceMapsEnabled = 28,
-    BreakOnTermination = 29,
-    DebugObjectHandle = 30,
-    DebugFlags = 31,
-    HandleTracing = 32,
-    IoPriority = 33,
-    ExecuteFlags = 34,
-    TlsInformation = 35,
-    Cookie = 36,
-    ImageInformation = 37,
-    CycleTime = 38,
-    PagePriority = 39,
-    InstrumentationCallback = 40,
-    ThreadStackAllocation = 41,
-    WorkingSetWatchEx = 42,
-    ImageFileNameWin32 = 43,
-    ImageFileMapping = 44,
-    AffinityUpdateMode = 45,
-    MemoryAllocationMode = 46,
-    GroupInformation = 47,
-    TokenVirtualizationEnabled = 48,
-    OwnerInformation = 49,
-    WindowInformation = 50,
-    HandleInformation = 51,
-    MitigationPolicy = 52,
-    DynamicFunctionTableInformation = 53,
-    HandleCheckingMode = 54,
-    KeepAliveCount = 55,
-    RevokeFileHandles = 56,
-    WorkingSetControl = 57,
-    HandleTable = 58,
-    CheckStackExtentsMode = 59,
-    CommandLineInformation = 60,
-    ProtectionInformation = 61,
-    MemoryExhaustion = 62,
-    FaultInformation = 63,
-    TelemetryIdInformation = 64,
-    CommitReleaseInformation = 65,
-    Reserved1Information = 66,
-    Reserved2Information = 67,
-    SubsystemProcess = 68,
-    InPrivate = 70,
-    RaiseUMExceptionOnInvalidHandleClose = 71,
-    SubsystemInformation = 75,
-    Win32kSyscallFilterInformation = 79,
-    EnergyTrackingState = 82,
-    NetworkIoCounters = 114,
-    _,
+pub const SYSTEM = struct {
+    pub const INFORMATION_CLASS = enum(c_int) {
+        Basic = 0,
+        Performance = 2,
+        TimeOfDay = 3,
+        Process = 5,
+        ProcessorPerformance = 8,
+        Interrupt = 23,
+        Exception = 33,
+        RegistryQuota = 37,
+        Lookaside = 45,
+        CodeIntegrity = 103,
+        Policy = 134,
+        _,
+    };
 
-    pub const Max: @typeInfo(@This()).@"enum".tag_type = 117;
+    pub const BASIC_INFORMATION = extern struct {
+        Reserved: ULONG,
+        TimerResolution: ULONG,
+        PageSize: ULONG,
+        NumberOfPhysicalPages: ULONG,
+        LowestPhysicalPageNumber: ULONG,
+        HighestPhysicalPageNumber: ULONG,
+        AllocationGranularity: ULONG,
+        MinimumUserModeAddress: ULONG_PTR,
+        MaximumUserModeAddress: ULONG_PTR,
+        ActiveProcessorsAffinityMask: KAFFINITY,
+        NumberOfProcessors: UCHAR,
+    };
 };
 
-pub const THREADINFOCLASS = enum(c_int) {
-    BasicInformation = 0,
-    Times = 1,
-    Priority = 2,
-    BasePriority = 3,
-    AffinityMask = 4,
-    ImpersonationToken = 5,
-    DescriptorTableEntry = 6,
-    EnableAlignmentFaultFixup = 7,
-    EventPair_Reusable = 8,
-    QuerySetWin32StartAddress = 9,
-    ZeroTlsCell = 10,
-    PerformanceCount = 11,
-    AmILastThread = 12,
-    IdealProcessor = 13,
-    PriorityBoost = 14,
-    SetTlsArrayAddress = 15,
-    IsIoPending = 16,
-    // Windows 2000+ from here
-    HideFromDebugger = 17,
-    // Windows XP+ from here
-    BreakOnTermination = 18,
-    SwitchLegacyState = 19,
-    IsTerminated = 20,
-    // Windows Vista+ from here
-    LastSystemCall = 21,
-    IoPriority = 22,
-    CycleTime = 23,
-    PagePriority = 24,
-    ActualBasePriority = 25,
-    TebInformation = 26,
-    CSwitchMon = 27,
-    // Windows 7+ from here
-    CSwitchPmu = 28,
-    Wow64Context = 29,
-    GroupInformation = 30,
-    UmsInformation = 31,
-    CounterProfiling = 32,
-    IdealProcessorEx = 33,
-    // Windows 8+ from here
-    CpuAccountingInformation = 34,
-    // Windows 8.1+ from here
-    SuspendCount = 35,
-    // Windows 10+ from here
-    HeterogeneousCpuPolicy = 36,
-    ContainerId = 37,
-    NameInformation = 38,
-    SelectedCpuSets = 39,
-    SystemThreadInformation = 40,
-    ActualGroupAffinity = 41,
-    DynamicCodePolicyInfo = 42,
-    SubsystemInformation = 45,
+pub const PROCESS = struct {
+    pub const INFORMATION = extern struct {
+        hProcess: HANDLE,
+        hThread: HANDLE,
+        dwProcessId: DWORD,
+        dwThreadId: DWORD,
+    };
 
-    pub const Max: @typeInfo(@This()).@"enum".tag_type = 60;
+    pub const INFOCLASS = enum(c_int) {
+        BasicInformation = 0,
+        QuotaLimits = 1,
+        IoCounters = 2,
+        VmCounters = 3,
+        Times = 4,
+        BasePriority = 5,
+        RaisePriority = 6,
+        DebugPort = 7,
+        ExceptionPort = 8,
+        AccessToken = 9,
+        LdtInformation = 10,
+        LdtSize = 11,
+        DefaultHardErrorMode = 12,
+        IoPortHandlers = 13,
+        PooledUsageAndLimits = 14,
+        WorkingSetWatch = 15,
+        UserModeIOPL = 16,
+        EnableAlignmentFaultFixup = 17,
+        PriorityClass = 18,
+        Wx86Information = 19,
+        HandleCount = 20,
+        AffinityMask = 21,
+        PriorityBoost = 22,
+        DeviceMap = 23,
+        SessionInformation = 24,
+        ForegroundInformation = 25,
+        Wow64Information = 26,
+        ImageFileName = 27,
+        LUIDDeviceMapsEnabled = 28,
+        BreakOnTermination = 29,
+        DebugObjectHandle = 30,
+        DebugFlags = 31,
+        HandleTracing = 32,
+        IoPriority = 33,
+        ExecuteFlags = 34,
+        TlsInformation = 35,
+        Cookie = 36,
+        ImageInformation = 37,
+        CycleTime = 38,
+        PagePriority = 39,
+        InstrumentationCallback = 40,
+        ThreadStackAllocation = 41,
+        WorkingSetWatchEx = 42,
+        ImageFileNameWin32 = 43,
+        ImageFileMapping = 44,
+        AffinityUpdateMode = 45,
+        MemoryAllocationMode = 46,
+        GroupInformation = 47,
+        TokenVirtualizationEnabled = 48,
+        OwnerInformation = 49,
+        WindowInformation = 50,
+        HandleInformation = 51,
+        MitigationPolicy = 52,
+        DynamicFunctionTableInformation = 53,
+        HandleCheckingMode = 54,
+        KeepAliveCount = 55,
+        RevokeFileHandles = 56,
+        WorkingSetControl = 57,
+        HandleTable = 58,
+        CheckStackExtentsMode = 59,
+        CommandLineInformation = 60,
+        ProtectionInformation = 61,
+        MemoryExhaustion = 62,
+        FaultInformation = 63,
+        TelemetryIdInformation = 64,
+        CommitReleaseInformation = 65,
+        Reserved1Information = 66,
+        Reserved2Information = 67,
+        SubsystemProcess = 68,
+        InPrivate = 70,
+        RaiseUMExceptionOnInvalidHandleClose = 71,
+        SubsystemInformation = 75,
+        Win32kSyscallFilterInformation = 79,
+        EnergyTrackingState = 82,
+        NetworkIoCounters = 114,
+        _,
+
+        pub const Max: @typeInfo(@This()).@"enum".tag_type = 117;
+    };
+
+    pub const BASIC_INFORMATION = extern struct {
+        ExitStatus: NTSTATUS,
+        PebBaseAddress: *PEB,
+        AffinityMask: ULONG_PTR,
+        BasePriority: KPRIORITY,
+        UniqueProcessId: ULONG_PTR,
+        InheritedFromUniqueProcessId: ULONG_PTR,
+    };
+
+    pub const VM_COUNTERS = extern struct {
+        PeakVirtualSize: SIZE_T,
+        VirtualSize: SIZE_T,
+        PageFaultCount: ULONG,
+        PeakWorkingSetSize: SIZE_T,
+        WorkingSetSize: SIZE_T,
+        QuotaPeakPagedPoolUsage: SIZE_T,
+        QuotaPagedPoolUsage: SIZE_T,
+        QuotaPeakNonPagedPoolUsage: SIZE_T,
+        QuotaNonPagedPoolUsage: SIZE_T,
+        PagefileUsage: SIZE_T,
+        PeakPagefileUsage: SIZE_T,
+    };
+};
+
+pub const THREAD = struct {
+    pub const INFOCLASS = enum(c_int) {
+        BasicInformation = 0,
+        Times = 1,
+        Priority = 2,
+        BasePriority = 3,
+        AffinityMask = 4,
+        ImpersonationToken = 5,
+        DescriptorTableEntry = 6,
+        EnableAlignmentFaultFixup = 7,
+        EventPair_Reusable = 8,
+        QuerySetWin32StartAddress = 9,
+        ZeroTlsCell = 10,
+        PerformanceCount = 11,
+        AmILastThread = 12,
+        IdealProcessor = 13,
+        PriorityBoost = 14,
+        SetTlsArrayAddress = 15,
+        IsIoPending = 16,
+        // Windows 2000+ from here
+        HideFromDebugger = 17,
+        // Windows XP+ from here
+        BreakOnTermination = 18,
+        SwitchLegacyState = 19,
+        IsTerminated = 20,
+        // Windows Vista+ from here
+        LastSystemCall = 21,
+        IoPriority = 22,
+        CycleTime = 23,
+        PagePriority = 24,
+        ActualBasePriority = 25,
+        TebInformation = 26,
+        CSwitchMon = 27,
+        // Windows 7+ from here
+        CSwitchPmu = 28,
+        Wow64Context = 29,
+        GroupInformation = 30,
+        UmsInformation = 31,
+        CounterProfiling = 32,
+        IdealProcessorEx = 33,
+        // Windows 8+ from here
+        CpuAccountingInformation = 34,
+        // Windows 8.1+ from here
+        SuspendCount = 35,
+        // Windows 10+ from here
+        HeterogeneousCpuPolicy = 36,
+        ContainerId = 37,
+        NameInformation = 38,
+        SelectedCpuSets = 39,
+        SystemThreadInformation = 40,
+        ActualGroupAffinity = 41,
+        DynamicCodePolicyInfo = 42,
+        SubsystemInformation = 45,
+        _,
+
+        pub const Max: @typeInfo(@This()).@"enum".tag_type = 60;
+    };
+
+    pub const BASIC_INFORMATION = extern struct {
+        ExitStatus: NTSTATUS,
+        TebBaseAddress: PVOID,
+        ClientId: CLIENT_ID,
+        AffinityMask: KAFFINITY,
+        Priority: KPRIORITY,
+        BasePriority: KPRIORITY,
+    };
+};
+
+pub const MEMORY = struct {
+    pub const BASIC_INFORMATION = extern struct {
+        BaseAddress: PVOID,
+        AllocationBase: PVOID,
+        AllocationProtect: DWORD,
+        PartitionId: WORD,
+        RegionSize: SIZE_T,
+        State: DWORD,
+        Protect: DWORD,
+        Type: DWORD,
+    };
 };
 
 // ref: km/ntifs.h
@@ -1160,6 +1639,22 @@ pub const CTL_CODE = packed struct(ULONG) {
 };
 
 pub const IOCTL = struct {
+    pub const CONDRV = struct {
+        pub const READ_IO: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 1, .Method = .OUT_DIRECT, .Access = .ANY };
+        pub const COMPLETE_IO: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 2, .Method = .NEITHER, .Access = .ANY };
+        pub const READ_INPUT: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 3, .Method = .NEITHER, .Access = .ANY };
+        pub const WRITE_OUTPUT: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 4, .Method = .NEITHER, .Access = .ANY };
+        pub const ISSUE_USER_IO: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 5, .Method = .OUT_DIRECT, .Access = .ANY };
+        pub const DISCONNECT_PIPE: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 6, .Method = .NEITHER, .Access = .ANY };
+        pub const SET_SERVER_INFORMATION: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 7, .Method = .NEITHER, .Access = .ANY };
+        pub const GET_SERVER_PID: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 8, .Method = .NEITHER, .Access = .ANY };
+        pub const GET_DISPLAY_SIZE: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 9, .Method = .NEITHER, .Access = .ANY };
+        pub const UPDATE_DISPLAY: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 10, .Method = .NEITHER, .Access = .ANY };
+        pub const SET_CURSOR: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 11, .Method = .NEITHER, .Access = .ANY };
+        pub const ALLOW_VIA_UIACCESS: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 12, .Method = .NEITHER, .Access = .ANY };
+        pub const LAUNCH_SERVER: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 13, .Method = .NEITHER, .Access = .ANY };
+        pub const GET_FONT_SIZE: CTL_CODE = .{ .DeviceType = .CONSOLE, .Function = 14, .Method = .NEITHER, .Access = .ANY };
+    };
     pub const KSEC = struct {
         pub const GEN_RANDOM: CTL_CODE = .{ .DeviceType = .KSEC, .Function = 2, .Method = .BUFFERED, .Access = .ANY };
     };
@@ -2315,48 +2810,6 @@ pub fn GetProcessHeap() ?*HEAP {
     return peb().ProcessHeap;
 }
 
-// ref: um/winternl.h
-
-pub const OBJECT_ATTRIBUTES = extern struct {
-    Length: ULONG = @sizeOf(OBJECT_ATTRIBUTES),
-    RootDirectory: ?HANDLE = null,
-    ObjectName: ?*UNICODE_STRING = @constCast(&UNICODE_STRING.empty),
-    Attributes: ATTRIBUTES = .{},
-    SecurityDescriptor: ?*anyopaque = null,
-    SecurityQualityOfService: ?*anyopaque = null,
-
-    // Valid values for the Attributes field
-    pub const ATTRIBUTES = packed struct(ULONG) {
-        Reserved0: u1 = 0,
-        INHERIT: bool = false,
-        Reserved2: u2 = 0,
-        PERMANENT: bool = false,
-        EXCLUSIVE: bool = false,
-        /// If name-lookup code should ignore the case of the ObjectName member rather than performing an exact-match search.
-        CASE_INSENSITIVE: bool = true,
-        OPENIF: bool = false,
-        OPENLINK: bool = false,
-        KERNEL_HANDLE: bool = false,
-        FORCE_ACCESS_CHECK: bool = false,
-        IGNORE_IMPERSONATED_DEVICEMAP: bool = false,
-        DONT_REPARSE: bool = false,
-        Reserved13: u19 = 0,
-
-        pub const VALID_ATTRIBUTES: ATTRIBUTES = .{
-            .INHERIT = true,
-            .PERMANENT = true,
-            .EXCLUSIVE = true,
-            .CASE_INSENSITIVE = true,
-            .OPENIF = true,
-            .OPENLINK = true,
-            .KERNEL_HANDLE = true,
-            .FORCE_ACCESS_CHECK = true,
-            .IGNORE_IMPERSONATED_DEVICEMAP = true,
-            .DONT_REPARSE = true,
-        };
-    };
-};
-
 // ref none
 
 pub fn GetCurrentProcess() HANDLE {
@@ -2378,320 +2831,13 @@ pub fn GetCurrentThreadId() DWORD {
 }
 
 pub fn GetLastError() Win32Error {
-    return @enumFromInt(teb().LastErrorValue);
-}
-/// A Zig wrapper around `NtDeviceIoControlFile` and `NtFsControlFile` syscalls.
-/// It implements similar behavior to `DeviceIoControl` and is meant to serve
-/// as a direct substitute for that call.
-/// TODO work out if we need to expose other arguments to the underlying syscalls.
-pub fn DeviceIoControl(
-    device: HANDLE,
-    io_control_code: CTL_CODE,
-    opts: struct {
-        event: ?HANDLE = null,
-        apc_routine: ?*const IO_APC_ROUTINE = null,
-        apc_context: ?*anyopaque = null,
-        io_status_block: ?*IO_STATUS_BLOCK = null,
-        in: []const u8 = &.{},
-        out: []u8 = &.{},
-    },
-) NTSTATUS {
-    var io_status_block: IO_STATUS_BLOCK = undefined;
-    return switch (io_control_code.DeviceType) {
-        .FILE_SYSTEM, .NAMED_PIPE => ntdll.NtFsControlFile(
-            device,
-            opts.event,
-            opts.apc_routine,
-            opts.apc_context,
-            opts.io_status_block orelse &io_status_block,
-            io_control_code,
-            if (opts.in.len > 0) opts.in.ptr else null,
-            @intCast(opts.in.len),
-            if (opts.out.len > 0) opts.out.ptr else null,
-            @intCast(opts.out.len),
-        ),
-        else => ntdll.NtDeviceIoControlFile(
-            device,
-            opts.event,
-            opts.apc_routine,
-            opts.apc_context,
-            opts.io_status_block orelse &io_status_block,
-            io_control_code,
-            if (opts.in.len > 0) opts.in.ptr else null,
-            @intCast(opts.in.len),
-            if (opts.out.len > 0) opts.out.ptr else null,
-            @intCast(opts.out.len),
-        ),
-    };
-}
-
-pub fn GetOverlappedResult(h: HANDLE, overlapped: *OVERLAPPED, wait: bool) !DWORD {
-    var bytes: DWORD = undefined;
-    if (kernel32.GetOverlappedResult(h, overlapped, &bytes, @intFromBool(wait)) == 0) {
-        switch (GetLastError()) {
-            .IO_INCOMPLETE => if (!wait) return error.WouldBlock else unreachable,
-            else => |err| return unexpectedError(err),
-        }
-    }
-    return bytes;
-}
-
-pub const CreateIoCompletionPortError = error{Unexpected};
-
-pub fn CreateIoCompletionPort(
-    file_handle: HANDLE,
-    existing_completion_port: ?HANDLE,
-    completion_key: usize,
-    concurrent_thread_count: DWORD,
-) CreateIoCompletionPortError!HANDLE {
-    const handle = kernel32.CreateIoCompletionPort(file_handle, existing_completion_port, completion_key, concurrent_thread_count) orelse {
-        switch (GetLastError()) {
-            .INVALID_PARAMETER => unreachable,
-            else => |err| return unexpectedError(err),
-        }
-    };
-    return handle;
-}
-
-pub const PostQueuedCompletionStatusError = error{Unexpected};
-
-pub fn PostQueuedCompletionStatus(
-    completion_port: HANDLE,
-    bytes_transferred_count: DWORD,
-    completion_key: usize,
-    lpOverlapped: ?*OVERLAPPED,
-) PostQueuedCompletionStatusError!void {
-    if (kernel32.PostQueuedCompletionStatus(completion_port, bytes_transferred_count, completion_key, lpOverlapped) == 0) {
-        switch (GetLastError()) {
-            else => |err| return unexpectedError(err),
-        }
-    }
-}
-
-pub const GetQueuedCompletionStatusResult = enum {
-    Normal,
-    Aborted,
-    Canceled,
-    EOF,
-    Timeout,
-};
-
-pub fn GetQueuedCompletionStatus(
-    completion_port: HANDLE,
-    bytes_transferred_count: *DWORD,
-    lpCompletionKey: *usize,
-    lpOverlapped: *?*OVERLAPPED,
-    dwMilliseconds: DWORD,
-) GetQueuedCompletionStatusResult {
-    if (kernel32.GetQueuedCompletionStatus(
-        completion_port,
-        bytes_transferred_count,
-        lpCompletionKey,
-        lpOverlapped,
-        dwMilliseconds,
-    ) == FALSE) {
-        switch (GetLastError()) {
-            .ABANDONED_WAIT_0 => return GetQueuedCompletionStatusResult.Aborted,
-            .OPERATION_ABORTED => return GetQueuedCompletionStatusResult.Canceled,
-            .HANDLE_EOF => return GetQueuedCompletionStatusResult.EOF,
-            .WAIT_TIMEOUT => return GetQueuedCompletionStatusResult.Timeout,
-            else => |err| {
-                if (std.debug.runtime_safety) {
-                    @setEvalBranchQuota(2500);
-                    std.debug.panic("unexpected error: {}\n", .{err});
-                }
-            },
-        }
-    }
-    return GetQueuedCompletionStatusResult.Normal;
-}
-
-pub const GetQueuedCompletionStatusError = error{
-    Aborted,
-    Canceled,
-    EOF,
-    Timeout,
-} || UnexpectedError;
-
-pub fn GetQueuedCompletionStatusEx(
-    completion_port: HANDLE,
-    completion_port_entries: []OVERLAPPED_ENTRY,
-    timeout_ms: ?DWORD,
-    alertable: bool,
-) GetQueuedCompletionStatusError!u32 {
-    var num_entries_removed: u32 = 0;
-
-    const success = kernel32.GetQueuedCompletionStatusEx(
-        completion_port,
-        completion_port_entries.ptr,
-        @as(ULONG, @intCast(completion_port_entries.len)),
-        &num_entries_removed,
-        timeout_ms orelse INFINITE,
-        @intFromBool(alertable),
-    );
-
-    if (success == FALSE) {
-        return switch (GetLastError()) {
-            .ABANDONED_WAIT_0 => error.Aborted,
-            .OPERATION_ABORTED => error.Canceled,
-            .HANDLE_EOF => error.EOF,
-            .WAIT_TIMEOUT => error.Timeout,
-            else => |err| unexpectedError(err),
-        };
-    }
-
-    return num_entries_removed;
+    return teb().LastErrorValue;
 }
 
 pub fn CloseHandle(hObject: HANDLE) void {
-    assert(ntdll.NtClose(hObject) == .SUCCESS);
-}
-
-pub fn getpeername(s: ws2_32.SOCKET, name: *ws2_32.sockaddr, namelen: *ws2_32.socklen_t) i32 {
-    return ws2_32.getpeername(s, name, @as(*i32, @ptrCast(namelen)));
-}
-
-pub fn sendmsg(
-    s: ws2_32.SOCKET,
-    msg: *ws2_32.WSAMSG_const,
-    flags: u32,
-) i32 {
-    var bytes_send: DWORD = undefined;
-    if (ws2_32.WSASendMsg(s, msg, flags, &bytes_send, null, null) == ws2_32.SOCKET_ERROR) {
-        return ws2_32.SOCKET_ERROR;
-    } else {
-        return @as(i32, @as(u31, @intCast(bytes_send)));
-    }
-}
-
-pub fn sendto(s: ws2_32.SOCKET, buf: [*]const u8, len: usize, flags: u32, to: ?*const ws2_32.sockaddr, to_len: ws2_32.socklen_t) i32 {
-    var buffer = ws2_32.WSABUF{ .len = @as(u31, @truncate(len)), .buf = @constCast(buf) };
-    var bytes_send: DWORD = undefined;
-    if (ws2_32.WSASendTo(s, @as([*]ws2_32.WSABUF, @ptrCast(&buffer)), 1, &bytes_send, flags, to, @as(i32, @intCast(to_len)), null, null) == ws2_32.SOCKET_ERROR) {
-        return ws2_32.SOCKET_ERROR;
-    } else {
-        return @as(i32, @as(u31, @intCast(bytes_send)));
-    }
-}
-
-pub fn recvfrom(s: ws2_32.SOCKET, buf: [*]u8, len: usize, flags: u32, from: ?*ws2_32.sockaddr, from_len: ?*ws2_32.socklen_t) i32 {
-    var buffer = ws2_32.WSABUF{ .len = @as(u31, @truncate(len)), .buf = buf };
-    var bytes_received: DWORD = undefined;
-    var flags_inout = flags;
-    if (ws2_32.WSARecvFrom(s, @as([*]ws2_32.WSABUF, @ptrCast(&buffer)), 1, &bytes_received, &flags_inout, from, @as(?*i32, @ptrCast(from_len)), null, null) == ws2_32.SOCKET_ERROR) {
-        return ws2_32.SOCKET_ERROR;
-    } else {
-        return @as(i32, @as(u31, @intCast(bytes_received)));
-    }
-}
-
-pub fn poll(fds: [*]ws2_32.pollfd, n: c_ulong, timeout: i32) i32 {
-    return ws2_32.WSAPoll(fds, n, timeout);
-}
-
-pub fn WSAIoctl(
-    s: ws2_32.SOCKET,
-    dwIoControlCode: DWORD,
-    inBuffer: ?[]const u8,
-    outBuffer: []u8,
-    overlapped: ?*OVERLAPPED,
-    completionRoutine: ?ws2_32.LPWSAOVERLAPPED_COMPLETION_ROUTINE,
-) !DWORD {
-    var bytes: DWORD = undefined;
-    switch (ws2_32.WSAIoctl(
-        s,
-        dwIoControlCode,
-        if (inBuffer) |i| i.ptr else null,
-        if (inBuffer) |i| @as(DWORD, @intCast(i.len)) else 0,
-        outBuffer.ptr,
-        @as(DWORD, @intCast(outBuffer.len)),
-        &bytes,
-        overlapped,
-        completionRoutine,
-    )) {
-        0 => {},
-        ws2_32.SOCKET_ERROR => switch (ws2_32.WSAGetLastError()) {
-            else => |err| return unexpectedWSAError(err),
-        },
-        else => unreachable,
-    }
-    return bytes;
-}
-
-const GetModuleFileNameError = error{Unexpected};
-
-pub fn GetModuleFileNameW(hModule: ?HMODULE, buf_ptr: [*]u16, buf_len: DWORD) GetModuleFileNameError![:0]u16 {
-    const rc = kernel32.GetModuleFileNameW(hModule, buf_ptr, buf_len);
-    if (rc == 0) {
-        switch (GetLastError()) {
-            else => |err| return unexpectedError(err),
-        }
-    }
-    return buf_ptr[0..rc :0];
-}
-
-pub const NtAllocateVirtualMemoryError = error{
-    AccessDenied,
-    InvalidParameter,
-    NoMemory,
-    Unexpected,
-};
-
-pub fn NtAllocateVirtualMemory(hProcess: HANDLE, addr: ?*PVOID, zero_bits: ULONG_PTR, size: ?*SIZE_T, alloc_type: ULONG, protect: ULONG) NtAllocateVirtualMemoryError!void {
-    return switch (ntdll.NtAllocateVirtualMemory(hProcess, addr, zero_bits, size, alloc_type, protect)) {
-        .SUCCESS => return,
-        .ACCESS_DENIED => NtAllocateVirtualMemoryError.AccessDenied,
-        .INVALID_PARAMETER => NtAllocateVirtualMemoryError.InvalidParameter,
-        .NO_MEMORY => NtAllocateVirtualMemoryError.NoMemory,
-        else => |st| unexpectedStatus(st),
-    };
-}
-
-pub const NtFreeVirtualMemoryError = error{
-    AccessDenied,
-    InvalidParameter,
-    Unexpected,
-};
-
-pub fn NtFreeVirtualMemory(hProcess: HANDLE, addr: ?*PVOID, size: *SIZE_T, free_type: ULONG) NtFreeVirtualMemoryError!void {
-    // TODO: If the return value is .INVALID_PAGE_PROTECTION, call RtlFlushSecureMemoryCache and try again.
-    return switch (ntdll.NtFreeVirtualMemory(hProcess, addr, size, free_type)) {
-        .SUCCESS => return,
-        .ACCESS_DENIED => NtFreeVirtualMemoryError.AccessDenied,
-        .INVALID_PARAMETER => NtFreeVirtualMemoryError.InvalidParameter,
-        else => NtFreeVirtualMemoryError.Unexpected,
-    };
-}
-
-pub const SetConsoleTextAttributeError = error{Unexpected};
-
-pub fn SetConsoleTextAttribute(hConsoleOutput: HANDLE, wAttributes: WORD) SetConsoleTextAttributeError!void {
-    if (kernel32.SetConsoleTextAttribute(hConsoleOutput, wAttributes) == 0) {
-        switch (GetLastError()) {
-            else => |err| return unexpectedError(err),
-        }
-    }
-}
-
-pub fn SetConsoleCtrlHandler(handler_routine: ?HANDLER_ROUTINE, add: bool) !void {
-    const success = kernel32.SetConsoleCtrlHandler(
-        handler_routine,
-        if (add) TRUE else FALSE,
-    );
-
-    if (success == FALSE) {
-        return switch (GetLastError()) {
-            else => |err| unexpectedError(err),
-        };
-    }
-}
-
-pub fn SetFileCompletionNotificationModes(handle: HANDLE, flags: UCHAR) !void {
-    const success = kernel32.SetFileCompletionNotificationModes(handle, flags);
-    if (success == FALSE) {
-        return switch (GetLastError()) {
-            else => |err| unexpectedError(err),
-        };
+    switch (ntdll.NtClose(hObject)) {
+        .SUCCESS => {},
+        else => |status| unexpectedStatus(status) catch {},
     }
 }
 
@@ -2741,114 +2887,75 @@ pub const CreateProcessFlags = packed struct(u32) {
     create_ignore_system_default: bool = false,
 };
 
-pub const LoadLibraryError = error{
-    FileNotFound,
-    Unexpected,
-};
-
-pub fn LoadLibraryW(lpLibFileName: [*:0]const u16) LoadLibraryError!HMODULE {
-    return kernel32.LoadLibraryW(lpLibFileName) orelse {
-        switch (GetLastError()) {
-            .FILE_NOT_FOUND => return error.FileNotFound,
-            .PATH_NOT_FOUND => return error.FileNotFound,
-            .MOD_NOT_FOUND => return error.FileNotFound,
-            else => |err| return unexpectedError(err),
-        }
-    };
-}
-
-pub const LoadLibraryFlags = enum(DWORD) {
-    none = 0,
-    dont_resolve_dll_references = 0x00000001,
-    load_ignore_code_authz_level = 0x00000010,
-    load_library_as_datafile = 0x00000002,
-    load_library_as_datafile_exclusive = 0x00000040,
-    load_library_as_image_resource = 0x00000020,
-    load_library_search_application_dir = 0x00000200,
-    load_library_search_default_dirs = 0x00001000,
-    load_library_search_dll_load_dir = 0x00000100,
-    load_library_search_system32 = 0x00000800,
-    load_library_search_user_dirs = 0x00000400,
-    load_with_altered_search_path = 0x00000008,
-    load_library_require_signed_target = 0x00000080,
-    load_library_safe_current_dirs = 0x00002000,
-};
-
-pub fn LoadLibraryExW(lpLibFileName: [*:0]const u16, dwFlags: LoadLibraryFlags) LoadLibraryError!HMODULE {
-    return kernel32.LoadLibraryExW(lpLibFileName, null, @intFromEnum(dwFlags)) orelse {
-        switch (GetLastError()) {
-            .FILE_NOT_FOUND => return error.FileNotFound,
-            .PATH_NOT_FOUND => return error.FileNotFound,
-            .MOD_NOT_FOUND => return error.FileNotFound,
-            else => |err| return unexpectedError(err),
-        }
-    };
-}
-
-pub fn FreeLibrary(hModule: HMODULE) void {
-    assert(kernel32.FreeLibrary(hModule) != 0);
-}
-
-pub fn QueryPerformanceFrequency() u64 {
-    // "On systems that run Windows XP or later, the function will always succeed"
-    // https://docs.microsoft.com/en-us/windows/desktop/api/profileapi/nf-profileapi-queryperformancefrequency
-    var result: LARGE_INTEGER = undefined;
-    assert(ntdll.RtlQueryPerformanceFrequency(&result) != 0);
-    // The kernel treats this integer as unsigned.
-    return @as(u64, @bitCast(result));
-}
-
-pub fn QueryPerformanceCounter() u64 {
-    // "On systems that run Windows XP or later, the function will always succeed"
-    // https://docs.microsoft.com/en-us/windows/desktop/api/profileapi/nf-profileapi-queryperformancecounter
-    var result: LARGE_INTEGER = undefined;
-    assert(ntdll.RtlQueryPerformanceCounter(&result) != 0);
-    // The kernel treats this integer as unsigned.
-    return @as(u64, @bitCast(result));
-}
-
-/// This is a workaround for the C backend until zig has the ability to put
-/// C code in inline assembly.
-extern fn zig_thumb_windows_teb() callconv(.c) *anyopaque;
-extern fn zig_aarch64_windows_teb() callconv(.c) *anyopaque;
-extern fn zig_x86_windows_teb() callconv(.c) *anyopaque;
-extern fn zig_x86_64_windows_teb() callconv(.c) *anyopaque;
-
 pub fn teb() *TEB {
-    return switch (native_arch) {
-        .thumb => if (builtin.zig_backend == .stage2_c)
-            @ptrCast(@alignCast(zig_thumb_windows_teb()))
-        else
-            asm (
-                \\ mrc p15, 0, %[ptr], c13, c0, 2
-                : [ptr] "=r" (-> *TEB),
-            ),
-        .aarch64 => if (builtin.zig_backend == .stage2_c)
-            @ptrCast(@alignCast(zig_aarch64_windows_teb()))
-        else
-            asm (
-                \\ mov %[ptr], x18
-                : [ptr] "=r" (-> *TEB),
-            ),
-        .x86 => if (builtin.zig_backend == .stage2_c)
-            @ptrCast(@alignCast(zig_x86_windows_teb()))
-        else
-            asm (
+    if (builtin.zig_backend == .stage2_c) return @ptrCast(@alignCast(struct {
+        /// This is a workaround for the C backend until zig has the ability to put
+        /// C code in inline assembly.
+        extern fn zig_windows_teb() callconv(.c) *anyopaque;
+    }.zig_windows_teb()));
+    switch (native_arch) {
+        .thumb => return asm (
+            \\ mrc p15, 0, %[ptr], c13, c0, 2
+            : [ptr] "=r" (-> *TEB),
+        ),
+        .aarch64 => return asm (
+            \\ mov %[ptr], x18
+            : [ptr] "=r" (-> *TEB),
+        ),
+        .x86 => {
+            comptime assert(
+                @offsetOf(TEB, "NtTib") + @offsetOf(@FieldType(TEB, "NtTib"), "Self") == 0x18,
+            );
+            return asm (
                 \\ movl %%fs:0x18, %[ptr]
                 : [ptr] "=r" (-> *TEB),
-            ),
-        .x86_64 => if (builtin.zig_backend == .stage2_c)
-            @ptrCast(@alignCast(zig_x86_64_windows_teb()))
-        else
-            asm (
+            );
+        },
+        .x86_64 => {
+            comptime assert(
+                @offsetOf(TEB, "NtTib") + @offsetOf(@FieldType(TEB, "NtTib"), "Self") == 0x30,
+            );
+            return asm (
                 \\ movq %%gs:0x30, %[ptr]
                 : [ptr] "=r" (-> *TEB),
-            ),
+            );
+        },
         else => @compileError("unsupported arch"),
-    };
+    }
 }
 
 pub fn peb() *PEB {
+    if (builtin.zig_backend == .stage2_c) switch (native_arch) {
+        .x86, .x86_64 => return @ptrCast(@alignCast(struct {
+            /// This is a workaround for the C backend until zig has the ability to put
+            /// C code in inline assembly.
+            extern fn zig_windows_peb() callconv(.c) *anyopaque;
+        }.zig_windows_peb())),
+        else => {},
+    } else switch (native_arch) {
+        .aarch64 => {
+            comptime assert(@offsetOf(TEB, "ProcessEnvironmentBlock") == 0x60);
+            return asm (
+                \\ ldr %[ptr], [x18, #0x60]
+                : [ptr] "=r" (-> *PEB),
+            );
+        },
+        .x86 => {
+            comptime assert(@offsetOf(TEB, "ProcessEnvironmentBlock") == 0x30);
+            return asm (
+                \\ movl %%fs:0x30, %[ptr]
+                : [ptr] "=r" (-> *PEB),
+            );
+        },
+        .x86_64 => {
+            comptime assert(@offsetOf(TEB, "ProcessEnvironmentBlock") == 0x60);
+            return asm (
+                \\ movq %%gs:0x60, %[ptr]
+                : [ptr] "=r" (-> *PEB),
+            );
+        },
+        else => {},
+    }
     return teb().ProcessEnvironmentBlock;
 }
 
@@ -2865,20 +2972,6 @@ pub fn fromSysTime(hns: i64) Io.Timestamp {
 pub fn toSysTime(ns: Io.Timestamp) i64 {
     const hns = @divFloor(ns.nanoseconds, 100);
     return @as(i64, @intCast(hns)) - std.time.epoch.windows * (std.time.ns_per_s / 100);
-}
-
-pub fn fileTimeToNanoSeconds(ft: FILETIME) Io.Timestamp {
-    const hns = (@as(i64, ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
-    return fromSysTime(hns);
-}
-
-/// Converts a number of nanoseconds since the POSIX epoch to a Windows FILETIME.
-pub fn nanoSecondsToFileTime(ns: Io.Timestamp) FILETIME {
-    const adjusted: u64 = @bitCast(toSysTime(ns));
-    return .{
-        .dwHighDateTime = @as(u32, @truncate(adjusted >> 32)),
-        .dwLowDateTime = @as(u32, @truncate(adjusted)),
-    };
 }
 
 /// Use RtlUpcaseUnicodeChar on Windows when not in comptime to avoid including a
@@ -2904,7 +2997,7 @@ pub fn eqlIgnoreCaseWtf16(a: []const u16, b: []const u16) bool {
             // endianness for the uppercasing
             const a_c_native = std.mem.littleToNative(u16, a_c);
             const b_c_native = std.mem.littleToNative(u16, b_c);
-            if (a_c != b_c and nls.upcaseW(a_c_native) != nls.upcaseW(b_c_native)) {
+            if (a_c != b_c and toUpperWtf16(a_c_native) != toUpperWtf16(b_c_native)) {
                 return false;
             }
         }
@@ -2912,19 +3005,7 @@ pub fn eqlIgnoreCaseWtf16(a: []const u16, b: []const u16) bool {
     }
     // Use RtlEqualUnicodeString on Windows when not in comptime to avoid including a
     // redundant copy of the uppercase data.
-    const a_bytes = @as(u16, @intCast(a.len * 2));
-    const a_string: UNICODE_STRING = .{
-        .Length = a_bytes,
-        .MaximumLength = a_bytes,
-        .Buffer = @constCast(a.ptr),
-    };
-    const b_bytes = @as(u16, @intCast(b.len * 2));
-    const b_string: UNICODE_STRING = .{
-        .Length = b_bytes,
-        .MaximumLength = b_bytes,
-        .Buffer = @constCast(b.ptr),
-    };
-    return ntdll.RtlEqualUnicodeString(&a_string, &b_string, TRUE) == TRUE;
+    return ntdll.RtlEqualUnicodeString(&.init(a), &.init(b), TRUE) == TRUE;
 }
 
 /// Compares two WTF-8 strings using the equivalent functionality of
@@ -3242,12 +3323,10 @@ pub const LONG = i32;
 pub const ULONG64 = u64;
 pub const ULONGLONG = u64;
 pub const LONGLONG = i64;
-pub const HLOCAL = HANDLE;
 pub const LANGID = c_ushort;
+pub const COLORREF = DWORD;
 
-pub const WPARAM = usize;
 pub const LPARAM = LONG_PTR;
-pub const LRESULT = LONG_PTR;
 
 pub const va_list = *opaque {};
 
@@ -3256,6 +3335,40 @@ pub const LPTSTR = @compileError("Deprecated: choose between `LPSTR` or `LPWSTR`
 pub const LPCTSTR = @compileError("Deprecated: choose between `LPCSTR` or `LPCWSTR` directly instead.");
 pub const PTSTR = @compileError("Deprecated: choose between `PSTR` or `PWSTR` directly instead.");
 pub const PCTSTR = @compileError("Deprecated: choose between `PCSTR` or `PCWSTR` directly instead.");
+
+fn STRING(comptime C: type) type {
+    return extern struct {
+        Length: USHORT,
+        MaximumLength: USHORT,
+        Buffer: ?[*]C,
+
+        pub const empty: @This() = .{ .Length = 0, .MaximumLength = 0, .Buffer = null };
+
+        pub fn init(string: []const C) @This() {
+            const len: USHORT = @intCast(@sizeOf(C) * string.len);
+            return .{
+                .Length = len,
+                .MaximumLength = len,
+                .Buffer = @constCast(string.ptr),
+            };
+        }
+
+        pub fn isEmpty(string: *const @This()) bool {
+            return string.Length == 0;
+        }
+
+        pub fn slice(string: *const @This()) []C {
+            return if (string.isEmpty()) &.{} else string.Buffer.?[0..@divExact(string.Length, @sizeOf(C))];
+        }
+
+        pub fn sliceZ(string: *const @This()) [:0]C {
+            assert(string.Length + @sizeOf(C) <= string.MaximumLength);
+            return string.Buffer.?[0..@divExact(string.Length, @sizeOf(C)) :0];
+        }
+    };
+}
+pub const ANSI_STRING = STRING(CHAR);
+pub const UNICODE_STRING = STRING(WCHAR);
 
 pub const TRUE = 1;
 pub const FALSE = 0;
@@ -3286,109 +3399,12 @@ pub const OVERLAPPED = extern struct {
     hEvent: ?HANDLE,
 };
 
-pub const OVERLAPPED_ENTRY = extern struct {
-    lpCompletionKey: ULONG_PTR,
-    lpOverlapped: *OVERLAPPED,
-    Internal: ULONG_PTR,
-    dwNumberOfBytesTransferred: DWORD,
-};
-
 pub const MAX_PATH = 260;
-
-pub const FILE_INFO_BY_HANDLE_CLASS = enum(u32) {
-    FileBasicInfo = 0,
-    FileStandardInfo = 1,
-    FileNameInfo = 2,
-    FileRenameInfo = 3,
-    FileDispositionInfo = 4,
-    FileAllocationInfo = 5,
-    FileEndOfFileInfo = 6,
-    FileStreamInfo = 7,
-    FileCompressionInfo = 8,
-    FileAttributeTagInfo = 9,
-    FileIdBothDirectoryInfo = 10,
-    FileIdBothDirectoryRestartInfo = 11,
-    FileIoPriorityHintInfo = 12,
-    FileRemoteProtocolInfo = 13,
-    FileFullDirectoryInfo = 14,
-    FileFullDirectoryRestartInfo = 15,
-    FileStorageInfo = 16,
-    FileAlignmentInfo = 17,
-    FileIdInfo = 18,
-    FileIdExtdDirectoryInfo = 19,
-    FileIdExtdDirectoryRestartInfo = 20,
-};
-
-pub const BY_HANDLE_FILE_INFORMATION = extern struct {
-    dwFileAttributes: DWORD,
-    ftCreationTime: FILETIME,
-    ftLastAccessTime: FILETIME,
-    ftLastWriteTime: FILETIME,
-    dwVolumeSerialNumber: DWORD,
-    nFileSizeHigh: DWORD,
-    nFileSizeLow: DWORD,
-    nNumberOfLinks: DWORD,
-    nFileIndexHigh: DWORD,
-    nFileIndexLow: DWORD,
-};
-
-pub const FILE_NAME_INFO = extern struct {
-    FileNameLength: DWORD,
-    FileName: [1]WCHAR,
-};
-
-/// Return the normalized drive name. This is the default.
-pub const FILE_NAME_NORMALIZED = 0x0;
-
-/// Return the opened file name (not normalized).
-pub const FILE_NAME_OPENED = 0x8;
-
-/// Return the path with the drive letter. This is the default.
-pub const VOLUME_NAME_DOS = 0x0;
-
-/// Return the path with a volume GUID path instead of the drive name.
-pub const VOLUME_NAME_GUID = 0x1;
-
-/// Return the path with no drive information.
-pub const VOLUME_NAME_NONE = 0x4;
-
-/// Return the path with the volume device path.
-pub const VOLUME_NAME_NT = 0x2;
 
 pub const SECURITY_ATTRIBUTES = extern struct {
     nLength: DWORD,
     lpSecurityDescriptor: ?*anyopaque,
     bInheritHandle: BOOL,
-};
-
-pub const PIPE_ACCESS_INBOUND = 0x00000001;
-pub const PIPE_ACCESS_OUTBOUND = 0x00000002;
-pub const PIPE_ACCESS_DUPLEX = 0x00000003;
-
-pub const PIPE_TYPE_BYTE = 0x00000000;
-pub const PIPE_TYPE_MESSAGE = 0x00000004;
-
-pub const PIPE_READMODE_BYTE = 0x00000000;
-pub const PIPE_READMODE_MESSAGE = 0x00000002;
-
-pub const PIPE_WAIT = 0x00000000;
-pub const PIPE_NOWAIT = 0x00000001;
-
-pub const CREATE_ALWAYS = 2;
-pub const CREATE_NEW = 1;
-pub const OPEN_ALWAYS = 4;
-pub const OPEN_EXISTING = 3;
-pub const TRUNCATE_EXISTING = 5;
-
-// flags for CreateEvent
-pub const CREATE_EVENT_INITIAL_SET = 0x00000002;
-pub const CREATE_EVENT_MANUAL_RESET = 0x00000001;
-
-pub const PROCESS_INFORMATION = extern struct {
-    hProcess: HANDLE,
-    hThread: HANDLE,
-    dwProcessId: DWORD,
-    dwThreadId: DWORD,
 };
 
 pub const STARTUPINFOW = extern struct {
@@ -3427,50 +3443,7 @@ pub const STARTF_USESHOWWINDOW = 0x00000001;
 pub const STARTF_USESIZE = 0x00000002;
 pub const STARTF_USESTDHANDLES = 0x00000100;
 
-pub const INFINITE = 4294967295;
-
-pub const MAXIMUM_WAIT_OBJECTS = 64;
-
-pub const WAIT_ABANDONED = 0x00000080;
-pub const WAIT_ABANDONED_0 = WAIT_ABANDONED + 0;
-pub const WAIT_OBJECT_0 = 0x00000000;
-pub const WAIT_TIMEOUT = 0x00000102;
-pub const WAIT_FAILED = 0xFFFFFFFF;
-
-pub const HANDLE_FLAG_INHERIT = 0x00000001;
-pub const HANDLE_FLAG_PROTECT_FROM_CLOSE = 0x00000002;
-
-pub const MOVEFILE_COPY_ALLOWED = 2;
-pub const MOVEFILE_CREATE_HARDLINK = 16;
-pub const MOVEFILE_DELAY_UNTIL_REBOOT = 4;
-pub const MOVEFILE_FAIL_IF_NOT_TRACKABLE = 32;
-pub const MOVEFILE_REPLACE_EXISTING = 1;
-pub const MOVEFILE_WRITE_THROUGH = 8;
-
-pub const FILE_BEGIN = 0;
-pub const FILE_CURRENT = 1;
-pub const FILE_END = 2;
-
-pub const PTHREAD_START_ROUTINE = *const fn (LPVOID) callconv(.winapi) DWORD;
-pub const LPTHREAD_START_ROUTINE = PTHREAD_START_ROUTINE;
-
-pub const WIN32_FIND_DATAW = extern struct {
-    dwFileAttributes: DWORD,
-    ftCreationTime: FILETIME,
-    ftLastAccessTime: FILETIME,
-    ftLastWriteTime: FILETIME,
-    nFileSizeHigh: DWORD,
-    nFileSizeLow: DWORD,
-    dwReserved0: DWORD,
-    dwReserved1: DWORD,
-    cFileName: [260]u16,
-    cAlternateFileName: [14]u16,
-};
-
-pub const FILETIME = extern struct {
-    dwLowDateTime: DWORD,
-    dwHighDateTime: DWORD,
-};
+pub const THREAD_START_ROUTINE = fn (LPVOID) callconv(.winapi) DWORD;
 
 pub const SYSTEM_INFO = extern struct {
     anon1: extern union {
@@ -3493,7 +3466,6 @@ pub const SYSTEM_INFO = extern struct {
 
 pub const HRESULT = c_long;
 
-pub const KNOWNFOLDERID = GUID;
 pub const GUID = extern struct {
     Data1: u32,
     Data2: u16,
@@ -3548,74 +3520,10 @@ test GUID {
     );
 }
 
-pub const FOLDERID_LocalAppData = GUID.parse("{F1B32785-6FBA-4FCF-9D55-7B8E7F157091}");
-
-pub const KF_FLAG_DEFAULT = 0;
-pub const KF_FLAG_NO_APPCONTAINER_REDIRECTION = 65536;
-pub const KF_FLAG_CREATE = 32768;
-pub const KF_FLAG_DONT_VERIFY = 16384;
-pub const KF_FLAG_DONT_UNEXPAND = 8192;
-pub const KF_FLAG_NO_ALIAS = 4096;
-pub const KF_FLAG_INIT = 2048;
-pub const KF_FLAG_DEFAULT_PATH = 1024;
-pub const KF_FLAG_NOT_PARENT_RELATIVE = 512;
-pub const KF_FLAG_SIMPLE_IDLIST = 256;
-pub const KF_FLAG_ALIAS_ONLY = -2147483648;
-
-pub const S_OK = 0;
-pub const S_FALSE = 0x00000001;
-pub const E_NOTIMPL = @as(c_long, @bitCast(@as(c_ulong, 0x80004001)));
-pub const E_NOINTERFACE = @as(c_long, @bitCast(@as(c_ulong, 0x80004002)));
-pub const E_POINTER = @as(c_long, @bitCast(@as(c_ulong, 0x80004003)));
-pub const E_ABORT = @as(c_long, @bitCast(@as(c_ulong, 0x80004004)));
-pub const E_FAIL = @as(c_long, @bitCast(@as(c_ulong, 0x80004005)));
-pub const E_UNEXPECTED = @as(c_long, @bitCast(@as(c_ulong, 0x8000FFFF)));
-pub const E_ACCESSDENIED = @as(c_long, @bitCast(@as(c_ulong, 0x80070005)));
-pub const E_HANDLE = @as(c_long, @bitCast(@as(c_ulong, 0x80070006)));
-pub const E_OUTOFMEMORY = @as(c_long, @bitCast(@as(c_ulong, 0x8007000E)));
-pub const E_INVALIDARG = @as(c_long, @bitCast(@as(c_ulong, 0x80070057)));
-
-pub fn HRESULT_CODE(hr: HRESULT) Win32Error {
-    return @enumFromInt(hr & 0xFFFF);
-}
-
-pub const FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
-pub const FILE_FLAG_DELETE_ON_CLOSE = 0x04000000;
-pub const FILE_FLAG_NO_BUFFERING = 0x20000000;
-pub const FILE_FLAG_OPEN_NO_RECALL = 0x00100000;
-pub const FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
-pub const FILE_FLAG_OVERLAPPED = 0x40000000;
-pub const FILE_FLAG_POSIX_SEMANTICS = 0x0100000;
-pub const FILE_FLAG_RANDOM_ACCESS = 0x10000000;
-pub const FILE_FLAG_SESSION_AWARE = 0x00800000;
-pub const FILE_FLAG_SEQUENTIAL_SCAN = 0x08000000;
-pub const FILE_FLAG_WRITE_THROUGH = 0x80000000;
-
-pub const RECT = extern struct {
-    left: LONG,
-    top: LONG,
-    right: LONG,
-    bottom: LONG,
-};
-
-pub const SMALL_RECT = extern struct {
-    Left: SHORT,
-    Top: SHORT,
-    Right: SHORT,
-    Bottom: SHORT,
-};
-
-pub const POINT = extern struct {
-    x: LONG,
-    y: LONG,
-};
-
 pub const COORD = extern struct {
     X: SHORT,
     Y: SHORT,
 };
-
-pub const CREATE_UNICODE_ENVIRONMENT = 1024;
 
 pub const TLS_OUT_OF_INDEXES = 4294967295;
 pub const IMAGE_TLS_DIRECTORY = extern struct {
@@ -3630,8 +3538,6 @@ pub const IMAGE_TLS_DIRECTORY64 = IMAGE_TLS_DIRECTORY;
 pub const IMAGE_TLS_DIRECTORY32 = IMAGE_TLS_DIRECTORY;
 
 pub const PIMAGE_TLS_CALLBACK = ?*const fn (PVOID, DWORD, PVOID) callconv(.winapi) void;
-
-pub const PROV_RSA_FULL = 1;
 
 pub const REGSAM = ACCESS_MASK;
 pub const LSTATUS = LONG;
@@ -3648,9 +3554,6 @@ pub const HKEY_PERFORMANCE_NLSTEXT: HKEY = @ptrFromInt(0x80000060);
 pub const HKEY_CURRENT_CONFIG: HKEY = @ptrFromInt(0x80000005);
 pub const HKEY_DYN_DATA: HKEY = @ptrFromInt(0x80000006);
 pub const HKEY_CURRENT_USER_LOCAL_SETTINGS: HKEY = @ptrFromInt(0x80000007);
-
-/// Open symbolic link.
-pub const REG_OPTION_OPEN_LINK: DWORD = 0x8;
 
 pub const RTL_QUERY_REGISTRY_TABLE = extern struct {
     QueryRoutine: RTL_QUERY_REGISTRY_ROUTINE,
@@ -3752,53 +3655,17 @@ pub const REG = struct {
     pub const QWORD_LITTLE_ENDIAN: ULONG = 11;
 };
 
-pub const FILE_NOTIFY_INFORMATION = extern struct {
-    NextEntryOffset: DWORD,
-    Action: DWORD,
-    FileNameLength: DWORD,
-    // Flexible array member
-    // FileName: [1]WCHAR,
-};
-
-pub const FILE_ACTION_ADDED = 0x00000001;
-pub const FILE_ACTION_REMOVED = 0x00000002;
-pub const FILE_ACTION_MODIFIED = 0x00000003;
-pub const FILE_ACTION_RENAMED_OLD_NAME = 0x00000004;
-pub const FILE_ACTION_RENAMED_NEW_NAME = 0x00000005;
-
-pub const LPOVERLAPPED_COMPLETION_ROUTINE = ?*const fn (DWORD, DWORD, *OVERLAPPED) callconv(.winapi) void;
-
-pub const FileNotifyChangeFilter = packed struct(DWORD) {
-    file_name: bool = false,
-    dir_name: bool = false,
-    attributes: bool = false,
-    size: bool = false,
-    last_write: bool = false,
-    last_access: bool = false,
-    creation: bool = false,
-    ea: bool = false,
-    security: bool = false,
-    stream_name: bool = false,
-    stream_size: bool = false,
-    stream_write: bool = false,
-    _pad: u20 = 0,
-};
-
-pub const CONSOLE_SCREEN_BUFFER_INFO = extern struct {
-    dwSize: COORD,
-    dwCursorPosition: COORD,
-    wAttributes: WORD,
-    srWindow: SMALL_RECT,
-    dwMaximumWindowSize: COORD,
-};
-
 pub const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x4;
 pub const DISABLE_NEWLINE_AUTO_RETURN = 0x8;
 
-pub const FOREGROUND_BLUE = 1;
-pub const FOREGROUND_GREEN = 2;
-pub const FOREGROUND_RED = 4;
-pub const FOREGROUND_INTENSITY = 8;
+pub const FOREGROUND_BLUE = 0x0001;
+pub const FOREGROUND_GREEN = 0x0002;
+pub const FOREGROUND_RED = 0x0004;
+pub const FOREGROUND_INTENSITY = 0x0008;
+pub const BACKGROUND_BLUE = 0x0010;
+pub const BACKGROUND_GREEN = 0x0020;
+pub const BACKGROUND_RED = 0x0040;
+pub const BACKGROUND_INTENSITY = 0x0080;
 
 pub const LIST_ENTRY = extern struct {
     Flink: *LIST_ENTRY,
@@ -3836,26 +3703,6 @@ pub const RTL_RUN_ONCE = extern struct {
 };
 
 pub const RTL_RUN_ONCE_INIT = RTL_RUN_ONCE{ .Ptr = null };
-
-pub const COINIT = struct {
-    pub const APARTMENTTHREADED = 2;
-    pub const MULTITHREADED = 0;
-    pub const DISABLE_OLE1DDE = 4;
-    pub const SPEED_OVER_MEMORY = 8;
-};
-
-pub const MEMORY_BASIC_INFORMATION = extern struct {
-    BaseAddress: PVOID,
-    AllocationBase: PVOID,
-    AllocationProtect: DWORD,
-    PartitionId: WORD,
-    RegionSize: SIZE_T,
-    State: DWORD,
-    Protect: DWORD,
-    Type: DWORD,
-};
-
-pub const PMEMORY_BASIC_INFORMATION = *MEMORY_BASIC_INFORMATION;
 
 /// > The maximum path of 32,767 characters is approximate, because the "\\?\"
 /// > prefix may be expanded to a longer string by the system at run time, and
@@ -4325,14 +4172,6 @@ pub const UNW_FLAG_EHANDLER = 0x1;
 pub const UNW_FLAG_UHANDLER = 0x2;
 pub const UNW_FLAG_CHAININFO = 0x4;
 
-pub const UNICODE_STRING = extern struct {
-    Length: c_ushort,
-    MaximumLength: c_ushort,
-    Buffer: ?[*]WCHAR,
-
-    pub const empty: UNICODE_STRING = .{ .Length = 0, .MaximumLength = 0, .Buffer = null };
-};
-
 pub const ACTIVATION_CONTEXT_DATA = opaque {};
 pub const ASSEMBLY_STORAGE_MAP = opaque {};
 pub const FLS_CALLBACK_INFO = opaque {};
@@ -4345,15 +4184,6 @@ pub const CLIENT_ID = extern struct {
     UniqueThread: HANDLE,
 };
 
-pub const THREAD_BASIC_INFORMATION = extern struct {
-    ExitStatus: NTSTATUS,
-    TebBaseAddress: PVOID,
-    ClientId: CLIENT_ID,
-    AffinityMask: KAFFINITY,
-    Priority: KPRIORITY,
-    BasePriority: KPRIORITY,
-};
-
 pub const TEB = extern struct {
     NtTib: NT_TIB,
     EnvironmentPointer: PVOID,
@@ -4361,7 +4191,7 @@ pub const TEB = extern struct {
     ActiveRpcHandle: PVOID,
     ThreadLocalStoragePointer: PVOID,
     ProcessEnvironmentBlock: *PEB,
-    LastErrorValue: ULONG,
+    LastErrorValue: Win32Error,
     Reserved2: [399 * @sizeOf(PVOID) - @sizeOf(ULONG)]u8,
     Reserved3: [1952]u8,
     TlsSlots: [64]PVOID,
@@ -4574,7 +4404,7 @@ pub const PEB = extern struct {
 };
 
 /// The `PEB_LDR_DATA` structure is the main record of what modules are loaded in a process.
-/// It is essentially the head of three double-linked lists of `LDR_DATA_TABLE_ENTRY` structures which each represent one loaded module.
+/// It is essentially the head of three double-linked lists of `LDR.DATA_TABLE_ENTRY` structures which each represent one loaded module.
 ///
 /// Microsoft documentation of this is incomplete, the fields here are taken from various resources including:
 ///  - https://www.geoffchappell.com/studies/windows/win32/ntdll/structs/peb_ldr_data.htm
@@ -4606,24 +4436,89 @@ pub const PEB_LDR_DATA = extern struct {
     ShutdownThreadId: HANDLE,
 };
 
-/// Microsoft documentation of this is incomplete, the fields here are taken from various resources including:
-///  - https://docs.microsoft.com/en-us/windows/win32/api/winternl/ns-winternl-peb_ldr_data
-///  - https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/ntldr/ldr_data_table_entry.htm
-pub const LDR_DATA_TABLE_ENTRY = extern struct {
-    InLoadOrderLinks: LIST_ENTRY,
-    InMemoryOrderLinks: LIST_ENTRY,
-    InInitializationOrderLinks: LIST_ENTRY,
-    DllBase: PVOID,
-    EntryPoint: PVOID,
-    SizeOfImage: ULONG,
-    FullDllName: UNICODE_STRING,
-    BaseDllName: UNICODE_STRING,
-    Reserved5: [3]PVOID,
-    DUMMYUNIONNAME: extern union {
-        CheckSum: ULONG,
-        Reserved6: PVOID,
-    },
-    TimeDateStamp: ULONG,
+pub const LDR = struct {
+    /// Microsoft documentation of this is incomplete, the fields here are taken from various resources including:
+    ///  - https://docs.microsoft.com/en-us/windows/win32/api/winternl/ns-winternl-peb_ldr_data
+    ///  - https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/ntldr/ldr_data_table_entry.htm
+    pub const DATA_TABLE_ENTRY = extern struct {
+        InLoadOrderLinks: LIST_ENTRY,
+        InMemoryOrderLinks: LIST_ENTRY,
+        InInitializationOrderLinks: LIST_ENTRY,
+        DllBase: PVOID,
+        EntryPoint: PVOID,
+        SizeOfImage: ULONG,
+        FullDllName: UNICODE_STRING,
+        BaseDllName: UNICODE_STRING,
+        Reserved5: [3]PVOID,
+        DUMMYUNIONNAME: extern union {
+            CheckSum: ULONG,
+            Reserved6: PVOID,
+        },
+        TimeDateStamp: ULONG,
+    };
+
+    pub const DLL_NOTIFICATION = struct {
+        pub const REASON = enum(ULONG) { LOADED = 1, UNLOADED = 2 };
+
+        pub const DATA = extern union {
+            Loaded: LOADED,
+            Unloaded: UNLOADED,
+
+            pub const LOADED = extern struct {
+                Flags: REGISTER,
+                FullDllName: *const UNICODE_STRING,
+                BaseDllName: *const UNICODE_STRING,
+                DllBase: PVOID,
+                SizeOfImage: ULONG,
+            };
+
+            pub const UNLOADED = extern struct {
+                Flags: REGISTER,
+                FullDllName: *const UNICODE_STRING,
+                BaseDllName: *const UNICODE_STRING,
+                DllBase: PVOID,
+                SizeOfImage: ULONG,
+            };
+        };
+
+        pub const COOKIE = *opaque {};
+
+        pub const FUNCTION = fn (
+            NotificationReason: REASON,
+            NotificationData: *const DATA,
+            Context: ?PVOID,
+        ) callconv(.winapi) void;
+
+        pub const REGISTER = packed struct(ULONG) {
+            Reserved0: u32 = 0,
+        };
+    };
+
+    pub const GET_DLL_HANDLE_EX = packed struct(ULONG) {
+        UNCHANGED_REFCOUNT: bool = false,
+        PIN: bool = false,
+        Reserved2: u30 = 0,
+    };
+
+    pub const GET_PROCEDURE_ADDRESS = packed struct(ULONG) {
+        DONT_RECORD_FORWARDER: bool = false,
+        Reserved1: u31 = 0,
+    };
+
+    pub const LOAD = packed struct(ULONG) {
+        DONT_RESOLVE_DLL_REFERENCES: bool = false,
+        LIBRARY_AS_DATAFILE: bool = false,
+        PACKAGED_LIBRARY: bool = false,
+        WITH_ALTERED_SEARCH_PATH: bool = false,
+        IGNORE_CODE_AUTHZ_LEVEL: bool = false,
+        LIBRARY_AS_IMAGE_RESOURCE: bool = false,
+        LIBRARY_AS_DATAFILE_EXCLUSIVE: bool = false,
+        LIBRARY_REQUERE_SIGNED_TARGET: bool = false,
+        LIBRARY_SEARCH_DLL_LOAD_DIR: bool = false,
+        LIBRARY_SEARCH_USER_DIRS: bool = false,
+        LIBRARY_SEARCH_SYSTEM32: bool = false,
+        LIBRARY_SEARCH_DEFAULT_DIRS: bool = false,
+    };
 };
 
 pub const RTL_USER_PROCESS_PARAMETERS = extern struct {
@@ -4737,86 +4632,6 @@ pub const MODULEINFO = extern struct {
     EntryPoint: LPVOID,
 };
 
-pub const PSAPI_WS_WATCH_INFORMATION = extern struct {
-    FaultingPc: LPVOID,
-    FaultingVa: LPVOID,
-};
-
-pub const VM_COUNTERS = extern struct {
-    PeakVirtualSize: SIZE_T,
-    VirtualSize: SIZE_T,
-    PageFaultCount: ULONG,
-    PeakWorkingSetSize: SIZE_T,
-    WorkingSetSize: SIZE_T,
-    QuotaPeakPagedPoolUsage: SIZE_T,
-    QuotaPagedPoolUsage: SIZE_T,
-    QuotaPeakNonPagedPoolUsage: SIZE_T,
-    QuotaNonPagedPoolUsage: SIZE_T,
-    PagefileUsage: SIZE_T,
-    PeakPagefileUsage: SIZE_T,
-};
-
-pub const PROCESS_MEMORY_COUNTERS = extern struct {
-    cb: DWORD,
-    PageFaultCount: DWORD,
-    PeakWorkingSetSize: SIZE_T,
-    WorkingSetSize: SIZE_T,
-    QuotaPeakPagedPoolUsage: SIZE_T,
-    QuotaPagedPoolUsage: SIZE_T,
-    QuotaPeakNonPagedPoolUsage: SIZE_T,
-    QuotaNonPagedPoolUsage: SIZE_T,
-    PagefileUsage: SIZE_T,
-    PeakPagefileUsage: SIZE_T,
-};
-
-pub const PROCESS_MEMORY_COUNTERS_EX = extern struct {
-    cb: DWORD,
-    PageFaultCount: DWORD,
-    PeakWorkingSetSize: SIZE_T,
-    WorkingSetSize: SIZE_T,
-    QuotaPeakPagedPoolUsage: SIZE_T,
-    QuotaPagedPoolUsage: SIZE_T,
-    QuotaPeakNonPagedPoolUsage: SIZE_T,
-    QuotaNonPagedPoolUsage: SIZE_T,
-    PagefileUsage: SIZE_T,
-    PeakPagefileUsage: SIZE_T,
-    PrivateUsage: SIZE_T,
-};
-
-pub const PERFORMANCE_INFORMATION = extern struct {
-    cb: DWORD,
-    CommitTotal: SIZE_T,
-    CommitLimit: SIZE_T,
-    CommitPeak: SIZE_T,
-    PhysicalTotal: SIZE_T,
-    PhysicalAvailable: SIZE_T,
-    SystemCache: SIZE_T,
-    KernelTotal: SIZE_T,
-    KernelPaged: SIZE_T,
-    KernelNonpaged: SIZE_T,
-    PageSize: SIZE_T,
-    HandleCount: DWORD,
-    ProcessCount: DWORD,
-    ThreadCount: DWORD,
-};
-
-pub const ENUM_PAGE_FILE_INFORMATION = extern struct {
-    cb: DWORD,
-    Reserved: DWORD,
-    TotalSize: SIZE_T,
-    TotalInUse: SIZE_T,
-    PeakUsage: SIZE_T,
-};
-
-pub const PENUM_PAGE_FILE_CALLBACKW = ?*const fn (?LPVOID, *ENUM_PAGE_FILE_INFORMATION, LPCWSTR) callconv(.winapi) BOOL;
-pub const PENUM_PAGE_FILE_CALLBACKA = ?*const fn (?LPVOID, *ENUM_PAGE_FILE_INFORMATION, LPCSTR) callconv(.winapi) BOOL;
-
-pub const PSAPI_WS_WATCH_INFORMATION_EX = extern struct {
-    BasicInfo: PSAPI_WS_WATCH_INFORMATION,
-    FaultingThreadId: ULONG_PTR,
-    Flags: ULONG_PTR,
-};
-
 pub const OSVERSIONINFOW = extern struct {
     dwOSVersionInfoSize: ULONG,
     dwMajorVersion: ULONG,
@@ -4879,20 +4694,6 @@ pub const MOUNTMGR_VOLUME_PATHS = extern struct {
     MultiSz: [1]WCHAR,
 };
 
-pub const OBJECT_INFORMATION_CLASS = enum(c_int) {
-    ObjectBasicInformation = 0,
-    ObjectNameInformation = 1,
-    ObjectTypeInformation = 2,
-    ObjectTypesInformation = 3,
-    ObjectHandleFlagInformation = 4,
-    ObjectSessionInformation = 5,
-    MaxObjectInfoClass,
-};
-
-pub const OBJECT_NAME_INFORMATION = extern struct {
-    Name: UNICODE_STRING,
-};
-
 pub const SRWLOCK_INIT = SRWLOCK{};
 pub const SRWLOCK = extern struct {
     Ptr: ?PVOID = null,
@@ -4902,17 +4703,6 @@ pub const CONDITION_VARIABLE_INIT = CONDITION_VARIABLE{};
 pub const CONDITION_VARIABLE = extern struct {
     Ptr: ?PVOID = null,
 };
-
-pub const FILE_SKIP_COMPLETION_PORT_ON_SUCCESS = 0x1;
-pub const FILE_SKIP_SET_EVENT_ON_HANDLE = 0x2;
-
-pub const CTRL_C_EVENT: DWORD = 0;
-pub const CTRL_BREAK_EVENT: DWORD = 1;
-pub const CTRL_CLOSE_EVENT: DWORD = 2;
-pub const CTRL_LOGOFF_EVENT: DWORD = 5;
-pub const CTRL_SHUTDOWN_EVENT: DWORD = 6;
-
-pub const HANDLER_ROUTINE = *const fn (dwCtrlType: DWORD) callconv(.winapi) BOOL;
 
 /// Processor feature enumeration.
 pub const PF = enum(DWORD) {
@@ -5212,71 +5002,12 @@ pub const KUSER_SHARED_DATA = extern struct {
 /// Read-only user-mode address for the shared data.
 /// https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/ntexapi_x/kuser_shared_data/index.htm
 /// https://msrc-blog.microsoft.com/2022/04/05/randomizing-the-kuser_shared_data-structure-on-windows/
-pub const SharedUserData: *const KUSER_SHARED_DATA = @as(*const KUSER_SHARED_DATA, @ptrFromInt(0x7FFE0000));
+pub const SharedUserData: *const KUSER_SHARED_DATA = @ptrFromInt(0x7FFE0000);
 
 pub fn IsProcessorFeaturePresent(feature: PF) bool {
     if (@intFromEnum(feature) >= PROCESSOR_FEATURE_MAX) return false;
     return SharedUserData.ProcessorFeatures[@intFromEnum(feature)] == 1;
 }
-
-pub const TH32CS_SNAPHEAPLIST = 0x00000001;
-pub const TH32CS_SNAPPROCESS = 0x00000002;
-pub const TH32CS_SNAPTHREAD = 0x00000004;
-pub const TH32CS_SNAPMODULE = 0x00000008;
-pub const TH32CS_SNAPMODULE32 = 0x00000010;
-pub const TH32CS_SNAPALL = TH32CS_SNAPHEAPLIST | TH32CS_SNAPPROCESS | TH32CS_SNAPTHREAD | TH32CS_SNAPMODULE;
-pub const TH32CS_INHERIT = 0x80000000;
-
-pub const MAX_MODULE_NAME32 = 255;
-pub const MODULEENTRY32 = extern struct {
-    dwSize: DWORD,
-    th32ModuleID: DWORD,
-    th32ProcessID: DWORD,
-    GlblcntUsage: DWORD,
-    ProccntUsage: DWORD,
-    modBaseAddr: *BYTE,
-    modBaseSize: DWORD,
-    hModule: HMODULE,
-    szModule: [MAX_MODULE_NAME32 + 1]CHAR,
-    szExePath: [MAX_PATH]CHAR,
-};
-
-pub const SYSTEM_INFORMATION_CLASS = enum(c_int) {
-    SystemBasicInformation = 0,
-    SystemPerformanceInformation = 2,
-    SystemTimeOfDayInformation = 3,
-    SystemProcessInformation = 5,
-    SystemProcessorPerformanceInformation = 8,
-    SystemInterruptInformation = 23,
-    SystemExceptionInformation = 33,
-    SystemRegistryQuotaInformation = 37,
-    SystemLookasideInformation = 45,
-    SystemCodeIntegrityInformation = 103,
-    SystemPolicyInformation = 134,
-};
-
-pub const SYSTEM_BASIC_INFORMATION = extern struct {
-    Reserved: ULONG,
-    TimerResolution: ULONG,
-    PageSize: ULONG,
-    NumberOfPhysicalPages: ULONG,
-    LowestPhysicalPageNumber: ULONG,
-    HighestPhysicalPageNumber: ULONG,
-    AllocationGranularity: ULONG,
-    MinimumUserModeAddress: ULONG_PTR,
-    MaximumUserModeAddress: ULONG_PTR,
-    ActiveProcessorsAffinityMask: KAFFINITY,
-    NumberOfProcessors: UCHAR,
-};
-
-pub const PROCESS_BASIC_INFORMATION = extern struct {
-    ExitStatus: NTSTATUS,
-    PebBaseAddress: *PEB,
-    AffinityMask: ULONG_PTR,
-    BasePriority: KPRIORITY,
-    UniqueProcessId: ULONG_PTR,
-    InheritedFromUniqueProcessId: ULONG_PTR,
-};
 
 // https://github.com/reactos/reactos/blob/master/sdk/include/ndk/pstypes.h#L977-L983
 pub const KERNEL_USER_TIMES = extern struct {
@@ -5285,75 +5016,6 @@ pub const KERNEL_USER_TIMES = extern struct {
     KernelTime: LARGE_INTEGER,
     UserTime: LARGE_INTEGER,
 };
-
-pub const ReadMemoryError = error{
-    Unexpected,
-};
-
-pub fn ReadProcessMemory(handle: HANDLE, addr: ?LPVOID, buffer: []u8) ReadMemoryError![]u8 {
-    var nread: usize = 0;
-    switch (ntdll.NtReadVirtualMemory(
-        handle,
-        addr,
-        buffer.ptr,
-        buffer.len,
-        &nread,
-    )) {
-        .SUCCESS => return buffer[0..nread],
-        // TODO: map errors
-        else => |rc| return unexpectedStatus(rc),
-    }
-}
-
-pub const WriteMemoryError = error{
-    Unexpected,
-};
-
-pub fn WriteProcessMemory(handle: HANDLE, addr: ?LPVOID, buffer: []const u8) WriteMemoryError!usize {
-    var nwritten: usize = 0;
-    switch (ntdll.NtWriteVirtualMemory(
-        handle,
-        addr,
-        buffer.ptr,
-        buffer.len,
-        &nwritten,
-    )) {
-        .SUCCESS => return nwritten,
-        // TODO: map errors
-        else => |rc| return unexpectedStatus(rc),
-    }
-}
-
-pub const ProcessBaseAddressError = error{
-    AccessDenied,
-    InvalidHandle,
-    Unexpected,
-} || ReadMemoryError;
-
-/// Returns the base address of the process loaded into memory.
-pub fn ProcessBaseAddress(handle: HANDLE) ProcessBaseAddressError!HMODULE {
-    var info: PROCESS_BASIC_INFORMATION = undefined;
-    var nread: DWORD = 0;
-    const rc = ntdll.NtQueryInformationProcess(
-        handle,
-        .BasicInformation,
-        &info,
-        @sizeOf(PROCESS_BASIC_INFORMATION),
-        &nread,
-    );
-    switch (rc) {
-        .SUCCESS => {},
-        .ACCESS_DENIED => return error.AccessDenied,
-        .INVALID_HANDLE => return error.InvalidHandle,
-        .INVALID_PARAMETER => unreachable,
-        else => return unexpectedStatus(rc),
-    }
-
-    var peb_buf: [@sizeOf(PEB)]u8 align(@alignOf(PEB)) = undefined;
-    const peb_out = try ReadProcessMemory(handle, info.PebBaseAddress, &peb_buf);
-    const ppeb: *const PEB = @ptrCast(@alignCast(peb_out.ptr));
-    return ppeb.ImageBaseAddress;
-}
 
 pub fn wtf8ToWtf16Le(wtf16le: []u16, wtf8: []const u8) error{ BadPathName, NameTooLong }!usize {
     // Each u8 in UTF-8/WTF-8 correlates to at most one u16 in UTF-16LE/WTF-16LE.

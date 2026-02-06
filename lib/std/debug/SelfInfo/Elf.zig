@@ -11,7 +11,9 @@ pub const init: SelfInfo = .{
     .ranges = .empty,
     .unwind_cache = null,
 };
-pub fn deinit(si: *SelfInfo, gpa: Allocator) void {
+pub fn deinit(si: *SelfInfo, io: Io) void {
+    _ = io;
+    const gpa = std.debug.getDebugInfoAllocator();
     for (si.modules.items) |*mod| {
         unwind: {
             const u = &(mod.unwind orelse break :unwind catch break :unwind);
@@ -28,7 +30,8 @@ pub fn deinit(si: *SelfInfo, gpa: Allocator) void {
     if (si.unwind_cache) |cache| gpa.free(cache);
 }
 
-pub fn getSymbol(si: *SelfInfo, gpa: Allocator, io: Io, address: usize) Error!std.debug.Symbol {
+pub fn getSymbol(si: *SelfInfo, io: Io, address: usize) Error!std.debug.Symbol {
+    const gpa = std.debug.getDebugInfoAllocator();
     const module = try si.findModule(gpa, io, address, .exclusive);
     defer si.rwlock.unlock(io);
 
@@ -73,13 +76,15 @@ pub fn getSymbol(si: *SelfInfo, gpa: Allocator, io: Io, address: usize) Error!st
         error.OutOfMemory => |e| return e,
     };
 }
-pub fn getModuleName(si: *SelfInfo, gpa: Allocator, io: Io, address: usize) Error![]const u8 {
+pub fn getModuleName(si: *SelfInfo, io: Io, address: usize) Error![]const u8 {
+    const gpa = std.debug.getDebugInfoAllocator();
     const module = try si.findModule(gpa, io, address, .shared);
     defer si.rwlock.unlockShared(io);
     if (module.name.len == 0) return error.MissingDebugInfo;
     return module.name;
 }
-pub fn getModuleSlide(si: *SelfInfo, gpa: Allocator, io: Io, address: usize) Error!usize {
+pub fn getModuleSlide(si: *SelfInfo, io: Io, address: usize) Error!usize {
+    const gpa = std.debug.getDebugInfoAllocator();
     const module = try si.findModule(gpa, io, address, .shared);
     defer si.rwlock.unlockShared(io);
     return module.load_offset;
@@ -179,8 +184,9 @@ comptime {
     }
 }
 pub const UnwindContext = Dwarf.SelfUnwinder;
-pub fn unwindFrame(si: *SelfInfo, gpa: Allocator, io: Io, context: *UnwindContext) Error!usize {
+pub fn unwindFrame(si: *SelfInfo, io: Io, context: *UnwindContext) Error!usize {
     comptime assert(can_unwind);
+    const gpa = std.debug.getDebugInfoAllocator();
 
     {
         si.rwlock.lockSharedUncancelable(io);

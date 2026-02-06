@@ -473,10 +473,9 @@ fn WinStartup() callconv(.withStackAlign(.c, 1)) noreturn {
     std.Thread.maybeAttachSignalStack();
     std.debug.maybeEnableSegfaultHandler();
 
-    const cmd_line = std.os.windows.peb().ProcessParameters.CommandLine;
-    const cmd_line_w = cmd_line.Buffer.?[0..@divExact(cmd_line.Length, 2)];
-
-    std.os.windows.ntdll.RtlExitUserProcess(callMain(cmd_line_w, .global));
+    std.os.windows.ntdll.RtlExitUserProcess(
+        callMain(std.os.windows.peb().ProcessParameters.CommandLine.slice(), .global),
+    );
 }
 
 fn wWinMainCRTStartup() callconv(.withStackAlign(.c, 1)) noreturn {
@@ -647,9 +646,7 @@ fn main(c_argc: c_int, c_argv: [*][*:0]c_char, c_envp: [*:null]?[*:0]c_char) cal
             // values in their intended encoding from the PEB instead.
             std.Thread.maybeAttachSignalStack();
             std.debug.maybeEnableSegfaultHandler();
-            const cmd_line = std.os.windows.peb().ProcessParameters.CommandLine;
-            const cmd_line_w = cmd_line.Buffer.?[0..@divExact(cmd_line.Length, 2)];
-            return callMain(cmd_line_w, .global);
+            return callMain(std.os.windows.peb().ProcessParameters.CommandLine.slice(), .global);
         },
         else => {},
     }
@@ -776,8 +773,7 @@ fn call_wWinMain() std.os.windows.INT {
         // - With STARTF_USESHOWWINDOW unset:
         //   - nShowCmd is always SW_SHOWDEFAULT
         const SW_SHOWDEFAULT = 10;
-        const STARTF_USESHOWWINDOW = 1;
-        if (peb.ProcessParameters.dwFlags & STARTF_USESHOWWINDOW != 0) {
+        if (peb.ProcessParameters.dwFlags & std.os.windows.STARTF_USESHOWWINDOW != 0) {
             break :nShowCmd @truncate(peb.ProcessParameters.dwShowWindow);
         }
         break :nShowCmd SW_SHOWDEFAULT;

@@ -621,7 +621,7 @@ pub fn main(init: process.Init.Minimal) !void {
         }) catch &caption_buf;
         var debouncing_node = main_progress_node.start(caption, 0);
         var in_debounce = false;
-        while (true) switch (try w.wait(gpa, if (in_debounce) .{ .ms = debounce_interval_ms } else .none)) {
+        while (true) switch (try w.wait(gpa, io, if (in_debounce) .{ .ms = debounce_interval_ms } else .none)) {
             .timeout => {
                 assert(in_debounce);
                 debouncing_node.end();

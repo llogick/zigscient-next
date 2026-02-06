@@ -127,7 +127,7 @@ fn spawnVerify(verify_path: [:0]const u16, cmd_line: [:0]const u16) !windows.DWO
             .hStdOutput = null,
             .hStdError = windows.peb().ProcessParameters.hStdError,
         };
-        var proc_info: windows.PROCESS_INFORMATION = undefined;
+        var proc_info: windows.PROCESS.INFORMATION = undefined;
 
         if (windows.kernel32.CreateProcessW(
             @constCast(verify_path.ptr),
@@ -141,7 +141,7 @@ fn spawnVerify(verify_path: [:0]const u16, cmd_line: [:0]const u16) !windows.DWO
             &startup_info,
             &proc_info,
         ) == 0) {
-            std.process.fatal("kernel32 CreateProcessW failed with {t}", .{windows.kernel32.GetLastError()});
+            std.process.fatal("kernel32 CreateProcessW failed with {t}", .{windows.GetLastError()});
         }
 
         windows.CloseHandle(proc_info.hThread);
@@ -156,9 +156,15 @@ fn spawnVerify(verify_path: [:0]const u16, cmd_line: [:0]const u16) !windows.DWO
         else => |status| return windows.unexpectedStatus(status),
     }
 
-    var exit_code: windows.DWORD = undefined;
-    if (windows.kernel32.GetExitCodeProcess(child_proc, &exit_code) == 0) {
-        return error.UnableToGetExitCode;
+    var info: windows.PROCESS.BASIC_INFORMATION = undefined;
+    switch (windows.ntdll.NtQueryInformationProcess(
+        child_proc,
+        .BasicInformation,
+        &info,
+        @sizeOf(windows.PROCESS.BASIC_INFORMATION),
+        null,
+    )) {
+        .SUCCESS => return @intFromEnum(info.ExitStatus),
+        else => return error.UnableToGetExitCode,
     }
-    return exit_code;
 }

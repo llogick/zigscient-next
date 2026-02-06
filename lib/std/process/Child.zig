@@ -86,7 +86,7 @@ pub const ResourceUsageStatistics = struct {
         .visionos,
         .watchos,
         => @as(?std.posix.rusage, null),
-        .windows => @as(?std.os.windows.VM_COUNTERS, null),
+        .windows => @as(?std.os.windows.PROCESS.VM_COUNTERS, null),
         else => {},
     };
 };

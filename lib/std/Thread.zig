@@ -88,20 +88,10 @@ pub fn setName(self: Thread, io: Io, name: []const u8) SetNameError!void {
         },
         .windows => {
             var buf: [max_name_len]u16 = undefined;
-            const len = try std.unicode.wtf8ToWtf16Le(&buf, name);
-            const byte_len = math.cast(c_ushort, len * 2) orelse return error.NameTooLong;
-
-            // Note: NT allocates its own copy, no use-after-free here.
-            const unicode_string = windows.UNICODE_STRING{
-                .Length = byte_len,
-                .MaximumLength = byte_len,
-                .Buffer = &buf,
-            };
-
             switch (windows.ntdll.NtSetInformationThread(
                 self.getHandle(),
                 .NameInformation,
-                &unicode_string,
+                &windows.UNICODE_STRING.init(buf[0..try std.unicode.wtf8ToWtf16Le(&buf, name)]),
                 @sizeOf(windows.UNICODE_STRING),
             )) {
                 .SUCCESS => return,
@@ -217,8 +207,8 @@ pub fn getName(self: Thread, buffer_ptr: *[max_name_len:0]u8) GetNameError!?[]co
                 null,
             )) {
                 .SUCCESS => {
-                    const string = @as(*const windows.UNICODE_STRING, @ptrCast(&buf));
-                    const len = std.unicode.wtf16LeToWtf8(buffer, string.Buffer.?[0 .. string.Length / 2]);
+                    const string: *const windows.UNICODE_STRING = @ptrCast(&buf);
+                    const len = std.unicode.wtf16LeToWtf8(buffer, string.slice());
                     return if (len > 0) buffer[0..len] else null;
                 },
                 .NOT_IMPLEMENTED => return error.Unsupported,

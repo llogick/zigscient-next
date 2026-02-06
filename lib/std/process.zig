@@ -243,7 +243,7 @@ pub fn getBaseAddress() usize {
         .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => {
             return @intFromPtr(&std.c._mh_execute_header);
         },
-        .windows => return @intFromPtr(windows.kernel32.GetModuleHandleW(null)),
+        .windows => return @intFromPtr(windows.peb().ImageBaseAddress),
         else => @compileError("Unsupported OS"),
     }
 }
@@ -606,11 +606,11 @@ pub fn totalSystemMemory() TotalSystemMemoryError!u64 {
             return @as(u64, @bitCast(physmem));
         },
         .windows => {
-            var sbi: windows.SYSTEM_BASIC_INFORMATION = undefined;
+            var sbi: windows.SYSTEM.BASIC_INFORMATION = undefined;
             const rc = windows.ntdll.NtQuerySystemInformation(
-                .SystemBasicInformation,
+                .Basic,
                 &sbi,
-                @sizeOf(windows.SYSTEM_BASIC_INFORMATION),
+                @sizeOf(windows.SYSTEM.BASIC_INFORMATION),
                 null,
             );
             if (rc != .SUCCESS) {
