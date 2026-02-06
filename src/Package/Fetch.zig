@@ -1,28 +1,34 @@
 //! Represents one independent job whose responsibility is to:
 //!
-//! 1. Check the global zig package cache to see if the hash already exists.
+//! 1. Check the local zig package directory to see if the hash already exists.
 //!    If so, load, parse, and validate the build.zig.zon file therein, and
-//!    goto step 8. Likewise if the location is a relative path, treat this
+//!    goto step 9. Likewise if the location is a relative path, treat this
 //!    the same as a cache hit. Otherwise, proceed.
-//! 2. Fetch and unpack a URL into a temporary directory.
-//! 3. Load, parse, and validate the build.zig.zon file therein. It is allowed
+//! 2. Check the global package cache for a compressed tarball matching the
+//!    hash. If it is found, unpack the contents into a temporary directory inside
+//!    project local zig cache. Rename this directory into the local zig package
+//!    directory and goto step 9, skipping step 10.
+//! 3. Fetch and unpack a URL into a temporary directory.
+//! 4. Load, parse, and validate the build.zig.zon file therein. It is allowed
 //!    for the file to be missing, in which case this fetched package is considered
 //!    to be a "naked" package.
-//! 4. Apply inclusion rules of the build.zig.zon to the temporary directory by
+//! 5. Apply inclusion rules of the build.zig.zon to the temporary directory by
 //!    deleting excluded files. If any files had errors for files that were
 //!    ultimately excluded, those errors should be ignored, such as failure to
 //!    create symlinks that weren't supposed to be included anyway.
-//! 5. Compute the package hash based on the remaining files in the temporary
+//! 6. Compute the package hash based on the remaining files in the temporary
 //!    directory.
-//! 6. Rename the temporary directory into the global zig package cache
-//!    directory. If the hash already exists, delete the temporary directory and
-//!    leave the zig package cache directory untouched as it may be in use by the
-//!    system. This is done even if the hash is invalid, in case the package with
-//!    the different hash is used in the future.
-//! 7. Validate the computed hash against the expected hash. If invalid,
+//! 7. Rename the temporary directory into the local zig package directory. If
+//!    the hash already exists, delete the temporary directory and leave the zig
+//!    package directory untouched as it may be in use. This is done even if
+//!    the hash is invalid, in case the package with the different hash is used
+//!    in the future.
+//! 8. Validate the computed hash against the expected hash. If invalid,
 //!    this job is done.
-//! 8. Spawn a new fetch job for each dependency in the manifest file. Use
+//! 9. Spawn a new fetch job for each dependency in the manifest file. Use
 //!    a mutex and a hash map so that redundant jobs do not get queued up.
+//! 10.Compress the package directory and store it into the global package
+//!    cache.
 //!
 //! All of this must be done with only referring to the state inside this struct
 //! because this work will be done in a dedicated thread.
@@ -34,6 +40,7 @@ const native_os = builtin.os.tag;
 const std = @import("std");
 const Io = std.Io;
 const fs = std.fs;
+const log = std.log.scoped(.fetch);
 const assert = std.debug.assert;
 const ascii = std.ascii;
 const Allocator = std.mem.Allocator;
@@ -60,16 +67,13 @@ omit_missing_hash_error: bool,
 /// which specifies inclusion rules. This is intended to be true for the first
 /// fetch task and false for the recursive dependencies.
 allow_missing_paths_field: bool,
-allow_missing_fingerprint: bool,
-allow_name_string: bool,
 /// If true and URL points to a Git repository, will use the latest commit.
 use_latest_commit: bool,
 
 // Above this are fields provided as inputs to `run`.
 // Below this are fields populated by `run`.
 
-/// This will either be relative to `global_cache`, or to the build root of
-/// the root package.
+/// Relative to the build root of the root package.
 package_root: Cache.Path,
 error_bundle: ErrorBundle.Wip,
 manifest: ?Manifest,
@@ -111,10 +115,15 @@ pub const JobQueue = struct {
     /// field contains references to all of them.
     /// Protected by `mutex`.
     all_fetches: std.ArrayList(*Fetch) = .empty,
+    prog_node: std.Progress.Node,
 
     http_client: *std.http.Client,
+    /// This tracks `Fetch` tasks as well as recompression tasks.
     group: Io.Group = .init,
     global_cache: Cache.Directory,
+    local_cache: Cache.Path,
+    /// Path to "zig-pkg" inside the package in which the user ran `zig build`.
+    root_pkg_path: Cache.Path,
     /// If true then, no fetching occurs, and:
     /// * The `global_cache` directory is assumed to be the direct parent
     ///   directory of on-disk packages rather than having the "p/" directory
@@ -129,7 +138,6 @@ pub const JobQueue = struct {
     /// two hashes of the same package do not match.
     /// If this is true, `recursive` must be false.
     debug_hash: bool,
-    work_around_btrfs_bug: bool,
     mode: Mode,
     /// Set of hashes that will be additionally fetched even if they are marked
     /// as lazy.
@@ -294,7 +302,120 @@ pub const JobQueue = struct {
             \\
         );
     }
+
+    fn recompress(jq: *JobQueue, package_hash: Package.Hash) Io.Cancelable!void {
+        const pkg_hash_slice = package_hash.toSlice();
+
+        const prog_node = jq.prog_node.startFmt(0, "recompress {s}", .{pkg_hash_slice});
+        defer prog_node.end();
+
+        var dest_sub_path_buf: ["p/".len + Package.Hash.max_len + ".tar.gz".len]u8 = undefined;
+        const dest_path: Cache.Path = .{
+            .root_dir = jq.global_cache,
+            .sub_path = std.fmt.bufPrint(&dest_sub_path_buf, "p/{s}.tar.gz", .{pkg_hash_slice}) catch unreachable,
+        };
+
+        const gpa = jq.http_client.allocator;
+
+        var arena_instance = std.heap.ArenaAllocator.init(gpa);
+        defer arena_instance.deinit();
+        const arena = arena_instance.allocator();
+
+        recompressFallible(jq, arena, dest_path, pkg_hash_slice, prog_node) catch |err| switch (err) {
+            error.Canceled => |e| return e,
+            error.ReadFailed => comptime unreachable,
+            error.WriteFailed => comptime unreachable,
+            else => |e| log.warn("failed caching recompressed tarball to {f}: {t}", .{ dest_path, e }),
+        };
+    }
+
+    fn recompressFallible(
+        jq: *JobQueue,
+        arena: Allocator,
+        dest_path: Cache.Path,
+        pkg_hash_slice: []const u8,
+        prog_node: std.Progress.Node,
+    ) !void {
+        const gpa = jq.http_client.allocator;
+        const io = jq.io;
+
+        // We have to walk the file system up front in order to sort the file
+        // list for determinism purposes. The hash of the recompressed file is
+        // not critical because the true hash is based on the content alone.
+        // However, if we want Zig users to be able to share cached package
+        // data with each other via peer-to-peer protocols, we benefit greatly
+        // from the data being identical on everyone's computers.
+        var scanned_files: std.ArrayList([]const u8) = .empty;
+        defer scanned_files.deinit(gpa);
+
+        var pkg_dir = try jq.root_pkg_path.openDir(io, pkg_hash_slice, .{ .iterate = true });
+        defer pkg_dir.close(io);
+
+        {
+            var walker = try pkg_dir.walk(gpa);
+            defer walker.deinit();
+
+            while (try walker.next(io)) |entry| {
+                switch (entry.kind) {
+                    .directory => continue,
+                    .file, .sym_link => {},
+                    else => {
+                        return error.IllegalFileType;
+                    },
+                }
+                const entry_path = try arena.dupe(u8, entry.path);
+                try scanned_files.append(gpa, entry_path);
+            }
+
+            std.mem.sortUnstable([]const u8, scanned_files.items, {}, stringCmp);
+        }
+
+        prog_node.setEstimatedTotalItems(scanned_files.items.len);
+
+        var atomic_file = try dest_path.root_dir.handle.createFileAtomic(io, dest_path.sub_path, .{
+            .make_path = true,
+            .replace = true,
+        });
+        defer atomic_file.deinit(io);
+
+        var file_write_buffer: [4096]u8 = undefined;
+        var file_writer = atomic_file.file.writer(io, &file_write_buffer);
+
+        var compress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        var compress = std.compress.flate.Compress.init(&file_writer.interface, &compress_buffer, .gzip, .level_9) catch |err| switch (err) {
+            error.WriteFailed => return file_writer.err.?,
+        };
+
+        var archiver: std.tar.Writer = .{ .underlying_writer = &compress.writer };
+        archiver.prefix = pkg_hash_slice;
+
+        var file_read_buffer: [4096]u8 = undefined;
+
+        for (scanned_files.items) |entry_path| {
+            var file = try pkg_dir.openFile(io, entry_path, .{});
+            defer file.close(io);
+            var file_reader: Io.File.Reader = .init(file, io, &file_read_buffer);
+            archiver.writeFile(entry_path, &file_reader, 0) catch |err| switch (err) {
+                error.ReadFailed => return file_reader.err.?,
+                error.WriteFailed => return file_writer.err.?,
+                else => |e| return e,
+            };
+            prog_node.completeOne();
+        }
+
+        // intentionally omitting the pointless trailer
+        //try archiver.finish();
+        compress.writer.flush() catch |err| switch (err) {
+            error.WriteFailed => return file_writer.err.?,
+        };
+        try file_writer.flush();
+        try atomic_file.replace(io);
+    }
 };
+
+fn stringCmp(_: void, lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.lessThan(u8, lhs, rhs);
+}
 
 pub const Location = union(enum) {
     remote: Remote,
@@ -326,11 +447,12 @@ pub const RunError = error{
 };
 
 pub fn run(f: *Fetch) RunError!void {
-    const io = f.job_queue.io;
+    const job_queue = f.job_queue;
+    const io = job_queue.io;
     const eb = &f.error_bundle;
     const arena = f.arena.allocator();
     const gpa = f.arena.child_allocator;
-    const cache_root = f.job_queue.global_cache;
+    const local_cache_root = job_queue.local_cache;
 
     try eb.init(gpa);
 
@@ -351,13 +473,13 @@ pub fn run(f: *Fetch) RunError!void {
             );
             // Packages fetched by URL may not use relative paths to escape outside the
             // fetched package directory from within the package cache.
-            if (pkg_root.root_dir.eql(cache_root)) {
+            if (pkg_root.root_dir.eql(local_cache_root.root_dir)) {
                 // `parent_package_root.sub_path` contains a path like this:
                 // "p/$hash", or
                 // "p/$hash/foo", with possibly more directories after "foo".
                 // We want to fail unless the resolved relative path has a
                 // prefix of "p/$hash/".
-                const prefix_len: usize = if (f.job_queue.read_only) 0 else "p/".len;
+                const prefix_len: usize = if (job_queue.read_only) 0 else "p/".len;
                 const parent_sub_path = f.parent_package_root.sub_path;
                 const end = find_end: {
                     if (parent_sub_path.len > prefix_len) {
@@ -380,21 +502,21 @@ pub fn run(f: *Fetch) RunError!void {
             f.package_root = pkg_root;
             try loadManifest(f, pkg_root);
             if (!f.has_build_zig) try checkBuildFileExistence(f);
-            if (!f.job_queue.recursive) return;
+            if (!job_queue.recursive) return;
             return queueJobsForDeps(f);
         },
         .remote => |remote| remote,
         .path_or_url => |path_or_url| {
             if (Io.Dir.cwd().openDir(io, path_or_url, .{ .iterate = true })) |dir| {
                 var resource: Resource = .{ .dir = dir };
-                return f.runResource(path_or_url, &resource, null);
+                return f.runResource(path_or_url, &resource, null, false);
             } else |dir_err| {
                 var server_header_buffer: [init_resource_buffer_size]u8 = undefined;
 
                 const file_err = if (dir_err == error.NotDir) e: {
                     if (Io.Dir.cwd().openFile(io, path_or_url, .{})) |file| {
                         var resource: Resource = .{ .file = file.reader(io, &server_header_buffer) };
-                        return f.runResource(path_or_url, &resource, null);
+                        return f.runResource(path_or_url, &resource, null, false);
                     } else |err| break :e err;
                 } else dir_err;
 
@@ -406,57 +528,73 @@ pub fn run(f: *Fetch) RunError!void {
                 };
                 var resource: Resource = undefined;
                 try f.initResource(uri, &resource, &server_header_buffer);
-                return f.runResource(try uri.path.toRawMaybeAlloc(arena), &resource, null);
+                return f.runResource(try uri.path.toRawMaybeAlloc(arena), &resource, null, false);
             }
         },
     };
 
+    var resource_buffer: [init_resource_buffer_size]u8 = undefined;
+
     if (remote.hash) |expected_hash| {
-        var prefixed_pkg_sub_path_buffer: [Package.Hash.max_len + 2]u8 = undefined;
-        prefixed_pkg_sub_path_buffer[0] = 'p';
-        prefixed_pkg_sub_path_buffer[1] = fs.path.sep;
-        const hash_slice = expected_hash.toSlice();
-        @memcpy(prefixed_pkg_sub_path_buffer[2..][0..hash_slice.len], hash_slice);
-        const prefixed_pkg_sub_path = prefixed_pkg_sub_path_buffer[0 .. 2 + hash_slice.len];
-        const prefix_len: usize = if (f.job_queue.read_only) "p/".len else 0;
-        const pkg_sub_path = prefixed_pkg_sub_path[prefix_len..];
-        if (cache_root.handle.access(io, pkg_sub_path, .{})) |_| {
+        const package_root = try job_queue.root_pkg_path.join(arena, expected_hash.toSlice());
+        if (package_root.root_dir.handle.access(io, package_root.sub_path, .{})) |_| {
             assert(f.lazy_status != .unavailable);
-            f.package_root = .{
-                .root_dir = cache_root,
-                .sub_path = try arena.dupe(u8, pkg_sub_path),
-            };
+            f.package_root = package_root;
             try loadManifest(f, f.package_root);
             try checkBuildFileExistence(f);
-            if (!f.job_queue.recursive) return;
+            if (!job_queue.recursive) return;
             return queueJobsForDeps(f);
         } else |err| switch (err) {
             error.FileNotFound => {
-                switch (f.lazy_status) {
-                    .eager => {},
-                    .available => if (!f.job_queue.unlazy_set.contains(expected_hash)) {
-                        f.lazy_status = .unavailable;
-                        return;
-                    },
-                    .unavailable => unreachable,
-                }
-                if (f.job_queue.read_only) return f.fail(
+                log.debug("FileNotFound: {f}", .{package_root});
+                if (job_queue.read_only) return f.fail(
                     f.name_tok,
-                    try eb.printString("package not found at '{f}{s}'", .{
-                        cache_root, pkg_sub_path,
-                    }),
+                    try eb.printString("package not found at '{f}'", .{package_root}),
                 );
             },
+            error.Canceled => |e| return e,
             else => |e| {
                 try eb.addRootErrorMessage(.{
-                    .msg = try eb.printString("unable to open global package cache directory '{f}{s}': {s}", .{
-                        cache_root, pkg_sub_path, @errorName(e),
+                    .msg = try eb.printString("unable to open package cache directory {f}: {t}", .{
+                        package_root, e,
                     }),
                 });
                 return error.FetchFailed;
             },
         }
-    } else if (f.job_queue.read_only) {
+
+        // Check global cache before remote fetch.
+        const cached_tarball_sub_path = try std.fmt.allocPrint(arena, "p/{s}.tar.gz", .{expected_hash.toSlice()});
+        const cached_tarball_path: Cache.Path = .{
+            .root_dir = job_queue.global_cache,
+            .sub_path = cached_tarball_sub_path,
+        };
+        if (cached_tarball_path.root_dir.handle.openFile(io, cached_tarball_path.sub_path, .{})) |file| {
+            log.debug("found global cached tarball {f}", .{cached_tarball_path});
+            var resource: Resource = .{ .file = file.reader(io, &resource_buffer) };
+            return f.runResource(cached_tarball_sub_path, &resource, remote.hash, true);
+        } else |err| switch (err) {
+            error.FileNotFound => log.debug("FileNotFound: {f}", .{cached_tarball_path}),
+            error.Canceled => |e| return e,
+            else => |e| {
+                try eb.addRootErrorMessage(.{
+                    .msg = try eb.printString("unable to open globally cached package {f}: {t}", .{
+                        cached_tarball_path, e,
+                    }),
+                });
+                return error.FetchFailed;
+            },
+        }
+
+        switch (f.lazy_status) {
+            .eager => {},
+            .available => if (!job_queue.unlazy_set.contains(expected_hash)) {
+                f.lazy_status = .unavailable;
+                return;
+            },
+            .unavailable => unreachable,
+        }
+    } else if (job_queue.read_only) {
         try eb.addRootErrorMessage(.{
             .msg = try eb.addString("dependency is missing hash field"),
             .src_loc = try f.srcLoc(f.location_tok),
@@ -465,15 +603,13 @@ pub fn run(f: *Fetch) RunError!void {
     }
 
     // Fetch and unpack the remote into a temporary directory.
-
     const uri = std.Uri.parse(remote.url) catch |err| return f.fail(
         f.location_tok,
-        try eb.printString("invalid URI: {s}", .{@errorName(err)}),
+        try eb.printString("invalid URI: {t}", .{err}),
     );
-    var buffer: [init_resource_buffer_size]u8 = undefined;
     var resource: Resource = undefined;
-    try f.initResource(uri, &resource, &buffer);
-    return f.runResource(try uri.path.toRawMaybeAlloc(arena), &resource, remote.hash);
+    try f.initResource(uri, &resource, &resource_buffer);
+    return f.runResource(try uri.path.toRawMaybeAlloc(arena), &resource, remote.hash, false);
 }
 
 pub fn deinit(f: *Fetch) void {
@@ -487,30 +623,35 @@ fn runResource(
     uri_path: []const u8,
     resource: *Resource,
     remote_hash: ?Package.Hash,
+    disable_recompress: bool,
 ) RunError!void {
-    const io = f.job_queue.io;
+    const job_queue = f.job_queue;
+    assert(!job_queue.read_only);
+
+    const io = job_queue.io;
     defer resource.deinit(io);
+
     const arena = f.arena.allocator();
     const eb = &f.error_bundle;
     const s = fs.path.sep_str;
-    const cache_root = f.job_queue.global_cache;
+    const local_cache_root = job_queue.local_cache;
     const rand_int = r: {
         var x: u64 = undefined;
         io.random(@ptrCast(&x));
         break :r x;
     };
     const tmp_dir_sub_path = "tmp" ++ s ++ std.fmt.hex(rand_int);
+    const tmp_directory_path = try local_cache_root.join(arena, tmp_dir_sub_path);
 
     const package_sub_path = blk: {
-        const tmp_directory_path = try cache_root.join(arena, &.{tmp_dir_sub_path});
         var tmp_directory: Cache.Directory = .{
-            .path = tmp_directory_path,
+            .path = tmp_directory_path.sub_path,
             .handle = handle: {
-                const dir = cache_root.handle.createDirPathOpen(io, tmp_dir_sub_path, .{
+                const dir = tmp_directory_path.root_dir.handle.createDirPathOpen(io, tmp_directory_path.sub_path, .{
                     .open_options = .{ .iterate = true },
                 }) catch |err| {
                     try eb.addRootErrorMessage(.{
-                        .msg = try eb.printString("unable to create temporary directory '{s}': {t}", .{
+                        .msg = try eb.printString("unable to create temporary directory '{f}': {t}", .{
                             tmp_directory_path, err,
                         }),
                     });
@@ -524,16 +665,7 @@ fn runResource(
         // Fetch and unpack a resource into a temporary directory.
         var unpack_result = try unpackResource(f, resource, uri_path, tmp_directory);
 
-        var pkg_path: Cache.Path = .{ .root_dir = tmp_directory, .sub_path = unpack_result.root_dir };
-
-        // Apply btrfs workaround if needed. Reopen tmp_directory.
-        if (native_os == .linux and f.job_queue.work_around_btrfs_bug) {
-            // https://github.com/ziglang/zig/issues/17095
-            pkg_path.root_dir.handle.close(io);
-            pkg_path.root_dir.handle = cache_root.handle.createDirPathOpen(io, tmp_dir_sub_path, .{
-                .open_options = .{ .iterate = true },
-            }) catch @panic("btrfs workaround failed");
-        }
+        const pkg_path: Cache.Path = .{ .root_dir = tmp_directory, .sub_path = unpack_result.root_dir };
 
         // Load, parse, and validate the unpacked build.zig.zon file. It is allowed
         // for the file to be missing, in which case this fetched package is
@@ -555,36 +687,40 @@ fn runResource(
         // directory.
         f.computed_hash = try computeHash(f, pkg_path, filter);
 
-        break :blk if (unpack_result.root_dir.len > 0)
-            try fs.path.join(arena, &.{ tmp_dir_sub_path, unpack_result.root_dir })
-        else
-            tmp_dir_sub_path;
+        if (unpack_result.root_dir.len > 0)
+            break :blk try tmp_directory_path.join(arena, unpack_result.root_dir);
+
+        break :blk tmp_directory_path;
     };
 
     const computed_package_hash = computedPackageHash(f);
 
-    // Rename the temporary directory into the global zig package cache
-    // directory. If the hash already exists, delete the temporary directory
-    // and leave the zig package cache directory untouched as it may be in use
-    // by the system. This is done even if the hash is invalid, in case the
-    // package with the different hash is used in the future.
-
-    f.package_root = .{
-        .root_dir = cache_root,
-        .sub_path = try std.fmt.allocPrint(arena, "p" ++ s ++ "{s}", .{computed_package_hash.toSlice()}),
-    };
-    renameTmpIntoCache(io, cache_root.handle, package_sub_path, f.package_root.sub_path) catch |err| {
-        const src = try cache_root.join(arena, &.{tmp_dir_sub_path});
-        const dest = try cache_root.join(arena, &.{f.package_root.sub_path});
+    // Rename the temporary directory into the local zig package directory. If
+    // the hash already exists, delete the temporary directory and leave the
+    // zig package directory untouched as it may be in use. This is done even
+    // if the hash is invalid, in case the package with the different hash is
+    // used in the future.
+    f.package_root = try job_queue.root_pkg_path.join(arena, computed_package_hash.toSlice());
+    renameTmpIntoCache(io, package_sub_path, f.package_root) catch |err| {
         try eb.addRootErrorMessage(.{ .msg = try eb.printString(
-            "unable to rename temporary directory '{s}' into package cache directory '{s}': {s}",
-            .{ src, dest, @errorName(err) },
+            "unable to rename temporary directory {f} into package cache directory {f}: {t}",
+            .{ package_sub_path, f.package_root, err },
         ) });
         return error.FetchFailed;
     };
+
+    if (!disable_recompress) {
+        // Spin off a task to recompress the tarball, with filtered files deleted, into
+        // the global cache.
+        job_queue.group.async(io, JobQueue.recompress, .{ job_queue, computed_package_hash });
+    }
+
     // Remove temporary directory root if not already renamed to global cache.
-    if (!std.mem.eql(u8, package_sub_path, tmp_dir_sub_path)) {
-        cache_root.handle.deleteDir(io, tmp_dir_sub_path) catch {};
+    if (!package_sub_path.eql(tmp_directory_path)) {
+        tmp_directory_path.root_dir.handle.deleteDir(io, tmp_directory_path.sub_path) catch |err| switch (err) {
+            error.Canceled => |e| return e,
+            else => |e| log.warn("failed to delete temporary directory {f}: {t}", .{ tmp_directory_path, e }),
+        };
     }
 
     // Validate the computed hash against the expected hash. If invalid, this
@@ -624,7 +760,7 @@ fn runResource(
 
     // Spawn a new fetch job for each dependency in the manifest file. Use
     // a mutex and a hash map so that redundant jobs do not get queued up.
-    if (!f.job_queue.recursive) return;
+    if (!job_queue.recursive) return;
     return queueJobsForDeps(f);
 }
 
@@ -651,8 +787,8 @@ fn checkBuildFileExistence(f: *Fetch) RunError!void {
         error.FileNotFound => {},
         else => |e| {
             try eb.addRootErrorMessage(.{
-                .msg = try eb.printString("unable to access '{f}{s}': {s}", .{
-                    f.package_root, Package.build_zig_basename, @errorName(e),
+                .msg = try eb.printString("unable to access '{f}{s}': {t}", .{
+                    f.package_root, Package.build_zig_basename, e,
                 }),
             });
             return error.FetchFailed;
@@ -677,9 +813,7 @@ fn loadManifest(f: *Fetch, pkg_root: Cache.Path) RunError!void {
         else => |e| {
             const file_path = try pkg_root.join(arena, Manifest.basename);
             try eb.addRootErrorMessage(.{
-                .msg = try eb.printString("unable to load package manifest '{f}': {s}", .{
-                    file_path, @errorName(e),
-                }),
+                .msg = try eb.printString("unable to load package manifest '{f}': {t}", .{ file_path, e }),
             });
             return error.FetchFailed;
         },
@@ -698,8 +832,6 @@ fn loadManifest(f: *Fetch, pkg_root: Cache.Path) RunError!void {
 
     f.manifest = try Manifest.parse(arena, ast.*, rng.interface(), .{
         .allow_missing_paths_field = f.allow_missing_paths_field,
-        .allow_missing_fingerprint = f.allow_missing_fingerprint,
-        .allow_name_string = f.allow_name_string,
     });
     const manifest = &f.manifest.?;
 
@@ -817,8 +949,6 @@ fn queueJobsForDeps(f: *Fetch) RunError!void {
                 .job_queue = f.job_queue,
                 .omit_missing_hash_error = false,
                 .allow_missing_paths_field = true,
-                .allow_missing_fingerprint = true,
-                .allow_name_string = true,
                 .use_latest_commit = false,
 
                 .package_root = undefined,
@@ -1463,14 +1593,20 @@ fn recursiveDirectoryCopy(f: *Fetch, dir: Io.Dir, tmp_dir: Io.Dir) anyerror!void
     }
 }
 
-pub fn renameTmpIntoCache(io: Io, cache_dir: Io.Dir, tmp_dir_sub_path: []const u8, dest_dir_sub_path: []const u8) !void {
-    assert(dest_dir_sub_path[1] == fs.path.sep);
+pub fn renameTmpIntoCache(io: Io, tmp_path: Cache.Path, dest_path: Cache.Path) !void {
     var handled_missing_dir = false;
     while (true) {
-        cache_dir.rename(tmp_dir_sub_path, cache_dir, dest_dir_sub_path, io) catch |err| switch (err) {
+        Io.Dir.rename(
+            tmp_path.root_dir.handle,
+            tmp_path.sub_path,
+            dest_path.root_dir.handle,
+            dest_path.sub_path,
+            io,
+        ) catch |err| switch (err) {
             error.FileNotFound => {
                 if (handled_missing_dir) return err;
-                cache_dir.createDir(io, dest_dir_sub_path[0..1], .default_dir) catch |mkd_err| switch (mkd_err) {
+                const parent_sub_path = Io.Dir.path.dirname(dest_path.sub_path).?;
+                dest_path.root_dir.handle.createDir(io, parent_sub_path, .default_dir) catch |er| switch (er) {
                     error.PathAlreadyExists => handled_missing_dir = true,
                     else => |e| return e,
                 };
@@ -1478,9 +1614,11 @@ pub fn renameTmpIntoCache(io: Io, cache_dir: Io.Dir, tmp_dir_sub_path: []const u
             },
             error.DirNotEmpty, error.AccessDenied => {
                 // Package has been already downloaded and may already be in use on the system.
-                cache_dir.deleteTree(io, tmp_dir_sub_path) catch {
+                tmp_path.root_dir.handle.deleteTree(io, tmp_path.sub_path) catch |er| switch (er) {
+                    error.Canceled => |e| return e,
                     // Garbage files leftover in zig-cache/tmp/ is, as they say
                     // on Star Trek, "operating within normal parameters".
+                    else => |e| log.warn("failed to delete temporary directory {f}: {t}", .{ tmp_path, e }),
                 };
             },
             else => |e| return e,
@@ -2064,130 +2202,6 @@ const UnpackResult = struct {
     }
 };
 
-test "tarball with duplicate paths" {
-    // This tarball has duplicate path 'dir1/file1' to simulate case sensitve
-    // file system on any file sytstem.
-    //
-    //     duplicate_paths/
-    //     duplicate_paths/dir1/
-    //     duplicate_paths/dir1/file1
-    //     duplicate_paths/dir1/file1
-    //     duplicate_paths/build.zig.zon
-    //     duplicate_paths/src/
-    //     duplicate_paths/src/main.zig
-    //     duplicate_paths/src/root.zig
-    //     duplicate_paths/build.zig
-    //
-
-    const gpa = std.testing.allocator;
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const tarball_name = "duplicate_paths.tar.gz";
-    try saveEmbedFile(io, tarball_name, tmp.dir);
-    const tarball_path = try std.fmt.allocPrint(gpa, ".zig-cache/tmp/{s}/{s}", .{ tmp.sub_path, tarball_name });
-    defer gpa.free(tarball_path);
-
-    // Run tarball fetch, expect to fail
-    var fb: TestFetchBuilder = undefined;
-    var fetch = try fb.build(gpa, io, tmp.dir, tarball_path);
-    defer fb.deinit();
-    try std.testing.expectError(error.FetchFailed, fetch.run());
-
-    try fb.expectFetchErrors(1,
-        \\error: unable to unpack tarball
-        \\    note: unable to create file 'dir1/file1': PathAlreadyExists
-        \\
-    );
-}
-
-test "tarball with excluded duplicate paths" {
-    // Same as previous tarball but has build.zig.zon wich excludes 'dir1'.
-    //
-    //     .paths = .{
-    //        "build.zig",
-    //        "build.zig.zon",
-    //        "src",
-    //    }
-    //
-
-    const gpa = std.testing.allocator;
-    const io = std.testing.io;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const tarball_name = "duplicate_paths_excluded.tar.gz";
-    try saveEmbedFile(io, tarball_name, tmp.dir);
-    const tarball_path = try std.fmt.allocPrint(gpa, ".zig-cache/tmp/{s}/{s}", .{ tmp.sub_path, tarball_name });
-    defer gpa.free(tarball_path);
-
-    // Run tarball fetch, should succeed
-    var fb: TestFetchBuilder = undefined;
-    var fetch = try fb.build(gpa, io, tmp.dir, tarball_path);
-    defer fb.deinit();
-    try fetch.run();
-
-    const hex_digest = Package.multiHashHexDigest(fetch.computed_hash.digest);
-    try std.testing.expectEqualStrings(
-        "12200bafe035cbb453dd717741b66e9f9d1e6c674069d06121dafa1b2e62eb6b22da",
-        &hex_digest,
-    );
-
-    const expected_files: []const []const u8 = &.{
-        "build.zig",
-        "build.zig.zon",
-        "src/main.zig",
-        "src/root.zig",
-    };
-    try fb.expectPackageFiles(expected_files);
-}
-
-test "tarball without root folder" {
-    // Tarball with root folder. Manifest excludes dir1 and dir2.
-    //
-    //    build.zig
-    //    build.zig.zon
-    //    dir1/
-    //    dir1/file2
-    //    dir1/file1
-    //    dir2/
-    //    dir2/file2
-    //    src/
-    //    src/main.zig
-    //
-
-    const gpa = std.testing.allocator;
-    const io = std.testing.io;
-
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const tarball_name = "no_root.tar.gz";
-    try saveEmbedFile(io, tarball_name, tmp.dir);
-    const tarball_path = try std.fmt.allocPrint(gpa, ".zig-cache/tmp/{s}/{s}", .{ tmp.sub_path, tarball_name });
-    defer gpa.free(tarball_path);
-
-    // Run tarball fetch, should succeed
-    var fb: TestFetchBuilder = undefined;
-    var fetch = try fb.build(gpa, io, tmp.dir, tarball_path);
-    defer fb.deinit();
-    try fetch.run();
-
-    const hex_digest = Package.multiHashHexDigest(fetch.computed_hash.digest);
-    try std.testing.expectEqualStrings(
-        "12209f939bfdcb8b501a61bb4a43124dfa1b2848adc60eec1e4624c560357562b793",
-        &hex_digest,
-    );
-
-    const expected_files: []const []const u8 = &.{
-        "build.zig",
-        "build.zig.zon",
-        "src/main.zig",
-    };
-    try fb.expectPackageFiles(expected_files);
-}
-
 test "set executable bit based on file content" {
     if (!Io.File.Permissions.has_executable_bit) return error.SkipZigTest;
     const gpa = std.testing.allocator;
@@ -2254,6 +2268,7 @@ fn saveEmbedFile(io: Io, comptime tarball_name: []const u8, dir: Io.Dir) !void {
 const TestFetchBuilder = struct {
     http_client: std.http.Client,
     global_cache_directory: Cache.Directory,
+    local_cache_path: Cache.Path,
     job_queue: Fetch.JobQueue,
     fetch: Fetch,
 
@@ -2264,20 +2279,30 @@ const TestFetchBuilder = struct {
         cache_parent_dir: std.Io.Dir,
         path_or_url: []const u8,
     ) !*Fetch {
-        const cache_dir = try cache_parent_dir.createDirPathOpen(io, "zig-global-cache", .{});
+        const global_cache_dir = try cache_parent_dir.createDirPathOpen(io, "zig-global-cache", .{});
+        const package_root_dir = try cache_parent_dir.createDirPathOpen(io, "local-project-root", .{});
 
         self.http_client = .{ .allocator = allocator, .io = io };
-        self.global_cache_directory = .{ .handle = cache_dir, .path = null };
+        self.global_cache_directory = .{ .handle = global_cache_dir, .path = "zig-global-cache" };
+        self.local_cache_path = .{
+            .root_dir = .{ .handle = package_root_dir, .path = "local-project-root" },
+            .sub_path = ".zig-cache",
+        };
 
         self.job_queue = .{
             .io = io,
             .http_client = &self.http_client,
             .global_cache = self.global_cache_directory,
+            .local_cache = self.local_cache_path,
+            .root_pkg_path = .{
+                .root_dir = .{ .handle = package_root_dir, .path = "local-project-root" },
+                .sub_path = "zig-pkg",
+            },
             .recursive = false,
             .read_only = false,
             .debug_hash = false,
-            .work_around_btrfs_bug = false,
             .mode = .needed,
+            .prog_node = std.Progress.Node.none,
         };
 
         self.fetch = .{
@@ -2287,14 +2312,12 @@ const TestFetchBuilder = struct {
             .hash_tok = .none,
             .name_tok = 0,
             .lazy_status = .eager,
-            .parent_package_root = Cache.Path{ .root_dir = Cache.Directory{ .handle = cache_dir, .path = null } },
+            .parent_package_root = .{ .root_dir = .{ .handle = package_root_dir, .path = null } },
             .parent_manifest_ast = null,
             .prog_node = std.Progress.Node.none,
             .job_queue = &self.job_queue,
             .omit_missing_hash_error = true,
             .allow_missing_paths_field = false,
-            .allow_missing_fingerprint = true, // so we can keep using the old testdata .tar.gz
-            .allow_name_string = true, // so we can keep using the old testdata .tar.gz
             .use_latest_commit = true,
 
             .package_root = undefined,

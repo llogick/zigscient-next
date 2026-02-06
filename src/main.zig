@@ -5373,8 +5373,6 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
         }
     }
 
-    const work_around_btrfs_bug = native_os == .linux and
-        EnvVar.ZIG_BTRFS_WORKAROUND.isSet(environ_map);
     const root_prog_node = std.Progress.start(io, .{
         .disable_printing = (color == .off),
         .root_name = "Compile Build Script",
@@ -5516,24 +5514,29 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                     .io = io,
                     .http_client = &http_client,
                     .global_cache = dirs.global_cache,
+                    .local_cache = .{ .root_dir = dirs.local_cache, .sub_path = "" },
+                    .root_pkg_path = .{ .root_dir = build_root.directory, .sub_path = "zig-pkg" },
                     .read_only = false,
                     .recursive = true,
                     .debug_hash = false,
-                    .work_around_btrfs_bug = work_around_btrfs_bug,
                     .unlazy_set = unlazy_set,
                     .mode = fetch_mode,
+                    .prog_node = fetch_prog_node,
                 };
                 defer job_queue.deinit();
 
                 if (system_pkg_dir_path) |p| {
-                    job_queue.global_cache = .{
-                        .path = p,
-                        .handle = Io.Dir.cwd().openDir(io, p, .{}) catch |err| {
-                            fatal("unable to open system package directory '{s}': {s}", .{
-                                p, @errorName(err),
-                            });
+                    const system_pkg_path: Path = .{
+                        .root_dir = .{
+                            .path = p,
+                            .handle = Io.Dir.cwd().openDir(io, p, .{}) catch |err| {
+                                fatal("unable to open system package directory '{s}': {t}", .{ p, err });
+                            },
                         },
+                        .sub_path = "",
                     };
+                    job_queue.global_cache = system_pkg_path.root_dir;
+                    job_queue.root_pkg_path = system_pkg_path;
                     job_queue.read_only = true;
                     cleanup_build_dir = job_queue.global_cache.handle;
                 } else {
@@ -5558,8 +5561,6 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                     .job_queue = &job_queue,
                     .omit_missing_hash_error = true,
                     .allow_missing_paths_field = false,
-                    .allow_missing_fingerprint = false,
-                    .allow_name_string = false,
                     .use_latest_commit = false,
 
                     .package_root = undefined,
@@ -7213,8 +7214,6 @@ fn cmdFetch(
     dev.check(.fetch_command);
 
     const color: Color = .auto;
-    const work_around_btrfs_bug = native_os == .linux and
-        EnvVar.ZIG_BTRFS_WORKAROUND.isSet(environ_map);
     var opt_path_or_url: ?[]const u8 = null;
     var override_global_cache_dir: ?[]const u8 = EnvVar.ZIG_GLOBAL_CACHE_DIR.get(environ_map);
     var debug_hash: bool = false;
@@ -7278,15 +7277,32 @@ fn cmdFetch(
     };
     defer global_cache_directory.handle.close(io);
 
+    const cwd_path = try introspect.getResolvedCwd(io, arena);
+
+    var build_root = try findBuildRoot(arena, io, .{
+        .cwd_path = cwd_path,
+    });
+    defer build_root.deinit(io);
+
+    const local_cache_path: Path = .{
+        .root_dir = build_root.directory,
+        .sub_path = ".zig-cache",
+    };
+
     var job_queue: Package.Fetch.JobQueue = .{
         .io = io,
         .http_client = &http_client,
         .global_cache = global_cache_directory,
+        .local_cache = local_cache_path,
+        .root_pkg_path = .{
+            .root_dir = build_root.directory,
+            .sub_path = "zig-pkg",
+        },
         .recursive = false,
         .read_only = false,
         .debug_hash = debug_hash,
-        .work_around_btrfs_bug = work_around_btrfs_bug,
         .mode = .all,
+        .prog_node = root_prog_node,
     };
     defer job_queue.deinit();
 
@@ -7303,8 +7319,6 @@ fn cmdFetch(
         .job_queue = &job_queue,
         .omit_missing_hash_error = true,
         .allow_missing_paths_field = false,
-        .allow_missing_fingerprint = true,
-        .allow_name_string = true,
         .use_latest_commit = true,
 
         .package_root = undefined,
@@ -7351,13 +7365,6 @@ fn cmdFetch(
             break :name fetched_manifest.name;
         },
     };
-
-    const cwd_path = try introspect.getResolvedCwd(io, arena);
-
-    var build_root = try findBuildRoot(arena, io, .{
-        .cwd_path = cwd_path,
-    });
-    defer build_root.deinit(io);
 
     // The name to use in case the manifest file needs to be created now.
     const init_root_name = fs.path.basename(build_root.directory.path orelse cwd_path);
@@ -7522,18 +7529,25 @@ fn createDependenciesModule(
         defer tmp_dir.close(io);
         try tmp_dir.writeFile(io, .{ .sub_path = basename, .data = source });
     }
+    const tmp_dir_path: Path = .{
+        .root_dir = dirs.local_cache,
+        .sub_path = tmp_dir_sub_path,
+    };
 
     var hh: Cache.HashHelper = .{};
     hh.addBytes(build_options.version);
     hh.addBytes(source);
     const hex_digest = hh.final();
 
-    const o_dir_sub_path = try arena.dupe(u8, "o" ++ fs.path.sep_str ++ hex_digest);
-    try Package.Fetch.renameTmpIntoCache(io, dirs.local_cache.handle, tmp_dir_sub_path, o_dir_sub_path);
+    const o_dir_path: Path = .{
+        .root_dir = dirs.local_cache,
+        .sub_path = try arena.dupe(u8, "o" ++ fs.path.sep_str ++ hex_digest),
+    };
+    try Package.Fetch.renameTmpIntoCache(io, tmp_dir_path, o_dir_path);
 
     const deps_mod = try Package.Module.create(arena, .{
         .paths = .{
-            .root = try .fromRoot(arena, dirs, .local_cache, o_dir_sub_path),
+            .root = try .fromRoot(arena, dirs, .local_cache, o_dir_path.sub_path),
             .root_src_path = basename,
         },
         .fully_qualified_name = "root.@dependencies",

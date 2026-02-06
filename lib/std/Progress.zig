@@ -325,6 +325,12 @@ pub const Node = struct {
         return init(@enumFromInt(free_index), parent, name, estimated_total_items);
     }
 
+    pub fn startFmt(node: Node, estimated_total_items: usize, comptime format: []const u8, args: anytype) Node {
+        var buffer: [max_name_len]u8 = undefined;
+        const name = std.fmt.bufPrint(&buffer, format, args) catch &buffer;
+        return Node.start(node, name, estimated_total_items);
+    }
+
     /// This is the same as calling `start` and then `end` on the returned `Node`. Thread-safe.
     pub fn completeOne(n: Node) void {
         const index = n.index.unwrap() orelse return;

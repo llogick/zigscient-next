@@ -3187,29 +3187,24 @@ fn dirCreateDirPosix(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, perm
                 try syscall.checkCancel();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ACCES => return error.AccessDenied,
-                    .BADF => |err| return errnoBug(err), // File descriptor used after closed.
-                    .PERM => return error.PermissionDenied,
-                    .DQUOT => return error.DiskQuota,
-                    .EXIST => return error.PathAlreadyExists,
-                    .FAULT => |err| return errnoBug(err),
-                    .LOOP => return error.SymLinkLoop,
-                    .MLINK => return error.LinkQuotaExceeded,
-                    .NAMETOOLONG => return error.NameTooLong,
-                    .NOENT => return error.FileNotFound,
-                    .NOMEM => return error.SystemResources,
-                    .NOSPC => return error.NoSpaceLeft,
-                    .NOTDIR => return error.NotDir,
-                    .ROFS => return error.ReadOnlyFileSystem,
-                    // dragonfly: when dir_fd is unlinked from filesystem
-                    .NOTCONN => return error.FileNotFound,
-                    .ILSEQ => return error.BadPathName,
-                    else => |err| return posix.unexpectedErrno(err),
-                }
-            },
+            .ACCES => return syscall.fail(error.AccessDenied),
+            .PERM => return syscall.fail(error.PermissionDenied),
+            .DQUOT => return syscall.fail(error.DiskQuota),
+            .EXIST => return syscall.fail(error.PathAlreadyExists),
+            .LOOP => return syscall.fail(error.SymLinkLoop),
+            .MLINK => return syscall.fail(error.LinkQuotaExceeded),
+            .NAMETOOLONG => return syscall.fail(error.NameTooLong),
+            .NOENT => return syscall.fail(error.FileNotFound),
+            .NOMEM => return syscall.fail(error.SystemResources),
+            .NOSPC => return syscall.fail(error.NoSpaceLeft),
+            .NOTDIR => return syscall.fail(error.NotDir),
+            .ROFS => return syscall.fail(error.ReadOnlyFileSystem),
+            // dragonfly: when dir_fd is unlinked from filesystem
+            .NOTCONN => return syscall.fail(error.FileNotFound),
+            .ILSEQ => return syscall.fail(error.BadPathName),
+            .BADF => |err| return syscall.errnoBug(err), // File descriptor used after closed.
+            .FAULT => |err| return syscall.errnoBug(err),
+            else => |err| return syscall.unexpectedErrno(err),
         }
     }
 }
@@ -5257,28 +5252,23 @@ fn dirOpenDirPosix(
                 try syscall.checkCancel();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .FAULT => |err| return errnoBug(err),
-                    .INVAL => return error.BadPathName,
-                    .BADF => |err| return errnoBug(err), // File descriptor used after closed.
-                    .ACCES => return error.AccessDenied,
-                    .LOOP => return error.SymLinkLoop,
-                    .MFILE => return error.ProcessFdQuotaExceeded,
-                    .NAMETOOLONG => return error.NameTooLong,
-                    .NFILE => return error.SystemFdQuotaExceeded,
-                    .NODEV => return error.NoDevice,
-                    .NOENT => return error.FileNotFound,
-                    .NOMEM => return error.SystemResources,
-                    .NOTDIR => return error.NotDir,
-                    .PERM => return error.PermissionDenied,
-                    .BUSY => |err| return errnoBug(err), // O_EXCL not passed
-                    .NXIO => return error.NoDevice,
-                    .ILSEQ => return error.BadPathName,
-                    else => |err| return posix.unexpectedErrno(err),
-                }
-            },
+            .INVAL => return syscall.fail(error.BadPathName),
+            .ACCES => return syscall.fail(error.AccessDenied),
+            .LOOP => return syscall.fail(error.SymLinkLoop),
+            .MFILE => return syscall.fail(error.ProcessFdQuotaExceeded),
+            .NAMETOOLONG => return syscall.fail(error.NameTooLong),
+            .NFILE => return syscall.fail(error.SystemFdQuotaExceeded),
+            .NODEV => return syscall.fail(error.NoDevice),
+            .NOENT => return syscall.fail(error.FileNotFound),
+            .NOMEM => return syscall.fail(error.SystemResources),
+            .NOTDIR => return syscall.fail(error.NotDir),
+            .PERM => return syscall.fail(error.PermissionDenied),
+            .NXIO => return syscall.fail(error.NoDevice),
+            .ILSEQ => return syscall.fail(error.BadPathName),
+            .FAULT => |err| return syscall.errnoBug(err),
+            .BADF => |err| return syscall.errnoBug(err), // File descriptor used after closed.
+            .BUSY => |err| return syscall.errnoBug(err), // O_EXCL not passed
+            else => |err| return syscall.unexpectedErrno(err),
         }
     }
 }

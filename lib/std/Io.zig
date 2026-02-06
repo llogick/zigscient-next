@@ -1033,6 +1033,9 @@ pub const Group = struct {
     /// Once this function is called, there are resources associated with the
     /// group. To release those resources, `Group.await` or `Group.cancel` must
     /// eventually be called.
+    ///
+    /// If `error.Canceled` is returned from any operation this task performs,
+    /// it is asserted that `function` returns `error.Canceled`.
     pub fn async(g: *Group, io: Io, function: anytype, args: std.meta.ArgsTuple(@TypeOf(function))) void {
         const Args = @TypeOf(args);
         const TypeErased = struct {
@@ -1052,6 +1055,9 @@ pub const Group = struct {
     /// Once this function is called, there are resources associated with the
     /// group. To release those resources, `Group.await` or `Group.cancel` must
     /// eventually be called.
+    ///
+    /// If `error.Canceled` is returned from any operation this task performs,
+    /// it is asserted that `function` returns `error.Canceled`.
     pub fn concurrent(g: *Group, io: Io, function: anytype, args: std.meta.ArgsTuple(@TypeOf(function))) ConcurrentError!void {
         const Args = @TypeOf(args);
         const TypeErased = struct {
