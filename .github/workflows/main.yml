@@ -27,4 +27,4 @@ jobs:
         run: zig build test-fmt
 
       - name: Run zig build check test-ls
-        run: zig build check test-ls --summary all
+        run: zig build check test --summary all

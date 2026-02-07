@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) !void {
     const single_threaded = b.option(bool, "single-threaded", "Build artifacts that run in single threaded mode");
     const use_zig_libcxx = b.option(bool, "use-zig-libcxx", "If libc++ is needed, use zig's bundled version, don't try to integrate with the system") orelse false;
 
-    const test_step = b.step("test", "Run all the tests");
+    const test_step = b.step("test-zig", "Run all the tests");
     const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse only_c or dev_env != .full;
     const skip_install_langref = b.option(bool, "no-langref", "skip copying of langref to the installation prefix") orelse skip_install_lib_files;
     const std_docs = b.option(bool, "std-docs", "include standard library autodocs") orelse false;
@@ -1593,14 +1593,10 @@ fn superHtmlCheck(b: *std.Build, html_file: std.Build.LazyPath) *std.Build.Step 
 }
 
 // LSP
-
-const proj_version = std.SemanticVersion.parse(@import("build.zig.zon").version) catch unreachable;
-const minimum_build_zig_version = @import("build.zig.zon").minimum_zig_version;
-
-/// Specify the minimum Zig version that the server's build_runner can handle:
-///
-/// A breaking change to the Zig Build System should be handled by updating the LSP server's build runner (see src/Lsp/src/build_runner)
-const minimum_runtime_zig_version = "0.16.0-dev.2365+377bb8f23";
+const bzz = @import("build.zig.zon");
+const proj_version = std.SemanticVersion.parse(bzz.version) catch unreachable;
+const minimum_build_zig_version = bzz.minimum_zig_version;
+const minimum_runtime_zig_version = bzz.minimum_runtime_zig_version;
 
 fn cfgLspServer(
     b: *std.Build,
@@ -1736,7 +1732,7 @@ fn cfgLspServer(
     }
 
     blk: { // zig build test, zig build test-build-runner, zig build test-analysis
-        const test_step = b.step("test-ls", "Run all the tests");
+        const test_step = b.step("test", "Run all the tests");
         const test_build_runner_step = b.step("test-build-runner", "Run all the build runner tests");
         const test_analysis_step = b.step("test-analysis", "Run all the analysis tests");
 
