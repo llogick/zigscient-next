@@ -169,7 +169,7 @@ pub fn init(k: *Kqueue, gpa: Allocator, options: InitOptions) !void {
     errdefer gpa.free(allocated_slice);
     k.* = .{
         .gpa = gpa,
-        .mutex = .{},
+        .mutex = .init,
         .main_fiber_buffer = undefined,
         .threads = .{
             .allocated = @ptrCast(allocated_slice[0..threads_size]),
