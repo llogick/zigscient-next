@@ -1954,7 +1954,6 @@ pub const PointerDeriveStep = union(enum) {
 /// which prefer field/elem accesses when lowering constant pointer values.
 /// It is also used by the Value printing logic for pointers.
 pub fn pointerDerivation(ptr_val: Value, arena: Allocator, pt: Zcu.PerThread, opt_sema: ?*Sema) Allocator.Error!PointerDeriveStep {
-    // MLUGG TODO: audit tf outta this code
     const zcu = pt.zcu;
     const ptr = zcu.intern_pool.indexToKey(ptr_val.toIntern()).ptr;
     const base_derive: PointerDeriveStep = switch (ptr.base_addr) {

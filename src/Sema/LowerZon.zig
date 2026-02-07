@@ -125,89 +125,77 @@ fn lowerExprAnonResTy(self: *LowerZon, node: Zoir.Node.Index) CompileError!Inter
             return (try pt.aggregateValue(.fromInterned(ty), values)).toIntern();
         },
         .struct_literal => |init| {
-            if (true) @panic("MLUGG TODO");
             const elems = try self.sema.arena.alloc(InternPool.Index, init.names.len);
             for (0..init.names.len) |i| {
                 elems[i] = try self.lowerExprAnonResTy(init.vals.at(@intCast(i)));
             }
-            const struct_ty = switch (try ip.getStructType(
-                gpa,
-                io,
-                pt.tid,
-                .{
-                    .layout = .auto,
-                    .fields_len = @intCast(init.names.len),
-                    .known_non_opv = false,
-                    .requires_comptime = .no,
-                    .any_comptime_fields = true,
-                    .any_default_inits = true,
-                    .inits_resolved = true,
-                    .any_aligned_fields = false,
-                    .key = .{ .reified = .{
-                        .zir_index = self.base_node_inst,
-                        .type_hash = hash: {
-                            var hasher: std.hash.Wyhash = .init(0);
-                            hasher.update(std.mem.asBytes(&node));
-                            hasher.update(std.mem.sliceAsBytes(elems));
-                            hasher.update(std.mem.sliceAsBytes(init.names));
-                            break :hash hasher.final();
-                        },
-                    } },
+            const struct_ty: Type = switch (try ip.getReifiedStructType(gpa, io, pt.tid, .{
+                .zir_index = self.base_node_inst,
+                .type_hash = hash: {
+                    var hasher: std.hash.Wyhash = .init(0);
+                    hasher.update(std.mem.asBytes(&node));
+                    hasher.update(std.mem.sliceAsBytes(elems));
+                    hasher.update(std.mem.sliceAsBytes(init.names));
+                    break :hash hasher.final();
                 },
-                false,
-            )) {
+                .fields_len = @intCast(init.names.len),
+                .layout = .auto,
+                .any_comptime_fields = true,
+                .any_field_defaults = true,
+                .any_field_aligns = false,
+                .packed_backing_int_type = .none,
+            })) {
+                .existing => |ty| .fromInterned(ty),
                 .wip => |wip| ty: {
                     errdefer wip.cancel(ip, pt.tid);
-                    const type_name = try self.sema.createTypeName(
-                        self.block,
-                        .anon,
-                        "struct",
-                        self.base_node_inst.resolve(ip),
-                        wip.index,
-                    );
-                    wip.setName(ip, type_name.name, type_name.nav);
+                    const block = self.block;
+                    const zcu = pt.zcu;
+                    try self.sema.setTypeName(block, &wip, .anon, "struct", self.base_node_inst.resolve(ip).?);
 
-                    const struct_type = ip.loadStructType(wip.index);
-
-                    for (init.names, 0..) |name, field_idx| {
-                        const name_interned = try ip.getOrPutString(
+                    // Reified structs have field information populated immediately.
+                    @memcpy(wip.field_values.get(ip), elems);
+                    if (init.names.len > 0) {
+                        // All fields are comptime, but unused bits remain zeroed.
+                        const unused_bits = switch (init.names.len % 32) {
+                            0 => 0,
+                            else => |n| 32 - n,
+                        };
+                        const comptime_bits = wip.field_is_comptime_bits.getAll(ip);
+                        @memset(comptime_bits[0 .. comptime_bits.len - 1], std.math.maxInt(u32));
+                        comptime_bits[comptime_bits.len - 1] = @as(u32, std.math.maxInt(u32)) >> @intCast(unused_bits);
+                    }
+                    for (
+                        init.names,
+                        wip.field_names.get(ip),
+                        wip.field_types.get(ip),
+                        wip.field_values.get(ip),
+                    ) |zoir_name, *field_name, *field_ty, field_val| {
+                        field_name.* = try ip.getOrPutString(
                             gpa,
                             io,
                             pt.tid,
-                            name.get(self.file.zoir.?),
+                            zoir_name.get(self.file.zoir.?),
                             .no_embedded_nulls,
                         );
-                        assert(struct_type.addFieldName(ip, name_interned) == null);
-                        struct_type.setFieldComptime(ip, field_idx);
-                    }
-
-                    @memcpy(struct_type.field_inits.get(ip), elems);
-                    const types = struct_type.field_types.get(ip);
-                    for (0..init.names.len) |i| {
-                        types[i] = Value.fromInterned(elems[i]).typeOf(pt.zcu).toIntern();
+                        field_ty.* = ip.typeOf(field_val);
                     }
 
                     const new_namespace_index = try pt.createNamespace(.{
-                        .parent = self.block.namespace.toOptional(),
+                        .parent = block.namespace.toOptional(),
                         .owner_type = wip.index,
-                        .file_scope = self.block.getFileScopeIndex(pt.zcu),
-                        .generation = pt.zcu.generation,
+                        .file_scope = block.getFileScopeIndex(zcu),
+                        .generation = zcu.generation,
                     });
-                    try pt.zcu.comp.queueJob(.{ .resolve_type_fully = wip.index });
-                    codegen_type: {
-                        if (pt.zcu.comp.config.use_llvm) break :codegen_type;
-                        if (self.block.ownerModule().strip) break :codegen_type;
-                        pt.zcu.comp.link_prog_node.increaseEstimatedTotalItems(1);
-                        try pt.zcu.comp.queueJob(.{ .link_type = wip.index });
-                    }
-                    break :ty wip.finish(ip, new_namespace_index);
+                    errdefer pt.destroyNamespace(new_namespace_index);
+                    if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
+                    break :ty .fromInterned(wip.finish(ip, new_namespace_index));
                 },
-                .existing => |ty| ty,
             };
-            try self.sema.declareDependency(.{ .interned = struct_ty });
             try self.sema.addTypeReferenceEntry(self.nodeSrc(node), struct_ty);
+            // No need for `ensureNamespaceUpToDate` because this type's namespace is always empty.
+            try self.sema.ensureLayoutResolved(struct_ty, self.nodeSrc(node), .init);
 
-            return (try pt.aggregateValue(.fromInterned(struct_ty), elems)).toIntern();
+            return (try pt.aggregateValue(struct_ty, elems)).toIntern();
         },
     }
 }

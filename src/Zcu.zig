@@ -3518,50 +3518,10 @@ pub const ImportResult = struct {
     module: ?*Package.Module,
 };
 
-/// Delete all the Export objects that are caused by this `AnalUnit`. Re-analysis of
-/// this `AnalUnit` will cause them to be re-created (or not).
-pub fn deleteUnitExports(zcu: *Zcu, anal_unit: AnalUnit) void {
-    const gpa = zcu.gpa;
-
-    const exports_base, const exports_len = if (zcu.single_exports.fetchSwapRemove(anal_unit)) |kv|
-        .{ @intFromEnum(kv.value), 1 }
-    else if (zcu.multi_exports.fetchSwapRemove(anal_unit)) |info|
-        .{ info.value.index, info.value.len }
-    else
-        return;
-
-    const exports = zcu.all_exports.items[exports_base..][0..exports_len];
-
-    // In an only-c build, we're guaranteed to never use incremental compilation, so there are
-    // guaranteed not to be any exports in the output file that need deleting (since we only call
-    // `updateExports` on flush).
-    // This case is needed because in some rare edge cases, `Sema` wants to add and delete exports
-    // within a single update.
-    if (dev.env.supports(.incremental)) {
-        for (exports, exports_base..) |exp, export_index_usize| {
-            const export_idx: Export.Index = @enumFromInt(export_index_usize);
-            if (zcu.comp.bin_file) |lf| {
-                lf.deleteExport(exp.exported, exp.opts.name);
-            }
-            if (zcu.failed_exports.fetchSwapRemove(export_idx)) |failed_kv| {
-                failed_kv.value.destroy(gpa);
-            }
-        }
-    }
-
-    zcu.free_exports.ensureUnusedCapacity(gpa, exports_len) catch {
-        // This space will be reused eventually, so we need not propagate this error.
-        // Just leak it for now, and let GC reclaim it later on.
-        return;
-    };
-    for (exports_base..exports_base + exports_len) |export_idx| {
-        zcu.free_exports.appendAssumeCapacity(@enumFromInt(export_idx));
-    }
-}
-
 /// Prepares `unit` for re-analysis by clearing all of the following state:
 /// * Compile errors associated with `unit`
 /// * Compile logs associated with `unit`
+/// * Exports performed by `unit`
 /// * Dependencies from `unit` on other things
 /// * References from `unit` to other units
 /// Delete all references in `reference_table` which are caused by `unit`, and all dependencies it
@@ -3590,6 +3550,36 @@ pub fn resetUnit(zcu: *Zcu, unit: AnalUnit) void {
                 break;
             };
             opt_line_idx = line_idx.get(zcu).next;
+        }
+    }
+
+    // Exports
+    exports: {
+        const base: u32, const len: u32 = index: {
+            if (zcu.single_exports.fetchSwapRemove(unit)) |kv| {
+                break :index .{ @intFromEnum(kv.value), 1 };
+            }
+            if (zcu.multi_exports.fetchSwapRemove(unit)) |kv| {
+                break :index .{ kv.value.index, kv.value.len };
+            }
+            break :exports;
+        };
+        for (zcu.all_exports.items[base..][0..len], base..) |exp, exp_index_usize| {
+            const exp_index: Export.Index = @enumFromInt(exp_index_usize);
+            if (zcu.comp.bin_file) |lf| {
+                lf.deleteExport(exp.exported, exp.opts.name);
+            }
+            if (zcu.failed_exports.fetchSwapRemove(exp_index)) |failed_kv| {
+                failed_kv.value.destroy(gpa);
+            }
+        }
+        zcu.free_exports.ensureUnusedCapacity(gpa, len) catch {
+            // This space will be reused eventually, so we need not propagate this error.
+            // Just leak it for now, and let GC reclaim it later on.
+            break :exports;
+        };
+        for (base..base + len) |exp_index| {
+            zcu.free_exports.appendAssumeCapacity(@enumFromInt(exp_index));
         }
     }
 

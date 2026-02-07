@@ -5746,91 +5746,94 @@ fn zirExport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
         }
     }
 
+    const export_ty = ptr_ty.childType(zcu);
+    if (!export_ty.validateExtern(.other, zcu)) {
+        return sema.failWithOwnedErrorMsg(block, msg: {
+            const msg = try sema.errMsg(src, "unable to export type '{f}'", .{export_ty.fmt(pt)});
+            errdefer msg.destroy(sema.gpa);
+            try sema.explainWhyTypeIsNotExtern(msg, src, export_ty, .other);
+            try sema.addDeclaredHereNote(msg, export_ty);
+            break :msg msg;
+        });
+    }
+
     const ptr_info = ip.indexToKey(ptr_val.toIntern()).ptr;
-    switch (ptr_info.base_addr) {
+    const target: Zcu.Exported = switch (ptr_info.base_addr) {
         .comptime_alloc, .int, .comptime_field => return sema.fail(block, ptr_src, "export target must be a global variable or a comptime-known constant", .{}),
         .eu_payload, .opt_payload, .field, .arr_elem => return sema.fail(block, ptr_src, "TODO: export pointer in middle of value", .{}),
-        .uav => |uav| {
-            if (ptr_info.byte_offset != 0) {
-                return sema.fail(block, ptr_src, "TODO: export pointer in middle of value", .{});
+        .uav => |uav| .{ .uav = uav.val },
+        .nav => |orig_nav| target: {
+            try sema.ensureNavResolved(block, src, orig_nav, .fully);
+            const export_nav = switch (ip.indexToKey(ip.getNav(orig_nav).status.fully_resolved.val)) {
+                .variable => |v| v.owner_nav,
+                .@"extern" => |e| e.owner_nav,
+                .func => |f| f.owner_nav,
+                else => orig_nav,
+            };
+            if (ip.getNav(export_nav).getExtern(ip) != null) {
+                return sema.fail(block, src, "export target cannot be extern", .{});
             }
-            if (zcu.llvm_object != null and options.linkage == .internal) return;
-            const export_ty = Value.fromInterned(uav.val).typeOf(zcu);
-            if (!export_ty.validateExtern(.other, zcu)) {
-                return sema.failWithOwnedErrorMsg(block, msg: {
-                    const msg = try sema.errMsg(src, "unable to export type '{f}'", .{export_ty.fmt(pt)});
-                    errdefer msg.destroy(sema.gpa);
-                    try sema.explainWhyTypeIsNotExtern(msg, src, export_ty, .other);
-                    try sema.addDeclaredHereNote(msg, export_ty);
-                    break :msg msg;
-                });
-            }
-            try sema.exports.append(zcu.gpa, .{
-                .opts = options,
-                .src = src,
-                .exported = .{ .uav = uav.val },
-                .status = .in_progress,
-            });
+            try sema.maybeQueueFuncBodyAnalysis(block, src, export_nav);
+            break :target .{ .nav = export_nav };
         },
-        .nav => |nav| {
-            if (ptr_info.byte_offset != 0) {
-                return sema.fail(block, ptr_src, "TODO: export pointer in middle of value", .{});
-            }
-            try sema.analyzeExport(block, src, options, nav);
-        },
+    };
+    if (ptr_info.byte_offset != 0) {
+        return sema.fail(block, ptr_src, "TODO: export pointer in middle of value", .{});
     }
+    if (zcu.llvm_object != null and options.linkage == .internal) return;
+    try sema.exports.append(zcu.gpa, .{
+        .opts = options,
+        .src = src,
+        .exported = target,
+        .status = .in_progress,
+    });
 }
 
-pub fn analyzeExport(
+/// Asserts that `sema.owner` is a `.nav_val` whose value is resolved.
+///
+/// Exports that `Nav` by the given name with all other options set to default.
+pub fn analyzeExportSelfNav(
     sema: *Sema,
     block: *Block,
     src: LazySrcLoc,
-    options: Zcu.Export.Options,
-    orig_nav_index: InternPool.Nav.Index,
+    name: InternPool.NullTerminatedString,
 ) !void {
     const gpa = sema.gpa;
     const pt = sema.pt;
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
 
-    if (zcu.llvm_object != null and options.linkage == .internal)
-        return;
-
-    try sema.ensureNavResolved(block, src, orig_nav_index, .fully);
-
-    const exported_nav_index = switch (ip.indexToKey(ip.getNav(orig_nav_index).status.fully_resolved.val)) {
-        .variable => |v| v.owner_nav,
-        .@"extern" => |e| e.owner_nav,
-        .func => |f| f.owner_nav,
-        else => orig_nav_index,
-    };
-
-    const exported_nav = ip.getNav(exported_nav_index);
-    const export_ty: Type = .fromInterned(exported_nav.typeOf(ip));
+    const orig_nav = sema.owner.unwrap().nav_val;
+    const export_val: Value = .fromInterned(ip.getNav(orig_nav).status.fully_resolved.val);
+    const export_ty = export_val.typeOf(zcu);
 
     if (!export_ty.validateExtern(.other, zcu)) {
         return sema.failWithOwnedErrorMsg(block, msg: {
             const msg = try sema.errMsg(src, "unable to export type '{f}'", .{export_ty.fmt(pt)});
             errdefer msg.destroy(gpa);
-
             try sema.explainWhyTypeIsNotExtern(msg, src, export_ty, .other);
-
             try sema.addDeclaredHereNote(msg, export_ty);
             break :msg msg;
         });
     }
 
-    // TODO: some backends might support re-exporting extern decls
-    if (exported_nav.getExtern(ip) != null) {
-        return sema.fail(block, src, "export target cannot be extern", .{});
-    }
-
-    try sema.maybeQueueFuncBodyAnalysis(block, src, exported_nav_index);
+    const export_nav = switch (ip.indexToKey(export_val.toIntern())) {
+        .variable => |v| v.owner_nav,
+        .@"extern" => |e| e.owner_nav,
+        .func => |f| export_nav: {
+            assert(export_ty.fnHasRuntimeBits(zcu)); // otherwise `validateExtern` failed above
+            const orig_fn_index = ip.unwrapCoercedFunc(export_val.toIntern());
+            try sema.addReferenceEntry(block, src, .wrap(.{ .func = orig_fn_index }));
+            try zcu.ensureFuncBodyAnalysisQueued(orig_fn_index);
+            break :export_nav f.owner_nav;
+        },
+        else => orig_nav,
+    };
 
     try sema.exports.append(gpa, .{
-        .opts = options,
+        .opts = .{ .name = name },
         .src = src,
-        .exported = .{ .nav = exported_nav_index },
+        .exported = .{ .nav = export_nav },
         .status = .in_progress,
     });
 }
@@ -33739,21 +33742,9 @@ pub fn flushExports(sema: *Sema) !void {
     const zcu = sema.pt.zcu;
     const gpa = zcu.gpa;
 
-    // There may be existing exports. For instance, a struct may export
-    // things during both field type resolution and field default resolution.
-    //
-    // So, pick up and delete any existing exports. This strategy performs
-    // redundant work, but that's okay, because this case is exceedingly rare.
-    //
-    // MLUGG TODO: is this still possible? if not, delete this logic and combine deleteUnitExports into resetUnit
-    if (zcu.single_exports.get(sema.owner)) |export_idx| {
-        try sema.exports.append(gpa, export_idx.ptr(zcu).*);
-    } else if (zcu.multi_exports.get(sema.owner)) |info| {
-        try sema.exports.appendSlice(gpa, zcu.all_exports.items[info.index..][0..info.len]);
-    }
-    zcu.deleteUnitExports(sema.owner);
+    assert(!zcu.single_exports.contains(sema.owner));
+    assert(!zcu.multi_exports.contains(sema.owner));
 
-    // `sema.exports` is completed; store the data into the `Zcu`.
     if (sema.exports.items.len == 1) {
         try zcu.single_exports.ensureUnusedCapacity(gpa, 1);
         const export_idx: Zcu.Export.Index = zcu.free_exports.pop() orelse idx: {
@@ -34038,7 +34029,7 @@ fn getExpectedBuiltinFnType(sema: *Sema, decl: Zcu.BuiltinDecl) CompileError!Typ
     };
 }
 
-fn setTypeName(
+pub fn setTypeName(
     sema: *Sema,
     block: *Block,
     wip: *const InternPool.WipContainerType,

@@ -752,7 +752,6 @@ pub fn ensureMemoizedStateUpToDate(
     if (was_outdated) {
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(unit);
-        // No need for `deleteUnitExports` because we never export anything.
         zcu.resetUnit(unit);
     } else {
         if (prev_failed) return error.AnalysisFail;
@@ -874,7 +873,6 @@ pub fn ensureComptimeUnitUpToDate(pt: Zcu.PerThread, cu_id: InternPool.ComptimeU
         _ = zcu.outdated_ready.swapRemove(anal_unit);
         // `was_outdated` can be true in the initial update for comptime units, so this isn't a `dev.check`.
         if (dev.env.supports(.incremental)) {
-            zcu.deleteUnitExports(anal_unit);
             zcu.resetUnit(anal_unit);
         }
     } else {
@@ -1033,7 +1031,6 @@ pub fn ensureTypeLayoutUpToDate(
         _ = zcu.outdated_ready.swapRemove(anal_unit);
         // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
         if (dev.env.supports(.incremental)) {
-            zcu.deleteUnitExports(anal_unit);
             zcu.resetUnit(anal_unit);
         }
         // For types, we already know that we have to invalidate all dependees.
@@ -1151,7 +1148,6 @@ pub fn ensureNavValUpToDate(
     if (was_outdated) {
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(anal_unit);
-        zcu.deleteUnitExports(anal_unit);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
@@ -1238,7 +1234,7 @@ fn analyzeNavVal(
     const zir_decl = zir.getDeclaration(inst_resolved.inst);
 
     try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, reason);
-    errdefer _ = zcu.analysis_in_progress.swapRemove(anal_unit);
+    defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
 
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
@@ -1443,15 +1439,11 @@ fn analyzeNavVal(
         .@"addrspace" = modifiers.@"addrspace",
     });
 
-    // Mark the unit as completed before evaluating the export!
-    // MLUGG TODO: do we really need to do this?
-    assert(zcu.analysis_in_progress.swapRemove(anal_unit));
-
     if (zir_decl.linkage == .@"export") {
         const export_src = block.src(.{ .token_offset = @enumFromInt(@intFromBool(zir_decl.is_pub)) });
         const name_slice = zir.nullTerminatedString(zir_decl.name);
         const name_ip = try ip.getOrPutString(gpa, io, pt.tid, name_slice, .no_embedded_nulls);
-        try sema.analyzeExport(&block, export_src, .{ .name = name_ip }, nav_id);
+        try sema.analyzeExportSelfNav(&block, export_src, name_ip);
     }
 
     try sema.flushExports();
@@ -1514,7 +1506,6 @@ pub fn ensureNavTypeUpToDate(
     if (was_outdated) {
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(anal_unit);
-        zcu.deleteUnitExports(anal_unit);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
@@ -1751,7 +1742,6 @@ pub fn ensureFuncBodyUpToDate(
     if (was_outdated) {
         dev.check(.incremental);
         _ = zcu.outdated_ready.swapRemove(anal_unit);
-        zcu.deleteUnitExports(anal_unit);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this function.
