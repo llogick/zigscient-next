@@ -336,14 +336,16 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
 
             if (!DocumentStore.isBuildFile(param_handle.uri)) comp: {
                 if (!@hasDecl(compiler_main, "Compilation")) break :comp;
-                const bfile_uri = param_handle.closest_build_file_uri orelse break :comp;
-                const bfile = param_server.document_store.getBuildFile(bfile_uri) orelse break :comp;
+                const build_file_uri = param_handle.closest_build_file_uri orelse break :comp;
+                const build_file = param_server.document_store.getBuildFile(build_file_uri) orelse break :comp;
 
-                try bfile.impl.mutex.lock(param_server.io);
-                defer bfile.impl.mutex.unlock(param_server.io);
+                try build_file.impl.mutex.lock(param_server.io);
+                defer build_file.impl.mutex.unlock(param_server.io);
 
-                const comp = bfile.impl.compilation orelse break :comp;
-                // log.debug("Triggering a compilation update for: {s}", .{bfile_uri});
+                const comp = build_file.impl.compilation orelse break :comp;
+
+                const token = param_server.document_store.notifyProgressStart(.compilation_progress, build_file_uri);
+                errdefer if (token) |t| param_server.document_store.notifyProgressEnd(t, .failure);
                 comp.file_system_inputs.?.clearRetainingCapacity();
                 @import("root").Compilation.setMainThread();
                 comp.update(.none) catch |err| switch (err) {
@@ -362,20 +364,21 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 param_server.diagnostics_collection.pushErrorBundle(
                     .compilation,
                     global.compilation_cycle,
-                    bfile.impl.compilation_state.project_root_path.?,
+                    build_file.impl.compilation_state.project_root_path.?,
                     error_bundle,
                 ) catch @panic("OOM");
                 param_server.diagnostics_collection.collectNotVisibleErrMessages(
                     &param_server.document_store,
                     .compilation,
                     global.compilation_cycle,
-                    bfile.impl.compilation_state.project_root_path.?,
+                    build_file.impl.compilation_state.project_root_path.?,
                     error_bundle,
                 ) catch @panic("OOM");
                 diagnostics_gen.generateOptionalDiagnostics(param_server, param_handle) catch |err| switch (err) {
                     error.Canceled => return error.Canceled,
                     error.OutOfMemory => @panic("OOM"),
                 };
+                if (token) |t| param_server.document_store.notifyProgressEnd(t, .success);
                 return;
             }
 
@@ -1972,7 +1975,7 @@ fn handleResponse(server: *Server, response: lsp.JsonRPCMessage.Response) Error!
     const id: []const u8 = switch (response.id.?) {
         .string => |id| id,
         .number => |id| {
-            log.warn("received response from client with id '{d}' that has no handler!", .{id});
+            log.warn("received response from client with numeric id '{d}' that has no handler!", .{id});
             return;
         },
     };
@@ -1992,7 +1995,7 @@ fn handleResponse(server: *Server, response: lsp.JsonRPCMessage.Response) Error!
         //
     } else if (std.mem.eql(u8, id, "inlay_hints_refresh")) {
         //
-    } else if (std.mem.eql(u8, id, "progress")) {
+    } else if (std.mem.startsWith(u8, id, "s2c-wdp-")) {
         //
     } else if (std.mem.startsWith(u8, id, "register")) {
         //
@@ -2001,7 +2004,7 @@ fn handleResponse(server: *Server, response: lsp.JsonRPCMessage.Response) Error!
     } else if (std.mem.eql(u8, id, "i_haz_configuration")) {
         try server.handleConfiguration(result orelse .null);
     } else {
-        log.warn("received response from client with id '{s}' that has no handler!", .{id});
+        log.warn("received response from client with string id '{s}' that has no handler!", .{id});
     }
 }
 

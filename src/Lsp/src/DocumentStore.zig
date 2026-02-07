@@ -35,6 +35,11 @@ pub fn falsebuildOutputType(
     _: anytype,
     _: anytype,
 ) !void {}
+const ProgressNotification = struct {
+    /// Prefix with "s2c-wdp-" (see Server.handleResponse). A suffix of "-{count}" will be added to it
+    id: []const u8,
+    title: []const u8,
+};
 
 const DocumentStore = @This();
 
@@ -49,13 +54,27 @@ handles: std.StringArrayHashMapUnmanaged(*Handle) = .empty,
 build_files: if (supports_build_system) std.StringArrayHashMapUnmanaged(*BuildFile) else void = if (supports_build_system) .empty else {},
 cimports: if (supports_build_system) std.AutoArrayHashMapUnmanaged(Hash, translate_c.Result) else void = if (supports_build_system) .empty else {},
 diagnostics_collection: *DiagnosticsCollection,
-builds_in_progress: std.atomic.Value(i32) = .init(0),
 transport: ?*lsp.Transport = null,
 lsp_capabilities: struct {
     supports_work_done_progress: bool = false,
     supports_semantic_tokens_refresh: bool = false,
     supports_inlay_hints_refresh: bool = false,
 } = .{},
+progress_notifications: [@typeInfo(ProgressNotificationIndex).@"enum".fields.len]ProgressNotification = .{
+    .{
+        .id = "s2c-wdp-builds",
+        .title = "Loading build configuration",
+    },
+    .{
+        .id = "s2c-wdp-compilations",
+        .title = "Updating compilation",
+    },
+},
+// Keep in sync with the `progress_notifications` field
+const ProgressNotificationIndex = enum {
+    build_progress,
+    compilation_progress,
+};
 
 pub const Uri = []const u8;
 
@@ -1161,8 +1180,6 @@ pub fn invalidateBuildFile(self: *DocumentStore, build_file_uri: Uri) void {
     self.wait_group.async(self.io, invalidateBuildFileWorker, .{ self, build_file });
 }
 
-const progress_token = "buildProgressToken";
-
 fn sendMessageToClient(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -1179,29 +1196,37 @@ fn sendMessageToClient(
     try transport.writeJsonMessageUncancelable(io, json_message);
 }
 
-fn notifyBuildStart(self: *DocumentStore) void {
-    if (!self.lsp_capabilities.supports_work_done_progress) return;
+pub fn notifyProgressStart(
+    self: *DocumentStore,
+    progress_notification_id: ProgressNotificationIndex,
+    message: []const u8,
+) ?lsp.types.ProgressToken {
+    if (!self.lsp_capabilities.supports_work_done_progress) return null;
 
-    const transport = self.transport orelse return;
+    const transport = self.transport orelse return null;
+    var pn = self.progress_notifications[@intFromEnum(progress_notification_id)];
 
-    // Atomicity note: We do not actually care about memory surrounding the
-    // counter, we only care about the counter itself. We only need to ensure
-    // we aren't double entering/exiting
-    const prev = self.builds_in_progress.fetchAdd(1, .monotonic);
-    if (prev != 0) return;
+    const global = struct {
+        var work_done_progress_token_count: std.atomic.Value(i32) = .init(0);
+    };
+    const token_id = global.work_done_progress_token_count.fetchAdd(1, .acq_rel);
+
+    // freed in notifyProgressEnd
+    const token_string = std.fmt.allocPrint(self.allocator, "{s}-{d}", .{ pn.id, token_id }) catch return null;
+    const token: lsp.types.ProgressToken = .{ .string = token_string };
 
     sendMessageToClient(self.io, self.allocator, transport, .{
         .jsonrpc = "2.0",
-        .id = "progress",
+        .id = token_string,
         .method = "window/workDoneProgress/create",
         .params = lsp.types.window.work_done_progress.CreateParams{
-            .token = .{ .string = progress_token },
+            .token = token,
         },
     }) catch |err| switch (err) {
         error.Canceled => comptime unreachable,
         else => |e| {
-            log.err("Failed to send create work message: {}", .{e});
-            return;
+            log.err("WorkDoneProgress: Failed to send a CreateParams message: {}", .{e});
+            return null;
         },
     };
 
@@ -1209,43 +1234,43 @@ fn notifyBuildStart(self: *DocumentStore) void {
         .jsonrpc = "2.0",
         .method = "$/progress",
         .params = .{
-            .token = progress_token,
+            .token = token,
             .value = lsp.types.window.work_done_progress.Begin{
-                .title = "Loading build configuration",
+                .title = pn.title,
+                .message = message,
             },
         },
     }) catch |err| switch (err) {
         error.Canceled => comptime unreachable,
         else => |e| {
-            log.err("Failed to send progress start message: {}", .{e});
-            return;
+            log.err("WorkDoneProgress: Failed to send a Begin message: {}", .{e});
+            return null;
         },
     };
+    return token;
 }
 
-const EndStatus = enum { success, failed };
+const EndStatus = enum { success, failure };
 
-fn notifyBuildEnd(self: *DocumentStore, status: EndStatus) void {
+pub fn notifyProgressEnd(
+    self: *DocumentStore,
+    token: lsp.types.ProgressToken,
+    status: EndStatus,
+) void {
     if (!self.lsp_capabilities.supports_work_done_progress) return;
-
     const transport = self.transport orelse return;
 
-    // Atomicity note: We do not actually care about memory surrounding the
-    // counter, we only care about the counter itself. We only need to ensure
-    // we aren't double entering/exiting
-    const prev = self.builds_in_progress.fetchSub(1, .monotonic);
-    if (prev != 1) return;
-
     const message = switch (status) {
-        .failed => "Failed",
+        .failure => "Failure",
         .success => "Success",
     };
 
+    defer self.allocator.free(token.string);
     sendMessageToClient(self.io, self.allocator, transport, .{
         .jsonrpc = "2.0",
         .method = "$/progress",
         .params = .{
-            .token = progress_token,
+            .token = token,
             .value = lsp.types.window.work_done_progress.End{
                 .message = message,
             },
@@ -1253,7 +1278,7 @@ fn notifyBuildEnd(self: *DocumentStore, status: EndStatus) void {
     }) catch |err| switch (err) {
         error.Canceled => comptime unreachable,
         else => |e| {
-            log.err("Failed to send progress end message: {}", .{e});
+            log.err("WorkDoneProgress: Failed to send an End message: {}", .{e});
             return;
         },
     };
@@ -1274,7 +1299,7 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
         }
     }
 
-    self.notifyBuildStart();
+    const token = self.notifyProgressStart(.build_progress, build_file.uri);
 
     while (true) {
         build_file.impl.version += 1;
@@ -1286,7 +1311,7 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
                 if (e != error.RunFailed) { // already logged
                     log.err("Failed to load build configuration for {s} (error: {})", .{ build_file.uri, e });
                 }
-                self.notifyBuildEnd(.failed);
+                if (token) |t| self.notifyProgressEnd(t, .failure);
                 build_file.impl.mutex.lockUncancelable(self.io);
                 defer build_file.impl.mutex.unlock(self.io);
                 build_file.impl.build_runner_state = .idle;
@@ -1304,7 +1329,7 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
                 build_file.impl.mutex.unlock(self.io);
 
                 if (old_config) |*config| config.deinit();
-                self.notifyBuildEnd(.success);
+                if (token) |t| self.notifyProgressEnd(t, .success);
                 break;
             },
             .running_but_already_invalidated => {
