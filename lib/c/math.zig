@@ -56,6 +56,7 @@ comptime {
     if (builtin.target.isMuslLibC()) {
         symbol(&copysignf, "copysignf");
         symbol(&copysign, "copysign");
+        symbol(&rint, "rint");
     }
     symbol(&copysignl, "copysignl");
 }
@@ -157,4 +158,60 @@ fn pow10(x: f64) callconv(.c) f64 {
 
 fn pow10f(x: f32) callconv(.c) f32 {
     return exp10f(x);
+}
+
+fn rint(x: f64) callconv(.c) f64 {
+    const toint: f64 = 1.0 / @as(f64, std.math.floatEps(f64));
+    const a: u64 = @bitCast(x);
+    const e = a >> 52 & 0x7ff;
+    const s = a >> 63;
+    var y: f64 = undefined;
+
+    if (e >= 0x3ff + 52) {
+        return x;
+    }
+    if (s == 1) {
+        y = x - toint + toint;
+    } else {
+        y = x + toint - toint;
+    }
+    if (y == 0) {
+        return if (s == 1) -0.0 else 0;
+    }
+    return y;
+}
+
+test "rint" {
+    // Positive numbers round correctly
+    try std.testing.expectEqual(@as(f64, 42.0), rint(42.2));
+    try std.testing.expectEqual(@as(f64, 42.0), rint(41.8));
+
+    // Negative numbers round correctly
+    try std.testing.expectEqual(@as(f64, -6.0), rint(-5.9));
+    try std.testing.expectEqual(@as(f64, -6.0), rint(-6.1));
+
+    // No rounding needed test
+    try std.testing.expectEqual(@as(f64, 5.0), rint(5.0));
+    try std.testing.expectEqual(@as(f64, -10.0), rint(-10.0));
+    try std.testing.expectEqual(@as(f64, 0.0), rint(0.0));
+
+    // Very large numbers return unchanged
+    const large: f64 = 9007199254740992.0; // 2^53
+    try std.testing.expectEqual(large, rint(large));
+    try std.testing.expectEqual(-large, rint(-large));
+
+    // Small positive numbers round to zero
+    const pos_result = rint(0.3);
+    try std.testing.expectEqual(@as(f64, 0.0), pos_result);
+    try std.testing.expect(@as(u64, @bitCast(pos_result)) == 0);
+
+    // Small negative numbers round to negative zero
+    const neg_result = rint(-0.3);
+    try std.testing.expectEqual(@as(f64, 0.0), neg_result);
+    const bits: u64 = @bitCast(neg_result);
+    try std.testing.expect((bits >> 63) == 1);
+
+    // Exact half rounds to nearest even (banker's rounding)
+    try std.testing.expectEqual(@as(f64, 2.0), rint(2.5));
+    try std.testing.expectEqual(@as(f64, 4.0), rint(3.5));
 }
