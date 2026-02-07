@@ -99,12 +99,13 @@ pub fn updateFile(
     defer source_file.close(io);
 
     var file_path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
+    defer gpa.free(file_path);
     if (!std.fs.path.isAbsolute(file_path)) blk: {
         const prp = zcu.project_root_path orelse break :blk;
         const absfp = std.fs.path.join(gpa, &.{ prp, file_path }) catch break :blk;
+        gpa.free(file_path); // free current file_path
         file_path = absfp;
     }
-    defer gpa.free(file_path);
     const uri = try @import("zls").URI.fromPath(gpa, file_path);
     defer gpa.free(uri);
 
