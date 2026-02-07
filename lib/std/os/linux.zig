@@ -1862,6 +1862,14 @@ pub const F = struct {
     pub const GETPIPE_SZ = LINUX_SPECIFIC_BASE + 8;
     pub const ADD_SEALS = LINUX_SPECIFIC_BASE + 9;
     pub const GET_SEALS = LINUX_SPECIFIC_BASE + 10;
+
+    pub const SEAL_SEAL = 0x0001;
+    pub const SEAL_SHRINK = 0x0002;
+    pub const SEAL_GROW = 0x0004;
+    pub const SEAL_WRITE = 0x0008;
+    pub const SEAL_FUTURE_WRITE = 0x0010;
+    pub const SEAL_EXEC = 0x0020;
+
     pub const GET_RW_HINT = LINUX_SPECIFIC_BASE + 11;
     pub const SET_RW_HINT = LINUX_SPECIFIC_BASE + 12;
     pub const GET_FILE_RW_HINT = LINUX_SPECIFIC_BASE + 13;
