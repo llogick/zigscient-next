@@ -5171,7 +5171,8 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
     var override_global_cache_dir: ?[]const u8 = EnvVar.ZIG_GLOBAL_CACHE_DIR.get(environ_map);
     var override_local_cache_dir: ?[]const u8 = EnvVar.ZIG_LOCAL_CACHE_DIR.get(environ_map);
     var override_build_runner: ?[]const u8 = EnvVar.ZIG_BUILD_RUNNER.get(environ_map);
-    var child_argv = std.array_list.Managed([]const u8).init(arena);
+    var child_argv: std.ArrayList([]const u8) = .empty;
+    var forks: std.ArrayList(Fork) = .empty;
     var reference_trace: ?u32 = null;
     var debug_compile_errors = false;
     var verbose_link = (native_os != .wasi or builtin.link_libc) and
@@ -5192,24 +5193,24 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
     var debug_libc_paths_file: ?[]const u8 = null;
 
     const argv_index_exe = child_argv.items.len;
-    _ = try child_argv.addOne();
+    _ = try child_argv.addOne(arena);
 
     const self_exe_path = try process.executablePathAlloc(io, arena);
-    try child_argv.append(self_exe_path);
+    try child_argv.append(arena, self_exe_path);
 
     const argv_index_zig_lib_dir = child_argv.items.len;
-    _ = try child_argv.addOne();
+    _ = try child_argv.addOne(arena);
 
     const argv_index_build_file = child_argv.items.len;
-    _ = try child_argv.addOne();
+    _ = try child_argv.addOne(arena);
 
     const argv_index_cache_dir = child_argv.items.len;
-    _ = try child_argv.addOne();
+    _ = try child_argv.addOne(arena);
 
     const argv_index_global_cache_dir = child_argv.items.len;
-    _ = try child_argv.addOne();
+    _ = try child_argv.addOne(arena);
 
-    try child_argv.appendSlice(&.{
+    try child_argv.appendSlice(arena, &.{
         "--seed",
         try std.fmt.allocPrint(arena, "0x{x}", .{randInt(io, u32)}),
     });
@@ -5230,7 +5231,7 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
     // read this file in the parent to obtain the results, in the case the child
     // exits with code 3.
     const results_tmp_file_nonce = std.fmt.hex(randInt(io, u64));
-    try child_argv.append("-Z" ++ results_tmp_file_nonce);
+    try child_argv.append(arena, "-Z" ++ results_tmp_file_nonce);
 
     var color: Color = .auto;
     var n_jobs: ?u32 = null;
@@ -5275,11 +5276,24 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                         fatal("expected [needed|all] after '--fetch=', found '{s}'", .{
                             sub_arg,
                         });
+                } else if (mem.cutPrefix(u8, arg, "--fork=")) |sub_arg| {
+                    try forks.append(arena, .{
+                        .manifest_ast = undefined,
+                        .manifest = undefined,
+                        .error_bundle = undefined,
+                        .arena_allocator = undefined,
+                        .path = .{
+                            .root_dir = .cwd(),
+                            .sub_path = sub_arg,
+                        },
+                        .failed = false,
+                    });
+                    continue;
                 } else if (mem.eql(u8, arg, "--system")) {
                     if (i + 1 >= args.len) fatal("expected argument after '{s}'", .{arg});
                     i += 1;
                     system_pkg_dir_path = args[i];
-                    try child_argv.append("--system");
+                    try child_argv.append(arena, "--system");
                     continue;
                 } else if (mem.cutPrefix(u8, arg, "-freference-trace=")) |num| {
                     reference_trace = std.fmt.parseUnsigned(u32, num, 10) catch |err| {
@@ -5289,7 +5303,7 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                     reference_trace = null;
                 } else if (mem.eql(u8, arg, "--debug-log")) {
                     if (i + 1 >= args.len) fatal("expected argument after '{s}'", .{arg});
-                    try child_argv.appendSlice(args[i .. i + 2]);
+                    try child_argv.appendSlice(arena, args[i .. i + 2]);
                     i += 1;
                     if (!build_options.enable_logging) {
                         warn("Zig was compiled without logging enabled (-Dlog). --debug-log has no effect.", .{});
@@ -5345,7 +5359,7 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                     color = std.meta.stringToEnum(Color, args[i]) orelse {
                         fatal("expected [auto|on|off] after {s}, found '{s}'", .{ arg, args[i] });
                     };
-                    try child_argv.appendSlice(&.{ arg, args[i] });
+                    try child_argv.appendSlice(arena, &.{ arg, args[i] });
                     continue;
                 } else if (mem.cutPrefix(u8, arg, "-j")) |str| {
                     const num = std.fmt.parseUnsigned(u32, str, 10) catch |err| {
@@ -5365,11 +5379,11 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                 } else if (mem.eql(u8, arg, "--")) {
                     // The rest of the args are supposed to get passed onto
                     // build runner's `build.args`
-                    try child_argv.appendSlice(args[i..]);
+                    try child_argv.appendSlice(arena, args[i..]);
                     break;
                 }
             }
-            try child_argv.append(arg);
+            try child_argv.append(arena, arg);
         }
     }
 
@@ -5457,6 +5471,29 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
     defer http_client.deinit();
 
     var unlazy_set: Package.Fetch.JobQueue.UnlazySet = .{};
+    var fork_set: Package.Fetch.JobQueue.ForkSet = .{};
+
+    {
+        // Populate fork_set.
+        var group: Io.Group = .init;
+        defer group.cancel(io);
+
+        for (forks.items) |*fork|
+            group.async(io, Fork.load, .{ io, gpa, fork, color });
+
+        try group.await(io);
+
+        for (forks.items) |*fork| {
+            if (fork.failed) process.exit(1);
+            try fork_set.put(arena, .{
+                .path = fork.path,
+                .manifest_ast = fork.manifest_ast,
+                .manifest = fork.manifest,
+                .uses = 0,
+            }, {});
+        }
+    }
+    defer Fork.deinitList(forks.items);
 
     // This loop is re-evaluated when the build script exits with an indication that it
     // could not continue due to missing lazy dependencies.
@@ -5510,6 +5547,9 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                 const fetch_prog_node = root_prog_node.start("Fetch Packages", 0);
                 defer fetch_prog_node.end();
 
+                // Reset fork match counts.
+                for (fork_set.keys()) |*fork| fork.uses = 0;
+
                 var job_queue: Package.Fetch.JobQueue = .{
                     .io = io,
                     .http_client = &http_client,
@@ -5520,6 +5560,7 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                     .recursive = true,
                     .debug_hash = false,
                     .unlazy_set = unlazy_set,
+                    .fork_set = fork_set,
                     .mode = fetch_mode,
                     .prog_node = fetch_prog_node,
                 };
@@ -5565,8 +5606,9 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
 
                     .package_root = undefined,
                     .error_bundle = undefined,
-                    .manifest = null,
+                    .manifest = undefined,
                     .manifest_ast = undefined,
+                    .have_manifest = false,
                     .computed_hash = undefined,
                     .has_build_zig = true,
                     .oom_flag = false,
@@ -5583,6 +5625,26 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
 
                 job_queue.group.async(io, Package.Fetch.workerRun, .{ &fetch, "root" });
                 try job_queue.group.await(io);
+
+                {
+                    // Ensure that forks were actually used. This is done
+                    // before printing manifest errors because using a fork can
+                    // prevent them.
+                    var any_unused = false;
+                    for (fork_set.keys()) |*fork| {
+                        if (fork.uses == 0) {
+                            std.log.err("fork {f} matched no {s} packages", .{
+                                fork.path, fork.manifest.name,
+                            });
+                            any_unused = true;
+                        } else {
+                            std.log.info("fork {f} matched {d} {s} packages", .{
+                                fork.path, fork.uses, fork.manifest.name,
+                            });
+                        }
+                    }
+                    if (any_unused) process.exit(1);
+                }
 
                 try job_queue.consolidateErrors();
 
@@ -5644,7 +5706,8 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                     // dependencies' build.zig modules by name.
                     for (fetches) |f| {
                         const mod = f.module orelse continue;
-                        const man = f.manifest orelse continue;
+                        if (!f.have_manifest) continue;
+                        const man = &f.manifest;
                         const dep_names = man.dependencies.keys();
                         try mod.deps.ensureUnusedCapacity(arena, @intCast(dep_names.len));
                         for (dep_names, man.dependencies.values()) |name, dep| {
@@ -5792,6 +5855,63 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
         }
     }
 }
+
+const Fork = struct {
+    path: Path,
+    manifest_ast: std.zig.Ast,
+    manifest: Package.Manifest,
+    error_bundle: std.zig.ErrorBundle.Wip,
+    failed: bool,
+    arena_allocator: std.heap.ArenaAllocator,
+
+    fn load(io: Io, gpa: Allocator, fork: *Fork, color: Color) Io.Cancelable!void {
+        loadFallible(io, gpa, fork, color) catch |err| switch (err) {
+            error.Canceled => |e| return e,
+            error.AlreadyReported => fork.failed = true,
+            else => |e| {
+                std.log.err("failed to load fork at {f}: {t}", .{ fork.path, e });
+                fork.failed = true;
+            },
+        };
+    }
+
+    fn loadFallible(io: Io, gpa: Allocator, fork: *Fork, color: Color) !void {
+        fork.arena_allocator = .init(gpa);
+        const arena = fork.arena_allocator.allocator();
+
+        var error_bundle: std.zig.ErrorBundle.Wip = undefined;
+        try error_bundle.init(gpa);
+        defer error_bundle.deinit();
+
+        const manifest_path = try fork.path.join(arena, Package.Manifest.basename);
+
+        Package.Manifest.load(
+            io,
+            arena,
+            manifest_path,
+            &fork.manifest_ast,
+            &error_bundle,
+            &fork.manifest,
+            true,
+        ) catch |err| switch (err) {
+            error.Canceled => |e| return e,
+            error.ErrorsBundled => {
+                assert(error_bundle.root_list.items.len > 0);
+                var errors = try error_bundle.toOwnedBundle("");
+                errors.renderToStderr(io, .{}, color) catch {};
+                return error.AlreadyReported;
+            },
+            else => |e| {
+                std.log.err("failed to load package manifest {f}: {t}", .{ manifest_path, e });
+                return error.AlreadyReported;
+            },
+        };
+    }
+
+    fn deinitList(forks: []Fork) void {
+        for (forks) |*fork| fork.arena_allocator.deinit();
+    }
+};
 
 const JitCmdOptions = struct {
     cmd_name: []const u8,
@@ -7323,8 +7443,9 @@ fn cmdFetch(
 
         .package_root = undefined,
         .error_bundle = undefined,
-        .manifest = null,
+        .manifest = undefined,
         .manifest_ast = undefined,
+        .have_manifest = false,
         .computed_hash = undefined,
         .has_build_zig = false,
         .oom_flag = false,
@@ -7360,9 +7481,9 @@ fn cmdFetch(
         },
         .yes, .exact => |name| name: {
             if (name) |n| break :name n;
-            const fetched_manifest = fetch.manifest orelse
+            if (!fetch.have_manifest)
                 fatal("unable to determine name; fetched package has no build.zig.zon file", .{});
-            break :name fetched_manifest.name;
+            break :name fetch.manifest.name;
         },
     };
 
@@ -7685,7 +7806,7 @@ fn loadManifest(
         process.exit(2);
     }
 
-    var manifest = try Package.Manifest.parse(gpa, ast, rng.interface(), .{});
+    var manifest = try Package.Manifest.parse(gpa, &ast, rng.interface(), .{});
     errdefer manifest.deinit(gpa);
 
     if (manifest.errors.len > 0) {

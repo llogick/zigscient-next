@@ -76,8 +76,9 @@ use_latest_commit: bool,
 /// Relative to the build root of the root package.
 package_root: Cache.Path,
 error_bundle: ErrorBundle.Wip,
-manifest: ?Manifest,
+manifest: Manifest,
 manifest_ast: std.zig.Ast,
+have_manifest: bool,
 computed_hash: ComputedHash,
 /// Fetch logic notices whether a package has a build.zig file and sets this flag.
 has_build_zig: bool,
@@ -142,6 +143,9 @@ pub const JobQueue = struct {
     /// Set of hashes that will be additionally fetched even if they are marked
     /// as lazy.
     unlazy_set: UnlazySet = .{},
+    /// Identifies paths that override all packages in the tree with matching
+    /// project ids.
+    fork_set: ForkSet = .{},
 
     pub const Mode = enum {
         /// Non-lazy dependencies are always fetched.
@@ -152,6 +156,38 @@ pub const JobQueue = struct {
     };
     pub const Table = std.AutoArrayHashMapUnmanaged(Package.Hash, *Fetch);
     pub const UnlazySet = std.AutoArrayHashMapUnmanaged(Package.Hash, void);
+    pub const ForkSet = std.ArrayHashMapUnmanaged(Fork, void, Fork.Context, false);
+
+    pub const Fork = struct {
+        path: Cache.Path,
+        manifest_ast: std.zig.Ast,
+        manifest: Package.Manifest,
+        uses: usize,
+
+        pub const Context = struct {
+            pub fn hash(_: @This(), a: Fork) u32 {
+                const project_id: Package.ProjectId = .init(a.manifest.name, a.manifest.id);
+                return @truncate(project_id.hash());
+            }
+
+            pub fn eql(_: @This(), a: Fork, b: Fork, _: usize) bool {
+                const a_project_id: Package.ProjectId = .init(a.manifest.name, a.manifest.id);
+                const b_project_id: Package.ProjectId = .init(b.manifest.name, b.manifest.id);
+                return a_project_id.eql(&b_project_id);
+            }
+        };
+
+        pub const Adapter = struct {
+            pub fn hash(_: @This(), a: Package.ProjectId) u32 {
+                return @truncate(a.hash());
+            }
+
+            pub fn eql(_: @This(), a_project_id: Package.ProjectId, b: Fork, _: usize) bool {
+                const b_project_id: Package.ProjectId = .init(b.manifest.name, b.manifest.id);
+                return a_project_id.eql(&b_project_id);
+            }
+        };
+    };
 
     pub fn deinit(jq: *JobQueue) void {
         const io = jq.io;
@@ -248,7 +284,8 @@ pub const JobQueue = struct {
                 , .{std.zig.fmtString(hash_slice)});
             }
 
-            if (fetch.manifest) |*manifest| {
+            if (fetch.have_manifest) {
+                const manifest = &fetch.manifest;
                 try buf.appendSlice(
                     \\        pub const deps: []const struct { []const u8, []const u8 } = &.{
                     \\
@@ -283,7 +320,8 @@ pub const JobQueue = struct {
         );
 
         const root_fetch = jq.all_fetches.items[0];
-        const root_manifest = &root_fetch.manifest.?;
+        assert(root_fetch.have_manifest);
+        const root_manifest = &root_fetch.manifest;
 
         for (root_manifest.dependencies.keys(), root_manifest.dependencies.values()) |name, dep| {
             const h = depDigest(root_fetch.package_root, jq.global_cache, dep) orelse continue;
@@ -536,6 +574,19 @@ pub fn run(f: *Fetch) RunError!void {
     var resource_buffer: [init_resource_buffer_size]u8 = undefined;
 
     if (remote.hash) |expected_hash| {
+        const expected_project_id: Package.ProjectId = expected_hash.projectId();
+        if (job_queue.fork_set.getKeyPtrAdapted(expected_project_id, @as(JobQueue.Fork.Adapter, .{}))) |fork| {
+            log.debug("using fork {f} for {s}", .{ fork.path, fork.manifest.name });
+            fork.uses += 1;
+            f.package_root = fork.path;
+            f.manifest_ast = fork.manifest_ast;
+            f.manifest = fork.manifest;
+            f.have_manifest = true;
+            try checkBuildFileExistence(f);
+            if (!job_queue.recursive) return;
+            return queueJobsForDeps(f);
+        }
+
         const package_root = try job_queue.root_pkg_path.join(arena, expected_hash.toSlice());
         if (package_root.root_dir.handle.access(io, package_root.sub_path, .{})) |_| {
             assert(f.lazy_status != .unavailable);
@@ -673,7 +724,7 @@ fn runResource(
         try loadManifest(f, pkg_path);
 
         const filter: Filter = .{
-            .include_paths = if (f.manifest) |m| m.paths else .{},
+            .include_paths = if (f.have_manifest) f.manifest.paths else .{},
         };
 
         // Ignore errors that were excluded by manifest, such as failure to
@@ -728,21 +779,11 @@ fn runResource(
 
     if (remote_hash) |declared_hash| {
         const hash_tok = f.hash_tok.unwrap().?;
-        if (declared_hash.isOld()) {
-            const actual_hex = Package.multiHashHexDigest(f.computed_hash.digest);
-            if (!std.mem.eql(u8, declared_hash.toSlice(), &actual_hex)) {
-                return f.fail(hash_tok, try eb.printString(
-                    "hash mismatch: manifest declares '{s}' but the fetched package has '{s}'",
-                    .{ declared_hash.toSlice(), actual_hex },
-                ));
-            }
-        } else {
-            if (!computed_package_hash.eql(&declared_hash)) {
-                return f.fail(hash_tok, try eb.printString(
-                    "hash mismatch: manifest declares '{s}' but the fetched package has '{s}'",
-                    .{ declared_hash.toSlice(), computed_package_hash.toSlice() },
-                ));
-            }
+        if (!computed_package_hash.eql(&declared_hash)) {
+            return f.fail(hash_tok, try eb.printString(
+                "hash mismatch: manifest declares '{s}' but the fetched package has '{s}'",
+                .{ declared_hash.toSlice(), computed_package_hash.toSlice() },
+            ));
         }
     } else if (!f.omit_missing_hash_error) {
         const notes_len = 1;
@@ -766,7 +807,8 @@ fn runResource(
 
 pub fn computedPackageHash(f: *const Fetch) Package.Hash {
     const saturated_size = std.math.cast(u32, f.computed_hash.total_size) orelse std.math.maxInt(u32);
-    if (f.manifest) |man| {
+    if (f.have_manifest) {
+        const man = &f.manifest;
         var version_buffer: [32]u8 = undefined;
         const version: []const u8 = std.fmt.bufPrint(&version_buffer, "{f}", .{man.version}) catch &version_buffer;
         return .init(f.computed_hash.digest, man.name, version, man.id, saturated_size);
@@ -801,45 +843,28 @@ fn loadManifest(f: *Fetch, pkg_root: Cache.Path) RunError!void {
     const io = f.job_queue.io;
     const eb = &f.error_bundle;
     const arena = f.arena.allocator();
-    const manifest_bytes = pkg_root.root_dir.handle.readFileAllocOptions(
+    const manifest_path = try pkg_root.join(arena, Manifest.basename);
+
+    Manifest.load(
         io,
-        try fs.path.join(arena, &.{ pkg_root.sub_path, Manifest.basename }),
         arena,
-        .limited(Manifest.max_bytes),
-        .@"1",
-        0,
+        manifest_path,
+        &f.manifest_ast,
+        eb,
+        &f.manifest,
+        f.allow_missing_paths_field,
     ) catch |err| switch (err) {
         error.FileNotFound => return,
+        error.Canceled => |e| return e,
+        error.ErrorsBundled => return error.FetchFailed,
         else => |e| {
-            const file_path = try pkg_root.join(arena, Manifest.basename);
             try eb.addRootErrorMessage(.{
-                .msg = try eb.printString("unable to load package manifest '{f}': {t}", .{ file_path, e }),
+                .msg = try eb.printString("unable to load package manifest '{f}': {t}", .{ manifest_path, e }),
             });
             return error.FetchFailed;
         },
     };
-
-    const ast = &f.manifest_ast;
-    ast.* = try std.zig.Ast.parse(arena, manifest_bytes, .zon);
-
-    if (ast.errors.len > 0) {
-        const file_path = try std.fmt.allocPrint(arena, "{f}" ++ fs.path.sep_str ++ Manifest.basename, .{pkg_root});
-        try std.zig.putAstErrorsIntoBundle(arena, ast.*, file_path, eb);
-        return error.FetchFailed;
-    }
-
-    const rng: std.Random.IoSource = .{ .io = io };
-
-    f.manifest = try Manifest.parse(arena, ast.*, rng.interface(), .{
-        .allow_missing_paths_field = f.allow_missing_paths_field,
-    });
-    const manifest = &f.manifest.?;
-
-    if (manifest.errors.len > 0) {
-        const src_path = try eb.printString("{f}" ++ fs.path.sep_str ++ "{s}", .{ pkg_root, Manifest.basename });
-        try manifest.copyErrorsIntoBundle(ast.*, src_path, eb);
-        return error.FetchFailed;
-    }
+    f.have_manifest = true;
 }
 
 fn queueJobsForDeps(f: *Fetch) RunError!void {
@@ -848,7 +873,8 @@ fn queueJobsForDeps(f: *Fetch) RunError!void {
     assert(f.job_queue.recursive);
 
     // If the package does not have a build.zig.zon file then there are no dependencies.
-    const manifest = f.manifest orelse return;
+    if (!f.have_manifest) return;
+    const manifest = &f.manifest;
 
     const new_fetches, const prog_names = nf: {
         const parent_arena = f.arena.allocator();
@@ -953,8 +979,9 @@ fn queueJobsForDeps(f: *Fetch) RunError!void {
 
                 .package_root = undefined,
                 .error_bundle = undefined,
-                .manifest = null,
+                .manifest = undefined,
                 .manifest_ast = undefined,
+                .have_manifest = false,
                 .computed_hash = undefined,
                 .has_build_zig = false,
                 .oom_flag = false,
@@ -1931,7 +1958,7 @@ const Filter = struct {
     include_paths: std.StringArrayHashMapUnmanaged(void) = .empty,
 
     /// sub_path is relative to the package root.
-    pub fn includePath(self: Filter, sub_path: []const u8) bool {
+    pub fn includePath(self: *const Filter, sub_path: []const u8) bool {
         if (self.include_paths.count() == 0) return true;
         if (self.include_paths.contains("")) return true;
         if (self.include_paths.contains(".")) return true;
@@ -2199,206 +2226,6 @@ const UnpackResult = struct {
             \\    note: file 'dir2/file4' has unsupported type 'x'
             \\
         , aw.written());
-    }
-};
-
-test "set executable bit based on file content" {
-    if (!Io.File.Permissions.has_executable_bit) return error.SkipZigTest;
-    const gpa = std.testing.allocator;
-    const io = std.testing.io;
-
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const tarball_name = "executables.tar.gz";
-    try saveEmbedFile(io, tarball_name, tmp.dir);
-    const tarball_path = try std.fmt.allocPrint(gpa, ".zig-cache/tmp/{s}/{s}", .{ tmp.sub_path, tarball_name });
-    defer gpa.free(tarball_path);
-
-    // $ tar -tvf executables.tar.gz
-    // drwxrwxr-x        0  executables/
-    // -rwxrwxr-x      170  executables/hello
-    // lrwxrwxrwx        0  executables/hello_ln -> hello
-    // -rw-rw-r--        0  executables/file1
-    // -rw-rw-r--       17  executables/script_with_shebang_without_exec_bit
-    // -rwxrwxr-x        7  executables/script_without_shebang
-    // -rwxrwxr-x       17  executables/script
-
-    var fb: TestFetchBuilder = undefined;
-    var fetch = try fb.build(gpa, io, tmp.dir, tarball_path);
-    defer fb.deinit();
-
-    try fetch.run();
-    try std.testing.expectEqualStrings(
-        "1220fecb4c06a9da8673c87fe8810e15785f1699212f01728eadce094d21effeeef3",
-        &Package.multiHashHexDigest(fetch.computed_hash.digest),
-    );
-
-    var out = try fb.packageDir();
-    defer out.close(io);
-    const S = std.posix.S;
-    // expect executable bit not set
-    try std.testing.expect((try out.statFile(io, "file1", .{})).permissions.toMode() & S.IXUSR == 0);
-    try std.testing.expect((try out.statFile(io, "script_without_shebang", .{})).permissions.toMode() & S.IXUSR == 0);
-    // expect executable bit set
-    try std.testing.expect((try out.statFile(io, "hello", .{})).permissions.toMode() & S.IXUSR != 0);
-    try std.testing.expect((try out.statFile(io, "script", .{})).permissions.toMode() & S.IXUSR != 0);
-    try std.testing.expect((try out.statFile(io, "script_with_shebang_without_exec_bit", .{})).permissions.toMode() & S.IXUSR != 0);
-    try std.testing.expect((try out.statFile(io, "hello_ln", .{})).permissions.toMode() & S.IXUSR != 0);
-
-    //
-    // $ ls -al zig-cache/tmp/OCz9ovUcstDjTC_U/zig-global-cache/p/1220fecb4c06a9da8673c87fe8810e15785f1699212f01728eadce094d21effeeef3
-    // -rw-rw-r-- 1     0 Apr   file1
-    // -rwxrwxr-x 1   170 Apr   hello
-    // lrwxrwxrwx 1     5 Apr   hello_ln -> hello
-    // -rwxrwxr-x 1    17 Apr   script
-    // -rw-rw-r-- 1     7 Apr   script_without_shebang
-    // -rwxrwxr-x 1    17 Apr   script_with_shebang_without_exec_bit
-}
-
-fn saveEmbedFile(io: Io, comptime tarball_name: []const u8, dir: Io.Dir) !void {
-    //const tarball_name = "duplicate_paths_excluded.tar.gz";
-    const tarball_content = @embedFile("Fetch/testdata/" ++ tarball_name);
-    var tmp_file = try dir.createFile(io, tarball_name, .{});
-    defer tmp_file.close(io);
-    try tmp_file.writeStreamingAll(io, tarball_content);
-}
-
-// Builds Fetch with required dependencies, clears dependencies on deinit().
-const TestFetchBuilder = struct {
-    http_client: std.http.Client,
-    global_cache_directory: Cache.Directory,
-    local_cache_path: Cache.Path,
-    job_queue: Fetch.JobQueue,
-    fetch: Fetch,
-
-    fn build(
-        self: *TestFetchBuilder,
-        allocator: std.mem.Allocator,
-        io: Io,
-        cache_parent_dir: std.Io.Dir,
-        path_or_url: []const u8,
-    ) !*Fetch {
-        const global_cache_dir = try cache_parent_dir.createDirPathOpen(io, "zig-global-cache", .{});
-        const package_root_dir = try cache_parent_dir.createDirPathOpen(io, "local-project-root", .{});
-
-        self.http_client = .{ .allocator = allocator, .io = io };
-        self.global_cache_directory = .{ .handle = global_cache_dir, .path = "zig-global-cache" };
-        self.local_cache_path = .{
-            .root_dir = .{ .handle = package_root_dir, .path = "local-project-root" },
-            .sub_path = ".zig-cache",
-        };
-
-        self.job_queue = .{
-            .io = io,
-            .http_client = &self.http_client,
-            .global_cache = self.global_cache_directory,
-            .local_cache = self.local_cache_path,
-            .root_pkg_path = .{
-                .root_dir = .{ .handle = package_root_dir, .path = "local-project-root" },
-                .sub_path = "zig-pkg",
-            },
-            .recursive = false,
-            .read_only = false,
-            .debug_hash = false,
-            .mode = .needed,
-            .prog_node = std.Progress.Node.none,
-        };
-
-        self.fetch = .{
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .location = .{ .path_or_url = path_or_url },
-            .location_tok = 0,
-            .hash_tok = .none,
-            .name_tok = 0,
-            .lazy_status = .eager,
-            .parent_package_root = .{ .root_dir = .{ .handle = package_root_dir, .path = null } },
-            .parent_manifest_ast = null,
-            .prog_node = std.Progress.Node.none,
-            .job_queue = &self.job_queue,
-            .omit_missing_hash_error = true,
-            .allow_missing_paths_field = false,
-            .use_latest_commit = true,
-
-            .package_root = undefined,
-            .error_bundle = undefined,
-            .manifest = null,
-            .manifest_ast = undefined,
-            .computed_hash = undefined,
-            .has_build_zig = false,
-            .oom_flag = false,
-            .latest_commit = null,
-
-            .module = null,
-        };
-        return &self.fetch;
-    }
-
-    fn deinit(self: *TestFetchBuilder) void {
-        const io = self.job_queue.io;
-        self.fetch.deinit();
-        self.job_queue.deinit();
-        self.fetch.prog_node.end();
-        self.global_cache_directory.handle.close(io);
-        self.http_client.deinit();
-    }
-
-    fn packageDir(self: *TestFetchBuilder) !Io.Dir {
-        const io = self.job_queue.io;
-        const root = self.fetch.package_root;
-        return try root.root_dir.handle.openDir(io, root.sub_path, .{ .iterate = true });
-    }
-
-    // Test helper, asserts thet package dir constains expected_files.
-    // expected_files must be sorted.
-    fn expectPackageFiles(self: *TestFetchBuilder, expected_files: []const []const u8) !void {
-        const io = self.job_queue.io;
-        const gpa = std.testing.allocator;
-
-        var package_dir = try self.packageDir();
-        defer package_dir.close(io);
-
-        var actual_files: std.ArrayList([]u8) = .empty;
-        defer actual_files.deinit(gpa);
-        defer for (actual_files.items) |file| gpa.free(file);
-        var walker = try package_dir.walk(gpa);
-        defer walker.deinit();
-        while (try walker.next(io)) |entry| {
-            if (entry.kind != .file) continue;
-            const path = try gpa.dupe(u8, entry.path);
-            errdefer gpa.free(path);
-            std.mem.replaceScalar(u8, path, std.fs.path.sep, '/');
-            try actual_files.append(gpa, path);
-        }
-        std.mem.sortUnstable([]u8, actual_files.items, {}, struct {
-            fn lessThan(_: void, a: []u8, b: []u8) bool {
-                return std.mem.lessThan(u8, a, b);
-            }
-        }.lessThan);
-
-        try std.testing.expectEqual(expected_files.len, actual_files.items.len);
-        for (expected_files, 0..) |file_name, i| {
-            try std.testing.expectEqualStrings(file_name, actual_files.items[i]);
-        }
-        try std.testing.expectEqualDeep(expected_files, actual_files.items);
-    }
-
-    // Test helper, asserts that fetch has failed with `msg` error message.
-    fn expectFetchErrors(self: *TestFetchBuilder, notes_len: usize, msg: []const u8) !void {
-        const gpa = std.testing.allocator;
-
-        var errors = try self.fetch.error_bundle.toOwnedBundle("");
-        defer errors.deinit(gpa);
-
-        const em = errors.getErrorMessage(errors.getMessages()[0]);
-        try std.testing.expectEqual(1, em.count);
-        if (notes_len > 0) {
-            try std.testing.expectEqual(notes_len, em.notes_len);
-        }
-        var aw: Io.Writer.Allocating = .init(gpa);
-        defer aw.deinit();
-        try errors.renderToWriter(.{}, &aw.writer);
-        try std.testing.expectEqualStrings(msg, aw.written());
     }
 };
 

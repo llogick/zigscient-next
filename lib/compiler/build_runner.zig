@@ -1573,6 +1573,23 @@ fn printUsage(b: *std.Build, w: *Writer) !void {
         \\  -fsys=[name]                 Enable a system integration
         \\  -fno-sys=[name]              Disable a system integration
         \\
+        \\  -fdarling,  -fno-darling     Integration with system-installed Darling to
+        \\                               execute macOS programs on Linux hosts
+        \\                               (default: no)
+        \\  -fqemu,     -fno-qemu        Integration with system-installed QEMU to execute
+        \\                               foreign-architecture programs on Linux hosts
+        \\                               (default: no)
+        \\  --libc-runtimes [path]       Enhances QEMU integration by providing dynamic libc
+        \\                               (e.g. glibc or musl) built for multiple foreign
+        \\                               architectures, allowing execution of non-native
+        \\                               programs that link with libc.
+        \\  -frosetta,  -fno-rosetta     Rely on Rosetta to execute x86_64 programs on
+        \\                               ARM64 macOS hosts. (default: no)
+        \\  -fwasmtime, -fno-wasmtime    Integration with system-installed wasmtime to
+        \\                               execute WASI binaries. (default: no)
+        \\  -fwine,     -fno-wine        Integration with system-installed Wine to execute
+        \\                               Windows programs on Linux hosts. (default: no)
+        \\
         \\  Available System Integrations:                Enabled:
         \\
     );
@@ -1592,33 +1609,16 @@ fn printUsage(b: *std.Build, w: *Writer) !void {
     try w.writeAll(
         \\
         \\General Options:
+        \\  -h, --help                   Print this help and exit
+        \\  -l, --list-steps             Print available steps
+        \\
         \\  -p, --prefix [path]          Where to install files (default: zig-out)
         \\  --prefix-lib-dir [path]      Where to install libraries
         \\  --prefix-exe-dir [path]      Where to install executables
         \\  --prefix-include-dir [path]  Where to install C header files
-        \\
         \\  --release[=mode]             Request release mode, optionally specifying a
         \\                               preferred optimization mode: fast, safe, small
         \\
-        \\  -fdarling,  -fno-darling     Integration with system-installed Darling to
-        \\                               execute macOS programs on Linux hosts
-        \\                               (default: no)
-        \\  -fqemu,     -fno-qemu        Integration with system-installed QEMU to execute
-        \\                               foreign-architecture programs on Linux hosts
-        \\                               (default: no)
-        \\  --libc-runtimes [path]       Enhances QEMU integration by providing dynamic libc
-        \\                               (e.g. glibc or musl) built for multiple foreign
-        \\                               architectures, allowing execution of non-native
-        \\                               programs that link with libc.
-        \\  -frosetta,  -fno-rosetta     Rely on Rosetta to execute x86_64 programs on
-        \\                               ARM64 macOS hosts. (default: no)
-        \\  -fwasmtime, -fno-wasmtime    Integration with system-installed wasmtime to
-        \\                               execute WASI binaries. (default: no)
-        \\  -fwine,     -fno-wine        Integration with system-installed Wine to execute
-        \\                               Windows programs on Linux hosts. (default: no)
-        \\
-        \\  -h, --help                   Print this help and exit
-        \\  -l, --list-steps             Print available steps
         \\  --verbose                    Print commands before executing them
         \\  --color [auto|off|on]        Enable or disable colored error messages
         \\  --error-style [style]        Control how build errors are printed
@@ -1641,9 +1641,6 @@ fn printUsage(b: *std.Build, w: *Writer) !void {
         \\  --skip-oom-steps             Instead of failing, skip steps that would exceed --maxrss
         \\  --test-timeout <timeout>     Limit execution time of unit tests, terminating if exceeded.
         \\                               The timeout must include a unit: ns, us, ms, s, m, h
-        \\  --fetch[=mode]               Fetch dependency tree (optionally choose laziness) and exit
-        \\    needed                     (Default) Lazy dependencies are fetched as needed
-        \\    all                        Lazy dependencies are always fetched
         \\  --watch                      Continuously rebuild when source files are modified
         \\  --debounce <ms>              Delay before rebuilding after changed file detected
         \\  --webui[=ip]                 Enable the web interface on the given IP address
@@ -1655,6 +1652,12 @@ fn printUsage(b: *std.Build, w: *Writer) !void {
         \\                               compilation time of Zig source code (implies '--webui')
         \\     -fincremental             Enable incremental compilation
         \\  -fno-incremental             Disable incremental compilation
+        \\
+        \\Package Management Options:
+        \\  --fetch[=mode]               Fetch dependency tree (optionally choose laziness) and exit
+        \\    needed                     (Default) Lazy dependencies are fetched as needed
+        \\    all                        Lazy dependencies are always fetched
+        \\  --fork=[path]                Override one or more projects from dependency tree
         \\
         \\Advanced Options:
         \\  -freference-trace[=num]      How many lines of reference trace should be shown per compile error
