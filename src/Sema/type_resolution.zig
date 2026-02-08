@@ -347,6 +347,12 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         }
     };
 
+    switch (struct_obj.layout) {
+        .auto => {},
+        .@"extern" => assert(class != .no_possible_value), // field types are all extern, so are not NPV
+        .@"packed" => unreachable,
+    }
+
     if (struct_obj.layout == .auto) {
         const runtime_order = struct_obj.field_runtime_order.get(ip);
         // This logic does not reorder fields; it only moves the omitted ones to the end so that logic
@@ -451,7 +457,12 @@ fn resolvePackedStructLayout(
             try sema.addDeclaredHereNote(msg, field_ty);
             break :msg msg;
         });
-        assert(!field_ty.comptimeOnly(zcu)); // packable types are not comptime-only
+        switch (field_ty.classify(zcu)) {
+            .one_possible_value, .runtime => {},
+            .no_possible_value => unreachable, // packable types are not NPV
+            .partially_comptime => unreachable, // packable types are not comptime-only
+            .fully_comptime => unreachable, // packable types are not comptime-only
+        }
         field_bits += field_ty.bitSize(zcu);
     }
 
@@ -749,6 +760,13 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         }
     }
 
+    // Uninstantiable `extern union`s don't make sense; disallow them.
+    if (possible_tags == 0 and union_obj.layout != .auto) {
+        // Field types are all extern, so not NPV; thus zero possible tags means no tags at all.
+        assert(union_obj.field_types.len == 0);
+        return sema.fail(&block, union_ty.srcLoc(zcu), "extern union has no fields", .{});
+    }
+
     // We only need a runtime tag if there are multiple possible active fields *and* the union is
     // not going to be comptime-only. Even if there are still runtime bits in the payload, the tag
     // does not require runtime bits in a comptime-only union, because it is impossible to get a
@@ -874,6 +892,11 @@ fn resolvePackedUnionLayout(
     const gpa = comp.gpa;
     const ip = &zcu.intern_pool;
 
+    // Uninstantiable `packed union`s don't make sense; disallow them.
+    if (union_obj.field_types.len == 0) {
+        return sema.fail(block, union_ty.srcLoc(zcu), "packed union has no fields", .{});
+    }
+
     // Resolve the layout of all fields, and check their types are allowed.
     for (union_obj.field_types.get(ip), 0..) |field_ty_ip, field_index| {
         const field_ty: Type = .fromInterned(field_ty_ip);
@@ -937,9 +960,6 @@ fn resolvePackedUnionLayout(
             });
         }
         break :ty backing_ty;
-    } else if (union_obj.field_types.len == 0) ty: {
-        // Special case: there is no first field to infer the type from. Treat the union as empty (zero-bit).
-        break :ty .u0;
     } else ty: {
         const field_types = union_obj.field_types.get(ip);
         const first_field_type: Type = .fromInterned(field_types[0]);
