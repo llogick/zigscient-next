@@ -4739,21 +4739,32 @@ pub fn addDependencyLoopErrors(zcu: *Zcu, eb: *std.zig.ErrorBundle.Wip) Allocato
         const frame_limit = zcu.comp.reference_trace orelse 0;
         try zcu.populateReferenceTrace(units.items[start_index], frame_limit, eb, &ref_trace);
 
+        if (units.items.len == 1) {
+            // Don't do a complicated message with multiple notes, just do a single error message.
+            assert(start_index == 0);
+            const root_msg = addDependencyLoopErrorLine(zcu, eb, units.items[start_index], ref_trace.items) catch |err| switch (err) {
+                error.AlreadyReported => return, // give up on the dep loop error
+                error.OutOfMemory => |e| return e,
+            };
+            try eb.root_list.append(eb.gpa, root_msg);
+            continue;
+        }
+
         // Collect all notes first so we don't leave an incomplete root error message on `error.AlreadyReported`.
         const note_buf = try gpa.alloc(std.zig.ErrorBundle.MessageIndex, units.items.len + 1);
         defer gpa.free(note_buf);
-        note_buf[0] = addDependencyLoopNote(zcu, eb, units.items[start_index], ref_trace.items) catch |err| switch (err) {
+        note_buf[0] = addDependencyLoopErrorLine(zcu, eb, units.items[start_index], ref_trace.items) catch |err| switch (err) {
             error.AlreadyReported => return, // give up on the dep loop error
             error.OutOfMemory => |e| return e,
         };
         for (units.items[start_index + 1 ..], note_buf[1 .. units.items.len - start_index]) |unit, *note| {
-            note.* = addDependencyLoopNote(zcu, eb, unit, &.{}) catch |err| switch (err) {
+            note.* = addDependencyLoopErrorLine(zcu, eb, unit, &.{}) catch |err| switch (err) {
                 error.AlreadyReported => return, // give up on the dep loop error
                 error.OutOfMemory => |e| return e,
             };
         }
         for (units.items[0..start_index], note_buf[units.items.len - start_index .. units.items.len]) |unit, *note| {
-            note.* = addDependencyLoopNote(zcu, eb, unit, &.{}) catch |err| switch (err) {
+            note.* = addDependencyLoopErrorLine(zcu, eb, unit, &.{}) catch |err| switch (err) {
                 error.AlreadyReported => return, // give up on the dep loop error
                 error.OutOfMemory => |e| return e,
             };
@@ -4773,7 +4784,7 @@ pub fn addDependencyLoopErrors(zcu: *Zcu, eb: *std.zig.ErrorBundle.Wip) Allocato
         @memcpy(notes, note_buf);
     }
 }
-fn addDependencyLoopNote(
+fn addDependencyLoopErrorLine(
     zcu: *Zcu,
     eb: *std.zig.ErrorBundle.Wip,
     source_unit: AnalUnit,
@@ -4789,7 +4800,16 @@ fn addDependencyLoopNote(
 
     const dep_node = zcu.dependency_loop_nodes.get(source_unit).?;
 
-    const msg: std.zig.ErrorBundle.String = switch (dep_node.unit.unwrap()) {
+    const msg: std.zig.ErrorBundle.String = if (dep_node.unit == source_unit) switch (source_unit.unwrap()) {
+        .@"comptime" => unreachable, // cannot be involved in a dependency loop
+        .nav_ty, .nav_val => try eb.printString("{f} depends on itself here", .{fmt_source}),
+        .memoized_state => unreachable, // memoized_state definitely does not *directly* depend on itself
+        .func => try eb.printString("{f} uses its own inferred error set here", .{fmt_source}),
+        .type_layout => try eb.printString("{f} depends on itself {s}", .{
+            fmt_source,
+            dep_node.reason.type_layout_reason.msg(),
+        }),
+    } else switch (dep_node.unit.unwrap()) {
         .@"comptime" => unreachable, // cannot be involved in a dependency loop
         .nav_val => |nav| try eb.printString("{f} uses value of declaration '{f}' here", .{
             fmt_source, ip.getNav(nav).fqn.fmt(ip),
