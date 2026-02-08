@@ -15629,10 +15629,10 @@ fn zirCmpEq(
 
     // comparing null with optionals
     if (lhs_ty_tag == .null and (rhs_ty_tag == .optional or rhs_ty.isCPtr(zcu))) {
-        return sema.analyzeIsNull(block, rhs, op == .neq);
+        return sema.analyzeIsNull(block, src, rhs, op == .neq);
     }
     if (rhs_ty_tag == .null and (lhs_ty_tag == .optional or lhs_ty.isCPtr(zcu))) {
-        return sema.analyzeIsNull(block, lhs, op == .neq);
+        return sema.analyzeIsNull(block, src, lhs, op == .neq);
     }
 
     if (lhs_ty_tag == .null or rhs_ty_tag == .null) {
@@ -17375,7 +17375,7 @@ fn zirIsNonNull(
     const src = block.nodeOffset(inst_data.src_node);
     const operand = sema.resolveInst(inst_data.operand);
     try sema.checkNullableType(block, src, sema.typeOf(operand));
-    return sema.analyzeIsNull(block, operand, true);
+    return sema.analyzeIsNull(block, src, operand, true);
 }
 
 fn zirIsNonNullPtr(
@@ -17394,15 +17394,19 @@ fn zirIsNonNullPtr(
     const ptr_ty = sema.typeOf(ptr);
     assert(ptr_ty.zigTypeTag(zcu) == .pointer);
     const nullable_ty = ptr_ty.childType(zcu);
+
     try sema.checkNullableType(block, src, nullable_ty);
+
+    if (try sema.resolveIsNullFromType(block, src, nullable_ty)) |is_null| {
+        return .fromValue(.makeBool(!is_null));
+    }
+
     if (sema.resolveValue(ptr)) |ptr_val| {
         if (try sema.pointerDeref(block, src, ptr_val, ptr_ty)) |nullable_val| {
-            return sema.analyzeIsNull(block, .fromValue(nullable_val), true);
+            return sema.analyzeIsNull(block, src, .fromValue(nullable_val), true);
         }
     }
-    if (nullable_ty.isNullFromType(zcu)) |is_null| {
-        return if (is_null) .bool_false else .bool_true;
-    }
+
     return block.addUnOp(.is_non_null_ptr, ptr);
 }
 
@@ -30147,25 +30151,25 @@ fn analyzeSliceLen(
 fn analyzeIsNull(
     sema: *Sema,
     block: *Block,
+    src: LazySrcLoc,
     operand: Air.Inst.Ref,
     invert_logic: bool,
 ) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
-    const result_ty: Type = .bool;
-    if (sema.resolveValue(operand)) |opt_val| {
-        if (opt_val.isUndef(zcu)) {
-            return pt.undefRef(result_ty);
-        }
-        const is_null = opt_val.isNull(zcu);
-        const bool_value = if (invert_logic) !is_null else is_null;
-        return if (bool_value) .bool_true else .bool_false;
+
+    if (try sema.resolveIsNullFromType(block, src, sema.typeOf(operand))) |is_null| {
+        return .fromValue(.makeBool(is_null != invert_logic)); // XOR
     }
 
-    if (sema.typeOf(operand).isNullFromType(zcu)) |is_null| {
-        const result = is_null != invert_logic;
-        return if (result) .bool_true else .bool_false;
+    if (sema.resolveValue(operand)) |opt_val| {
+        if (opt_val.isUndef(zcu)) {
+            return pt.undefRef(.bool);
+        }
+        const is_null = opt_val.isNull(zcu);
+        return .fromValue(.makeBool(is_null != invert_logic)); // XOR
     }
+
     const air_tag: Air.Inst.Tag = if (invert_logic) .is_non_null else .is_null;
     return block.addUnOp(air_tag, operand);
 }
@@ -30218,6 +30222,35 @@ fn resolveIsNonErrVal(
     return null;
 }
 
+fn resolveIsNullFromType(
+    sema: *Sema,
+    block: *Block,
+    src: LazySrcLoc,
+    ty: Type,
+) CompileError!?bool {
+    const zcu = sema.pt.zcu;
+    return switch (ty.zigTypeTag(zcu)) {
+        else => false,
+        .null => true,
+        .pointer => switch (ty.ptrSize(zcu)) {
+            .c => null,
+            else => false,
+        },
+        .optional => {
+            const payload_ty = ty.optionalChild(zcu);
+            if (payload_ty.classify(zcu) == .no_possible_value) {
+                return true; // e.g. `?noreturn`
+            }
+            if (payload_ty.zigTypeTag(zcu) == .error_set and
+                try sema.resolveErrSetIsEmpty(block, src, payload_ty))
+            {
+                return true; // e.g. `?error{}`
+            }
+            return null;
+        },
+    };
+}
+
 fn resolveIsNonErrFromType(
     sema: *Sema,
     block: *Block,
@@ -30226,7 +30259,6 @@ fn resolveIsNonErrFromType(
 ) CompileError!?Value {
     const pt = sema.pt;
     const zcu = pt.zcu;
-    const ip = &zcu.intern_pool;
     const ot = operand_ty.zigTypeTag(zcu);
     if (ot != .error_set and ot != .error_union) return .true;
     if (ot == .error_set) return .false;
@@ -30236,29 +30268,54 @@ fn resolveIsNonErrFromType(
     if (payload_ty.classify(zcu) == .no_possible_value) {
         return .false;
     }
+    if (try sema.resolveErrSetIsEmpty(block, src, operand_ty.errorUnionSet(zcu))) {
+        return .true;
+    }
+    return null;
+}
 
-    // exception if the error union error set is known to be empty,
-    // we allow the comparison but always make it comptime-known.
-    return err_set: switch (ip.errorUnionSet(operand_ty.toIntern())) {
-        .anyerror_type => null,
+/// Returns `true` iff the error set type `orig_err_set_ty` contains no errors.
+///
+/// This is used to give comptime answers for whether `error{}!T` is an error or a payload, as well
+/// as whether `?error{}` is null. The type `error{}` cannot be NPV, as it has runtime bits, but the
+/// only value of that type which can exist is `undefined`; semantically it has no "legal" value.
+/// TODO: this runs into some unsolved language design questions about such types. Performing a
+/// coercion from `@as(E, undefined)` to `E!T` needs to semantically result in an `undefined` error
+/// union if our implementation is to be legal, and likewise for coercing `@as(E, undefined)` to
+/// `?E` (for an error set `E`) because our implementation uses the zero error value at runtime to
+/// represent `null`. The unsolved problem is the exact rules for `undefined` propagation through
+/// these types: for instance, what if `@as(u32, undfined)` is coerced to `?u32`? What about error
+/// union *payloads*, i.e. `@as(u32, undefined)` to `E!u32`? That one is analagous to the optional
+/// example in some ways, but right now I believe there is code which relies on that coercion giving
+/// a well-defined error union with an `undefined` payload.
+/// Relevant issues/discussions:
+/// * https://github.com/ziglang/zig/issues/1831
+/// * https://github.com/ziglang/zig/issues/6762
+/// * https://github.com/ziglang/zig/issues/1831#issuecomment-722129239
+fn resolveErrSetIsEmpty(
+    sema: *Sema,
+    block: *Block,
+    src: LazySrcLoc,
+    orig_err_set_ty: Type,
+) CompileError!bool {
+    const ip = &sema.pt.zcu.intern_pool;
+    err_set: switch (orig_err_set_ty.toIntern()) {
+        .anyerror_type => return false,
         .adhoc_inferred_error_set_type => {
             // This is *our* error set; that is, we're currently analyzing the function
             // which owns it. Trying to resolve it now would cause a dependency loop.
             // Instead, accept that we don't know.
-            return null;
+            return false;
         },
-        else => |set_ty| switch (ip.indexToKey(set_ty)) {
-            .error_set_type => |error_set_type| switch (error_set_type.names.len) {
-                0 => .true,
-                else => null,
-            },
+        else => |err_set_ty| switch (ip.indexToKey(err_set_ty)) {
+            .error_set_type => |es| return es.names.len == 0,
             .inferred_error_set_type => |func_index| {
                 if (sema.fn_ret_ty_ies) |ies| {
                     if (ies.func == func_index) {
                         // This is *our* error set; that is, we're currently analyzing the function
                         // which owns it. Trying to resolve it now would cause a dependency loop.
                         // Instead, accept that we don't know.
-                        return null;
+                        return false;
                     }
                 }
                 try sema.ensureFuncIesResolved(block, src, func_index);
@@ -30266,7 +30323,7 @@ fn resolveIsNonErrFromType(
             },
             else => unreachable,
         },
-    };
+    }
 }
 
 fn analyzeIsNonErr(
@@ -30732,7 +30789,7 @@ fn analyzeSlice(
             if (block.wantSafety()) {
                 // requirement: slicing C ptr is non-null
                 if (ptr_ptr_child_ty.isCPtr(zcu)) {
-                    const is_non_null = try sema.analyzeIsNull(block, ptr, true);
+                    const is_non_null = try block.addUnOp(.is_non_null, ptr);
                     try sema.addSafetyCheck(block, src, is_non_null, .unwrap_null);
                 }
 
@@ -30792,7 +30849,7 @@ fn analyzeSlice(
     if (block.wantSafety()) {
         // requirement: slicing C ptr is non-null
         if (ptr_ptr_child_ty.isCPtr(zcu)) {
-            const is_non_null = try sema.analyzeIsNull(block, ptr, true);
+            const is_non_null = try block.addUnOp(.is_non_null, ptr);
             try sema.addSafetyCheck(block, src, is_non_null, .unwrap_null);
         }
 

@@ -661,15 +661,28 @@ pub fn toValue(self: Type) Value {
     return .fromInterned(self.toIntern());
 }
 
-/// true if and only if the type takes up space in memory at runtime.
-/// There are two reasons a type will return false:
-/// * the type is a comptime-only type. For example, the type `type` itself.
-///   - note, however, that a struct can have mixed fields and only the non-comptime-only
-///     fields will count towards the ABI size. For example, `struct {T: type, x: i32}`
-///     hasRuntimeBits()=true and abiSize()=4
-/// * the type has only one possible value, making its ABI size 0.
-///   - an enum with an explicit tag type has the ABI size of the integer tag type,
-///     making it one-possible-value only if the integer tag type has 0 bits.
+/// Returns `true` if and only if the type takes up space in memory at runtime. This is also exactly
+/// whether or not the backend/linker needs to be sent values of this type to emit to the binary.
+///
+/// Types without runtime bits have an ABI size of 0; all other types have a non-zero ABI size. All
+/// types, regardless of whether they have runtime bits, have a non-zero ABI alignment.
+///
+/// Comptime-only types may still have runtime bits. For instance, `struct { a: u32, b: type }` is a
+/// comptime-only type, but it nonetheless has runtime bits and a runtime memory layout (where the
+/// field `b: type` is omitted). This is because a user may take a pointer to the field `a`, which
+/// must then be valid to use at runtime.
+///
+/// This function is a trivial wrapper around `classify`:
+///
+/// * Types with one possible value, such as `void`, or no possible value, such as `noreturn`, do
+///   not have runtime bits and have an ABI size of 0 because they simply contain no state.
+///
+/// * Types which are fully comptime, such as `type` and `comptime_int`, do not have runtime bits
+///   because they contain only comptime state. (This compiler implementation also currently makes
+///   types like `struct { x: comptime_int }` fully comptime, but that could change in the future if
+///   we start inserting hidden safety fields into them.)
+///
+/// * All other types contain some runtime state, so have runtime bits and a non-zero ABI size.
 pub fn hasRuntimeBits(ty: Type, zcu: *const Zcu) bool {
     return switch (ty.classify(zcu)) {
         .no_possible_value, .one_possible_value, .fully_comptime => false,
@@ -1576,6 +1589,11 @@ pub fn errorUnionSet(ty: Type, zcu: *const Zcu) Type {
 }
 
 /// Returns false for unresolved inferred error sets.
+///
+/// TODO: this function will behave incorrectly under incremental compilation, because in that case
+/// it may see an outdated resolved error set. This function must be either deleted, or its contract
+/// changed to require the caller to resolve the error set beforehand. If you must introduce new
+/// call sites, please make sure the error set in question is definitely resolved first!
 pub fn errorSetIsEmpty(ty: Type, zcu: *const Zcu) bool {
     const ip = &zcu.intern_pool;
     return switch (ty.toIntern()) {
@@ -1594,6 +1612,11 @@ pub fn errorSetIsEmpty(ty: Type, zcu: *const Zcu) bool {
 /// Returns true if it is an error set that includes anyerror, false otherwise.
 /// Note that the result may be a false negative if the type did not get error set
 /// resolution prior to this call.
+///
+/// TODO: this function will behave incorrectly under incremental compilation, because in that case
+/// it may see an outdated resolved error set. This function must be either deleted, or its contract
+/// changed to require the caller to resolve the error set beforehand. If you must introduce new
+/// call sites, please make sure the error set in question is definitely resolved first!
 pub fn isAnyError(ty: Type, zcu: *const Zcu) bool {
     const ip = &zcu.intern_pool;
     return switch (ty.toIntern()) {
@@ -1616,6 +1639,11 @@ pub fn isError(ty: Type, zcu: *const Zcu) bool {
 /// Returns whether ty, which must be an error set, includes an error `name`.
 /// Might return a false negative if `ty` is an inferred error set and not fully
 /// resolved yet.
+///
+/// TODO: this function will behave incorrectly under incremental compilation, because in that case
+/// it may see an outdated resolved error set. This function must be either deleted, or its contract
+/// changed to require the caller to resolve the error set beforehand. If you must introduce new
+/// call sites, please make sure the error set in question is definitely resolved first!
 pub fn errorSetHasField(
     ty: Type,
     name: InternPool.NullTerminatedString,
@@ -2937,23 +2965,6 @@ pub fn containerTypeName(ty: Type, ip: *const InternPool) InternPool.NullTermina
         .opaque_type => ip.loadOpaqueType(ty.toIntern()).name,
         else => unreachable,
     };
-}
-
-/// Returns `true` if a value of this type is always `null`.
-/// Returns `false` if a value of this type is never `null`.
-/// Returns `null` otherwise.
-pub fn isNullFromType(ty: Type, zcu: *const Zcu) ?bool {
-    if (ty.zigTypeTag(zcu) != .optional and !ty.isCPtr(zcu)) return false;
-    const payload_ty = ty.optionalChild(zcu);
-    if (payload_ty.classify(zcu) == .no_possible_value) return true; // `?noreturn` etc
-
-    // Although it has runtime bits, `?error{}` is always null. MLUGG TODO: think for a bit...
-    switch (zcu.intern_pool.indexToKey(payload_ty.toIntern())) {
-        .error_set_type => |error_set| if (error_set.names.len == 0) return true,
-        else => {},
-    }
-
-    return null;
 }
 
 pub const UnpackableReason = union(enum) {
