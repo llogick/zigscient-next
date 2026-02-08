@@ -454,7 +454,6 @@ fn resolvePackedStructLayout(
             const msg = try sema.errMsg(field_ty_src, "packed structs cannot contain fields of type '{f}'", .{field_ty.fmt(pt)});
             errdefer msg.destroy(gpa);
             try sema.explainWhyTypeIsUnpackable(msg, field_ty_src, reason);
-            try sema.addDeclaredHereNote(msg, field_ty);
             break :msg msg;
         });
         switch (field_ty.classify(zcu)) {
