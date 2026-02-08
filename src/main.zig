@@ -2080,6 +2080,9 @@ pub fn buildOutputType(
                             fatal("only one manifest file can be specified, found '{s}' after '{s}'", .{ arg, other });
                         } else cs.manifest_file = arg;
                     },
+                    .def => {
+                        linker_module_definition_file = arg;
+                    },
                     .assembly, .assembly_with_cpp, .c, .cpp, .h, .hpp, .hm, .hmm, .ll, .bc, .m, .mm => {
                         dev.check(.c_compiler);
                         try cs.create_module.c_source_files.append(arena, .{
@@ -2105,7 +2108,7 @@ pub fn buildOutputType(
                             fatal("found another zig file '{s}' after root source file '{s}'", .{ arg, other });
                         } else cs.root_src_file = arg;
                     },
-                    .def, .unknown => {
+                    .unknown => {
                         if (std.ascii.eqlIgnoreCase(".xml", fs.path.extension(arg))) {
                             warn("embedded manifest files must have the extension '.manifest'", .{});
                         }
