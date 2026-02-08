@@ -366,7 +366,7 @@ test "Extern function calls in @TypeOf" {
 
         extern fn s_do_thing([*c]const @This(), b: c_int) c_short;
     };
-    const E = struct {
+    const E = extern struct {
         export fn s_do_thing(a: [*c]const @This(), b: c_int) c_short {
             _ = a;
             _ = b;
