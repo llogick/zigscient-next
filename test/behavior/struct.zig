@@ -1249,20 +1249,6 @@ test "store to comptime field" {
     }
 }
 
-test "struct field init value is size of the struct" {
-    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-
-    const namespace = struct {
-        const S = extern struct {
-            size: u8 = @sizeOf(S),
-            blah: u16,
-        };
-    };
-    var s: namespace.S = .{ .blah = 1234 };
-    _ = &s;
-    try expect(s.size == 4);
-}
-
 test "under-aligned struct field" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -1710,41 +1696,19 @@ test "comptimeness of optional and error union payload is analyzed properly" {
     try std.testing.expectEqual(3, x);
 }
 
-test "initializer uses own alignment" {
-    const S = struct {
-        x: u32 = @alignOf(@This()) + 1,
-    };
-
-    var s: S = .{};
-    _ = &s;
-    try expectEqual(4, @alignOf(S));
-    try expectEqual(@as(usize, 5), s.x);
-}
-
-test "initializer uses own size" {
-    const S = struct {
-        x: u32 = @sizeOf(@This()) + 1,
-    };
-
-    var s: S = .{};
-    _ = &s;
-    try expectEqual(4, @sizeOf(S));
-    try expectEqual(@as(usize, 5), s.x);
-}
-
 test "initializer takes a pointer to a variable inside its struct" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     const namespace = struct {
         const S = struct {
-            s: *S = &S.instance,
-            var instance: S = undefined;
+            x: *u32 = &S.int,
+            var int: u32 = undefined;
         };
 
         fn doTheTest() !void {
             var foo: S = .{};
             _ = &foo;
-            try expectEqual(&S.instance, foo.s);
+            try expectEqual(&S.int, foo.x);
         }
     };
 
@@ -1773,22 +1737,6 @@ test "circular dependency through pointer field of a struct" {
     _ = &outer;
     try expect(outer.middle.outer == null);
     try expect(outer.middle.inner == null);
-}
-
-test "field calls do not force struct field init resolution" {
-    const S = struct {
-        x: u32 = blk: {
-            _ = @TypeOf(make().dummyFn()); // runtime field call - S not fully resolved - dummyFn call should not force field init resolution
-            break :blk 123;
-        },
-        dummyFn: *const fn () void = undefined,
-        fn make() @This() {
-            return .{};
-        }
-    };
-    var s: S = .{};
-    _ = &s;
-    try expect(s.x == 123);
 }
 
 test "tuple with comptime-only field" {

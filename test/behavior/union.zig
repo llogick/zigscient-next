@@ -1796,55 +1796,6 @@ test "reinterpret packed union inside packed struct" {
     try S.doTheTest();
 }
 
-test "inner struct initializer uses union layout" {
-    const namespace = struct {
-        const U = union {
-            a: struct {
-                x: u32 = @alignOf(U) + 1,
-            },
-            b: struct {
-                y: u16 = @sizeOf(U) + 2,
-            },
-        };
-    };
-
-    {
-        const u: namespace.U = .{ .a = .{} };
-        try expectEqual(4, @alignOf(namespace.U));
-        try expectEqual(@as(usize, 5), u.a.x);
-    }
-
-    {
-        const u: namespace.U = .{ .b = .{} };
-        try expectEqual(@as(usize, @sizeOf(namespace.U) + 2), u.b.y);
-    }
-}
-
-test "inner struct initializer uses packed union layout" {
-    const namespace = struct {
-        const U = packed union {
-            a: packed struct {
-                x: u32 = @alignOf(U) + 1,
-            },
-            b: packed struct(u32) {
-                y: u16 = @sizeOf(U) + 2,
-                padding: u16 = 0,
-            },
-        };
-    };
-
-    {
-        const u: namespace.U = .{ .a = .{} };
-        try expectEqual(4, @alignOf(namespace.U));
-        try expectEqual(@as(usize, 5), u.a.x);
-    }
-
-    {
-        const u: namespace.U = .{ .b = .{} };
-        try expectEqual(@as(usize, @sizeOf(namespace.U) + 2), u.b.y);
-    }
-}
-
 test "extern union initialized via reintepreted struct field initializer" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
