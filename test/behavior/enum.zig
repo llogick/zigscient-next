@@ -823,15 +823,6 @@ test "enum with one member and u1 tag type @intFromEnum" {
     try expect(@intFromEnum(Enum.Test) == 0);
 }
 
-test "enum with comptime_int tag type" {
-    const Enum = enum(comptime_int) {
-        One = 3,
-        Two = 2,
-        Three = 1,
-    };
-    comptime assert(Tag(Enum) == comptime_int);
-}
-
 test "enum with one member default to u0 tag type" {
     const E0 = enum { X };
     comptime assert(Tag(E0) == u0);
@@ -1272,13 +1263,6 @@ fn getLazyInitialized(param: enum(u8) {
     a = @bitCast(packed struct(u8) { a: u8 }{ .a = @alignOf(struct {}) }),
 }) u8 {
     return @intFromEnum(param);
-}
-
-test "Non-exhaustive enum backed by comptime_int" {
-    const E = enum(comptime_int) { a, b, c, _ };
-    comptime var e: E = .a;
-    e = @as(E, @enumFromInt(378089457309184723749));
-    try expect(@intFromEnum(e) == 378089457309184723749);
 }
 
 test "matching captures causes enum equivalence" {

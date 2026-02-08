@@ -703,25 +703,23 @@ test "union with only 1 field casted to its enum type which has enum value speci
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const Literal = union(enum) {
-        Number: f64,
-        Bool: bool,
+        number: f64,
+        bool: bool,
     };
 
-    const ExprTag = enum(comptime_int) {
-        Literal = 33,
-    };
+    const ExprTag = enum(u32) { literal = 33 };
+    const Expr = union(ExprTag) { literal: Literal };
 
-    const Expr = union(ExprTag) {
-        Literal: Literal,
-    };
+    comptime assert(Tag(ExprTag) == u32);
 
-    var e = Expr{ .Literal = Literal{ .Bool = true } };
-    _ = &e;
-    comptime assert(Tag(ExprTag) == comptime_int);
-    const t = comptime @as(ExprTag, e);
-    try expect(t == Expr.Literal);
-    try expect(@intFromEnum(t) == 33);
+    var e: Expr = undefined;
+    e = .{ .literal = .{ .bool = true } };
+
+    const t: ExprTag = e;
+    comptime assert(t == Expr.literal);
     comptime assert(@intFromEnum(t) == 33);
+    try expect(t == Expr.literal);
+    try expect(@intFromEnum(t) == 33);
 }
 
 test "@intFromEnum works on unions" {
@@ -891,15 +889,6 @@ test "union no tag with struct member" {
     };
     var u = Union{ .s = Struct{} };
     u.foo();
-}
-
-test "union with comptime_int tag" {
-    const Union = union(enum(comptime_int)) {
-        X: u32,
-        Y: u16,
-        Z: u8,
-    };
-    comptime assert(Tag(Tag(Union)) == comptime_int);
 }
 
 test "extern union doesn't trigger field check at comptime" {
