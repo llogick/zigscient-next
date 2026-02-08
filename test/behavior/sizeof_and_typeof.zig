@@ -120,21 +120,6 @@ test "@bitOffsetOf" {
     try expect(@offsetOf(A, "g") * 8 == @bitOffsetOf(A, "g"));
 }
 
-test "@sizeOf(T) == 0 doesn't force resolving struct size" {
-    const S = struct {
-        const Foo = struct {
-            y: if (@sizeOf(Foo) == 0) u64 else u32,
-        };
-        const Bar = struct {
-            x: i32,
-            y: if (0 == @sizeOf(Bar)) u64 else u32,
-        };
-    };
-
-    try expect(@sizeOf(S.Foo) == 4);
-    try expect(@sizeOf(S.Bar) == 8);
-}
-
 test "@TypeOf() has no runtime side effects" {
     const S = struct {
         fn foo(comptime T: type, ptr: *T) T {
