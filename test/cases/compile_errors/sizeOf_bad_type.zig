@@ -1,7 +1,25 @@
-export fn entry() usize {
+export fn entry0() usize {
     return @sizeOf(@TypeOf(null));
+}
+export fn entry1() usize {
+    return @sizeOf(comptime_int);
+}
+export fn entry2() usize {
+    return @sizeOf(noreturn);
+}
+const S3 = struct { a: u32, b: comptime_int };
+export fn entry3() usize {
+    return @sizeOf(S3);
+}
+const S4 = struct { a: u32, b: noreturn };
+export fn entry4() usize {
+    return @sizeOf(S4);
 }
 
 // error
 //
-// :2:20: error: no size available for type '@TypeOf(null)'
+// :2:20: error: no size available for comptime-only type '@TypeOf(null)'
+// :5:20: error: no size available for comptime-only type 'comptime_int'
+// :8:20: error: no size available for uninstantiable type 'noreturn'
+// :12:20: error: no size available for comptime-only type 'tmp.S3'
+// :16:20: error: no size available for uninstantiable type 'tmp.S4'

@@ -11,13 +11,6 @@ test "@sizeOf and @TypeOf" {
 const x: u16 = 13;
 const z: @TypeOf(x) = 19;
 
-test "@sizeOf on compile-time types" {
-    try expect(@sizeOf(comptime_int) == 0);
-    try expect(@sizeOf(comptime_float) == 0);
-    try expect(@sizeOf(@TypeOf(.hi)) == 0);
-    try expect(@sizeOf(@TypeOf(type)) == 0);
-}
-
 test "@TypeOf() with multiple arguments" {
     {
         var var_1: u32 = undefined;
@@ -265,10 +258,6 @@ test "lazy size cast to float" {
     }
 }
 
-test "bitSizeOf comptime_int" {
-    try expect(@bitSizeOf(comptime_int) == 0);
-}
-
 test "runtime instructions inside typeof in comptime only scope" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -334,20 +323,6 @@ test "peer type resolution with @TypeOf doesn't trigger dependency loop check" {
     var t: T = .{ .next = null };
     _ = &t;
     try std.testing.expect(t.next == null);
-}
-
-test "@sizeOf reified union zero-size payload fields" {
-    comptime {
-        try std.testing.expect(0 == @sizeOf(@Union(.auto, null, &.{}, &.{}, &.{})));
-        try std.testing.expect(0 == @sizeOf(@Union(.auto, null, &.{"a"}, &.{void}, &.{.{}})));
-        if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) {
-            try std.testing.expect(1 == @sizeOf(@Union(.auto, null, &.{ "a", "b" }, &.{ void, void }, &.{ .{}, .{} })));
-            try std.testing.expect(1 == @sizeOf(@Union(.auto, null, &.{ "a", "b", "c" }, &.{ void, void, void }, &.{ .{}, .{}, .{} })));
-        } else {
-            try std.testing.expect(0 == @sizeOf(@Union(.auto, null, &.{ "a", "b" }, &.{ void, void }, &.{ .{}, .{} })));
-            try std.testing.expect(0 == @sizeOf(@Union(.auto, null, &.{ "a", "b", "c" }, &.{ void, void, void }, &.{ .{}, .{}, .{} })));
-        }
-    }
 }
 
 const FILE = extern struct {
