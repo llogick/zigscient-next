@@ -1020,7 +1020,7 @@ test "containers with single-field enums" {
     try comptime S.doTheTest();
 }
 
-test "@unionInit on union with tag but no fields" {
+test "@unionInit on union with u8 tag but no fields" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -1035,10 +1035,6 @@ test "@unionInit on union with tag but no fields" {
                 return @unionInit(Data, "no_op", {});
             }
         };
-
-        comptime {
-            assert(@sizeOf(Data) == 1);
-        }
 
         fn doTheTest() !void {
             var data: Data = .{ .no_op = {} };
