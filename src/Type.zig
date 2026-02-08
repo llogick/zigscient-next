@@ -790,11 +790,21 @@ pub fn hasWellDefinedLayout(ty: Type, zcu: *const Zcu) bool {
 /// function with this type can exist at runtime.
 /// Asserts that `ty` is a function type.
 pub fn fnHasRuntimeBits(fn_ty: Type, zcu: *Zcu) bool {
+    assertHasLayout(fn_ty, zcu);
     const fn_info = zcu.typeToFunc(fn_ty).?;
     if (fn_info.comptime_bits != 0) return false;
     for (fn_info.param_types.get(&zcu.intern_pool)) |param_ty| {
         if (param_ty == .generic_poison_type) return false;
-        if (Type.fromInterned(param_ty).comptimeOnly(zcu)) return false;
+        switch (Type.fromInterned(param_ty).classify(zcu)) {
+            .fully_comptime,
+            .partially_comptime,
+            .no_possible_value,
+            => return false,
+
+            .one_possible_value,
+            .runtime,
+            => {},
+        }
     }
     const ret_ty: Type = .fromInterned(fn_info.return_type);
     if (ret_ty.toIntern() == .generic_poison_type) {
@@ -805,8 +815,16 @@ pub fn fnHasRuntimeBits(fn_ty: Type, zcu: *Zcu) bool {
     {
         return false;
     }
-    if (fn_info.return_type == .generic_poison_type) return false;
-    if (Type.fromInterned(fn_info.return_type).comptimeOnly(zcu)) return false;
+    switch (ret_ty.classify(zcu)) {
+        .fully_comptime,
+        .partially_comptime,
+        => return false,
+
+        .no_possible_value,
+        .one_possible_value,
+        .runtime,
+        => {},
+    }
     if (fn_info.cc == .@"inline") return false;
     return true;
 }

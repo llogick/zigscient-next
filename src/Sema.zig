@@ -19400,7 +19400,7 @@ fn zirAlignOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
     const ty = try sema.resolveType(block, operand_src, inst_data.operand);
     try sema.ensureLayoutResolved(ty, operand_src, .align_of);
     if (ty.isNoReturn(zcu)) {
-        return sema.fail(block, operand_src, "no align available for type '{f}'", .{ty.fmt(sema.pt)});
+        return sema.fail(block, operand_src, "no align available for uninstantiable type '{f}'", .{ty.fmt(sema.pt)});
     }
     return .fromValue(try pt.intValue(.comptime_int, ty.abiAlignment(zcu).toByteUnits().?));
 }
@@ -33430,16 +33430,6 @@ fn errorSetMerge(sema: *Sema, lhs: Type, rhs: Type) !Type {
     }
 
     return pt.errorSetFromUnsortedNames(names.keys());
-}
-
-/// Avoids crashing the compiler when asking if inferred allocations are noreturn.
-fn isNoReturn(sema: *Sema, ref: Air.Inst.Ref) bool {
-    if (ref == .unreachable_value) return true;
-    if (ref.toIndex()) |inst| switch (sema.air_instructions.items(.tag)[@intFromEnum(inst)]) {
-        .inferred_alloc, .inferred_alloc_comptime => return false,
-        else => {},
-    };
-    return sema.typeOf(ref).isNoReturn(sema.pt.zcu);
 }
 
 pub fn declareDependency(sema: *Sema, dependee: InternPool.Dependee) !void {
