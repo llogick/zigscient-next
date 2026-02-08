@@ -217,26 +217,6 @@ test "union with specified enum tag" {
     try comptime doTest();
 }
 
-test "packed union generates correctly aligned type" {
-    // This test will be removed after the following accepted proposal is implemented:
-    // https://github.com/ziglang/zig/issues/24657
-    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
-
-    const U = packed union {
-        f1: *const fn () error{TestUnexpectedResult}!void,
-        f2: usize,
-    };
-    var foo = [_]U{
-        U{ .f1 = doTest },
-        U{ .f2 = 0 },
-    };
-    try foo[0].f1();
-}
-
 fn doTest() error{TestUnexpectedResult}!void {
     try expect((try bar(Payload{ .A = 1234 })) == -10);
 }
@@ -359,12 +339,12 @@ test "simple union(enum(u32))" {
     try expect(@intFromEnum(@as(Tag(MultipleChoice), x)) == 60);
 }
 
-const PackedPtrOrInt = packed union {
-    ptr: *u8,
-    int: usize,
-};
 test "packed union size" {
-    comptime assert(@sizeOf(PackedPtrOrInt) == @sizeOf(usize));
+    const U = packed union {
+        signed: isize,
+        unsigned: usize,
+    };
+    comptime assert(@sizeOf(U) == @sizeOf(usize));
 }
 
 const ZeroBits = union {

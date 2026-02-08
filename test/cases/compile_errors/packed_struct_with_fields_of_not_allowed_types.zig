@@ -76,6 +76,11 @@ export fn entry14() void {
         x: E,
     });
 }
+export fn entry15() void {
+    _ = @sizeOf(packed struct {
+        x: *const u32,
+    });
+}
 
 // error
 //
@@ -103,3 +108,6 @@ export fn entry14() void {
 // :70:12: note: types are not available at runtime
 // :76:12: error: packed structs cannot contain fields of type 'tmp.entry14.E'
 // :74:15: note: enum declared here
+// :81:12: error: packed structs cannot contain fields of type '*const u32'
+// :81:12: note: pointers cannot be directly bitpacked
+// :81:12: note: consider using 'usize' and '@intFromPtr'

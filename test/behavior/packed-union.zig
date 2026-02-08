@@ -177,15 +177,3 @@ test "assigning to non-active field at comptime" {
         test_bits.bits = .{};
     }
 }
-
-test "comptime packed union of pointers" {
-    const U = packed union {
-        a: *const u32,
-        b: *const [1]u32,
-    };
-
-    const x: u32 = 123;
-    const u: U = .{ .a = &x };
-
-    comptime assert(u.b[0] == 123);
-}
