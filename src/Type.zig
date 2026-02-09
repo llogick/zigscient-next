@@ -3055,9 +3055,10 @@ pub const ExternPosition = enum {
 };
 
 /// Returns true if `ty` is allowed in extern types.
-/// Does not require `ty` to be resolved in any way.
+/// Asserts that `ty` is fully resolved.
 /// Keep in sync with `Sema.explainWhyTypeIsNotExtern`.
 pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool {
+    ty.assertHasLayout(zcu);
     return switch (ty.zigTypeTag(zcu)) {
         .type,
         .comptime_float,

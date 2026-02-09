@@ -32,6 +32,7 @@ pub const LayoutResolveReason = enum {
     type_info,
     align_check,
     bit_ptr_child,
+    @"export",
     builtin_type,
 
     /// Written after string: "while resolving type 'T' "
@@ -56,6 +57,7 @@ pub const LayoutResolveReason = enum {
             .type_info     => "for type information query here",
             .align_check   => "for alignment check here",
             .bit_ptr_child => "for bit size check here",
+            .@"export"     => "for export here",
             .builtin_type  => "from 'std.builtin'",
             // zig fmt: on
         };
@@ -276,7 +278,6 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         assert(!field_ty.isGenericPoison());
         const field_ty_src = block.src(.{ .container_field_type = @intCast(field_index) });
         try sema.ensureLayoutResolved(field_ty, field_ty_src, .field);
-
         if (field_ty.zigTypeTag(zcu) == .@"opaque") {
             return sema.failWithOwnedErrorMsg(&block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "cannot directly embed opaque type '{f}' in struct", .{field_ty.fmt(pt)});
@@ -286,7 +287,6 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
                 break :msg msg;
             });
         }
-
         if (struct_obj.layout == .@"extern" and !field_ty.validateExtern(.struct_field, zcu)) {
             return sema.failWithOwnedErrorMsg(&block, msg: {
                 const msg = try sema.errMsg(field_ty_src, "extern structs cannot contain fields of type '{f}'", .{field_ty.fmt(pt)});

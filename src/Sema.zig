@@ -5747,6 +5747,7 @@ fn zirExport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
     }
 
     const export_ty = ptr_ty.childType(zcu);
+    try sema.ensureLayoutResolved(export_ty, src, .@"export");
     if (!export_ty.validateExtern(.other, zcu)) {
         return sema.failWithOwnedErrorMsg(block, msg: {
             const msg = try sema.errMsg(src, "unable to export type '{f}'", .{export_ty.fmt(pt)});
@@ -6749,6 +6750,37 @@ fn analyzeCall(
     } else func_src;
 
     const func_ty_info = zcu.typeToFunc(func_ty).?;
+
+    for (func_ty_info.param_types.get(ip), 0..) |param_ty_ip, param_index| {
+        const arg_src = args_info.argSrc(block, param_index);
+        try sema.ensureLayoutResolved(.fromInterned(param_ty_ip), arg_src, .init);
+    }
+    try sema.ensureLayoutResolved(.fromInterned(func_ty_info.return_type), func_ret_ty_src, .return_type);
+    try sema.validateResolvedFuncType(
+        block,
+        func_ty_info.cc,
+        func_ty_info.param_types.get(ip),
+        .fromInterned(func_ty_info.return_type),
+        func_src,
+        maybe_func_inst,
+    );
+
+    if (!callConvIsCallable(func_ty_info.cc)) {
+        return sema.failWithOwnedErrorMsg(block, msg: {
+            const msg = try sema.errMsg(
+                func_src,
+                "unable to call function with calling convention '{s}'",
+                .{@tagName(func_ty_info.cc)},
+            );
+            errdefer msg.destroy(gpa);
+            if (maybe_func_inst) |func_inst| try sema.errNote(.{
+                .base_node_inst = func_inst,
+                .offset = .nodeOffset(.zero),
+            }, msg, "function declared here", .{});
+            break :msg msg;
+        });
+    }
+
     const any_comptime_params = func_ty_info.comptime_bits != 0 or ct: {
         for (func_ty_info.param_types.get(ip)) |param_ty| {
             if (Type.fromInterned(param_ty).comptimeOnly(zcu)) break :ct true;
@@ -6770,22 +6802,6 @@ fn analyzeCall(
         }
         break :generic false;
     };
-
-    if (!callConvIsCallable(func_ty_info.cc)) {
-        return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(
-                func_src,
-                "unable to call function with calling convention '{s}'",
-                .{@tagName(func_ty_info.cc)},
-            );
-            errdefer msg.destroy(gpa);
-            if (maybe_func_inst) |func_inst| try sema.errNote(.{
-                .base_node_inst = func_inst,
-                .offset = .nodeOffset(.zero),
-            }, msg, "function declared here", .{});
-            break :msg msg;
-        });
-    }
 
     // We need this value in a few code paths.
     const callee_val = try sema.resolveDefinedValue(block, call_src, callee);
@@ -8755,11 +8771,12 @@ fn checkCallConvSupportsVarArgs(sema: *Sema, block: *Block, src: LazySrcLoc, cc:
     }
 }
 
-fn checkParamTypeCommon(
+fn checkParamType(
     sema: *Sema,
     block: *Block,
     param_idx: u32,
     param_ty: Type,
+    param_is_comptime: bool,
     param_is_noalias: bool,
     param_src: LazySrcLoc,
     cc: std.builtin.CallingConvention,
@@ -8774,29 +8791,22 @@ fn checkParamTypeCommon(
             opaque_str, param_ty.fmt(pt),
         });
     }
-    if (!param_ty.isGenericPoison() and
-        !target_util.fnCallConvAllowsZigTypes(cc) and
-        !param_ty.validateExtern(.param_ty, zcu))
-    {
-        return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(param_src, "parameter of type '{f}' not allowed in function with calling convention '{s}'", .{
-                param_ty.fmt(pt), @tagName(cc),
-            });
-            errdefer msg.destroy(sema.gpa);
-
-            try sema.explainWhyTypeIsNotExtern(msg, param_src, param_ty, .param_ty);
-
-            try sema.addDeclaredHereNote(msg, param_ty);
-            break :msg msg;
-        });
+    if (!target_util.fnCallConvAllowsZigTypes(cc)) {
+        if (param_is_comptime) {
+            return sema.fail(block, param_src, "comptime parameters not allowed in function with calling convention '{t}'", .{cc});
+        }
+        if (param_ty.isGenericPoison()) {
+            return sema.fail(block, param_src, "generic parameters not allowed in function with calling convention '{t}'", .{cc});
+        }
+        // The `validateExtern` check happens later, in `validateResolvedFuncType`.
     }
     switch (cc) {
         .x86_64_interrupt, .x86_interrupt => {
             const err_code_size = target.ptrBitWidth();
             switch (param_idx) {
-                0 => if (param_ty.zigTypeTag(zcu) != .pointer) return sema.fail(block, param_src, "first parameter of function with '{s}' calling convention must be a pointer type", .{@tagName(cc)}),
-                1 => if (param_ty.bitSize(zcu) != err_code_size) return sema.fail(block, param_src, "second parameter of function with '{s}' calling convention must be a {d}-bit integer", .{ @tagName(cc), err_code_size }),
-                else => return sema.fail(block, param_src, "'{s}' calling convention supports up to 2 parameters, found {d}", .{ @tagName(cc), param_idx + 1 }),
+                0 => if (param_ty.zigTypeTag(zcu) != .pointer) return sema.fail(block, param_src, "first parameter of function with '{t}' calling convention must be a pointer type", .{cc}),
+                1 => if (param_ty.bitSize(zcu) != err_code_size) return sema.fail(block, param_src, "second parameter of function with '{t}' calling convention must be a {d}-bit integer", .{ cc, err_code_size }),
+                else => return sema.fail(block, param_src, "'{t}' calling convention supports up to 2 parameters, found {d}", .{ cc, param_idx + 1 }),
             }
         },
         .arc_interrupt,
@@ -8812,7 +8822,7 @@ fn checkParamTypeCommon(
         .m68k_interrupt,
         .msp430_interrupt,
         .avr_signal,
-        => return sema.fail(block, param_src, "parameters are not allowed with '{s}' calling convention", .{@tagName(cc)}),
+        => return sema.fail(block, param_src, "parameters are not allowed with '{t}' calling convention", .{cc}),
         else => {},
     }
     if (param_is_noalias and !param_ty.isGenericPoison() and !param_ty.isPtrAtRuntime(zcu) and !param_ty.isSliceAtRuntime(zcu)) {
@@ -8820,7 +8830,7 @@ fn checkParamTypeCommon(
     }
 }
 
-fn checkReturnTypeAndCallConvCommon(
+fn checkReturnTypeAndCallConv(
     sema: *Sema,
     block: *Block,
     bare_ret_ty: Type,
@@ -8834,7 +8844,6 @@ fn checkReturnTypeAndCallConvCommon(
 ) CompileError!void {
     const pt = sema.pt;
     const zcu = pt.zcu;
-    const gpa = zcu.gpa;
     if (opt_varargs_src) |varargs_src| {
         try sema.checkCallConvSupportsVarArgs(block, varargs_src, @"callconv");
     }
@@ -8848,21 +8857,14 @@ fn checkReturnTypeAndCallConvCommon(
             opaque_str, ies_ret_ty_prefix, bare_ret_ty.fmt(pt),
         });
     }
-    if (!bare_ret_ty.isGenericPoison() and
-        !target_util.fnCallConvAllowsZigTypes(@"callconv") and
-        (inferred_error_set or !bare_ret_ty.validateExtern(.ret_ty, zcu)))
-    {
-        return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(ret_ty_src, "return type '{s}{f}' not allowed in function with calling convention '{s}'", .{
-                ies_ret_ty_prefix, bare_ret_ty.fmt(pt), @tagName(@"callconv"),
-            });
-            errdefer msg.destroy(gpa);
-            if (!inferred_error_set) {
-                try sema.explainWhyTypeIsNotExtern(msg, ret_ty_src, bare_ret_ty, .ret_ty);
-                try sema.addDeclaredHereNote(msg, bare_ret_ty);
-            }
-            break :msg msg;
-        });
+    if (!target_util.fnCallConvAllowsZigTypes(@"callconv")) {
+        if (inferred_error_set) {
+            return sema.fail(block, ret_ty_src, "return type '!{f}' not allowed in function with calling convention '{t}'", .{ bare_ret_ty.fmt(pt), @"callconv" });
+        }
+        if (bare_ret_ty.isGenericPoison()) {
+            return sema.fail(block, ret_ty_src, "generic return type not allowed in function with calling convention '{t}'", .{@"callconv"});
+        }
+        // The `validateExtern` check happens later, in `validateResolvedFuncType`.
     }
     validate_incoming_stack_align: {
         const a: u64 = switch (@"callconv") {
@@ -8897,7 +8899,7 @@ fn checkReturnTypeAndCallConvCommon(
                 else => false,
             };
             if (!ret_ok) {
-                return sema.fail(block, ret_ty_src, "function with calling convention '{s}' must return 'void' or 'noreturn'", .{@tagName(@"callconv")});
+                return sema.fail(block, ret_ty_src, "function with calling convention '{t}' must return 'void' or 'noreturn'", .{@"callconv"});
             }
         },
         .@"inline" => if (is_noinline) {
@@ -8918,15 +8920,73 @@ fn checkReturnTypeAndCallConvCommon(
                     }
                 }
             };
-            return sema.fail(block, callconv_src, "calling convention '{s}' only available on architectures {f}", .{
-                @tagName(@"callconv"),
-                ArchListFormatter{ .archs = allowed_archs },
+            return sema.fail(block, callconv_src, "calling convention '{t}' only available on architectures {f}", .{
+                @"callconv", ArchListFormatter{ .archs = allowed_archs },
             });
         },
-        .bad_backend => |bad_backend| return sema.fail(block, callconv_src, "calling convention '{s}' not supported by compiler backend '{s}'", .{
-            @tagName(@"callconv"),
-            @tagName(bad_backend),
+        .bad_backend => |bad_backend| return sema.fail(block, callconv_src, "calling convention '{t}' not supported by compiler backend '{t}'", .{
+            @"callconv", bad_backend,
         }),
+    }
+}
+
+/// To avoid forcing type layout resolution too quickly, some validation of function types cannot be
+/// performed when the type is first constructed, and instead must happen when either (a) a function
+/// with that type is declared, or (b) a function with that type is called. That validation is
+/// handled here.
+///
+/// Asserts that all parameter types and return types have their layout fully resolved.
+fn validateResolvedFuncType(
+    sema: *Sema,
+    block: *Block,
+    @"callconv": std.builtin.CallingConvention,
+    param_types: []const InternPool.Index,
+    ret_ty: Type,
+    src: LazySrcLoc,
+    maybe_func_decl_inst: ?InternPool.TrackedInst.Index,
+) SemaError!void {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const gpa = zcu.comp.gpa;
+    if (!target_util.fnCallConvAllowsZigTypes(@"callconv")) {
+        // Check that all parameter types are extern-compatible.
+        for (param_types, 0..) |param_ty_ip, param_index| {
+            const param_ty: Type = .fromInterned(param_ty_ip);
+            if (!param_ty.validateExtern(.param_ty, zcu)) {
+                const param_src: LazySrcLoc = if (maybe_func_decl_inst) |inst| .{
+                    .base_node_inst = inst,
+                    .offset = .{ .fn_proto_param = .{
+                        .fn_proto_node_offset = .zero,
+                        .param_index = @intCast(param_index),
+                    } },
+                } else src;
+                return sema.failWithOwnedErrorMsg(block, msg: {
+                    const msg = try sema.errMsg(param_src, "parameter of type '{f}' not allowed in function with calling convention '{t}'", .{
+                        param_ty.fmt(pt), @"callconv",
+                    });
+                    errdefer msg.destroy(gpa);
+                    try sema.explainWhyTypeIsNotExtern(msg, param_src, param_ty, .param_ty);
+                    try sema.addDeclaredHereNote(msg, param_ty);
+                    break :msg msg;
+                });
+            }
+        }
+        // Check that the return type is extern-compatible.
+        if (!ret_ty.validateExtern(.ret_ty, zcu)) {
+            const ret_ty_src: LazySrcLoc = if (maybe_func_decl_inst) |inst| .{
+                .base_node_inst = inst,
+                .offset = .{ .node_offset_fn_type_ret_ty = .zero },
+            } else src;
+            return sema.failWithOwnedErrorMsg(block, msg: {
+                const msg = try sema.errMsg(ret_ty_src, "return type '{f}' not allowed in function with calling convention '{t}'", .{
+                    ret_ty.fmt(pt), @"callconv",
+                });
+                errdefer msg.destroy(gpa);
+                try sema.explainWhyTypeIsNotExtern(msg, ret_ty_src, ret_ty, .ret_ty);
+                try sema.addDeclaredHereNote(msg, ret_ty);
+                break :msg msg;
+            });
+        }
     }
 }
 
@@ -9022,6 +9082,7 @@ fn funcCommon(
     const io = comp.io;
     const ip = &zcu.intern_pool;
 
+    const src = block.nodeOffset(src_node_offset);
     const ret_ty_src = block.src(.{ .node_offset_fn_type_ret_ty = src_node_offset });
     const cc_src = block.src(.{ .node_offset_fn_type_cc = src_node_offset });
 
@@ -9036,27 +9097,21 @@ fn funcCommon(
             .fn_proto_node_offset = src_node_offset,
             .param_index = @intCast(i),
         } });
-        const param_ty_generic = param_ty.isGenericPoison();
         if (param_is_comptime) {
             comptime_bits |= @as(u32, 1) << @intCast(i); // TODO: handle cast error
         }
-        if (param_is_comptime and !target_util.fnCallConvAllowsZigTypes(cc)) {
-            return sema.fail(block, param_src, "comptime parameters not allowed in function with calling convention '{s}'", .{@tagName(cc)});
-        }
-        if (param_ty_generic and !target_util.fnCallConvAllowsZigTypes(cc)) {
-            return sema.fail(block, param_src, "generic parameters not allowed in function with calling convention '{s}'", .{@tagName(cc)});
-        }
-        try sema.checkParamTypeCommon(
+        try sema.checkParamType(
             block,
             @intCast(i),
             param_ty,
+            param_is_comptime,
             is_noalias,
             param_src,
             cc,
         );
     }
 
-    try sema.checkReturnTypeAndCallConvCommon(
+    try sema.checkReturnTypeAndCallConv(
         block,
         bare_return_type,
         ret_ty_src,
@@ -9072,9 +9127,29 @@ fn funcCommon(
 
     const param_types = block.params.items(.ty);
 
+    if (has_body) {
+        for (param_types, 0..) |param_ty_ip, param_index| {
+            const param_ty: Type = .fromInterned(param_ty_ip);
+            const param_src = block.src(.{ .fn_proto_param = .{
+                .fn_proto_node_offset = src_node_offset,
+                .param_index = @intCast(param_index),
+            } });
+            try sema.ensureLayoutResolved(param_ty, param_src, .parameter);
+        }
+        try sema.ensureLayoutResolved(bare_return_type, ret_ty_src, .return_type);
+        try sema.validateResolvedFuncType(
+            block,
+            cc,
+            param_types,
+            bare_return_type,
+            src,
+            ip.getNav(sema.owner.unwrap().nav_val).srcInst(ip),
+        );
+    }
+
     if (inferred_error_set) {
         assert(has_body);
-        const func_val: Value = .fromInterned(try ip.getFuncDeclIes(gpa, io, pt.tid, .{
+        return .fromIntern(try ip.getFuncDeclIes(gpa, io, pt.tid, .{
             .owner_nav = sema.owner.unwrap().nav_val,
 
             .param_types = param_types,
@@ -9091,8 +9166,6 @@ fn funcCommon(
             .lbrace_column = @as(u16, @truncate(src_locs.columns)),
             .rbrace_column = @as(u16, @truncate(src_locs.columns >> 16)),
         }));
-        try sema.ensureLayoutResolved(func_val.typeOf(zcu), ret_ty_src, .return_type);
-        return .fromValue(func_val);
     }
 
     const func_ty = try ip.getFuncType(gpa, io, pt.tid, .{
@@ -9106,7 +9179,6 @@ fn funcCommon(
     });
 
     if (has_body) {
-        try sema.ensureLayoutResolved(.fromInterned(func_ty), ret_ty_src, .return_type);
         return .fromIntern(try ip.getFuncDecl(gpa, io, pt.tid, .{
             .owner_nav = sema.owner.unwrap().nav_val,
             .ty = func_ty,
@@ -18256,19 +18328,6 @@ fn zirPtrType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
         }
     } else if (inst_data.size != .one and elem_ty.zigTypeTag(zcu) == .@"opaque") {
         return sema.fail(block, elem_ty_src, "indexable pointer to opaque type '{f}' not allowed", .{elem_ty.fmt(pt)});
-    } else if (inst_data.size == .c) {
-        if (!elem_ty.validateExtern(.other, zcu)) {
-            const msg = msg: {
-                const msg = try sema.errMsg(elem_ty_src, "C pointers cannot point to non-C-ABI-compatible type '{f}'", .{elem_ty.fmt(pt)});
-                errdefer msg.destroy(sema.gpa);
-
-                try sema.explainWhyTypeIsNotExtern(msg, elem_ty_src, elem_ty, .other);
-
-                try sema.addDeclaredHereNote(msg, elem_ty);
-                break :msg msg;
-            };
-            return sema.failWithOwnedErrorMsg(block, msg);
-        }
     }
 
     if (host_size != 0) {
@@ -19800,16 +19859,6 @@ fn zirReifyPointer(
         else => {},
     }
 
-    if (size == .c and !elem_ty.validateExtern(.other, zcu)) {
-        return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(src, "C pointers cannot point to non-C-ABI-compatible type '{f}'", .{elem_ty.fmt(pt)});
-            errdefer msg.destroy(gpa);
-            try sema.explainWhyTypeIsNotExtern(msg, elem_ty_src, elem_ty, .other);
-            try sema.addDeclaredHereNote(msg, elem_ty);
-            break :msg msg;
-        });
-    }
-
     const sentinel_ty = try pt.optionalType(elem_ty.toIntern());
     const sentinel_uncoerced = sema.resolveInst(extra.sentinel);
     const sentinel_coerced = try sema.coerce(block, sentinel_ty, sentinel_uncoerced, sentinel_src);
@@ -19898,10 +19947,11 @@ fn zirReifyFn(
             try param_attrs_arr.elemValue(pt, param_idx),
             std.builtin.Type.Fn.Param.Attributes,
         );
-        try sema.checkParamTypeCommon(
+        try sema.checkParamType(
             block,
             @intCast(param_idx),
             param_ty,
+            false,
             param_attrs.@"noalias",
             param_types_src,
             fn_attrs.@"callconv",
@@ -19919,7 +19969,7 @@ fn zirReifyFn(
         try sema.checkCallConvSupportsVarArgs(block, fn_attrs_src, fn_attrs.@"callconv");
     }
 
-    try sema.checkReturnTypeAndCallConvCommon(
+    try sema.checkReturnTypeAndCallConv(
         block,
         ret_ty,
         ret_ty_src,
@@ -19929,9 +19979,6 @@ fn zirReifyFn(
         false,
         false,
     );
-    if (ret_ty.comptimeOnly(zcu)) {
-        return sema.fail(block, param_attrs_src, "cannot reify function type with comptime-only return type '{f}'", .{ret_ty.fmt(pt)});
-    }
 
     return .fromIntern(try ip.getFuncType(gpa, io, pt.tid, .{
         .param_types = param_types_ip,
@@ -20615,7 +20662,7 @@ fn zirCVaArg(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) C
 
     const va_list_ref = try sema.resolveVaListRef(block, va_list_src, extra.lhs);
     const arg_ty = try sema.resolveType(block, ty_src, extra.rhs);
-
+    try sema.ensureLayoutResolved(arg_ty, ty_src, .parameter);
     if (!arg_ty.validateExtern(.param_ty, sema.pt.zcu)) {
         const msg = msg: {
             const msg = try sema.errMsg(ty_src, "cannot get '{f}' from variadic argument", .{arg_ty.fmt(sema.pt)});
@@ -24639,13 +24686,12 @@ fn zirBuiltinExtern(
         return sema.fail(block, ty_src, "expected (optional) pointer", .{});
     }
     if (!ty.validateExtern(.other, zcu)) {
-        const msg = msg: {
+        return sema.failWithOwnedErrorMsg(block, msg: {
             const msg = try sema.errMsg(ty_src, "extern symbol cannot have type '{f}'", .{ty.fmt(pt)});
             errdefer msg.destroy(sema.gpa);
             try sema.explainWhyTypeIsNotExtern(msg, ty_src, ty, .other);
             break :msg msg;
-        };
-        return sema.failWithOwnedErrorMsg(block, msg);
+        });
     }
 
     const options = try sema.resolveExternOptions(block, options_src, extra.rhs);
@@ -25034,7 +25080,7 @@ pub fn explainWhyTypeIsNotExtern(
     src_loc: LazySrcLoc,
     ty: Type,
     position: Type.ExternPosition,
-) CompileError!void {
+) SemaError!void {
     const pt = sema.pt;
     const zcu = pt.zcu;
     switch (ty.zigTypeTag(zcu)) {
