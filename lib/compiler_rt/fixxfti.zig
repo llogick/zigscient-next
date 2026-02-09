@@ -1,12 +1,14 @@
 const builtin = @import("builtin");
+
 const common = @import("./common.zig");
 const intFromFloat = @import("./int_from_float.zig").intFromFloat;
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
     if (common.want_windows_v2u64_abi) {
-        @export(&__fixxfti_windows_x86_64, .{ .name = "__fixxfti", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&__fixxfti_windows_x86_64, "__fixxfti");
     } else {
-        @export(&__fixxfti, .{ .name = "__fixxfti", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&__fixxfti, "__fixxfti");
     }
 }
 

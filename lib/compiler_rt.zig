@@ -1,10 +1,11 @@
-const std = @import("std");
 const builtin = @import("builtin");
-const common = @import("compiler_rt/common.zig");
+const ofmt_c = builtin.object_format == .c;
+
+const std = @import("std");
 
 /// Avoid dragging in the runtime safety mechanisms into this .o file, unless
 /// we're trying to test compiler-rt.
-pub const panic = if (common.test_safety)
+pub const panic = if (test_safety)
     std.debug.FullPanic(std.debug.defaultPanic)
 else
     std.debug.no_panic;
@@ -18,6 +19,33 @@ pub const std_options_debug_io: std.Io = if (builtin.is_test)
     std.Io.Threaded.global_single_threaded.ioBasic()
 else
     unreachable;
+
+pub inline fn symbol(comptime func: *const anyopaque, comptime name: []const u8) void {
+    @export(func, .{ .name = name, .linkage = linkage, .visibility = visibility });
+}
+
+/// For now, we prefer weak linkage because some of the routines we implement here may also be
+/// provided by system/dynamic libc. Eventually we should be more disciplined about this on a
+/// per-symbol, per-target basis: https://github.com/ziglang/zig/issues/11883
+pub const linkage: std.builtin.GlobalLinkage = if (builtin.is_test)
+    .internal
+else if (ofmt_c)
+    .strong
+else
+    .weak;
+
+/// Determines the symbol's visibility to other objects.
+/// For WebAssembly this allows the symbol to be resolved to other modules, but will not
+/// export it to the host runtime.
+pub const visibility: std.builtin.SymbolVisibility = if (linkage == .internal or builtin.link_mode == .dynamic)
+    .default
+else
+    .hidden;
+
+pub const test_safety = switch (builtin.zig_backend) {
+    .stage2_aarch64 => false,
+    else => builtin.is_test,
+};
 
 comptime {
     // Integer routines
@@ -276,17 +304,44 @@ comptime {
         _ = @import("compiler_rt/memcpy.zig");
         _ = @import("compiler_rt/memset.zig");
         _ = @import("compiler_rt/memmove.zig");
-        _ = @import("compiler_rt/memcmp.zig");
+        symbol(&memcmp, "memcmp");
         _ = @import("compiler_rt/bcmp.zig");
         _ = @import("compiler_rt/ssp.zig");
-
-        _ = @import("compiler_rt/strlen.zig");
+        symbol(&strlen, "strlen");
     }
 
     // Temporarily used for uefi until https://github.com/ziglang/zig/issues/21630 is addressed.
     if (!builtin.link_libc and (builtin.os.tag == .windows or builtin.os.tag == .uefi) and (builtin.abi == .none or builtin.abi == .msvc)) {
-        @export(&_fltused, .{ .name = "_fltused", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&_fltused, "_fltused");
     }
 }
 
 var _fltused: c_int = 1;
+
+fn strlen(s: [*:0]const c_char) callconv(.c) usize {
+    return std.mem.len(s);
+}
+
+fn memcmp(vl: [*]const u8, vr: [*]const u8, n: usize) callconv(.c) c_int {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const compared = @as(c_int, vl[i]) -% @as(c_int, vr[i]);
+        if (compared != 0) return compared;
+    }
+    return 0;
+}
+
+test "memcmp" {
+    const arr0 = &[_]u8{ 1, 1, 1 };
+    const arr1 = &[_]u8{ 1, 1, 1 };
+    const arr2 = &[_]u8{ 1, 0, 1 };
+    const arr3 = &[_]u8{ 1, 2, 1 };
+    const arr4 = &[_]u8{ 1, 0xff, 1 };
+
+    try std.testing.expect(memcmp(arr0, arr1, 3) == 0);
+    try std.testing.expect(memcmp(arr0, arr2, 3) > 0);
+    try std.testing.expect(memcmp(arr0, arr3, 3) < 0);
+
+    try std.testing.expect(memcmp(arr0, arr4, 3) < 0);
+    try std.testing.expect(memcmp(arr4, arr0, 3) > 0);
+}

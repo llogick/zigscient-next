@@ -1,9 +1,10 @@
 const common = @import("./common.zig");
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
     if (common.want_ppc_abi)
-        @export(&__negtf2, .{ .name = "__negkf2", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__negtf2, .{ .name = "__negtf2", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&__negtf2, "__negkf2");
+    symbol(&__negtf2, "__negtf2");
 }
 
 fn __negtf2(a: f128) callconv(.c) f128 {

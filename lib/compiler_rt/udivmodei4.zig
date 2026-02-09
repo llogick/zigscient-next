@@ -1,17 +1,19 @@
-const std = @import("std");
 const builtin = @import("builtin");
-const common = @import("common.zig");
+const endian = builtin.cpu.arch.endian();
+
+const std = @import("std");
 const shr = std.math.shr;
 const shl = std.math.shl;
+
+const common = @import("common.zig");
+const symbol = @import("../compiler_rt.zig").symbol;
 
 const max_limbs = std.math.divCeil(usize, 65535, 32) catch unreachable; // max supported type is u65535
 
 comptime {
-    @export(&__udivei4, .{ .name = "__udivei4", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__umodei4, .{ .name = "__umodei4", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__udivei4, "__udivei4");
+    symbol(&__umodei4, "__umodei4");
 }
-
-const endian = builtin.cpu.arch.endian();
 
 /// Get the value of a limb.
 inline fn limb(x: []const u32, i: usize) u32 {

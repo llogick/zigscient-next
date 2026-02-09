@@ -4,24 +4,27 @@
 //! https://git.musl-libc.org/cgit/musl/tree/src/math/truncf.c
 //! https://git.musl-libc.org/cgit/musl/tree/src/math/trunc.c
 
-const std = @import("std");
 const builtin = @import("builtin");
 const arch = builtin.cpu.arch;
+
+const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 const expect = std.testing.expect;
+
 const common = @import("common.zig");
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    @export(&__trunch, .{ .name = "__trunch", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&truncf, .{ .name = "truncf", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&trunc, .{ .name = "trunc", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__truncx, .{ .name = "__truncx", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__trunch, "__trunch");
+    symbol(&truncf, "truncf");
+    symbol(&trunc, "trunc");
+    symbol(&__truncx, "__truncx");
     if (common.want_ppc_abi) {
-        @export(&truncq, .{ .name = "truncf128", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&truncq, "truncf128");
     }
-    @export(&truncq, .{ .name = "truncq", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&truncl, .{ .name = "truncl", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&truncq, "truncq");
+    symbol(&truncl, "truncl");
 }
 
 pub fn __trunch(x: f16) callconv(.c) f16 {

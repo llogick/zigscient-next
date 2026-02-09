@@ -1,14 +1,16 @@
-const std = @import("std");
 const builtin = @import("builtin");
+const endian = builtin.cpu.arch.endian();
+
+const std = @import("std");
+
 const common = @import("common.zig");
 const udivmod = @import("udivmodei4.zig").divmod;
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    @export(&__divei4, .{ .name = "__divei4", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__modei4, .{ .name = "__modei4", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__divei4, "__divei4");
+    symbol(&__modei4, "__modei4");
 }
-
-const endian = builtin.cpu.arch.endian();
 
 inline fn limb(x: []u32, i: usize) *u32 {
     return if (endian == .little) &x[i] else &x[x.len - 1 - i];

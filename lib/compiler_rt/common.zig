@@ -3,23 +3,11 @@ const builtin = @import("builtin");
 const native_endian = builtin.cpu.arch.endian();
 const ofmt_c = builtin.object_format == .c;
 
-/// For now, we prefer weak linkage because some of the routines we implement here may also be
-/// provided by system/dynamic libc. Eventually we should be more disciplined about this on a
-/// per-symbol, per-target basis: https://github.com/ziglang/zig/issues/11883
-pub const linkage: std.builtin.GlobalLinkage = if (builtin.is_test)
-    .internal
-else if (ofmt_c)
-    .strong
-else
-    .weak;
+/// Deprecated, everything in common should move to compiler_rt.zig
+pub const linkage = @import("../compiler_rt.zig").linkage;
 
-/// Determines the symbol's visibility to other objects.
-/// For WebAssembly this allows the symbol to be resolved to other modules, but will not
-/// export it to the host runtime.
-pub const visibility: std.builtin.SymbolVisibility = if (linkage == .internal or builtin.link_mode == .dynamic)
-    .default
-else
-    .hidden;
+/// Deprecated, everything in common should move to compiler_rt.zig
+pub const visibility = @import("../compiler_rt.zig").visibility;
 
 pub const PreferredLoadStoreElement = element: {
     if (std.simd.suggestVectorLength(u8)) |vec_size| {
@@ -121,10 +109,8 @@ pub const gnu_f16_abi = switch (builtin.cpu.arch) {
 
 pub const want_sparc_abi = builtin.cpu.arch.isSPARC();
 
-pub const test_safety = switch (builtin.zig_backend) {
-    .stage2_aarch64 => false,
-    else => builtin.is_test,
-};
+/// Deprecated, everything in common should move to compiler_rt.zig
+pub const test_safety = @import("../compiler_rt.zig").test_safety;
 
 /// This seems to mostly correspond to `clang::TargetInfo::HasFloat16`.
 pub fn F16T(comptime OtherType: type) type {

@@ -17,17 +17,18 @@ const rem_pio2f = @import("rem_pio2f.zig").rem_pio2f;
 
 const arch = builtin.cpu.arch;
 const common = @import("common.zig");
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    @export(&__tanh, .{ .name = "__tanh", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&tanf, .{ .name = "tanf", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&tan, .{ .name = "tan", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__tanx, .{ .name = "__tanx", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__tanh, "__tanh");
+    symbol(&tanf, "tanf");
+    symbol(&tan, "tan");
+    symbol(&__tanx, "__tanx");
     if (common.want_ppc_abi) {
-        @export(&tanq, .{ .name = "tanf128", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&tanq, "tanf128");
     }
-    @export(&tanq, .{ .name = "tanq", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&tanl, .{ .name = "tanl", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&tanq, "tanq");
+    symbol(&tanl, "tanl");
 }
 
 pub fn __tanh(x: f16) callconv(.c) f16 {

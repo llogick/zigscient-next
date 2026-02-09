@@ -15,29 +15,30 @@ const mem = std.mem;
 const expect = std.testing.expect;
 
 const common = @import("common.zig");
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
     // floor
-    @export(&__floorh, .{ .name = "__floorh", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&floorf, .{ .name = "floorf", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&floor, .{ .name = "floor", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__floorx, .{ .name = "__floorx", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__floorh, "__floorh");
+    symbol(&floorf, "floorf");
+    symbol(&floor, "floor");
+    symbol(&__floorx, "__floorx");
     if (common.want_ppc_abi) {
-        @export(&floorq, .{ .name = "floorf128", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&floorq, "floorf128");
     }
-    @export(&floorq, .{ .name = "floorq", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&floorl, .{ .name = "floorl", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&floorq, "floorq");
+    symbol(&floorl, "floorl");
 
     // ceil
-    @export(&__ceilh, .{ .name = "__ceilh", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&ceilf, .{ .name = "ceilf", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&ceil, .{ .name = "ceil", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__ceilx, .{ .name = "__ceilx", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__ceilh, "__ceilh");
+    symbol(&ceilf, "ceilf");
+    symbol(&ceil, "ceil");
+    symbol(&__ceilx, "__ceilx");
     if (common.want_ppc_abi) {
-        @export(&ceilq, .{ .name = "ceilf128", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&ceilq, "ceilf128");
     }
-    @export(&ceilq, .{ .name = "ceilq", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&ceill, .{ .name = "ceill", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&ceilq, "ceilq");
+    symbol(&ceill, "ceill");
 }
 
 pub fn __floorh(x: f16) callconv(.c) f16 {

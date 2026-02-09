@@ -1,13 +1,14 @@
 const common = @import("./common.zig");
 const extendf = @import("./extendf.zig").extendf;
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
     if (common.gnu_f16_abi) {
-        @export(&__gnu_h2f_ieee, .{ .name = "__gnu_h2f_ieee", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&__gnu_h2f_ieee, "__gnu_h2f_ieee");
     } else if (common.want_aeabi) {
-        @export(&__aeabi_h2f, .{ .name = "__aeabi_h2f", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&__aeabi_h2f, "__aeabi_h2f");
     }
-    @export(&__extendhfsf2, .{ .name = "__extendhfsf2", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__extendhfsf2, "__extendhfsf2");
 }
 
 pub fn __extendhfsf2(a: common.F16T(f32)) callconv(.c) f32 {

@@ -5,24 +5,24 @@
 //! https://git.musl-libc.org/cgit/musl/tree/src/math/log10.c
 
 const std = @import("std");
-const builtin = @import("builtin");
 const math = std.math;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const maxInt = std.math.maxInt;
-const arch = builtin.cpu.arch;
+
 const common = @import("common.zig");
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    @export(&__log10h, .{ .name = "__log10h", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&log10f, .{ .name = "log10f", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&log10, .{ .name = "log10", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__log10x, .{ .name = "__log10x", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__log10h, "__log10h");
+    symbol(&log10f, "log10f");
+    symbol(&log10, "log10");
+    symbol(&__log10x, "__log10x");
     if (common.want_ppc_abi) {
-        @export(&log10q, .{ .name = "log10f128", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&log10q, "log10f128");
     }
-    @export(&log10q, .{ .name = "log10q", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&log10l, .{ .name = "log10l", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&log10q, "log10q");
+    symbol(&log10l, "log10l");
 }
 
 pub fn __log10h(a: f16) callconv(.c) f16 {

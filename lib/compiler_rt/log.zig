@@ -5,23 +5,23 @@
 //! https://git.musl-libc.org/cgit/musl/tree/src/math/log.c?h=1b76ff0767d01df72f692806ee5adee13c67ef88
 
 const std = @import("std");
-const builtin = @import("builtin");
 const math = std.math;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
-const arch = builtin.cpu.arch;
+
 const common = @import("common.zig");
+const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    @export(&__logh, .{ .name = "__logh", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&logf, .{ .name = "logf", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&log, .{ .name = "log", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&__logx, .{ .name = "__logx", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__logh, "__logh");
+    symbol(&logf, "logf");
+    symbol(&log, "log");
+    symbol(&__logx, "__logx");
     if (common.want_ppc_abi) {
-        @export(&logq, .{ .name = "logf128", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&logq, "logf128");
     }
-    @export(&logq, .{ .name = "logq", .linkage = common.linkage, .visibility = common.visibility });
-    @export(&logl, .{ .name = "logl", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&logq, "logq");
+    symbol(&logl, "logl");
 }
 
 pub fn __logh(a: f16) callconv(.c) f16 {
