@@ -2853,7 +2853,7 @@ pub fn fieldPtrType(ptr_ty: Type, field_index: u32, pt: Zcu.PerThread) Allocator
                     else => parent_align.minStrict(.fromLog2Units(@ctz(field_offset))),
                 };
                 const field_ptr_align: Alignment = a: {
-                    if (parent_align == .none and
+                    if (ptr_info.flags.alignment == .none and
                         aggregate_ty.explicitFieldAlignment(field_index, zcu) == .none and
                         actual_field_align == field_ty.abiAlignment(zcu))
                     {
