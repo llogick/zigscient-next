@@ -21,7 +21,7 @@ const AstGen = std.zig.AstGen;
 const ZonGen = std.zig.ZonGen;
 const Server = std.zig.Server;
 
-const tracy = @import("tracy.zig");
+pub const tracy = @import("tracy.zig");
 pub const Compilation = @import("Compilation.zig");
 const link = @import("link.zig");
 const Package = @import("Package.zig");
@@ -60,8 +60,11 @@ pub const std_options: std.Options = .{
 
 pub const std_options_cwd = if (native_os == .wasi) wasi_cwd else null;
 
-pub const panic = crash_report.panic;
-pub const debug = crash_report.debug;
+pub const debug = struct {
+    pub fn printCrashContext(terminal: Io.Terminal) void {
+        crash_report.dumpCrashContext(terminal) catch {};
+    }
+};
 
 var preopens: std.process.Preopens = .empty;
 pub fn wasi_cwd() Io.Dir {
@@ -166,25 +169,55 @@ pub fn log(
     std.log.defaultLog(level, scope, format, args);
 }
 
-var debug_allocator: std.heap.DebugAllocator(.{
-    .stack_trace_frames = build_options.mem_leak_frames,
-}) = .init;
-
 const use_debug_allocator = build_options.debug_gpa or
     (native_os != .wasi and !builtin.link_libc and switch (builtin.mode) {
         .Debug, .ReleaseSafe => true,
         .ReleaseFast, .ReleaseSmall => false,
     });
 
+const RootAllocator = if (use_debug_allocator) std.heap.DebugAllocator(.{
+    .stack_trace_frames = build_options.mem_leak_frames,
+    .thread_safe = switch (build_options.io_mode) {
+        .threaded => true,
+        .evented => false,
+    },
+}) else struct {
+    pub const init: RootAllocator = .{};
+    pub fn allocator(_: RootAllocator) Allocator {
+        if (native_os == .wasi) return std.heap.wasm_allocator;
+        if (builtin.link_libc) return std.heap.c_allocator;
+        return std.heap.smp_allocator;
+    }
+    pub fn deinit(_: RootAllocator) std.heap.Check {
+        return .ok;
+    }
+};
+
 pub fn main(init: std.process.Init.Minimal) anyerror!void {
-    const gpa = gpa: {
-        if (use_debug_allocator) break :gpa debug_allocator.allocator();
-        if (native_os == .wasi) break :gpa std.heap.wasm_allocator;
-        if (builtin.link_libc) break :gpa std.heap.c_allocator;
-        break :gpa std.heap.smp_allocator;
-    };
-    defer if (use_debug_allocator) {
-        _ = debug_allocator.deinit();
+    var root_allocator: RootAllocator = .init;
+    defer _ = root_allocator.deinit();
+    const root_gpa = root_allocator.allocator();
+    var io_impl: IoImpl = undefined;
+    switch (build_options.io_mode) {
+        .threaded => io_impl = .init(root_gpa, .{
+            .stack_size = thread_stack_size,
+
+            .argv0 = .init(init.args),
+            .environ = init.environ,
+        }),
+        .evented => try io_impl.init(root_gpa, .{
+            .argv0 = .init(init.args),
+            .environ = init.environ,
+
+            .backing_allocator_needs_mutex = use_debug_allocator,
+        }),
+    }
+    defer io_impl.deinit();
+    io_impl_ptr = &io_impl;
+    const io = io_impl.io();
+    const gpa = switch (build_options.io_mode) {
+        .threaded => root_gpa,
+        .evented => io_impl.allocator(),
     };
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
@@ -195,17 +228,6 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     if (args.len > 0) crash_report.zig_argv0 = args[0];
 
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
-
-    Compilation.setMainThread();
-
-    var threaded: Io.Threaded = .init(gpa, .{
-        .argv0 = .init(init.args),
-        .environ = init.environ,
-    });
-    defer threaded.deinit();
-    threaded_impl_ptr = &threaded;
-    threaded.stack_size = thread_stack_size;
-    const io = threaded.io();
 
     if (args.len <= 1 or !mem.eql(u8, args[1], "zig")) {
         _ = try @import("Lsp/src/main.zig").main(init);
@@ -3670,7 +3692,7 @@ pub fn buildOutputType(
         @max(cs.n_jobs orelse std.Thread.getCpuCount() catch 1, 1),
         std.math.maxInt(Zcu.PerThread.IdBacking),
     );
-    setThreadLimit(thread_limit);
+    try setThreadLimit(arena, thread_limit);
 
     for (cs.create_module.c_source_files.items) |*src| {
         dev.check(.c_compiler);
@@ -5006,13 +5028,13 @@ pub fn translateC(
     argv: []const []const u8,
     environ_map: *const process.Environ.Map,
     prog_node: std.Progress.Node,
+    thread_limit: usize,
     capture: ?*[]u8,
 ) !void {
-    try jitCmd(gpa, arena, io, argv, environ_map, .{
+    try jitCmdInner(gpa, arena, io, argv, environ_map, prog_node, thread_limit, .{
         .cmd_name = "translate-c",
         .root_src_path = "translate-c/main.zig",
         .depend_on_aro = true,
-        .progress_node = prog_node,
         .capture = capture,
     });
 }
@@ -5462,7 +5484,7 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
         @max(n_jobs orelse std.Thread.getCpuCount() catch 1, 1),
         std.math.maxInt(Zcu.PerThread.IdBacking),
     );
-    setThreadLimit(thread_limit);
+    try setThreadLimit(arena, thread_limit);
 
     // Dummy http client that is not actually used when fetch_command is unsupported.
     // Prevents bootstrap from depending on a bunch of unnecessary stuff.
@@ -5926,7 +5948,7 @@ const JitCmdOptions = struct {
     capture: ?*[]u8 = null,
     /// Send error bundles via std.zig.Server over stdout
     server: bool = false,
-    progress_node: ?std.Progress.Node = null,
+    color: Color = .auto,
 };
 
 fn jitCmd(
@@ -5939,12 +5961,30 @@ fn jitCmd(
 ) !void {
     dev.check(.jit_command);
 
-    const color: Color = .auto;
-    const root_prog_node = if (options.progress_node) |node| node else std.Progress.start(io, .{
-        .disable_printing = (color == .off),
+    const root_prog_node = std.Progress.start(io, .{
+        .disable_printing = (options.color == .off),
     });
     defer root_prog_node.end();
 
+    const thread_limit = @min(
+        @max(std.Thread.getCpuCount() catch 1, 1),
+        std.math.maxInt(Zcu.PerThread.IdBacking),
+    );
+    try setThreadLimit(arena, thread_limit);
+
+    return jitCmdInner(gpa, arena, io, args, environ_map, root_prog_node, thread_limit, options);
+}
+
+fn jitCmdInner(
+    gpa: Allocator,
+    arena: Allocator,
+    io: Io,
+    args: []const []const u8,
+    environ_map: *const process.Environ.Map,
+    root_prog_node: std.Progress.Node,
+    thread_limit: usize,
+    options: JitCmdOptions,
+) !void {
     const target_query: std.Target.Query = .{};
     const resolved_target: Package.Module.ResolvedTarget = .{
         .result = std.zig.resolveTargetQueryOrFatal(io, target_query),
@@ -5976,12 +6016,6 @@ fn jitCmd(
         environ_map,
     );
     defer dirs.deinit(io);
-
-    const thread_limit = @min(
-        @max(std.Thread.getCpuCount() catch 1, 1),
-        std.math.maxInt(Zcu.PerThread.IdBacking),
-    );
-    setThreadLimit(thread_limit);
 
     var child_argv: std.ArrayList([]const u8) = .empty;
     try child_argv.ensureUnusedCapacity(arena, args.len + 4);
@@ -6070,7 +6104,7 @@ fn jitCmd(
                 process.exit(2);
             }
         } else {
-            updateModule(comp, color, root_prog_node) catch |err| switch (err) {
+            updateModule(comp, options.color, root_prog_node) catch |err| switch (err) {
                 error.CompileErrorsReported => process.exit(2),
                 else => |e| return e,
             };
@@ -8052,15 +8086,25 @@ fn addLibDirectoryWarn2(
     });
 }
 
-var threaded_impl_ptr: *Io.Threaded = undefined;
-fn setThreadLimit(n: usize) void {
-    // We want a maximum of n total threads to keep the InternPool happy, but
-    // the main thread doesn't count towards the limits, so use n-1. Also, the
-    // linker can run concurrently, so we need to set both the async *and* the
-    // concurrency limit.
-    const limit: Io.Limit = .limited(n - 1);
-    threaded_impl_ptr.setAsyncLimit(limit);
-    threaded_impl_ptr.concurrent_limit = limit;
+const IoImpl = switch (build_options.io_mode) {
+    .threaded => Io.Threaded,
+    .evented => Io.Evented,
+};
+var io_impl_ptr: *IoImpl = undefined;
+fn setThreadLimit(arena: std.mem.Allocator, n: usize) Allocator.Error!void {
+    switch (build_options.io_mode) {
+        .threaded => {
+            // We want a maximum of n total threads to keep the InternPool happy, but
+            // the main thread doesn't count towards the limits, so use n-1. Also, the
+            // linker can run concurrently, so we need to set both the async *and* the
+            // concurrency limit.
+            const limit: Io.Limit = .limited(n - 1);
+            io_impl_ptr.setAsyncLimit(limit);
+            io_impl_ptr.concurrent_limit = limit;
+        },
+        .evented => {},
+    }
+    try Zcu.PerThread.Id.allocate(arena, @max(n, 2));
 }
 
 fn randInt(io: Io, comptime T: type) T {

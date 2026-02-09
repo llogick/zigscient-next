@@ -41,13 +41,86 @@ zcu: *Zcu,
 tid: Id,
 
 pub const IdBacking = u7;
-pub const Id = if (InternPool.single_threaded) enum { main } else enum(IdBacking) { main, _ };
+pub const Id = if (InternPool.single_threaded) enum {
+    main,
+
+    pub fn allocate(arena: Allocator, n: usize) Allocator.Error!void {
+        _ = arena;
+        _ = n;
+    }
+    pub fn acquire(io: std.Io) Id {
+        _ = io;
+        return .main;
+    }
+    pub fn release(tid: Id, io: std.Io) void {
+        _ = io;
+        _ = tid;
+    }
+} else enum(IdBacking) {
+    main,
+    _,
+
+    var tid_mutex: std.Io.Mutex = .init;
+    var tid_cond: std.Io.Condition = .init;
+    /// This is a temporary workaround put in place to migrate from `std.Thread.Pool`
+    /// to `std.Io.Threaded` for asynchronous/concurrent work. The eventual solution
+    /// will likely involve significant changes to the `InternPool` implementation.
+    var available_tids: std.ArrayList(Id) = .empty;
+    threadlocal var recursive_depth: usize = 0;
+    threadlocal var recursive_tid: Id = .main;
+
+    pub fn allocate(arena: Allocator, n: usize) Allocator.Error!void {
+        assert(available_tids.items.len == 0);
+        try available_tids.ensureTotalCapacityPrecise(arena, n - 1);
+        for (1..n) |tid| available_tids.appendAssumeCapacity(@enumFromInt(tid));
+    }
+    pub fn acquire(io: std.Io) Id {
+        switch (build_options.io_mode) {
+            .threaded => {
+                recursive_depth += 1;
+                if (recursive_depth > 1) {
+                    assert(recursive_tid != .main);
+                    return recursive_tid;
+                }
+            },
+            .evented => {},
+        }
+        tid_mutex.lockUncancelable(io);
+        defer tid_mutex.unlock(io);
+        while (true) {
+            if (available_tids.pop()) |tid| {
+                switch (build_options.io_mode) {
+                    .threaded => recursive_tid = tid,
+                    .evented => {},
+                }
+                return tid;
+            }
+            tid_cond.waitUncancelable(io, &tid_mutex);
+        }
+    }
+    pub fn release(tid: Id, io: std.Io) void {
+        switch (build_options.io_mode) {
+            .threaded => {
+                assert(recursive_tid == tid);
+                recursive_depth -= 1;
+                if (recursive_depth > 0) return;
+                recursive_tid = .main;
+            },
+            .evented => {},
+        }
+        {
+            tid_mutex.lockUncancelable(io);
+            defer tid_mutex.unlock(io);
+            available_tids.appendAssumeCapacity(tid);
+        }
+        tid_cond.signal(io);
+    }
+};
 
 pub fn activate(zcu: *Zcu, tid: Id) Zcu.PerThread {
     zcu.intern_pool.activate();
     return .{ .zcu = zcu, .tid = tid };
 }
-
 pub fn deactivate(pt: Zcu.PerThread) void {
     pt.zcu.intern_pool.deactivate();
 }

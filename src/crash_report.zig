@@ -1,34 +1,14 @@
-/// We override the panic implementation to our own one, so we can print our own information before
-/// calling the default panic handler. This declaration must be re-exposed from `@import("root")`.
-pub const panic = if (dev.env == .bootstrap)
-    std.debug.simple_panic
-else
-    std.debug.FullPanic(panicImpl);
-
-/// We let std install its segfault handler, but we override the target-agnostic handler it calls,
-/// so we can print our own information before calling the default segfault logic. This declaration
-/// must be re-exposed from `@import("root")`.
-pub const debug = struct {
-    pub const handleSegfault = handleSegfaultImpl;
-};
-
 /// Printed in panic messages when suggesting a command to run, allowing copy-pasting the command.
 /// Set by `main` as soon as arguments are known. The value here is a default in case we somehow
 /// crash earlier than that.
 pub var zig_argv0: []const u8 = "zig";
 
-fn handleSegfaultImpl(addr: ?usize, name: []const u8, opt_ctx: ?std.debug.CpuContextPtr) noreturn {
-    @branchHint(.cold);
-    dumpCrashContext() catch {};
-    std.debug.defaultHandleSegfault(addr, name, opt_ctx);
-}
-fn panicImpl(msg: []const u8, first_trace_addr: ?usize) noreturn {
-    @branchHint(.cold);
-    dumpCrashContext() catch {};
-    std.debug.defaultPanic(msg, first_trace_addr orelse @returnAddress());
-}
+const enabled = switch (build_options.io_mode) {
+    .threaded => build_options.enable_debug_extensions,
+    .evented => false, // would use threadlocals in a way incompatible with evented
+};
 
-pub const AnalyzeBody = if (build_options.enable_debug_extensions) struct {
+pub const AnalyzeBody = if (enabled) struct {
     parent: ?*AnalyzeBody,
     sema: *Sema,
     block: *Sema.Block,
@@ -63,7 +43,7 @@ pub const AnalyzeBody = if (build_options.enable_debug_extensions) struct {
     pub inline fn setBodyIndex(_: @This(), _: usize) void {}
 };
 
-pub const CodegenFunc = if (build_options.enable_debug_extensions) struct {
+pub const CodegenFunc = if (enabled) struct {
     zcu: *const Zcu,
     func_index: InternPool.Index,
     threadlocal var current: ?CodegenFunc = null;
@@ -82,23 +62,14 @@ pub const CodegenFunc = if (build_options.enable_debug_extensions) struct {
     pub fn stop(_: InternPool.Index) void {}
 };
 
-fn dumpCrashContext() Io.Writer.Error!void {
+pub fn dumpCrashContext(terminal: Io.Terminal) Io.Writer.Error!void {
     const S = struct {
-        /// In the case of recursive panics or segfaults, don't print the context for a second time.
-        threadlocal var already_dumped = false;
         /// TODO: make this unnecessary. It exists because `print_zir` currently needs an allocator,
         /// but that shouldn't be necessary---it's already only used in one place.
-        threadlocal var crash_heap: [64 * 1024]u8 = undefined;
+        var crash_heap: [64 * 1024]u8 = undefined;
     };
-    if (S.already_dumped) return;
-    S.already_dumped = true;
 
-    // TODO: this does mean that a different thread could grab the stderr mutex between the context
-    // and the actual panic printing, which would be quite confusing.
-    const stderr = std.debug.lockStderr(&.{});
-    defer std.debug.unlockStderr();
-    const w = &stderr.file_writer.interface;
-
+    const w = terminal.writer;
     try w.writeAll("Compiler crash context:\n");
 
     if (CodegenFunc.current) |*cg| {

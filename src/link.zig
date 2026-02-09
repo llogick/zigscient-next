@@ -1500,12 +1500,12 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
         },
     }
 }
-pub fn doZcuTask(comp: *Compilation, tid: usize, task: ZcuTask) void {
+pub fn doZcuTask(comp: *Compilation, tid: Zcu.PerThread.Id, task: ZcuTask) void {
     const io = comp.io;
     const diags = &comp.link_diags;
     const zcu = comp.zcu.?;
     const ip = &zcu.intern_pool;
-    const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
+    const pt: Zcu.PerThread = .activate(zcu, tid);
     defer pt.deactivate();
 
     var timer = comp.startTimer();
@@ -1610,8 +1610,8 @@ pub fn doZcuTask(comp: *Compilation, tid: usize, task: ZcuTask) void {
         }
     }
 }
-pub fn doIdleTask(comp: *Compilation, tid: usize) error{ OutOfMemory, LinkFailure }!bool {
-    return if (comp.bin_file) |lf| lf.idle(@enumFromInt(tid)) else false;
+pub fn doIdleTask(comp: *Compilation, tid: Zcu.PerThread.Id) error{ OutOfMemory, LinkFailure }!bool {
+    return if (comp.bin_file) |lf| lf.idle(tid) else false;
 }
 /// After the main pipeline is done, but before flush, the compilation may need to link one final
 /// `Nav` into the binary: the `builtin.test_functions` value. Since the link thread isn't running

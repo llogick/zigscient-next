@@ -78,7 +78,7 @@ null_file: NullFile = .{},
 random_file: RandomFile = .{},
 pipe_file: PipeFile = .{},
 
-csprng: Csprng = .{},
+csprng: Csprng = .uninitialized,
 
 system_basic_information: SystemBasicInformation = .{},
 
@@ -88,10 +88,12 @@ const SystemBasicInformation = if (!is_windows) struct {} else struct {
 };
 
 pub const Csprng = struct {
-    rng: std.Random.DefaultCsprng = .{
+    rng: std.Random.DefaultCsprng,
+
+    pub const uninitialized: Csprng = .{ .rng = .{
         .state = undefined,
         .offset = std.math.maxInt(usize),
-    },
+    } };
 
     pub const seed_len = std.Random.DefaultCsprng.secret_seed_length;
 
@@ -120,7 +122,7 @@ pub const Argv0 = switch (native_os) {
     },
 };
 
-const Environ = struct {
+pub const Environ = struct {
     /// Unmodified data directly from the OS.
     process_environ: process.Environ,
     /// Protected by `mutex`. Determines whether the other fields have been
@@ -157,6 +159,127 @@ const Environ = struct {
             HOME: ?[:0]const u8 = null,
         },
     };
+
+    pub fn scan(environ: *Environ, allocator: std.mem.Allocator) void {
+        if (environ.initialized) return;
+        environ.initialized = true;
+
+        if (is_windows) {
+            // This value expires with any call that modifies the environment,
+            // which is outside of this Io implementation's control, so references
+            // must be short-lived.
+            const peb = windows.peb();
+            assert(windows.ntdll.RtlEnterCriticalSection(peb.FastPebLock) == .SUCCESS);
+            defer assert(windows.ntdll.RtlLeaveCriticalSection(peb.FastPebLock) == .SUCCESS);
+            const ptr = peb.ProcessParameters.Environment;
+
+            var i: usize = 0;
+            while (ptr[i] != 0) {
+                // There are some special environment variables that start with =,
+                // so we need a special case to not treat = as a key/value separator
+                // if it's the first character.
+                // https://devblogs.microsoft.com/oldnewthing/20100506-00/?p=14133
+                const key_start = i;
+                if (ptr[i] == '=') i += 1;
+                while (ptr[i] != 0 and ptr[i] != '=') : (i += 1) {}
+                const key_w = ptr[key_start..i];
+
+                const value_start = i + 1;
+                while (ptr[i] != 0) : (i += 1) {} // skip over '=' and value
+                const value_w = ptr[value_start..i];
+                i += 1; // skip over null byte
+
+                if (windows.eqlIgnoreCaseWtf16(key_w, &.{ 'N', 'O', '_', 'C', 'O', 'L', 'O', 'R' })) {
+                    environ.exist.NO_COLOR = true;
+                } else if (windows.eqlIgnoreCaseWtf16(key_w, &.{ 'C', 'L', 'I', 'C', 'O', 'L', 'O', 'R', '_', 'F', 'O', 'R', 'C', 'E' })) {
+                    environ.exist.CLICOLOR_FORCE = true;
+                } else if (windows.eqlIgnoreCaseWtf16(key_w, &.{ 'Z', 'I', 'G', '_', 'P', 'R', 'O', 'G', 'R', 'E', 'S', 'S' })) {
+                    environ.zig_progress_file = file: {
+                        var value_buf: [std.fmt.count("{d}", .{std.math.maxInt(usize)})]u8 = undefined;
+                        const len = std.unicode.calcWtf8Len(value_w);
+                        if (len > value_buf.len) break :file error.UnrecognizedFormat;
+                        assert(std.unicode.wtf16LeToWtf8(&value_buf, value_w) == len);
+                        break :file .{
+                            .handle = @ptrFromInt(std.fmt.parseInt(usize, value_buf[0..len], 10) catch
+                                break :file error.UnrecognizedFormat),
+                            .flags = .{ .nonblocking = true },
+                        };
+                    };
+                }
+                comptime assert(@sizeOf(String) == 0);
+            }
+        } else if (native_os == .wasi and !builtin.link_libc) {
+            var environ_size: usize = undefined;
+            var environ_buf_size: usize = undefined;
+
+            switch (std.os.wasi.environ_sizes_get(&environ_size, &environ_buf_size)) {
+                .SUCCESS => {},
+                else => |err| {
+                    environ.err = posix.unexpectedErrno(err);
+                    return;
+                },
+            }
+            if (environ_size == 0) return;
+
+            const wasi_environ = allocator.alloc([*:0]u8, environ_size) catch |err| {
+                environ.err = err;
+                return;
+            };
+            defer allocator.free(wasi_environ);
+            const wasi_environ_buf = allocator.alloc(u8, environ_buf_size) catch |err| {
+                environ.err = err;
+                return;
+            };
+            defer allocator.free(wasi_environ_buf);
+
+            switch (std.os.wasi.environ_get(wasi_environ.ptr, wasi_environ_buf.ptr)) {
+                .SUCCESS => {},
+                else => |err| {
+                    environ.err = posix.unexpectedErrno(err);
+                    return;
+                },
+            }
+
+            for (wasi_environ) |env| {
+                const pair = std.mem.sliceTo(env, 0);
+                var parts = std.mem.splitScalar(u8, pair, '=');
+                const key = parts.first();
+                if (std.mem.eql(u8, key, "NO_COLOR")) {
+                    environ.exist.NO_COLOR = true;
+                } else if (std.mem.eql(u8, key, "CLICOLOR_FORCE")) {
+                    environ.exist.CLICOLOR_FORCE = true;
+                }
+                comptime assert(@sizeOf(String) == 0);
+            }
+        } else {
+            for (environ.process_environ.block.slice) |opt_entry| {
+                const entry = opt_entry.?;
+                var entry_i: usize = 0;
+                while (entry[entry_i] != 0 and entry[entry_i] != '=') : (entry_i += 1) {}
+                const key = entry[0..entry_i];
+
+                var end_i: usize = entry_i;
+                while (entry[end_i] != 0) : (end_i += 1) {}
+                const value = entry[entry_i + 1 .. end_i :0];
+
+                if (std.mem.eql(u8, key, "NO_COLOR")) {
+                    environ.exist.NO_COLOR = true;
+                } else if (std.mem.eql(u8, key, "CLICOLOR_FORCE")) {
+                    environ.exist.CLICOLOR_FORCE = true;
+                } else if (std.mem.eql(u8, key, "ZIG_PROGRESS")) {
+                    environ.zig_progress_file = file: {
+                        break :file .{
+                            .handle = std.fmt.parseInt(u31, value, 10) catch
+                                break :file error.UnrecognizedFormat,
+                            .flags = .{ .nonblocking = true },
+                        };
+                    };
+                } else inline for (@typeInfo(String).@"struct".fields) |field| {
+                    if (std.mem.eql(u8, key, field.name)) @field(environ.string, field.name) = value;
+                }
+            }
+        }
+    }
 };
 
 pub const NullFile = switch (native_os) {
@@ -1397,13 +1520,13 @@ pub fn waitForApcOrAlert() void {
     _ = windows.ntdll.NtDelayExecution(windows.TRUE, &infinite_timeout);
 }
 
-const max_iovecs_len = 8;
-const splat_buffer_size = 64;
+pub const max_iovecs_len = 8;
+pub const splat_buffer_size = 64;
 /// Happens to be the same number that matches maximum number of handles that
 /// NtWaitForMultipleObjects accepts. We use this value also for poll() on
 /// posix systems.
 const poll_buffer_len = 64;
-const default_PATH = "/usr/local/bin:/bin/:/usr/bin";
+pub const default_PATH = "/usr/local/bin:/bin/:/usr/bin";
 /// There are multiple kernel bugs being worked around with retries.
 const max_windows_kernel_bug_retries = 13;
 
@@ -1588,7 +1711,7 @@ fn worker(t: *Threaded) void {
         .cancel_protection = .unblocked,
         .futex_waiter = undefined,
         .unpark_flag = unpark_flag_init,
-        .csprng = .{},
+        .csprng = .uninitialized,
     };
     Thread.current = &thread;
 
@@ -2563,12 +2686,12 @@ fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Oper
 fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (is_windows) {
-        batchAwaitWindows(b, false) catch |err| switch (err) {
+        batchDrainSubmittedWindows(b, false) catch |err| switch (err) {
             error.ConcurrencyUnavailable => unreachable, // passed concurrency=false
             else => |e| return e,
         };
         const alertable_syscall = try AlertableSyscall.start();
-        while (b.pending.head != .none and b.completions.head == .none) waitForApcOrAlert();
+        while (b.pending.head != .none and b.completed.head == .none) waitForApcOrAlert();
         alertable_syscall.finish();
         return;
     }
@@ -2576,7 +2699,7 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
         var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
         var poll_len: u32 = 0;
         {
-            var index = b.submissions.head;
+            var index = b.submitted.head;
             while (index != .none and poll_len < poll_buffer_len) {
                 const submission = &b.storage[index.toIndex()].submission;
                 switch (submission.operation) {
@@ -2605,7 +2728,7 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
             1 => {},
             else => while (true) {
                 const timeout_ms: i32 = t: {
-                    if (b.completions.head != .none) {
+                    if (b.completed.head != .none) {
                         // It is legal to call batchWait with already completed
                         // operations in the ring. In such case, we need to avoid
                         // blocking in the poll syscall, but we can still take this
@@ -2620,7 +2743,7 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
                 switch (posix.errno(rc)) {
                     .SUCCESS => {
                         if (rc == 0) {
-                            if (b.completions.head != .none) {
+                            if (b.completed.head != .none) {
                                 // Since there are already completions available in the
                                 // queue, this is neither a timeout nor a case for
                                 // retrying.
@@ -2629,7 +2752,7 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
                             continue;
                         }
                         var prev_index: Io.Operation.OptionalIndex = .none;
-                        var index = b.submissions.head;
+                        var index = b.submitted.head;
                         for (poll_buffer[0..poll_len]) |poll_entry| {
                             const storage = &b.storage[index.toIndex()];
                             const submission = &storage.submission;
@@ -2638,17 +2761,17 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
                                 const result = try operate(t, submission.operation);
 
                                 switch (prev_index) {
-                                    .none => b.submissions.head = next_index,
+                                    .none => b.submitted.head = next_index,
                                     else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
                                 }
-                                if (next_index == .none) b.submissions.tail = prev_index;
+                                if (next_index == .none) b.submitted.tail = prev_index;
 
-                                switch (b.completions.tail) {
-                                    .none => b.completions.head = index,
+                                switch (b.completed.tail) {
+                                    .none => b.completed.head = index,
                                     else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
                                 }
                                 storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
-                                b.completions.tail = index;
+                                b.completed.tail = index;
                             } else prev_index = index;
                             index = next_index;
                         }
@@ -2662,10 +2785,10 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
         }
     }
 
-    var tail_index = b.completions.tail;
-    defer b.completions.tail = tail_index;
-    var index = b.submissions.head;
-    errdefer b.submissions.head = index;
+    var tail_index = b.completed.tail;
+    defer b.completed.tail = tail_index;
+    var index = b.submitted.head;
+    errdefer b.submitted.head = index;
     while (index != .none) {
         const storage = &b.storage[index.toIndex()];
         const submission = &storage.submission;
@@ -2673,22 +2796,22 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
         const result = try operate(t, submission.operation);
 
         switch (tail_index) {
-            .none => b.completions.head = index,
+            .none => b.completed.head = index,
             else => b.storage[tail_index.toIndex()].completion.node.next = index,
         }
         storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
         tail_index = index;
         index = next_index;
     }
-    b.submissions = .{ .head = .none, .tail = .none };
+    b.submitted = .{ .head = .none, .tail = .none };
 }
 
 fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (is_windows) {
         const deadline: ?Io.Clock.Timestamp = timeout.toTimestamp(ioBasic(t));
-        try batchAwaitWindows(b, true);
-        while (b.pending.head != .none and b.completions.head == .none) {
+        try batchDrainSubmittedWindows(b, true);
+        while (b.pending.head != .none and b.completed.head == .none) {
             var delay_interval: windows.LARGE_INTEGER = interval: {
                 const d = deadline orelse break :interval std.math.minInt(windows.LARGE_INTEGER);
                 break :interval timeoutToWindowsInterval(.{ .deadline = d }).?;
@@ -2701,7 +2824,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
                     // The thread woke due to the timeout. Although spurious
                     // timeouts are OK, when no deadline is passed we must not
                     // return `error.Timeout`.
-                    if (timeout != .none and b.completions.head == .none) return error.Timeout;
+                    if (timeout != .none and b.completed.head == .none) return error.Timeout;
                 },
                 else => {},
             }
@@ -2743,7 +2866,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
         }
     } = .{ .gpa = t.allocator, .b = b, .slice = &poll_buffer, .len = 0 };
     {
-        var index = b.submissions.head;
+        var index = b.submitted.head;
         while (index != .none) {
             const submission = &b.storage[index.toIndex()].submission;
             switch (submission.operation) {
@@ -2757,18 +2880,18 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
     switch (poll_storage.len) {
         0 => return,
         1 => if (timeout == .none) {
-            const index = b.submissions.head;
+            const index = b.submitted.head;
             const storage = &b.storage[index.toIndex()];
             const result = try operate(t, storage.submission.operation);
 
-            b.submissions = .{ .head = .none, .tail = .none };
+            b.submitted = .{ .head = .none, .tail = .none };
 
-            switch (b.completions.tail) {
-                .none => b.completions.head = index,
+            switch (b.completed.tail) {
+                .none => b.completed.head = index,
                 else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
             }
             storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
-            b.completions.tail = index;
+            b.completed.tail = index;
             return;
         },
         else => {},
@@ -2777,7 +2900,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
     const deadline = timeout.toTimestamp(t_io);
     while (true) {
         const timeout_ms: i32 = t: {
-            if (b.completions.head != .none) {
+            if (b.completed.head != .none) {
                 // It is legal to call batchWait with already completed
                 // operations in the ring. In such case, we need to avoid
                 // blocking in the poll syscall, but we can still take this
@@ -2794,7 +2917,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
         switch (posix.errno(rc)) {
             .SUCCESS => {
                 if (rc == 0) {
-                    if (b.completions.head != .none) {
+                    if (b.completed.head != .none) {
                         // Since there are already completions available in the
                         // queue, this is neither a timeout nor a case for
                         // retrying.
@@ -2806,7 +2929,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
                     return error.Timeout;
                 }
                 var prev_index: Io.Operation.OptionalIndex = .none;
-                var index = b.submissions.head;
+                var index = b.submitted.head;
                 for (poll_storage.slice[0..poll_storage.len]) |poll_entry| {
                     const submission = &b.storage[index.toIndex()].submission;
                     const next_index = submission.node.next;
@@ -2814,17 +2937,20 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
                         const result = try operate(t, submission.operation);
 
                         switch (prev_index) {
-                            .none => b.submissions.head = next_index,
+                            .none => b.submitted.head = next_index,
                             else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
                         }
-                        if (next_index == .none) b.submissions.tail = prev_index;
+                        if (next_index == .none) b.submitted.tail = prev_index;
 
-                        switch (b.completions.tail) {
-                            .none => b.completions.head = index,
+                        switch (b.completed.tail) {
+                            .none => b.completed.head = index,
                             else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
                         }
-                        b.completions.tail = index;
-                        b.storage[index.toIndex()] = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+                        b.completed.tail = index;
+                        b.storage[index.toIndex()] = .{ .completion = .{
+                            .node = .{ .next = .none },
+                            .result = result,
+                        } };
                     } else prev_index = index;
                     index = next_index;
                 }
@@ -2841,7 +2967,7 @@ const WindowsBatchPendingOperationContext = extern struct {
     file: windows.HANDLE,
     iosb: windows.IO_STATUS_BLOCK,
 
-    const Erased = [3]usize;
+    const Erased = Io.Operation.Storage.Pending.Context;
 
     comptime {
         assert(@sizeOf(Erased) <= @sizeOf(WindowsBatchPendingOperationContext));
@@ -2858,24 +2984,9 @@ const WindowsBatchPendingOperationContext = extern struct {
 
 fn batchCancel(userdata: ?*anyopaque, b: *Io.Batch) void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    {
-        var tail_index = b.unused.tail;
-        defer b.unused.tail = tail_index;
-        var index = b.submissions.head;
-        errdefer b.submissions.head = index;
-        while (index != .none) {
-            const next_index = b.storage[index.toIndex()].submission.node.next;
-            switch (tail_index) {
-                .none => b.unused.head = index,
-                else => b.storage[tail_index.toIndex()].unused.next = index,
-            }
-            b.storage[index.toIndex()] = .{ .unused = .{ .prev = tail_index, .next = .none } };
-            tail_index = index;
-            index = next_index;
-        }
-        b.submissions = .{ .head = .none, .tail = .none };
-    }
     if (is_windows) {
+        if (b.pending.head == .none) return;
+        waitForApcOrAlert();
         var index = b.pending.head;
         while (index != .none) {
             const pending = &b.storage[index.toIndex()].pending;
@@ -2889,10 +3000,13 @@ fn batchCancel(userdata: ?*anyopaque, b: *Io.Batch) void {
         t.allocator.free(@as([*]posix.pollfd, @ptrCast(@alignCast(context)))[0..b.storage.len]);
         b.context = null;
     }
-    assert(b.pending.head == .none);
 }
 
-fn batchApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows.ULONG) callconv(.winapi) void {
+fn batchApc(
+    apc_context: ?*anyopaque,
+    iosb: *windows.IO_STATUS_BLOCK,
+    _: windows.ULONG,
+) callconv(.winapi) void {
     const b: *Io.Batch = @ptrCast(@alignCast(apc_context));
     const context: *WindowsBatchPendingOperationContext = @fieldParentPtr("iosb", iosb);
     const erased_context = context.toErased();
@@ -2918,11 +3032,12 @@ fn batchApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows
             b.unused.tail = .fromIndex(index);
         },
         else => {
-            switch (b.completions.tail) {
-                .none => b.completions.head = .fromIndex(index),
-                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = .fromIndex(index),
+            switch (b.completed.tail) {
+                .none => b.completed.head = .fromIndex(index),
+                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next =
+                    .fromIndex(index),
             }
-            b.completions.tail = .fromIndex(index);
+            b.completed.tail = .fromIndex(index);
             const result: Io.Operation.Result = switch (pending.tag) {
                 .file_read_streaming => .{ .file_read_streaming = ntReadFileResult(iosb) },
                 .file_write_streaming => .{ .file_write_streaming = ntWriteFileResult(iosb) },
@@ -2934,9 +3049,9 @@ fn batchApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows
 }
 
 /// If `concurrency` is false, `error.ConcurrencyUnavailable` is unreachable.
-fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, ConcurrencyUnavailable }!void {
-    var index = b.submissions.head;
-    errdefer b.submissions.head = index;
+fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentError || Io.Cancelable)!void {
+    var index = b.submitted.head;
+    errdefer b.submitted.head = index;
     while (index != .none) {
         const storage = &b.storage[index.toIndex()];
         const submission = storage.submission;
@@ -2952,7 +3067,7 @@ fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, Concurren
         b.pending.tail = index;
         const context: *WindowsBatchPendingOperationContext = .fromErased(&storage.pending.context);
         errdefer {
-            context.iosb.u.Status = .CANCELLED;
+            context.iosb = .{ .u = .{ .Status = .CANCELLED }, .Information = undefined };
             batchApc(b, &context.iosb, 0);
         }
         switch (submission.operation) {
@@ -2960,10 +3075,7 @@ fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, Concurren
                 var data_index: usize = 0;
                 while (o.data.len - data_index != 0 and o.data[data_index].len == 0) data_index += 1;
                 if (o.data.len - data_index == 0) {
-                    context.iosb = .{
-                        .u = .{ .Status = .SUCCESS },
-                        .Information = 0,
-                    };
+                    context.iosb = .{ .u = .{ .Status = .SUCCESS }, .Information = 0 };
                     batchApc(b, &context.iosb, 0);
                     break :o;
                 }
@@ -3023,10 +3135,7 @@ fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, Concurren
             .file_write_streaming => |o| o: {
                 const buffer = windowsWriteBuffer(o.header, o.data, o.splat);
                 if (buffer.len == 0) {
-                    context.iosb = .{
-                        .u = .{ .Status = .SUCCESS },
-                        .Information = 0,
-                    };
+                    context.iosb = .{ .u = .{ .Status = .SUCCESS }, .Information = 0 };
                     batchApc(b, &context.iosb, 0);
                     break :o;
                 }
@@ -3140,7 +3249,7 @@ fn batchAwaitWindows(b: *Io.Batch, concurrency: bool) error{ Canceled, Concurren
         }
         index = submission.node.next;
     }
-    b.submissions = .{ .head = .none, .tail = .none };
+    b.submitted = .{ .head = .none, .tail = .none };
 }
 
 /// Since Windows only supports writing one contiguous buffer, returns the
@@ -3155,7 +3264,7 @@ fn windowsWriteBuffer(header: []const u8, data: []const []const u8, splat: usize
         if (splat == 0) return &.{};
         break :b data[data.len - 1];
     };
-    return buffer[0..@min(buffer.len, std.math.maxInt(u32))];
+    return buffer[0..std.math.lossyCast(u32, buffer.len)];
 }
 
 fn submitComplete(ring: []u32, complete_tail: *Io.Batch.RingIndex, op: u32) void {
@@ -4677,8 +4786,8 @@ fn atomicFileInit(
     dir: Dir,
     close_dir_on_deinit: bool,
 ) Dir.CreateFileAtomicError!File.Atomic {
-    var random_integer: u64 = undefined;
     while (true) {
+        var random_integer: u64 = undefined;
         t_io.random(@ptrCast(&random_integer));
         const tmp_sub_path = std.fmt.hex(random_integer);
         const file = dir.createFile(t_io, &tmp_sub_path, .{
@@ -14317,11 +14426,11 @@ pub fn posixProtocol(protocol: ?net.Protocol) u32 {
     return @intFromEnum(protocol orelse return 0);
 }
 
-fn recoverableOsBugDetected() void {
+pub fn recoverableOsBugDetected() void {
     if (is_debug) unreachable;
 }
 
-fn clockToPosix(clock: Io.Clock) posix.clockid_t {
+pub fn clockToPosix(clock: Io.Clock) posix.clockid_t {
     return switch (clock) {
         .real => posix.CLOCK.REALTIME,
         .awake => switch (native_os) {
@@ -14355,7 +14464,7 @@ fn clockToWasi(clock: Io.Clock) std.os.wasi.clockid_t {
     };
 }
 
-const linux_statx_request: std.os.linux.STATX = .{
+pub const linux_statx_request: std.os.linux.STATX = .{
     .TYPE = true,
     .MODE = true,
     .ATIME = true,
@@ -14367,7 +14476,7 @@ const linux_statx_request: std.os.linux.STATX = .{
     .BLOCKS = true,
 };
 
-const linux_statx_check: std.os.linux.STATX = .{
+pub const linux_statx_check: std.os.linux.STATX = .{
     .TYPE = true,
     .MODE = true,
     .ATIME = false,
@@ -14379,7 +14488,7 @@ const linux_statx_check: std.os.linux.STATX = .{
     .BLOCKS = false,
 };
 
-fn statFromLinux(stx: *const std.os.linux.Statx) Io.UnexpectedError!File.Stat {
+pub fn statFromLinux(stx: *const std.os.linux.Statx) Io.UnexpectedError!File.Stat {
     const actual_mask_int: u32 = @bitCast(stx.mask);
     const wanted_mask_int: u32 = @bitCast(linux_statx_check);
     if ((actual_mask_int | wanted_mask_int) != actual_mask_int) return error.Unexpected;
@@ -14470,11 +14579,11 @@ fn statFromWasi(st: *const std.os.wasi.filestat_t) File.Stat {
     };
 }
 
-fn timestampFromPosix(timespec: *const posix.timespec) Io.Timestamp {
+pub fn timestampFromPosix(timespec: *const posix.timespec) Io.Timestamp {
     return .{ .nanoseconds = nanosecondsFromPosix(timespec) };
 }
 
-fn nanosecondsFromPosix(timespec: *const posix.timespec) i96 {
+pub fn nanosecondsFromPosix(timespec: *const posix.timespec) i96 {
     return @intCast(@as(i128, timespec.sec) * std.time.ns_per_s + timespec.nsec);
 }
 
@@ -14492,7 +14601,7 @@ fn timestampToPosix(nanoseconds: i96) posix.timespec {
     };
 }
 
-fn setTimestampToPosix(set_ts: File.SetTimestamp) posix.timespec {
+pub fn setTimestampToPosix(set_ts: File.SetTimestamp) posix.timespec {
     return switch (set_ts) {
         .unchanged => .OMIT,
         .now => .NOW,
@@ -14500,7 +14609,7 @@ fn setTimestampToPosix(set_ts: File.SetTimestamp) posix.timespec {
     };
 }
 
-fn pathToPosix(file_path: []const u8, buffer: *[posix.PATH_MAX]u8) Dir.PathNameError![:0]u8 {
+pub fn pathToPosix(file_path: []const u8, buffer: *[posix.PATH_MAX]u8) Dir.PathNameError![:0]u8 {
     if (std.mem.containsAtLeastScalar2(u8, file_path, 0, 1)) return error.BadPathName;
     // >= rather than > to make room for the null byte
     if (file_path.len >= buffer.len) return error.NameTooLong;
@@ -14996,126 +15105,7 @@ const WindowsEnvironStrings = struct {
 fn scanEnviron(t: *Threaded) void {
     mutexLock(&t.mutex);
     defer mutexUnlock(&t.mutex);
-
-    if (t.environ.initialized) return;
-    t.environ.initialized = true;
-
-    if (is_windows) {
-        // This value expires with any call that modifies the environment,
-        // which is outside of this Io implementation's control, so references
-        // must be short-lived.
-        const peb = windows.peb();
-        assert(windows.ntdll.RtlEnterCriticalSection(peb.FastPebLock) == .SUCCESS);
-        defer assert(windows.ntdll.RtlLeaveCriticalSection(peb.FastPebLock) == .SUCCESS);
-        const ptr = peb.ProcessParameters.Environment;
-
-        var i: usize = 0;
-        while (ptr[i] != 0) {
-
-            // There are some special environment variables that start with =,
-            // so we need a special case to not treat = as a key/value separator
-            // if it's the first character.
-            // https://devblogs.microsoft.com/oldnewthing/20100506-00/?p=14133
-            const key_start = i;
-            if (ptr[i] == '=') i += 1;
-            while (ptr[i] != 0 and ptr[i] != '=') : (i += 1) {}
-            const key_w = ptr[key_start..i];
-
-            const value_start = i + 1;
-            while (ptr[i] != 0) : (i += 1) {} // skip over '=' and value
-            const value_w = ptr[value_start..i];
-            i += 1; // skip over null byte
-
-            if (windows.eqlIgnoreCaseWtf16(key_w, &.{ 'N', 'O', '_', 'C', 'O', 'L', 'O', 'R' })) {
-                t.environ.exist.NO_COLOR = true;
-            } else if (windows.eqlIgnoreCaseWtf16(key_w, &.{ 'C', 'L', 'I', 'C', 'O', 'L', 'O', 'R', '_', 'F', 'O', 'R', 'C', 'E' })) {
-                t.environ.exist.CLICOLOR_FORCE = true;
-            } else if (windows.eqlIgnoreCaseWtf16(key_w, &.{ 'Z', 'I', 'G', '_', 'P', 'R', 'O', 'G', 'R', 'E', 'S', 'S' })) {
-                t.environ.zig_progress_file = file: {
-                    var value_buf: [std.fmt.count("{d}", .{std.math.maxInt(usize)})]u8 = undefined;
-                    const len = std.unicode.calcWtf8Len(value_w);
-                    if (len > value_buf.len) break :file error.UnrecognizedFormat;
-                    assert(std.unicode.wtf16LeToWtf8(&value_buf, value_w) == len);
-                    break :file .{
-                        .handle = @ptrFromInt(std.fmt.parseInt(usize, value_buf[0..len], 10) catch
-                            break :file error.UnrecognizedFormat),
-                        .flags = .{ .nonblocking = true },
-                    };
-                };
-            }
-            comptime assert(@sizeOf(Environ.String) == 0);
-        }
-    } else if (native_os == .wasi and !builtin.link_libc) {
-        var environ_count: usize = undefined;
-        var environ_buf_size: usize = undefined;
-
-        switch (std.os.wasi.environ_sizes_get(&environ_count, &environ_buf_size)) {
-            .SUCCESS => {},
-            else => |err| {
-                t.environ.err = posix.unexpectedErrno(err);
-                return;
-            },
-        }
-        if (environ_count == 0) return;
-
-        const environ = t.allocator.alloc([*:0]u8, environ_count) catch |err| {
-            t.environ.err = err;
-            return;
-        };
-        defer t.allocator.free(environ);
-        const environ_buf = t.allocator.alloc(u8, environ_buf_size) catch |err| {
-            t.environ.err = err;
-            return;
-        };
-        defer t.allocator.free(environ_buf);
-
-        switch (std.os.wasi.environ_get(environ.ptr, environ_buf.ptr)) {
-            .SUCCESS => {},
-            else => |err| {
-                t.environ.err = posix.unexpectedErrno(err);
-                return;
-            },
-        }
-
-        for (environ) |env| {
-            const pair = std.mem.sliceTo(env, 0);
-            var parts = std.mem.splitScalar(u8, pair, '=');
-            const key = parts.first();
-            if (std.mem.eql(u8, key, "NO_COLOR")) {
-                t.environ.exist.NO_COLOR = true;
-            } else if (std.mem.eql(u8, key, "CLICOLOR_FORCE")) {
-                t.environ.exist.CLICOLOR_FORCE = true;
-            }
-            comptime assert(@sizeOf(Environ.String) == 0);
-        }
-    } else {
-        for (t.environ.process_environ.block.slice) |opt_entry| {
-            const entry = opt_entry.?;
-            var entry_i: usize = 0;
-            while (entry[entry_i] != 0 and entry[entry_i] != '=') : (entry_i += 1) {}
-            const key = entry[0..entry_i];
-
-            var end_i: usize = entry_i;
-            while (entry[end_i] != 0) : (end_i += 1) {}
-            const value = entry[entry_i + 1 .. end_i :0];
-
-            if (std.mem.eql(u8, key, "NO_COLOR")) {
-                t.environ.exist.NO_COLOR = true;
-            } else if (std.mem.eql(u8, key, "CLICOLOR_FORCE")) {
-                t.environ.exist.CLICOLOR_FORCE = true;
-            } else if (std.mem.eql(u8, key, "ZIG_PROGRESS")) {
-                t.environ.zig_progress_file = file: {
-                    break :file .{
-                        .handle = std.fmt.parseInt(u31, value, 10) catch
-                            break :file error.UnrecognizedFormat,
-                        .flags = .{ .nonblocking = true },
-                    };
-                };
-            } else inline for (@typeInfo(Environ.String).@"struct".fields) |field| {
-                if (std.mem.eql(u8, key, field.name)) @field(t.environ.string, field.name) = value;
-            }
-        }
-    }
+    t.environ.scan(t.allocator);
 }
 
 fn processReplace(userdata: ?*anyopaque, options: process.ReplaceOptions) process.ReplaceError {
@@ -15213,16 +15203,16 @@ fn spawnPosix(t: *Threaded, options: process.SpawnOptions) process.SpawnError!Sp
     const any_ignore = (options.stdin == .ignore or options.stdout == .ignore or options.stderr == .ignore);
     const dev_null_fd = if (any_ignore) try getDevNullFd(t) else undefined;
 
-    const prog_pipe: [2]posix.fd_t = if (options.progress_node.index != .none)
+    const prog_pipe: [2]posix.fd_t = if (options.progress_node.index != .none) pipe: {
         // We use CLOEXEC for the same reason as in `pipe_flags`.
-        try pipe2(.{ .NONBLOCK = true, .CLOEXEC = true })
-    else
-        .{ -1, -1 };
+        const pipe = try pipe2(.{ .NONBLOCK = true, .CLOEXEC = true });
+        switch (native_os) {
+            .linux => _ = posix.system.fcntl(pipe[0], posix.F.SETPIPE_SZ, @as(u32, std.Progress.max_packet_len * 2)),
+            else => {},
+        }
+        break :pipe pipe;
+    } else .{ -1, -1 };
     errdefer destroyPipe(prog_pipe);
-
-    if (native_os == .linux and prog_pipe[0] != -1) {
-        _ = posix.system.fcntl(prog_pipe[0], posix.F.SETPIPE_SZ, @as(u32, std.Progress.max_packet_len * 2));
-    }
 
     var arena_allocator = std.heap.ArenaAllocator.init(t.allocator);
     defer arena_allocator.deinit();
@@ -17241,22 +17231,24 @@ fn randomMainThread(t: *Threaded, buffer: []u8) void {
 
             randomSecure(t, &seed) catch |err| switch (err) {
                 error.Canceled => unreachable,
-                error.EntropyUnavailable => {
-                    @memset(&seed, 0);
-                    const aslr_addr = @intFromPtr(t);
-                    std.mem.writeInt(usize, seed[seed.len - @sizeOf(usize) ..][0..@sizeOf(usize)], aslr_addr, .native);
-                    switch (native_os) {
-                        .windows => fallbackSeedWindows(&seed),
-                        .wasi => if (builtin.link_libc) fallbackSeedPosix(&seed) else fallbackSeedWasi(&seed),
-                        else => fallbackSeedPosix(&seed),
-                    }
-                },
+                error.EntropyUnavailable => fallbackSeed(t, &seed),
             };
         }
         t.csprng.rng = .init(seed);
     }
 
     t.csprng.rng.fill(buffer);
+}
+
+pub fn fallbackSeed(aslr_addr: ?*anyopaque, seed: *[Csprng.seed_len]u8) void {
+    @memset(seed, 0);
+    std.mem.writeInt(usize, seed[seed.len - @sizeOf(usize) ..][0..@sizeOf(usize)], @intFromPtr(aslr_addr), .native);
+    const fallbackSeedImpl = switch (native_os) {
+        .windows => fallbackSeedWindows,
+        .wasi => if (builtin.link_libc) fallbackSeedPosix else fallbackSeedWasi,
+        else => fallbackSeedPosix,
+    };
+    fallbackSeedImpl(seed);
 }
 
 fn fallbackSeedPosix(seed: *[Csprng.seed_len]u8) void {

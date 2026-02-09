@@ -477,11 +477,16 @@ pub const Permissions = std.Options.FilePermissions orelse if (is_windows) enum(
     /// libc implementations use `0o666` inside `fopen` and then rely on the
     /// process-scoped "umask" setting to adjust this number for file creation.
     default_file = 0o666,
-    default_dir = 0o755,
-    executable_file = 0o777,
+    /// This is the default mode given to POSIX operating systems for creating
+    /// directories. `0o777` is "-rwxrwxrwx" which is counter-intuitive at first,
+    /// since most people would expect "-rwxr-xr-x", for example, when using
+    /// the `touch` command, which would correspond to `0o755`.
+    default_dir = 0o777,
     _,
 
     pub const has_executable_bit = native_os != .wasi;
+
+    pub const executable_file: @This() = .default_dir;
 
     pub fn toMode(self: @This()) std.posix.mode_t {
         return @intFromEnum(self);

@@ -60,7 +60,7 @@ pub const CurrentPathError = error{
     NameTooLong,
     /// Not possible on Windows. Always returned on WASI.
     CurrentDirUnlinked,
-} || Io.UnexpectedError;
+} || Io.Cancelable || Io.UnexpectedError;
 
 /// On Windows, the result is encoded as [WTF-8](https://wtf-8.codeberg.page/).
 /// On other platforms, the result is an opaque sequence of bytes with no
@@ -72,7 +72,7 @@ pub fn currentPath(io: Io, buffer: []u8) CurrentPathError!usize {
 pub const CurrentPathAllocError = Allocator.Error || error{
     /// Not possible on Windows. Always returned on WASI.
     CurrentDirUnlinked,
-} || Io.UnexpectedError;
+} || Io.Cancelable || Io.UnexpectedError;
 
 /// On Windows, the result is encoded as [WTF-8](https://wtf-8.codeberg.page/).
 /// On other platforms, the result is an opaque sequence of bytes with no
@@ -355,7 +355,7 @@ pub const SpawnError = error{
     /// On Windows, the volume does not contain a recognized file system. File
     /// system drivers might not be loaded, or the volume may be corrupt.
     UnrecognizedVolume,
-} || Io.Dir.PathNameError || Io.Cancelable || Io.UnexpectedError;
+} || Io.File.OpenError || Io.Dir.PathNameError || Io.Cancelable || Io.UnexpectedError;
 
 pub const SpawnOptions = struct {
     argv: []const []const u8,

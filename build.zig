@@ -13,6 +13,7 @@ const DevEnv = @import("src/dev.zig").Env;
 const zig_version: std.SemanticVersion = .{ .major = 0, .minor = 16, .patch = 0 };
 const stack_size = 46 * 1024 * 1024;
 
+const IoMode = enum { threaded, evented };
 const ValueInterpretMode = enum { direct, by_name };
 
 pub fn build(b: *std.Build) !void {
@@ -190,6 +191,7 @@ pub fn build(b: *std.Build) !void {
     const strip = b.option(bool, "strip", "Omit debug information");
     const valgrind = b.option(bool, "valgrind", "Enable valgrind integration");
     const pie = b.option(bool, "pie", "Produce a Position Independent Executable");
+    const io_mode = b.option(IoMode, "io-mode", "How the compiler performs IO") orelse .threaded;
     const value_interpret_mode = b.option(ValueInterpretMode, "value-interpret-mode", "How the compiler translates between 'std.builtin' types and its internal datastructures") orelse .direct;
     const value_tracing = b.option(bool, "value-tracing", "Enable extra state tracking to help troubleshoot bugs in the compiler (using the std.debug.Trace API)") orelse false;
 
@@ -241,6 +243,7 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(bool, "llvm_has_xtensa", llvm_has_xtensa);
     exe_options.addOption(bool, "debug_gpa", debug_gpa);
     exe_options.addOption(DevEnv, "dev", dev_env);
+    exe_options.addOption(IoMode, "io_mode", io_mode);
     exe_options.addOption(ValueInterpretMode, "value_interpret_mode", value_interpret_mode);
 
     exe_options.addOption(bool, "enable_failing_allocator", b.option(bool, "enable-failing-allocator", "Whether to use a randomly failing allocator.") orelse false);
@@ -401,14 +404,22 @@ pub fn build(b: *std.Build) !void {
             &[_][]const u8{ tracy_path, "public", "TracyClient.cpp" },
         );
 
-        const tracy_c_flags: []const []const u8 = &.{ "-DTRACY_ENABLE=1", "-fno-sanitize=undefined" };
+        const tracy_c_flags: []const []const u8 = &.{
+            "-DTRACY_ENABLE=1",
+            "-fno-sanitize=undefined",
+            "-DTRACY_FIBERS",
+        };
 
         exe.root_module.addIncludePath(.{ .cwd_relative = tracy_path });
-        exe.root_module.addCSourceFile(.{ .file = .{ .cwd_relative = client_cpp }, .flags = tracy_c_flags });
-        if (!enable_llvm) {
-            exe.root_module.linkSystemLibrary("c++", .{ .use_pkg_config = .no });
-        }
+        exe.root_module.addCSourceFile(.{
+            .file = .{ .cwd_relative = client_cpp },
+            .flags = tracy_c_flags[0..switch (io_mode) {
+                .threaded => 2,
+                .evented => 3,
+            }],
+        });
         exe.root_module.link_libc = true;
+        exe.root_module.link_libcpp = true;
 
         if (target.result.os.tag == .windows) {
             exe.root_module.linkSystemLibrary("dbghelp", .{});
@@ -758,6 +769,7 @@ fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
     exe_options.addOption(u32, "tracy_callstack_depth", 0);
     exe_options.addOption(bool, "value_tracing", false);
     exe_options.addOption(DevEnv, "dev", .bootstrap);
+    exe_options.addOption(IoMode, "io_mode", .threaded);
 
     // zig1 chooses to interpret values by name. The tradeoff is as follows:
     //

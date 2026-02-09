@@ -6717,9 +6717,10 @@ pub const IORING_ACCEPT_MULTISHOT = 1 << 0;
 /// IORING_OP_MSG_RING command types, stored in sqe->addr
 pub const IORING_MSG_RING_COMMAND = enum(u8) {
     /// pass sqe->len as 'res' and off as user_data
-    DATA,
+    DATA = 0,
     /// send a registered fd to another ring
-    SEND_FD,
+    SEND_FD = 1,
+    _,
 };
 
 // io_uring_sqe.msg_ring_flags (rw_flags in the Zig struct)
@@ -6772,6 +6773,8 @@ pub const IORING_CQE_F_SOCK_NONEMPTY = 1 << 2;
 pub const IORING_CQE_F_NOTIF = 1 << 3;
 /// If set, the buffer ID set in the completion will get more completions.
 pub const IORING_CQE_F_BUF_MORE = 1 << 4;
+pub const IORING_CQE_F_SKIP = 1 << 5;
+pub const IORING_CQE_F_32 = 1 << 15;
 
 pub const IORING_CQE_BUFFER_SHIFT = 16;
 
@@ -7068,7 +7071,7 @@ pub const IORING_RESTRICTION = enum(u16) {
     _,
 };
 
-pub const IO_URING_SOCKET_OP = enum(u16) {
+pub const IO_URING_SOCKET_OP = enum(u32) {
     SIOCIN = 0,
     SIOCOUTQ = 1,
     GETSOCKOPT = 2,

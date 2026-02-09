@@ -347,7 +347,6 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 const token = param_server.document_store.notifyProgressStart(.compilation_progress, build_file_uri);
                 errdefer if (token) |t| param_server.document_store.notifyProgressEnd(t, .failure);
                 comp.file_system_inputs.?.clearRetainingCapacity();
-                @import("root").Compilation.setMainThread();
                 comp.update(.none) catch |err| switch (err) {
                     error.Canceled => return error.Canceled,
                     error.OutOfMemory => @panic("OOM"),

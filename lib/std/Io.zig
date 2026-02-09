@@ -380,7 +380,9 @@ pub const Operation = union(enum) {
         pub const Pending = struct {
             node: List.DoubleNode,
             tag: Tag,
-            context: [3]usize,
+            context: Context align(@max(@alignOf(usize), 4)),
+
+            pub const Context = [3]usize;
         };
 
         pub const Completion = struct {
@@ -428,10 +430,10 @@ pub fn operate(io: Io, operation: Operation) Cancelable!Operation.Result {
 pub const Batch = struct {
     storage: []Operation.Storage,
     unused: Operation.List,
-    submissions: Operation.List,
+    submitted: Operation.List,
     pending: Operation.List,
-    completions: Operation.List,
-    context: ?*anyopaque,
+    completed: Operation.List,
+    context: ?*anyopaque align(@max(@alignOf(?*anyopaque), 4)),
 
     /// After calling this, it is safe to unconditionally defer a call to
     /// `cancel`. `storage` is a pre-allocated buffer of undefined memory that
@@ -450,9 +452,9 @@ pub const Batch = struct {
                 .head = .fromIndex(0),
                 .tail = .fromIndex(storage.len - 1),
             },
-            .submissions = .empty,
+            .submitted = .empty,
             .pending = .empty,
-            .completions = .empty,
+            .completed = .empty,
             .context = null,
         };
     }
@@ -473,20 +475,20 @@ pub const Batch = struct {
         const storage = &b.storage[index];
         const unused = storage.unused;
         switch (unused.prev) {
-            .none => b.unused.head = .none,
+            .none => b.unused.head = unused.next,
             else => |prev_index| b.storage[prev_index.toIndex()].unused.next = unused.next,
         }
         switch (unused.next) {
-            .none => b.unused.tail = .none,
+            .none => b.unused.tail = unused.prev,
             else => |next_index| b.storage[next_index.toIndex()].unused.prev = unused.prev,
         }
 
-        switch (b.submissions.tail) {
-            .none => b.submissions.head = .fromIndex(index),
+        switch (b.submitted.tail) {
+            .none => b.submitted.head = .fromIndex(index),
             else => |tail_index| b.storage[tail_index.toIndex()].submission.node.next = .fromIndex(index),
         }
         storage.* = .{ .submission = .{ .node = .{ .next = .none }, .operation = operation } };
-        b.submissions.tail = .fromIndex(index);
+        b.submitted.tail = .fromIndex(index);
     }
 
     pub const Completion = struct {
@@ -503,13 +505,13 @@ pub const Batch = struct {
     /// Each completion returned from this function dequeues from the `Batch`.
     /// It is not required to dequeue all completions before awaiting again.
     pub fn next(b: *Batch) ?Completion {
-        const index = b.completions.head;
+        const index = b.completed.head;
         if (index == .none) return null;
         const storage = &b.storage[index.toIndex()];
         const completion = storage.completion;
         const next_index = completion.node.next;
-        b.completions.head = next_index;
-        if (next_index == .none) b.completions.tail = .none;
+        b.completed.head = next_index;
+        if (next_index == .none) b.completed.tail = .none;
 
         const tail_index = b.unused.tail;
         switch (tail_index) {
@@ -553,7 +555,27 @@ pub const Batch = struct {
     /// may have successfully completed regardless of the cancel request and
     /// will appear in the iteration.
     pub fn cancel(b: *Batch, io: Io) void {
-        return io.vtable.batchCancel(io.userdata, b);
+        { // abort pending submissions
+            var tail_index = b.unused.tail;
+            defer b.unused.tail = tail_index;
+            var index = b.submitted.head;
+            errdefer b.submissions.head = index;
+            while (index != .none) {
+                const next_index = b.storage[index.toIndex()].submission.node.next;
+                switch (tail_index) {
+                    .none => b.unused.head = index,
+                    else => b.storage[tail_index.toIndex()].unused.next = index,
+                }
+                b.storage[index.toIndex()] = .{ .unused = .{ .prev = tail_index, .next = .none } };
+                tail_index = index;
+                index = next_index;
+            }
+            b.submitted = .{ .head = .none, .tail = .none };
+        }
+        io.vtable.batchCancel(io.userdata, b);
+        assert(b.submitted.head == .none and b.submitted.tail == .none);
+        assert(b.pending.head == .none and b.pending.tail == .none);
+        assert(b.context == null); // that was the last chance to deallocate resources
     }
 };
 
@@ -1119,13 +1141,13 @@ pub fn recancel(io: Io) void {
 /// To modify a task's cancel protection state, see `swapCancelProtection`.
 ///
 /// For a description of cancelation and cancelation points, see `Future.cancel`.
-pub const CancelProtection = enum {
+pub const CancelProtection = enum(u1) {
     /// Any call to an `Io` function with `error.Canceled` in its error set is a cancelation point.
     ///
     /// This is the default state, which all tasks are created in.
-    unblocked,
+    unblocked = 0,
     /// No `Io` function introduces a cancelation point (`error.Canceled` will never be returned).
-    blocked,
+    blocked = 1,
 };
 /// Updates the current task's cancel protection state (see `CancelProtection`).
 ///
@@ -1294,8 +1316,7 @@ pub fn futexWake(io: Io, comptime T: type, ptr: *align(@alignOf(u32)) const T, m
 /// shared region of code known as the "critical section".
 ///
 /// Mutex is an extern struct so that it may be used as a field inside another
-/// extern struct. Having a guaranteed memory layout including mutexes is
-/// important for IPC over shared memory (mmap).
+/// extern struct.
 pub const Mutex = extern struct {
     state: std.atomic.Value(State),
 

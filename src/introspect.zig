@@ -54,11 +54,7 @@ pub fn findZigLibDir(gpa: Allocator, io: Io) !Cache.Directory {
 /// Like `std.process.currentPathAlloc`, but also resolves the path with `Dir.path.resolve`. This
 /// means the path has no repeated separators, no "." or ".." components, and no trailing separator.
 /// On WASI, "" is returned instead of ".".
-pub fn getResolvedCwd(io: Io, gpa: Allocator) error{
-    OutOfMemory,
-    CurrentDirUnlinked,
-    Unexpected,
-}![]u8 {
+pub fn getResolvedCwd(io: Io, gpa: Allocator) std.process.CurrentPathAllocError![]u8 {
     if (builtin.target.os.tag == .wasi) {
         if (std.debug.runtime_safety) {
             const cwd = try std.process.currentPathAlloc(io, gpa);
