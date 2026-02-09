@@ -719,13 +719,6 @@ fn testVarInsideInlineLoop(args: anytype) !void {
     }
 }
 
-test "*align(1) u16 is the same as *align(1:0:2) u16" {
-    comptime {
-        try expect(*align(1:0:2) u16 == *align(1) u16);
-        try expect(*align(2:0:2) u16 == *u16);
-    }
-}
-
 test "array concatenation of function calls" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO

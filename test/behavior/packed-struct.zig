@@ -820,7 +820,7 @@ test "packed struct passed to callconv(.c) function" {
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const S = struct {
-        const Packed = packed struct {
+        const Packed = packed struct(u64) {
             a: u16,
             b: bool = true,
             c: bool = true,

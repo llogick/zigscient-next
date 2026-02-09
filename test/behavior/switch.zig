@@ -645,7 +645,7 @@ test "switch prong pointer capture alignment" {
             }
 
             switch (u) {
-                .a, .c => |*p| comptime assert(@TypeOf(p) == *const u8),
+                .a, .c => |*p| comptime assert(@TypeOf(p) == *align(1) const u8),
                 .b => |*p| {
                     _ = p;
                     return error.TestFailed;
@@ -1141,24 +1141,23 @@ test "decl literals as switch cases" {
     try comptime E.doTheTest(.foo);
 }
 
-// TODO audit after #15909 and/or #19855 are decided/implemented
+// TODO audit after #15909 and/or #19855 are decided/implemented.
+// When we do that, consider adding an 'error{}' case if possible.
 test "switch with uninstantiable union fields" {
     const U = union(enum) {
         ok: void,
         a: noreturn,
         b: noreturn,
-        c: error{},
 
         fn doTheTest(u: @This()) void {
             switch (u) {
                 .ok => {},
                 .a => comptime unreachable,
                 .b => comptime unreachable,
-                .c => comptime unreachable,
             }
             switch (u) {
                 .ok => {},
-                .a, .b, .c => comptime unreachable,
+                .a, .b => comptime unreachable,
             }
             switch (u) {
                 .ok => {},
@@ -1166,7 +1165,7 @@ test "switch with uninstantiable union fields" {
             }
             switch (u) {
                 .a => comptime unreachable,
-                .ok, .b, .c => {},
+                .ok, .b => {},
             }
         }
     };

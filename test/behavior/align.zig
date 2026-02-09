@@ -307,11 +307,15 @@ test "runtime-known array index has best alignment possible" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
     // take full advantage of over-alignment
-    var array align(4) = [_]u8{ 1, 2, 3, 4 };
+    var array align(4) = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8 };
     comptime assert(@TypeOf(&array[0]) == *align(4) u8);
-    comptime assert(@TypeOf(&array[1]) == *u8);
+    comptime assert(@TypeOf(&array[1]) == *align(1) u8);
     comptime assert(@TypeOf(&array[2]) == *align(2) u8);
-    comptime assert(@TypeOf(&array[3]) == *u8);
+    comptime assert(@TypeOf(&array[3]) == *align(1) u8);
+    comptime assert(@TypeOf(&array[4]) == *align(4) u8);
+    comptime assert(@TypeOf(&array[5]) == *align(1) u8);
+    comptime assert(@TypeOf(&array[6]) == *align(2) u8);
+    comptime assert(@TypeOf(&array[7]) == *align(1) u8);
 
     // because align is too small but we still figure out to use 2
     var bigger align(2) = [_]u64{ 1, 2, 3, 4 };
@@ -332,10 +336,14 @@ test "runtime-known array index has best alignment possible" {
     try testIndex(smaller[runtime_zero..].ptr, 3, *align(2) u32);
 
     // has to use ABI alignment because index known at runtime only
-    try testIndex2(&array, 0, *u8);
-    try testIndex2(&array, 1, *u8);
-    try testIndex2(&array, 2, *u8);
-    try testIndex2(&array, 3, *u8);
+    try testIndex2(&array, 0, *align(1) u8);
+    try testIndex2(&array, 1, *align(1) u8);
+    try testIndex2(&array, 2, *align(1) u8);
+    try testIndex2(&array, 3, *align(1) u8);
+    try testIndex2(&array, 4, *align(1) u8);
+    try testIndex2(&array, 5, *align(1) u8);
+    try testIndex2(&array, 6, *align(1) u8);
+    try testIndex2(&array, 7, *align(1) u8);
 }
 fn testIndex(smaller: [*]align(2) u32, index: usize, comptime T: type) !void {
     comptime assert(@TypeOf(&smaller[index]) == T);

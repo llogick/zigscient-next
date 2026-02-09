@@ -350,9 +350,6 @@ test "comptime @bitCast packed struct to int and back" {
         iint_neg2: i3 = -2,
         float: f32 = 3.14,
         @"enum": enum(u2) { A, B = 1, C, D } = .B,
-        vectorb: @Vector(3, bool) = .{ true, false, true },
-        vectori: @Vector(2, u8) = .{ 127, 42 },
-        vectorf: @Vector(2, f16) = .{ 3.14, 2.71 },
     };
     const Int = @typeInfo(S).@"struct".backing_integer.?;
 
