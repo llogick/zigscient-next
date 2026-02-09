@@ -746,12 +746,11 @@ pub fn ensureMemoizedStateUpToDate(
 
     assert(!zcu.analysis_in_progress.contains(unit));
 
-    const was_outdated = zcu.outdated.swapRemove(unit) or zcu.potentially_outdated.swapRemove(unit);
+    const was_outdated = zcu.clearOutdatedState(unit);
     const prev_failed = zcu.failed_analysis.contains(unit) or zcu.transitive_failed_analysis.contains(unit);
 
     if (was_outdated) {
         dev.check(.incremental);
-        _ = zcu.outdated_ready.swapRemove(unit);
         zcu.resetUnit(unit);
     } else {
         if (prev_failed) return error.AnalysisFail;
@@ -866,11 +865,9 @@ pub fn ensureComptimeUnitUpToDate(pt: Zcu.PerThread, cu_id: InternPool.ComptimeU
     // result in over-analysis if analysis occurs in a poor order; we do our best to avoid this by
     // carefully choosing which units to re-analyze. See `Zcu.findOutdatedToAnalyze`.
 
-    const was_outdated = zcu.outdated.swapRemove(anal_unit) or
-        zcu.potentially_outdated.swapRemove(anal_unit);
+    const was_outdated = zcu.clearOutdatedState(anal_unit);
 
     if (was_outdated) {
-        _ = zcu.outdated_ready.swapRemove(anal_unit);
         // `was_outdated` can be true in the initial update for comptime units, so this isn't a `dev.check`.
         if (dev.env.supports(.incremental)) {
             zcu.resetUnit(anal_unit);
@@ -1023,12 +1020,10 @@ pub fn ensureTypeLayoutUpToDate(
 
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
-    const was_outdated = zcu.outdated.swapRemove(anal_unit) or
-        zcu.potentially_outdated.swapRemove(anal_unit) or
+    const was_outdated = zcu.clearOutdatedState(anal_unit) or
         zcu.intern_pool.setWantTypeLayout(zcu.comp.io, ty.toIntern());
 
     if (was_outdated) {
-        _ = zcu.outdated_ready.swapRemove(anal_unit);
         // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
         if (dev.env.supports(.incremental)) {
             zcu.resetUnit(anal_unit);
@@ -1139,15 +1134,13 @@ pub fn ensureNavValUpToDate(
     // result in over-analysis if analysis occurs in a poor order; we do our best to avoid this by
     // carefully choosing which units to re-analyze. See `Zcu.findOutdatedToAnalyze`.
 
-    const was_outdated = zcu.outdated.swapRemove(anal_unit) or
-        zcu.potentially_outdated.swapRemove(anal_unit);
+    const was_outdated = zcu.clearOutdatedState(anal_unit);
 
     const prev_failed = zcu.failed_analysis.contains(anal_unit) or
         zcu.transitive_failed_analysis.contains(anal_unit);
 
     if (was_outdated) {
         dev.check(.incremental);
-        _ = zcu.outdated_ready.swapRemove(anal_unit);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
@@ -1497,15 +1490,13 @@ pub fn ensureNavTypeUpToDate(
     // result in over-analysis if analysis occurs in a poor order; we do our best to avoid this by
     // carefully choosing which units to re-analyze. See `Zcu.findOutdatedToAnalyze`.
 
-    const was_outdated = zcu.outdated.swapRemove(anal_unit) or
-        zcu.potentially_outdated.swapRemove(anal_unit);
+    const was_outdated = zcu.clearOutdatedState(anal_unit);
 
     const prev_failed = zcu.failed_analysis.contains(anal_unit) or
         zcu.transitive_failed_analysis.contains(anal_unit);
 
     if (was_outdated) {
         dev.check(.incremental);
-        _ = zcu.outdated_ready.swapRemove(anal_unit);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
@@ -1733,15 +1724,13 @@ pub fn ensureFuncBodyUpToDate(
 
     assert(func.ty == func.uncoerced_ty); // analyze the body of the original function, not a coerced one
 
-    const was_outdated = zcu.outdated.swapRemove(anal_unit) or
-        zcu.potentially_outdated.swapRemove(anal_unit) or
+    const was_outdated = zcu.clearOutdatedState(anal_unit) or
         ip.setWantRuntimeFnAnalysis(zcu.comp.io, func_index);
 
     const prev_failed = zcu.failed_analysis.contains(anal_unit) or zcu.transitive_failed_analysis.contains(anal_unit);
 
     if (was_outdated) {
         dev.check(.incremental);
-        _ = zcu.outdated_ready.swapRemove(anal_unit);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this function.
@@ -2712,27 +2701,22 @@ const ScanDeclIter = struct {
 
         const existing_unit = iter.existing_by_inst.get(tracked_inst);
 
-        const unit, const want_analysis = switch (decl.kind) {
+        const unit: AnalUnit, const want_analysis = switch (decl.kind) {
             .@"comptime" => unit: {
                 const cu = if (existing_unit) |eu|
                     eu.unwrap().@"comptime"
                 else
                     try ip.createComptimeUnit(gpa, io, pt.tid, tracked_inst, namespace_index);
 
-                const unit: AnalUnit = .wrap(.{ .@"comptime" = cu });
-
                 try namespace.comptime_decls.append(gpa, cu);
 
                 if (existing_unit == null) {
                     // For a `comptime` declaration, whether to analyze is based solely on whether the unit
                     // is outdated. So, add this fresh one to `outdated` and `outdated_ready`.
-                    try zcu.outdated.ensureUnusedCapacity(gpa, 1);
-                    try zcu.outdated_ready.ensureUnusedCapacity(gpa, 1);
-                    zcu.outdated.putAssumeCapacityNoClobber(unit, 0);
-                    zcu.outdated_ready.putAssumeCapacityNoClobber(unit, {});
+                    try zcu.queueComptimeUnitAnalysis(cu);
                 }
 
-                break :unit .{ unit, true };
+                break :unit .{ .wrap(.{ .@"comptime" = cu }), true };
             },
             else => unit: {
                 const name = maybe_name.unwrap().?;

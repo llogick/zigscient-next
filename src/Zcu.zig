@@ -264,6 +264,10 @@ cimport_errors: std.AutoArrayHashMapUnmanaged(AnalUnit, std.zig.ErrorBundle) = .
 /// Maximum amount of distinct error values, set by --error-limit
 error_limit: ErrorInt,
 
+/// In safe builds, `Type.assertHasLayout` may be called cross-thread, so this lock
+/// guards accesses to `outdated` and `potentially_outdated`. In unsafe builds, the
+/// lock is not needed and is compiled out.
+outdated_lock: if (std.debug.runtime_safety) std.Io.RwLock else void = if (std.debug.runtime_safety) .init,
 /// Value is the number of PO dependencies of this AnalUnit.
 /// This value will decrease as we perform semantic analysis to learn what is outdated.
 /// If any of these PO deps is outdated, this value will be moved to `outdated`.
@@ -3063,6 +3067,8 @@ pub fn markDependeeOutdated(
 ) !void {
     deps_log.debug("outdated dependee: {f}", .{zcu.fmtDependee(dependee)});
     var it = zcu.intern_pool.dependencyIterator(dependee);
+    if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
+    defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
     while (it.next()) |depender| {
         if (zcu.outdated.getPtr(depender)) |po_dep_count| {
             switch (marked_po) {
@@ -3107,6 +3113,12 @@ pub fn markDependeeOutdated(
 }
 
 pub fn markPoDependeeUpToDate(zcu: *Zcu, dependee: InternPool.Dependee) !void {
+    if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
+    defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
+    return markPoDependeeUpToDateInner(zcu, dependee);
+}
+/// Assumes that `zcu.outdated_lock` is already held exclusively.
+fn markPoDependeeUpToDateInner(zcu: *Zcu, dependee: InternPool.Dependee) !void {
     deps_log.debug("up-to-date dependee: {f}", .{zcu.fmtDependee(dependee)});
     var it = zcu.intern_pool.dependencyIterator(dependee);
     while (it.next()) |depender| {
@@ -3142,17 +3154,19 @@ pub fn markPoDependeeUpToDate(zcu: *Zcu, dependee: InternPool.Dependee) !void {
         // as no longer PO.
         switch (depender.unwrap()) {
             .@"comptime" => {},
-            .nav_val => |nav| try zcu.markPoDependeeUpToDate(.{ .nav_val = nav }),
-            .nav_ty => |nav| try zcu.markPoDependeeUpToDate(.{ .nav_ty = nav }),
-            .type_layout => |ty| try zcu.markPoDependeeUpToDate(.{ .type_layout = ty }),
-            .func => |func| try zcu.markPoDependeeUpToDate(.{ .func_ies = func }),
-            .memoized_state => |stage| try zcu.markPoDependeeUpToDate(.{ .memoized_state = stage }),
+            .nav_val => |nav| try zcu.markPoDependeeUpToDateInner(.{ .nav_val = nav }),
+            .nav_ty => |nav| try zcu.markPoDependeeUpToDateInner(.{ .nav_ty = nav }),
+            .type_layout => |ty| try zcu.markPoDependeeUpToDateInner(.{ .type_layout = ty }),
+            .func => |func| try zcu.markPoDependeeUpToDateInner(.{ .func_ies = func }),
+            .memoized_state => |stage| try zcu.markPoDependeeUpToDateInner(.{ .memoized_state = stage }),
         }
     }
 }
 
 /// Given a AnalUnit which is newly outdated or PO, mark all AnalUnits which may
 /// in turn be PO, due to a dependency on the original AnalUnit's tyval or IES.
+///
+/// Assumes that `zcu.outdated_lock` is already held exclusively.
 fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUnit) !void {
     const ip = &zcu.intern_pool;
     const dependee: InternPool.Dependee = switch (maybe_outdated.unwrap()) {
@@ -3211,6 +3225,9 @@ pub fn findOutdatedToAnalyze(zcu: *Zcu) Allocator.Error!?AnalUnit {
     // possible situation is a cycle where everything is actually up-to-date, so we can clear out
     // `zcu.potentially_outdated` and we are done.
 
+    if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
+    defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
+
     if (zcu.outdated.count() == 0) {
         // Everything is up-to-date. There could be lingering entries in `zcu.potentially_outdated`
         // from a dependency loop on a previous update.
@@ -3230,7 +3247,10 @@ pub fn findOutdatedToAnalyze(zcu: *Zcu) Allocator.Error!?AnalUnit {
 /// During an incremental update, before semantic analysis, call this to flush all values from
 /// `retryable_failures` and mark them as outdated so they get re-analyzed.
 pub fn flushRetryableFailures(zcu: *Zcu) !void {
-    const gpa = zcu.gpa;
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+    if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(comp.io);
+    defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(comp.io);
     for (zcu.retryable_failures.items) |depender| {
         if (zcu.outdated.contains(depender)) continue;
         if (zcu.potentially_outdated.fetchSwapRemove(depender)) |kv| {
@@ -3481,8 +3501,12 @@ pub fn ensureFuncBodyAnalysisQueued(zcu: *Zcu, func: InternPool.Index) !void {
     if (ip.setWantRuntimeFnAnalysis(io, func)) {
         // This is the first reference to this function, so we must ensure it will be analyzed.
         const unit: AnalUnit = .wrap(.{ .func = func });
-        try zcu.outdated.putNoClobber(gpa, unit, 0);
-        try zcu.outdated_ready.putNoClobber(gpa, unit, {});
+        if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
+        defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
+        try zcu.outdated.ensureUnusedCapacity(gpa, 1);
+        try zcu.outdated_ready.ensureUnusedCapacity(gpa, 1);
+        zcu.outdated.putAssumeCapacityNoClobber(unit, 0);
+        zcu.outdated_ready.putAssumeCapacityNoClobber(unit, {});
     }
 }
 
@@ -3493,6 +3517,8 @@ pub fn ensureNavValAnalysisQueued(zcu: *Zcu, nav: InternPool.Nav.Index) !void {
     const ip = &zcu.intern_pool;
     if (ip.setWantNavAnalysis(io, nav)) {
         // This is the first reference to this function, so we must ensure it will be analyzed.
+        if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
+        defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
         try zcu.outdated.ensureUnusedCapacity(gpa, 2);
         try zcu.outdated_ready.ensureUnusedCapacity(gpa, 2);
         zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .nav_val = nav }), 0);
@@ -3500,6 +3526,51 @@ pub fn ensureNavValAnalysisQueued(zcu: *Zcu, nav: InternPool.Nav.Index) !void {
         zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .nav_val = nav }), {});
         zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .nav_ty = nav }), {});
     }
+}
+
+/// Called when an `InternPool.ComptimeUnit` is first created to mark it as outdated so that it will
+/// be semantically analyzed.
+pub fn queueComptimeUnitAnalysis(zcu: *Zcu, cu: InternPool.ComptimeUnit.Id) Allocator.Error!void {
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+    const io = comp.io;
+    const unit: AnalUnit = .wrap(.{ .@"comptime" = cu });
+    if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(io);
+    defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(io);
+    try zcu.outdated.ensureUnusedCapacity(gpa, 1);
+    try zcu.outdated_ready.ensureUnusedCapacity(gpa, 1);
+    zcu.outdated.putAssumeCapacityNoClobber(unit, 0);
+    zcu.outdated_ready.putAssumeCapacityNoClobber(unit, {});
+}
+
+/// If `unit` was marked as outdated or porentially outdated, clears that status and returns `true`.
+/// Otherwise, returns `false`.
+pub fn clearOutdatedState(zcu: *Zcu, unit: AnalUnit) bool {
+    const io = zcu.comp.io;
+    if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(io);
+    defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(io);
+    if (zcu.outdated.fetchSwapRemove(unit)) |kv| {
+        if (kv.value == 0) assert(zcu.outdated_ready.swapRemove(unit));
+        return true;
+    } else if (zcu.potentially_outdated.swapRemove(unit)) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+/// This function takes a `*const Zcu` and `@constCast`s it so that it can be called from functions
+/// in `Type` which otherwise do not modify the `Zcu`.
+pub fn assertUpToDate(zcu: *const Zcu, unit: AnalUnit) void {
+    if (!std.debug.runtime_safety) return;
+
+    const io = zcu.comp.io;
+
+    @constCast(zcu).outdated_lock.lockSharedUncancelable(io);
+    defer @constCast(zcu).outdated_lock.unlockShared(io);
+
+    assert(!zcu.outdated.contains(unit));
+    assert(!zcu.potentially_outdated.contains(unit));
 }
 
 pub const ImportResult = struct {

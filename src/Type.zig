@@ -3175,21 +3175,15 @@ pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
         },
         .struct_type => {
             assert(zcu.intern_pool.loadStructType(ty.toIntern()).want_layout);
-            const unit: InternPool.AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
-            assert(!zcu.outdated.contains(unit));
-            assert(!zcu.potentially_outdated.contains(unit));
+            zcu.assertUpToDate(.wrap(.{ .type_layout = ty.toIntern() }));
         },
         .union_type => {
             assert(zcu.intern_pool.loadUnionType(ty.toIntern()).want_layout);
-            const unit: InternPool.AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
-            assert(!zcu.outdated.contains(unit));
-            assert(!zcu.potentially_outdated.contains(unit));
+            zcu.assertUpToDate(.wrap(.{ .type_layout = ty.toIntern() }));
         },
         .enum_type => {
             assert(zcu.intern_pool.loadEnumType(ty.toIntern()).want_layout);
-            const unit: InternPool.AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
-            assert(!zcu.outdated.contains(unit));
-            assert(!zcu.potentially_outdated.contains(unit));
+            zcu.assertUpToDate(.wrap(.{ .type_layout = ty.toIntern() }));
         },
 
         // values, not types
