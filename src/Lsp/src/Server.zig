@@ -1478,7 +1478,7 @@ fn prepareRenameHandler(server: *Server, request: types.prepare_rename.Params) E
     const handle = server.document_store.getHandle(request.textDocument.uri) orelse return null;
 
     const source_index = offsets.positionToIndex(handle.tree.source, request.position, server.offset_encoding);
-    const name_loc = Analyser.identifierLocFromIndex(&handle.tree, source_index) orelse return null;
+    const name_loc = offsets.identifierLocFromIndex(&handle.tree, source_index) orelse return null;
     const name = offsets.locToSlice(handle.tree.source, name_loc);
     return .{
         .prepare_rename_placeholder = .{
@@ -1666,7 +1666,6 @@ pub const CreateOptions = struct {
     /// Must be set when running `loop`. Controls how the server will send and receive messages.
     transport: ?*lsp.Transport,
     config_manager: *configuration.Manager,
-    max_thread_count: usize = 4, // what is a good value here?
 };
 
 pub fn create(options: CreateOptions) std.mem.Allocator.Error!*Server {
@@ -1694,7 +1693,7 @@ pub fn create(options: CreateOptions) std.mem.Allocator.Error!*Server {
     };
     server.document_store.config = createDocumentStoreConfig(server.config_manager);
 
-    server.ip = try InternPool.init(allocator, io);
+    server.ip = try InternPool.init(io, allocator);
     errdefer server.ip.deinit(allocator);
 
     if (options.transport) |transport| {
