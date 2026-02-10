@@ -100,23 +100,25 @@ pub fn updateFile(
 
     var file_path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
     defer gpa.free(file_path);
-    if (!std.fs.path.isAbsolute(file_path)) blk: {
-        const prp = zcu.project_root_path orelse break :blk;
-        const absfp = std.fs.path.join(gpa, &.{ prp, file_path }) catch break :blk;
+
+    if (!std.fs.path.isAbsolute(file_path)) not_abs_file_path: {
+        const abs_file_path = std.fs.path.join(gpa, &.{
+            zcu.project_root_path orelse break :not_abs_file_path,
+            file_path,
+        }) catch break :not_abs_file_path;
         gpa.free(file_path); // free current file_path
-        file_path = absfp;
+        file_path = abs_file_path;
     }
+
     const uri = try @import("zls").URI.fromPath(gpa, file_path);
     defer gpa.free(uri);
 
-    const lsps_file = if (zcu.lsps_ds) |ds| ds.getHandle(uri) else null;
+    const lsp_doc = if (zcu.lsps_ds) |ds| ds.getHandle(uri) else null;
 
     var stat = try source_file.stat(io);
 
-    if (lsps_file) |lsps_f| {
-        if (lsps_f.stat) |lsps_fstat| {
-            stat.mtime = lsps_fstat.mtime;
-        }
+    if (lsp_doc) |doc| {
+        if (doc.mtime.nanoseconds != 0) stat.mtime = doc.mtime;
     }
 
     const want_local_cache = switch (file.path.root) {
@@ -268,7 +270,7 @@ pub fn updateFile(
         if (stat.size > std.math.maxInt(u32))
             return error.FileTooBig;
 
-        const source = if (lsps_file) |lsps_f| lsps_f.tree.source else src: {
+        const source = if (lsp_doc) |doc| doc.tree.source else src: {
             const src = try gpa.allocSentinel(u8, @intCast(stat.size), 0);
             var source_fr = source_file.reader(io, &.{});
             source_fr.size = stat.size;
@@ -278,15 +280,17 @@ pub fn updateFile(
             };
             break :src src;
         };
-        defer if (lsps_file == null and file.source == null) gpa.free(source);
+        defer if (lsp_doc == null and file.source == null) gpa.free(source);
 
         file.source = source;
 
-        if (lsps_file != null) file.owned_by_comp = false;
+        if (lsp_doc != null) file.owned_by_comp = false;
 
         var timer = comp.startTimer();
+
         // Any potential AST errors are converted to ZIR errors when we run AstGen/ZonGen.
-        file.tree = if (lsps_file) |lsps_f| lsps_f.tree else try Ast.parse(gpa, source, file.getMode());
+        file.tree = if (lsp_doc) |lsps_f| lsps_f.tree else try Ast.parse(gpa, source, file.getMode());
+
         if (timer.finish(io)) |ns_parse| {
             comp.mutex.lockUncancelable(io);
             defer comp.mutex.unlock(io);

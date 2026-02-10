@@ -307,7 +307,10 @@ pub const BuildFile = struct {
 
 /// Represents a Zig source file.
 pub const Handle = struct {
+    /// The document's uri.
     uri: Uri,
+    /// The version number of this document.
+    version: i32 = 0,
     /// Custom AST with extra data. Must be freed with .deinit
     ast: extd_zccs.Ast,
     /// std.zig.Ast compatible mapping of the custom AST ('ast`)
@@ -322,7 +325,7 @@ pub const Handle = struct {
     /// First build.zig up the dir tree
     closest_build_file_uri: ?[]const u8 = null,
 
-    stat: ?std.Io.File.Stat = null,
+    mtime: std.Io.Timestamp = .{ .nanoseconds = 0 },
 
     /// private field
     impl: struct {
@@ -1798,10 +1801,7 @@ fn createAndStoreDocument(
         }
         const file = std.Io.Dir.openFileAbsolute(self.io, file_path, .{}) catch break :stat;
         defer file.close(self.io);
-        new_handle.stat = file.stat(self.io) catch |err| switch (err) {
-            error.Canceled => return error.Canceled,
-            else => break :stat,
-        };
+        new_handle.mtime = .now(self.io, .real);
     }
 
     if (supports_build_system and isBuildFile(uri) and !isInStd(uri)) {

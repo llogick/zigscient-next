@@ -1227,10 +1227,8 @@ fn changeDocumentHandler(server: *Server, _: std.mem.Allocator, notification: ty
         error.OutOfMemory => return error.InternalError,
     };
 
-    if (handle.stat) |*stat| {
-        stat.*.mtime.nanoseconds += 1;
-    }
-
+    handle.version = notification.textDocument.version;
+    handle.mtime = .now(server.io, .real);
     handle.setChangePending(false);
 
     server.generateDiagnostics(handle);
