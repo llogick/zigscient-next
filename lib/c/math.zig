@@ -1,57 +1,59 @@
+const builtin = @import("builtin");
+
 const std = @import("std");
 const math = std.math;
-const common = @import("common.zig");
-const builtin = @import("builtin");
+
+const symbol = @import("../c.zig").symbol;
 
 comptime {
     if (builtin.target.isMinGW()) {
-        @export(&isnan, .{ .name = "isnan", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&isnan, .{ .name = "__isnan", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&isnanf, .{ .name = "isnanf", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&isnanf, .{ .name = "__isnanf", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&isnanl, .{ .name = "isnanl", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&isnanl, .{ .name = "__isnanl", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&isnan, "isnan");
+        symbol(&isnan, "__isnan");
+        symbol(&isnanf, "isnanf");
+        symbol(&isnanf, "__isnanf");
+        symbol(&isnanl, "isnanl");
+        symbol(&isnanl, "__isnanl");
 
-        @export(&math.nan(f64), .{ .name = "__QNAN", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.snan(f64), .{ .name = "__SNAN", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.inf(f64), .{ .name = "__INF", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.floatTrueMin(f64), .{ .name = "__DENORM", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&math.nan(f64), "__QNAN");
+        symbol(&math.snan(f64), "__SNAN");
+        symbol(&math.inf(f64), "__INF");
+        symbol(&math.floatTrueMin(f64), "__DENORM");
 
-        @export(&math.nan(f32), .{ .name = "__QNANF", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.snan(f32), .{ .name = "__SNANF", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.inf(f32), .{ .name = "__INFF", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.floatTrueMin(f32), .{ .name = "__DENORMF", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&math.nan(f32), "__QNANF");
+        symbol(&math.snan(f32), "__SNANF");
+        symbol(&math.inf(f32), "__INFF");
+        symbol(&math.floatTrueMin(f32), "__DENORMF");
 
-        @export(&math.nan(c_longdouble), .{ .name = "__QNANL", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.snan(c_longdouble), .{ .name = "__SNANL", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.inf(c_longdouble), .{ .name = "__INFL", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&math.floatTrueMin(c_longdouble), .{ .name = "__DENORML", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&math.nan(c_longdouble), "__QNANL");
+        symbol(&math.snan(c_longdouble), "__SNANL");
+        symbol(&math.inf(c_longdouble), "__INFL");
+        symbol(&math.floatTrueMin(c_longdouble), "__DENORML");
     }
 
     if (builtin.target.isMinGW() or builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
-        @export(&hypotf, .{ .name = "hypotf", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&hypotl, .{ .name = "hypotl", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&nan, .{ .name = "nan", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&nanf, .{ .name = "nanf", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&nanl, .{ .name = "nanl", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&hypotf, "hypotf");
+        symbol(&hypotl, "hypotl");
+        symbol(&nan, "nan");
+        symbol(&nanf, "nanf");
+        symbol(&nanl, "nanl");
     }
 
     if (builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
-        @export(&acos, .{ .name = "acos", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&atanf, .{ .name = "atanf", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&atan, .{ .name = "atan", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&atanl, .{ .name = "atanl", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&cbrt, .{ .name = "cbrt", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&cbrtf, .{ .name = "cbrtf", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&hypot, .{ .name = "hypot", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&pow, .{ .name = "pow", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&acos, "acos");
+        symbol(&atanf, "atanf");
+        symbol(&atan, "atan");
+        symbol(&atanl, "atanl");
+        symbol(&cbrt, "cbrt");
+        symbol(&cbrtf, "cbrtf");
+        symbol(&hypot, "hypot");
+        symbol(&pow, "pow");
     }
 
     if (builtin.target.isMuslLibC()) {
-        @export(&copysignf, .{ .name = "copysignf", .linkage = common.linkage, .visibility = common.visibility });
-        @export(&copysign, .{ .name = "copysign", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&copysignf, "copysignf");
+        symbol(&copysign, "copysign");
     }
-    @export(&copysignl, .{ .name = "copysignl", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&copysignl, "copysignl");
 }
 
 fn acos(x: f64) callconv(.c) f64 {

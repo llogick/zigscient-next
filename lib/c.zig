@@ -1,7 +1,9 @@
-//! This is Zig's multi-target implementation of libc.
+//! Multi-target implementation of libc, providing ABI compatibility with
+//! bundled libcs.
 //!
-//! When `builtin.link_libc` is true, we need to export all the functions and
-//! provide a libc API compatible with the target (e.g. musl, wasi-libc, ...).
+//! mingw-w64 libc is not fully statically linked, so some symbols don't need
+//! to be exported. However, a future enhancement could be eliminating Zig's
+//! dependency on msvcrt dll even when linking libc and targeting Windows.
 
 const builtin = @import("builtin");
 const std = @import("std");
@@ -13,8 +15,36 @@ pub const panic = if (builtin.is_test)
 else
     std.debug.no_panic;
 
-// NOTE: `libzigc` aims to be a standalone libc and provide ABI compatibility with its bundled libc's.
-// Some of them like `mingw` are not fully statically linked so some symbols don't need to be exported.
+/// It is incorrect to make this conditional on `builtin.is_test`, because it is possible that
+/// libzigc is being linked into a different test compilation, as opposed to being tested itself.
+pub const linkage: std.builtin.GlobalLinkage = .strong;
+
+/// Determines the symbol's visibility to other objects.
+/// For WebAssembly this allows the symbol to be resolved to other modules, but will not
+/// export it to the host runtime.
+pub const visibility: std.builtin.SymbolVisibility = .hidden;
+
+pub inline fn symbol(comptime func: *const anyopaque, comptime name: []const u8) void {
+    @export(func, .{ .name = name, .linkage = linkage, .visibility = visibility });
+}
+
+/// Given a low-level syscall return value, sets errno and returns `-1`, or on
+/// success returns the result.
+pub fn errno(syscall_return_value: usize) c_int {
+    return switch (builtin.os.tag) {
+        .linux => {
+            const signed: isize = @bitCast(syscall_return_value);
+            const casted: c_int = @intCast(signed);
+            if (casted < 0) {
+                @branchHint(.unlikely);
+                std.c._errno().* = -casted;
+                return -1;
+            }
+            return casted;
+        },
+        else => comptime unreachable,
+    };
+}
 
 comptime {
     _ = @import("c/inttypes.zig");
@@ -25,22 +55,11 @@ comptime {
     _ = @import("c/strings.zig");
     _ = @import("c/wchar.zig");
 
-    _ = @import("c/sys.zig");
+    _ = @import("c/sys/mman.zig");
+    _ = @import("c/sys/file.zig");
+    _ = @import("c/sys/reboot.zig");
+    _ = @import("c/sys/capability.zig");
+    _ = @import("c/sys/utsname.zig");
+
     _ = @import("c/unistd.zig");
-
-    if (builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
-        // Files specific to musl and wasi-libc.
-    }
-
-    if (builtin.target.isMuslLibC()) {
-        // Files specific to musl.
-    }
-
-    if (builtin.target.isWasiLibC()) {
-        // Files specific to wasi-libc.
-    }
-
-    if (builtin.target.isMinGW()) {
-        // Files specific to MinGW-w64.
-    }
 }
