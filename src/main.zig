@@ -2103,7 +2103,7 @@ pub fn buildOutputType(
                         } else cs.manifest_file = arg;
                     },
                     .def => {
-                        linker_module_definition_file = arg;
+                        cs.linker_module_definition_file = arg;
                     },
                     .assembly, .assembly_with_cpp, .c, .cpp, .h, .hpp, .hm, .hmm, .ll, .bc, .m, .mm => {
                         dev.check(.c_compiler);
