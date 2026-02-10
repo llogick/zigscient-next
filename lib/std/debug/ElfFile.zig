@@ -86,7 +86,11 @@ pub const DebugInfoSearchPaths = struct {
             },
             .exe_dir = std.fs.path.dirname(exe_path) orelse ".",
         };
-        @compileError("std.Options.elf_debug_info_search_paths must be provided");
+        return .{
+            .debuginfod_client = null,
+            .global_debug = &.{"/usr/lib/debug"},
+            .exe_dir = std.fs.path.dirname(exe_path) orelse ".",
+        };
     }
 };
 
