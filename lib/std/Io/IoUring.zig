@@ -59,7 +59,9 @@ backing_allocator: Allocator,
 main_fiber_buffer: [
     std.mem.alignForward(usize, @sizeOf(Fiber), @alignOf(Completion)) + @sizeOf(Completion)
 ]u8 align(@max(@alignOf(Fiber), @alignOf(Completion))),
+log2_ring_entries: u4,
 threads: Thread.List,
+sync_limit: ?Io.Semaphore,
 
 stderr_mutex: Io.Mutex,
 stderr_writer: File.Writer = .{
@@ -84,10 +86,9 @@ csprng: Csprng,
 /// Empirically saw glibc complain about 256KB.
 const idle_stack_size = 512 * 1024;
 
-const max_idle_search = 4;
-const max_steal_ready_search = 4;
-
-const io_uring_entries = 64;
+const max_idle_search = 1;
+const max_steal_ready_search = 2;
+const max_steal_free_search = 4;
 
 const Thread = struct {
     required_align: void align(4),
@@ -95,9 +96,11 @@ const Thread = struct {
     idle_context: Context,
     current_context: *Context,
     ready_queue: ?*Fiber,
+    free_queue: ?*Fiber,
     io_uring: IoUring,
     idle_search_index: u32,
     steal_ready_search_index: u32,
+    steal_free_search_index: u32,
     name_arena: if (tracy.enable) std.heap.ArenaAllocator.State else struct {},
     csprng: Csprng,
 
@@ -105,6 +108,15 @@ const Thread = struct {
 
     noinline fn current() *Thread {
         return self.?;
+    }
+
+    fn deinit(thread: *Thread, gpa: Allocator) void {
+        var next_fiber = thread.free_queue;
+        while (next_fiber) |free_fiber| {
+            next_fiber = free_fiber.status.free_next;
+            gpa.free(free_fiber.allocatedSlice());
+        }
+        thread.io_uring.deinit();
     }
 
     fn currentFiber(thread: *Thread) *Fiber {
@@ -144,6 +156,7 @@ const Fiber = struct {
     status: union(enum) {
         queue_next: ?*Fiber,
         awaiting_group: Group,
+        free_next: ?*Fiber,
     },
     cancel_status: CancelStatus,
     cancel_protection: CancelProtection,
@@ -235,7 +248,7 @@ const Fiber = struct {
         }
     };
 
-    const finished: ?*Fiber = @ptrFromInt(@alignOf(Thread));
+    const finished: ?*Fiber = @ptrFromInt(@alignOf(Fiber));
 
     const max_result_align: Alignment = .@"16";
     const max_result_size = max_result_align.forward(512);
@@ -259,13 +272,49 @@ const Fiber = struct {
     }
 
     fn create(ev: *Evented) error{OutOfMemory}!*Fiber {
+        const thread: *Thread = .current();
+        if (@atomicRmw(?*Fiber, &thread.free_queue, .Xchg, finished, .acquire)) |free_fiber| {
+            assert(free_fiber != finished);
+            @atomicStore(?*Fiber, &thread.free_queue, free_fiber.status.free_next, .release);
+            return free_fiber;
+        }
+        const active_threads = @atomicLoad(u32, &ev.threads.active, .acquire);
+        for (0..@min(max_steal_free_search, active_threads)) |_| {
+            defer thread.steal_free_search_index += 1;
+            if (thread.steal_free_search_index == active_threads) thread.steal_free_search_index = 0;
+            const steal_free_search_thread =
+                &ev.threads.allocated[0..active_threads][thread.steal_free_search_index];
+            if (steal_free_search_thread == thread) continue;
+            const free_fiber =
+                @atomicLoad(?*Fiber, &steal_free_search_thread.free_queue, .monotonic) orelse continue;
+            if (free_fiber == finished) continue;
+            if (@cmpxchgWeak(
+                ?*Fiber,
+                &steal_free_search_thread.free_queue,
+                free_fiber,
+                null,
+                .acquire,
+                .monotonic,
+            )) |_| continue;
+            @atomicStore(?*Fiber, &thread.free_queue, free_fiber.status.free_next, .release);
+            return free_fiber;
+        }
+        @atomicStore(?*Fiber, &thread.free_queue, null, .monotonic);
         return @ptrCast(try ev.allocator().alignedAlloc(u8, .of(Fiber), allocation_size));
     }
 
-    fn destroy(fiber: *Fiber, gpa: std.mem.Allocator) void {
-        log.debug("destroying {*}", .{fiber});
+    fn destroy(fiber: *Fiber) void {
+        const thread: *Thread = .current();
         assert(fiber.status.queue_next == null);
-        gpa.free(fiber.allocatedSlice());
+        fiber.status = .{ .free_next = @atomicLoad(?*Fiber, &thread.free_queue, .acquire) };
+        while (true) fiber.status.free_next = @cmpxchgWeak(
+            ?*Fiber,
+            &thread.free_queue,
+            fiber.status.free_next,
+            fiber,
+            .acq_rel,
+            .acquire,
+        ) orelse break;
     }
 
     fn allocatedSlice(f: *Fiber) []align(@alignOf(Fiber)) u8 {
@@ -416,6 +465,62 @@ const CancelRegion = struct {
     fn errno(cancel_region: *const CancelRegion) linux.E {
         return cancel_region.completion().errno();
     }
+
+    const Sync = struct {
+        cancel_region: CancelRegion,
+        fn init(ev: *Evented) Io.Cancelable!Sync {
+            if (ev.sync_limit) |*sync_limit| try sync_limit.wait(ev.io());
+            return .{ .cancel_region = .init() };
+        }
+        fn initBlocked(ev: *Evented) Sync {
+            if (ev.sync_limit) |*sync_limit| sync_limit.waitUncancelable(ev.io());
+            return .{ .cancel_region = .initBlocked() };
+        }
+        fn deinit(sync: *Sync, ev: *Evented) void {
+            sync.cancel_region.deinit();
+            if (ev.sync_limit) |*sync_limit| sync_limit.post(ev.io());
+        }
+
+        const Maybe = union(enum) {
+            cancel_region: CancelRegion,
+            sync: Sync,
+
+            fn deinit(maybe: *Maybe, ev: *Evented) void {
+                switch (maybe.*) {
+                    .cancel_region => |*cancel_region| cancel_region.deinit(),
+                    .sync => |*sync| sync.deinit(ev),
+                }
+            }
+
+            fn enterSync(maybe: *Maybe, ev: *Evented) Io.Cancelable!*Sync {
+                switch (maybe.*) {
+                    .cancel_region => |cancel_region| {
+                        if (ev.sync_limit) |*sync_limit| try sync_limit.wait(ev.io());
+                        maybe.* = .{ .sync = .{ .cancel_region = cancel_region } };
+                    },
+                    .sync => {},
+                }
+                return &maybe.sync;
+            }
+
+            fn leaveSync(maybe: *Maybe, ev: *Evented) void {
+                switch (maybe.*) {
+                    .cancel_region => {},
+                    .sync => |sync| {
+                        if (ev.sync_limit) |*sync_limit| sync_limit.post(ev.io());
+                        maybe.* = .{ .cancel_region = sync.cancel_region };
+                    },
+                }
+            }
+
+            fn cancelRegion(maybe: *Maybe) *CancelRegion {
+                return switch (maybe.*) {
+                    .cancel_region => |*cancel_region| cancel_region,
+                    .sync => |*sync| &sync.cancel_region,
+                };
+            }
+        };
+    };
 };
 
 const CachedFd = struct {
@@ -685,7 +790,7 @@ fn fileMemoryMapSetLength(
     new_len: usize,
 ) File.MemoryMap.SetLengthError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
+
     const page_size = std.heap.pageSize();
     const alignment: Alignment = .fromByteUnits(page_size);
     const page_align = std.heap.page_size_min;
@@ -695,12 +800,12 @@ fn fileMemoryMapSetLength(
         mm.memory.len = new_len;
         return;
     }
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
     const flags: linux.MREMAP = .{ .MAYMOVE = true };
     const addr_hint: ?[*]const u8 = null;
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     const new_memory = while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         const rc = linux.mremap(old_memory.ptr, old_memory.len, new_len, flags, addr_hint);
         switch (linux.errno(rc)) {
             .SUCCESS => break @as([*]align(page_align) u8, @ptrFromInt(rc))[0..new_len],
@@ -730,17 +835,28 @@ fn fileMemoryMapWrite(userdata: ?*anyopaque, mm: *File.MemoryMap) File.WritePosi
 pub const InitOptions = struct {
     backing_allocator_needs_mutex: bool = true,
 
+    /// Maximum thread pool size (excluding the main thread).
+    /// Defaults to one less than the number of logical CPU cores.
+    thread_limit: ?usize = null,
+    /// Maximum number of threads that may perform synchronous syscalls.
+    sync_limit: Io.Limit = .unlimited,
+
+    log2_ring_entries: u4 = 3,
+
     /// Affects the following operations:
     /// * `processExecutablePath` on OpenBSD and Haiku.
     argv0: Argv0 = .empty,
     /// Affects the following operations:
     /// * `fileIsTty`
     /// * `processSpawn`, `processSpawnPath`, `processReplace`, `processReplacePath`
-    environ: process.Environ,
+    environ: process.Environ = .empty,
 };
 
 pub fn init(ev: *Evented, backing_allocator: Allocator, options: InitOptions) !void {
-    const threads_size = @max(std.Thread.getCpuCount() catch 1, 1) * @sizeOf(Thread);
+    const threads_size = @sizeOf(Thread) * if (options.thread_limit) |thread_limit|
+        1 + thread_limit
+    else
+        @max(std.Thread.getCpuCount() catch 1, 1);
     const idle_stack_end_offset =
         std.mem.alignForward(usize, threads_size + idle_stack_size, std.heap.page_size_max);
     const allocated_slice = try backing_allocator.alignedAlloc(u8, .of(Thread), idle_stack_end_offset);
@@ -750,11 +866,13 @@ pub fn init(ev: *Evented, backing_allocator: Allocator, options: InitOptions) !v
         .backing_allocator_mutex = .init,
         .backing_allocator = backing_allocator,
         .main_fiber_buffer = undefined,
+        .log2_ring_entries = options.log2_ring_entries,
         .threads = .{
             .allocated = @ptrCast(allocated_slice[0..threads_size]),
             .reserved = 1,
             .active = 1,
         },
+        .sync_limit = if (options.sync_limit.toInt()) |sync_limit| .{ .permits = sync_limit } else null,
 
         .stderr_mutex = .init,
         .stderr_writer = .{
@@ -809,18 +927,18 @@ pub fn init(ev: *Evented, backing_allocator: Allocator, options: InitOptions) !v
         },
         .current_context = &main_fiber.context,
         .ready_queue = null,
+        .free_queue = null,
         .io_uring = try .init(
-            io_uring_entries,
+            @as(u16, 1) << ev.log2_ring_entries,
             linux.IORING_SETUP_COOP_TASKRUN | linux.IORING_SETUP_SINGLE_ISSUER,
         ),
         .idle_search_index = 1,
         .steal_ready_search_index = 1,
+        .steal_free_search_index = 1,
         .name_arena = .{},
         .csprng = .uninitialized,
     };
     errdefer main_thread.io_uring.deinit();
-    log.debug("created main idle {*}", .{&main_thread.idle_context});
-    log.debug("created main {*}", .{main_fiber});
     if (tracy.enable) tracy.fiberEnter(main_fiber.name);
 }
 
@@ -831,7 +949,7 @@ pub fn deinit(ev: *Evented) void {
         assert(ready_fiber == null or ready_fiber == Fiber.finished); // pending async
     }
     ev.yield(null, .exit);
-    ev.threads.allocated[0].io_uring.deinit();
+    ev.threads.allocated[0].deinit(ev.allocator());
     ev.null_fd.close();
     ev.random_fd.close();
     const allocated_ptr: [*]align(@alignOf(Thread)) u8 = @ptrCast(@alignCast(ev.threads.allocated.ptr));
@@ -848,6 +966,7 @@ pub fn deinit(ev: *Evented) void {
 
 fn findReadyFiber(ev: *Evented, thread: *Thread) ?*Fiber {
     if (@atomicRmw(?*Fiber, &thread.ready_queue, .Xchg, Fiber.finished, .acquire)) |ready_fiber| {
+        assert(ready_fiber != Fiber.finished);
         @atomicStore(?*Fiber, &thread.ready_queue, ready_fiber.status.queue_next, .release);
         ready_fiber.status.queue_next = null;
         return ready_fiber;
@@ -860,7 +979,7 @@ fn findReadyFiber(ev: *Evented, thread: *Thread) ?*Fiber {
             &ev.threads.allocated[0..active_threads][thread.steal_ready_search_index];
         if (steal_ready_search_thread == thread) continue;
         const ready_fiber =
-            @atomicLoad(?*Fiber, &steal_ready_search_thread.ready_queue, .acquire) orelse continue;
+            @atomicLoad(?*Fiber, &steal_ready_search_thread.ready_queue, .monotonic) orelse continue;
         if (ready_fiber == Fiber.finished) continue;
         if (@cmpxchgWeak(
             ?*Fiber,
@@ -892,19 +1011,10 @@ fn yield(ev: *Evented, maybe_ready_fiber: ?*Fiber, pending_task: SwitchMessage.P
         },
         .pending_task = pending_task,
     };
-    log.debug("switching from {*} to {*}", .{ message.contexts.prev, message.contexts.ready });
     contextSwitch(&message).handle(ev);
 }
 
 fn schedule(ev: *Evented, thread: *Thread, ready_queue: Fiber.Queue) bool {
-    {
-        var fiber = ready_queue.head;
-        while (true) {
-            log.debug("scheduling {*}", .{fiber});
-            fiber = fiber.status.queue_next orelse break;
-        }
-        assert(fiber == ready_queue.tail);
-    }
     // shared fields of previous `Thread` must be initialized before later ones are marked as active
     const new_thread_index = @atomicLoad(u32, &ev.threads.active, .acquire);
     for (0..@min(max_idle_search, new_thread_index)) |_| {
@@ -963,7 +1073,8 @@ fn schedule(ev: *Evented, thread: *Thread, ready_queue: Fiber.Queue) bool {
             .idle_context = undefined,
             .current_context = &new_thread.idle_context,
             .ready_queue = ready_queue.head,
-            .io_uring = IoUring.init_params(io_uring_entries, &params) catch |err| {
+            .free_queue = null,
+            .io_uring = IoUring.init_params(@as(u16, 1) << ev.log2_ring_entries, &params) catch |err| {
                 @atomicStore(u32, &ev.threads.reserved, new_thread_index, .release);
                 // no more access to `thread` after giving up reservation
                 log.warn("unable to create worker thread due to io_uring init failure: {s}", .{
@@ -973,6 +1084,7 @@ fn schedule(ev: *Evented, thread: *Thread, ready_queue: Fiber.Queue) bool {
             },
             .idle_search_index = 0,
             .steal_ready_search_index = 0,
+            .steal_free_search_index = 0,
             .name_arena = .{},
             .csprng = .uninitialized,
         };
@@ -991,14 +1103,14 @@ fn schedule(ev: *Evented, thread: *Thread, ready_queue: Fiber.Queue) bool {
         return false;
     }
     // nobody wanted it, so just queue it on ourselves
-    while (@cmpxchgWeak(
+    while (true) ready_queue.tail.status.queue_next = @cmpxchgWeak(
         ?*Fiber,
         &thread.ready_queue,
         ready_queue.tail.status.queue_next,
         ready_queue.head,
         .acq_rel,
         .acquire,
-    )) |old_head| ready_queue.tail.status.queue_next = old_head;
+    ) orelse break;
     return false;
 }
 
@@ -1015,8 +1127,7 @@ fn mainIdle(
 fn threadEntry(ev: *Evented, index: u32) void {
     const thread: *Thread = &ev.threads.allocated[index];
     Thread.self = thread;
-    defer thread.io_uring.deinit();
-    log.debug("created thread idle {*}", .{&thread.idle_context});
+    defer thread.deinit(ev.allocator());
     switch (linux.errno(linux.io_uring_register(thread.io_uring.fd, .REGISTER_ENABLE_RINGS, null, 0))) {
         .SUCCESS => ev.idle(thread),
         else => |err| @panic(@tagName(err)),
@@ -1054,103 +1165,107 @@ fn idle(ev: *Evented, thread: *Thread) void {
             error.SignalInterrupt => {},
             else => |e| @panic(@errorName(e)),
         };
-        var cqes_buffer: [io_uring_entries]linux.io_uring_cqe = undefined;
         var maybe_ready_queue: ?Fiber.Queue = null;
-        for (cqes_buffer[0 .. thread.io_uring.copy_cqes(&cqes_buffer, 0) catch |err| switch (err) {
-            error.SignalInterrupt => 0,
-            else => |e| @panic(@errorName(e)),
-        }]) |cqe| if (cqe.flags & linux.IORING_CQE_F_SKIP == 0) switch (@as(
-            Completion.UserData,
-            @enumFromInt(cqe.user_data),
-        )) {
-            .unused => unreachable, // bad submission queued?
-            .wakeup => {},
-            .futex_wake => switch (Completion.errno(.{ .result = cqe.res, .flags = cqe.flags })) {
-                .SUCCESS => recoverableOsBugDetected(), // success is skipped
-                .INVAL => {}, // invalid futex_wait() on ptr done elsewhere
-                .INTR, .CANCELED => recoverableOsBugDetected(), // `Completion.UserData.futex_wake` is not cancelable
-                .FAULT => {}, // pointer became invalid while doing the wake
-                else => recoverableOsBugDetected(), // deadlock due to operating system bug
-            },
-            .cleanup => @panic("failed to notify other threads that we are exiting"),
-            .exit => {
-                assert(maybe_ready_fiber == null and maybe_ready_queue == null); // pending async
-                return;
-            },
-            _ => if (@as(?*Fiber, ready_fiber: switch (@as(u2, @truncate(cqe.user_data))) {
-                0b00 => {
-                    const ready_fiber: *Fiber = @ptrFromInt(cqe.user_data & ~@as(usize, 0b11));
-                    ready_fiber.resultPointer(Completion).* = .{
-                        .result = cqe.res,
-                        .flags = cqe.flags,
-                    };
-                    break :ready_fiber ready_fiber;
+        while (true) {
+            var cqes_buffer: [1 << 8]linux.io_uring_cqe = undefined;
+            const cqes = cqes_buffer[0 .. thread.io_uring.copy_cqes(&cqes_buffer, 0) catch |err| switch (err) {
+                error.SignalInterrupt => 0,
+                else => |e| @panic(@errorName(e)),
+            }];
+            if (cqes.len == 0) break;
+            for (cqes) |cqe| if (cqe.flags & linux.IORING_CQE_F_SKIP == 0) switch (@as(
+                Completion.UserData,
+                @enumFromInt(cqe.user_data),
+            )) {
+                .unused => unreachable, // bad submission queued?
+                .wakeup => {},
+                .futex_wake => switch (Completion.errno(.{ .result = cqe.res, .flags = cqe.flags })) {
+                    .SUCCESS => recoverableOsBugDetected(), // success is skipped
+                    .INVAL => {}, // invalid futex_wait() on ptr done elsewhere
+                    .INTR, .CANCELED => recoverableOsBugDetected(), // `Completion.UserData.futex_wake` is not cancelable
+                    .FAULT => {}, // pointer became invalid while doing the wake
+                    else => recoverableOsBugDetected(), // deadlock due to operating system bug
                 },
-                0b01 => {
-                    thread.enqueue().* = .{
-                        .opcode = .ASYNC_CANCEL,
-                        .flags = linux.IOSQE_CQE_SKIP_SUCCESS,
-                        .ioprio = 0,
-                        .fd = 0,
-                        .off = 0,
-                        .addr = cqe.user_data & ~@as(usize, 0b11),
-                        .len = 0,
-                        .rw_flags = 0,
-                        .user_data = @intFromEnum(Completion.UserData.wakeup),
-                        .buf_index = 0,
-                        .personality = 0,
-                        .splice_fd_in = 0,
-                        .addr3 = 0,
-                        .resv = 0,
-                    };
-                    break :ready_fiber null;
+                .cleanup => @panic("failed to notify other threads that we are exiting"),
+                .exit => {
+                    assert(maybe_ready_fiber == null and maybe_ready_queue == null); // pending async
+                    return;
                 },
-                0b10 => {
-                    const context: *Io.Operation.Storage.Pending.Context =
-                        @ptrFromInt(cqe.user_data & ~@as(usize, 0b11));
-                    const batch: *Io.Batch = @ptrFromInt(context[0]);
-                    var next: usize = 0b00;
-                    context[0..3].* = .{ next, @as(u32, @bitCast(cqe.res)), cqe.flags };
-                    while (true) {
-                        next = @cmpxchgWeak(
-                            usize,
-                            @as(*usize, @ptrCast(&batch.context)),
-                            next,
-                            cqe.user_data,
-                            .release,
-                            .acquire,
-                        ) orelse break;
-                        context[0] = next;
-                    }
-                    break :ready_fiber switch (@as(u2, @truncate(next))) {
-                        0b00, 0b01 => @ptrFromInt(next & ~@as(usize, 0b11)),
-                        0b10, 0b11 => null,
-                    };
-                },
-                0b11 => switch (Completion.errno(.{ .result = cqe.res, .flags = cqe.flags })) {
-                    .SUCCESS => unreachable, // no event count specified
-                    .TIME => {
-                        const context: *usize = @ptrFromInt(cqe.user_data & ~@as(usize, 0b11));
-                        const fiber = @atomicRmw(usize, context, .Add, 0b01, .acquire);
-                        break :ready_fiber switch (@as(u2, @truncate(fiber))) {
-                            else => unreachable, // timeout completed multiple times
-                            0b00 => @ptrFromInt(fiber & ~@as(usize, 0b11)),
-                            0b10 => null,
+                _ => if (@as(?*Fiber, ready_fiber: switch (@as(u2, @truncate(cqe.user_data))) {
+                    0b00 => {
+                        const ready_fiber: *Fiber = @ptrFromInt(cqe.user_data & ~@as(usize, 0b11));
+                        ready_fiber.resultPointer(Completion).* = .{
+                            .result = cqe.res,
+                            .flags = cqe.flags,
+                        };
+                        break :ready_fiber ready_fiber;
+                    },
+                    0b01 => {
+                        thread.enqueue().* = .{
+                            .opcode = .ASYNC_CANCEL,
+                            .flags = linux.IOSQE_CQE_SKIP_SUCCESS,
+                            .ioprio = 0,
+                            .fd = 0,
+                            .off = 0,
+                            .addr = cqe.user_data & ~@as(usize, 0b11),
+                            .len = 0,
+                            .rw_flags = 0,
+                            .user_data = @intFromEnum(Completion.UserData.wakeup),
+                            .buf_index = 0,
+                            .personality = 0,
+                            .splice_fd_in = 0,
+                            .addr3 = 0,
+                            .resv = 0,
+                        };
+                        break :ready_fiber null;
+                    },
+                    0b10 => {
+                        const context: *Io.Operation.Storage.Pending.Context =
+                            @ptrFromInt(cqe.user_data & ~@as(usize, 0b11));
+                        const batch: *Io.Batch = @ptrFromInt(context[0]);
+                        var next: usize = 0b00;
+                        context[0..3].* = .{ next, @as(u32, @bitCast(cqe.res)), cqe.flags };
+                        while (true) {
+                            next = @cmpxchgWeak(
+                                usize,
+                                @as(*usize, @ptrCast(&batch.context)),
+                                next,
+                                cqe.user_data,
+                                .release,
+                                .acquire,
+                            ) orelse break;
+                            context[0] = next;
+                        }
+                        break :ready_fiber switch (@as(u2, @truncate(next))) {
+                            0b00, 0b01 => @ptrFromInt(next & ~@as(usize, 0b11)),
+                            0b10, 0b11 => null,
                         };
                     },
-                    .CANCELED => null, // user data may have been invalidated
-                    else => |err| unexpectedErrno(err) catch null,
+                    0b11 => switch (Completion.errno(.{ .result = cqe.res, .flags = cqe.flags })) {
+                        .SUCCESS => unreachable, // no event count specified
+                        .TIME => {
+                            const context: *usize = @ptrFromInt(cqe.user_data & ~@as(usize, 0b11));
+                            const fiber = @atomicRmw(usize, context, .Add, 0b01, .acquire);
+                            break :ready_fiber switch (@as(u2, @truncate(fiber))) {
+                                else => unreachable, // timeout completed multiple times
+                                0b00 => @ptrFromInt(fiber & ~@as(usize, 0b11)),
+                                0b10 => null,
+                            };
+                        },
+                        .CANCELED => null, // user data may have been invalidated
+                        else => |err| unexpectedErrno(err) catch null,
+                    },
+                })) |ready_fiber| {
+                    assert(ready_fiber.status.queue_next == null);
+                    if (maybe_ready_fiber == null) {
+                        maybe_ready_fiber = ready_fiber;
+                    } else if (maybe_ready_queue) |*ready_queue| {
+                        ready_queue.tail.status.queue_next = ready_fiber;
+                        ready_queue.tail = ready_fiber;
+                    } else maybe_ready_queue = .{ .head = ready_fiber, .tail = ready_fiber };
                 },
-            })) |ready_fiber| {
-                assert(ready_fiber.status.queue_next == null);
-                if (maybe_ready_fiber == null) {
-                    maybe_ready_fiber = ready_fiber;
-                } else if (maybe_ready_queue) |*ready_queue| {
-                    ready_queue.tail.status.queue_next = ready_fiber;
-                    ready_queue.tail = ready_fiber;
-                } else maybe_ready_queue = .{ .head = ready_fiber, .tail = ready_fiber };
-            },
-        };
+            };
+        }
         if (maybe_ready_queue) |ready_queue| _ = ev.schedule(thread, ready_queue);
     }
 }
@@ -1220,8 +1335,7 @@ const SwitchMessage = struct {
             },
             .destroy => {
                 const fiber: *Fiber = @alignCast(@fieldParentPtr("context", message.contexts.prev));
-                fiber.destroy(ev.backing_allocator);
-                ev.backing_allocator_mutex.unlock(ev.io());
+                fiber.destroy();
             },
             .exit => for (
                 ev.threads.allocated[0..@atomicLoad(u32, &ev.threads.active, .acquire)],
@@ -1295,7 +1409,6 @@ inline fn contextSwitch(message: *const SwitchMessage) *const SwitchMessage {
               .x15 = true,
               .x16 = true,
               .x17 = true,
-              .x18 = true,
               .x19 = true,
               .x20 = true,
               .x21 = true,
@@ -1497,7 +1610,6 @@ const AsyncClosure = struct {
     ) callconv(.withStackAlign(.c, @alignOf(AsyncClosure))) noreturn {
         message.handle(closure.ev);
         const fiber = closure.fiber;
-        log.debug("{*} performing async", .{fiber});
         closure.start(closure.contextPointer(), fiber.resultBytes(closure.result_align));
         closure.ev.yield(
             if (@atomicRmw(?*Fiber, &fiber.link.awaiter, .Xchg, Fiber.finished, .acq_rel)) |awaiter|
@@ -1542,7 +1654,6 @@ fn concurrent(
     const fiber = Fiber.create(ev) catch |err| switch (err) {
         error.OutOfMemory => return error.ConcurrencyUnavailable,
     };
-    log.debug("allocated {*}", .{fiber});
 
     const closure: *AsyncClosure = .fromFiber(fiber);
     fiber.* = .{
@@ -1608,7 +1719,7 @@ fn await(
         assert(awaiter == fiber); // spurious wakeup
     }
     @memcpy(result, future_fiber.resultBytes(result_alignment));
-    future_fiber.destroy(ev.allocator());
+    future_fiber.destroy();
 }
 
 fn cancel(
@@ -1866,7 +1977,6 @@ const Group = struct {
         ) callconv(.withStackAlign(.c, @alignOf(Group.AsyncClosure))) noreturn {
             message.handle(closure.ev);
             assert(closure.fiber.status.queue_next == null);
-            log.debug("{*} performing group async", .{closure.fiber});
             const result = closure.start(closure.contextPointer());
             const ev = closure.ev;
             const group = closure.group;
@@ -1877,9 +1987,7 @@ const Group = struct {
             } else |err| switch (err) {
                 error.Canceled => assert(cancel_acknowledged), // group task returned `error.Canceled` but was never canceled
             }
-            const awaiter = group.removeFiber(ev, fiber);
-            ev.backing_allocator_mutex.lockUncancelable(ev.io());
-            ev.yield(awaiter, .destroy);
+            ev.yield(group.removeFiber(ev, fiber), .destroy);
             unreachable; // switched to dead fiber
         }
     };
@@ -1930,7 +2038,6 @@ fn groupConcurrent(
     const fiber = Fiber.create(ev) catch |err| switch (err) {
         error.OutOfMemory => return error.ConcurrencyUnavailable,
     };
-    log.debug("allocated {*}", .{fiber});
 
     const closure: *Group.AsyncClosure = .fromFiber(fiber);
     fiber.* = .{
@@ -2080,7 +2187,6 @@ fn futexWait(
     timeout: Io.Timeout,
 ) Io.Cancelable!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    if (builtin.single_threaded) unreachable; // Deadlock.
     const timespec: ?linux.kernel_timespec, const clock: Io.Clock, const timeout_flags: u32 = timespec: switch (timeout) {
         .none => .{
             null,
@@ -2163,7 +2269,6 @@ fn futexWait(
 
 fn futexWaitUncancelable(userdata: ?*anyopaque, ptr: *const u32, expected: u32) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    if (builtin.single_threaded) unreachable; // Deadlock.
     var cancel_region: CancelRegion = .initBlocked();
     defer cancel_region.deinit();
     const thread = cancel_region.awaitIoUring() catch |err| switch (err) {
@@ -2199,7 +2304,6 @@ fn futexWaitUncancelable(userdata: ?*anyopaque, ptr: *const u32, expected: u32) 
 fn futexWake(userdata: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
-    if (builtin.single_threaded) unreachable; // Nothing to wake up.
     const thread: *Thread = .current();
     thread.enqueue().* = .{
         .opcode = .FUTEX_WAKE,
@@ -2222,24 +2326,43 @@ fn futexWake(userdata: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
 
 fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Operation.Result {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    switch (operation) {
-        .file_read_streaming => |o| return .{
-            .file_read_streaming = ev.fileReadStreaming(o.file, o.data) catch |err| switch (err) {
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    return switch (operation) {
+        .file_read_streaming => |o| .{
+            .file_read_streaming = ev.fileReadStreaming(
+                &maybe_sync.cancel_region,
+                o.file,
+                o.data,
+            ) catch |err| switch (err) {
                 error.Canceled => |e| return e,
                 else => |e| e,
             },
         },
-        .file_write_streaming => |o| return .{
-            .file_write_streaming = ev.fileWriteStreaming(o.file, o.header, o.data, o.splat) catch |err| switch (err) {
+        .file_write_streaming => |o| .{
+            .file_write_streaming = ev.fileWriteStreaming(
+                &maybe_sync.cancel_region,
+                o.file,
+                o.header,
+                o.data,
+                o.splat,
+            ) catch |err| switch (err) {
                 error.Canceled => |e| return e,
                 else => |e| e,
             },
         },
-        .device_io_control => |*o| return .{ .device_io_control = try deviceIoControl(o) },
-    }
+        .device_io_control => |o| .{
+            .device_io_control = try ev.deviceIoControl(try maybe_sync.enterSync(ev), o),
+        },
+    };
 }
 
-fn fileReadStreaming(ev: *Evented, file: File, data: []const []u8) File.Reader.Error!usize {
+fn fileReadStreaming(
+    ev: *Evented,
+    cancel_region: *CancelRegion,
+    file: File,
+    data: []const []u8,
+) File.ReadStreamingError!usize {
     var iovecs_buffer: [max_iovecs_len]iovec = undefined;
     var i: usize = 0;
     for (data) |buf| {
@@ -2252,13 +2375,13 @@ fn fileReadStreaming(ev: *Evented, file: File, data: []const []u8) File.Reader.E
     const dest = iovecs_buffer[0..i];
     assert(dest[0].len > 0);
 
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    return ev.preadv(&cancel_region, file.handle, dest, null);
+    const n = try ev.preadv(cancel_region, file.handle, dest, null);
+    return if (n == 0) error.EndOfStream else n;
 }
 
 fn fileWriteStreaming(
     ev: *Evented,
+    cancel_region: *CancelRegion,
     file: File,
     header: []const u8,
     data: []const []const u8,
@@ -2294,17 +2417,17 @@ fn fileWriteStreaming(
             },
         },
     };
-
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    return ev.pwritev(&cancel_region, file.handle, iovecs[0..iovlen], null);
+    return ev.pwritev(cancel_region, file.handle, iovecs[0..iovlen], null);
 }
 
-fn deviceIoControl(o: *const Io.Operation.DeviceIoControl) Io.Cancelable!i32 {
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+fn deviceIoControl(
+    ev: *Evented,
+    sync: *CancelRegion.Sync,
+    o: Io.Operation.DeviceIoControl,
+) Io.Cancelable!i32 {
+    _ = ev;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         const rc = linux.ioctl(o.file.handle, @bitCast(o.code), @intFromPtr(o.arg));
         switch (linux.errno(rc)) {
             .SUCCESS => return @bitCast(@as(u32, @truncate(rc))),
@@ -2316,12 +2439,13 @@ fn deviceIoControl(o: *const Io.Operation.DeviceIoControl) Io.Cancelable!i32 {
 
 fn batchAwaitAsync(userdata: ?*anyopaque, batch: *Io.Batch) Io.Cancelable!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    batchDrainSubmitted(batch, &cancel_region, false) catch |err| switch (err) {
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    ev.batchDrainSubmitted(&maybe_sync, batch, false) catch |err| switch (err) {
         error.ConcurrencyUnavailable => unreachable, // passed concurrency=false
         else => |e| return e,
     };
+    maybe_sync.leaveSync(ev);
     while (true) {
         batchDrainReady(batch) catch |err| switch (err) {
             error.Timeout => unreachable, // no timeout
@@ -2337,9 +2461,10 @@ fn batchAwaitConcurrent(
     timeout: Io.Timeout,
 ) Io.Batch.AwaitConcurrentError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    try batchDrainSubmitted(batch, &cancel_region, true);
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    try ev.batchDrainSubmitted(&maybe_sync, batch, true);
+    maybe_sync.leaveSync(ev);
     const timespec: linux.kernel_timespec, const clock: Io.Clock, const timeout_flags: u32 = while (true) {
         batchDrainReady(batch) catch |err| switch (err) {
             error.Timeout => unreachable, // no timeout
@@ -2372,7 +2497,7 @@ fn batchAwaitConcurrent(
         }
     };
     {
-        const thread = try cancel_region.awaitIoUring();
+        const thread = try maybe_sync.cancel_region.awaitIoUring();
         thread.enqueue().* = .{
             .opcode = .TIMEOUT,
             .flags = 0,
@@ -2401,7 +2526,7 @@ fn batchAwaitConcurrent(
         };
         if (batch.completed.head == .none) continue;
     }
-    const thread = try cancel_region.awaitIoUring();
+    const thread = try maybe_sync.cancel_region.awaitIoUring();
     thread.enqueue().* = .{
         .opcode = .TIMEOUT_REMOVE,
         .flags = 0,
@@ -2411,7 +2536,7 @@ fn batchAwaitConcurrent(
         .addr = @intFromPtr(&batch.context) | 0b11,
         .len = 0,
         .rw_flags = 0,
-        .user_data = @intFromPtr(cancel_region.fiber),
+        .user_data = @intFromPtr(maybe_sync.cancel_region.fiber),
         .buf_index = 0,
         .personality = 0,
         .splice_fd_in = 0,
@@ -2419,7 +2544,7 @@ fn batchAwaitConcurrent(
         .resv = 0,
     };
     ev.yield(null, .nothing);
-    switch (cancel_region.errno()) {
+    switch (maybe_sync.cancel_region.errno()) {
         .SUCCESS => return,
         .BUSY, .NOENT => {},
         else => |err| unexpectedErrno(err) catch {},
@@ -2434,22 +2559,23 @@ fn batchAwaitConcurrent(
 
 /// If `concurrency` is false, `error.ConcurrencyUnavailable` is unreachable.
 fn batchDrainSubmitted(
+    ev: *Evented,
+    maybe_sync: *CancelRegion.Sync.Maybe,
     batch: *Io.Batch,
-    cancel_region: *CancelRegion,
     concurrency: bool,
 ) (Io.ConcurrentError || Io.Cancelable)!void {
     var index = batch.submitted.head;
     if (index == .none) return;
     errdefer batch.submitted.head = index;
-    const thread = try cancel_region.awaitIoUring();
+    const thread = try maybe_sync.cancelRegion().awaitIoUring();
     while (index != .none) {
         const storage = &batch.storage[index.toIndex()];
         const next_index = storage.submission.node.next;
-        if (@as(?Io.Operation.Result, operation: switch (storage.submission.operation) {
+        if (@as(?Io.Operation.Result, result: switch (storage.submission.operation) {
             .file_read_streaming => |o| {
                 const buffer = for (o.data) |buffer| {
                     if (buffer.len != 0) break buffer;
-                } else break :operation .{ .file_read_streaming = 0 };
+                } else break :result .{ .file_read_streaming = 0 };
                 const fd = o.file.handle;
                 storage.* = .{ .pending = .{
                     .node = .{ .prev = batch.pending.tail, .next = .none },
@@ -2472,7 +2598,7 @@ fn batchDrainSubmitted(
                     .addr3 = 0,
                     .resv = 0,
                 };
-                break :operation null;
+                break :result null;
             },
             .file_write_streaming => |o| {
                 const buffer = buffer: {
@@ -2481,7 +2607,7 @@ fn batchDrainSubmitted(
                         if (buffer.len != 0) break :buffer buffer;
                     }
                     if (o.splat > 0) break :buffer o.data[o.data.len - 1];
-                    break :operation .{ .file_write_streaming = 0 };
+                    break :result .{ .file_write_streaming = 0 };
                 };
                 const fd = o.file.handle;
                 storage.* = .{ .pending = .{
@@ -2505,12 +2631,12 @@ fn batchDrainSubmitted(
                     .addr3 = 0,
                     .resv = 0,
                 };
-                break :operation null;
+                break :result null;
             },
             .device_io_control => |o| if (concurrency)
                 return error.ConcurrencyUnavailable
             else
-                .{ .device_io_control = try deviceIoControl(&o) },
+                .{ .device_io_control = try ev.deviceIoControl(try maybe_sync.enterSync(ev), o) },
         })) |result| {
             switch (batch.completed.tail) {
                 .none => batch.completed.head = index,
@@ -2838,7 +2964,6 @@ fn dirAccess(
     options: Dir.AccessOptions,
 ) Dir.AccessError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
 
     var path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &path_buffer);
@@ -2849,10 +2974,10 @@ fn dirAccess(
         @as(u32, if (options.execute) linux.X_OK else 0);
     const flags: u32 = if (options.follow_symlinks) 0 else linux.AT.SYMLINK_NOFOLLOW;
 
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.faccessat(dir.handle, sub_path_posix, mode, flags))) {
             .SUCCESS => return,
             .INTR => continue,
@@ -2885,21 +3010,21 @@ fn dirCreateFile(
     var path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &path_buffer);
 
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    const fd = try ev.openat(&cancel_region, dir.handle, sub_path_posix, .{
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    const fd = try ev.openat(&maybe_sync.cancel_region, dir.handle, sub_path_posix, .{
         .ACCMODE = if (flags.read) .RDWR else .WRONLY,
         .CREAT = true,
         .TRUNC = flags.truncate,
         .EXCL = flags.exclusive,
         .CLOEXEC = true,
     }, flags.permissions.toMode());
-    errdefer ev.close(fd);
+    errdefer ev.close(maybe_sync.cancelRegion(), fd);
 
     switch (flags.lock) {
         .none => {},
         .shared, .exclusive => try ev.flock(
-            &cancel_region,
+            try maybe_sync.enterSync(ev),
             fd,
             flags.lock,
             if (flags.lock_nonblocking) .nonblocking else .blocking,
@@ -3069,9 +3194,9 @@ fn dirOpenFile(
     var path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &path_buffer);
 
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    const fd = try ev.openat(&cancel_region, dir.handle, sub_path_posix, .{
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    const fd = try ev.openat(&maybe_sync.cancel_region, dir.handle, sub_path_posix, .{
         .ACCMODE = switch (flags.mode) {
             .read_only => .RDONLY,
             .write_only => .WRONLY,
@@ -3082,11 +3207,11 @@ fn dirOpenFile(
         .CLOEXEC = true,
         .PATH = flags.path_only,
     }, 0);
-    errdefer ev.close(fd);
+    errdefer ev.close(maybe_sync.cancelRegion(), fd);
 
     if (!flags.allow_directory) {
         const is_dir = is_dir: {
-            const s = ev.stat(&cancel_region, fd) catch |err| switch (err) {
+            const s = ev.stat(&maybe_sync.cancel_region, fd) catch |err| switch (err) {
                 // The directory-ness is either unknown or unknowable
                 error.Streaming => break :is_dir false,
                 else => |e| return e,
@@ -3099,7 +3224,7 @@ fn dirOpenFile(
     switch (flags.lock) {
         .none => {},
         .shared, .exclusive => try ev.flock(
-            &cancel_region,
+            try maybe_sync.enterSync(ev),
             fd,
             flags.lock,
             if (flags.lock_nonblocking) .nonblocking else .blocking,
@@ -3111,7 +3236,9 @@ fn dirOpenFile(
 
 fn dirClose(userdata: ?*anyopaque, dirs: []const Dir) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    for (dirs) |dir| ev.close(dir.handle);
+    var cancel_region: CancelRegion = .init();
+    defer cancel_region.deinit();
+    for (dirs) |dir| ev.close(&cancel_region, dir.handle);
 }
 
 fn dirRead(userdata: ?*anyopaque, dr: *Dir.Reader, buffer: []Dir.Entry) Dir.Reader.Error!usize {
@@ -3122,17 +3249,17 @@ fn dirRead(userdata: ?*anyopaque, dr: *Dir.Reader, buffer: []Dir.Entry) Dir.Read
             // Refill the buffer, unless we've already created references to
             // buffered data.
             if (buffer_index != 0) break;
-            var cancel_region: CancelRegion = .init();
-            defer cancel_region.deinit();
+            var sync: CancelRegion.Sync = try .init(ev);
+            defer sync.deinit(ev);
             if (dr.state == .reset) {
-                ev.lseek(&cancel_region, dr.dir.handle, 0, linux.SEEK.SET) catch |err| switch (err) {
+                ev.lseek(&sync, dr.dir.handle, 0, linux.SEEK.SET) catch |err| switch (err) {
                     error.Unseekable => return error.Unexpected,
                     else => |e| return e,
                 };
                 dr.state = .reading;
             }
             const n = while (true) {
-                try cancel_region.await(.nothing);
+                try sync.cancel_region.await(.nothing);
                 const rc = linux.getdents64(dr.dir.handle, dr.buffer.ptr, dr.buffer.len);
                 switch (linux.errno(rc)) {
                     .SUCCESS => break rc,
@@ -3203,9 +3330,9 @@ fn dirRead(userdata: ?*anyopaque, dr: *Dir.Reader, buffer: []Dir.Entry) Dir.Read
 
 fn dirRealPath(userdata: ?*anyopaque, dir: Dir, out_buffer: []u8) Dir.RealPathError!usize {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    return ev.realPath(&cancel_region, dir.handle, out_buffer);
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    return ev.realPath(&sync, dir.handle, out_buffer);
 }
 
 fn dirRealPathFile(
@@ -3219,9 +3346,9 @@ fn dirRealPathFile(
     var path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &path_buffer);
 
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    const fd = ev.openat(&cancel_region, dir.handle, sub_path_posix, .{
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    const fd = ev.openat(&maybe_sync.cancel_region, dir.handle, sub_path_posix, .{
         .CLOEXEC = true,
         .PATH = true,
     }, 0) catch |err| switch (err) {
@@ -3229,8 +3356,8 @@ fn dirRealPathFile(
         error.FileLocksUnsupported => return errnoBug(.OPNOTSUPP), // Not asking for locks.
         else => |e| return e,
     };
-    defer ev.close(fd);
-    return ev.realPath(&cancel_region, fd, out_buffer);
+    defer ev.close(maybe_sync.cancelRegion(), fd);
+    return ev.realPath(try maybe_sync.enterSync(ev), fd, out_buffer);
 }
 
 fn dirDeleteFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8) Dir.DeleteFileError!void {
@@ -3458,15 +3585,14 @@ fn dirReadLink(
     buffer: []u8,
 ) Dir.ReadLinkError!usize {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
 
     var sub_path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &sub_path_buffer);
 
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         const rc = linux.readlinkat(dir.handle, sub_path_posix, buffer.ptr, buffer.len);
         switch (linux.errno(rc)) {
             .SUCCESS => {
@@ -3496,10 +3622,10 @@ fn dirSetOwner(
     group: ?File.Gid,
 ) Dir.SetOwnerError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     try ev.fchownat(
-        &cancel_region,
+        &sync,
         dir.handle,
         "",
         owner orelse std.math.maxInt(linux.uid_t),
@@ -3519,10 +3645,10 @@ fn dirSetFileOwner(
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     var path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &path_buffer);
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     try ev.fchownat(
-        &cancel_region,
+        &sync,
         dir.handle,
         sub_path_posix,
         owner orelse std.math.maxInt(linux.uid_t),
@@ -3537,10 +3663,10 @@ fn dirSetPermissions(
     permissions: Dir.Permissions,
 ) Dir.SetPermissionsError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     ev.fchmodat(
-        &cancel_region,
+        &sync,
         dir.handle,
         "",
         permissions.toMode(),
@@ -3565,10 +3691,10 @@ fn dirSetFilePermissions(
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     var path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &path_buffer);
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     try ev.fchmodat(
-        &cancel_region,
+        &sync,
         dir.handle,
         sub_path_posix,
         permissions.toMode(),
@@ -3585,8 +3711,8 @@ fn dirSetTimestamps(
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     var path_buffer: [PATH_MAX]u8 = undefined;
     const sub_path_posix = try pathToPosix(sub_path, &path_buffer);
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var cancel_region: CancelRegion.Sync = try .init(ev);
+    defer cancel_region.deinit(ev);
     try ev.utimensat(
         &cancel_region,
         dir.handle,
@@ -3680,7 +3806,9 @@ fn fileLength(userdata: ?*anyopaque, file: File) File.LengthError!u64 {
 
 fn fileClose(userdata: ?*anyopaque, files: []const File) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    for (files) |file| ev.close(file.handle);
+    var cancel_region: CancelRegion = .init();
+    defer cancel_region.deinit();
+    for (files) |file| ev.close(&cancel_region, file.handle);
 }
 
 fn fileWritePositional(
@@ -3807,16 +3935,16 @@ fn fileReadPositional(
 
 fn fileSeekBy(userdata: ?*anyopaque, file: File, offset: i64) File.SeekError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    try ev.lseek(&cancel_region, file.handle, @bitCast(offset), linux.SEEK.CUR);
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    try ev.lseek(&sync, file.handle, @bitCast(offset), linux.SEEK.CUR);
 }
 
 fn fileSeekTo(userdata: ?*anyopaque, file: File, offset: u64) File.SeekError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    try ev.lseek(&cancel_region, file.handle, offset, linux.SEEK.SET);
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    try ev.lseek(&sync, file.handle, offset, linux.SEEK.SET);
 }
 
 fn fileSync(userdata: ?*anyopaque, file: File) File.SyncError!void {
@@ -3858,14 +3986,12 @@ fn fileSync(userdata: ?*anyopaque, file: File) File.SyncError!void {
 
 fn fileIsTty(userdata: ?*anyopaque, file: File) Io.Cancelable!bool {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         var wsz: winsize = undefined;
-        const fd: usize = @bitCast(@as(isize, file.handle));
-        const rc = linux.syscall3(.ioctl, fd, linux.T.IOCGWINSZ, @intFromPtr(&wsz));
+        const rc = linux.ioctl(file.handle, linux.T.IOCGWINSZ, @intFromPtr(&wsz));
         switch (linux.errno(rc)) {
             .SUCCESS => return true,
             .INTR => continue,
@@ -3923,10 +4049,10 @@ fn fileSetOwner(
     group: ?File.Gid,
 ) File.SetOwnerError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     try ev.fchownat(
-        &cancel_region,
+        &sync,
         file.handle,
         "",
         owner orelse std.math.maxInt(linux.uid_t),
@@ -3941,10 +4067,10 @@ fn fileSetPermissions(
     permissions: File.Permissions,
 ) File.SetPermissionsError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     ev.fchmodat(
-        &cancel_region,
+        &sync,
         file.handle,
         "",
         permissions.toMode(),
@@ -3965,10 +4091,10 @@ fn fileSetTimestamps(
     options: File.SetTimestampsOptions,
 ) File.SetTimestampsError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     try ev.utimensat(
-        &cancel_region,
+        &sync,
         file.handle,
         "",
         if (options.modify_timestamp != .now or options.access_timestamp != .now) &.{
@@ -3981,9 +4107,9 @@ fn fileSetTimestamps(
 
 fn fileLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    ev.flock(&cancel_region, file.handle, lock, .blocking) catch |err| switch (err) {
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    ev.flock(&sync, file.handle, lock, .blocking) catch |err| switch (err) {
         error.WouldBlock => unreachable, // blocking
         else => |e| return e,
     };
@@ -3991,9 +4117,9 @@ fn fileLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockError!v
 
 fn fileTryLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockError!bool {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    ev.flock(&cancel_region, file.handle, lock, switch (lock) {
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    ev.flock(&sync, file.handle, lock, switch (lock) {
         .none => .blocking,
         .shared, .exclusive => .nonblocking,
     }) catch |err| switch (err) {
@@ -4005,9 +4131,9 @@ fn fileTryLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockErro
 
 fn fileUnlock(userdata: ?*anyopaque, file: File) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .initBlocked();
-    defer cancel_region.deinit();
-    ev.flock(&cancel_region, file.handle, .none, .blocking) catch |err| switch (err) {
+    var sync: CancelRegion.Sync = .initBlocked(ev);
+    defer sync.deinit(ev);
+    ev.flock(&sync, file.handle, .none, .blocking) catch |err| switch (err) {
         error.Canceled => unreachable, // blocked
         error.WouldBlock => unreachable, // blocking
         error.SystemResources => return recoverableOsBugDetected(), // Resource deallocation.
@@ -4018,9 +4144,9 @@ fn fileUnlock(userdata: ?*anyopaque, file: File) void {
 
 fn fileDowngradeLock(userdata: ?*anyopaque, file: File) File.DowngradeLockError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    ev.flock(&cancel_region, file.handle, .shared, .nonblocking) catch |err| switch (err) {
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    ev.flock(&sync, file.handle, .shared, .nonblocking) catch |err| switch (err) {
         error.WouldBlock => return errnoBug(.AGAIN), // File was not locked in exclusive mode.
         error.SystemResources => return errnoBug(.NOLCK), // Lock already obtained.
         error.FileLocksUnsupported => return errnoBug(.OPNOTSUPP), // Lock already obtained.
@@ -4030,9 +4156,9 @@ fn fileDowngradeLock(userdata: ?*anyopaque, file: File) File.DowngradeLockError!
 
 fn fileRealPath(userdata: ?*anyopaque, file: File, out_buffer: []u8) File.RealPathError!usize {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    return ev.realPath(&cancel_region, file.handle, out_buffer);
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    return ev.realPath(&sync, file.handle, out_buffer);
 }
 
 fn fileHardLink(
@@ -4065,7 +4191,7 @@ fn fileMemoryMapCreate(
     options: File.MemoryMap.CreateOptions,
 ) File.MemoryMap.CreateError!File.MemoryMap {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
+
     const prot: linux.PROT = .{
         .READ = options.protection.read,
         .WRITE = options.protection.write,
@@ -4078,10 +4204,10 @@ fn fileMemoryMapCreate(
 
     const page_align = std.heap.page_size_min;
 
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     const contents = while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         const casted_offset = std.math.cast(i64, options.offset) orelse return error.Unseekable;
         const rc = linux.mmap(null, options.len, prot, flags, file.handle, casted_offset);
         switch (linux.errno(rc)) {
@@ -4189,11 +4315,10 @@ fn unlockStderr(userdata: ?*anyopaque) void {
 
 fn processCurrentPath(userdata: ?*anyopaque, buffer: []u8) process.CurrentPathError!usize {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.getcwd(buffer.ptr, buffer.len))) {
             .SUCCESS => return std.mem.findScalar(u8, buffer, 0).?,
             .INTR => continue,
@@ -4208,48 +4333,19 @@ fn processCurrentPath(userdata: ?*anyopaque, buffer: []u8) process.CurrentPathEr
 
 fn processSetCurrentDir(userdata: ?*anyopaque, dir: Dir) process.SetCurrentDirError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
     if (dir.handle == linux.AT.FDCWD) return;
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    while (true) {
-        try cancel_region.await(.nothing);
-        switch (linux.errno(linux.fchdir(dir.handle))) {
-            .SUCCESS => return,
-            .INTR => continue,
-            .ACCES => return error.AccessDenied,
-            .NOTDIR => return error.NotDir,
-            .IO => return error.FileSystem,
-            .BADF => |err| return errnoBug(err),
-            else => |err| return unexpectedErrno(err),
-        }
-    }
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    return ev.fchdir(&sync, dir.handle);
 }
 
 fn processSetCurrentPath(userdata: ?*anyopaque, dir_path: []const u8) ChdirError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
     var path_buffer: [PATH_MAX]u8 = undefined;
     const dir_path_posix = try pathToPosix(dir_path, &path_buffer);
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    while (true) {
-        try cancel_region.await(.nothing);
-        switch (linux.errno(linux.chdir(dir_path_posix))) {
-            .SUCCESS => return,
-            .INTR => continue,
-            .ACCES => return error.AccessDenied,
-            .IO => return error.FileSystem,
-            .LOOP => return error.SymLinkLoop,
-            .NAMETOOLONG => return error.NameTooLong,
-            .NOENT => return error.FileNotFound,
-            .NOMEM => return error.SystemResources,
-            .NOTDIR => return error.NotDir,
-            .ILSEQ => return error.BadPathName,
-            .FAULT => |err| return errnoBug(err),
-            else => |err| return unexpectedErrno(err),
-        }
-    }
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    return ev.chdir(&sync, dir_path_posix);
 }
 
 fn processReplace(userdata: ?*anyopaque, options: process.ReplaceOptions) process.ReplaceError {
@@ -4275,7 +4371,9 @@ fn processReplace(userdata: ?*anyopaque, options: process.ReplaceOptions) proces
         });
     };
 
-    return execv(options.expand_arg0, argv_buf.ptr[0].?, argv_buf.ptr, env_block, PATH);
+    var sync: CancelRegion.Sync = try .init(ev);
+    defer sync.deinit(ev);
+    return ev.execv(&sync, options.expand_arg0, argv_buf.ptr[0].?, argv_buf.ptr, env_block, PATH);
 }
 
 fn processReplacePath(
@@ -4293,12 +4391,12 @@ fn processReplacePath(
 fn processSpawn(userdata: ?*anyopaque, options: process.SpawnOptions) process.SpawnError!process.Child {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     const spawned = try ev.spawn(options);
-    defer ev.close(spawned.err_fd);
+    var cancel_region: CancelRegion = .initBlocked();
+    defer cancel_region.deinit();
+    defer ev.close(&cancel_region, spawned.err_fd);
 
     // Wait for the child to report any errors in or before `execvpe`.
     var child_err: ForkBailError = undefined;
-    var cancel_region: CancelRegion = .initBlocked();
-    defer cancel_region.deinit();
     ev.readAll(&cancel_region, spawned.err_fd, @ptrCast(&child_err)) catch |read_err| {
         switch (read_err) {
             error.Canceled => unreachable, // blocked
@@ -4336,6 +4434,8 @@ fn processSpawnPath(
     @panic("TODO processSpawnPath");
 }
 
+const prog_fileno = 3;
+
 const Spawned = struct {
     pid: pid_t,
     err_fd: fd_t,
@@ -4344,6 +4444,9 @@ const Spawned = struct {
     stderr: ?File,
 };
 fn spawn(ev: *Evented, options: process.SpawnOptions) process.SpawnError!Spawned {
+    var cancel_region: CancelRegion = .init();
+    defer cancel_region.deinit();
+
     // The child process does need to access (one end of) these pipes. However,
     // we must initially set CLOEXEC to avoid a race condition. If another thread
     // is racing to spawn a different child process, we don't want it to inherit
@@ -4358,28 +4461,24 @@ fn spawn(ev: *Evented, options: process.SpawnOptions) process.SpawnError!Spawned
 
     const stdin_pipe = if (options.stdin == .pipe) try pipe2(pipe_flags) else undefined;
     errdefer if (options.stdin == .pipe) {
-        ev.destroyPipe(stdin_pipe);
+        ev.destroyPipe(&cancel_region, stdin_pipe);
     };
 
     const stdout_pipe = if (options.stdout == .pipe) try pipe2(pipe_flags) else undefined;
     errdefer if (options.stdout == .pipe) {
-        ev.destroyPipe(stdout_pipe);
+        ev.destroyPipe(&cancel_region, stdout_pipe);
     };
 
     const stderr_pipe = if (options.stderr == .pipe) try pipe2(pipe_flags) else undefined;
     errdefer if (options.stderr == .pipe) {
-        ev.destroyPipe(stderr_pipe);
+        ev.destroyPipe(&cancel_region, stderr_pipe);
     };
 
     const any_ignore =
         options.stdin == .ignore or options.stdout == .ignore or options.stderr == .ignore;
-    const dev_null_fd = if (any_ignore) dev_null_fd: {
-        var cancel_region: CancelRegion = .init();
-        defer cancel_region.deinit();
-        break :dev_null_fd try ev.null_fd.open(ev, &cancel_region, "/dev/null", .{
-            .ACCMODE = .RDWR,
-        });
-    } else undefined;
+    const dev_null_fd = if (any_ignore) try ev.null_fd.open(ev, &cancel_region, "/dev/null", .{
+        .ACCMODE = .RDWR,
+    }) else undefined;
 
     const prog_pipe: [2]fd_t = if (options.progress_node.index != .none) pipe: {
         // We use CLOEXEC for the same reason as in `pipe_flags`.
@@ -4387,7 +4486,7 @@ fn spawn(ev: *Evented, options: process.SpawnOptions) process.SpawnError!Spawned
         _ = linux.fcntl(pipe[0], linux.F.SETPIPE_SZ, @as(u32, std.Progress.max_packet_len * 2));
         break :pipe pipe;
     } else .{ -1, -1 };
-    errdefer ev.destroyPipe(prog_pipe);
+    errdefer ev.destroyPipe(&cancel_region, prog_pipe);
 
     var arena_allocator = std.heap.ArenaAllocator.init(ev.allocator());
     defer arena_allocator.deinit();
@@ -4405,7 +4504,6 @@ fn spawn(ev: *Evented, options: process.SpawnOptions) process.SpawnError!Spawned
     const argv_buf = try arena.allocSentinel(?[*:0]const u8, options.argv.len, null);
     for (options.argv, 0..) |arg, i| argv_buf[i] = (try arena.dupeZ(u8, arg)).ptr;
 
-    const prog_fileno = 3;
     comptime assert(@max(linux.STDIN_FILENO, linux.STDOUT_FILENO, linux.STDERR_FILENO) + 1 == prog_fileno);
 
     const env_block = env_block: {
@@ -4421,7 +4519,7 @@ fn spawn(ev: *Evented, options: process.SpawnOptions) process.SpawnError!Spawned
     // This pipe communicates to the parent errors in the child between `fork` and `execvpe`.
     // It is closed by the child (via CLOEXEC) without writing if `execvpe` succeeds.
     const err_pipe: [2]fd_t = try pipe2(.{ .CLOEXEC = true });
-    errdefer ev.destroyPipe(err_pipe);
+    errdefer ev.destroyPipe(&cancel_region, err_pipe);
 
     try ev.scanEnviron(); // for PATH
     const PATH = ev.environ.string.PATH orelse default_PATH;
@@ -4439,78 +4537,33 @@ fn spawn(ev: *Evented, options: process.SpawnOptions) process.SpawnError!Spawned
 
     if (pid_result == 0) {
         defer comptime unreachable; // We are the child.
-        _ = swapCancelProtection(ev, .blocked);
-        const ep1 = err_pipe[1];
-
-        ev.setUpChildIo(options.stdin, stdin_pipe[0], linux.STDIN_FILENO, dev_null_fd) catch |err|
-            ev.forkBail(ep1, err);
-        ev.setUpChildIo(options.stdout, stdout_pipe[1], linux.STDOUT_FILENO, dev_null_fd) catch |err|
-            ev.forkBail(ep1, err);
-        ev.setUpChildIo(options.stderr, stderr_pipe[1], linux.STDERR_FILENO, dev_null_fd) catch |err|
-            ev.forkBail(ep1, err);
-
-        switch (options.cwd) {
-            .inherit => {},
-            .dir => |cwd| processSetCurrentDir(ev, cwd) catch |err| ev.forkBail(ep1, err),
-            .path => |cwd| processSetCurrentPath(ev, cwd) catch |err| ev.forkBail(ep1, err),
-        }
-
-        // Must happen after fchdir above, the cwd file descriptor might be
-        // equal to prog_fileno and be clobbered by this dup2 call.
-        if (prog_pipe[1] != -1) dup2(prog_pipe[1], prog_fileno) catch |err| ev.forkBail(ep1, err);
-
-        if (options.gid) |gid| {
-            switch (linux.errno(linux.setregid(gid, gid))) {
-                .SUCCESS => {},
-                .AGAIN => ev.forkBail(ep1, error.ResourceLimitReached),
-                .INVAL => ev.forkBail(ep1, error.InvalidUserId),
-                .PERM => ev.forkBail(ep1, error.PermissionDenied),
-                else => ev.forkBail(ep1, error.Unexpected),
-            }
-        }
-
-        if (options.uid) |uid| {
-            switch (linux.errno(linux.setreuid(uid, uid))) {
-                .SUCCESS => {},
-                .AGAIN => ev.forkBail(ep1, error.ResourceLimitReached),
-                .INVAL => ev.forkBail(ep1, error.InvalidUserId),
-                .PERM => ev.forkBail(ep1, error.PermissionDenied),
-                else => ev.forkBail(ep1, error.Unexpected),
-            }
-        }
-
-        if (options.pgid) |pid| {
-            switch (linux.errno(linux.setpgid(0, pid))) {
-                .SUCCESS => {},
-                .ACCES => ev.forkBail(ep1, error.ProcessAlreadyExec),
-                .INVAL => ev.forkBail(ep1, error.InvalidProcessGroupId),
-                .PERM => ev.forkBail(ep1, error.PermissionDenied),
-                else => ev.forkBail(ep1, error.Unexpected),
-            }
-        }
-
-        if (options.start_suspended) {
-            switch (linux.errno(linux.kill(linux.getpid(), .STOP))) {
-                .SUCCESS => {},
-                .PERM => ev.forkBail(ep1, error.PermissionDenied),
-                else => ev.forkBail(ep1, error.Unexpected),
-            }
-        }
-
-        const err = execv(options.expand_arg0, argv_buf.ptr[0].?, argv_buf.ptr, env_block, PATH);
-        ev.forkBail(ep1, err);
+        var sync: CancelRegion.Sync = .{ .cancel_region = .initBlocked() };
+        const err = ev.setUpChild(&sync, .{
+            .stdin_pipe = stdin_pipe[0],
+            .stdout_pipe = stdout_pipe[1],
+            .stderr_pipe = stderr_pipe[1],
+            .dev_null_fd = dev_null_fd,
+            .prog_pipe = prog_pipe[1],
+            .argv_buf = argv_buf,
+            .env_block = env_block,
+            .PATH = PATH,
+            .spawn = options,
+        });
+        ev.writeAll(&sync.cancel_region, err_pipe[1], @ptrCast(&err)) catch {};
+        const exit = if (builtin.single_threaded) linux.exit else linux.exit_group;
+        exit(1);
     }
 
     const pid: pid_t = @intCast(pid_result); // We are the parent.
     errdefer comptime unreachable; // The child is forked; we must not error from now on
 
-    ev.close(err_pipe[1]); // make sure only the child holds the write end open
+    ev.close(&cancel_region, err_pipe[1]); // make sure only the child holds the write end open
 
-    if (options.stdin == .pipe) ev.close(stdin_pipe[0]);
-    if (options.stdout == .pipe) ev.close(stdout_pipe[1]);
-    if (options.stderr == .pipe) ev.close(stderr_pipe[1]);
+    if (options.stdin == .pipe) ev.close(&cancel_region, stdin_pipe[0]);
+    if (options.stdout == .pipe) ev.close(&cancel_region, stdout_pipe[1]);
+    if (options.stderr == .pipe) ev.close(&cancel_region, stderr_pipe[1]);
 
-    if (prog_pipe[1] != -1) ev.close(prog_pipe[1]);
+    if (prog_pipe[1] != -1) ev.close(&cancel_region, prog_pipe[1]);
 
     options.progress_node.setIpcFile(ev, .{ .handle = prog_pipe[0], .flags = .{ .nonblocking = true } });
 
@@ -4546,24 +4599,127 @@ pub fn pipe2(flags: linux.O) PipeError![2]fd_t {
         else => |err| return unexpectedErrno(err),
     }
 }
-fn destroyPipe(ev: *Evented, pipe: [2]fd_t) void {
-    if (pipe[0] != -1) ev.close(pipe[0]);
-    if (pipe[0] != pipe[1]) ev.close(pipe[1]);
+fn destroyPipe(ev: *Evented, cancel_region: *CancelRegion, pipe: [2]fd_t) void {
+    if (pipe[0] != -1) ev.close(cancel_region, pipe[0]);
+    if (pipe[0] != pipe[1]) ev.close(cancel_region, pipe[1]);
+}
+
+/// Errors that can occur between fork() and execv()
+const ForkBailError = process.SetCurrentDirError || ChdirError ||
+    process.SpawnError || process.ReplaceError;
+fn setUpChild(
+    ev: *Evented,
+    sync: *CancelRegion.Sync,
+    options: struct {
+        stdin_pipe: fd_t,
+        stdout_pipe: fd_t,
+        stderr_pipe: fd_t,
+        dev_null_fd: fd_t,
+        prog_pipe: fd_t,
+        argv_buf: [:null]?[*:0]const u8,
+        env_block: process.Environ.Block,
+        PATH: []const u8,
+        spawn: process.SpawnOptions,
+    },
+) ForkBailError {
+    try ev.setUpChildIo(
+        sync,
+        options.spawn.stdin,
+        options.stdin_pipe,
+        linux.STDIN_FILENO,
+        options.dev_null_fd,
+    );
+    try ev.setUpChildIo(
+        sync,
+        options.spawn.stdout,
+        options.stdout_pipe,
+        linux.STDOUT_FILENO,
+        options.dev_null_fd,
+    );
+    try ev.setUpChildIo(
+        sync,
+        options.spawn.stderr,
+        options.stderr_pipe,
+        linux.STDERR_FILENO,
+        options.dev_null_fd,
+    );
+
+    switch (options.spawn.cwd) {
+        .inherit => {},
+        .dir => |cwd_dir| try ev.fchdir(sync, cwd_dir.handle),
+        .path => |cwd_path| {
+            var cwd_path_buffer: [PATH_MAX]u8 = undefined;
+            const cwd_path_posix = try pathToPosix(cwd_path, &cwd_path_buffer);
+            try ev.chdir(sync, cwd_path_posix);
+        },
+    }
+
+    // Must happen after fchdir above, the cwd file descriptor might be
+    // equal to prog_fileno and be clobbered by this dup2 call.
+    if (options.prog_pipe != -1) try ev.dup2(sync, options.prog_pipe, prog_fileno);
+
+    if (options.spawn.gid) |gid| {
+        switch (linux.errno(linux.setregid(gid, gid))) {
+            .SUCCESS => {},
+            .AGAIN => return error.ResourceLimitReached,
+            .INVAL => return error.InvalidUserId,
+            .PERM => return error.PermissionDenied,
+            else => return error.Unexpected,
+        }
+    }
+
+    if (options.spawn.uid) |uid| {
+        switch (linux.errno(linux.setreuid(uid, uid))) {
+            .SUCCESS => {},
+            .AGAIN => return error.ResourceLimitReached,
+            .INVAL => return error.InvalidUserId,
+            .PERM => return error.PermissionDenied,
+            else => return error.Unexpected,
+        }
+    }
+
+    if (options.spawn.pgid) |pid| {
+        switch (linux.errno(linux.setpgid(0, pid))) {
+            .SUCCESS => {},
+            .ACCES => return error.ProcessAlreadyExec,
+            .INVAL => return error.InvalidProcessGroupId,
+            .PERM => return error.PermissionDenied,
+            else => return error.Unexpected,
+        }
+    }
+
+    if (options.spawn.start_suspended) {
+        switch (linux.errno(linux.kill(linux.getpid(), .STOP))) {
+            .SUCCESS => {},
+            .PERM => return error.PermissionDenied,
+            else => return error.Unexpected,
+        }
+    }
+
+    return ev.execv(
+        sync,
+        options.spawn.expand_arg0,
+        options.argv_buf.ptr[0].?,
+        options.argv_buf.ptr,
+        options.env_block,
+        options.PATH,
+    );
 }
 
 fn setUpChildIo(
     ev: *Evented,
+    sync: *CancelRegion.Sync,
     stdio: process.SpawnOptions.StdIo,
     pipe_fd: fd_t,
     std_fileno: i32,
     dev_null_fd: fd_t,
 ) !void {
     switch (stdio) {
-        .pipe => try dup2(pipe_fd, std_fileno),
-        .close => ev.close(std_fileno),
+        .pipe => try ev.dup2(sync, pipe_fd, std_fileno),
+        .close => ev.close(&sync.cancel_region, std_fileno),
         .inherit => {},
-        .ignore => try dup2(dev_null_fd, std_fileno),
-        .file => |file| try dup2(file.handle, std_fileno),
+        .ignore => try ev.dup2(sync, dev_null_fd, std_fileno),
+        .file => |file| try ev.dup2(sync, file.handle, std_fileno),
     }
 }
 
@@ -4571,11 +4727,10 @@ pub const DupError = error{
     ProcessFdQuotaExceeded,
     SystemResources,
 } || Io.UnexpectedError || Io.Cancelable;
-pub fn dup2(old_fd: fd_t, new_fd: fd_t) DupError!void {
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
+pub fn dup2(ev: *Evented, sync: *CancelRegion.Sync, old_fd: fd_t, new_fd: fd_t) DupError!void {
+    _ = ev;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.dup2(old_fd, new_fd))) {
             .SUCCESS => {},
             .BUSY, .INTR => continue,
@@ -4588,20 +4743,9 @@ pub fn dup2(old_fd: fd_t, new_fd: fd_t) DupError!void {
     }
 }
 
-/// Errors that can occur between fork() and execv()
-const ForkBailError = process.SetCurrentDirError || ChdirError ||
-    process.SpawnError || process.ReplaceError;
-/// Child of fork calls this to report an error to the fork parent. Then the
-/// child exits.
-fn forkBail(ev: *Evented, fd: fd_t, err: ForkBailError) noreturn {
-    var cancel_region: CancelRegion = .initBlocked();
-    defer cancel_region.deinit();
-    ev.writeAll(&cancel_region, fd, @ptrCast(&err)) catch {};
-    const exit = if (builtin.single_threaded) linux.exit else linux.exit_group;
-    exit(1);
-}
-
 fn execv(
+    ev: *Evented,
+    sync: *CancelRegion.Sync,
     arg0_expand: process.ArgExpansion,
     file: [*:0]const u8,
     child_argv: [*:null]?[*:0]const u8,
@@ -4609,7 +4753,7 @@ fn execv(
     PATH: []const u8,
 ) process.ReplaceError {
     const file_slice = std.mem.sliceTo(file, 0);
-    if (std.mem.findScalar(u8, file_slice, '/') != null) return execvPath(file, child_argv, env_block);
+    if (std.mem.findScalar(u8, file_slice, '/') != null) return ev.execvPath(sync, file, child_argv, env_block);
 
     // Use of PATH_MAX here is valid as the path_buf will be passed
     // directly to the operating system in posixExecvPath.
@@ -4637,7 +4781,7 @@ fn execv(
             .expand => child_argv[0] = full_path,
             .no_expand => {},
         }
-        err = execvPath(full_path, child_argv, env_block);
+        err = ev.execvPath(sync, full_path, child_argv, env_block);
         switch (err) {
             error.AccessDenied => seen_eacces = true,
             error.FileNotFound, error.NotDir => {},
@@ -4649,13 +4793,14 @@ fn execv(
 }
 /// This function ignores PATH environment variable.
 pub fn execvPath(
+    ev: *Evented,
+    sync: *CancelRegion.Sync,
     path: [*:0]const u8,
     child_argv: [*:null]const ?[*:0]const u8,
     env_block: process.Environ.PosixBlock,
 ) process.ReplaceError {
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    try cancel_region.await(.nothing);
+    _ = ev;
+    try sync.cancel_region.await(.nothing);
     switch (linux.errno(linux.execve(path, child_argv, env_block.slice.ptr))) {
         .FAULT => |err| return errnoBug(err), // Bad pointer parameter.
         .@"2BIG" => return error.SystemResources,
@@ -4680,14 +4825,15 @@ pub fn execvPath(
 
 fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitError!process.Child.Term {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    defer ev.childCleanup(child);
+
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    defer ev.childCleanup(maybe_sync.cancelRegion(), child);
 
     const pid = child.id.?;
     var info: linux.siginfo_t = undefined;
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
     while (true) {
-        const thread = try cancel_region.awaitIoUring();
+        const thread = try maybe_sync.cancel_region.awaitIoUring();
         thread.enqueue().* = .{
             .opcode = .WAITID,
             .flags = 0,
@@ -4697,7 +4843,7 @@ fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitErr
             .addr = 0,
             .len = @intFromEnum(linux.P.PID),
             .rw_flags = 0,
-            .user_data = @intFromPtr(cancel_region.fiber),
+            .user_data = @intFromPtr(maybe_sync.cancel_region.fiber),
             .buf_index = 0,
             .personality = 0,
             .splice_fd_in = linux.W.EXITED |
@@ -4706,27 +4852,30 @@ fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitErr
             .resv = 0,
         };
         ev.yield(null, .nothing);
-        switch (cancel_region.errno()) {
+        switch (maybe_sync.cancel_region.errno()) {
             .SUCCESS => {
-                if (child.request_resource_usage_statistics) while (true) {
-                    try cancel_region.await(.nothing);
-                    var rusage: linux.rusage = undefined;
-                    switch (linux.errno(linux.waitid(
-                        .PID,
-                        pid,
-                        &info,
-                        linux.W.EXITED | linux.W.NOHANG,
-                        &rusage,
-                    ))) {
-                        .SUCCESS => {
-                            child.resource_usage_statistics.rusage = rusage;
-                            break;
-                        },
-                        .INTR, .CANCELED => continue,
-                        .CHILD => |err| return errnoBug(err), // Double-free.
-                        else => |err| return unexpectedErrno(err),
+                if (child.request_resource_usage_statistics) {
+                    const sync = try maybe_sync.enterSync(ev);
+                    while (true) {
+                        try sync.cancel_region.await(.nothing);
+                        var rusage: linux.rusage = undefined;
+                        switch (linux.errno(linux.waitid(
+                            .PID,
+                            pid,
+                            &info,
+                            linux.W.EXITED | linux.W.NOHANG,
+                            &rusage,
+                        ))) {
+                            .SUCCESS => {
+                                child.resource_usage_statistics.rusage = rusage;
+                                break;
+                            },
+                            .INTR, .CANCELED => continue,
+                            .CHILD => |err| return errnoBug(err), // Double-free.
+                            else => |err| return unexpectedErrno(err),
+                        }
                     }
-                };
+                }
                 const status: u32 = @bitCast(info.fields.common.second.sigchld.status);
                 const code: linux.CLD = @enumFromInt(info.code);
                 return switch (code) {
@@ -4745,11 +4894,12 @@ fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitErr
 
 fn childKill(userdata: ?*anyopaque, child: *process.Child) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    defer ev.childCleanup(child);
+
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .sync = .initBlocked(ev) };
+    defer maybe_sync.deinit(ev);
+    defer ev.childCleanup(maybe_sync.cancelRegion(), child);
 
     const pid = child.id.?;
-    var cancel_region: CancelRegion = .initBlocked();
-    defer cancel_region.deinit();
     while (true) switch (linux.errno(linux.kill(pid, .TERM))) {
         .SUCCESS => break,
         .INTR => continue,
@@ -4758,10 +4908,11 @@ fn childKill(userdata: ?*anyopaque, child: *process.Child) void {
         .SRCH => |err| return errnoBug(err) catch {},
         else => |err| return unexpectedErrno(err) catch {},
     };
+    maybe_sync.leaveSync(ev);
 
     var info: linux.siginfo_t = undefined;
     while (true) {
-        const thread = cancel_region.awaitIoUring() catch |err| switch (err) {
+        const thread = maybe_sync.cancel_region.awaitIoUring() catch |err| switch (err) {
             error.Canceled => unreachable, // blocked
         };
         thread.enqueue().* = .{
@@ -4773,7 +4924,7 @@ fn childKill(userdata: ?*anyopaque, child: *process.Child) void {
             .addr = 0,
             .len = @intFromEnum(linux.P.PID),
             .rw_flags = 0,
-            .user_data = @intFromPtr(cancel_region.fiber),
+            .user_data = @intFromPtr(maybe_sync.cancel_region.fiber),
             .buf_index = 0,
             .personality = 0,
             .splice_fd_in = linux.W.EXITED,
@@ -4781,7 +4932,7 @@ fn childKill(userdata: ?*anyopaque, child: *process.Child) void {
             .resv = 0,
         };
         ev.yield(null, .nothing);
-        switch (cancel_region.errno()) {
+        switch (maybe_sync.cancel_region.errno()) {
             .SUCCESS => return,
             .INTR, .CANCELED => continue,
             .CHILD => |err| return errnoBug(err) catch {}, // Double-free.
@@ -4790,17 +4941,17 @@ fn childKill(userdata: ?*anyopaque, child: *process.Child) void {
     }
 }
 
-fn childCleanup(ev: *Evented, child: *process.Child) void {
+fn childCleanup(ev: *Evented, cancel_region: *CancelRegion, child: *process.Child) void {
     if (child.stdin) |*stdin| {
-        ev.close(stdin.handle);
+        ev.close(cancel_region, stdin.handle);
         child.stdin = null;
     }
     if (child.stdout) |*stdout| {
-        ev.close(stdout.handle);
+        ev.close(cancel_region, stdout.handle);
         child.stdout = null;
     }
     if (child.stderr) |*stderr| {
-        ev.close(stderr.handle);
+        ev.close(cancel_region, stderr.handle);
         child.stderr = null;
     }
     child.id = null;
@@ -4985,14 +5136,14 @@ fn netBindIp(
 ) net.IpAddress.BindError!net.Socket {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     const family = posixAddressFamily(address);
-    var cancel_region: CancelRegion = .init();
-    defer cancel_region.deinit();
-    const socket_fd = try ev.socket(&cancel_region, family, options);
-    errdefer ev.close(socket_fd);
+    var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
+    defer maybe_sync.deinit(ev);
+    const socket_fd = try ev.socket(&maybe_sync.cancel_region, family, options);
+    errdefer ev.close(maybe_sync.cancelRegion(), socket_fd);
     var storage: PosixAddress = undefined;
     var addr_len = addressToPosix(address, &storage);
-    try ev.bind(&cancel_region, socket_fd, &storage.any, addr_len);
-    try ev.getsockname(&cancel_region, socket_fd, &storage.any, &addr_len);
+    try ev.bind(&maybe_sync.cancel_region, socket_fd, &storage.any, addr_len);
+    try ev.getsockname(try maybe_sync.enterSync(ev), socket_fd, &storage.any, &addr_len);
     return .{
         .handle = socket_fd,
         .address = addressFromPosix(&storage),
@@ -5268,7 +5419,9 @@ fn netWriteFileUnavailable(
 
 fn netClose(userdata: ?*anyopaque, handles: []const net.Socket.Handle) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    for (handles) |handle| ev.close(handle);
+    var cancel_region: CancelRegion = .init();
+    defer cancel_region.deinit();
+    for (handles) |handle| ev.close(&cancel_region, handle);
 }
 
 fn netCloseUnavailable(userdata: ?*anyopaque, handles: []const net.Socket.Handle) void {
@@ -5407,9 +5560,28 @@ fn bind(
     }
 }
 
-fn close(ev: *Evented, fd: fd_t) void {
-    var cancel_region: CancelRegion = .initBlocked();
-    defer cancel_region.deinit();
+fn chdir(ev: *Evented, sync: *CancelRegion.Sync, path: [*:0]const u8) ChdirError!void {
+    _ = ev;
+    while (true) {
+        try sync.cancel_region.await(.nothing);
+        switch (linux.errno(linux.chdir(path))) {
+            .SUCCESS => return,
+            .INTR => continue,
+            .ACCES => return error.AccessDenied,
+            .IO => return error.FileSystem,
+            .LOOP => return error.SymLinkLoop,
+            .NAMETOOLONG => return error.NameTooLong,
+            .NOENT => return error.FileNotFound,
+            .NOMEM => return error.SystemResources,
+            .NOTDIR => return error.NotDir,
+            .ILSEQ => return error.BadPathName,
+            .FAULT => |err| return errnoBug(err),
+            else => |err| return unexpectedErrno(err),
+        }
+    }
+}
+
+fn close(ev: *Evented, cancel_region: *CancelRegion, fd: fd_t) void {
     while (true) {
         const thread = cancel_region.awaitIoUring() catch |err| switch (err) {
             error.Canceled => unreachable, // blocked
@@ -5440,9 +5612,26 @@ fn close(ev: *Evented, fd: fd_t) void {
     }
 }
 
+fn fchdir(ev: *Evented, sync: *CancelRegion.Sync, dir: fd_t) process.SetCurrentDirError!void {
+    _ = ev;
+    if (dir == linux.AT.FDCWD) return;
+    while (true) {
+        try sync.cancel_region.await(.nothing);
+        switch (linux.errno(linux.fchdir(dir))) {
+            .SUCCESS => return,
+            .INTR => continue,
+            .ACCES => return error.AccessDenied,
+            .NOTDIR => return error.NotDir,
+            .IO => return error.FileSystem,
+            .BADF => |err| return errnoBug(err),
+            else => |err| return unexpectedErrno(err),
+        }
+    }
+}
+
 fn fchmodat(
     ev: *Evented,
-    cancel_region: *CancelRegion,
+    sync: *CancelRegion.Sync,
     dir: fd_t,
     path: [*:0]const u8,
     mode: linux.mode_t,
@@ -5450,7 +5639,7 @@ fn fchmodat(
 ) Dir.SetFilePermissionsError!void {
     _ = ev;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.fchmodat2(dir, path, mode, flags))) {
             .SUCCESS => return,
             .INTR => continue,
@@ -5473,7 +5662,7 @@ fn fchmodat(
 
 fn fchownat(
     ev: *Evented,
-    cancel_region: *CancelRegion,
+    sync: *CancelRegion.Sync,
     dir: fd_t,
     path: [*:0]const u8,
     owner: linux.uid_t,
@@ -5482,7 +5671,7 @@ fn fchownat(
 ) File.SetOwnerError!void {
     _ = ev;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.fchownat(dir, path, owner, group, flags))) {
             .SUCCESS => return,
             .INTR => continue,
@@ -5504,13 +5693,13 @@ fn fchownat(
 
 fn flock(
     ev: *Evented,
-    cancel_region: *CancelRegion,
+    sync: *CancelRegion.Sync,
     fd: fd_t,
     op: File.Lock,
     blocking: enum { blocking, nonblocking },
 ) (File.LockError || error{WouldBlock})!void {
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.flock(fd, LOCK.NB | @as(i32, switch (op) {
             .none => LOCK.UN,
             .shared => LOCK.SH,
@@ -5522,7 +5711,7 @@ fn flock(
             .INVAL => |err| return errnoBug(err), // invalid parameters
             .NOLCK => return error.SystemResources,
             .AGAIN => {
-                const thread = try cancel_region.awaitIoUring();
+                const thread = try sync.cancel_region.awaitIoUring();
                 thread.enqueue().* = .{
                     .opcode = .NOP,
                     .flags = 0,
@@ -5532,7 +5721,7 @@ fn flock(
                     .addr = 0,
                     .len = 0,
                     .rw_flags = 0,
-                    .user_data = @intFromPtr(cancel_region.fiber),
+                    .user_data = @intFromPtr(sync.cancel_region.fiber),
                     .buf_index = 0,
                     .personality = 0,
                     .splice_fd_in = 0,
@@ -5540,7 +5729,7 @@ fn flock(
                     .resv = 0,
                 };
                 ev.yield(null, .nothing);
-                switch (cancel_region.errno()) {
+                switch (sync.cancel_region.errno()) {
                     .SUCCESS, .INTR, .CANCELED => {},
                     else => unreachable,
                 }
@@ -5557,14 +5746,14 @@ fn flock(
 
 fn getsockname(
     ev: *Evented,
-    cancel_region: *CancelRegion,
+    sync: *CancelRegion.Sync,
     socket_fd: fd_t,
     addr: *linux.sockaddr,
     addr_len: *linux.socklen_t,
 ) !void {
     _ = ev;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.getsockname(socket_fd, addr, addr_len))) {
             .SUCCESS => return,
             .INTR => continue,
@@ -5633,14 +5822,14 @@ fn linkat(
 
 fn lseek(
     ev: *Evented,
-    cancel_region: *CancelRegion,
+    sync: *CancelRegion.Sync,
     fd: fd_t,
     offset: u64,
     whence: u32,
 ) File.SeekError!void {
     _ = ev;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         var result: u64 = undefined;
         switch (linux.errno(switch (@sizeOf(usize)) {
             else => comptime unreachable,
@@ -5837,7 +6026,7 @@ fn readAll(
 
 fn realPath(
     ev: *Evented,
-    cancel_region: *CancelRegion,
+    sync: *CancelRegion.Sync,
     fd: fd_t,
     out_buffer: []u8,
 ) File.RealPathError!usize {
@@ -5846,7 +6035,7 @@ fn realPath(
     const proc_path = std.fmt.bufPrintSentinel(&procfs_buf, "/proc/self/fd/{d}", .{fd}, 0) catch
         unreachable;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         const rc = linux.readlink(proc_path, out_buffer.ptr, out_buffer.len);
         switch (linux.errno(rc)) {
             .SUCCESS => return rc,
@@ -6025,7 +6214,7 @@ fn socket(
             else => |err| return unexpectedErrno(err),
         }
     };
-    errdefer ev.close(socket_fd);
+    errdefer ev.close(cancel_region, socket_fd);
 
     if (options.ip6_only) {
         if (linux.IPV6 == void) return error.OptionUnsupported;
@@ -6103,7 +6292,7 @@ fn urandomReadAll(
 
 fn utimensat(
     ev: *Evented,
-    cancel_region: *CancelRegion,
+    sync: *CancelRegion.Sync,
     dir: fd_t,
     path: [*:0]const u8,
     times: ?*const [2]linux.timespec,
@@ -6111,7 +6300,7 @@ fn utimensat(
 ) File.SetTimestampsError!void {
     _ = ev;
     while (true) {
-        try cancel_region.await(.nothing);
+        try sync.cancel_region.await(.nothing);
         switch (linux.errno(linux.utimensat(dir, path, times, flags))) {
             .SUCCESS => return,
             .INTR => continue,

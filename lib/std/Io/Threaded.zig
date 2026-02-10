@@ -1543,7 +1543,7 @@ pub const InitOptions = struct {
     /// this limit, calls to `Io.async` when all threads are busy run the task
     /// immediately.
     ///
-    /// Defaults to a number equal to logical CPU cores.
+    /// Defaults to one less than the number of logical CPU cores.
     ///
     /// Protected by `Threaded.mutex` once the I/O instance is already in use. See
     /// `setAsyncLimit`.
@@ -1552,8 +1552,7 @@ pub const InitOptions = struct {
     /// tasks. Until this limit, calls to `Io.concurrent` will increase the thread
     /// pool size.
     ///
-    /// concurrent tasks. After this number, calls to `Io.concurrent` return
-    /// `error.ConcurrencyUnavailable`.
+    /// After this number, calls to `Io.concurrent` return `error.ConcurrencyUnavailable`.
     concurrent_limit: Io.Limit = .unlimited,
     /// Affects the following operations:
     /// * `processExecutablePath` on OpenBSD and Haiku.
@@ -1562,7 +1561,7 @@ pub const InitOptions = struct {
     /// * `fileIsTty`
     /// * `processExecutablePath` on OpenBSD and Haiku (observes "PATH").
     /// * `processSpawn`, `processSpawnPath`, `processReplace`, `processReplacePath`
-    environ: process.Environ,
+    environ: process.Environ = .empty,
     /// If set to `true`, `File.MemoryMap` APIs will always take the fallback path.
     disable_memory_mapping: bool = false,
 };
