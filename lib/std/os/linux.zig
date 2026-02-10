@@ -118,6 +118,7 @@ pub const SYS = switch (native_arch) {
     .arm, .armeb, .thumb, .thumbeb => syscalls.Arm,
     .csky => syscalls.CSky,
     .hexagon => syscalls.Hexagon,
+    .loongarch32 => syscalls.LoongArch32,
     .loongarch64 => syscalls.LoongArch64,
     .m68k => syscalls.M68k,
     .mips, .mipsel => syscalls.MipsO32,
