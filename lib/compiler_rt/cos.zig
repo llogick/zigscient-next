@@ -3,7 +3,7 @@ const math = std.math;
 const mem = std.mem;
 const expect = std.testing.expect;
 
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 const trig = @import("trig.zig");
 const rem_pio2 = @import("rem_pio2.zig").rem_pio2;
@@ -14,7 +14,7 @@ comptime {
     symbol(&cosf, "cosf");
     symbol(&cos, "cos");
     symbol(&__cosx, "__cosx");
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&cosq, "cosf128");
     }
     symbol(&cosq, "cosq");
@@ -40,7 +40,7 @@ pub fn cosf(x: f32) callconv(.c) f32 {
     if (ix <= 0x3f490fda) { // |x| ~<= pi/4
         if (ix < 0x39800000) { // |x| < 2**-12
             // raise inexact if x != 0
-            if (common.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
+            if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
             return 1.0;
         }
         return trig.__cosdf(x);
@@ -91,7 +91,7 @@ pub fn cos(x: f64) callconv(.c) f64 {
     if (ix <= 0x3fe921fb) {
         if (ix < 0x3e46a09e) { // |x| < 2**-27 * sqrt(2)
             // raise inexact if x!=0
-            if (common.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
+            if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
             return 1.0;
         }
         return trig.__cos(x, 0);

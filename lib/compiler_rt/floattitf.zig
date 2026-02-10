@@ -1,12 +1,12 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 const floatFromInt = @import("./float_from_int.zig").floatFromInt;
 
 comptime {
-    if (common.want_windows_v2u64_abi) {
+    if (compiler_rt.want_windows_v2u64_abi) {
         symbol(&__floattitf_windows_x86_64, "__floattitf");
     } else {
-        if (common.want_ppc_abi)
+        if (compiler_rt.want_ppc_abi)
             symbol(&__floattitf, "__floattikf");
         symbol(&__floattitf, "__floattitf");
     }

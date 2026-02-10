@@ -9,7 +9,7 @@ const math = std.math;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
@@ -17,7 +17,7 @@ comptime {
     symbol(&logf, "logf");
     symbol(&log, "log");
     symbol(&__logx, "__logx");
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&logq, "logf128");
     }
     symbol(&logq, "logq");
@@ -45,11 +45,11 @@ pub fn logf(x_: f32) callconv(.c) f32 {
     if (ix < 0x00800000 or ix >> 31 != 0) {
         // log(+-0) = -inf
         if (ix << 1 == 0) {
-            return if (common.want_float_exceptions) -1 / (x * x) else -std.math.inf(f64);
+            return if (compiler_rt.want_float_exceptions) -1 / (x * x) else -std.math.inf(f64);
         }
         // log(-#) = nan
         if (ix >> 31 != 0) {
-            return if (common.want_float_exceptions) (x - x) / 0.0 else math.nan(f64);
+            return if (compiler_rt.want_float_exceptions) (x - x) / 0.0 else math.nan(f64);
         }
 
         // subnormal, scale x
@@ -398,13 +398,13 @@ pub fn log(x: f64) callconv(.c) f64 {
         @branchHint(.unlikely);
 
         if (ix << 1 == 0)
-            return if (common.want_float_exceptions) -1 / (x * x) else -std.math.inf(f64);
+            return if (compiler_rt.want_float_exceptions) -1 / (x * x) else -std.math.inf(f64);
 
         if (ix == @as(i64, @bitCast(std.math.inf(f64))))
             return x;
 
         if (top & 0x8000 != 0 or top & 0x7ff0 == 0x7ff0)
-            return if (common.want_float_exceptions) (x - x) / 0.0 else math.nan(f64);
+            return if (compiler_rt.want_float_exceptions) (x - x) / 0.0 else math.nan(f64);
 
         ix = @as(i64, @bitCast(x * 0x1p52)) - (52 << 52);
     }

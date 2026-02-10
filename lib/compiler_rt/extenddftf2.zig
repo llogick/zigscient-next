@@ -1,11 +1,11 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const extendf = @import("./extendf.zig").extendf;
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&__extenddftf2, "__extenddfkf2");
-    } else if (common.want_sparc_abi) {
+    } else if (compiler_rt.want_sparc_abi) {
         symbol(&_Qp_dtoq, "_Qp_dtoq");
     }
     symbol(&__extenddftf2, "__extenddftf2");

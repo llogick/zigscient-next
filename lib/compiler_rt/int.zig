@@ -8,16 +8,16 @@ const testing = std.testing;
 const maxInt = std.math.maxInt;
 const minInt = std.math.minInt;
 
-const common = @import("common.zig");
-const symbol = @import("../compiler_rt.zig").symbol;
+const compiler_rt = @import("../compiler_rt.zig");
+const symbol = compiler_rt.symbol;
 const udivmod = @import("udivmod.zig").udivmod;
-const __divti3 = @import("divti3.zig").__divti3;
+const __divti3 = @import("udivmod.zig").__divti3;
 
 comptime {
     symbol(&__divmodti4, "__divmodti4");
     symbol(&__udivmoddi4, "__udivmoddi4");
     symbol(&__divmoddi4, "__divmoddi4");
-    if (common.want_aeabi) {
+    if (compiler_rt.want_aeabi) {
         symbol(&__aeabi_idiv, "__aeabi_idiv");
         symbol(&__aeabi_uidiv, "__aeabi_uidiv");
     } else {

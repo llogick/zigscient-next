@@ -3,14 +3,14 @@
 //! Multiplication order (left-to-right or right-to-left) does not matter for
 //! error propagation and this method is optimized for performance, not accuracy.
 
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
     symbol(&__powihf2, "__powihf2");
     symbol(&__powisf2, "__powisf2");
     symbol(&__powidf2, "__powidf2");
-    if (common.want_ppc_abi)
+    if (compiler_rt.want_ppc_abi)
         symbol(&__powitf2, "__powikf2");
     symbol(&__powitf2, "__powitf2");
     symbol(&__powixf2, "__powixf2");

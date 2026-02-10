@@ -1,17 +1,18 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const common = @import("common.zig");
-const normalize = common.normalize;
-const wideMultiply = common.wideMultiply;
+const compiler_rt = @import("../compiler_rt.zig");
+const symbol = compiler_rt.symbol;
+const normalize = compiler_rt.normalize;
+const wideMultiply = compiler_rt.wideMultiply;
 
 comptime {
-    if (common.want_ppc_abi) {
-        @export(&__divtf3, .{ .name = "__divkf3", .linkage = common.linkage, .visibility = common.visibility });
-    } else if (common.want_sparc_abi) {
-        @export(&_Qp_div, .{ .name = "_Qp_div", .linkage = common.linkage, .visibility = common.visibility });
+    if (compiler_rt.want_ppc_abi) {
+        symbol(&__divtf3, "__divkf3");
+    } else if (compiler_rt.want_sparc_abi) {
+        symbol(&_Qp_div, "_Qp_div");
     }
-    @export(&__divtf3, .{ .name = "__divtf3", .linkage = common.linkage, .visibility = common.visibility });
+    symbol(&__divtf3, "__divtf3");
 }
 
 pub fn __divtf3(a: f128, b: f128) callconv(.c) f128 {

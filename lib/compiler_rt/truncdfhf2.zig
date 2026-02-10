@@ -1,15 +1,15 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const truncf = @import("./truncf.zig").truncf;
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_aeabi) {
+    if (compiler_rt.want_aeabi) {
         symbol(&__aeabi_d2h, "__aeabi_d2h");
     }
     symbol(&__truncdfhf2, "__truncdfhf2");
 }
 
-pub fn __truncdfhf2(a: f64) callconv(.c) common.F16T(f64) {
+pub fn __truncdfhf2(a: f64) callconv(.c) compiler_rt.F16T(f64) {
     return @bitCast(truncf(f16, f64, a));
 }
 

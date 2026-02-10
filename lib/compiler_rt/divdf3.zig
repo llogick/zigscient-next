@@ -3,14 +3,14 @@
 //! https://github.com/llvm/llvm-project/commit/d674d96bc56c0f377879d01c9d8dfdaaa7859cdb/compiler-rt/lib/builtins/divdf3.c
 
 const std = @import("std");
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
-const normalize = common.normalize;
-const wideMultiply = common.wideMultiply;
+const normalize = compiler_rt.normalize;
+const wideMultiply = compiler_rt.wideMultiply;
 
 comptime {
-    if (common.want_aeabi) {
+    if (compiler_rt.want_aeabi) {
         symbol(&__aeabi_ddiv, "__aeabi_ddiv");
     } else {
         symbol(&__divdf3, "__divdf3");

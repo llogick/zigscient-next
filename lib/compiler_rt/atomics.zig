@@ -4,7 +4,7 @@ const arch = cpu.arch;
 
 const std = @import("std");
 
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
 // This parameter is true iff the target architecture supports the bare minimum

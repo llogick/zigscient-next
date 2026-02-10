@@ -4,23 +4,20 @@
 //! https://git.musl-libc.org/cgit/musl/tree/src/math/truncf.c
 //! https://git.musl-libc.org/cgit/musl/tree/src/math/trunc.c
 
-const builtin = @import("builtin");
-const arch = builtin.cpu.arch;
-
 const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 const expect = std.testing.expect;
 
-const common = @import("common.zig");
-const symbol = @import("../compiler_rt.zig").symbol;
+const compiler_rt = @import("../compiler_rt.zig");
+const symbol = compiler_rt.symbol;
 
 comptime {
     symbol(&__trunch, "__trunch");
     symbol(&truncf, "truncf");
     symbol(&trunc, "trunc");
     symbol(&__truncx, "__truncx");
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&truncq, "truncf128");
     }
     symbol(&truncq, "truncq");
@@ -48,7 +45,7 @@ pub fn truncf(x: f32) callconv(.c) f32 {
     if (u & m == 0) {
         return x;
     } else {
-        if (common.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
+        if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
         return @bitCast(u & ~m);
     }
 }
@@ -69,7 +66,7 @@ pub fn trunc(x: f64) callconv(.c) f64 {
     if (u & m == 0) {
         return x;
     } else {
-        if (common.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
+        if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
         return @bitCast(u & ~m);
     }
 }
@@ -95,7 +92,7 @@ pub fn truncq(x: f128) callconv(.c) f128 {
     if (u & m == 0) {
         return x;
     } else {
-        if (common.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
+        if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1p120);
         return @bitCast(u & ~m);
     }
 }

@@ -1,9 +1,9 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const addf3 = @import("./addf3.zig").addf3;
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_aeabi) {
+    if (compiler_rt.want_aeabi) {
         symbol(&__aeabi_dadd, "__aeabi_dadd");
     } else {
         symbol(&__adddf3, "__adddf3");

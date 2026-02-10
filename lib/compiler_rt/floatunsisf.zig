@@ -1,9 +1,9 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const floatFromInt = @import("./float_from_int.zig").floatFromInt;
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_aeabi) {
+    if (compiler_rt.want_aeabi) {
         symbol(&__aeabi_ui2f, "__aeabi_ui2f");
     } else {
         symbol(&__floatunsisf, "__floatunsisf");

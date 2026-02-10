@@ -5,7 +5,8 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
+const symbol = compiler_rt.symbol;
 
 const abort = std.process.abort;
 const assert = std.debug.assert;
@@ -17,7 +18,7 @@ const gcc_word = usize;
 
 comptime {
     if (builtin.link_libc and (builtin.abi.isAndroid() or builtin.abi.isOpenHarmony() or builtin.os.tag == .openbsd)) {
-        @export(&__emutls_get_address, .{ .name = "__emutls_get_address", .linkage = common.linkage, .visibility = common.visibility });
+        symbol(&__emutls_get_address, "__emutls_get_address");
     }
 }
 

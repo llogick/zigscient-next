@@ -1,9 +1,9 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const intFromFloat = @import("./int_from_float.zig").intFromFloat;
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_windows_v2u64_abi) {
+    if (compiler_rt.want_windows_v2u64_abi) {
         symbol(&__fixdfti_windows_x86_64, "__fixdfti");
     } else {
         symbol(&__fixdfti, "__fixdfti");

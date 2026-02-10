@@ -13,7 +13,7 @@ const mem = std.mem;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
@@ -21,7 +21,7 @@ comptime {
     symbol(&expf, "expf");
     symbol(&exp, "exp");
     symbol(&__expx, "__expx");
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&expq, "expf128");
     }
     symbol(&expq, "expq");
@@ -61,7 +61,7 @@ pub fn expf(x_: f32) callconv(.c) f32 {
             return x * 0x1.0p127;
         }
         if (sign != 0) {
-            if (common.want_float_exceptions) mem.doNotOptimizeAway(-0x1.0p-149 / x); // overflow
+            if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(-0x1.0p-149 / x); // overflow
             // x <= -103.972084
             if (hx >= 0x42CFF1B5) {
                 return 0;
@@ -93,7 +93,7 @@ pub fn expf(x_: f32) callconv(.c) f32 {
         hi = x;
         lo = 0;
     } else {
-        if (common.want_float_exceptions) mem.doNotOptimizeAway(0x1.0p127 + x); // inexact
+        if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(0x1.0p127 + x); // inexact
         return 1 + x;
     }
 
@@ -137,11 +137,11 @@ pub fn exp(x_: f64) callconv(.c) f64 {
         }
         if (x > 709.782712893383973096) {
             // overflow if x != inf
-            return if (common.want_float_exceptions) x * 0x1p1023 else std.math.inf(f64);
+            return if (compiler_rt.want_float_exceptions) x * 0x1p1023 else std.math.inf(f64);
         }
         if (x < -708.39641853226410622) {
             // underflow if x != -inf
-            if (common.want_float_exceptions) mem.doNotOptimizeAway(-0x0.0000000000001p-1022 / x);
+            if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(-0x0.0000000000001p-1022 / x);
             if (x < -745.13321910194110842) {
                 return 0;
             }
@@ -174,7 +174,7 @@ pub fn exp(x_: f64) callconv(.c) f64 {
         lo = 0;
     } else {
         // inexact if x != 0
-        if (common.want_float_exceptions) mem.doNotOptimizeAway(0x1.0p1023 + x);
+        if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(0x1.0p1023 + x);
         return 1 + x;
     }
 

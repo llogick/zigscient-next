@@ -1,11 +1,11 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const intFromFloat = @import("./int_from_float.zig").intFromFloat;
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&__fixtfdi, "__fixkfdi");
-    } else if (common.want_sparc_abi) {
+    } else if (compiler_rt.want_sparc_abi) {
         symbol(&_Qp_qtox, "_Qp_qtox");
     }
     symbol(&__fixtfdi, "__fixtfdi");

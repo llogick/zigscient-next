@@ -1,4 +1,4 @@
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const floatFromInt = @import("./float_from_int.zig").floatFromInt;
 const symbol = @import("../compiler_rt.zig").symbol;
 

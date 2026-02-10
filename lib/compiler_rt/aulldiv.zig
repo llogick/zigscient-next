@@ -1,10 +1,10 @@
 const builtin = @import("builtin");
 
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_windows_x86_msvc_abi) {
+    if (compiler_rt.want_windows_x86_msvc_abi) {
         // Don't let LLVM apply the stdcall name mangling on those MSVC builtins
         symbol(&_alldiv, "\x01__alldiv");
         symbol(&_aulldiv, "\x01__aulldiv");

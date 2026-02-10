@@ -14,7 +14,7 @@ const math = std.math;
 const mem = std.mem;
 const expect = std.testing.expect;
 
-const common = @import("common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
@@ -23,7 +23,7 @@ comptime {
     symbol(&floorf, "floorf");
     symbol(&floor, "floor");
     symbol(&__floorx, "__floorx");
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&floorq, "floorf128");
     }
     symbol(&floorq, "floorq");
@@ -34,7 +34,7 @@ comptime {
     symbol(&ceilf, "ceilf");
     symbol(&ceil, "ceil");
     symbol(&__ceilx, "__ceilx");
-    if (common.want_ppc_abi) {
+    if (compiler_rt.want_ppc_abi) {
         symbol(&ceilq, "ceilf128");
     }
     symbol(&ceilq, "ceilq");
@@ -106,11 +106,11 @@ inline fn impl(comptime T: type, comptime op: enum { floor, ceil }, x: T) T {
             if (e >= 0) {
                 const m = (@as(U, 1) << @intCast(mantissa - e)) - 1;
                 if (u & m == 0) return x;
-                if (common.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1.0p120);
+                if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1.0p120);
                 if (u >> bits - 1 == @intFromBool(op == .floor)) u += m;
                 return @bitCast(u & ~m);
             } else {
-                if (common.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1.0p120);
+                if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(x + 0x1.0p120);
                 return switch (op) {
                     .floor => if (u >> bits - 1 == 0) 0.0 else if (u << 1 != 0) -1.0 else x,
                     .ceil => if (u >> bits - 1 != 0) -0.0 else if (u << 1 != 0) 1.0 else x,
@@ -128,7 +128,7 @@ inline fn impl(comptime T: type, comptime op: enum { floor, ceil }, x: T) T {
                 x - C + C - x;
 
             if (e <= bias - 1) {
-                if (common.want_float_exceptions) mem.doNotOptimizeAway(y);
+                if (compiler_rt.want_float_exceptions) mem.doNotOptimizeAway(y);
                 return switch (op) {
                     .floor => if (positive) 0.0 else -1.0,
                     .ceil => if (positive) 1.0 else -0.0,

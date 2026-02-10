@@ -1,11 +1,11 @@
 ///! The quoted behavior definitions are from
 ///! https://gcc.gnu.org/onlinedocs/gcc-12.1.0/gccint/Soft-float-library-routines.html#Soft-float-library-routines
-const common = @import("./common.zig");
+const compiler_rt = @import("../compiler_rt.zig");
 const comparef = @import("./comparef.zig");
 const symbol = @import("../compiler_rt.zig").symbol;
 
 comptime {
-    if (common.want_aeabi) {
+    if (compiler_rt.want_aeabi) {
         symbol(&__aeabi_dcmpeq, "__aeabi_dcmpeq");
         symbol(&__aeabi_dcmplt, "__aeabi_dcmplt");
         symbol(&__aeabi_dcmple, "__aeabi_dcmple");
