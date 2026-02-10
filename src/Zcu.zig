@@ -42,6 +42,7 @@ const LlvmObject = @import("codegen/llvm.zig").Object;
 const dev = @import("dev.zig");
 const Zoir = std.zig.Zoir;
 const ZonGen = std.zig.ZonGen;
+const LspDocumentStore = @import("zls").DocumentStore;
 
 comptime {
     @setEvalBranchQuota(4000);
@@ -322,8 +323,9 @@ codegen_task_pool: CodegenTaskPool,
 
 generation: u32 = 0,
 
+/// In order to generate an absolute file path
 project_root_path: ?[]const u8 = null,
-lsps_ds: ?*@import("zls").DocumentStore = null,
+lsp_document_store: ?*LspDocumentStore = null,
 
 pub const IncrementalDebugState = struct {
     /// All container types in the ZCU, even dead ones.
@@ -990,6 +992,9 @@ pub const File = struct {
     /// we invalidate the corresponding `zon_file` dependency, and reset it to `false`.
     zoir_invalidated: bool,
 
+    /// A Uri slice to query the LSP Component's DocumentStore
+    uri_slice: ?[]const u8 = null,
+    /// Indicates whether .tree is owhed by the compilation or the LSP Component's DocumentStore
     owned_by_comp: bool = true,
 
     pub const Path = struct {
@@ -1196,6 +1201,23 @@ pub const File = struct {
             .column = @intCast(loc.column),
             .source_line = try eb.addString(loc.source_line),
         });
+    }
+
+    pub fn pathToUriSlice(file: *File, zcu: *const Zcu) Allocator.Error!?[]const u8 {
+        const gpa = zcu.gpa;
+        const comp = zcu.comp;
+        const pathToUriFn = @import("zls").DiagnosticsCollection.pathToUri;
+
+        const file_path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
+        defer gpa.free(file_path);
+
+        return pathToUriFn(gpa, zcu.project_root_path, file_path);
+    }
+
+    pub fn getLspDocHandle(file: *File, zcu: *const Zcu) Allocator.Error!?*LspDocumentStore.Handle {
+        const uri_slice = file.uri_slice orelse try file.pathToUriSlice(zcu) orelse return null;
+        file.uri_slice = uri_slice;
+        return if (zcu.lsp_document_store) |doc_store| doc_store.getHandle(uri_slice) else null;
     }
 };
 

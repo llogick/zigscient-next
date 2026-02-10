@@ -3881,7 +3881,7 @@ pub fn buildOutputType(
         .debug_compiler_runtime_libs = cs.debug_compiler_runtime_libs,
         .environ_map = environ_map,
         .project_root_path = cs.project_root_path,
-        .lsps_ds = ds,
+        .lsp_document_store = ds,
     }) catch |err| switch (err) {
         error.CreateFail => switch (create_diag) {
             .cross_libc_unavailable => {

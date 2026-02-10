@@ -1805,7 +1805,7 @@ pub const CreateOptions = struct {
     environ_map: *const std.process.Environ.Map,
 
     project_root_path: ?[]const u8 = null,
-    lsps_ds: ?*@import("zls").DocumentStore = null,
+    lsp_document_store: ?*@import("zls").DocumentStore = null,
 
     pub const Entry = link.File.OpenOptions.Entry;
 
@@ -2278,7 +2278,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 .analysis_roots_buffer = undefined,
                 .analysis_roots_len = 0,
                 .codegen_task_pool = try .init(arena),
-                .lsps_ds = options.lsps_ds,
+                .lsp_document_store = options.lsp_document_store,
                 .project_root_path = options.project_root_path,
             };
             try zcu.init(gpa, io, options.thread_limit);

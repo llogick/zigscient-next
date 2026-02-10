@@ -5922,6 +5922,7 @@ fn zirCImport(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileEr
             .prev_zir = null,
             .zoir_invalidated = false,
         };
+        c_import_file.uri_slice = c_import_file.pathToUriSlice(zcu) catch null;
         break :file c_import_file_index;
     };
     pt.updateFile(new_file_index, zcu.fileByIndex(new_file_index)) catch |err|

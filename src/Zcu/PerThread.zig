@@ -59,6 +59,7 @@ fn deinitFile(pt: Zcu.PerThread, file_index: Zcu.File.Index) void {
     log.debug("deinit File {f}", .{file.path.fmt(zcu.comp)});
     file.path.deinit(gpa);
     file.unload(gpa);
+    if (file.uri_slice) |slice| gpa.free(slice);
     if (file.prev_zir) |prev_zir| {
         prev_zir.deinit(gpa);
         gpa.destroy(prev_zir);
@@ -98,22 +99,7 @@ pub fn updateFile(
     };
     defer source_file.close(io);
 
-    var file_path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
-    defer gpa.free(file_path);
-
-    if (!std.fs.path.isAbsolute(file_path)) not_abs_file_path: {
-        const abs_file_path = std.fs.path.join(gpa, &.{
-            zcu.project_root_path orelse break :not_abs_file_path,
-            file_path,
-        }) catch break :not_abs_file_path;
-        gpa.free(file_path); // free current file_path
-        file_path = abs_file_path;
-    }
-
-    const uri = try @import("zls").URI.fromPath(gpa, file_path);
-    defer gpa.free(uri);
-
-    const lsp_doc = if (zcu.lsps_ds) |ds| ds.getHandle(uri) else null;
+    const lsp_doc = file.getLspDocHandle(zcu) catch null;
 
     var stat = try source_file.stat(io);
 
@@ -2009,6 +1995,7 @@ pub fn discoverImport(
         .prev_zir = null,
         .zoir_invalidated = false,
     };
+    new_file.uri_slice = new_file.pathToUriSlice(zcu) catch null;
 
     return .{ .new_file = .{
         .index = new_file_index,
@@ -2155,6 +2142,7 @@ pub fn populateModuleRootTable(pt: Zcu.PerThread) error{
             .prev_zir = null,
             .zoir_invalidated = false,
         };
+        new_file.uri_slice = new_file.pathToUriSlice(zcu) catch null;
     }
 }
 
@@ -2376,6 +2364,7 @@ pub fn updateBuiltinModule(pt: Zcu.PerThread, opts: Builtin) Allocator.Error!voi
         .prev_zir = null,
         .zoir_invalidated = false,
     };
+    file.uri_slice = file.pathToUriSlice(zcu) catch null;
 
     const file_index = try zcu.intern_pool.createFile(gpa, io, pt.tid, .{
         .bin_digest = path.digest(),
