@@ -10357,7 +10357,10 @@ pub extern "c" fn sendfile64(out_fd: fd_t, in_fd: fd_t, offset: ?*i64, count: us
 pub extern "c" fn setrlimit64(resource: rlimit_resource, rlim: *const rlimit) c_int;
 
 pub const arc4random_buf = switch (native_os) {
-    .linux => if (builtin.abi.isAndroid()) private.arc4random_buf else {},
+    .linux => if (builtin.abi.isAndroid() or
+        (builtin.abi.isGnu() and versionCheck(.{ .major = 2, .minor = 36, .patch = 0 })))
+        private.arc4random_buf
+    else {},
     .dragonfly, .netbsd, .freebsd, .illumos, .openbsd, .serenity, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => private.arc4random_buf,
     else => {},
 };
