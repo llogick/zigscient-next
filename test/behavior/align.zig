@@ -30,13 +30,41 @@ test "slicing array of length 1 can not assume runtime index is always zero" {
     var runtime_index: usize = 1;
     _ = &runtime_index;
     const slice = @as(*align(4) [1]u8, &foo)[runtime_index..];
-    try expect(@TypeOf(slice) == []u8);
+    try expect(@TypeOf(slice) == []align(1) u8);
     try expect(slice.len == 0);
     try expect(@as(u2, @truncate(@intFromPtr(slice.ptr) - 1)) == 0);
 }
 
-test "default alignment allows unspecified in type syntax" {
-    try expect(*u32 == *align(@alignOf(u32)) u32);
+test "implicitly-aligned pointer is coercible to equivalent explicitly-aligned pointer" {
+    const A = *u32;
+    const B = *align(@alignOf(u32)) u32;
+
+    comptime assert(A != B);
+
+    const static = struct {
+        fn doTheTest() !void {
+            var buf: u32 = 123;
+
+            const ptr: A = &buf;
+            const coerced_ptr: B = ptr;
+
+            try expect(ptr == coerced_ptr);
+            try expect(ptr.* == 123);
+            try expect(coerced_ptr.* == 123);
+
+            const ptr_ptr: *const A = &ptr;
+            const coerced_ptr_ptr: *const B = ptr_ptr;
+
+            try expect(ptr_ptr == coerced_ptr_ptr);
+            try expect(ptr_ptr.* == &buf);
+            try expect(coerced_ptr_ptr.* == &buf);
+            try expect(ptr_ptr.*.* == 123);
+            try expect(coerced_ptr_ptr.*.* == 123);
+        }
+    };
+
+    try static.doTheTest();
+    try comptime static.doTheTest();
 }
 
 test "implicitly decreasing pointer alignment" {
