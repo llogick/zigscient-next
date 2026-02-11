@@ -1719,11 +1719,12 @@ pub fn updateContainerType(
     self: *ZigObject,
     pt: Zcu.PerThread,
     ty: InternPool.Index,
+    success: bool,
 ) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    if (self.dwarf) |*dwarf| try dwarf.updateContainerType(pt, ty);
+    if (self.dwarf) |*dwarf| try dwarf.updateContainerType(pt, ty, success);
 }
 
 fn updateLazySymbol(

@@ -700,7 +700,14 @@ fn lowerPtr(
             };
             return lowerPtr(bin_file, pt, src_loc, field.base, w, reloc_parent, offset + field_off);
         },
-        .arr_elem, .comptime_field, .comptime_alloc => unreachable,
+        .arr_elem => |arr_elem| {
+            const base_ptr_ty = Value.fromInterned(arr_elem.base).typeOf(zcu);
+            assert(base_ptr_ty.ptrSize(zcu) == .many);
+            const elem_size = base_ptr_ty.childType(zcu).abiSize(zcu);
+            return lowerPtr(bin_file, pt, src_loc, arr_elem.base, w, reloc_parent, offset + elem_size * arr_elem.index);
+        },
+        .comptime_alloc => unreachable,
+        .comptime_field => unreachable,
     };
 }
 
@@ -781,9 +788,8 @@ fn lowerNavRef(
     const ptr_width_bytes = @divExact(target.ptrBitWidth(), 8);
     const is_obj = lf.comp.config.output_mode == .Obj;
     const nav_ty = Type.fromInterned(ip.getNav(nav_index).typeOf(ip));
-    const is_fn_body = nav_ty.zigTypeTag(zcu) == .@"fn";
 
-    if (!is_fn_body and !nav_ty.hasRuntimeBits(zcu)) {
+    if (!nav_ty.isRuntimeFnOrHasRuntimeBits(zcu) and ip.getNav(nav_index).getExtern(ip) == null) {
         try w.splatByteAll(0xaa, ptr_width_bytes);
         return;
     }
@@ -795,7 +801,7 @@ fn lowerNavRef(
             dev.check(link.File.Tag.wasm.devFeature());
             const wasm = lf.cast(.wasm).?;
             assert(reloc_parent == .none);
-            if (is_fn_body) {
+            if (nav_ty.zigTypeTag(zcu) == .@"fn") {
                 const gop = try wasm.zcu_indirect_function_set.getOrPut(gpa, nav_index);
                 if (!gop.found_existing) gop.value_ptr.* = {};
                 if (is_obj) {
@@ -1025,23 +1031,26 @@ pub fn lowerValue(pt: Zcu.PerThread, val: Value, target: *const std.Target) Allo
         .pointer => switch (ty.ptrSize(zcu)) {
             .slice => {},
             .one, .many, .c => {
-                const elem_ty = ty.childType(zcu);
                 const ptr = ip.indexToKey(val.toIntern()).ptr;
                 if (ptr.base_addr == .int) return .{ .immediate = ptr.byte_offset };
                 if (ptr.byte_offset == 0) switch (ptr.base_addr) {
                     .int => unreachable, // handled above
 
-                    .nav => |nav| if (elem_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
-                        return .{ .lea_nav = nav };
-                    } else {
-                        // Create the 0xaa bit pattern...
-                        const undef_ptr_bits: u64 = @intCast((@as(u66, 1) << @intCast(target.ptrBitWidth() + 1)) / 3);
-                        // ...but align the pointer
-                        const alignment = zcu.navAlignment(nav);
-                        return .{ .immediate = alignment.forward(undef_ptr_bits) };
+                    .nav => |nav_index| {
+                        const nav = ip.getNav(nav_index);
+                        const nav_ty: Type = .fromInterned(nav.typeOf(ip));
+                        if (nav_ty.isRuntimeFnOrHasRuntimeBits(zcu) or nav.getExtern(ip) != null) {
+                            return .{ .lea_nav = nav_index };
+                        } else {
+                            // Create the 0xaa bit pattern...
+                            const undef_ptr_bits: u64 = @intCast((@as(u66, 1) << @intCast(target.ptrBitWidth() + 1)) / 3);
+                            // ...but align the pointer
+                            const alignment = zcu.navAlignment(nav_index);
+                            return .{ .immediate = alignment.forward(undef_ptr_bits) };
+                        }
                     },
 
-                    .uav => |uav| if (elem_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
+                    .uav => |uav| if (Value.fromInterned(uav.val).typeOf(zcu).isRuntimeFnOrHasRuntimeBits(zcu)) {
                         return .{ .lea_uav = uav };
                     } else {
                         // Create the 0xaa bit pattern...

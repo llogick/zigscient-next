@@ -956,8 +956,7 @@ pub const RcSourceFile = struct {
 
 const Job = union(enum) {
     /// Given the generated AIR for a function, put it onto the code generation queue.
-    /// This `Job` exists (instead of the `link.ZcuTask` being directly queued) to ensure that
-    /// all types are resolved before the linker task is queued.
+    /// MLUGG TODO: because type resolution is no longer necessary, we can remove this now
     /// If the backend does not support `Zcu.Feature.separate_thread`, codegen and linking happen immediately.
     /// Before queueing this `Job`, increase the estimated total item count for both
     /// `comp.zcu.?.codegen_prog_node` and `comp.link_prog_node`.
@@ -967,17 +966,10 @@ const Job = union(enum) {
         air: Air,
     },
     /// Queue a `link.ZcuTask` to emit this non-function `Nav` into the output binary.
-    /// This `Job` exists (instead of the `link.ZcuTask` being directly queued) to ensure that
-    /// all types are resolved before the linker task is queued.
+    /// MLUGG TODO: because type resolution is no longer necessary, we can remove this now
     /// If the backend does not support `Zcu.Feature.separate_thread`, the task is run immediately.
     /// Before queueing this `Job`, increase the estimated total item count for `comp.link_prog_node`.
     link_nav: InternPool.Nav.Index,
-    /// Queue a `link.ZcuTask` to emit debug information for this container type.
-    /// This `Job` exists (instead of the `link.ZcuTask` being directly queued) to ensure that
-    /// all types are resolved before the linker task is queued.
-    /// If the backend does not support `Zcu.Feature.separate_thread`, the task is run immediately.
-    /// Before queueing this `Job`, increase the estimated total item count for `comp.link_prog_node`.
-    link_type: InternPool.Index,
     /// Before queueing this `Job`, increase the estimated total item count for `comp.link_prog_node`.
     update_line_number: InternPool.TrackedInst.Index,
     /// The `AnalUnit`, which is *not* a `func`, must be semantically analyzed.
@@ -5058,26 +5050,6 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
             var owned_air: ?Air = func.air;
             defer if (owned_air) |*air| air.deinit(gpa);
 
-            {
-                const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
-                defer pt.deactivate();
-                pt.resolveAirTypesForCodegen(&owned_air.?) catch |err| switch (err) {
-                    error.OutOfMemory,
-                    error.Canceled,
-                    => |e| return e,
-
-                    error.AnalysisFail => {
-                        // Type resolution failed, making codegen of this function impossible. This
-                        // is a transitive failure, but it doesn't need recording, because this
-                        // function semantically depends on the failed type, so when it is changed
-                        // the function will be updated.
-                        zcu.codegen_prog_node.completeOne();
-                        comp.link_prog_node.completeOne();
-                        return;
-                    },
-                };
-            }
-
             // Some linkers need to refer to the AIR. In that case, the linker is not running
             // concurrently, so we'll just keep ownership of the AIR for ourselves instead of
             // letting the codegen job destroy it.
@@ -5101,51 +5073,10 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 }
             }
             assert(nav.status == .fully_resolved);
-            {
-                const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
-                defer pt.deactivate();
-                pt.resolveValueTypesForCodegen(zcu.navValue(nav_index)) catch |err| switch (err) {
-                    error.OutOfMemory,
-                    error.Canceled,
-                    => |e| return e,
-
-                    error.AnalysisFail => {
-                        // Type resolution failed, making codegen of this `Nav` impossible. This is
-                        // a transitive failure, but it doesn't need recording, because this `Nav`
-                        // semantically depends on the failed type, so when it is changed the value
-                        // of the `Nav` will be updated.
-                        comp.link_prog_node.completeOne();
-                        return;
-                    },
-                };
-            }
             try comp.link_queue.enqueueZcu(comp, tid, .{ .link_nav = nav_index });
         },
-        .link_type => |ty| {
-            const zcu = comp.zcu.?;
-            if (zcu.failed_types.fetchSwapRemove(ty)) |*entry| entry.value.deinit(zcu.gpa);
-            {
-                const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
-                defer pt.deactivate();
-                pt.resolveTypeForCodegen(.fromInterned(ty)) catch |err| switch (err) {
-                    error.OutOfMemory,
-                    error.Canceled,
-                    => |e| return e,
-
-                    error.AnalysisFail => {
-                        // Type resolution failed, making codegen of this type impossible. This is
-                        // a transitive failure, but it doesn't need recording, because this type
-                        // semantically depends on the failed type, so when it is changed the type
-                        // will be updated appropriately.
-                        comp.link_prog_node.completeOne();
-                        return;
-                    },
-                };
-            }
-            try comp.link_queue.enqueueZcu(comp, tid, .{ .link_type = ty });
-        },
         .update_line_number => |tracked_inst| {
-            try comp.link_queue.enqueueZcu(comp, tid, .{ .update_line_number = tracked_inst });
+            try comp.link_queue.enqueueZcu(comp, tid, .{ .debug_update_line_number = tracked_inst });
         },
         .analyze_unit => |unit| {
             const tracy_trace = traceNamed(@src(), "analyze_unit");

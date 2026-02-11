@@ -998,10 +998,10 @@ fn analyzeComptimeUnit(pt: Zcu.PerThread, cu_id: InternPool.ComptimeUnit.Id) Zcu
     try sema.flushExports();
 }
 
-/// Ensures that the layout of the given `struct` or `union` type is fully up-to-date, performing
-/// re-analysis if necessary. Asserts that `ty` is a struct (not a tuple!) or union. Returns
-/// `error.AnalysisFail` if an analysis error is encountered during type resolution; the caller is
-/// free to ignore this, since the error is already registered.
+/// Ensures that the layout of the given `struct`, `union`, or `enum` type is fully up-to-date,
+/// performing re-analysis if necessary. Asserts that `ty` is a struct (not a tuple!), union, or
+/// enum type. Returns `error.AnalysisFail` if an analysis error is encountered during type
+/// resolution; the caller is free to ignore this, since the error is already registered.
 pub fn ensureTypeLayoutUpToDate(
     pt: Zcu.PerThread,
     ty: Type,
@@ -1012,7 +1012,8 @@ pub fn ensureTypeLayoutUpToDate(
     defer tracy.end();
 
     const zcu = pt.zcu;
-    const gpa = zcu.gpa;
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
 
     const anal_unit: AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
 
@@ -1021,7 +1022,7 @@ pub fn ensureTypeLayoutUpToDate(
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
     const was_outdated = zcu.clearOutdatedState(anal_unit) or
-        zcu.intern_pool.setWantTypeLayout(zcu.comp.io, ty.toIntern());
+        zcu.intern_pool.setWantTypeLayout(comp.io, ty.toIntern());
 
     if (was_outdated) {
         // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
@@ -1038,7 +1039,7 @@ pub fn ensureTypeLayoutUpToDate(
         return;
     }
 
-    if (zcu.comp.debugIncremental()) {
+    if (comp.debugIncremental()) {
         const info = try zcu.incremental_debug_state.getUnitInfo(gpa, anal_unit);
         info.last_update_gen = zcu.generation;
         info.deps.clearRetainingCapacity();
@@ -1078,15 +1079,17 @@ pub fn ensureTypeLayoutUpToDate(
         .@"union" => Sema.type_resolution.resolveUnionLayout(&sema, ty),
         else => unreachable,
     };
-    result catch |err| switch (err) {
-        error.AnalysisFail => {
+    const new_success: bool = if (result) s: {
+        break :s true;
+    } else |err| switch (err) {
+        error.AnalysisFail => success: {
             if (!zcu.failed_analysis.contains(anal_unit)) {
                 // If this unit caused the error, it would have an entry in `failed_analysis`.
                 // Since it does not, this must be a transitive failure.
                 try zcu.transitive_failed_analysis.put(gpa, anal_unit, {});
                 log.debug("mark transitive analysis failure for {f}", .{zcu.fmtAnalUnit(anal_unit)});
             }
-            return error.AnalysisFail;
+            break :success false;
         },
         error.OutOfMemory,
         error.Canceled,
@@ -1098,6 +1101,15 @@ pub fn ensureTypeLayoutUpToDate(
     sema.flushExports() catch |err| switch (err) {
         error.OutOfMemory => |e| return e,
     };
+
+    // We don't need to `markDependeeOutdated`/`markPoDependeeUpToDate` here, because we already
+    // marked the layout as outdated at the top of this function. However, we do need to tell the
+    // debug info logic in the backend about this type.
+    comp.link_prog_node.increaseEstimatedTotalItems(1);
+    try comp.link_queue.enqueueZcu(comp, pt.tid, .{ .debug_update_container_type = .{
+        .ty = ty.toIntern(),
+        .success = new_success,
+    } });
 }
 
 /// Ensures that the resolved value of the given `Nav` is fully up-to-date, performing re-analysis
@@ -4101,464 +4113,4 @@ fn printVerboseAir(
     try w.print("# Begin Function AIR: {f}:\n", .{fqn.fmt(ip)});
     try air.write(w, pt, liveness);
     try w.print("# End Function AIR: {f}\n\n", .{fqn.fmt(ip)});
-}
-
-// MLUGG TODO: these functions are all blatant hacks. See if I can remove them!
-pub fn resolveTypeForCodegen(pt: Zcu.PerThread, ty: Type) Zcu.SemaError!void {
-    const zcu = pt.zcu;
-    const ip = &zcu.intern_pool;
-    if (ty.isGenericPoison()) return;
-    switch (ty.zigTypeTag(zcu)) {
-        .type,
-        .void,
-        .bool,
-        .noreturn,
-        .int,
-        .float,
-        .error_set,
-        .@"opaque",
-        .comptime_float,
-        .comptime_int,
-        .undefined,
-        .null,
-        .enum_literal,
-        => {},
-
-        .frame, .@"anyframe" => @panic("TODO resolveTypeForCodegen async frames"),
-
-        .optional => try pt.resolveTypeForCodegen(ty.childType(zcu)),
-        .error_union => try pt.resolveTypeForCodegen(ty.errorUnionPayload(zcu)),
-        .pointer => try pt.resolveTypeForCodegen(ty.childType(zcu)),
-        .array => try pt.resolveTypeForCodegen(ty.childType(zcu)),
-        .vector => try pt.resolveTypeForCodegen(ty.childType(zcu)),
-
-        .@"fn" => {
-            const info = zcu.typeToFunc(ty).?;
-            for (0..info.param_types.len) |i| {
-                const param_ty = info.param_types.get(ip)[i];
-                try pt.resolveTypeForCodegen(.fromInterned(param_ty));
-            }
-            try pt.resolveTypeForCodegen(.fromInterned(info.return_type));
-        },
-
-        .@"struct" => switch (ip.indexToKey(ty.toIntern())) {
-            .struct_type => try pt.ensureTypeLayoutUpToDate(ty, null),
-            .tuple_type => |tuple| for (0..tuple.types.len) |i| {
-                const field_is_comptime = tuple.values.get(ip)[i] != .none;
-                if (field_is_comptime) continue;
-                const field_ty = tuple.types.get(ip)[i];
-                try pt.resolveTypeForCodegen(.fromInterned(field_ty));
-            },
-            else => unreachable,
-        },
-
-        .@"union" => try pt.ensureTypeLayoutUpToDate(ty, null),
-        .@"enum" => try pt.ensureTypeLayoutUpToDate(ty, null),
-    }
-}
-pub fn resolveValueTypesForCodegen(pt: Zcu.PerThread, val: Value) Zcu.SemaError!void {
-    const zcu = pt.zcu;
-    const ty: Type = switch (val.typeOf(zcu).toIntern()) {
-        .type_type => if (val.isUndef(zcu)) {
-            return;
-        } else val.toType(),
-        else => |ty| .fromInterned(ty),
-    };
-    return pt.resolveTypeForCodegen(ty);
-}
-pub fn resolveAirTypesForCodegen(pt: Zcu.PerThread, air: *const Air) Zcu.SemaError!void {
-    return pt.resolveBodyTypesForCodegen(air, air.getMainBody());
-}
-fn resolveBodyTypesForCodegen(pt: Zcu.PerThread, air: *const Air, body: []const Air.Inst.Index) Zcu.SemaError!void {
-    const zcu = pt.zcu;
-    const tags = air.instructions.items(.tag);
-    const datas = air.instructions.items(.data);
-    for (body) |inst| {
-        const data = datas[@intFromEnum(inst)];
-        switch (tags[@intFromEnum(inst)]) {
-            .inferred_alloc, .inferred_alloc_comptime => unreachable,
-
-            .arg => try pt.resolveTypeForCodegen(data.arg.ty.toType()),
-
-            .add,
-            .add_safe,
-            .add_optimized,
-            .add_wrap,
-            .add_sat,
-            .sub,
-            .sub_safe,
-            .sub_optimized,
-            .sub_wrap,
-            .sub_sat,
-            .mul,
-            .mul_safe,
-            .mul_optimized,
-            .mul_wrap,
-            .mul_sat,
-            .div_float,
-            .div_float_optimized,
-            .div_trunc,
-            .div_trunc_optimized,
-            .div_floor,
-            .div_floor_optimized,
-            .div_exact,
-            .div_exact_optimized,
-            .rem,
-            .rem_optimized,
-            .mod,
-            .mod_optimized,
-            .max,
-            .min,
-            .bit_and,
-            .bit_or,
-            .shr,
-            .shr_exact,
-            .shl,
-            .shl_exact,
-            .shl_sat,
-            .xor,
-            .cmp_lt,
-            .cmp_lt_optimized,
-            .cmp_lte,
-            .cmp_lte_optimized,
-            .cmp_eq,
-            .cmp_eq_optimized,
-            .cmp_gte,
-            .cmp_gte_optimized,
-            .cmp_gt,
-            .cmp_gt_optimized,
-            .cmp_neq,
-            .cmp_neq_optimized,
-            .bool_and,
-            .bool_or,
-            .store,
-            .store_safe,
-            .set_union_tag,
-            .array_elem_val,
-            .slice_elem_val,
-            .ptr_elem_val,
-            .memset,
-            .memset_safe,
-            .memcpy,
-            .memmove,
-            .atomic_store_unordered,
-            .atomic_store_monotonic,
-            .atomic_store_release,
-            .atomic_store_seq_cst,
-            .legalize_vec_elem_val,
-            => {
-                try pt.resolveRefTypesForCodegen(data.bin_op.lhs);
-                try pt.resolveRefTypesForCodegen(data.bin_op.rhs);
-            },
-
-            .not,
-            .bitcast,
-            .clz,
-            .ctz,
-            .popcount,
-            .byte_swap,
-            .bit_reverse,
-            .abs,
-            .load,
-            .fptrunc,
-            .fpext,
-            .intcast,
-            .intcast_safe,
-            .trunc,
-            .optional_payload,
-            .optional_payload_ptr,
-            .optional_payload_ptr_set,
-            .wrap_optional,
-            .unwrap_errunion_payload,
-            .unwrap_errunion_err,
-            .unwrap_errunion_payload_ptr,
-            .unwrap_errunion_err_ptr,
-            .errunion_payload_ptr_set,
-            .wrap_errunion_payload,
-            .wrap_errunion_err,
-            .struct_field_ptr_index_0,
-            .struct_field_ptr_index_1,
-            .struct_field_ptr_index_2,
-            .struct_field_ptr_index_3,
-            .get_union_tag,
-            .slice_len,
-            .slice_ptr,
-            .ptr_slice_len_ptr,
-            .ptr_slice_ptr_ptr,
-            .array_to_slice,
-            .int_from_float,
-            .int_from_float_optimized,
-            .int_from_float_safe,
-            .int_from_float_optimized_safe,
-            .float_from_int,
-            .splat,
-            .error_set_has_value,
-            .addrspace_cast,
-            .c_va_arg,
-            .c_va_copy,
-            => {
-                try pt.resolveTypeForCodegen(data.ty_op.ty.toType());
-                try pt.resolveRefTypesForCodegen(data.ty_op.operand);
-            },
-
-            .alloc,
-            .ret_ptr,
-            .c_va_start,
-            => try pt.resolveTypeForCodegen(data.ty),
-
-            .ptr_add,
-            .ptr_sub,
-            .add_with_overflow,
-            .sub_with_overflow,
-            .mul_with_overflow,
-            .shl_with_overflow,
-            .slice,
-            .slice_elem_ptr,
-            .ptr_elem_ptr,
-            => {
-                const bin = air.extraData(Air.Bin, data.ty_pl.payload).data;
-                try pt.resolveTypeForCodegen(data.ty_pl.ty.toType());
-                try pt.resolveRefTypesForCodegen(bin.lhs);
-                try pt.resolveRefTypesForCodegen(bin.rhs);
-            },
-
-            .block,
-            .loop,
-            => {
-                const block = air.unwrapBlock(inst);
-                try pt.resolveTypeForCodegen(block.ty);
-                try pt.resolveBodyTypesForCodegen(air, block.body);
-            },
-
-            .dbg_inline_block => {
-                const block = air.unwrapDbgBlock(inst);
-                try pt.resolveTypeForCodegen(block.ty);
-                try pt.resolveBodyTypesForCodegen(air, block.body);
-            },
-
-            .sqrt,
-            .sin,
-            .cos,
-            .tan,
-            .exp,
-            .exp2,
-            .log,
-            .log2,
-            .log10,
-            .floor,
-            .ceil,
-            .round,
-            .trunc_float,
-            .neg,
-            .neg_optimized,
-            .is_null,
-            .is_non_null,
-            .is_null_ptr,
-            .is_non_null_ptr,
-            .is_err,
-            .is_non_err,
-            .is_err_ptr,
-            .is_non_err_ptr,
-            .ret,
-            .ret_safe,
-            .ret_load,
-            .is_named_enum_value,
-            .tag_name,
-            .error_name,
-            .cmp_lt_errors_len,
-            .c_va_end,
-            .set_err_return_trace,
-            => try pt.resolveRefTypesForCodegen(data.un_op),
-
-            .br, .switch_dispatch => try pt.resolveRefTypesForCodegen(data.br.operand),
-
-            .cmp_vector,
-            .cmp_vector_optimized,
-            => {
-                const extra = air.extraData(Air.VectorCmp, data.ty_pl.payload).data;
-                try pt.resolveTypeForCodegen(data.ty_pl.ty.toType());
-                try pt.resolveRefTypesForCodegen(extra.lhs);
-                try pt.resolveRefTypesForCodegen(extra.rhs);
-            },
-
-            .reduce,
-            .reduce_optimized,
-            => try pt.resolveRefTypesForCodegen(data.reduce.operand),
-
-            .struct_field_ptr,
-            .struct_field_val,
-            => {
-                const extra = air.extraData(Air.StructField, data.ty_pl.payload).data;
-                try pt.resolveTypeForCodegen(data.ty_pl.ty.toType());
-                try pt.resolveRefTypesForCodegen(extra.struct_operand);
-            },
-
-            .shuffle_one => {
-                const unwrapped = air.unwrapShuffleOne(zcu, inst);
-                try pt.resolveTypeForCodegen(unwrapped.result_ty);
-                try pt.resolveRefTypesForCodegen(unwrapped.operand);
-                for (unwrapped.mask) |m| switch (m.unwrap()) {
-                    .elem => {},
-                    .value => |val| try pt.resolveValueTypesForCodegen(.fromInterned(val)),
-                };
-            },
-
-            .shuffle_two => {
-                const unwrapped = air.unwrapShuffleTwo(zcu, inst);
-                try pt.resolveTypeForCodegen(unwrapped.result_ty);
-                try pt.resolveRefTypesForCodegen(unwrapped.operand_a);
-                try pt.resolveRefTypesForCodegen(unwrapped.operand_b);
-                // No values to check because there are no comptime-known values other than undef
-            },
-
-            .cmpxchg_weak,
-            .cmpxchg_strong,
-            => {
-                const extra = air.extraData(Air.Cmpxchg, data.ty_pl.payload).data;
-                try pt.resolveTypeForCodegen(data.ty_pl.ty.toType());
-                try pt.resolveRefTypesForCodegen(extra.ptr);
-                try pt.resolveRefTypesForCodegen(extra.expected_value);
-                try pt.resolveRefTypesForCodegen(extra.new_value);
-            },
-
-            .aggregate_init => {
-                const ty = data.ty_pl.ty.toType();
-                const elems_len: usize = @intCast(ty.arrayLen(zcu));
-                const elems: []const Air.Inst.Ref = @ptrCast(air.extra.items[data.ty_pl.payload..][0..elems_len]);
-                try pt.resolveTypeForCodegen(ty);
-                if (ty.zigTypeTag(zcu) == .@"struct") {
-                    for (elems, 0..) |elem, elem_idx| {
-                        if (ty.structFieldIsComptime(elem_idx, zcu)) continue;
-                        try pt.resolveRefTypesForCodegen(elem);
-                    }
-                } else {
-                    for (elems) |elem| {
-                        try pt.resolveRefTypesForCodegen(elem);
-                    }
-                }
-            },
-
-            .union_init => {
-                const extra = air.extraData(Air.UnionInit, data.ty_pl.payload).data;
-                try pt.resolveTypeForCodegen(data.ty_pl.ty.toType());
-                try pt.resolveRefTypesForCodegen(extra.init);
-            },
-
-            .field_parent_ptr => {
-                const extra = air.extraData(Air.FieldParentPtr, data.ty_pl.payload).data;
-                try pt.resolveTypeForCodegen(data.ty_pl.ty.toType());
-                try pt.resolveRefTypesForCodegen(extra.field_ptr);
-            },
-
-            .atomic_load => try pt.resolveRefTypesForCodegen(data.atomic_load.ptr),
-
-            .prefetch => try pt.resolveRefTypesForCodegen(data.prefetch.ptr),
-
-            .runtime_nav_ptr => try pt.resolveTypeForCodegen(.fromInterned(data.ty_nav.ty)),
-
-            .select,
-            .mul_add,
-            .legalize_vec_store_elem,
-            => {
-                const bin = air.extraData(Air.Bin, data.pl_op.payload).data;
-                try pt.resolveRefTypesForCodegen(data.pl_op.operand);
-                try pt.resolveRefTypesForCodegen(bin.lhs);
-                try pt.resolveRefTypesForCodegen(bin.rhs);
-            },
-
-            .atomic_rmw => {
-                const extra = air.extraData(Air.AtomicRmw, data.pl_op.payload).data;
-                try pt.resolveRefTypesForCodegen(data.pl_op.operand);
-                try pt.resolveRefTypesForCodegen(extra.operand);
-            },
-
-            .call,
-            .call_always_tail,
-            .call_never_tail,
-            .call_never_inline,
-            => {
-                const call = air.unwrapCall(inst);
-                try pt.resolveRefTypesForCodegen(call.callee);
-                for (call.args) |arg| try pt.resolveRefTypesForCodegen(arg);
-            },
-
-            .dbg_var_ptr,
-            .dbg_var_val,
-            .dbg_arg_inline,
-            => try pt.resolveRefTypesForCodegen(data.pl_op.operand),
-
-            .@"try", .try_cold => {
-                const @"try" = air.unwrapTry(inst);
-                try pt.resolveRefTypesForCodegen(@"try".error_union);
-                try pt.resolveBodyTypesForCodegen(air, @"try".else_body);
-            },
-
-            .try_ptr, .try_ptr_cold => {
-                const try_ptr = air.unwrapTryPtr(inst);
-                try pt.resolveTypeForCodegen(try_ptr.error_union_payload_ptr_ty.toType());
-                try pt.resolveRefTypesForCodegen(try_ptr.error_union_ptr);
-                try pt.resolveBodyTypesForCodegen(air, try_ptr.else_body);
-            },
-
-            .cond_br => {
-                const cond_br = air.unwrapCondBr(inst);
-                try pt.resolveRefTypesForCodegen(cond_br.condition);
-                try pt.resolveBodyTypesForCodegen(air, cond_br.then_body);
-                try pt.resolveBodyTypesForCodegen(air, cond_br.else_body);
-            },
-
-            .switch_br, .loop_switch_br => {
-                const switch_br = air.unwrapSwitch(inst);
-                try pt.resolveRefTypesForCodegen(switch_br.operand);
-                var it = switch_br.iterateCases();
-                while (it.next()) |case| {
-                    for (case.items) |item| {
-                        try pt.resolveRefTypesForCodegen(item);
-                    }
-                    for (case.ranges) |range| {
-                        try pt.resolveRefTypesForCodegen(range[0]);
-                        try pt.resolveRefTypesForCodegen(range[1]);
-                    }
-                    try pt.resolveBodyTypesForCodegen(air, case.body);
-                }
-                try pt.resolveBodyTypesForCodegen(air, it.elseBody());
-            },
-
-            .assembly => {
-                const @"asm" = air.unwrapAsm(inst);
-                try pt.resolveTypeForCodegen(data.ty_pl.ty.toType());
-                for (@"asm".outputs) |output| if (output != .none) try pt.resolveRefTypesForCodegen(output);
-                for (@"asm".inputs) |input| if (input != .none) try pt.resolveRefTypesForCodegen(input);
-            },
-
-            .legalize_compiler_rt_call => {
-                const compiler_rt_call = air.unwrapCompilerRtCall(inst);
-                for (compiler_rt_call.args) |arg| try pt.resolveRefTypesForCodegen(arg);
-            },
-
-            .trap,
-            .breakpoint,
-            .ret_addr,
-            .frame_addr,
-            .unreach,
-            .wasm_memory_size,
-            .wasm_memory_grow,
-            .work_item_id,
-            .work_group_size,
-            .work_group_id,
-            .dbg_stmt,
-            .dbg_empty_stmt,
-            .err_return_trace,
-            .save_err_return_trace_index,
-            .repeat,
-            => {},
-        }
-    }
-}
-fn resolveRefTypesForCodegen(pt: Zcu.PerThread, ref: Air.Inst.Ref) Zcu.SemaError!void {
-    const ip_index = ref.toInterned() orelse {
-        // `ref` refers to a prior instruction, which we already did the resolution for.
-        return;
-    };
-    return pt.resolveValueTypesForCodegen(.fromInterned(ip_index));
 }
