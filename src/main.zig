@@ -59,17 +59,6 @@ pub const std_options: std.Options = .{
 };
 
 pub const std_options_cwd = if (native_os == .wasi) wasi_cwd else null;
-pub const std_options_debug_threaded_io: ?*Io.Threaded = switch (build_options.io_mode) {
-    .threaded => &io_impl,
-    .evented => switch (builtin.mode) {
-        .Debug => Io.Threaded.global_single_threaded,
-        .ReleaseFast, .ReleaseSmall, .ReleaseSafe => null,
-    },
-};
-pub const std_options_debug_io: Io = switch (build_options.io_mode) {
-    .threaded => io_impl.ioBasic(),
-    .evented => io_impl.io(),
-};
 
 pub const debug = struct {
     pub fn printCrashContext(terminal: Io.Terminal) void {
@@ -208,6 +197,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     var root_allocator: RootAllocator = .init;
     defer _ = root_allocator.deinit();
     const root_gpa = root_allocator.allocator();
+    var io_impl: IoImpl = undefined;
     switch (build_options.io_mode) {
         .threaded => io_impl = .init(root_gpa, .{
             .stack_size = thread_stack_size,
@@ -223,6 +213,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
         }),
     }
     defer io_impl.deinit();
+    io_impl_ptr = &io_impl;
     const io = io_impl.io();
     const gpa = switch (build_options.io_mode) {
         .threaded => root_gpa,
@@ -8099,7 +8090,7 @@ const IoImpl = switch (build_options.io_mode) {
     .threaded => Io.Threaded,
     .evented => Io.Evented,
 };
-var io_impl: IoImpl = undefined;
+var io_impl_ptr: *IoImpl = undefined;
 fn setThreadLimit(arena: std.mem.Allocator, n: usize) Allocator.Error!void {
     switch (build_options.io_mode) {
         .threaded => {
@@ -8108,8 +8099,8 @@ fn setThreadLimit(arena: std.mem.Allocator, n: usize) Allocator.Error!void {
             // linker can run concurrently, so we need to set both the async *and* the
             // concurrency limit.
             const limit: Io.Limit = .limited(n - 1);
-            io_impl.setAsyncLimit(limit);
-            io_impl.concurrent_limit = limit;
+            io_impl_ptr.setAsyncLimit(limit);
+            io_impl_ptr.concurrent_limit = limit;
         },
         .evented => {},
     }
