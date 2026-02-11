@@ -555,7 +555,7 @@ pub fn build(b: *std.Build) !void {
         .skip_llvm = skip_llvm,
         .skip_libc = true,
         .no_builtin = true,
-        .max_rss = 900_000_000,
+        .max_rss = 2_000_000_000,
     }));
 
     test_modules_step.dependOn(tests.addModuleTests(b, .{
@@ -581,7 +581,7 @@ pub fn build(b: *std.Build) !void {
         .skip_llvm = skip_llvm,
         .skip_libc = true,
         .no_builtin = true,
-        .max_rss = 900_000_000,
+        .max_rss = 4_000_000_000,
     }));
 
     test_modules_step.dependOn(tests.addModuleTests(b, .{
@@ -664,27 +664,7 @@ pub fn build(b: *std.Build) !void {
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
         .skip_release = skip_release,
-        .max_rss = switch (b.graph.host.result.os.tag) {
-            .freebsd => switch (b.graph.host.result.cpu.arch) {
-                .x86_64 => 727_221_862,
-                else => 800_000_000,
-            },
-            .linux => switch (b.graph.host.result.cpu.arch) {
-                .aarch64 => 1_318_185_369,
-                .loongarch64 => 1_422_904_524,
-                .powerpc64le => 560_870_604,
-                .riscv64 => 449_924_710,
-                .s390x => 1_946_743_603,
-                .x86_64 => 2_389_779_251,
-                else => 2_200_000_000,
-            },
-            .macos => switch (b.graph.host.result.cpu.arch) {
-                .aarch64 => 1_813_612_134,
-                else => 1_900_000_000,
-            },
-            .windows => 400_000_000,
-            else => 2_200_000_000,
-        },
+        .max_rss = 3_000_000_000,
     }));
     test_step.dependOn(tests.addLinkTests(b, enable_macos_sdk, enable_ios_sdk, enable_symlinks_windows));
     test_step.dependOn(tests.addStackTraceTests(b, test_filters, skip_non_native));
