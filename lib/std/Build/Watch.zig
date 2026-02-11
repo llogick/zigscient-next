@@ -693,7 +693,7 @@ const Os = switch (builtin.os.tag) {
                                     fatal("failed to open directory {f}: {t}", .{ path, err });
                                 };
                             // Empirically the dir has to stay open or else no events are triggered.
-                            errdefer if (!skip_open_dir) posix.close(dir_fd);
+                            errdefer if (!skip_open_dir) std.Io.Threaded.closeFd(dir_fd);
                             const changes = [1]posix.Kevent{.{
                                 .ident = @bitCast(@as(isize, dir_fd)),
                                 .filter = std.c.EVFILT.VNODE,
@@ -793,7 +793,7 @@ const Os = switch (builtin.os.tag) {
                     };
                     const filtered_changes = if (i == handles.len - 1) changes[0..1] else &changes;
                     _ = try Io.Kqueue.kevent(w.os.kq_fd, filtered_changes, &.{}, null);
-                    if (path.sub_path.len != 0) posix.close(dir_fd);
+                    if (path.sub_path.len != 0) std.Io.Threaded.closeFd(dir_fd);
 
                     w.dir_table.swapRemoveAt(i);
                     handles.swapRemove(i);

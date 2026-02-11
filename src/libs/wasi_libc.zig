@@ -999,7 +999,6 @@ const libc_top_half_src_files = [_][]const u8{
     "musl/src/time/strptime.c",
     "musl/src/time/timespec_get.c",
     "musl/src/time/__year_to_secs.c",
-    "musl/src/unistd/posix_close.c",
 
     "wasi/libc-top-half/musl/src/conf/fpathconf.c",
     "wasi/libc-top-half/musl/src/conf/sysconf.c",

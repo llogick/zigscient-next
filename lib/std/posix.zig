@@ -278,30 +278,6 @@ pub const socket_t = if (native_os == .windows) windows.ws2_32.SOCKET else fd_t;
 /// the system function call whose errno value is intended to be observed.
 pub const errno = system.errno;
 
-/// Closes the file descriptor.
-///
-/// Asserts the file descriptor is open.
-///
-/// This function is not capable of returning any indication of failure. An
-/// application which wants to ensure writes have succeeded before closing must
-/// call `fsync` before `close`.
-///
-/// The Zig standard library does not support POSIX thread cancellation.
-pub fn close(fd: fd_t) void {
-    if (native_os == .windows) {
-        return windows.CloseHandle(fd);
-    }
-    if (native_os == .wasi and !builtin.link_libc) {
-        _ = std.os.wasi.fd_close(fd);
-        return;
-    }
-    switch (errno(system.close(fd))) {
-        .BADF => unreachable, // Always a race condition.
-        .INTR => return, // This is still a success. See https://github.com/ziglang/zig/issues/2425
-        else => return,
-    }
-}
-
 pub const RebootError = error{
     PermissionDenied,
 } || UnexpectedError;
@@ -1539,60 +1515,6 @@ pub fn perf_event_open(
             else => |err| return unexpectedErrno(err),
         }
     }
-}
-
-pub const TimerFdCreateError = error{
-    PermissionDenied,
-    ProcessFdQuotaExceeded,
-    SystemFdQuotaExceeded,
-    NoDevice,
-    SystemResources,
-} || UnexpectedError;
-
-pub const TimerFdGetError = error{InvalidHandle} || UnexpectedError;
-pub const TimerFdSetError = TimerFdGetError || error{Canceled};
-
-pub fn timerfd_create(clock_id: system.timerfd_clockid_t, flags: system.TFD) TimerFdCreateError!fd_t {
-    const rc = system.timerfd_create(clock_id, @bitCast(flags));
-    return switch (errno(rc)) {
-        .SUCCESS => @intCast(rc),
-        .INVAL => unreachable,
-        .MFILE => return error.ProcessFdQuotaExceeded,
-        .NFILE => return error.SystemFdQuotaExceeded,
-        .NODEV => return error.NoDevice,
-        .NOMEM => return error.SystemResources,
-        .PERM => return error.PermissionDenied,
-        else => |err| return unexpectedErrno(err),
-    };
-}
-
-pub fn timerfd_settime(
-    fd: i32,
-    flags: system.TFD.TIMER,
-    new_value: *const system.itimerspec,
-    old_value: ?*system.itimerspec,
-) TimerFdSetError!void {
-    const rc = system.timerfd_settime(fd, @bitCast(flags), new_value, old_value);
-    return switch (errno(rc)) {
-        .SUCCESS => {},
-        .BADF => error.InvalidHandle,
-        .FAULT => unreachable,
-        .INVAL => unreachable,
-        .CANCELED => error.Canceled,
-        else => |err| return unexpectedErrno(err),
-    };
-}
-
-pub fn timerfd_gettime(fd: i32) TimerFdGetError!system.itimerspec {
-    var curr_value: system.itimerspec = undefined;
-    const rc = system.timerfd_gettime(fd, &curr_value);
-    return switch (errno(rc)) {
-        .SUCCESS => return curr_value,
-        .BADF => error.InvalidHandle,
-        .FAULT => unreachable,
-        .INVAL => unreachable,
-        else => |err| return unexpectedErrno(err),
-    };
 }
 
 pub const PtraceError = error{

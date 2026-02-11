@@ -303,7 +303,7 @@ pub const NullFile = switch (native_os) {
 
         fn deinit(this: *@This()) void {
             if (this.fd >= 0) {
-                posix.close(this.fd);
+                closeFd(this.fd);
                 this.fd = -1;
             }
         }
@@ -4337,7 +4337,7 @@ fn dirCreateFilePosix(
             }
         }
     };
-    errdefer posix.close(fd);
+    errdefer closeFd(fd);
 
     if (have_flock and !have_flock_open_flags and flags.lock != .none) {
         const lock_nonblocking: i32 = if (flags.lock_nonblocking) posix.LOCK.NB else 0;
@@ -4917,7 +4917,7 @@ fn dirOpenFilePosix(
             }
         }
     };
-    errdefer posix.close(fd);
+    errdefer closeFd(fd);
 
     if (!flags.allow_directory) {
         const is_dir = is_dir: {
@@ -5241,7 +5241,7 @@ fn dirOpenFileWasi(
             },
         }
     }
-    errdefer posix.close(fd);
+    errdefer closeFd(fd);
 
     if (!flags.allow_directory) {
         const is_dir = is_dir: {
@@ -5457,7 +5457,13 @@ pub fn dirOpenDirWindows(
 fn dirClose(userdata: ?*anyopaque, dirs: []const Dir) void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    for (dirs) |dir| posix.close(dir.handle);
+    for (dirs) |dir| {
+        if (is_windows) {
+            windows.CloseHandle(dir.handle);
+        } else {
+            closeFd(dir.handle);
+        }
+    }
 }
 
 const dirRead = switch (native_os) {
@@ -6777,7 +6783,7 @@ fn dirRealPathFilePosix(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, o
             },
         }
     };
-    defer posix.close(fd);
+    defer closeFd(fd);
     return realPathPosix(fd, out_buffer);
 }
 
@@ -8367,7 +8373,7 @@ fn fchmodatFallback(
             }
         }
     };
-    defer posix.close(path_fd);
+    defer closeFd(path_fd);
 
     const path_mode = mode: {
         const sys = if (statx_use_c) std.c else std.os.linux;
@@ -9592,7 +9598,13 @@ fn dirHardLink(
 fn fileClose(userdata: ?*anyopaque, files: []const File) void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    for (files) |file| posix.close(file.handle);
+    for (files) |file| {
+        if (is_windows) {
+            windows.CloseHandle(file.handle);
+        } else {
+            closeFd(file.handle);
+        }
+    }
 }
 
 fn fileReadStreaming(userdata: ?*anyopaque, file: File, data: []const []u8) File.ReadStreamingError!usize {
@@ -11783,7 +11795,7 @@ fn netListenIpPosix(
         .mode = options.mode,
         .protocol = options.protocol,
     });
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
 
     if (options.reuse_address) {
         try setSocketOption(socket_fd, posix.SOL.SOCKET, posix.SO.REUSEADDR, 1);
@@ -11946,7 +11958,7 @@ fn netListenUnixPosix(
         error.OptionUnsupported => return error.Unexpected,
         else => |e| return e,
     };
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
 
     var storage: UnixAddress = undefined;
     const addr_len = addressUnixToPosix(address, &storage);
@@ -12362,7 +12374,7 @@ fn netConnectIpPosix(
         .mode = options.mode,
         .protocol = options.protocol,
     });
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
     var storage: PosixAddress = undefined;
     var addr_len = addressToPosix(address, &storage);
     try posixConnect(socket_fd, &storage.any, addr_len);
@@ -12462,7 +12474,7 @@ fn netConnectUnixPosix(
         error.OptionUnsupported => return error.Unexpected,
         else => |e| return e,
     };
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
     var storage: UnixAddress = undefined;
     const addr_len = addressUnixToPosix(address, &storage);
     try posixConnectUnix(socket_fd, &storage.any, addr_len);
@@ -12536,7 +12548,7 @@ fn netBindIpPosix(
     _ = t;
     const family = posixAddressFamily(address);
     const socket_fd = try openSocketPosix(family, options);
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
     var storage: PosixAddress = undefined;
     var addr_len = addressToPosix(address, &storage);
     try posixBind(socket_fd, &storage.any, addr_len);
@@ -12642,7 +12654,7 @@ fn openSocketPosix(
             .SUCCESS => {
                 syscall.finish();
                 const fd: posix.fd_t = @intCast(rc);
-                errdefer posix.close(fd);
+                errdefer closeFd(fd);
                 if (socket_flags_unsupported) try setCloexec(fd);
                 break fd;
             },
@@ -12661,7 +12673,7 @@ fn openSocketPosix(
             else => |err| return syscall.unexpectedErrno(err),
         }
     };
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
 
     if (options.ip6_only) {
         if (posix.IPV6 == void) return error.OptionUnsupported;
@@ -12707,8 +12719,8 @@ fn netSocketCreatePair(
         .SUCCESS => {
             syscall.finish();
             errdefer {
-                posix.close(sockets[0]);
-                posix.close(sockets[1]);
+                closeFd(sockets[0]);
+                closeFd(sockets[1]);
             }
             if (socket_flags_unsupported) {
                 try setCloexec(sockets[0]);
@@ -12809,7 +12821,7 @@ fn netAcceptPosix(userdata: ?*anyopaque, listen_fd: net.Socket.Handle) net.Serve
             .SUCCESS => {
                 syscall.finish();
                 const fd: posix.fd_t = @intCast(rc);
-                errdefer posix.close(fd);
+                errdefer closeFd(fd);
                 if (!have_accept4) try setCloexec(fd);
                 break fd;
             },
@@ -13679,7 +13691,7 @@ fn netClose(userdata: ?*anyopaque, handles: []const net.Socket.Handle) void {
     _ = t;
     switch (native_os) {
         .windows => for (handles) |handle| closeSocketWindows(handle),
-        else => for (handles) |handle| posix.close(handle),
+        else => for (handles) |handle| closeFd(handle),
     }
 }
 
@@ -13787,7 +13799,7 @@ fn netInterfaceNameResolve(
             error.OptionUnsupported => return error.Unexpected,
             else => |e| return e,
         };
-        defer posix.close(sock_fd);
+        defer closeFd(sock_fd);
 
         var ifr: posix.ifreq = .{
             .ifrn = .{ .name = @bitCast(name.bytes) },
@@ -15329,13 +15341,13 @@ fn spawnPosix(t: *Threaded, options: process.SpawnOptions) process.SpawnError!Sp
     const pid: posix.pid_t = @intCast(pid_result); // We are the parent.
     errdefer comptime unreachable; // The child is forked; we must not error from now on
 
-    posix.close(err_pipe[1]); // make sure only the child holds the write end open
+    closeFd(err_pipe[1]); // make sure only the child holds the write end open
 
-    if (options.stdin == .pipe) posix.close(stdin_pipe[0]);
-    if (options.stdout == .pipe) posix.close(stdout_pipe[1]);
-    if (options.stderr == .pipe) posix.close(stderr_pipe[1]);
+    if (options.stdin == .pipe) closeFd(stdin_pipe[0]);
+    if (options.stdout == .pipe) closeFd(stdout_pipe[1]);
+    if (options.stderr == .pipe) closeFd(stderr_pipe[1]);
 
-    if (prog_pipe[1] != -1) posix.close(prog_pipe[1]);
+    if (prog_pipe[1] != -1) closeFd(prog_pipe[1]);
     options.progress_node.setIpcFile(t, .{ .handle = prog_pipe[0], .flags = .{ .nonblocking = true } });
 
     return .{
@@ -15373,7 +15385,7 @@ fn getDevNullFd(t: *Threaded) !posix.fd_t {
                 mutexLock(&t.mutex); // Another thread might have won the race.
                 defer mutexUnlock(&t.mutex);
                 if (t.null_file.fd != -1) {
-                    posix.close(fresh_fd);
+                    closeFd(fresh_fd);
                     return t.null_file.fd;
                 } else {
                     t.null_file.fd = fresh_fd;
@@ -15399,7 +15411,7 @@ fn getDevNullFd(t: *Threaded) !posix.fd_t {
 fn processSpawnPosix(userdata: ?*anyopaque, options: process.SpawnOptions) process.SpawnError!process.Child {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     const spawned = try spawnPosix(t, options);
-    defer posix.close(spawned.err_fd);
+    defer closeFd(spawned.err_fd);
 
     // Wait for the child to report any errors in or before `execvpe`.
     if (readIntFd(spawned.err_fd)) |child_err_int| {
@@ -15666,15 +15678,15 @@ fn childKillPosix(child: *process.Child) !void {
 
 fn childCleanupPosix(child: *process.Child) void {
     if (child.stdin) |*stdin| {
-        posix.close(stdin.handle);
+        closeFd(stdin.handle);
         child.stdin = null;
     }
     if (child.stdout) |*stdout| {
-        posix.close(stdout.handle);
+        closeFd(stdout.handle);
         child.stdout = null;
     }
     if (child.stderr) |*stderr| {
-        posix.close(stderr.handle);
+        closeFd(stderr.handle);
         child.stderr = null;
     }
     child.id = null;
@@ -15743,14 +15755,14 @@ fn readIntFd(fd: posix.fd_t) !ErrInt {
 const ErrInt = std.meta.Int(.unsigned, @sizeOf(anyerror) * 8);
 
 fn destroyPipe(pipe: [2]posix.fd_t) void {
-    if (pipe[0] != -1) posix.close(pipe[0]);
-    if (pipe[0] != pipe[1]) posix.close(pipe[1]);
+    if (pipe[0] != -1) closeFd(pipe[0]);
+    if (pipe[0] != pipe[1]) closeFd(pipe[1]);
 }
 
 fn setUpChildIo(stdio: process.SpawnOptions.StdIo, pipe_fd: i32, std_fileno: i32, dev_null_fd: i32) !void {
     switch (stdio) {
         .pipe => try dup2(pipe_fd, std_fileno),
-        .close => posix.close(std_fileno),
+        .close => closeFd(std_fileno),
         .inherit => {},
         .ignore => try dup2(dev_null_fd, std_fileno),
         .file => @panic("TODO implement setUpChildIo when file is used"),
@@ -17439,7 +17451,7 @@ fn getRandomFd(t: *Threaded) Io.RandomSecureError!posix.fd_t {
             }
         }
     };
-    errdefer posix.close(fd);
+    errdefer closeFd(fd);
 
     switch (native_os) {
         .linux => {
@@ -17454,7 +17466,7 @@ fn getRandomFd(t: *Threaded) Io.RandomSecureError!posix.fd_t {
                         mutexLock(&t.mutex); // Another thread might have won the race.
                         defer mutexUnlock(&t.mutex);
                         if (t.random_file.fd >= 0) {
-                            posix.close(fd);
+                            closeFd(fd);
                             return t.random_file.fd;
                         } else if (!posix.S.ISCHR(statx.mode)) {
                             t.random_file.fd = -2;
@@ -17482,7 +17494,7 @@ fn getRandomFd(t: *Threaded) Io.RandomSecureError!posix.fd_t {
                         mutexLock(&t.mutex); // Another thread might have won the race.
                         defer mutexUnlock(&t.mutex);
                         if (t.random_file.fd >= 0) {
-                            posix.close(fd);
+                            closeFd(fd);
                             return t.random_file.fd;
                         } else if (!posix.S.ISCHR(stat.mode)) {
                             t.random_file.fd = -2;
@@ -18170,8 +18182,8 @@ pub fn pipe2(flags: posix.O) PipeError![2]posix.fd_t {
         else => |err| return posix.unexpectedErrno(err),
     }
     errdefer {
-        posix.close(fds[0]);
-        posix.close(fds[1]);
+        closeFd(fds[0]);
+        closeFd(fds[1]);
     }
 
     // https://github.com/ziglang/zig/issues/18882
@@ -19162,5 +19174,19 @@ fn OpenFile(sub_path_w: []const u16, options: OpenFileOptions) OpenError!windows
             .INVALID_HANDLE => |status| return syscall.ntstatusBug(status),
             else => |status| return syscall.unexpectedNtstatus(status),
         }
+    }
+}
+
+pub fn closeFd(fd: posix.fd_t) void {
+    if (native_os == .wasi and !builtin.link_libc) {
+        switch (std.os.wasi.fd_close(fd)) {
+            .SUCCESS, .INTR => {},
+            .BADF => recoverableOsBugDetected(), // use after free
+            else => recoverableOsBugDetected(), // unexpected failure
+        }
+    } else switch (posix.errno(posix.system.close(fd))) {
+        .SUCCESS, .INTR => {}, // INTR still a success, see https://github.com/ziglang/zig/issues/2425
+        .BADF => recoverableOsBugDetected(), // use after free
+        else => recoverableOsBugDetected(), // unexpected failure
     }
 }

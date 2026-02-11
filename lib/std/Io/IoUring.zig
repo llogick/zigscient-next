@@ -549,7 +549,7 @@ const CachedFd = struct {
             .initializing => unreachable,
             _ => |fd| {
                 assert(@intFromEnum(fd) >= 0);
-                std.posix.close(@intFromEnum(fd));
+                _ = std.os.linux.close(@intFromEnum(fd));
                 cached_fd.* = .init;
             },
         }

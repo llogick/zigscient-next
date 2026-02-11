@@ -11,6 +11,7 @@ const Allocator = std.mem.Allocator;
 const Alignment = std.mem.Alignment;
 const IpAddress = std.Io.net.IpAddress;
 const errnoBug = std.Io.Threaded.errnoBug;
+const closeFd = std.Io.Threaded.closeFd;
 const posix = std.posix;
 
 /// Must be a thread-safe allocator.
@@ -64,7 +65,7 @@ const Thread = struct {
     };
 
     fn deinit(thread: *Thread, gpa: Allocator) void {
-        posix.close(thread.kq_fd);
+        closeFd(thread.kq_fd);
         assert(thread.wait_queues.count() == 0);
         thread.wait_queues.deinit(gpa);
         thread.* = undefined;
@@ -212,7 +213,7 @@ pub fn init(k: *Kqueue, gpa: Allocator, options: InitOptions) !void {
         .steal_ready_search_index = 1,
         .wait_queues = .empty,
     };
-    errdefer std.posix.close(main_thread.kq_fd);
+    errdefer closeFd(main_thread.kq_fd);
     std.log.debug("created main idle {*}", .{&main_thread.idle_context});
     std.log.debug("created main {*}", .{main_fiber});
 }
@@ -371,7 +372,7 @@ fn schedule(k: *Kqueue, thread: *Thread, ready_queue: Fiber.Queue) void {
             .stack_size = idle_stack_size,
             .allocator = k.gpa,
         }, threadEntry, .{ k, new_thread_index }) catch |err| {
-            posix.close(new_thread.kq_fd);
+            closeFd(new_thread.kq_fd);
             @atomicStore(u32, &k.threads.reserved, new_thread_index, .release);
             // no more access to `thread` after giving up reservation
             std.log.warn("unable to create worker thread due spawn failure: {s}", .{@errorName(err)});
@@ -1234,7 +1235,7 @@ fn netBindIp(
     const k: *Kqueue = @ptrCast(@alignCast(userdata));
     const family = Io.Threaded.posixAddressFamily(address);
     const socket_fd = try openSocketPosix(k, family, options);
-    errdefer std.posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
     var storage: Io.Threaded.PosixAddress = undefined;
     var addr_len = Io.Threaded.addressToPosix(address, &storage);
     try posixBind(k, socket_fd, &storage.any, addr_len);
@@ -1252,7 +1253,7 @@ fn netConnectIp(userdata: ?*anyopaque, address: *const net.IpAddress, options: n
         .mode = options.mode,
         .protocol = options.protocol,
     });
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
     var storage: Io.Threaded.PosixAddress = undefined;
     var addr_len = Io.Threaded.addressToPosix(address, &storage);
     try posixConnect(k, socket_fd, &storage.any, addr_len);
@@ -1565,7 +1566,7 @@ fn openSocketPosix(
         switch (posix.errno(socket_rc)) {
             .SUCCESS => {
                 const fd: posix.fd_t = @intCast(socket_rc);
-                errdefer posix.close(fd);
+                errdefer closeFd(fd);
                 if (Io.Threaded.socket_flags_unsupported) {
                     while (true) {
                         try k.checkCancel();
@@ -1614,7 +1615,7 @@ fn openSocketPosix(
             else => |err| return posix.unexpectedErrno(err),
         }
     };
-    errdefer posix.close(socket_fd);
+    errdefer closeFd(socket_fd);
 
     if (options.ip6_only) {
         if (posix.IPV6 == void) return error.OptionUnsupported;

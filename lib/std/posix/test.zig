@@ -522,21 +522,3 @@ test "rename smoke test" {
         try expectError(error.FileNotFound, Io.Dir.cwd().openDir(io, file_path, .{}));
     }
 }
-
-test "timerfd" {
-    if (native_os != .linux) return error.SkipZigTest;
-
-    const tfd = try posix.timerfd_create(.MONOTONIC, .{ .CLOEXEC = true });
-    defer posix.close(tfd);
-
-    // Fire event 10_000_000ns = 10ms after the posix.timerfd_settime call.
-    var sit: linux.itimerspec = .{ .it_interval = .{ .sec = 0, .nsec = 0 }, .it_value = .{ .sec = 0, .nsec = 10 * (1000 * 1000) } };
-    try posix.timerfd_settime(tfd, .{}, &sit, null);
-
-    var fds: [1]posix.pollfd = .{.{ .fd = tfd, .events = linux.POLL.IN, .revents = 0 }};
-    try expectEqual(@as(usize, 1), try posix.poll(&fds, -1)); // -1 => infinite waiting
-
-    const git = try posix.timerfd_gettime(tfd);
-    const expect_disarmed_timer: linux.itimerspec = .{ .it_interval = .{ .sec = 0, .nsec = 0 }, .it_value = .{ .sec = 0, .nsec = 0 } };
-    try expectEqual(expect_disarmed_timer, git);
-}

@@ -14,6 +14,8 @@ comptime {
         symbol(&acctLinux, "acct");
         symbol(&chdirLinux, "chdir");
         symbol(&chownLinux, "chown");
+        symbol(&close, "close");
+        symbol(&posix_close, "posix_close");
         symbol(&fchownatLinux, "fchownat");
         symbol(&lchownLinux, "lchown");
         symbol(&chrootLinux, "chroot");
@@ -48,6 +50,9 @@ comptime {
     }
     if (builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
         symbol(&swab, "swab");
+    }
+    if (builtin.target.isWasiLibC()) {
+        symbol(&closeWasi, "close");
     }
 }
 
@@ -225,4 +230,29 @@ test swab {
     try std.testing.expectEqualSlices(u8, "\x00" ** 4, &a);
     swab("abcd", &a, 3);
     try std.testing.expectEqualSlices(u8, "ba\x00\x00", &a);
+}
+
+fn close(fd: std.c.fd_t) callconv(.c) c_int {
+    const signed: isize = @bitCast(linux.close(fd));
+    if (signed < 0) {
+        @branchHint(.unlikely);
+        if (-signed == @intFromEnum(linux.E.INTR)) return 0;
+        std.c._errno().* = @intCast(-signed);
+        return -1;
+    }
+    return 0;
+}
+
+fn posix_close(fd: std.c.fd_t, _: c_int) callconv(.c) c_int {
+    return close(fd);
+}
+
+fn closeWasi(fd: std.c.fd_t) callconv(.c) c_int {
+    switch (std.os.wasi.fd_close(fd)) {
+        .SUCCESS => return 0,
+        else => |e| {
+            std.c._errno().* = @intFromEnum(e);
+            return -1;
+        },
+    }
 }
