@@ -343,9 +343,14 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 defer build_file.impl.mutex.unlock(param_server.io);
 
                 const comp = build_file.impl.compilation orelse break :comp;
+                const project_root_path = build_file.impl.compilation_state.project_root_path orelse {
+                    log.err("compilation_state.project_root_path is null", .{});
+                    break :comp;
+                };
 
                 const token = param_server.document_store.notifyProgressStart(.compilation_progress, build_file_uri);
                 errdefer if (token) |t| param_server.document_store.notifyProgressEnd(t, .failure);
+
                 comp.file_system_inputs.?.clearRetainingCapacity();
                 comp.update(.none) catch |err| switch (err) {
                     error.Canceled => return error.Canceled,
@@ -356,21 +361,29 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 var error_bundle = comp.getAllErrorsAlloc() catch @panic("OOM");
                 defer error_bundle.deinit(param_server.document_store.allocator);
 
+                clear_single_doc_diags: {
+                    var tag_set = param_server.diagnostics_collection.tag_set.getPtr(.parse) orelse break :clear_single_doc_diags;
+                    _ = tag_set.diagnostics_set.swapRemove(param_handle.uri);
+                    tag_set = param_server.diagnostics_collection.tag_set.getPtr(.cimport) orelse break :clear_single_doc_diags;
+                    _ = tag_set.diagnostics_set.swapRemove(param_handle.uri);
+                }
+
                 const global = struct {
                     var compilation_cycle: u32 = 0;
                 };
                 global.compilation_cycle += 1;
+
                 param_server.diagnostics_collection.pushErrorBundle(
                     .compilation,
                     global.compilation_cycle,
-                    build_file.impl.compilation_state.project_root_path.?,
+                    project_root_path,
                     error_bundle,
                 ) catch @panic("OOM");
                 param_server.diagnostics_collection.collectNotVisibleErrMessages(
                     &param_server.document_store,
                     .compilation,
                     global.compilation_cycle,
-                    build_file.impl.compilation_state.project_root_path.?,
+                    project_root_path,
                     error_bundle,
                 ) catch @panic("OOM");
                 diagnostics_gen.generateOptionalDiagnostics(param_server, param_handle) catch |err| switch (err) {
