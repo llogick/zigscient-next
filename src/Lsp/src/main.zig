@@ -541,20 +541,26 @@ pub fn main(init: std.process.Init.Minimal) !u8 {
     // const allocator: std.mem.Allocator = if (exe_options.enable_failing_allocator) failing_allocator_state.allocator() else inner_allocator;
     const allocator = base_allocator;
 
-    var threaded: std.Io.Threaded = if (@hasDecl(root, "threaded_impl_ptr"))
-        root.threaded_impl_ptr
-    else
-        .init(allocator, .{
-            .environ = init.environ,
-            .argv0 = .init(init.args),
-        });
-    defer if (!@hasDecl(root, "threaded_impl_ptr")) threaded.deinit();
+    var threaded: std.Io.Threaded = .init(allocator, .{
+        .environ = init.environ,
+        .argv0 = .init(init.args),
+    });
+    threaded.deinit();
     const io = threaded.ioBasic();
 
     var environ_map = try init.environ.createMap(allocator);
     defer environ_map.deinit();
 
-    const result = try parseArgs(io, allocator, &environ_map, init.args);
+    return stage2(allocator, io, init, &environ_map);
+}
+
+pub fn stage2(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    init: std.process.Init.Minimal,
+    environ_map: *std.process.Environ.Map,
+) !u8 {
+    const result = try parseArgs(io, allocator, environ_map, init.args);
     defer result.deinit(allocator);
 
     log_file, const log_file_path =
@@ -594,7 +600,7 @@ pub fn main(init: std.process.Init.Minimal) !u8 {
         result.zls_exe_path,
     });
 
-    var config_manager: zls.configuration.Manager = try .init(io, allocator, &environ_map);
+    var config_manager: zls.configuration.Manager = try .init(io, allocator, environ_map);
     defer config_manager.deinit();
 
     const server: *zls.Server = try .create(.{
@@ -605,7 +611,7 @@ pub fn main(init: std.process.Init.Minimal) !u8 {
     });
     defer server.destroy();
 
-    try loadConfiguration(io, allocator, environ_map, server, result.config_path);
+    try loadConfiguration(io, allocator, environ_map.*, server, result.config_path);
 
     try server.loop();
 

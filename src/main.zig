@@ -239,7 +239,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
     if (args.len <= 1 or !mem.eql(u8, args[1], "zig")) {
-        _ = try @import("Lsp/src/main.zig").main(init);
+        _ = try @import("Lsp/src/main.zig").stage2(gpa, io, init, &environ_map);
         return;
     }
 
