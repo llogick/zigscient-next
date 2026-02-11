@@ -15263,17 +15263,29 @@ fn analyzeArithmetic(
                 if (zir_tag != .sub) {
                     return sema.failWithInvalidPtrArithmetic(block, src, "pointer-pointer", "subtraction");
                 }
-                if (!lhs_ty.childType(zcu).eql(rhs_ty.childType(zcu), zcu)) {
+
+                // MLUGG TODO: these semantics are insane and matching them is causing my soul to fragment into a thousand pieces
+                const lhs_elem_ty = ty: {
+                    const ptr_elem_ty = lhs_ty.childType(zcu);
+                    if (lhs_ty.ptrSize(zcu) == .one and ptr_elem_ty.isArrayOrVector(zcu)) break :ty ptr_elem_ty.childType(zcu);
+                    break :ty ptr_elem_ty;
+                };
+                const rhs_elem_ty = ty: {
+                    const ptr_elem_ty = rhs_ty.childType(zcu);
+                    if (rhs_ty.ptrSize(zcu) == .one and ptr_elem_ty.isArrayOrVector(zcu)) break :ty ptr_elem_ty.childType(zcu);
+                    break :ty ptr_elem_ty;
+                };
+                if (lhs_elem_ty.toIntern() != rhs_elem_ty.toIntern()) {
                     return sema.fail(block, src, "incompatible pointer arithmetic operands '{f}' and '{f}'", .{
                         lhs_ty.fmt(pt), rhs_ty.fmt(pt),
                     });
                 }
 
-                try sema.ensureLayoutResolved(lhs_ty.childType(zcu), src, .ptr_offset);
-                const elem_size = lhs_ty.childType(zcu).abiSize(zcu);
+                try sema.ensureLayoutResolved(lhs_elem_ty, src, .ptr_offset);
+                const elem_size = lhs_elem_ty.abiSize(zcu);
                 if (elem_size == 0) {
                     return sema.fail(block, src, "pointer subtraction requires element type '{f}' to have runtime bits", .{
-                        lhs_ty.childType(zcu).fmt(pt),
+                        lhs_elem_ty.fmt(pt),
                     });
                 }
 
@@ -16293,19 +16305,23 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             const func_ty_info = zcu.typeToFunc(ty).?;
             const param_vals = try sema.arena.alloc(InternPool.Index, func_ty_info.param_types.len);
             var func_is_generic = false;
-            for (param_vals, 0..) |*param_val, i| {
-                const param_ty = func_ty_info.param_types.get(ip)[i];
+
+            for (param_vals, 0..) |*param_val, param_index| {
+                const param_ty = func_ty_info.param_types.get(ip)[param_index];
                 const is_generic = param_ty == .generic_poison_type;
-                if (is_generic or Type.fromInterned(param_ty).comptimeOnly(zcu)) func_is_generic = true;
+                const is_noalias, const is_comptime = flags: {
+                    const i = std.math.cast(u5, param_index) orelse break :flags .{ false, false };
+                    break :flags .{ func_ty_info.paramIsNoalias(i), func_ty_info.paramIsComptime(i) };
+                };
+
+                if (is_generic or is_comptime or Type.fromInterned(param_ty).comptimeOnly(zcu)) {
+                    func_is_generic = true;
+                }
+
                 const param_ty_val = try pt.intern(.{ .opt = .{
                     .ty = try pt.intern(.{ .opt_type = .type_type }),
                     .val = if (is_generic) .none else param_ty,
                 } });
-
-                const is_noalias = blk: {
-                    const index = std.math.cast(u5, i) orelse break :blk false;
-                    break :blk @as(u1, @truncate(func_ty_info.noalias_bits >> index)) != 0;
-                };
 
                 const param_fields = .{
                     // is_generic: bool,
@@ -16348,15 +16364,17 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
 
             const ret_ty_is_generic = generic: {
                 const ret_ty: Type = .fromInterned(func_ty_info.return_type);
-                if (ret_ty.toIntern() == .generic_poison_type) break :generic true;
-                if (ret_ty.zigTypeTag(zcu) == .error_union) {
-                    if (ret_ty.errorUnionPayload(zcu).toIntern() == .generic_poison_type) {
-                        break :generic true;
-                    }
+                if (ret_ty.toIntern() == .generic_poison_type or
+                    (ret_ty.zigTypeTag(zcu) == .error_union and
+                        ret_ty.errorUnionPayload(zcu).toIntern() == .generic_poison_type))
+                {
+                    break :generic true;
                 }
                 break :generic false;
             };
-            if (ret_ty_is_generic) func_is_generic = true;
+            if (ret_ty_is_generic or Type.fromInterned(func_ty_info.return_type).comptimeOnly(zcu)) {
+                func_is_generic = true;
+            }
 
             const ret_ty_opt = try pt.intern(.{ .opt = .{
                 .ty = try pt.intern(.{ .opt_type = .type_type }),

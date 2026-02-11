@@ -585,8 +585,8 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
             .int_tag_mode = switch (union_obj.is_reified) {
                 true => .auto,
                 false => switch (sema.code.getUnionDecl(zir_index).kind) {
-                    .tagged_enum_explicit => .auto,
-                    else => .explicit,
+                    .tagged_enum_explicit => .explicit,
+                    else => .auto,
                 },
             },
             .fields_len = @intCast(union_obj.field_types.len),
