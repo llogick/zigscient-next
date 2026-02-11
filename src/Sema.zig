@@ -22236,7 +22236,7 @@ fn checkAtomicPtrOperand(
 ) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
-    try elem_ty.resolveLayout(pt);
+    try sema.ensureLayoutResolved(elem_ty, elem_ty_src, .ptr_access);
     var diag: Zcu.AtomicPtrAlignmentDiagnostics = .{};
     const alignment = zcu.atomicPtrAlignment(elem_ty, &diag) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
