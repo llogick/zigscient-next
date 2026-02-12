@@ -3208,6 +3208,8 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
 /// recursive analysis (all of its previously-marked dependencies are already up-to-date), because
 /// recursive analysis can cause over-analysis on incremental updates.
 pub fn findOutdatedToAnalyze(zcu: *Zcu) Allocator.Error!?AnalUnit {
+    // MLUGG TODO: priorize `func` units, just like we used to do in the Compilation job queue.
+
     if (zcu.outdated_ready.count() > 0) {
         const unit = zcu.outdated_ready.keys()[0];
         log.debug("findOutdatedToAnalyze: {f}", .{zcu.fmtAnalUnit(unit)});

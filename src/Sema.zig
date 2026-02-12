@@ -5362,7 +5362,7 @@ fn zirCImport(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileEr
     pt.updateFile(new_file_index, zcu.fileByIndex(new_file_index)) catch |err|
         return sema.fail(&child_block, src, "C import failed: {s}", .{@errorName(err)});
 
-    try pt.ensureFileAnalyzed(new_file_index);
+    try pt.ensureFilePopulated(new_file_index);
     const ty: Type = .fromInterned(zcu.fileRootType(new_file_index));
     try sema.addTypeReferenceEntry(src, ty);
     return .fromType(ty);
@@ -13005,7 +13005,7 @@ fn zirImport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
     const file = zcu.fileByIndex(file_index);
     switch (file.getMode()) {
         .zig => {
-            try pt.ensureFileAnalyzed(file_index);
+            try pt.ensureFilePopulated(file_index);
             const ty: Type = .fromInterned(zcu.fileRootType(file_index));
             try sema.addTypeReferenceEntry(operand_src, ty);
             // No need for `ensureNamespaceUpToDate`, because `Zcu.PerThread.updateFileNamespace`
@@ -34002,7 +34002,7 @@ pub fn analyzeMemoizedState(sema: *Sema, stage: InternPool.MemoizedStateStage) C
         // Get the main struct type of the root source file of `std`. No need for a reference entry
         // because `std` is always an analysis root.
         const std_file_index = zcu.module_roots.get(zcu.std_mod).?.unwrap().?;
-        try pt.ensureFileAnalyzed(std_file_index);
+        try pt.ensureFilePopulated(std_file_index);
         const std_type: Type = .fromInterned(zcu.fileRootType(std_file_index));
         break :block .{
             .parent = null,
