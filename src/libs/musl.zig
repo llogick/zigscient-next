@@ -1296,7 +1296,6 @@ const src_files = [_][]const u8{
     "musl/src/sched/sched_setscheduler.c",
     "musl/src/sched/sched_yield.c",
     "musl/src/search/hsearch.c",
-    "musl/src/search/insque.c",
     "musl/src/search/lsearch.c",
     "musl/src/search/tdelete.c",
     "musl/src/search/tdestroy.c",
