@@ -10374,7 +10374,7 @@ fn analyzeSwitchBlock(
                     assert(case.range_infos.len == 0);
                     for (case.item_infos, item_refs) |item_info, item_ref| {
                         if (item_info.bodyLen()) |body_len| extra_index += body_len;
-                        if (sema.wantSwitchProngBodyAnalysis(block, item_ref, operand_ty, false, true, prong_info.is_comptime_unreach)) {
+                        if (sema.wantSwitchProngBodyAnalysis(item_ref, operand_ty, false, true, prong_info.is_comptime_unreach)) {
                             break :skip_case;
                         }
                     }
@@ -10390,7 +10390,7 @@ fn analyzeSwitchBlock(
             unreachable; // malformed validated switch
         };
 
-        const analyze_body = sema.wantSwitchProngBodyAnalysis(block, .fromValue(item_opv), operand_ty, union_originally, err_set, false);
+        const analyze_body = sema.wantSwitchProngBodyAnalysis(.fromValue(item_opv), operand_ty, union_originally, err_set, false);
         if (!analyze_body) return .unreachable_value;
 
         if (!(err_set and
@@ -10648,7 +10648,7 @@ fn finishSwitchBr(
             if (item_ref == .none) is_under_prong = true;
             if (item_info.bodyLen()) |body_len| extra_index += body_len;
 
-            const analyze_body = sema.wantSwitchProngBodyAnalysis(block, item_ref, operand_ty, union_originally, err_set, prong_info.is_comptime_unreach);
+            const analyze_body = sema.wantSwitchProngBodyAnalysis(item_ref, operand_ty, union_originally, err_set, prong_info.is_comptime_unreach);
             if (analyze_body) any_analyze_body = true;
 
             if (prong_info.is_inline) {
@@ -10708,8 +10708,8 @@ fn finishSwitchBr(
             any_analyze_body = true; // always an integer range, always needs analysis
 
             if (prong_info.is_inline) {
-                var item = sema.resolveConstDefinedValue(block, .unneeded, range_ref[0], undefined) catch unreachable;
-                const item_last = sema.resolveConstDefinedValue(block, .unneeded, range_ref[1], undefined) catch unreachable;
+                var item = sema.resolveValue(range_ref[0]).?;
+                const item_last = sema.resolveValue(range_ref[1]).?;
 
                 if (item.getUnsignedInt(zcu)) |first_int| {
                     if (item_last.getUnsignedInt(zcu)) |last_int| {
@@ -10887,7 +10887,7 @@ fn finishSwitchBr(
 
                 const item_ref: Air.Inst.Ref = .fromValue(item_val);
 
-                const analyze_body = sema.wantSwitchProngBodyAnalysis(block, item_ref, operand_ty, union_originally, err_set, false);
+                const analyze_body = sema.wantSwitchProngBodyAnalysis(item_ref, operand_ty, union_originally, err_set, false);
 
                 if (emit_bb) try sema.emitBackwardBranch(block, else_prong_src);
                 emit_bb = true;
@@ -11820,7 +11820,7 @@ fn resolveSwitchBlock(
                 };
                 continue;
             }
-            const item_val = sema.resolveConstDefinedValue(child_block, .unneeded, item_ref, undefined) catch unreachable;
+            const item_val = sema.resolveValue(item_ref).?;
             if (cond_val.eql(item_val, item_ty, zcu)) {
                 if (err_set) try sema.maybeErrorUnwrapComptime(child_block, prong_body, cond_ref);
                 if (union_originally and operand_ty.unionFieldType(item_val, zcu).?.isNoReturn(zcu)) {
@@ -11853,8 +11853,8 @@ fn resolveSwitchBlock(
             }
         }
         for (range_refs) |range_ref| {
-            const first_val = sema.resolveConstDefinedValue(child_block, .unneeded, range_ref[0], undefined) catch unreachable;
-            const last_val = sema.resolveConstDefinedValue(child_block, .unneeded, range_ref[1], undefined) catch unreachable;
+            const first_val = sema.resolveValue(range_ref[0]).?;
+            const last_val = sema.resolveValue(range_ref[1]).?;
             if ((try sema.compareAll(cond_val, .gte, first_val, item_ty)) and
                 (try sema.compareAll(cond_val, .lte, last_val, item_ty)))
             {
@@ -12063,7 +12063,6 @@ fn resolveSwitchProng(
 
 fn wantSwitchProngBodyAnalysis(
     sema: *Sema,
-    block: *Block,
     item_ref: Air.Inst.Ref,
     operand_ty: Type,
     union_originally: bool,
@@ -12072,12 +12071,12 @@ fn wantSwitchProngBodyAnalysis(
 ) bool {
     const zcu = sema.pt.zcu;
     if (union_originally) {
-        const item_val = sema.resolveConstDefinedValue(block, .unneeded, item_ref, undefined) catch unreachable;
+        const item_val = sema.resolveValue(item_ref).?;
         const field_ty = operand_ty.unionFieldType(item_val, zcu).?;
         if (field_ty.isNoReturn(zcu)) return false;
     }
     if (err_set and prong_is_comptime_unreach) {
-        const item_val = sema.resolveConstDefinedValue(block, .unneeded, item_ref, undefined) catch unreachable;
+        const item_val = sema.resolveValue(item_ref).?;
         const err_name = item_val.getErrorName(zcu).unwrap().?;
         if (!operand_ty.errorSetHasField(err_name, zcu)) return false;
     }
@@ -12252,7 +12251,7 @@ fn analyzeSwitchPayloadCapture(
     const switch_node_offset = operand_src.offset.node_offset_switch_operand;
 
     if (kind == .inline_ref) {
-        const item_val = sema.resolveConstDefinedValue(case_block, .unneeded, kind.inline_ref, undefined) catch unreachable;
+        const item_val = sema.resolveValue(kind.inline_ref).?;
         if (operand_ty.zigTypeTag(zcu) == .@"union") {
             const field_index: u32 = @intCast(operand_ty.unionTagFieldIndex(item_val, zcu).?);
             const union_obj = zcu.typeToUnion(operand_ty).?;
@@ -12303,14 +12302,14 @@ fn analyzeSwitchPayloadCapture(
             const case_vals = kind.item_refs;
 
             const union_obj = zcu.typeToUnion(operand_ty).?;
-            const first_item_val = sema.resolveConstDefinedValue(case_block, .unneeded, case_vals[0], undefined) catch unreachable;
+            const first_item_val = sema.resolveValue(case_vals[0]).?;
 
             const first_field_index: u32 = zcu.unionTagFieldIndex(union_obj, first_item_val).?;
             const first_field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[first_field_index]);
 
             const field_indices = try sema.arena.alloc(u32, case_vals.len);
             for (case_vals, field_indices) |item, *field_idx| {
-                const item_val = sema.resolveConstDefinedValue(case_block, .unneeded, item, undefined) catch unreachable;
+                const item_val = sema.resolveValue(item).?;
                 field_idx.* = zcu.unionTagFieldIndex(union_obj, item_val).?;
             }
 
@@ -12592,7 +12591,7 @@ fn analyzeSwitchPayloadCapture(
 
             const case_vals = kind.item_refs;
             if (case_vals.len == 1) {
-                const item_val = sema.resolveConstDefinedValue(case_block, .unneeded, case_vals[0], undefined) catch unreachable;
+                const item_val = sema.resolveValue(case_vals[0]).?;
                 const item_ty = try pt.singleErrorSetType(item_val.getErrorName(zcu).unwrap().?);
                 return sema.bitCast(case_block, item_ty, .fromValue(item_val), operand_src, null);
             }
@@ -12600,7 +12599,7 @@ fn analyzeSwitchPayloadCapture(
             var names: InferredErrorSet.NameMap = .{};
             try names.ensureUnusedCapacity(sema.arena, case_vals.len);
             for (case_vals) |err| {
-                const err_val = sema.resolveConstDefinedValue(case_block, .unneeded, err, undefined) catch unreachable;
+                const err_val = sema.resolveValue(err).?;
                 names.putAssumeCapacityNoClobber(err_val.getErrorName(zcu).unwrap().?, {});
             }
             const error_ty = try pt.errorSetFromUnsortedNames(names.keys());
@@ -13731,26 +13730,24 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 const lhs_elem_i = elem_i;
                 const elem_default_val: ?Value = if (lhs_is_tuple) lhs_ty.structFieldDefaultValue(lhs_elem_i, zcu) else null;
                 const elem_val = elem_default_val orelse try lhs_sub_val.elemValue(pt, lhs_elem_i);
-                const elem_val_inst = Air.internedToRef(elem_val.toIntern());
                 const operand_src = block.src(.{ .array_cat_lhs = .{
                     .array_cat_offset = inst_data.src_node,
                     .elem_index = elem_i,
                 } });
-                const coerced_elem_val_inst = try sema.coerce(block, resolved_elem_ty, elem_val_inst, operand_src);
-                const coerced_elem_val = try sema.resolveConstValue(block, operand_src, coerced_elem_val_inst, undefined);
+                const coerced_elem_val_inst = try sema.coerce(block, resolved_elem_ty, .fromValue(elem_val), operand_src);
+                const coerced_elem_val = sema.resolveValue(coerced_elem_val_inst).?;
                 element_vals[elem_i] = coerced_elem_val.toIntern();
             }
             while (elem_i < result_len) : (elem_i += 1) {
                 const rhs_elem_i = elem_i - lhs_len;
                 const elem_default_val: ?Value = if (rhs_is_tuple) rhs_ty.structFieldDefaultValue(rhs_elem_i, zcu) else null;
                 const elem_val = elem_default_val orelse try rhs_sub_val.elemValue(pt, rhs_elem_i);
-                const elem_val_inst = Air.internedToRef(elem_val.toIntern());
                 const operand_src = block.src(.{ .array_cat_rhs = .{
                     .array_cat_offset = inst_data.src_node,
                     .elem_index = @intCast(rhs_elem_i),
                 } });
-                const coerced_elem_val_inst = try sema.coerce(block, resolved_elem_ty, elem_val_inst, operand_src);
-                const coerced_elem_val = try sema.resolveConstValue(block, operand_src, coerced_elem_val_inst, undefined);
+                const coerced_elem_val_inst = try sema.coerce(block, resolved_elem_ty, .fromValue(elem_val), operand_src);
+                const coerced_elem_val = sema.resolveValue(coerced_elem_val_inst).?;
                 element_vals[elem_i] = coerced_elem_val.toIntern();
             }
             return sema.addConstantMaybeRef(
@@ -25886,7 +25883,6 @@ fn fieldPtr(
             }
         },
         .type => {
-            _ = try sema.resolveConstDefinedValue(block, LazySrcLoc.unneeded, object_ptr, undefined);
             const result = try sema.analyzeLoad(block, src, object_ptr, object_ptr_src);
             const inner = if (is_pointer_to)
                 try sema.analyzeLoad(block, src, result, object_ptr_src)
@@ -27361,7 +27357,7 @@ fn coerceExtra(
 
             // Function body to function pointer.
             if (inst_ty.zigTypeTag(zcu) == .@"fn") {
-                const fn_val = try sema.resolveConstDefinedValue(block, LazySrcLoc.unneeded, inst, undefined);
+                const fn_val = sema.resolveValue(inst).?;
                 const fn_nav = switch (zcu.intern_pool.indexToKey(fn_val.toIntern())) {
                     .func => |f| f.owner_nav,
                     .@"extern" => |e| e.owner_nav,
@@ -27667,7 +27663,7 @@ fn coerceExtra(
         },
         .float, .comptime_float => switch (inst_ty.zigTypeTag(zcu)) {
             .comptime_float => {
-                const val = try sema.resolveConstDefinedValue(block, LazySrcLoc.unneeded, inst, undefined);
+                const val = sema.resolveValue(inst).?;
                 const result_val = try val.floatCast(dest_ty, pt);
                 return Air.internedToRef(result_val.toIntern());
             },
@@ -27753,7 +27749,7 @@ fn coerceExtra(
         .@"enum" => switch (inst_ty.zigTypeTag(zcu)) {
             .enum_literal => {
                 // enum literal to enum
-                const val = try sema.resolveConstDefinedValue(block, LazySrcLoc.unneeded, inst, undefined);
+                const val = sema.resolveValue(inst).?;
                 const string = zcu.intern_pool.indexToKey(val.toIntern()).enum_literal;
                 const field_index = dest_ty.enumFieldIndex(string, zcu) orelse {
                     return sema.fail(block, inst_src, "no field named '{f}' in enum '{f}'", .{
@@ -28965,7 +28961,7 @@ fn coerceVarArgParam(
             .{},
         ),
         .@"fn" => fn_ptr: {
-            const fn_val = try sema.resolveConstDefinedValue(block, LazySrcLoc.unneeded, inst, undefined);
+            const fn_val = sema.resolveValue(inst).?;
             const fn_nav = zcu.funcInfo(fn_val.toIntern()).owner_nav;
             break :fn_ptr try sema.analyzeNavRef(block, inst_src, fn_nav);
         },
