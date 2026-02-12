@@ -18,7 +18,7 @@ const codegen = @import("../codegen.zig");
 const dev = @import("../dev.zig");
 const link = @import("../link.zig");
 const target_info = @import("../target.zig");
-const DebugConstPool = @import("DebugConstPool.zig");
+const DebugConstPool = link.DebugConstPool;
 
 gpa: Allocator,
 bin_file: *link.File,

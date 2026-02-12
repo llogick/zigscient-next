@@ -13,6 +13,9 @@
 /// * forward `updateContainerType` calls to its `DebugConstPool`
 /// * expose some callback functions---see functions in `DebugInfo`
 /// * ensure that any `get` call is eventually followed by a `flushPending` call
+///
+/// TODO: everything in this file should have the error set 'Allocator.Error', but right now the
+/// self-hosted linkers can return all kinds of crap for some reason. This needs fixing.
 const DebugConstPool = @This();
 
 values: std.AutoArrayHashMapUnmanaged(InternPool.Index, void),

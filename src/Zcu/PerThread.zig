@@ -2926,7 +2926,13 @@ fn analyzeFuncBodyInner(
         const param_ty: Type = .fromInterned(fn_ty_info.param_types.get(ip)[runtime_param_index]);
         runtime_param_index += 1;
 
-        try sema.ensureLayoutResolved(param_ty, inner_block.src(.{ .func_decl_param_ty = @intCast(zir_param_index) }), .parameter);
+        const param_ty_src = inner_block.src(.{ .func_decl_param_ty = @intCast(zir_param_index) });
+
+        try sema.ensureLayoutResolved(param_ty, param_ty_src, .parameter);
+        if (param_ty.isPtrAtRuntime(zcu) or param_ty.isSliceAtRuntime(zcu)) {
+            // LLVM wants this information for an "align" attribute on the parameter.
+            try sema.ensureLayoutResolved(param_ty.nullablePtrElem(zcu), param_ty_src, .parameter);
+        }
         if (try param_ty.onePossibleValue(pt)) |opv| {
             gop.value_ptr.* = .fromValue(opv);
             continue;

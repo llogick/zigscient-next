@@ -1627,7 +1627,7 @@ pub const FunctionAttributes = enum(u32) {
     const params_index = 2;
 
     pub const Wip = struct {
-        maps: Maps = .{},
+        maps: Maps = .empty,
 
         const Map = std.AutoArrayHashMapUnmanaged(Attribute.Kind, Attribute.Index);
         const Maps = std.ArrayList(Map);
@@ -4048,7 +4048,7 @@ pub const Function = struct {
     section: String = .none,
     alignment: Alignment = .default,
     blocks: []const Block = &.{},
-    instructions: std.MultiArrayList(Instruction) = .{},
+    instructions: std.MultiArrayList(Instruction) = .empty,
     names: [*]const String = &[0]String{},
     value_indices: [*]const u32 = &[0]u32{},
     strip: bool,
@@ -5222,13 +5222,13 @@ pub const WipFunction = struct {
             .prev_debug_location = .no_location,
             .debug_location = .no_location,
             .cursor = undefined,
-            .blocks = .{},
-            .instructions = .{},
-            .names = .{},
+            .blocks = .empty,
+            .instructions = .empty,
+            .names = .empty,
             .strip = options.strip,
-            .debug_locations = .{},
-            .debug_values = .{},
-            .extra = .{},
+            .debug_locations = .empty,
+            .debug_values = .empty,
+            .extra = .empty,
         };
         errdefer self.deinit();
 
@@ -5265,7 +5265,7 @@ pub const WipFunction = struct {
         self.blocks.appendAssumeCapacity(.{
             .name = final_name,
             .incoming = incoming,
-            .instructions = .{},
+            .instructions = .empty,
         });
         return index;
     }
@@ -6325,7 +6325,7 @@ pub const WipFunction = struct {
         function.blocks = &.{};
         gpa.free(function.names[0..function.instructions.len]);
         function.debug_locations.deinit(gpa);
-        function.debug_locations = .{};
+        function.debug_locations = .empty;
         gpa.free(function.debug_values);
         function.debug_values = &.{};
         gpa.free(function.extra);
@@ -8391,7 +8391,7 @@ pub const Metadata = packed struct(u32) {
         map: std.AutoArrayHashMapUnmanaged(union(enum) {
             metadata: Metadata,
             debug_location: DebugLocation.Location,
-        }, void) = .{},
+        }, void) = .empty,
 
         const FormatData = struct {
             formatter: *Formatter,
@@ -8649,52 +8649,52 @@ pub fn init(options: Options) Allocator.Error!Builder {
         .source_filename = .none,
         .data_layout = .none,
         .target_triple = .none,
-        .module_asm = .{},
+        .module_asm = .empty,
 
-        .string_map = .{},
-        .string_indices = .{},
-        .string_bytes = .{},
+        .string_map = .empty,
+        .string_indices = .empty,
+        .string_bytes = .empty,
 
-        .types = .{},
+        .types = .empty,
         .next_unnamed_type = @enumFromInt(0),
-        .next_unique_type_id = .{},
-        .type_map = .{},
-        .type_items = .{},
-        .type_extra = .{},
+        .next_unique_type_id = .empty,
+        .type_map = .empty,
+        .type_items = .empty,
+        .type_extra = .empty,
 
-        .attributes = .{},
-        .attributes_map = .{},
-        .attributes_indices = .{},
-        .attributes_extra = .{},
+        .attributes = .empty,
+        .attributes_map = .empty,
+        .attributes_indices = .empty,
+        .attributes_extra = .empty,
 
-        .function_attributes_set = .{},
+        .function_attributes_set = .empty,
 
-        .globals = .{},
+        .globals = .empty,
         .next_unnamed_global = @enumFromInt(0),
         .next_replaced_global = .none,
-        .next_unique_global_id = .{},
-        .aliases = .{},
-        .variables = .{},
-        .functions = .{},
+        .next_unique_global_id = .empty,
+        .aliases = .empty,
+        .variables = .empty,
+        .functions = .empty,
 
-        .strtab_string_map = .{},
-        .strtab_string_indices = .{},
-        .strtab_string_bytes = .{},
+        .strtab_string_map = .empty,
+        .strtab_string_indices = .empty,
+        .strtab_string_bytes = .empty,
 
-        .constant_map = .{},
-        .constant_items = .{},
-        .constant_extra = .{},
-        .constant_limbs = .{},
+        .constant_map = .empty,
+        .constant_items = .empty,
+        .constant_extra = .empty,
+        .constant_limbs = .empty,
 
-        .metadata_map = .{},
-        .metadata_items = .{},
-        .metadata_extra = .{},
-        .metadata_limbs = .{},
-        .metadata_forward_references = .{},
-        .metadata_named = .{},
-        .metadata_string_map = .{},
-        .metadata_string_indices = .{},
-        .metadata_string_bytes = .{},
+        .metadata_map = .empty,
+        .metadata_items = .empty,
+        .metadata_extra = .empty,
+        .metadata_limbs = .empty,
+        .metadata_forward_references = .empty,
+        .metadata_named = .empty,
+        .metadata_string_map = .empty,
+        .metadata_string_indices = .empty,
+        .metadata_string_bytes = .empty,
     };
     errdefer self.deinit();
 
@@ -12069,7 +12069,7 @@ pub fn trailingMetadataStringAssumeCapacity(self: *Builder) Metadata.String {
     const start = self.metadata_string_indices.getLast();
     const bytes: []const u8 = self.metadata_string_bytes.items[start..];
     assert(bytes.len > 0);
-    const gop = self.metadata_string_map.getOrPutAssumeCapacityAdapted(bytes, String.Adapter{ .builder = self });
+    const gop = self.metadata_string_map.getOrPutAssumeCapacityAdapted(bytes, Metadata.String.Adapter{ .builder = self });
     if (gop.found_existing) {
         self.metadata_string_bytes.shrinkRetainingCapacity(start);
     } else {
@@ -12467,11 +12467,12 @@ pub fn metadataConstant(self: *Builder, value: Constant) Allocator.Error!Metadat
     return self.metadataConstantAssumeCapacity(value);
 }
 
+/// Resolves the given forward reference to the given value (which is not itself a forward
+/// reference). If the forward reference is already resolved, its target is replaced.
 pub fn resolveDebugForwardReference(self: *Builder, fwd_ref: Metadata, value: Metadata) void {
     assert(fwd_ref.kind == .forward);
-    const resolved = &self.metadata_forward_references.items[fwd_ref.index];
-    assert(resolved.is_none);
-    resolved.* = value.toOptional();
+    assert(value.kind != .forward);
+    self.metadata_forward_references.items[fwd_ref.index] = value.toOptional();
 }
 
 fn metadataSimpleAssumeCapacity(self: *Builder, tag: Metadata.Tag, value: anytype) Metadata {

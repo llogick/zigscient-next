@@ -29,6 +29,7 @@ const codegen = @import("codegen.zig");
 pub const aarch64 = @import("link/aarch64.zig");
 pub const LdScript = @import("link/LdScript.zig");
 pub const Queue = @import("link/Queue.zig");
+pub const DebugConstPool = @import("link/DebugConstPool.zig");
 
 pub const Diags = struct {
     /// Stored here so that function definitions can distinguish between
@@ -1587,8 +1588,9 @@ pub fn doZcuTask(comp: *Compilation, tid: Zcu.PerThread.Id, task: ZcuTask) void 
             const ty_prog_node = comp.link_prog_node.start(name, 0);
             defer ty_prog_node.end();
             if (zcu.llvm_object) |llvm_object| {
-                _ = llvm_object;
-                @compileError("MLUGG TODO");
+                llvm_object.updateContainerType(pt, container_update.ty, container_update.success) catch |err| switch (err) {
+                    error.OutOfMemory => diags.setAllocFailure(),
+                };
             } else {
                 if (comp.bin_file) |lf| {
                     lf.updateContainerType(pt, container_update.ty, container_update.success) catch |err| switch (err) {

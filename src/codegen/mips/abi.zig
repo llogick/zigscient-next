@@ -13,7 +13,7 @@ pub const Context = enum { ret, arg };
 
 pub fn classifyType(ty: Type, zcu: *Zcu, ctx: Context) Class {
     const target = zcu.getTarget();
-    std.debug.assert(ty.hasRuntimeBitsIgnoreComptime(zcu));
+    std.debug.assert(ty.hasRuntimeBits(zcu));
 
     const max_direct_size = target.ptrBitWidth() * 2;
     switch (ty.zigTypeTag(zcu)) {

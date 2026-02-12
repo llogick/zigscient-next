@@ -7096,7 +7096,13 @@ fn analyzeCall(
             }
         }
         for (args, 0..) |arg, arg_idx| {
-            try sema.validateRuntimeValue(block, args_info.argSrc(block, arg_idx), arg);
+            const arg_src = args_info.argSrc(block, arg_idx);
+            const arg_ty = sema.typeOf(arg);
+            try sema.validateRuntimeValue(block, arg_src, arg);
+            if (arg_ty.isPtrAtRuntime(zcu) or arg_ty.isSliceAtRuntime(zcu)) {
+                // LLVM wants this information for an "align" attribute on the argument.
+                try sema.ensureLayoutResolved(arg_ty.nullablePtrElem(zcu), arg_src, .init);
+            }
         }
         const runtime_func: Air.Inst.Ref, const runtime_args: []const Air.Inst.Ref = func: {
             if (!any_generic_types and !any_comptime_params) break :func .{ callee, args };
@@ -24270,6 +24276,13 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
 
     const elem = try sema.coerce(block, dest_elem_ty, uncoerced_elem, value_src);
 
+    const comptime_only_elem = switch (dest_elem_ty.classify(zcu)) {
+        .no_possible_value => unreachable, // `elem` is a value of this type
+        .one_possible_value => return, // no work to do
+        .runtime => false,
+        .partially_comptime, .fully_comptime => true,
+    };
+
     const runtime_src = rs: {
         const len_air_ref = try sema.fieldVal(block, src, dest_ptr, try ip.getOrPutString(gpa, io, pt.tid, "len", .no_embedded_nulls), dest_src);
         const len_val = (try sema.resolveDefinedValue(block, dest_src, len_air_ref)) orelse break :rs dest_src;
@@ -24298,6 +24311,15 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
         const array_ptr_val = try pt.getCoerced(raw_ptr_val, array_ptr_ty);
         return sema.storePtrVal(block, src, array_ptr_val, array_val, array_ty);
     };
+
+    if (comptime_only_elem) {
+        return sema.failWithOwnedErrorMsg(block, msg: {
+            const msg = try sema.errMsg(src, "cannot store comptime-only element '{f}' at runtime", .{dest_elem_ty.fmt(pt)});
+            errdefer msg.destroy(sema.gpa);
+            try sema.errNote(dest_src, msg, "operation is runtime due to destination pointer", .{});
+            break :msg msg;
+        });
+    }
 
     try sema.requireRuntimeBlock(block, src, runtime_src);
     try sema.validateRuntimeValue(block, dest_src, dest_ptr);
@@ -27061,6 +27083,11 @@ fn elemPtrArray(
         const len_inst = try pt.intRef(.usize, array_len);
         const cmp_op: Air.Inst.Tag = if (array_sent) .cmp_lte else .cmp_lt;
         try sema.addSafetyCheckIndexOob(block, src, elem_index, len_inst, cmp_op);
+    }
+
+    if (array_ty.childType(zcu).abiSize(zcu) == 0) {
+        // zero-bit child type; just bitcast the pointer
+        return block.addBitCast(elem_ptr_ty, array_ptr);
     }
 
     return block.addPtrElemPtr(array_ptr, elem_index, elem_ptr_ty);
