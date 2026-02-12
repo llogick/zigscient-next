@@ -150,7 +150,7 @@ fn newAtom(self: *ZigObject, allocator: Allocator, name: MachO.String, macho_fil
     atom.name = name;
 
     const relocs_index = @as(u32, @intCast(self.relocs.items.len));
-    self.relocs.addOneAssumeCapacity().* = .{};
+    self.relocs.addOneAssumeCapacity().* = .empty;
     atom.addExtra(.{ .rel_index = relocs_index, .rel_count = 0 }, macho_file);
 
     return index;

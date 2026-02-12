@@ -4226,7 +4226,7 @@ fn convertZcuFnType(
 
     if (CodeGen.firstParamSRet(cc, return_type, zcu, target)) {
         try params_buffer.append(gpa, .i32); // memory address is always a 32-bit handle
-    } else if (return_type.hasRuntimeBitsIgnoreComptime(zcu)) {
+    } else if (return_type.hasRuntimeBits(zcu)) {
         if (cc == .wasm_mvp) {
             switch (abi.classifyType(return_type, zcu)) {
                 .direct => |scalar_ty| {
@@ -4245,7 +4245,7 @@ fn convertZcuFnType(
     // param types
     for (params) |param_type_ip| {
         const param_type = Zcu.Type.fromInterned(param_type_ip);
-        if (!param_type.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+        if (!param_type.hasRuntimeBits(zcu)) continue;
 
         switch (cc) {
             .wasm_mvp => {

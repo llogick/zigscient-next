@@ -2791,9 +2791,9 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 } else return isel.fail("invalid constraint: '{s}'", .{constraint});
             }
 
-            const clobbers_val: Value = .fromInterned(unwrapped_asm.clobbers);
+            const clobbers_val: Constant = .fromInterned(unwrapped_asm.clobbers);
             const clobbers_ty = clobbers_val.typeOf(zcu);
-            var clobbers_bigint_buf: Value.BigIntSpace = undefined;
+            var clobbers_bigint_buf: Constant.BigIntSpace = undefined;
             const clobbers_bigint = clobbers_val.toBigInt(&clobbers_bigint_buf, zcu);
             for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
                 assert(clobbers_ty.fieldType(field_index, zcu).toIntern() == .bool_type);
@@ -2818,7 +2818,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
             for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
                 const limb_bits = @bitSizeOf(std.math.big.Limb);
                 if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
-                switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> field_index % limb_bits))) {
+                switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> @intCast(field_index % limb_bits)))) {
                     0 => continue, // field is false
                     1 => {}, // field is true
                 }
@@ -2871,7 +2871,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
             for (0..clobbers_ty.structFieldCount(zcu)) |field_index| {
                 const limb_bits = @bitSizeOf(std.math.big.Limb);
                 if (field_index / limb_bits >= clobbers_bigint.limbs.len) continue; // field is false
-                switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> field_index % limb_bits))) {
+                switch (@as(u1, @truncate(clobbers_bigint.limbs[field_index / limb_bits] >> @intCast(field_index % limb_bits)))) {
                     0 => continue, // field is false
                     1 => {}, // field is true
                 }
@@ -3283,8 +3283,8 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 } else if (dst_ty.isSliceAtRuntime(zcu) and src_ty.isSliceAtRuntime(zcu)) {
                     try dst_vi.value.move(isel, ty_op.operand);
                 } else if (dst_tag == .error_union and src_tag == .error_union) {
-                    assert(dst_ty.errorUnionSet(zcu).hasRuntimeBitsIgnoreComptime(zcu) ==
-                        src_ty.errorUnionSet(zcu).hasRuntimeBitsIgnoreComptime(zcu));
+                    assert(dst_ty.errorUnionSet(zcu).hasRuntimeBits(zcu) ==
+                        src_ty.errorUnionSet(zcu).hasRuntimeBits(zcu));
                     if (dst_ty.errorUnionPayload(zcu).toIntern() == src_ty.errorUnionPayload(zcu).toIntern()) {
                         try dst_vi.value.move(isel, ty_op.operand);
                     } else return isel.fail("bad {t} {f} {f}", .{ air_tag, isel.fmtType(dst_ty), isel.fmtType(src_ty) });
@@ -4562,7 +4562,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 }
                 if (case.ranges.len == 0 and case.items.len == 1 and Constant.fromInterned(
                     case.items[0].toInterned().?,
-                ).orderAgainstZero(zcu).compare(.eq)) {
+                ).compareHetero(.eq, .zero_comptime_int, zcu)) {
                     try isel.emit(.cbnz(
                         cond_reg,
                         @intCast((isel.instructions.items.len + 1 - next_label) << 2),
@@ -6893,11 +6893,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                         var field_it = loaded_struct.iterateRuntimeOrder(ip);
                         while (field_it.next()) |field_index| {
                             const field_ty: ZigType = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                            field_offset = field_ty.structFieldAlignment(
-                                loaded_struct.fieldAlign(ip, field_index),
-                                loaded_struct.layout,
-                                zcu,
-                            ).forward(field_offset);
+                            field_offset = loaded_struct.field_offsets.get(ip)[field_index];
                             const field_size = field_ty.abiSize(zcu);
                             if (field_size == 0) continue;
                             var agg_part_it = agg_vi.value.field(agg_ty, field_offset, field_size);
@@ -6905,7 +6901,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                             try agg_part_vi.?.move(isel, elems[field_index]);
                             field_offset += field_size;
                         }
-                        assert(loaded_struct.flagsUnordered(ip).alignment.forward(field_offset) == agg_vi.value.size(isel));
+                        assert(loaded_struct.alignment.forward(field_offset) == agg_vi.value.size(isel));
                     },
                     .tuple_type => |tuple_type| {
                         const elems: []const Air.Inst.Ref =
@@ -6947,23 +6943,23 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 const union_layout = ZigType.getUnionLayout(loaded_union, zcu);
 
                 if (union_layout.tag_size > 0) unused_tag: {
-                    const loaded_tag = loaded_union.loadTagType(ip);
+                    const loaded_tag = ip.loadEnumType(loaded_union.enum_tag_type);
                     var tag_it = union_vi.value.field(union_ty, union_layout.tagOffset(), union_layout.tag_size);
                     const tag_vi = try tag_it.only(isel);
                     const tag_ra = try tag_vi.?.defReg(isel) orelse break :unused_tag;
                     switch (union_layout.tag_size) {
                         0 => unreachable,
-                        1...4 => try isel.movImmediate(tag_ra.w(), @as(u32, switch (loaded_tag.values.len) {
+                        1...4 => try isel.movImmediate(tag_ra.w(), @as(u32, switch (loaded_tag.field_values.len) {
                             0 => extra.field_index,
-                            else => switch (ip.indexToKey(loaded_tag.values.get(ip)[extra.field_index]).int.storage) {
+                            else => switch (ip.indexToKey(loaded_tag.field_values.get(ip)[extra.field_index]).int.storage) {
                                 .u64 => |imm| @intCast(imm),
                                 .i64 => |imm| @bitCast(@as(i32, @intCast(imm))),
                                 else => unreachable,
                             },
                         })),
-                        5...8 => try isel.movImmediate(tag_ra.x(), switch (loaded_tag.values.len) {
+                        5...8 => try isel.movImmediate(tag_ra.x(), switch (loaded_tag.field_values.len) {
                             0 => extra.field_index,
-                            else => switch (ip.indexToKey(loaded_tag.values.get(ip)[extra.field_index]).int.storage) {
+                            else => switch (ip.indexToKey(loaded_tag.field_values.get(ip)[extra.field_index]).int.storage) {
                                 .u64 => |imm| imm,
                                 .i64 => |imm| @bitCast(imm),
                                 else => unreachable,
@@ -10391,7 +10387,7 @@ pub const Value = struct {
                         switch (loaded_struct.layout) {
                             .auto, .@"extern" => {},
                             .@"packed" => continue :type_key .{
-                                .int_type = ip.indexToKey(loaded_struct.backingIntTypeUnordered(ip)).int_type,
+                                .int_type = ip.indexToKey(loaded_struct.packed_backing_int_type).int_type,
                             },
                         }
                         const min_part_log2_stride: u5 = if (size > 16) 4 else if (size > 8) 3 else 0;
@@ -10406,7 +10402,7 @@ pub const Value = struct {
                         var field_it = loaded_struct.iterateRuntimeOrder(ip);
                         while (field_it.next()) |field_index| {
                             const field_ty: ZigType = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                            const field_begin = switch (loaded_struct.fieldAlign(ip, field_index)) {
+                            const field_begin = switch (loaded_struct.field_aligns.getOrNone(ip, field_index)) {
                                 .none => field_ty.abiAlignment(zcu),
                                 else => |field_align| field_align,
                             }.forward(field_end);
@@ -10504,7 +10500,7 @@ pub const Value = struct {
                     },
                     .union_type => {
                         const loaded_union = ip.loadUnionType(ty.toIntern());
-                        switch (loaded_union.flagsUnordered(ip).layout) {
+                        switch (loaded_union.layout) {
                             .auto, .@"extern" => {},
                             .@"packed" => continue :type_key .{ .int_type = .{
                                 .signedness = .unsigned,
@@ -10539,12 +10535,13 @@ pub const Value = struct {
                             const field_signedness = field_signedness: switch (field) {
                                 .tag => {
                                     if (offset >= field_begin and offset + size <= field_begin + field_size) {
-                                        ty = .fromInterned(loaded_union.enum_tag_ty);
+                                        ty = .fromInterned(loaded_union.enum_tag_type);
                                         ty_size = field_size;
                                         offset -= field_begin;
-                                        continue :type_key ip.indexToKey(loaded_union.enum_tag_ty);
+                                        continue :type_key ip.indexToKey(loaded_union.enum_tag_type);
                                     }
-                                    break :field_signedness ip.indexToKey(loaded_union.loadTagType(ip).tag_ty).int_type.signedness;
+                                    const loaded_enum = ip.loadEnumType(loaded_union.enum_tag_type);
+                                    break :field_signedness ip.indexToKey(loaded_enum.int_tag_type).int_type.signedness;
                                 },
                                 .payload => null,
                             };
@@ -10574,7 +10571,7 @@ pub const Value = struct {
                         }
                     },
                     .opaque_type, .func_type => continue :type_key .{ .simple_type = .anyopaque },
-                    .enum_type => continue :type_key ip.indexToKey(ip.loadEnumType(ty.toIntern()).tag_ty),
+                    .enum_type => continue :type_key ip.indexToKey(ip.loadEnumType(ty.toIntern()).int_tag_type),
                     .error_set_type,
                     .inferred_error_set_type,
                     => continue :type_key .{ .simple_type = .anyerror },
@@ -10740,7 +10737,7 @@ pub const Value = struct {
                                         .storage = .{ .u64 = 0 },
                                     } },
                                 },
-                                .int => |int| break :free storage: switch (int.storage) {
+                                .int => |int| break :free switch (int.storage) {
                                     .u64 => |imm| try isel.movImmediate(switch (size) {
                                         else => unreachable,
                                         1...4 => mat.ra.w(),
@@ -10771,12 +10768,6 @@ pub const Value = struct {
                                             } else -%imm;
                                         }
                                         try isel.movImmediate(mat.ra.x(), imm);
-                                    },
-                                    .lazy_align => |ty| continue :storage .{
-                                        .u64 = ZigType.fromInterned(ty).abiAlignment(zcu).toByteUnits().?,
-                                    },
-                                    .lazy_size => |ty| continue :storage .{
-                                        .u64 = ZigType.fromInterned(ty).abiSize(zcu),
                                     },
                                 },
                                 .err => |err| continue :constant_key .{ .int = .{
@@ -11084,13 +11075,9 @@ pub const Value = struct {
                                                 var field_offset: u64 = 0;
                                                 var field_it = loaded_struct.iterateRuntimeOrder(ip);
                                                 while (field_it.next()) |field_index| {
-                                                    if (loaded_struct.fieldIsComptime(ip, field_index)) continue;
+                                                    if (loaded_struct.field_is_comptime_bits.get(ip, field_index)) continue;
                                                     const field_ty: ZigType = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                                                    field_offset = field_ty.structFieldAlignment(
-                                                        loaded_struct.fieldAlign(ip, field_index),
-                                                        loaded_struct.layout,
-                                                        zcu,
-                                                    ).forward(field_offset);
+                                                    field_offset = loaded_struct.field_offsets.get(ip)[field_index];
                                                     const field_size = field_ty.abiSize(zcu);
                                                     if (offset >= field_offset and offset + size <= field_offset + field_size) {
                                                         offset -= field_offset;
@@ -11132,7 +11119,7 @@ pub const Value = struct {
                                 .un => |un| {
                                     const loaded_union = ip.loadUnionType(un.ty);
                                     const union_layout = ZigType.getUnionLayout(loaded_union, zcu);
-                                    if (loaded_union.hasTag(ip)) {
+                                    if (loaded_union.has_runtime_tag) {
                                         const tag_offset = union_layout.tagOffset();
                                         if (offset >= tag_offset and offset + size <= tag_offset + union_layout.tag_size) {
                                             offset -= tag_offset;
@@ -11477,13 +11464,9 @@ fn writeKeyToMemory(isel: *Select, constant_key: InternPool.Key, buffer: []u8) e
                         var field_offset: u64 = 0;
                         var field_it = loaded_struct.iterateRuntimeOrder(ip);
                         while (field_it.next()) |field_index| {
-                            if (loaded_struct.fieldIsComptime(ip, field_index)) continue;
+                            if (loaded_struct.field_is_comptime_bits.get(ip, field_index)) continue;
                             const field_ty: ZigType = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                            field_offset = field_ty.structFieldAlignment(
-                                loaded_struct.fieldAlign(ip, field_index),
-                                loaded_struct.layout,
-                                zcu,
-                            ).forward(field_offset);
+                            field_offset = loaded_struct.field_offsets.get(ip)[field_index];
                             const field_size = field_ty.abiSize(zcu);
                             if (!try isel.writeToMemory(.fromInterned(switch (aggregate.storage) {
                                 .bytes => unreachable,
@@ -12082,7 +12065,7 @@ pub const CallAbiIterator = struct {
         const zcu = isel.pt.zcu;
         const ip = &zcu.intern_pool;
 
-        if (!ty.hasRuntimeBitsIgnoreComptime(zcu)) return null;
+        if (!ty.hasRuntimeBits(zcu)) return null;
         try isel.values.ensureUnusedCapacity(zcu.gpa, Value.max_parts);
         const wip_vi = isel.initValue(ty);
         type_key: switch (ip.indexToKey(ty.toIntern())) {
@@ -12186,7 +12169,7 @@ pub const CallAbiIterator = struct {
                 switch (loaded_struct.layout) {
                     .auto, .@"extern" => {},
                     .@"packed" => continue :type_key .{
-                        .int_type = ip.indexToKey(loaded_struct.backingIntTypeUnordered(ip)).int_type,
+                        .int_type = ip.indexToKey(loaded_struct.packed_backing_int_type).int_type,
                     },
                 }
                 const size = wip_vi.size(isel);
@@ -12210,7 +12193,7 @@ pub const CallAbiIterator = struct {
                             const field_end = next_field_end;
                             const next_field_begin = if (field_it.next()) |field_index| next_field_begin: {
                                 const field_ty: ZigType = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                                const next_field_begin = switch (loaded_struct.fieldAlign(ip, field_index)) {
+                                const next_field_begin = switch (loaded_struct.field_aligns.getOrNone(ip, field_index)) {
                                     .none => field_ty.abiAlignment(zcu),
                                     else => |field_align| field_align,
                                 }.forward(field_end);
@@ -12276,7 +12259,7 @@ pub const CallAbiIterator = struct {
             },
             .union_type => {
                 const loaded_union = ip.loadUnionType(ty.toIntern());
-                switch (loaded_union.flagsUnordered(ip).layout) {
+                switch (loaded_union.layout) {
                     .auto, .@"extern" => {},
                     .@"packed" => continue :type_key .{ .int_type = .{
                         .signedness = .unsigned,
@@ -12309,7 +12292,9 @@ pub const CallAbiIterator = struct {
                 }
             },
             .opaque_type, .func_type => continue :type_key .{ .simple_type = .anyopaque },
-            .enum_type => continue :type_key ip.indexToKey(ip.loadEnumType(ty.toIntern()).tag_ty),
+            .enum_type => continue :type_key .{
+                .int_type = ip.indexToKey(ip.loadEnumType(ty.toIntern()).int_tag_type).int_type,
+            },
             .error_set_type,
             .inferred_error_set_type,
             => continue :type_key .{ .simple_type = .anyerror },
@@ -12414,8 +12399,8 @@ pub const CallAbiIterator = struct {
         const ip = &zcu.intern_pool;
         var common_fdt: ?FundamentalDataType = null;
         for (0.., loaded_struct.field_types.get(ip)) |field_index, field_ty| {
-            if (loaded_struct.fieldIsComptime(ip, field_index)) continue;
-            if (loaded_struct.fieldAlign(ip, field_index) != .none) return null;
+            if (loaded_struct.field_is_comptime_bits.get(ip, field_index)) continue;
+            if (loaded_struct.field_aligns.getOrNone(ip, field_index) != .none) return null;
             if (!ZigType.fromInterned(field_ty).hasRuntimeBits(zcu)) continue;
             const fdt = homogeneousAggregateBaseType(zcu, field_ty);
             if (common_fdt == null) common_fdt = fdt else if (fdt != common_fdt) return null;

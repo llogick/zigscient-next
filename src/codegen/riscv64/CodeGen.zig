@@ -3257,7 +3257,7 @@ fn airOptionalPayload(func: *Func, inst: Air.Inst.Index) !void {
     const ty_op = func.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
     const result: MCValue = result: {
         const pl_ty = func.typeOfIndex(inst);
-        if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .none;
+        if (!pl_ty.hasRuntimeBits(zcu)) break :result .none;
 
         const opt_mcv = try func.resolveInst(ty_op.operand);
         if (func.reuseOperand(inst, ty_op.operand, 0, opt_mcv)) {
@@ -3331,7 +3331,7 @@ fn airUnwrapErrErr(func: *Func, inst: Air.Inst.Index) !void {
             break :result .{ .immediate = 0 };
         }
 
-        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!payload_ty.hasRuntimeBits(zcu)) {
             break :result operand;
         }
 
@@ -3384,7 +3384,7 @@ fn genUnwrapErrUnionPayloadMir(
     const payload_ty = err_union_ty.errorUnionPayload(zcu);
 
     const result: MCValue = result: {
-        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .none;
+        if (!payload_ty.hasRuntimeBits(zcu)) break :result .none;
 
         const payload_off: u31 = @intCast(errUnionPayloadOffset(payload_ty, zcu));
         switch (err_union) {
@@ -3547,7 +3547,7 @@ fn airWrapErrUnionPayload(func: *Func, inst: Air.Inst.Index) !void {
     const operand = try func.resolveInst(ty_op.operand);
 
     const result: MCValue = result: {
-        if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .{ .immediate = 0 };
+        if (!pl_ty.hasRuntimeBits(zcu)) break :result .{ .immediate = 0 };
 
         const frame_index = try func.allocFrameIndex(FrameAlloc.initSpill(eu_ty, zcu));
         const pl_off: i32 = @intCast(errUnionPayloadOffset(pl_ty, zcu));
@@ -3571,7 +3571,7 @@ fn airWrapErrUnionErr(func: *Func, inst: Air.Inst.Index) !void {
     const err_ty = eu_ty.errorUnionSet(zcu);
 
     const result: MCValue = result: {
-        if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result try func.resolveInst(ty_op.operand);
+        if (!pl_ty.hasRuntimeBits(zcu)) break :result try func.resolveInst(ty_op.operand);
 
         const frame_index = try func.allocFrameIndex(FrameAlloc.initSpill(eu_ty, zcu));
         const pl_off: i32 = @intCast(errUnionPayloadOffset(pl_ty, zcu));
@@ -3761,7 +3761,7 @@ fn airSliceElemVal(func: *Func, inst: Air.Inst.Index) !void {
 
     const result: MCValue = result: {
         const elem_ty = func.typeOfIndex(inst);
-        if (!elem_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .none;
+        assert(elem_ty.hasRuntimeBits(zcu));
 
         const slice_ty = func.typeOf(bin_op.lhs);
         const slice_ptr_field_type = slice_ty.slicePtrFieldType(zcu);
@@ -3914,7 +3914,7 @@ fn airPtrElemVal(func: *Func, inst: Air.Inst.Index) !void {
 
     const result: MCValue = if (!is_volatile and func.liveness.isUnused(inst)) .unreach else result: {
         const elem_ty = base_ptr_ty.indexableElem(zcu);
-        if (!elem_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .none;
+        assert(elem_ty.hasRuntimeBits(zcu));
         const base_ptr_mcv = try func.resolveInst(bin_op.lhs);
         const base_ptr_lock: ?RegisterLock = switch (base_ptr_mcv) {
             .register => |reg| func.register_manager.lockRegAssumeUnused(reg),
@@ -4617,7 +4617,7 @@ fn airStructFieldVal(func: *Func, inst: Air.Inst.Index) !void {
         const src_mcv = try func.resolveInst(operand);
         const struct_ty = func.typeOf(operand);
         const field_ty = struct_ty.fieldType(index, zcu);
-        if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) break :result .none;
+        assert(field_ty.hasRuntimeBits(zcu));
 
         const field_off: u32 = switch (struct_ty.containerLayout(zcu)) {
             .auto, .@"extern" => @intCast(struct_ty.structFieldOffset(index, zcu) * 8),
@@ -5126,7 +5126,6 @@ fn airCmp(func: *Func, inst: Air.Inst.Index, tag: Air.Inst.Tag) !void {
     const bin_op = func.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
     const pt = func.pt;
     const zcu = pt.zcu;
-    const ip = &zcu.intern_pool;
 
     const result: MCValue = if (func.liveness.isUnused(inst)) .unreach else result: {
         const lhs_ty = func.typeOf(bin_op.lhs);
@@ -5140,28 +5139,23 @@ fn airCmp(func: *Func, inst: Air.Inst.Index, tag: Air.Inst.Tag) !void {
             .optional,
             .@"struct",
             => {
-                const int_ty = switch (lhs_ty.zigTypeTag(zcu)) {
+                const int_ty: Type = switch (lhs_ty.zigTypeTag(zcu)) {
                     .@"enum" => lhs_ty.intTagType(zcu),
                     .int => lhs_ty,
-                    .bool => Type.u1,
-                    .pointer => Type.u64,
-                    .error_set => Type.anyerror,
+                    .bool => .u1,
+                    .pointer => .u64,
+                    .error_set => .anyerror,
                     .optional => blk: {
                         const payload_ty = lhs_ty.optionalChild(zcu);
-                        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
-                            break :blk Type.u1;
+                        if (!payload_ty.hasRuntimeBits(zcu)) {
+                            break :blk .u1;
                         } else if (lhs_ty.isPtrLikeOptional(zcu)) {
-                            break :blk Type.u64;
+                            break :blk .u64;
                         } else {
                             return func.fail("TODO riscv cmp non-pointer optionals", .{});
                         }
                     },
-                    .@"struct" => blk: {
-                        const struct_obj = ip.loadStructType(lhs_ty.toIntern());
-                        assert(struct_obj.layout == .@"packed");
-                        const backing_index = struct_obj.backingIntTypeUnordered(ip);
-                        break :blk Type.fromInterned(backing_index);
-                    },
+                    .@"struct", .@"union" => lhs_ty.bitpackBackingInt(zcu),
                     else => unreachable,
                 };
 
@@ -5925,8 +5919,7 @@ fn airBr(func: *Func, inst: Air.Inst.Index) !void {
     const br = func.air.instructions.items(.data)[@intFromEnum(inst)].br;
 
     const block_ty = func.typeOfIndex(br.block_inst);
-    const block_unused =
-        !block_ty.hasRuntimeBitsIgnoreComptime(zcu) or func.liveness.isUnused(br.block_inst);
+    const block_unused = !block_ty.hasRuntimeBits(zcu) or func.liveness.isUnused(br.block_inst);
     const block_tracking = func.inst_tracking.getPtr(br.block_inst).?;
     const block_data = func.blocks.getPtr(br.block_inst).?;
     const first_br = block_data.relocs.items.len == 0;
@@ -8249,7 +8242,7 @@ fn resolveCallingConventionValues(
             // Return values
             if (ret_ty.zigTypeTag(zcu) == .noreturn) {
                 result.return_value = InstTracking.init(.unreach);
-            } else if (!ret_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+            } else if (!ret_ty.hasRuntimeBits(zcu)) {
                 result.return_value = InstTracking.init(.none);
             } else {
                 var ret_tracking: [2]InstTracking = undefined;
@@ -8300,7 +8293,7 @@ fn resolveCallingConventionValues(
             var param_float_reg_i: usize = 0;
 
             for (param_types, result.args) |ty, *arg| {
-                if (!ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+                if (!ty.hasRuntimeBits(zcu)) {
                     assert(cc == .auto);
                     arg.* = .none;
                     continue;
@@ -8415,10 +8408,10 @@ fn hasFeature(func: *Func, feature: Target.riscv.Feature) bool {
 }
 
 pub fn errUnionPayloadOffset(payload_ty: Type, zcu: *Zcu) u64 {
-    if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) return 0;
+    if (!payload_ty.hasRuntimeBits(zcu)) return 0;
     const payload_align = payload_ty.abiAlignment(zcu);
     const error_align = Type.anyerror.abiAlignment(zcu);
-    if (payload_align.compare(.gte, error_align) or !payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    if (payload_align.compare(.gte, error_align) or !payload_ty.hasRuntimeBits(zcu)) {
         return 0;
     } else {
         return payload_align.forward(Type.anyerror.abiSize(zcu));
@@ -8426,10 +8419,10 @@ pub fn errUnionPayloadOffset(payload_ty: Type, zcu: *Zcu) u64 {
 }
 
 pub fn errUnionErrorOffset(payload_ty: Type, zcu: *Zcu) u64 {
-    if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) return 0;
+    if (!payload_ty.hasRuntimeBits(zcu)) return 0;
     const payload_align = payload_ty.abiAlignment(zcu);
     const error_align = Type.anyerror.abiAlignment(zcu);
-    if (payload_align.compare(.gte, error_align) and payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    if (payload_align.compare(.gte, error_align) and payload_ty.hasRuntimeBits(zcu)) {
         return error_align.forward(payload_ty.abiSize(zcu));
     } else {
         return 0;

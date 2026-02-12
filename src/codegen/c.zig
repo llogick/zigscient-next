@@ -1052,17 +1052,7 @@ pub const DeclGen = struct {
             .func,
             .enum_literal,
             => unreachable, // non-runtime values
-            .int => |int| switch (int.storage) {
-                .u64, .i64, .big_int => try w.print("{f}", .{try dg.fmtIntLiteralDec(val, location)}),
-                .lazy_align, .lazy_size => {
-                    try w.writeAll("((");
-                    try dg.renderCType(w, ctype);
-                    try w.print("){f})", .{try dg.fmtIntLiteralHex(
-                        try pt.intValue(.usize, val.toUnsignedInt(zcu)),
-                        .Other,
-                    )});
-                },
-            },
+            .int => try w.print("{f}", .{try dg.fmtIntLiteralDec(val, location)}),
             .err => |err| try dg.renderErrorName(w, err.name),
             .error_union => |error_union| switch (ctype.info(ctype_pool)) {
                 .basic => switch (error_union.val) {
@@ -1338,7 +1328,7 @@ pub const DeclGen = struct {
                         const comptime_val = tuple.values.get(ip)[field_index];
                         if (comptime_val != .none) continue;
                         const field_ty: Type = .fromInterned(tuple.types.get(ip)[field_index]);
-                        if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+                        if (!field_ty.hasRuntimeBits(zcu)) continue;
 
                         if (!empty) try w.writeByte(',');
 
@@ -1373,7 +1363,7 @@ pub const DeclGen = struct {
                     var need_comma = false;
                     while (field_it.next()) |field_index| {
                         const field_ty: Type = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                        if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+                        if (!field_ty.hasRuntimeBits(zcu)) continue;
 
                         if (need_comma) try w.writeByte(',');
                         need_comma = true;
@@ -1396,7 +1386,7 @@ pub const DeclGen = struct {
                 const loaded_union = ip.loadUnionType(ty.toIntern());
                 if (un.tag == .none) {
                     const backing_ty = try ty.externUnionBackingType(pt);
-                    assert(loaded_union.flagsUnordered(ip).layout == .@"extern");
+                    assert(loaded_union.layout == .@"extern");
                     if (location == .StaticInitializer) {
                         return dg.fail("TODO: C backend: implement extern union backing type rendering in static initializers", .{});
                     }
@@ -1418,9 +1408,9 @@ pub const DeclGen = struct {
 
                     const field_index = zcu.unionTagFieldIndex(loaded_union, Value.fromInterned(un.tag)).?;
                     const field_ty: Type = .fromInterned(loaded_union.field_types.get(ip)[field_index]);
-                    const field_name = loaded_union.loadTagType(ip).names.get(ip)[field_index];
+                    const field_name = ip.loadEnumType(loaded_union.enum_tag_type).field_names.get(ip)[field_index];
 
-                    const has_tag = loaded_union.hasTag(ip);
+                    const has_tag = loaded_union.has_runtime_tag;
                     if (has_tag) try w.writeByte('{');
                     const aggregate = ctype.info(ctype_pool).aggregate;
                     for (0..if (has_tag) aggregate.fields.len else 1) |outer_field_index| {
@@ -1597,7 +1587,7 @@ pub const DeclGen = struct {
                             var need_comma = false;
                             while (field_it.next()) |field_index| {
                                 const field_ty: Type = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                                if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+                                if (!field_ty.hasRuntimeBits(zcu)) continue;
 
                                 if (need_comma) try w.writeByte(',');
                                 need_comma = true;
@@ -1620,7 +1610,7 @@ pub const DeclGen = struct {
                     for (0..tuple_info.types.len) |field_index| {
                         if (tuple_info.values.get(ip)[field_index] != .none) continue;
                         const field_ty: Type = .fromInterned(tuple_info.types.get(ip)[field_index]);
-                        if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+                        if (!field_ty.hasRuntimeBits(zcu)) continue;
 
                         if (need_comma) try w.writeByte(',');
                         need_comma = true;
@@ -1630,7 +1620,7 @@ pub const DeclGen = struct {
                 },
                 .union_type => {
                     const loaded_union = ip.loadUnionType(ty.toIntern());
-                    switch (loaded_union.flagsUnordered(ip).layout) {
+                    switch (loaded_union.layout) {
                         .auto, .@"extern" => {
                             if (!location.isInitializer()) {
                                 try w.writeByte('(');
@@ -1638,7 +1628,7 @@ pub const DeclGen = struct {
                                 try w.writeByte(')');
                             }
 
-                            const has_tag = loaded_union.hasTag(ip);
+                            const has_tag = loaded_union.has_runtime_tag;
                             if (has_tag) try w.writeByte('{');
                             const aggregate = ctype.info(ctype_pool).aggregate;
                             for (0..if (has_tag) aggregate.fields.len else 1) |outer_field_index| {
@@ -1649,7 +1639,7 @@ pub const DeclGen = struct {
                                     .payload) {
                                     .tag => try dg.renderUndefValue(
                                         w,
-                                        .fromInterned(loaded_union.enum_tag_ty),
+                                        .fromInterned(loaded_union.enum_tag_type),
                                         initializer_type,
                                     ),
                                     .payload => {
@@ -1760,6 +1750,7 @@ pub const DeclGen = struct {
                 .opt,
                 .aggregate,
                 .un,
+                .bitpack,
                 .memoized_call,
                 => unreachable, // values, not types
             },
@@ -2797,7 +2788,7 @@ pub fn genLazyFn(o: *Object, lazy_ctype_pool: *const CType.Pool, lazy_fn: LazyFn
                 } });
 
                 try w.print("case {f}: {{", .{
-                    try o.dg.fmtIntLiteralDec(try tag_val.intFromEnum(enum_ty, pt), .Other),
+                    try o.dg.fmtIntLiteralDec(tag_val.intFromEnum(zcu), .Other),
                 });
                 o.indent();
                 try o.newline();
@@ -3599,10 +3590,7 @@ fn airPtrElemVal(f: *Function, inst: Air.Inst.Index) !CValue {
     const zcu = f.object.dg.pt.zcu;
     const inst_ty = f.typeOfIndex(inst);
     const bin_op = f.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
-    if (!inst_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
-        try reap(f, inst, &.{ bin_op.lhs, bin_op.rhs });
-        return .none;
-    }
+    assert(inst_ty.hasRuntimeBits(zcu));
 
     const ptr = try f.resolveInst(bin_op.lhs);
     const index = try f.resolveInst(bin_op.rhs);
@@ -3629,7 +3617,7 @@ fn airPtrElemPtr(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const inst_ty = f.typeOfIndex(inst);
     const ptr_ty = f.typeOf(bin_op.lhs);
-    const elem_has_bits = ptr_ty.indexableElem(zcu).hasRuntimeBitsIgnoreComptime(zcu);
+    assert(ptr_ty.indexableElem(zcu).hasRuntimeBits(zcu));
 
     const ptr = try f.resolveInst(bin_op.lhs);
     const index = try f.resolveInst(bin_op.rhs);
@@ -3643,16 +3631,14 @@ fn airPtrElemPtr(f: *Function, inst: Air.Inst.Index) !CValue {
     try w.writeByte('(');
     try f.renderType(w, inst_ty);
     try w.writeByte(')');
-    if (elem_has_bits) try w.writeByte('&');
-    if (elem_has_bits and ptr_ty.ptrSize(zcu) == .one) {
+    try w.writeByte('&');
+    if (ptr_ty.ptrSize(zcu) == .one) {
         // It's a pointer to an array, so we need to de-reference.
         try f.writeCValueDeref(w, ptr);
     } else try f.writeCValue(w, ptr, .Other);
-    if (elem_has_bits) {
-        try w.writeByte('[');
-        try f.writeCValue(w, index, .Other);
-        try w.writeByte(']');
-    }
+    try w.writeByte('[');
+    try f.writeCValue(w, index, .Other);
+    try w.writeByte(']');
     try a.end(f, w);
     return local;
 }
@@ -3661,10 +3647,7 @@ fn airSliceElemVal(f: *Function, inst: Air.Inst.Index) !CValue {
     const zcu = f.object.dg.pt.zcu;
     const inst_ty = f.typeOfIndex(inst);
     const bin_op = f.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
-    if (!inst_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
-        try reap(f, inst, &.{ bin_op.lhs, bin_op.rhs });
-        return .none;
-    }
+    assert(inst_ty.hasRuntimeBits(zcu));
 
     const slice = try f.resolveInst(bin_op.lhs);
     const index = try f.resolveInst(bin_op.rhs);
@@ -3692,7 +3675,7 @@ fn airSliceElemPtr(f: *Function, inst: Air.Inst.Index) !CValue {
     const inst_ty = f.typeOfIndex(inst);
     const slice_ty = f.typeOf(bin_op.lhs);
     const elem_ty = slice_ty.childType(zcu);
-    const elem_has_bits = elem_ty.hasRuntimeBitsIgnoreComptime(zcu);
+    assert(elem_ty.hasRuntimeBits(zcu));
 
     const slice = try f.resolveInst(bin_op.lhs);
     const index = try f.resolveInst(bin_op.rhs);
@@ -3703,13 +3686,11 @@ fn airSliceElemPtr(f: *Function, inst: Air.Inst.Index) !CValue {
     const a = try Assignment.start(f, w, try f.ctypeFromType(inst_ty, .complete));
     try f.writeCValue(w, local, .Other);
     try a.assign(f, w);
-    if (elem_has_bits) try w.writeByte('&');
+    try w.writeByte('&');
     try f.writeCValueMember(w, slice, .{ .identifier = "ptr" });
-    if (elem_has_bits) {
-        try w.writeByte('[');
-        try f.writeCValue(w, index, .Other);
-        try w.writeByte(']');
-    }
+    try w.writeByte('[');
+    try f.writeCValue(w, index, .Other);
+    try w.writeByte(']');
     try a.end(f, w);
     return local;
 }
@@ -3718,10 +3699,7 @@ fn airArrayElemVal(f: *Function, inst: Air.Inst.Index) !CValue {
     const zcu = f.object.dg.pt.zcu;
     const bin_op = f.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
     const inst_ty = f.typeOfIndex(inst);
-    if (!inst_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
-        try reap(f, inst, &.{ bin_op.lhs, bin_op.rhs });
-        return .none;
-    }
+    assert(inst_ty.hasRuntimeBits(zcu));
 
     const array = try f.resolveInst(bin_op.lhs);
     const index = try f.resolveInst(bin_op.rhs);
@@ -3853,10 +3831,7 @@ fn airLoad(f: *Function, inst: Air.Inst.Index) !CValue {
     // bit-pointers we see here are vector element pointers.
     assert(ptr_info.packed_offset.host_size == 0 or ptr_info.flags.vector_index != .none);
 
-    if (!src_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
-        try reap(f, inst, &.{ty_op.operand});
-        return .none;
-    }
+    assert(src_ty.hasRuntimeBits(zcu));
 
     const operand = try f.resolveInst(ty_op.operand);
 
@@ -4456,7 +4431,7 @@ fn airPtrAddSub(f: *Function, inst: Air.Inst.Index, operator: u8) !CValue {
     const inst_ty = f.typeOfIndex(inst);
     const inst_scalar_ty = inst_ty.scalarType(zcu);
     const elem_ty = inst_scalar_ty.indexableElem(zcu);
-    if (!elem_ty.hasRuntimeBitsIgnoreComptime(zcu)) return f.moveCValue(inst, inst_ty, lhs);
+    assert(elem_ty.hasRuntimeBits(zcu));
     const inst_scalar_ctype = try f.ctypeFromType(inst_scalar_ty, .complete);
 
     const local = try f.allocLocal(inst, inst_ty);
@@ -4787,7 +4762,7 @@ fn lowerBlock(f: *Function, inst: Air.Inst.Index, body: []const Air.Inst.Index) 
     const w = &f.object.code.writer;
 
     const inst_ty = f.typeOfIndex(inst);
-    const result = if (inst_ty.hasRuntimeBitsIgnoreComptime(zcu) and !f.liveness.isUnused(inst))
+    const result = if (inst_ty.hasRuntimeBits(zcu) and !f.liveness.isUnused(inst))
         try f.allocLocal(inst, inst_ty)
     else
         .none;
@@ -4853,7 +4828,7 @@ fn lowerTry(
     const liveness_condbr = f.liveness.getCondBr(inst);
     const w = &f.object.code.writer;
     const payload_ty = err_union_ty.errorUnionPayload(zcu);
-    const payload_has_bits = payload_ty.hasRuntimeBitsIgnoreComptime(zcu);
+    const payload_has_bits = payload_ty.hasRuntimeBits(zcu);
 
     if (!err_union_ty.errorUnionSet(zcu).errorSetIsEmpty(zcu)) {
         try w.writeAll("if (");
@@ -5393,7 +5368,7 @@ fn airAsm(f: *Function, inst: Air.Inst.Index) !CValue {
     const result = result: {
         const w = &f.object.code.writer;
         const inst_ty = f.typeOfIndex(inst);
-        const inst_local = if (inst_ty.hasRuntimeBitsIgnoreComptime(zcu)) local: {
+        const inst_local = if (inst_ty.hasRuntimeBits(zcu)) local: {
             const inst_local = try f.allocLocalValue(.{
                 .ctype = try f.ctypeFromType(inst_ty, .complete),
                 .alignas = CType.AlignAs.fromAbiAlignment(inst_ty.abiAlignment(zcu)),
@@ -5820,12 +5795,12 @@ fn fieldLocation(
         .struct_type => {
             const loaded_struct = ip.loadStructType(container_ty.toIntern());
             return switch (loaded_struct.layout) {
-                .auto, .@"extern" => if (!container_ty.hasRuntimeBitsIgnoreComptime(zcu))
+                .auto, .@"extern" => if (!container_ty.hasRuntimeBits(zcu))
                     .begin
-                else if (!field_ptr_ty.childType(zcu).hasRuntimeBitsIgnoreComptime(zcu))
-                    .{ .byte_offset = loaded_struct.offsets.get(ip)[field_index] }
+                else if (!field_ptr_ty.childType(zcu).hasRuntimeBits(zcu))
+                    .{ .byte_offset = loaded_struct.field_offsets.get(ip)[field_index] }
                 else
-                    .{ .field = .{ .identifier = loaded_struct.fieldName(ip, field_index).toSlice(ip) } },
+                    .{ .field = .{ .identifier = loaded_struct.field_names.get(ip)[field_index].toSlice(ip) } },
                 .@"packed" => if (field_ptr_ty.ptrInfo(zcu).packed_offset.host_size == 0)
                     .{ .byte_offset = @divExact(zcu.structPackedFieldBitOffset(loaded_struct, field_index) +
                         container_ptr_ty.ptrInfo(zcu).packed_offset.bit_offset, 8) }
@@ -5833,24 +5808,24 @@ fn fieldLocation(
                     .begin,
             };
         },
-        .tuple_type => return if (!container_ty.hasRuntimeBitsIgnoreComptime(zcu))
+        .tuple_type => return if (!container_ty.hasRuntimeBits(zcu))
             .begin
-        else if (!field_ptr_ty.childType(zcu).hasRuntimeBitsIgnoreComptime(zcu))
+        else if (!field_ptr_ty.childType(zcu).hasRuntimeBits(zcu))
             .{ .byte_offset = container_ty.structFieldOffset(field_index, zcu) }
         else
             .{ .field = .{ .field = field_index } },
         .union_type => {
             const loaded_union = ip.loadUnionType(container_ty.toIntern());
-            switch (loaded_union.flagsUnordered(ip).layout) {
+            switch (loaded_union.layout) {
                 .auto, .@"extern" => {
                     const field_ty: Type = .fromInterned(loaded_union.field_types.get(ip)[field_index]);
-                    if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu))
+                    if (!field_ty.hasRuntimeBits(zcu))
                         return if (loaded_union.has_runtime_tag and !container_ty.unionHasAllZeroBitFieldTypes(zcu))
                             .{ .field = .{ .identifier = "payload" } }
                         else
                             .begin;
-                    const field_name = loaded_union.loadTagType(ip).names.get(ip)[field_index];
-                    return .{ .field = if (loaded_union.hasTag(ip))
+                    const field_name = ip.loadEnumType(loaded_union.enum_tag_type).field_names.get(ip)[field_index];
+                    return .{ .field = if (loaded_union.has_runtime_tag)
                         .{ .payload_identifier = field_name.toSlice(ip) }
                     else
                         .{ .identifier = field_name.toSlice(ip) } };
@@ -5996,10 +5971,7 @@ fn airStructFieldVal(f: *Function, inst: Air.Inst.Index) !CValue {
     const extra = f.air.extraData(Air.StructField, ty_pl.payload).data;
 
     const inst_ty = f.typeOfIndex(inst);
-    if (!inst_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
-        try reap(f, inst, &.{extra.struct_operand});
-        return .none;
-    }
+    assert(inst_ty.hasRuntimeBits(zcu));
 
     const struct_byval = try f.resolveInst(extra.struct_operand);
     try reap(f, inst, &.{extra.struct_operand});
@@ -6014,9 +5986,9 @@ fn airStructFieldVal(f: *Function, inst: Air.Inst.Index) !CValue {
         .struct_type => .{ .identifier = struct_ty.structFieldName(extra.field_index, zcu).unwrap().?.toSlice(ip) },
         .union_type => name: {
             const union_type = ip.loadUnionType(struct_ty.toIntern());
-            const enum_tag_ty: Type = .fromInterned(union_type.enum_tag_ty);
+            const enum_tag_ty: Type = .fromInterned(union_type.enum_tag_type);
             const field_name_str = enum_tag_ty.enumFieldName(extra.field_index, zcu).toSlice(ip);
-            if (union_type.hasTag(ip)) {
+            if (union_type.has_runtime_tag) {
                 break :name .{ .payload_identifier = field_name_str };
             } else {
                 break :name .{ .identifier = field_name_str };
@@ -6161,7 +6133,7 @@ fn airWrapErrUnionErr(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const inst_ty = f.typeOfIndex(inst);
     const payload_ty = inst_ty.errorUnionPayload(zcu);
-    const repr_is_err = !payload_ty.hasRuntimeBitsIgnoreComptime(zcu);
+    const repr_is_err = !payload_ty.hasRuntimeBits(zcu);
     const err_ty = inst_ty.errorUnionSet(zcu);
     const err = try f.resolveInst(ty_op.operand);
     try reap(f, inst, &.{ty_op.operand});
@@ -6210,7 +6182,7 @@ fn airErrUnionPayloadPtrSet(f: *Function, inst: Air.Inst.Index) !CValue {
     try reap(f, inst, &.{ty_op.operand});
 
     // First, set the non-error value.
-    if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    if (!payload_ty.hasRuntimeBits(zcu)) {
         const a = try Assignment.start(f, w, try f.ctypeFromType(operand_ty, .complete));
         try f.writeCValueDeref(w, operand);
         try a.assign(f, w);
@@ -6262,13 +6234,13 @@ fn airWrapErrUnionPay(f: *Function, inst: Air.Inst.Index) !CValue {
     const inst_ty = f.typeOfIndex(inst);
     const payload_ty = inst_ty.errorUnionPayload(zcu);
     const payload = try f.resolveInst(ty_op.operand);
-    const repr_is_err = !payload_ty.hasRuntimeBitsIgnoreComptime(zcu);
+    assert(payload_ty.hasRuntimeBits(zcu));
     const err_ty = inst_ty.errorUnionSet(zcu);
     try reap(f, inst, &.{ty_op.operand});
 
     const w = &f.object.code.writer;
     const local = try f.allocLocal(inst, inst_ty);
-    if (!repr_is_err) {
+    {
         const a = try Assignment.start(f, w, try f.ctypeFromType(payload_ty, .complete));
         try f.writeCValueMember(w, local, .{ .identifier = "payload" });
         try a.assign(f, w);
@@ -6277,10 +6249,7 @@ fn airWrapErrUnionPay(f: *Function, inst: Air.Inst.Index) !CValue {
     }
     {
         const a = try Assignment.start(f, w, try f.ctypeFromType(err_ty, .complete));
-        if (repr_is_err)
-            try f.writeCValue(w, local, .Other)
-        else
-            try f.writeCValueMember(w, local, .{ .identifier = "error" });
+        try f.writeCValueMember(w, local, .{ .identifier = "error" });
         try a.assign(f, w);
         try f.object.dg.renderValue(w, try pt.intValue(try pt.errorIntType(), 0), .Other);
         try a.end(f, w);
@@ -7411,10 +7380,10 @@ fn airAggregateInit(f: *Function, inst: Air.Inst.Index) !CValue {
                     var field_it = loaded_struct.iterateRuntimeOrder(ip);
                     while (field_it.next()) |field_index| {
                         const field_ty: Type = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
-                        if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+                        if (!field_ty.hasRuntimeBits(zcu)) continue;
 
                         const a = try Assignment.start(f, w, try f.ctypeFromType(field_ty, .complete));
-                        try f.writeCValueMember(w, local, .{ .identifier = loaded_struct.fieldName(ip, field_index).toSlice(ip) });
+                        try f.writeCValueMember(w, local, .{ .identifier = loaded_struct.field_names.get(ip)[field_index].toSlice(ip) });
                         try a.assign(f, w);
                         try f.writeCValue(w, resolved_elements[field_index], .Other);
                         try a.end(f, w);
@@ -7426,7 +7395,7 @@ fn airAggregateInit(f: *Function, inst: Air.Inst.Index) !CValue {
         .tuple_type => |tuple_info| for (0..tuple_info.types.len) |field_index| {
             if (tuple_info.values.get(ip)[field_index] != .none) continue;
             const field_ty: Type = .fromInterned(tuple_info.types.get(ip)[field_index]);
-            if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+            if (!field_ty.hasRuntimeBits(zcu)) continue;
 
             const a = try Assignment.start(f, w, try f.ctypeFromType(field_ty, .complete));
             try f.writeCValueMember(w, local, .{ .field = field_index });
@@ -7449,13 +7418,13 @@ fn airUnionInit(f: *Function, inst: Air.Inst.Index) !CValue {
 
     const union_ty = f.typeOfIndex(inst);
     const loaded_union = ip.loadUnionType(union_ty.toIntern());
-    const field_name = loaded_union.loadTagType(ip).names.get(ip)[extra.field_index];
+    const field_name = ip.loadEnumType(loaded_union.enum_tag_type).field_names.get(ip)[extra.field_index];
     const payload_ty = f.typeOf(extra.init);
     const payload = try f.resolveInst(extra.init);
     try reap(f, inst, &.{extra.init});
 
     const w = &f.object.code.writer;
-    if (loaded_union.flagsUnordered(ip).layout == .@"packed") return f.moveCValue(inst, union_ty, payload);
+    if (loaded_union.layout == .@"packed") return f.moveCValue(inst, union_ty, payload);
 
     const local = try f.allocLocal(inst, union_ty);
 
@@ -7466,7 +7435,7 @@ fn airUnionInit(f: *Function, inst: Air.Inst.Index) !CValue {
         const a = try Assignment.start(f, w, try f.ctypeFromType(tag_ty, .complete));
         try f.writeCValueMember(w, local, .{ .identifier = "tag" });
         try a.assign(f, w);
-        try w.print("{f}", .{try f.fmtIntLiteralDec(try tag_val.intFromEnum(tag_ty, pt))});
+        try w.print("{f}", .{try f.fmtIntLiteralDec(tag_val.intFromEnum(zcu))});
         try a.end(f, w);
         break :field .{ .payload_identifier = field_name.toSlice(ip) };
     } else .{ .identifier = field_name.toSlice(ip) };

@@ -2558,7 +2558,7 @@ pub const Pool = struct {
                                 .tag = .@"struct",
                                 .name = .{ .index = ip_index },
                             });
-                            if (kind.isForward()) return if (ty.hasRuntimeBitsIgnoreComptime(zcu))
+                            if (kind.isForward()) return if (ty.hasRuntimeBits(zcu))
                                 fwd_decl
                             else
                                 .void;
@@ -2584,9 +2584,9 @@ pub const Pool = struct {
                                     kind.noParameter(),
                                 );
                                 if (field_ctype.index == .void) continue;
-                                const field_name = try pool.string(allocator, loaded_struct.fieldName(ip, field_index).toSlice(ip));
+                                const field_name = try pool.string(allocator, loaded_struct.field_names.get(ip)[field_index].toSlice(ip));
                                 const field_alignas = AlignAs.fromAlignment(.{
-                                    .@"align" = loaded_struct.fieldAlign(ip, field_index),
+                                    .@"align" = loaded_struct.field_aligns.getOrNone(ip, field_index),
                                     .abi = field_type.abiAlignment(zcu),
                                 });
                                 pool.addHashedExtraAssumeCapacityTo(scratch, &hasher, Field, .{
@@ -2613,7 +2613,7 @@ pub const Pool = struct {
                         .@"packed" => return pool.fromType(
                             allocator,
                             scratch,
-                            Type.fromInterned(loaded_struct.backingIntTypeUnordered(ip)),
+                            .fromInterned(loaded_struct.packed_backing_int_type),
                             pt,
                             mod,
                             kind,
@@ -2682,17 +2682,17 @@ pub const Pool = struct {
                 },
                 .union_type => {
                     const loaded_union = ip.loadUnionType(ip_index);
-                    switch (loaded_union.flagsUnordered(ip).layout) {
+                    switch (loaded_union.layout) {
                         .auto, .@"extern" => {
                             const fwd_decl = try pool.getFwdDecl(allocator, .{
                                 .tag = if (loaded_union.has_runtime_tag) .@"struct" else .@"union",
                                 .name = .{ .index = ip_index },
                             });
-                            if (kind.isForward()) return if (ty.hasRuntimeBitsIgnoreComptime(zcu))
+                            if (kind.isForward()) return if (ty.hasRuntimeBits(zcu))
                                 fwd_decl
                             else
                                 .void;
-                            const loaded_tag = loaded_union.loadTagType(ip);
+                            const loaded_tag = ip.loadEnumType(loaded_union.enum_tag_type);
                             const scratch_top = scratch.items.len;
                             defer scratch.shrinkRetainingCapacity(scratch_top);
                             try scratch.ensureUnusedCapacity(
@@ -2718,10 +2718,10 @@ pub const Pool = struct {
                                 if (field_ctype.index == .void) continue;
                                 const field_name = try pool.string(
                                     allocator,
-                                    loaded_tag.names.get(ip)[field_index].toSlice(ip),
+                                    loaded_tag.field_names.get(ip)[field_index].toSlice(ip),
                                 );
                                 const field_alignas = AlignAs.fromAlignment(.{
-                                    .@"align" = loaded_union.fieldAlign(ip, field_index),
+                                    .@"align" = loaded_union.field_aligns.getOrNone(ip, field_index),
                                     .abi = field_type.abiAlignment(zcu),
                                 });
                                 pool.addHashedExtraAssumeCapacityTo(scratch, &hasher, Field, .{
@@ -2753,24 +2753,22 @@ pub const Pool = struct {
                             try pool.ensureUnusedCapacity(allocator, 2);
                             var struct_fields: [2]Info.Field = undefined;
                             var struct_fields_len: usize = 0;
-                            if (loaded_tag.tag_ty != .comptime_int_type) {
-                                const tag_type = Type.fromInterned(loaded_tag.tag_ty);
-                                const tag_ctype: CType = try pool.fromType(
-                                    allocator,
-                                    scratch,
-                                    tag_type,
-                                    pt,
-                                    mod,
-                                    kind.noParameter(),
-                                );
-                                if (tag_ctype.index != .void) {
-                                    struct_fields[struct_fields_len] = .{
-                                        .name = .{ .index = .tag },
-                                        .ctype = tag_ctype,
-                                        .alignas = AlignAs.fromAbiAlignment(tag_type.abiAlignment(zcu)),
-                                    };
-                                    struct_fields_len += 1;
-                                }
+                            const tag_type = Type.fromInterned(loaded_tag.int_tag_type);
+                            const tag_ctype: CType = try pool.fromType(
+                                allocator,
+                                scratch,
+                                tag_type,
+                                pt,
+                                mod,
+                                kind.noParameter(),
+                            );
+                            if (tag_ctype.index != .void) {
+                                struct_fields[struct_fields_len] = .{
+                                    .name = .{ .index = .tag },
+                                    .ctype = tag_ctype,
+                                    .alignas = AlignAs.fromAbiAlignment(tag_type.abiAlignment(zcu)),
+                                };
+                                struct_fields_len += 1;
                             }
                             if (fields_len > 0) {
                                 const payload_ctype = payload_ctype: {
@@ -2823,12 +2821,14 @@ pub const Pool = struct {
                 .enum_type => return pool.fromType(
                     allocator,
                     scratch,
-                    Type.fromInterned(ip.loadEnumType(ip_index).tag_ty),
+                    .fromInterned(ip.loadEnumType(ip_index).int_tag_type),
                     pt,
                     mod,
                     kind,
                 ),
-                .func_type => |func_info| if (func_info.is_generic) return .void else {
+                .func_type => |func_info| {
+                    if (!ty.fnHasRuntimeBits(zcu)) return .void;
+
                     const scratch_top = scratch.items.len;
                     defer scratch.shrinkRetainingCapacity(scratch_top);
                     try scratch.ensureUnusedCapacity(allocator, func_info.param_types.len);
@@ -2894,6 +2894,7 @@ pub const Pool = struct {
                 .opt,
                 .aggregate,
                 .un,
+                .bitpack,
                 .memoized_call,
                 => unreachable, // values, not types
             },
