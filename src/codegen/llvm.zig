@@ -1735,7 +1735,7 @@ pub const Object = struct {
         }
 
         global_index.setUnnamedAddr(.default, &o.builder);
-        if (comp.config.dll_export_fns)
+        if (comp.config.dll_export_fns and first_export.opts.visibility != .hidden)
             global_index.setDllStorageClass(.dllexport, &o.builder);
         global_index.setLinkage(switch (first_export.opts.linkage) {
             .internal => unreachable,
@@ -1794,7 +1794,7 @@ pub const Object = struct {
 
             const alias_global_index = alias_index.ptrConst(&o.builder).global;
             alias_global_index.setUnnamedAddr(.default, &o.builder);
-            if (comp.config.dll_export_fns)
+            if (comp.config.dll_export_fns and first_export.opts.visibility != .hidden)
                 alias_global_index.setDllStorageClass(.dllexport, &o.builder);
             alias_global_index.setLinkage(switch (first_export.opts.linkage) {
                 .internal => unreachable,
