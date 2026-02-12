@@ -113,6 +113,18 @@ pub fn pushSingleDocumentDiagnostics(
     }
 }
 
+pub fn clearDiagnosticsTagForHandle(
+    collection: *DiagnosticsCollection,
+    tag: Tag,
+    document_uri: []const u8,
+) void {
+    var tag_set = collection.tag_set.getPtr(tag) orelse return;
+    var entry = tag_set.diagnostics_set.fetchSwapRemove(document_uri) orelse return;
+    entry.value.arena.promote(collection.allocator).deinit();
+    entry.value.error_bundle.deinit(collection.allocator);
+    collection.allocator.free(entry.key);
+}
+
 pub fn pushErrorBundle(
     collection: *DiagnosticsCollection,
     /// All changes will affect diagnostics with the same tag.

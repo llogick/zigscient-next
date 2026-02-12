@@ -361,12 +361,8 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 var error_bundle = comp.getAllErrorsAlloc() catch @panic("OOM");
                 defer error_bundle.deinit(param_server.document_store.allocator);
 
-                clear_single_doc_diags: {
-                    var tag_set = param_server.diagnostics_collection.tag_set.getPtr(.parse) orelse break :clear_single_doc_diags;
-                    _ = tag_set.diagnostics_set.swapRemove(param_handle.uri);
-                    tag_set = param_server.diagnostics_collection.tag_set.getPtr(.cimport) orelse break :clear_single_doc_diags;
-                    _ = tag_set.diagnostics_set.swapRemove(param_handle.uri);
-                }
+                param_server.diagnostics_collection.clearDiagnosticsTagForHandle(.parse, param_handle.uri);
+                param_server.diagnostics_collection.clearDiagnosticsTagForHandle(.cimport, param_handle.uri);
 
                 const global = struct {
                     var compilation_cycle: u32 = 0;
