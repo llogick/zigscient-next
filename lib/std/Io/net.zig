@@ -153,8 +153,9 @@ pub const IpAddress = union(enum) {
 
     /// `port` is native-endian.
     pub fn setPort(a: *IpAddress, port: u16) void {
-        switch (a) {
-            inline .ip4, .ip6 => |*x| x.port = port,
+        switch (a.*) {
+            .ip4 => a.ip4.port = port,
+            .ip6 => a.ip6.port = port,
         }
     }
 
@@ -1429,6 +1430,11 @@ test "parsing IPv6 addresses" {
     try testIp6Parse("fe80::abcd:ef12%3");
     try testIp6Parse("ff02::");
     try testIp6Parse("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff");
+}
+test "IpAddress.setPort works" {
+    var addr: IpAddress = .{ .ip4 = undefined };
+    addr.setPort(0);
+    try std.testing.expectEqual(0, addr.getPort());
 }
 
 fn testIp6Parse(input: []const u8) !void {
