@@ -4255,6 +4255,7 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
 
     try comp.link_diags.addMessagesToBundle(&bundle, comp.bin_file);
 
+    var should_free_compile_log_text: bool = false;
     const compile_log_text: []const u8 = compile_log_text: {
         const zcu = comp.zcu orelse break :compile_log_text "";
         if (zcu.skip_analysis_this_update) break :compile_log_text "";
@@ -4333,8 +4334,10 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
             try addModuleErrorMsg(zcu, &bundle, messages.items[0], false);
         }
 
+        should_free_compile_log_text = true;
         break :compile_log_text try log_text.toOwnedSlice(gpa);
     };
+    defer if (should_free_compile_log_text) gpa.free(compile_log_text);
 
     // TODO: eventually, this should be behind `std.debug.runtime_safety`. But right now, this is a
     // very common way for incremental compilation bugs to manifest, so let's always check it.
