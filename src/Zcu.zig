@@ -1219,6 +1219,12 @@ pub const File = struct {
         file.uri_slice = uri_slice;
         return if (zcu.lsp_document_store) |doc_store| doc_store.getHandle(uri_slice) else null;
     }
+
+    pub fn getOrLoadLspDocHandle(file: *File, zcu: *const Zcu) (error{Canceled} || Allocator.Error)!?*LspDocumentStore.Handle {
+        const uri_slice = file.uri_slice orelse try file.pathToUriSlice(zcu) orelse return null;
+        file.uri_slice = uri_slice;
+        return if (zcu.lsp_document_store) |doc_store| doc_store.getOrLoadHandle(uri_slice) else null;
+    }
 };
 
 /// Represents the contents of a file loaded with `@embedFile`.

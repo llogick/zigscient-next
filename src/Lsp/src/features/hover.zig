@@ -534,6 +534,79 @@ fn hoverDefinitionNumberLiteral(
     };
 }
 
+fn hoverKeyword(
+    ds: *DocumentStore,
+    arena: std.mem.Allocator,
+    handle: *DocumentStore.Handle,
+    token_index: Ast.TokenIndex,
+    markup_kind: types.MarkupKind,
+    offset_encoding: offsets.Encoding,
+) error{OutOfMemory}!?types.Hover {
+    if (@hasDecl(DocumentStore.Compilation, "decoy")) return null;
+    const tree = &handle.tree;
+
+    switch (tree.tokenTag(token_index)) {
+        else => return null,
+        .keyword_enum,
+        .keyword_union,
+        .keyword_struct,
+        => {},
+    }
+
+    const nodes = try ast.nodesOverlappingIndex(arena, tree, tree.tokenStart(token_index));
+    if (nodes.len == 0) return null;
+
+    handle.computed_data.lock.lockSharedUncancelable(ds.io);
+    defer handle.computed_data.lock.unlockShared(ds.io);
+
+    if (handle.computed_data.zcu == null) return null;
+
+    const args = handle.computed_data.nodes.get(nodes[0]) orelse return null;
+
+    const pt: DocumentStore.Compilation.Zcu.PerThread = .activate(handle.computed_data.zcu.?, args.tid);
+    defer pt.deactivate();
+
+    switch (pt.zcu.intern_pool.indexToKey(args.ty)) {
+        .enum_type,
+        .union_type,
+        .struct_type,
+        => {
+            var output: std.ArrayList(u8) = .empty;
+
+            if (markup_kind == .markdown) {
+                try output.print(arena, "```zig\n", .{});
+            }
+
+            const ty = DocumentStore.Compilation.Type.fromInterned(args.ty);
+
+            try output.print(arena,
+                \\size: {}
+                \\align({t})
+                \\fqn: {f}
+            , .{
+                ty.abiSize(pt.zcu),
+                ty.abiAlignment(pt.zcu),
+                ty.fmt(pt),
+            });
+
+            if (markup_kind == .markdown) {
+                try output.print(arena, "\n```\n", .{});
+            }
+
+            return .{
+                .contents = .{ .markup_content = .{
+                    .kind = markup_kind,
+                    .value = output.items,
+                } },
+                .range = offsets.locToRange(handle.tree.source, offsets.tokenToLoc(tree, token_index), offset_encoding),
+            };
+        },
+        else => {},
+    }
+
+    return null;
+}
+
 pub fn hover(
     ds: *DocumentStore,
     analyser: *Analyser,
@@ -552,6 +625,7 @@ pub fn hover(
         .label_access, .label_decl => |loc| try hoverDefinitionLabel(ds, analyser, arena, handle, source_index, loc, markup_kind, offset_encoding),
         .enum_literal => try hoverDefinitionEnumLiteral(ds, analyser, arena, handle, source_index, markup_kind, offset_encoding),
         .number_literal, .char_literal => try hoverDefinitionNumberLiteral(arena, handle, source_index, markup_kind, offset_encoding),
+        .keyword => |token_index| try hoverKeyword(ds, arena, handle, token_index, markup_kind, offset_encoding),
         else => null,
     };
 
