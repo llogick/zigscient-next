@@ -8021,6 +8021,7 @@ pub const Metadata = packed struct(u32) {
         composite_vector_type,
         derived_pointer_type,
         derived_member_type,
+        derived_typedef_type,
         subroutine_type,
         enumerator_unsigned,
         enumerator_signed_positive,
@@ -8064,6 +8065,7 @@ pub const Metadata = packed struct(u32) {
                 .composite_vector_type,
                 .derived_pointer_type,
                 .derived_member_type,
+                .derived_typedef_type,
                 .subroutine_type,
                 .enumerator_unsigned,
                 .enumerator_signed_positive,
@@ -10463,15 +10465,18 @@ pub fn print(self: *Builder, w: *Writer) (Writer.Error || Allocator.Error)!void 
                 },
                 .derived_pointer_type,
                 .derived_member_type,
+                .derived_typedef_type,
                 => |kind| {
                     const extra = self.metadataExtraData(Metadata.DerivedType, metadata_item.data);
                     try metadata_formatter.specialized(.@"!", .DIDerivedType, .{
                         .tag = @as(enum {
                             DW_TAG_pointer_type,
                             DW_TAG_member,
+                            DW_TAG_typedef,
                         }, switch (kind) {
                             .derived_pointer_type => .DW_TAG_pointer_type,
                             .derived_member_type => .DW_TAG_member,
+                            .derived_typedef_type => .DW_TAG_typedef,
                             else => unreachable,
                         }),
                         .name = extra.name,
@@ -12360,6 +12365,30 @@ pub fn debugMemberType(
     );
 }
 
+pub fn debugTypedefType(
+    self: *Builder,
+    name: ?Metadata.String,
+    file: ?Metadata,
+    scope: ?Metadata,
+    line: u32,
+    underlying_type: ?Metadata,
+    size_in_bits: u64,
+    align_in_bits: u64,
+    offset_in_bits: u64,
+) Allocator.Error!Metadata {
+    try self.ensureUnusedMetadataCapacity(1, Metadata.DerivedType, 0);
+    return self.debugTypedefTypeAssumeCapacity(
+        name,
+        file,
+        scope,
+        line,
+        underlying_type,
+        size_in_bits,
+        align_in_bits,
+        offset_in_bits,
+    );
+}
+
 pub fn debugSubroutineType(self: *Builder, types_tuple: ?Metadata) Allocator.Error!Metadata {
     try self.ensureUnusedMetadataCapacity(1, Metadata.SubroutineType, 0);
     return self.debugSubroutineTypeAssumeCapacity(types_tuple);
@@ -12861,6 +12890,33 @@ fn debugMemberTypeAssumeCapacity(
 ) Metadata {
     assert(!self.strip);
     return self.metadataSimpleAssumeCapacity(.derived_member_type, Metadata.DerivedType{
+        .name = .wrap(name),
+        .file = .wrap(file),
+        .scope = .wrap(scope),
+        .line = line,
+        .underlying_type = .wrap(underlying_type),
+        .size_in_bits_lo = @truncate(size_in_bits),
+        .size_in_bits_hi = @truncate(size_in_bits >> 32),
+        .align_in_bits_lo = @truncate(align_in_bits),
+        .align_in_bits_hi = @truncate(align_in_bits >> 32),
+        .offset_in_bits_lo = @truncate(offset_in_bits),
+        .offset_in_bits_hi = @truncate(offset_in_bits >> 32),
+    });
+}
+
+fn debugTypedefTypeAssumeCapacity(
+    self: *Builder,
+    name: ?Metadata.String,
+    file: ?Metadata,
+    scope: ?Metadata,
+    line: u32,
+    underlying_type: ?Metadata,
+    size_in_bits: u64,
+    align_in_bits: u64,
+    offset_in_bits: u64,
+) Metadata {
+    assert(!self.strip);
+    return self.metadataSimpleAssumeCapacity(.derived_typedef_type, Metadata.DerivedType{
         .name = .wrap(name),
         .file = .wrap(file),
         .scope = .wrap(scope),
@@ -14223,12 +14279,14 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
                     },
                     .derived_pointer_type,
                     .derived_member_type,
+                    .derived_typedef_type,
                     => |kind| {
                         const extra = self.metadataExtraData(Metadata.DerivedType, data);
                         try metadata_block.writeAbbrevAdapted(MetadataBlock.DerivedType{
                             .tag = switch (kind) {
                                 .derived_pointer_type => DW.TAG.pointer_type,
                                 .derived_member_type => DW.TAG.member,
+                                .derived_typedef_type => DW.TAG.typedef,
                                 else => unreachable,
                             },
                             .name = extra.name,
