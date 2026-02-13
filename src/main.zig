@@ -60,12 +60,8 @@ pub const std_options: std.Options = .{
 
 pub const std_options_cwd = if (native_os == .wasi) wasi_cwd else null;
 
-const crash_report_enabled = switch (build_options.io_mode) {
-    .threaded => build_options.enable_debug_extensions,
-    .evented => false, // would use threadlocals in a way incompatible with evented
-};
-pub const panic = if (crash_report_enabled) crash_report.panic else std.debug.FullPanic(std.debug.defaultPanic);
-pub const debug = if (crash_report_enabled) crash_report.debug else struct {};
+pub const panic = crash_report.panic;
+pub const debug = crash_report.debug;
 
 var preopens: std.process.Preopens = .empty;
 pub fn wasi_cwd() Io.Dir {

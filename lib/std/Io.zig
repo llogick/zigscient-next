@@ -26,19 +26,17 @@ userdata: ?*anyopaque,
 vtable: *const VTable,
 
 pub const Threaded = @import("Io/Threaded.zig");
-pub const Evented = switch (builtin.os.tag) {
-    .linux => switch (builtin.cpu.arch) {
-        .x86_64, .aarch64 => IoUring,
-        else => void, // context-switching code not implemented yet
-    },
-    .dragonfly, .freebsd, .netbsd, .openbsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => switch (builtin.cpu.arch) {
-        .x86_64, .aarch64 => Kqueue,
-        else => void, // context-switching code not implemented yet
-    },
+
+pub const fiber = @import("Io/fiber.zig");
+pub const Evented = if (fiber.supported) switch (builtin.os.tag) {
+    .linux => Uring,
+    .dragonfly, .freebsd, .netbsd, .openbsd => Kqueue,
+    .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => Dispatch,
     else => void,
-};
+} else void; // context-switching code not implemented yet
+pub const Dispatch = @import("Io/Dispatch.zig");
 pub const Kqueue = @import("Io/Kqueue.zig");
-pub const IoUring = @import("Io/IoUring.zig");
+pub const Uring = @import("Io/Uring.zig");
 
 pub const Reader = @import("Io/Reader.zig");
 pub const Writer = @import("Io/Writer.zig");
@@ -51,6 +49,8 @@ pub const RwLock = @import("Io/RwLock.zig");
 pub const Semaphore = @import("Io/Semaphore.zig");
 
 pub const VTable = struct {
+    crashHandler: *const fn (?*anyopaque) void,
+
     /// If it returns `null` it means `result` has been already populated and
     /// `await` will be a no-op.
     ///
@@ -380,9 +380,9 @@ pub const Operation = union(enum) {
         pub const Pending = struct {
             node: List.DoubleNode,
             tag: Tag,
-            context: Context align(@max(@alignOf(usize), 4)),
+            userdata: Userdata align(@max(@alignOf(usize), 4)),
 
-            pub const Context = [3]usize;
+            pub const Userdata = [7]usize;
         };
 
         pub const Completion = struct {
@@ -433,7 +433,7 @@ pub const Batch = struct {
     submitted: Operation.List,
     pending: Operation.List,
     completed: Operation.List,
-    context: ?*anyopaque align(@max(@alignOf(?*anyopaque), 4)),
+    userdata: ?*anyopaque align(@max(@alignOf(?*anyopaque), 4)),
 
     /// After calling this, it is safe to unconditionally defer a call to
     /// `cancel`. `storage` is a pre-allocated buffer of undefined memory that
@@ -455,40 +455,40 @@ pub const Batch = struct {
             .submitted = .empty,
             .pending = .empty,
             .completed = .empty,
-            .context = null,
+            .userdata = null,
         };
     }
 
     /// Adds an operation to be performed at the next await call.
     /// Returns the index that will be returned by `next` after the operation completes.
     /// Asserts that no more than `storage.len` operations are active at a time.
-    pub fn add(b: *Batch, operation: Operation) u32 {
-        const index = b.unused.next;
-        b.addAt(index.toIndex(), operation);
+    pub fn add(batch: *Batch, operation: Operation) u32 {
+        const index = batch.unused.next;
+        batch.addAt(index.toIndex(), operation);
         return index;
     }
 
     /// Adds an operation to be performed at the next await call.
     /// After the operation completes, `next` will return `index`.
     /// Asserts that the operation at `index` is not active.
-    pub fn addAt(b: *Batch, index: u32, operation: Operation) void {
-        const storage = &b.storage[index];
+    pub fn addAt(batch: *Batch, index: u32, operation: Operation) void {
+        const storage = &batch.storage[index];
         const unused = storage.unused;
         switch (unused.prev) {
-            .none => b.unused.head = unused.next,
-            else => |prev_index| b.storage[prev_index.toIndex()].unused.next = unused.next,
+            .none => batch.unused.head = unused.next,
+            else => |prev_index| batch.storage[prev_index.toIndex()].unused.next = unused.next,
         }
         switch (unused.next) {
-            .none => b.unused.tail = unused.prev,
-            else => |next_index| b.storage[next_index.toIndex()].unused.prev = unused.prev,
+            .none => batch.unused.tail = unused.prev,
+            else => |next_index| batch.storage[next_index.toIndex()].unused.prev = unused.prev,
         }
 
-        switch (b.submitted.tail) {
-            .none => b.submitted.head = .fromIndex(index),
-            else => |tail_index| b.storage[tail_index.toIndex()].submission.node.next = .fromIndex(index),
+        switch (batch.submitted.tail) {
+            .none => batch.submitted.head = .fromIndex(index),
+            else => |tail_index| batch.storage[tail_index.toIndex()].submission.node.next = .fromIndex(index),
         }
         storage.* = .{ .submission = .{ .node = .{ .next = .none }, .operation = operation } };
-        b.submitted.tail = .fromIndex(index);
+        batch.submitted.tail = .fromIndex(index);
     }
 
     pub const Completion = struct {
@@ -504,22 +504,22 @@ pub const Batch = struct {
     ///
     /// Each completion returned from this function dequeues from the `Batch`.
     /// It is not required to dequeue all completions before awaiting again.
-    pub fn next(b: *Batch) ?Completion {
-        const index = b.completed.head;
+    pub fn next(batch: *Batch) ?Completion {
+        const index = batch.completed.head;
         if (index == .none) return null;
-        const storage = &b.storage[index.toIndex()];
+        const storage = &batch.storage[index.toIndex()];
         const completion = storage.completion;
         const next_index = completion.node.next;
-        b.completed.head = next_index;
-        if (next_index == .none) b.completed.tail = .none;
+        batch.completed.head = next_index;
+        if (next_index == .none) batch.completed.tail = .none;
 
-        const tail_index = b.unused.tail;
+        const tail_index = batch.unused.tail;
         switch (tail_index) {
-            .none => b.unused.head = index,
-            else => b.storage[tail_index.toIndex()].unused.next = index,
+            .none => batch.unused.head = index,
+            else => batch.storage[tail_index.toIndex()].unused.next = index,
         }
         storage.* = .{ .unused = .{ .prev = tail_index, .next = .none } };
-        b.unused.tail = index;
+        batch.unused.tail = index;
         return .{ .index = index.toIndex(), .result = completion.result };
     }
 
@@ -531,8 +531,8 @@ pub const Batch = struct {
     /// concurrency into the batched operations, but unlike `awaitConcurrent`,
     /// does not require it, and therefore cannot fail with
     /// `error.ConcurrencyUnavailable`.
-    pub fn awaitAsync(b: *Batch, io: Io) Cancelable!void {
-        return io.vtable.batchAwaitAsync(io.userdata, b);
+    pub fn awaitAsync(batch: *Batch, io: Io) Cancelable!void {
+        return io.vtable.batchAwaitAsync(io.userdata, batch);
     }
 
     pub const AwaitConcurrentError = ConcurrentError || Cancelable || Timeout.Error;
@@ -544,8 +544,8 @@ pub const Batch = struct {
     /// Unlike `awaitAsync`, this function requires the implementation to
     /// perform the operations concurrently and therefore can fail with
     /// `error.ConcurrencyUnavailable`.
-    pub fn awaitConcurrent(b: *Batch, io: Io, timeout: Timeout) AwaitConcurrentError!void {
-        return io.vtable.batchAwaitConcurrent(io.userdata, b, timeout);
+    pub fn awaitConcurrent(batch: *Batch, io: Io, timeout: Timeout) AwaitConcurrentError!void {
+        return io.vtable.batchAwaitConcurrent(io.userdata, batch, timeout);
     }
 
     /// Requests all pending operations to be interrupted, then waits for all
@@ -554,28 +554,28 @@ pub const Batch = struct {
     /// canceled operations will be absent from the iteration. Some operations
     /// may have successfully completed regardless of the cancel request and
     /// will appear in the iteration.
-    pub fn cancel(b: *Batch, io: Io) void {
+    pub fn cancel(batch: *Batch, io: Io) void {
         { // abort pending submissions
-            var tail_index = b.unused.tail;
-            defer b.unused.tail = tail_index;
-            var index = b.submitted.head;
-            errdefer b.submissions.head = index;
+            var tail_index = batch.unused.tail;
+            defer batch.unused.tail = tail_index;
+            var index = batch.submitted.head;
+            errdefer batch.submissions.head = index;
             while (index != .none) {
-                const next_index = b.storage[index.toIndex()].submission.node.next;
+                const next_index = batch.storage[index.toIndex()].submission.node.next;
                 switch (tail_index) {
-                    .none => b.unused.head = index,
-                    else => b.storage[tail_index.toIndex()].unused.next = index,
+                    .none => batch.unused.head = index,
+                    else => batch.storage[tail_index.toIndex()].unused.next = index,
                 }
-                b.storage[index.toIndex()] = .{ .unused = .{ .prev = tail_index, .next = .none } };
+                batch.storage[index.toIndex()] = .{ .unused = .{ .prev = tail_index, .next = .none } };
                 tail_index = index;
                 index = next_index;
             }
-            b.submitted = .{ .head = .none, .tail = .none };
+            batch.submitted = .{ .head = .none, .tail = .none };
         }
-        io.vtable.batchCancel(io.userdata, b);
-        assert(b.submitted.head == .none and b.submitted.tail == .none);
-        assert(b.pending.head == .none and b.pending.tail == .none);
-        assert(b.context == null); // that was the last chance to deallocate resources
+        io.vtable.batchCancel(io.userdata, batch);
+        assert(batch.submitted.head == .none and batch.submitted.tail == .none);
+        assert(batch.pending.head == .none and batch.pending.tail == .none);
+        assert(batch.userdata == null); // that was the last chance to deallocate resources
     }
 };
 
@@ -645,7 +645,7 @@ pub const Limit = enum(usize) {
     }
 
     pub fn nonzero(l: Limit) bool {
-        return @intFromEnum(l) > 0;
+        return l != .nothing;
     }
 
     /// Return a new limit reduced by `amount` or return `null` indicating

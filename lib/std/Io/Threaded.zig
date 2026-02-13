@@ -72,6 +72,9 @@ stderr_mutex_locker: std.Thread.Id = Thread.invalid_id,
 stderr_mutex_lock_count: usize = 0,
 
 argv0: Argv0,
+/// Protected by `mutex`. Determines whether `environ` has been
+/// memoized based on `process_environ`.
+environ_initialized: bool,
 environ: Environ,
 
 null_file: NullFile = .{},
@@ -125,9 +128,6 @@ pub const Argv0 = switch (native_os) {
 pub const Environ = struct {
     /// Unmodified data directly from the OS.
     process_environ: process.Environ,
-    /// Protected by `mutex`. Determines whether the other fields have been
-    /// memoized based on `process_environ`.
-    initialized: bool = false,
     /// Protected by `mutex`. Memoized based on `process_environ`. Tracks whether the
     /// environment variables are present, ignoring their value.
     exist: Exist = .{},
@@ -161,9 +161,6 @@ pub const Environ = struct {
     };
 
     pub fn scan(environ: *Environ, allocator: std.mem.Allocator) void {
-        if (environ.initialized) return;
-        environ.initialized = true;
-
         if (is_windows) {
             // This value expires with any call that modifies the environment,
             // which is outside of this Io implementation's control, so references
@@ -1589,6 +1586,7 @@ pub fn init(
         .old_sig_pipe = undefined,
         .have_signal_handler = init_single_threaded.have_signal_handler,
         .argv0 = options.argv0,
+        .environ_initialized = options.environ.block.isEmpty(),
         .environ = .{ .process_environ = options.environ },
         .worker_threads = init_single_threaded.worker_threads,
         .disable_memory_mapping = options.disable_memory_mapping,
@@ -1606,6 +1604,7 @@ pub fn init(
         .old_sig_pipe = undefined,
         .have_signal_handler = false,
         .argv0 = options.argv0,
+        .environ_initialized = options.environ.block.isEmpty(),
         .environ = .{ .process_environ = options.environ },
         .worker_threads = .init(null),
         .disable_memory_mapping = options.disable_memory_mapping,
@@ -1643,9 +1642,8 @@ pub const init_single_threaded: Threaded = .{
     .old_sig_pipe = undefined,
     .have_signal_handler = false,
     .argv0 = .empty,
-    .environ = .{ .process_environ = .{
-        .block = if (process.Environ.Block == process.Environ.GlobalBlock) .global else .empty,
-    } },
+    .environ_initialized = true,
+    .environ = .empty,
     .worker_threads = .init(null),
     .disable_memory_mapping = false,
 };
@@ -1768,6 +1766,8 @@ pub fn io(t: *Threaded) Io {
     return .{
         .userdata = t,
         .vtable = &.{
+            .crashHandler = crashHandler,
+
             .async = async,
             .concurrent = concurrent,
             .await = await,
@@ -1932,6 +1932,8 @@ pub fn ioBasic(t: *Threaded) Io {
     return .{
         .userdata = t,
         .vtable = &.{
+            .crashHandler = crashHandler,
+
             .async = async,
             .concurrent = concurrent,
             .await = await,
@@ -2156,6 +2158,14 @@ const use_libc_getrandom = std.c.versionCheck(if (builtin.abi.isAndroid()) .{
 });
 
 const use_dev_urandom = @TypeOf(posix.system.getrandom) == void and native_os == .linux;
+
+fn crashHandler(userdata: ?*anyopaque) void {
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
+    const thread = Thread.current orelse return;
+    thread.status.store(.{ .cancelation = .canceled, .awaitable = .null }, .monotonic);
+    thread.cancel_protection = .blocked;
+}
 
 fn async(
     userdata: ?*anyopaque,
@@ -2838,19 +2848,19 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
     var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
     var poll_storage: struct {
         gpa: std.mem.Allocator,
-        b: *Io.Batch,
+        batch: *Io.Batch,
         slice: []posix.pollfd,
         len: u32,
 
         fn add(storage: *@This(), file: Io.File, events: @FieldType(posix.pollfd, "events")) Io.ConcurrentError!void {
             const len = storage.len;
             if (len == poll_buffer_len) {
-                const slice: []posix.pollfd = if (storage.b.context) |context|
-                    @as([*]posix.pollfd, @ptrCast(@alignCast(context)))[0..storage.b.storage.len]
+                const slice: []posix.pollfd = if (storage.batch.userdata) |batch_userdata|
+                    @as([*]posix.pollfd, @ptrCast(@alignCast(batch_userdata)))[0..storage.batch.storage.len]
                 else allocation: {
-                    const allocation = storage.gpa.alloc(posix.pollfd, storage.b.storage.len) catch
+                    const allocation = storage.gpa.alloc(posix.pollfd, storage.batch.storage.len) catch
                         return error.ConcurrencyUnavailable;
-                    storage.b.context = allocation.ptr;
+                    storage.batch.userdata = allocation.ptr;
                     break :allocation allocation;
                 };
                 @memcpy(slice[0..poll_buffer_len], storage.slice);
@@ -2863,7 +2873,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
             };
             storage.len = len + 1;
         }
-    } = .{ .gpa = t.allocator, .b = b, .slice = &poll_buffer, .len = 0 };
+    } = .{ .gpa = t.allocator, .batch = b, .slice = &poll_buffer, .len = 0 };
     {
         var index = b.submitted.head;
         while (index != .none) {
@@ -2962,21 +2972,21 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
     }
 }
 
-const WindowsBatchPendingOperationContext = extern struct {
+const WindowsBatchOperationUserdata = extern struct {
     file: windows.HANDLE,
     iosb: windows.IO_STATUS_BLOCK,
 
-    const Erased = Io.Operation.Storage.Pending.Context;
+    const Erased = Io.Operation.Storage.Pending.Userdata;
 
     comptime {
-        assert(@sizeOf(Erased) <= @sizeOf(WindowsBatchPendingOperationContext));
+        assert(@sizeOf(WindowsBatchOperationUserdata) <= @sizeOf(Erased));
     }
 
-    fn toErased(context: *WindowsBatchPendingOperationContext) *Erased {
-        return @ptrCast(context);
+    fn toErased(userdata: *WindowsBatchOperationUserdata) *Erased {
+        return @ptrCast(userdata);
     }
 
-    fn fromErased(erased: *Erased) *WindowsBatchPendingOperationContext {
+    fn fromErased(erased: *Erased) *WindowsBatchOperationUserdata {
         return @ptrCast(erased);
     }
 };
@@ -2989,15 +2999,16 @@ fn batchCancel(userdata: ?*anyopaque, b: *Io.Batch) void {
         var index = b.pending.head;
         while (index != .none) {
             const pending = &b.storage[index.toIndex()].pending;
-            const context: *WindowsBatchPendingOperationContext = .fromErased(&pending.context);
+            const operation_userdata: *WindowsBatchOperationUserdata = .fromErased(&pending.userdata);
             var cancel_iosb: windows.IO_STATUS_BLOCK = undefined;
-            _ = windows.ntdll.NtCancelIoFileEx(context.file, &context.iosb, &cancel_iosb);
+            _ = windows.ntdll.NtCancelIoFileEx(operation_userdata.file, &operation_userdata.iosb, &cancel_iosb);
             index = pending.node.next;
         }
         while (b.pending.head != .none) waitForApcOrAlert();
-    } else if (b.context) |context| {
-        t.allocator.free(@as([*]posix.pollfd, @ptrCast(@alignCast(context)))[0..b.storage.len]);
-        b.context = null;
+    } else if (b.userdata) |batch_userdata| {
+        const poll_storage: [*]posix.pollfd = @ptrCast(@alignCast(batch_userdata));
+        t.allocator.free(poll_storage[0..b.storage.len]);
+        b.userdata = null;
     }
 }
 
@@ -3007,9 +3018,9 @@ fn batchApc(
     _: windows.ULONG,
 ) callconv(.winapi) void {
     const b: *Io.Batch = @ptrCast(@alignCast(apc_context));
-    const context: *WindowsBatchPendingOperationContext = @fieldParentPtr("iosb", iosb);
-    const erased_context = context.toErased();
-    const pending: *Io.Operation.Storage.Pending = @fieldParentPtr("context", erased_context);
+    const operation_userdata: *WindowsBatchOperationUserdata = @fieldParentPtr("iosb", iosb);
+    const erased_userdata = operation_userdata.toErased();
+    const pending: *Io.Operation.Storage.Pending = @fieldParentPtr("userdata", erased_userdata);
     switch (pending.node.prev) {
         .none => b.pending.head = pending.node.next,
         else => |prev_index| b.storage[prev_index.toIndex()].pending.node.next = pending.node.next,
@@ -3019,24 +3030,23 @@ fn batchApc(
         else => |next_index| b.storage[next_index.toIndex()].pending.node.prev = pending.node.prev,
     }
     const storage: *Io.Operation.Storage = @fieldParentPtr("pending", pending);
-    const index = storage - b.storage.ptr;
+    const index: Io.Operation.OptionalIndex = .fromIndex(storage - b.storage.ptr);
     switch (iosb.u.Status) {
         .CANCELLED => {
             const tail_index = b.unused.tail;
             switch (tail_index) {
-                .none => b.unused.head = .fromIndex(index),
-                else => b.storage[tail_index.toIndex()].unused.next = .fromIndex(index),
+                .none => b.unused.head = index,
+                else => b.storage[tail_index.toIndex()].unused.next = index,
             }
             storage.* = .{ .unused = .{ .prev = tail_index, .next = .none } };
-            b.unused.tail = .fromIndex(index);
+            b.unused.tail = index;
         },
         else => {
             switch (b.completed.tail) {
-                .none => b.completed.head = .fromIndex(index),
-                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next =
-                    .fromIndex(index),
+                .none => b.completed.head = index,
+                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
             }
-            b.completed.tail = .fromIndex(index);
+            b.completed.tail = index;
             const result: Io.Operation.Result = switch (pending.tag) {
                 .file_read_streaming => .{ .file_read_streaming = ntReadFileResult(iosb) },
                 .file_write_streaming => .{ .file_write_streaming = ntWriteFileResult(iosb) },
@@ -3057,38 +3067,38 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
         storage.* = .{ .pending = .{
             .node = .{ .prev = b.pending.tail, .next = .none },
             .tag = submission.operation,
-            .context = undefined,
+            .userdata = undefined,
         } };
         switch (b.pending.tail) {
             .none => b.pending.head = index,
             else => |tail_index| b.storage[tail_index.toIndex()].pending.node.next = index,
         }
         b.pending.tail = index;
-        const context: *WindowsBatchPendingOperationContext = .fromErased(&storage.pending.context);
+        const operation_userdata: *WindowsBatchOperationUserdata = .fromErased(&storage.pending.userdata);
         errdefer {
-            context.iosb = .{ .u = .{ .Status = .CANCELLED }, .Information = undefined };
-            batchApc(b, &context.iosb, 0);
+            operation_userdata.iosb = .{ .u = .{ .Status = .CANCELLED }, .Information = undefined };
+            batchApc(b, &operation_userdata.iosb, 0);
         }
         switch (submission.operation) {
             .file_read_streaming => |o| o: {
                 var data_index: usize = 0;
                 while (o.data.len - data_index != 0 and o.data[data_index].len == 0) data_index += 1;
                 if (o.data.len - data_index == 0) {
-                    context.iosb = .{ .u = .{ .Status = .SUCCESS }, .Information = 0 };
-                    batchApc(b, &context.iosb, 0);
+                    operation_userdata.iosb = .{ .u = .{ .Status = .SUCCESS }, .Information = 0 };
+                    batchApc(b, &operation_userdata.iosb, 0);
                     break :o;
                 }
                 const buffer = o.data[data_index];
                 const short_buffer_len = std.math.lossyCast(u32, buffer.len);
 
                 if (o.file.flags.nonblocking) {
-                    context.file = o.file.handle;
+                    operation_userdata.file = o.file.handle;
                     switch (windows.ntdll.NtReadFile(
                         o.file.handle,
                         null, // event
                         &batchApc,
                         b,
-                        &context.iosb,
+                        &operation_userdata.iosb,
                         buffer.ptr,
                         short_buffer_len,
                         null, // byte offset
@@ -3097,8 +3107,8 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         .PENDING, .SUCCESS => {},
                         .CANCELLED => unreachable,
                         else => |status| {
-                            context.iosb.u.Status = status;
-                            batchApc(b, &context.iosb, 0);
+                            operation_userdata.iosb.u.Status = status;
+                            batchApc(b, &operation_userdata.iosb, 0);
                         },
                     }
                 } else {
@@ -3110,7 +3120,7 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         null, // event
                         null, // APC routine
                         null, // APC context
-                        &context.iosb,
+                        &operation_userdata.iosb,
                         buffer.ptr,
                         short_buffer_len,
                         null, // byte offset
@@ -3123,9 +3133,8 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         },
                         else => |status| {
                             syscall.finish();
-
-                            context.iosb.u.Status = status;
-                            batchApc(b, &context.iosb, 0);
+                            operation_userdata.iosb.u.Status = status;
+                            batchApc(b, &operation_userdata.iosb, 0);
                             break;
                         },
                     };
@@ -3134,18 +3143,18 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
             .file_write_streaming => |o| o: {
                 const buffer = windowsWriteBuffer(o.header, o.data, o.splat);
                 if (buffer.len == 0) {
-                    context.iosb = .{ .u = .{ .Status = .SUCCESS }, .Information = 0 };
-                    batchApc(b, &context.iosb, 0);
+                    operation_userdata.iosb = .{ .u = .{ .Status = .SUCCESS }, .Information = 0 };
+                    batchApc(b, &operation_userdata.iosb, 0);
                     break :o;
                 }
                 if (o.file.flags.nonblocking) {
-                    context.file = o.file.handle;
+                    operation_userdata.file = o.file.handle;
                     switch (windows.ntdll.NtWriteFile(
                         o.file.handle,
                         null, // event
                         &batchApc,
                         b,
-                        &context.iosb,
+                        &operation_userdata.iosb,
                         buffer.ptr,
                         @intCast(buffer.len),
                         null, // byte offset
@@ -3154,8 +3163,8 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         .PENDING, .SUCCESS => {},
                         .CANCELLED => unreachable,
                         else => |status| {
-                            context.iosb.u.Status = status;
-                            batchApc(b, &context.iosb, 0);
+                            operation_userdata.iosb.u.Status = status;
+                            batchApc(b, &operation_userdata.iosb, 0);
                         },
                     }
                 } else {
@@ -3167,7 +3176,7 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         null, // event
                         null, // APC routine
                         null, // APC context
-                        &context.iosb,
+                        &operation_userdata.iosb,
                         buffer.ptr,
                         @intCast(buffer.len),
                         null, // byte offset
@@ -3180,9 +3189,8 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         },
                         else => |status| {
                             syscall.finish();
-
-                            context.iosb.u.Status = status;
-                            batchApc(b, &context.iosb, 0);
+                            operation_userdata.iosb.u.Status = status;
+                            batchApc(b, &operation_userdata.iosb, 0);
                             break;
                         },
                     };
@@ -3194,13 +3202,13 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                     else => &windows.ntdll.NtDeviceIoControlFile,
                 };
                 if (o.file.flags.nonblocking) {
-                    context.file = o.file.handle;
+                    operation_userdata.file = o.file.handle;
                     switch (NtControlFile(
                         o.file.handle,
                         null, // event
                         &batchApc,
                         b,
-                        &context.iosb,
+                        &operation_userdata.iosb,
                         o.code,
                         if (o.in.len > 0) o.in.ptr else null,
                         @intCast(o.in.len),
@@ -3210,8 +3218,8 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         .PENDING, .SUCCESS => {},
                         .CANCELLED => unreachable,
                         else => |status| {
-                            context.iosb.u.Status = status;
-                            batchApc(b, &context.iosb, 0);
+                            operation_userdata.iosb.u.Status = status;
+                            batchApc(b, &operation_userdata.iosb, 0);
                         },
                     }
                 } else {
@@ -3223,7 +3231,7 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         null, // event
                         null, // APC routine
                         null, // APC context
-                        &context.iosb,
+                        &operation_userdata.iosb,
                         o.code,
                         if (o.in.len > 0) o.in.ptr else null,
                         @intCast(o.in.len),
@@ -3237,9 +3245,8 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         },
                         else => |status| {
                             syscall.finish();
-
-                            context.iosb.u.Status = status;
-                            batchApc(b, &context.iosb, 0);
+                            operation_userdata.iosb.u.Status = status;
+                            batchApc(b, &operation_userdata.iosb, 0);
                             break;
                         },
                     };
@@ -3816,7 +3823,13 @@ fn filePathKind(t: *Threaded, dir: Dir, sub_path: []const u8) !File.Kind {
         const syscall: Syscall = try .start();
         while (true) {
             var statx = std.mem.zeroes(linux.Statx);
-            switch (linux.errno(linux.statx(dir.handle, sub_path_posix, 0, .{ .TYPE = true }, &statx))) {
+            switch (linux.errno(linux.statx(
+                dir.handle,
+                sub_path_posix,
+                linux.AT.NO_AUTOMOUNT | linux.AT.SYMLINK_NOFOLLOW,
+                .{ .TYPE = true },
+                &statx,
+            ))) {
                 .SUCCESS => {
                     syscall.finish();
                     if (!statx.mask.TYPE) return error.Unexpected;
@@ -3832,7 +3845,7 @@ fn filePathKind(t: *Threaded, dir: Dir, sub_path: []const u8) !File.Kind {
         }
     }
 
-    const stat = try dirStatFile(t, dir, sub_path, .{});
+    const stat = try dirStatFile(t, dir, sub_path, .{ .follow_symlinks = false });
     return stat.kind;
 }
 
@@ -13573,13 +13586,13 @@ fn netWriteWindows(
     addWsaBuf(&iovecs, &len, header);
     for (data[0 .. data.len - 1]) |bytes| addWsaBuf(&iovecs, &len, bytes);
     const pattern = data[data.len - 1];
+    var backup_buffer: [64]u8 = undefined;
     if (iovecs.len - len != 0) switch (splat) {
         0 => {},
         1 => addWsaBuf(&iovecs, &len, pattern),
         else => switch (pattern.len) {
             0 => {},
             1 => {
-                var backup_buffer: [64]u8 = undefined;
                 const splat_buffer = &backup_buffer;
                 const memset_len = @min(splat_buffer.len, splat);
                 const buf = splat_buffer[0..memset_len];
@@ -14519,7 +14532,7 @@ pub fn statFromLinux(stx: *const std.os.linux.Statx) Io.UnexpectedError!File.Sta
     };
 }
 
-fn statxKind(stx_mode: u16) File.Kind {
+pub fn statxKind(stx_mode: u16) File.Kind {
     return switch (stx_mode & std.os.linux.S.IFMT) {
         std.os.linux.S.IFDIR => .directory,
         std.os.linux.S.IFCHR => .character_device,
@@ -14532,7 +14545,7 @@ fn statxKind(stx_mode: u16) File.Kind {
     };
 }
 
-fn statFromPosix(st: *const posix.Stat) File.Stat {
+pub fn statFromPosix(st: *const posix.Stat) File.Stat {
     const atime = st.atime();
     const mtime = st.mtime();
     const ctime = st.ctime();
@@ -15116,7 +15129,9 @@ const WindowsEnvironStrings = struct {
 fn scanEnviron(t: *Threaded) void {
     mutexLock(&t.mutex);
     defer mutexUnlock(&t.mutex);
+    if (t.environ_initialized) return;
     t.environ.scan(t.allocator);
+    t.environ_initialized = true;
 }
 
 fn processReplace(userdata: ?*anyopaque, options: process.ReplaceOptions) process.ReplaceError {
@@ -15256,7 +15271,7 @@ fn spawnPosix(t: *Threaded, options: process.SpawnOptions) process.SpawnError!Sp
 
     // This pipe communicates to the parent errors in the child between `fork` and `execvpe`.
     // It is closed by the child (via CLOEXEC) without writing if `execvpe` succeeds.
-    const err_pipe: [2]posix.fd_t = try pipe2(.{ .CLOEXEC = true });
+    const err_pipe = try pipe2(.{ .CLOEXEC = true });
     errdefer destroyPipe(err_pipe);
 
     t.scanEnviron(); // for PATH
@@ -15327,7 +15342,7 @@ fn spawnPosix(t: *Threaded, options: process.SpawnOptions) process.SpawnError!Sp
         }
 
         if (options.start_suspended) {
-            switch (posix.errno(posix.system.kill(posix.system.getpid(), .STOP))) {
+            switch (posix.errno(posix.system.kill(0, .STOP))) {
                 .SUCCESS => {},
                 .PERM => forkBail(ep1, error.PermissionDenied),
                 else => forkBail(ep1, error.Unexpected),
@@ -15539,15 +15554,15 @@ fn childCleanupWindows(child: *process.Child) void {
     windows.CloseHandle(child.thread_handle);
     child.thread_handle = undefined;
 
-    if (child.stdin) |*stdin| {
+    if (child.stdin) |stdin| {
         windows.CloseHandle(stdin.handle);
         child.stdin = null;
     }
-    if (child.stdout) |*stdout| {
+    if (child.stdout) |stdout| {
         windows.CloseHandle(stdout.handle);
         child.stdout = null;
     }
-    if (child.stderr) |*stderr| {
+    if (child.stderr) |stderr| {
         windows.CloseHandle(stderr.handle);
         child.stderr = null;
     }
@@ -15621,7 +15636,7 @@ fn childWaitPosix(child: *process.Child) process.Child.WaitError!process.Child.T
     };
 }
 
-fn statusToTerm(status: u32) process.Child.Term {
+pub fn statusToTerm(status: u32) process.Child.Term {
     return if (posix.W.IFEXITED(status))
         .{ .exited = posix.W.EXITSTATUS(status) }
     else if (posix.W.IFSIGNALED(status))
@@ -15677,15 +15692,15 @@ fn childKillPosix(child: *process.Child) !void {
 }
 
 fn childCleanupPosix(child: *process.Child) void {
-    if (child.stdin) |*stdin| {
+    if (child.stdin) |stdin| {
         closeFd(stdin.handle);
         child.stdin = null;
     }
-    if (child.stdout) |*stdout| {
+    if (child.stdout) |stdout| {
         closeFd(stdout.handle);
         child.stdout = null;
     }
-    if (child.stderr) |*stderr| {
+    if (child.stderr) |stderr| {
         closeFd(stderr.handle);
         child.stderr = null;
     }
@@ -15818,21 +15833,57 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
         .dwFlags = windows.STARTF_USESTDHANDLES,
         .hStdInput = switch (options.stdin) {
             .inherit => peb.ProcessParameters.hStdInput,
-            .file => |file| file.handle,
+            .file => |file| try OpenFile(&.{}, .{
+                .access_mask = .{
+                    .STANDARD = .{ .SYNCHRONIZE = true },
+                    .GENERIC = .{ .READ = true },
+                },
+                .dir = file.handle,
+                .sa = &.{
+                    .nLength = @sizeOf(windows.SECURITY_ATTRIBUTES),
+                    .lpSecurityDescriptor = null,
+                    .bInheritHandle = windows.TRUE,
+                },
+                .creation = .OPEN,
+            }),
             .ignore => nul_handle,
             .pipe => stdin_pipe[1],
             .close => null,
         },
         .hStdOutput = switch (options.stdout) {
             .inherit => peb.ProcessParameters.hStdOutput,
-            .file => |file| file.handle,
+            .file => |file| try OpenFile(&.{}, .{
+                .access_mask = .{
+                    .STANDARD = .{ .SYNCHRONIZE = true },
+                    .GENERIC = .{ .WRITE = true },
+                },
+                .dir = file.handle,
+                .sa = &.{
+                    .nLength = @sizeOf(windows.SECURITY_ATTRIBUTES),
+                    .lpSecurityDescriptor = null,
+                    .bInheritHandle = windows.TRUE,
+                },
+                .creation = .OPEN,
+            }),
             .ignore => nul_handle,
             .pipe => stdout_pipe[1],
             .close => null,
         },
         .hStdError = switch (options.stderr) {
             .inherit => peb.ProcessParameters.hStdError,
-            .file => |file| file.handle,
+            .file => |file| try OpenFile(&.{}, .{
+                .access_mask = .{
+                    .STANDARD = .{ .SYNCHRONIZE = true },
+                    .GENERIC = .{ .WRITE = true },
+                },
+                .dir = file.handle,
+                .sa = &.{
+                    .nLength = @sizeOf(windows.SECURITY_ATTRIBUTES),
+                    .lpSecurityDescriptor = null,
+                    .bInheritHandle = windows.TRUE,
+                },
+                .creation = .OPEN,
+            }),
             .ignore => nul_handle,
             .pipe => stderr_pipe[1],
             .close => null,
@@ -16030,6 +16081,10 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
         .id = piProcInfo.hProcess,
         .thread_handle = piProcInfo.hThread,
         .stdin = stdin: switch (options.stdin) {
+            .file => {
+                windows.CloseHandle(siStartInfo.hStdInput.?);
+                break :stdin null;
+            },
             .pipe => {
                 windows.CloseHandle(stdin_pipe[1]);
                 break :stdin .{ .handle = stdin_pipe[0], .flags = .{ .nonblocking = false } };
@@ -16037,6 +16092,10 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
             else => null,
         },
         .stdout = stdout: switch (options.stdout) {
+            .file => {
+                windows.CloseHandle(siStartInfo.hStdOutput.?);
+                break :stdout null;
+            },
             .pipe => {
                 windows.CloseHandle(stdout_pipe[1]);
                 break :stdout .{ .handle = stdout_pipe[0], .flags = .{ .nonblocking = true } };
@@ -16044,6 +16103,10 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
             else => null,
         },
         .stderr = stderr: switch (options.stderr) {
+            .file => {
+                windows.CloseHandle(siStartInfo.hStdError.?);
+                break :stderr null;
+            },
             .pipe => {
                 windows.CloseHandle(stderr_pipe[1]);
                 break :stderr .{ .handle = stderr_pipe[0], .flags = .{ .nonblocking = true } };
@@ -16053,6 +16116,8 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
         .request_resource_usage_statistics = options.request_resource_usage_statistics,
     };
 }
+
+fn inheritFile() windows.HANDLE {}
 
 fn getCngDevice(t: *Threaded) Io.RandomSecureError!windows.HANDLE {
     {
@@ -17758,11 +17823,7 @@ const parking_futex = struct {
                 waiter.node.next = waking_head;
                 waking_head = &waiter.node;
                 num_removed += 1;
-                // Signal to `waiter` that they're about to be unparked, in case we're racing with their
-                // timeout. See corresponding logic in `wake`.
-                waiter.address = 0;
             }
-
             _ = bucket.num_waiters.fetchSub(num_removed, .monotonic);
         }
 
@@ -19056,7 +19117,7 @@ const OpenError = error{
 const OpenFileOptions = struct {
     access_mask: windows.ACCESS_MASK,
     dir: ?windows.HANDLE = null,
-    sa: ?*windows.SECURITY_ATTRIBUTES = null,
+    sa: ?*const windows.SECURITY_ATTRIBUTES = null,
     share_access: windows.FILE.SHARE = .VALID_FLAGS,
     creation: windows.FILE.CREATE_DISPOSITION,
     filter: Filter = .non_directory_only,
@@ -19076,10 +19137,10 @@ const OpenFileOptions = struct {
 
 /// TODO: inline this logic everywhere and delete this function
 fn OpenFile(sub_path_w: []const u16, options: OpenFileOptions) OpenError!windows.HANDLE {
-    if (std.mem.eql(u16, sub_path_w, &[_]u16{'.'}) and options.filter == .non_directory_only) {
+    if (std.mem.eql(u16, sub_path_w, &.{'.'}) and options.filter == .non_directory_only) {
         return error.IsDir;
     }
-    if (std.mem.eql(u16, sub_path_w, &[_]u16{ '.', '.' }) and options.filter == .non_directory_only) {
+    if (std.mem.eql(u16, sub_path_w, &.{ '.', '.' }) and options.filter == .non_directory_only) {
         return error.IsDir;
     }
 

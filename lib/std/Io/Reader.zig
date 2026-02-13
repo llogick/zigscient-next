@@ -375,7 +375,7 @@ pub fn appendRemainingAligned(
     defer list.* = a.toArrayListAligned(alignment);
 
     var remaining = limit;
-    while (remaining.nonzero()) {
+    while (remaining != .nothing) {
         const n = stream(r, &a.writer, remaining) catch |err| switch (err) {
             error.EndOfStream => return,
             error.WriteFailed => return error.OutOfMemory,

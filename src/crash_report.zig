@@ -1,13 +1,18 @@
+pub const enabled = switch (build_options.io_mode) {
+    .threaded => build_options.enable_debug_extensions,
+    .evented => false, // would use threadlocals in a way incompatible with evented
+};
+
 /// We override the panic implementation to our own one, so we can print our own information before
 /// calling the default panic handler. This declaration must be re-exposed from `@import("root")`.
-pub const panic = std.debug.FullPanic(panicImpl);
+pub const panic = std.debug.FullPanic(if (enabled) panicImpl else std.debug.defaultPanic);
 
 /// We let std install its segfault handler, but we override the target-agnostic handler it calls,
 /// so we can print our own information before calling the default segfault logic. This declaration
 /// must be re-exposed from `@import("root")`.
-pub const debug = struct {
+pub const debug = if (enabled) struct {
     pub const handleSegfault = handleSegfaultImpl;
-};
+} else struct {};
 
 /// Printed in panic messages when suggesting a command to run, allowing copy-pasting the command.
 /// Set by `main` as soon as arguments are known. The value here is a default in case we somehow
@@ -25,7 +30,7 @@ fn panicImpl(msg: []const u8, first_trace_addr: ?usize) noreturn {
     std.debug.defaultPanic(msg, first_trace_addr orelse @returnAddress());
 }
 
-pub const AnalyzeBody = struct {
+pub const AnalyzeBody = if (enabled) struct {
     parent: ?*AnalyzeBody,
     sema: *Sema,
     block: *Sema.Block,
@@ -52,9 +57,15 @@ pub const AnalyzeBody = struct {
         std.debug.assert(current.? == ab); // `Sema.analyzeBodyInner` did not match push/pop calls
         current = ab.parent;
     }
+} else struct {
+    const current: ?noreturn = null;
+    // Dummy implementation, with functions marked `inline` to avoid interfering with tail calls.
+    pub inline fn push(_: AnalyzeBody, _: *Sema, _: *Sema.Block, _: []const Zir.Inst.Index) void {}
+    pub inline fn pop(_: AnalyzeBody) void {}
+    pub inline fn setBodyIndex(_: @This(), _: usize) void {}
 };
 
-pub const CodegenFunc = struct {
+pub const CodegenFunc = if (enabled) struct {
     zcu: *const Zcu,
     func_index: InternPool.Index,
     threadlocal var current: ?CodegenFunc = null;
@@ -66,6 +77,11 @@ pub const CodegenFunc = struct {
         std.debug.assert(current.?.func_index == func_index);
         current = null;
     }
+} else struct {
+    const current: ?noreturn = null;
+    // Dummy implementation
+    pub fn start(_: *const Zcu, _: InternPool.Index) void {}
+    pub fn stop(_: InternPool.Index) void {}
 };
 
 fn dumpCrashContext() Io.Writer.Error!void {
@@ -78,6 +94,8 @@ fn dumpCrashContext() Io.Writer.Error!void {
     };
     if (S.already_dumped) return;
     S.already_dumped = true;
+
+    std.Options.debug_io.vtable.crashHandler(std.Options.debug_io.userdata);
 
     // TODO: this does mean that a different thread could grab the stderr mutex between the context
     // and the actual panic printing, which would be quite confusing.
@@ -170,3 +188,5 @@ const Zcu = @import("Zcu.zig");
 const InternPool = @import("InternPool.zig");
 const dev = @import("dev.zig");
 const print_zir = @import("print_zir.zig");
+
+const build_options = @import("build_options");

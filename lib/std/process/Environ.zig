@@ -39,6 +39,10 @@ pub const GlobalBlock = struct {
     pub const global: GlobalBlock = .{ .use_global = true };
 
     pub fn deinit(_: GlobalBlock, _: Allocator) void {}
+
+    pub fn isEmpty(block: GlobalBlock) bool {
+        return !block.use_global;
+    }
 };
 
 pub const PosixBlock = struct {
@@ -49,6 +53,10 @@ pub const PosixBlock = struct {
     pub fn deinit(block: PosixBlock, gpa: Allocator) void {
         for (block.slice) |entry| gpa.free(mem.span(entry.?));
         gpa.free(block.slice);
+    }
+
+    pub fn isEmpty(block: PosixBlock) bool {
+        return block.slice.len == 0;
     }
 
     pub const View = struct {
@@ -70,6 +78,10 @@ pub const WindowsBlock = struct {
 
     pub fn deinit(block: WindowsBlock, gpa: Allocator) void {
         gpa.free(block.slice);
+    }
+
+    pub fn isEmpty(block: WindowsBlock) bool {
+        return block.slice[0] == 0;
     }
 
     pub const View = struct {
