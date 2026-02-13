@@ -275,10 +275,16 @@ potentially_outdated: std.AutoArrayHashMapUnmanaged(AnalUnit, u32) = .empty,
 /// Value is the number of PO dependencies of this AnalUnit.
 /// Once this value drops to 0, the AnalUnit is a candidate for re-analysis.
 outdated: std.AutoArrayHashMapUnmanaged(AnalUnit, u32) = .empty,
-/// This contains all `AnalUnit`s in `outdated` whose PO dependency count is 0.
+/// This is the set of all `AnalUnit`s in `outdated` whose PO dependency count is 0.
 /// Such `AnalUnit`s are ready for immediate re-analysis.
 /// See `findOutdatedToAnalyze` for details.
-outdated_ready: std.AutoArrayHashMapUnmanaged(AnalUnit, void) = .empty,
+outdated_ready: struct {
+    /// These are separate from other units because it allows `findOutdatedToAnalyze` to prioritize
+    /// functions, which is useful because it means they will be sent to codegen more quickly.
+    funcs: std.AutoArrayHashMapUnmanaged(InternPool.Index, void),
+    /// Does not contain `.func` units.
+    other: std.AutoArrayHashMapUnmanaged(AnalUnit, void),
+} = .{ .funcs = .empty, .other = .empty },
 /// This contains a list of AnalUnit whose analysis or codegen failed, but the
 /// failure was something like running out of disk space, and trying again may
 /// succeed. On the next update, we will flush this list, marking all members of
@@ -2835,7 +2841,8 @@ pub fn deinit(zcu: *Zcu) void {
 
         zcu.potentially_outdated.deinit(gpa);
         zcu.outdated.deinit(gpa);
-        zcu.outdated_ready.deinit(gpa);
+        zcu.outdated_ready.funcs.deinit(gpa);
+        zcu.outdated_ready.other.deinit(gpa);
         zcu.retryable_failures.deinit(gpa);
 
         zcu.test_functions.deinit(gpa);
@@ -3065,6 +3072,7 @@ pub fn markDependeeOutdated(
     marked_po: enum { not_marked_po, marked_po },
     dependee: InternPool.Dependee,
 ) !void {
+    const gpa = zcu.comp.gpa;
     deps_log.debug("outdated dependee: {f}", .{zcu.fmtDependee(dependee)});
     var it = zcu.intern_pool.dependencyIterator(dependee);
     if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
@@ -3078,7 +3086,10 @@ pub fn markDependeeOutdated(
                     deps_log.debug("outdated {f} => already outdated {f} po_deps={}", .{ zcu.fmtDependee(dependee), zcu.fmtAnalUnit(depender), po_dep_count.* });
                     if (po_dep_count.* == 0) {
                         deps_log.debug("outdated ready: {f}", .{zcu.fmtAnalUnit(depender)});
-                        try zcu.outdated_ready.put(zcu.gpa, depender, {});
+                        switch (depender.unwrap()) {
+                            .func => |func| try zcu.outdated_ready.funcs.put(gpa, func, {}),
+                            else => try zcu.outdated_ready.other.put(gpa, depender, {}),
+                        }
                     }
                 },
             }
@@ -3094,14 +3105,17 @@ pub fn markDependeeOutdated(
             },
         };
         try zcu.outdated.putNoClobber(
-            zcu.gpa,
+            gpa,
             depender,
             new_po_dep_count,
         );
         deps_log.debug("outdated {f} => new outdated {f} po_deps={}", .{ zcu.fmtDependee(dependee), zcu.fmtAnalUnit(depender), new_po_dep_count });
         if (new_po_dep_count == 0) {
             deps_log.debug("outdated ready: {f}", .{zcu.fmtAnalUnit(depender)});
-            try zcu.outdated_ready.put(zcu.gpa, depender, {});
+            switch (depender.unwrap()) {
+                .func => |func| try zcu.outdated_ready.funcs.put(gpa, func, {}),
+                else => try zcu.outdated_ready.other.put(gpa, depender, {}),
+            }
         }
         // If this is a Decl and was not previously PO, we must recursively
         // mark dependencies on its tyval as PO.
@@ -3119,6 +3133,7 @@ pub fn markPoDependeeUpToDate(zcu: *Zcu, dependee: InternPool.Dependee) !void {
 }
 /// Assumes that `zcu.outdated_lock` is already held exclusively.
 fn markPoDependeeUpToDateInner(zcu: *Zcu, dependee: InternPool.Dependee) !void {
+    const gpa = zcu.comp.gpa;
     deps_log.debug("up-to-date dependee: {f}", .{zcu.fmtDependee(dependee)});
     var it = zcu.intern_pool.dependencyIterator(dependee);
     while (it.next()) |depender| {
@@ -3129,7 +3144,10 @@ fn markPoDependeeUpToDateInner(zcu: *Zcu, dependee: InternPool.Dependee) !void {
             deps_log.debug("up-to-date {f} => {f} po_deps={}", .{ zcu.fmtDependee(dependee), zcu.fmtAnalUnit(depender), po_dep_count.* });
             if (po_dep_count.* == 0) {
                 deps_log.debug("outdated ready: {f}", .{zcu.fmtAnalUnit(depender)});
-                try zcu.outdated_ready.put(zcu.gpa, depender, {});
+                switch (depender.unwrap()) {
+                    .func => |func| try zcu.outdated_ready.funcs.put(gpa, func, {}),
+                    else => try zcu.outdated_ready.other.put(gpa, depender, {}),
+                }
             }
             continue;
         }
@@ -3167,7 +3185,8 @@ fn markPoDependeeUpToDateInner(zcu: *Zcu, dependee: InternPool.Dependee) !void {
 /// in turn be PO, due to a dependency on the original AnalUnit's tyval or IES.
 ///
 /// Assumes that `zcu.outdated_lock` is already held exclusively.
-fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUnit) !void {
+fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUnit) Allocator.Error!void {
+    const gpa = zcu.comp.gpa;
     const ip = &zcu.intern_pool;
     const dependee: InternPool.Dependee = switch (maybe_outdated.unwrap()) {
         .@"comptime" => return, // analysis of a comptime decl can't outdate any dependencies
@@ -3181,10 +3200,12 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
     var it = ip.dependencyIterator(dependee);
     while (it.next()) |po| {
         if (zcu.outdated.getPtr(po)) |po_dep_count| {
-            // This dependency is already outdated, but it now has one more PO
-            // dependency.
+            // This dependency is already outdated, but it now has one more PO dependency.
             if (po_dep_count.* == 0) {
-                _ = zcu.outdated_ready.swapRemove(po);
+                switch (po.unwrap()) {
+                    .func => |func| _ = zcu.outdated_ready.funcs.swapRemove(func),
+                    else => _ = zcu.outdated_ready.other.swapRemove(po),
+                }
             }
             po_dep_count.* += 1;
             deps_log.debug("po {f} => {f} [outdated] po_deps={}", .{ zcu.fmtDependee(dependee), zcu.fmtAnalUnit(po), po_dep_count.* });
@@ -3196,7 +3217,7 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
             deps_log.debug("po {f} => {f} po_deps={}", .{ zcu.fmtDependee(dependee), zcu.fmtAnalUnit(po), n.* });
             continue;
         }
-        try zcu.potentially_outdated.putNoClobber(zcu.gpa, po, 1);
+        try zcu.potentially_outdated.putNoClobber(gpa, po, 1);
         deps_log.debug("po {f} => {f} po_deps=1", .{ zcu.fmtDependee(dependee), zcu.fmtAnalUnit(po) });
         // This AnalUnit was not already PO, so we must recursively mark its dependers as also PO.
         try zcu.markTransitiveDependersPotentiallyOutdated(po);
@@ -3208,10 +3229,20 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
 /// recursive analysis (all of its previously-marked dependencies are already up-to-date), because
 /// recursive analysis can cause over-analysis on incremental updates.
 pub fn findOutdatedToAnalyze(zcu: *Zcu) Allocator.Error!?AnalUnit {
-    // MLUGG TODO: priorize `func` units, just like we used to do in the Compilation job queue.
+    // We prioritize functions, because the sooner they get analyzed, the sooner they can be send to
+    // the codegen backend and linker, which are usually running in parallel (so this can increase
+    // parallelism).
+    // TODO: perhaps we should also experiment with *avoiding* functions if the codegen/link queue
+    // is backed up (for instance due to a very large function). That could help minimize blocking
+    // on the main thread in `CodegenTaskPool.start` waiting for the linker to catch up.
+    if (zcu.outdated_ready.funcs.count() > 0) {
+        const unit: AnalUnit = .wrap(.{ .func = zcu.outdated_ready.funcs.keys()[0] });
+        log.debug("findOutdatedToAnalyze: {f}", .{zcu.fmtAnalUnit(unit)});
+        return unit;
+    }
 
-    if (zcu.outdated_ready.count() > 0) {
-        const unit = zcu.outdated_ready.keys()[0];
+    if (zcu.outdated_ready.other.count() > 0) {
+        const unit = zcu.outdated_ready.other.keys()[0];
         log.debug("findOutdatedToAnalyze: {f}", .{zcu.fmtAnalUnit(unit)});
         return unit;
     }
@@ -3502,13 +3533,12 @@ pub fn ensureFuncBodyAnalysisQueued(zcu: *Zcu, func: InternPool.Index) !void {
     assert(func == ip.unwrapCoercedFunc(func)); // analyze the body of the original function, not a coerced one
     if (ip.setWantRuntimeFnAnalysis(io, func)) {
         // This is the first reference to this function, so we must ensure it will be analyzed.
-        const unit: AnalUnit = .wrap(.{ .func = func });
         if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
         defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
         try zcu.outdated.ensureUnusedCapacity(gpa, 1);
-        try zcu.outdated_ready.ensureUnusedCapacity(gpa, 1);
-        zcu.outdated.putAssumeCapacityNoClobber(unit, 0);
-        zcu.outdated_ready.putAssumeCapacityNoClobber(unit, {});
+        try zcu.outdated_ready.funcs.ensureUnusedCapacity(gpa, 1);
+        zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .func = func }), 0);
+        zcu.outdated_ready.funcs.putAssumeCapacityNoClobber(func, {});
     }
 }
 
@@ -3522,11 +3552,11 @@ pub fn ensureNavValAnalysisQueued(zcu: *Zcu, nav: InternPool.Nav.Index) !void {
         if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
         defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
         try zcu.outdated.ensureUnusedCapacity(gpa, 2);
-        try zcu.outdated_ready.ensureUnusedCapacity(gpa, 2);
+        try zcu.outdated_ready.other.ensureUnusedCapacity(gpa, 2);
         zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .nav_val = nav }), 0);
         zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .nav_ty = nav }), 0);
-        zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .nav_val = nav }), {});
-        zcu.outdated_ready.putAssumeCapacityNoClobber(.wrap(.{ .nav_ty = nav }), {});
+        zcu.outdated_ready.other.putAssumeCapacityNoClobber(.wrap(.{ .nav_val = nav }), {});
+        zcu.outdated_ready.other.putAssumeCapacityNoClobber(.wrap(.{ .nav_ty = nav }), {});
     }
 }
 
@@ -3540,9 +3570,9 @@ pub fn queueComptimeUnitAnalysis(zcu: *Zcu, cu: InternPool.ComptimeUnit.Id) Allo
     if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(io);
     defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(io);
     try zcu.outdated.ensureUnusedCapacity(gpa, 1);
-    try zcu.outdated_ready.ensureUnusedCapacity(gpa, 1);
+    try zcu.outdated_ready.other.ensureUnusedCapacity(gpa, 1);
     zcu.outdated.putAssumeCapacityNoClobber(unit, 0);
-    zcu.outdated_ready.putAssumeCapacityNoClobber(unit, {});
+    zcu.outdated_ready.other.putAssumeCapacityNoClobber(unit, {});
 }
 
 /// If `unit` was marked as outdated or porentially outdated, clears that status and returns `true`.
@@ -3552,7 +3582,15 @@ pub fn clearOutdatedState(zcu: *Zcu, unit: AnalUnit) bool {
     if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(io);
     defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(io);
     if (zcu.outdated.fetchSwapRemove(unit)) |kv| {
-        if (kv.value == 0) assert(zcu.outdated_ready.swapRemove(unit));
+        const was_ready = switch (unit.unwrap()) {
+            .func => |func| zcu.outdated_ready.funcs.swapRemove(func),
+            else => zcu.outdated_ready.other.swapRemove(unit),
+        };
+        if (kv.value == 0) {
+            assert(was_ready);
+        } else {
+            assert(!was_ready);
+        }
         return true;
     } else if (zcu.potentially_outdated.swapRemove(unit)) {
         return true;
