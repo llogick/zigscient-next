@@ -52,17 +52,37 @@ const Header = packed struct(u64) {
     alignment: Alignment,
     /// Does not include the extra alignment bytes added.
     size: Size,
-    padding: Padding = 0,
+    canary: Canary = magic,
 
     comptime {
         assert(@sizeOf(Header) <= alignment_bytes);
     }
 
-    const Size = @Int(.unsigned, @min(64 - @bitSizeOf(Alignment), @bitSizeOf(usize)));
-    const Padding = @Int(.unsigned, 64 - @bitSizeOf(Alignment) - @bitSizeOf(Size));
+    const safety = switch (builtin.mode) {
+        .Debug, .ReleaseSafe => true,
+        .ReleaseFast, .ReleaseSmall => false,
+    };
+    const max_addr_bits = switch (safety) {
+        true => 48, // Ensures space for Canary bits.
+        false => 64,
+    };
+    const Size = @Int(.unsigned, @min(max_addr_bits, 64 - @bitSizeOf(Alignment), @bitSizeOf(usize)));
+    const Canary = @Int(.unsigned, 64 - @bitSizeOf(Alignment) - @bitSizeOf(Size));
+    const magic: Canary = switch (safety) {
+        true => @truncate(@as(u64, 0x76fa65bebb3d7a39)), // statically chosen entropy
+        false => 0,
+    };
 
-    fn fromBase(base: [*]align(alignment_bytes) u8) *Header {
-        return @ptrCast(base - @sizeOf(Header));
+    fn get(base: [*]align(alignment_bytes) u8) Header {
+        const header: *Header = @ptrCast(base - @sizeOf(Header));
+        assert(header.canary == magic);
+        return header.*;
+    }
+
+    fn set(base: [*]align(alignment_bytes) u8, a: Alignment, size: Size) [*]align(alignment_bytes) u8 {
+        const header: *Header = @ptrCast(base - @sizeOf(Header));
+        header.* = .{ .alignment = a, .size = size };
+        return base;
     }
 };
 
@@ -72,12 +92,7 @@ fn malloc(n: usize) callconv(.c) ?[*]align(alignment_bytes) u8 {
         vtable.alloc(no_context, n + alignment_bytes, alignment, no_ra) orelse return nomem(),
     );
     const base = ptr + alignment_bytes;
-    const header: *Header = .fromBase(base);
-    header.* = .{
-        .alignment = alignment,
-        .size = size,
-    };
-    return base;
+    return Header.set(base, alignment, size);
 }
 
 fn aligned_alloc(alloc_alignment: usize, n: usize) callconv(.c) ?[*]align(alignment_bytes) u8 {
@@ -93,12 +108,7 @@ fn aligned_alloc_inner(alloc_alignment: usize, n: usize) ?[*]align(alignment_byt
         vtable.alloc(no_context, n + max_align_bytes, max_align, no_ra) orelse return null,
     );
     const base: [*]align(alignment_bytes) u8 = @alignCast(ptr + max_align_bytes);
-    const header: *Header = .fromBase(base);
-    header.* = .{
-        .alignment = max_align,
-        .size = size,
-    };
-    return base;
+    return Header.set(base, max_align, size);
 }
 
 fn calloc(elems: usize, len: usize) callconv(.c) ?[*]align(alignment_bytes) u8 {
@@ -115,8 +125,7 @@ fn realloc(opt_old_base: ?[*]align(alignment_bytes) u8, n: usize) callconv(.c) ?
     }
     const old_base = opt_old_base orelse return malloc(n);
     const new_size = std.math.cast(Header.Size, n) orelse return nomem();
-    const old_header: *Header = .fromBase(old_base);
-    assert(old_header.padding == 0);
+    const old_header: Header = .get(old_base);
     const old_size = old_header.size;
     const old_alignment = old_header.alignment;
     const old_alignment_bytes = old_alignment.toByteUnits();
@@ -139,12 +148,7 @@ fn realloc(opt_old_base: ?[*]align(alignment_bytes) u8, n: usize) callconv(.c) ?
         vtable.free(no_context, old_slice, old_alignment, no_ra);
         break :b new_base;
     };
-    const new_header: *Header = .fromBase(new_base);
-    new_header.* = .{
-        .alignment = old_alignment,
-        .size = new_size,
-    };
-    return new_base;
+    return Header.set(new_base, old_alignment, new_size);
 }
 
 fn reallocarray(opt_base: ?[*]align(alignment_bytes) u8, elems: usize, len: usize) callconv(.c) ?[*]align(alignment_bytes) u8 {
@@ -154,8 +158,7 @@ fn reallocarray(opt_base: ?[*]align(alignment_bytes) u8, elems: usize, len: usiz
 
 fn free(opt_old_base: ?[*]align(alignment_bytes) u8) callconv(.c) void {
     const old_base = opt_old_base orelse return;
-    const old_header: *Header = .fromBase(old_base);
-    assert(old_header.padding == 0);
+    const old_header: Header = .get(old_base);
     const old_size = old_header.size;
     const old_alignment = old_header.alignment;
     const old_alignment_bytes = old_alignment.toByteUnits();
@@ -166,8 +169,7 @@ fn free(opt_old_base: ?[*]align(alignment_bytes) u8) callconv(.c) void {
 
 fn malloc_usable_size(opt_old_base: ?[*]align(alignment_bytes) u8) callconv(.c) usize {
     const old_base = opt_old_base orelse return 0;
-    const old_header: *Header = .fromBase(old_base);
-    assert(old_header.padding == 0);
+    const old_header: Header = .get(old_base);
     const old_size = old_header.size;
     return old_size;
 }
