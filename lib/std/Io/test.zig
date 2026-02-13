@@ -818,10 +818,11 @@ test "Event broadcast" {
         event: Io.Event = .unset,
         counter: std.atomic.Value(usize) = std.atomic.Value(usize).init(num_threads),
 
-        fn wait(self: *@This()) void {
+        fn wait(self: *@This()) !void {
             if (self.counter.fetchSub(1, .acq_rel) == 1) {
                 self.event.set(io);
             }
+            try self.event.wait(io);
         }
     };
 
@@ -829,9 +830,9 @@ test "Event broadcast" {
         start_barrier: Barrier = .{},
         finish_barrier: Barrier = .{},
 
-        fn run(self: *@This()) void {
-            self.start_barrier.wait();
-            self.finish_barrier.wait();
+        fn run(self: *@This()) !void {
+            try self.start_barrier.wait();
+            try self.finish_barrier.wait();
         }
     };
 
@@ -841,5 +842,5 @@ test "Event broadcast" {
     for (&threads) |*t| t.* = try std.Thread.spawn(.{}, Context.run, .{&ctx});
     defer for (threads) |t| t.join();
 
-    ctx.run();
+    try ctx.run();
 }

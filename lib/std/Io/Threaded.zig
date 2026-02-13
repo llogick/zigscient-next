@@ -1104,7 +1104,7 @@ const Thread = struct {
                 const rc = std.c._umtx_op(
                     @intFromPtr(ptr),
                     @intFromEnum(std.c.UMTX_OP.WAKE_PRIVATE),
-                    @as(c_ulong, max_waiters),
+                    @as(c_ulong, @min(max_waiters, std.math.maxInt(c_int))),
                     0, // there is no timeout struct
                     0, // there is no timeout struct pointer
                 );
