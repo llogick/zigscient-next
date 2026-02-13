@@ -14,7 +14,7 @@ const ErrorBundle = std.zig.ErrorBundle;
 const fatal = std.process.fatal;
 
 const Value = @import("Value.zig");
-const Type = @import("Type.zig");
+pub const Type = @import("Type.zig");
 const target_util = @import("target.zig");
 const Package = @import("Package.zig");
 const introspect = @import("introspect.zig");
@@ -34,9 +34,9 @@ const libunwind = @import("libs/libunwind.zig");
 const libcxx = @import("libs/libcxx.zig");
 const wasi_libc = @import("libs/wasi_libc.zig");
 const clangMain = @import("main.zig").clangMain;
-const Zcu = @import("Zcu.zig");
+pub const Zcu = @import("Zcu.zig");
 const Sema = @import("Sema.zig");
-const InternPool = @import("InternPool.zig");
+pub const InternPool = @import("InternPool.zig");
 const Cache = std.Build.Cache;
 const c_codegen = @import("codegen/c.zig");
 const libtsan = @import("libs/libtsan.zig");
@@ -5279,16 +5279,45 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 try pt.zcu.ensureFuncBodyAnalysisQueued(ip.getNav(nav).status.fully_resolved.val);
             }
         },
-        .resolve_type_fully => |ty| {
+        .resolve_type_fully => |ty| rtf: {
             const tracy_trace = traceNamed(@src(), "resolve_type_fully");
             defer tracy_trace.end();
 
-            const pt: Zcu.PerThread = .activate(comp.zcu.?, tid);
+            const zcu = comp.zcu.?;
+
+            const pt: Zcu.PerThread = .activate(zcu, tid);
             defer pt.deactivate();
-            Type.fromInterned(ty).resolveFully(pt) catch |err| switch (err) {
+
+            const ttype = Type.fromInterned(ty);
+            ttype.resolveFully(pt) catch |err| switch (err) {
                 error.OutOfMemory, error.Canceled => |e| return e,
                 error.AnalysisFail => return,
             };
+
+            const lsp_doc_store = zcu.lsp_document_store orelse break :rtf;
+            if (switch (zcu.intern_pool.indexToKey(ty)) {
+                .enum_type,
+                .union_type,
+                .struct_type,
+                => true,
+                else => false,
+            }) {
+                const src_loc = ttype.srcLocOrNull(zcu) orelse break :rtf;
+                const resolved = src_loc.base_node_inst.resolveFull(&zcu.intern_pool) orelse break :rtf;
+                const file = zcu.fileByIndex(resolved.file);
+                const uri = file.uri_slice orelse break :rtf;
+                const zir = file.zir orelse break :rtf;
+                const src_node = move_to_Zir.getTypeDeclSrcNode(zir, resolved.inst) orelse break :rtf;
+                const lsp_doc = lsp_doc_store.getHandle(uri) orelse break :rtf;
+                lsp_doc.computed_data.lock.lockUncancelable(lsp_doc_store.io);
+                defer lsp_doc.computed_data.lock.unlock(lsp_doc_store.io);
+                lsp_doc.computed_data.zcu = comp.zcu;
+                try lsp_doc.computed_data.nodes.put(
+                    lsp_doc_store.allocator,
+                    src_node,
+                    .{ .ty = ty, .tid = tid },
+                );
+            }
         },
         .analyze_mod => |mod| {
             const tracy_trace = traceNamed(@src(), "analyze_mod");
@@ -5317,6 +5346,48 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
         },
     }
 }
+
+// Flesh out and move to a proper location, eg extended-zccs..
+const move_to_Zir = struct {
+    pub fn getTypeDeclSrcNode(zir: Zir, type_decl: Zir.Inst.Index) ?std.zig.Ast.Node.Index {
+        const inst = zir.instructions.get(@intFromEnum(type_decl));
+        if (inst.tag != .extended) return null;
+        switch (inst.data.extended.opcode) {
+            .struct_decl => {
+                const extra = zir.extraData(Zir.Inst.StructDecl, inst.data.extended.operand).data;
+                return extra.src_node;
+            },
+            .union_decl => {
+                const extra = zir.extraData(Zir.Inst.UnionDecl, inst.data.extended.operand).data;
+                return extra.src_node;
+            },
+            .enum_decl => {
+                const extra = zir.extraData(Zir.Inst.EnumDecl, inst.data.extended.operand).data;
+                return extra.src_node;
+            },
+            .opaque_decl => {
+                const extra = zir.extraData(Zir.Inst.OpaqueDecl, inst.data.extended.operand).data;
+                return extra.src_node;
+            },
+            .reify_struct => {
+                const extra = zir.extraData(Zir.Inst.ReifyStruct, inst.data.extended.operand).data;
+                return extra.node;
+            },
+            .reify_union => {
+                const extra = zir.extraData(Zir.Inst.ReifyUnion, inst.data.extended.operand).data;
+                return extra.node;
+            },
+            .reify_enum => {
+                const extra = zir.extraData(Zir.Inst.ReifyEnum, inst.data.extended.operand).data;
+                return extra.node;
+            },
+            else => {
+                std.log.err("incorrect opcode: {t}", .{inst.data.extended.opcode});
+                return null;
+            },
+        }
+    }
+};
 
 fn createDepFile(comp: *Compilation, dep_file: []const u8, bin_file: Cache.Path) anyerror!void {
     const io = comp.io;

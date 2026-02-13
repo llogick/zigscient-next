@@ -17,7 +17,16 @@ const DocumentScope = @import("DocumentScope.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
 const compiler_main = if (!builtin.is_test) @import("root") else void;
-const Compilation = if (!builtin.is_test and @hasDecl(compiler_main, "Compilation")) compiler_main.Compilation else struct {
+pub const Compilation = if (!builtin.is_test and @hasDecl(compiler_main, "Compilation")) compiler_main.Compilation else struct {
+    pub const decoy = {};
+    pub const InternPool = struct {
+        pub const Index = void;
+    };
+    pub const Zcu = struct {
+        pub const PerThread = struct {
+            pub const Id = void;
+        };
+    };
     pub fn destroy(_: anytype) void {}
 };
 const CompilationState = if (!builtin.is_test and @hasDecl(compiler_main, "CompilationState")) compiler_main.CompilationState else struct {
@@ -327,6 +336,15 @@ pub const Handle = struct {
 
     mtime: std.Io.Timestamp = .{ .nanoseconds = 0 },
 
+    computed_data: struct {
+        lock: std.Io.RwLock = .init,
+        zcu: ?*Compilation.Zcu = null,
+        nodes: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
+            ty: Compilation.InternPool.Index,
+            tid: Compilation.Zcu.PerThread.Id,
+        }) = .empty,
+    } = .{},
+
     /// private field
     impl: struct {
         /// @bitCast from/to `Status`
@@ -459,6 +477,8 @@ pub const Handle = struct {
         }
 
         if (self.closest_build_file_uri) |cbfuri| allocator.free(cbfuri);
+
+        self.computed_data.nodes.deinit(allocator);
 
         self.* = undefined;
     }
@@ -715,7 +735,7 @@ pub const Handle = struct {
     }
 
     /// returns the previous value
-    fn setLspSynced(self: *Handle, lsp_synced: bool) bool {
+    pub fn setLspSynced(self: *Handle, lsp_synced: bool) bool {
         if (lsp_synced) {
             return self.impl.status.bitSet(@offsetOf(Handle.Status, "lsp_synced"), .release) == 1;
         } else {
@@ -1792,17 +1812,22 @@ fn createAndStoreDocument(
     };
     errdefer new_handle.deinit();
 
-    stat: {
-        const file_path = URI.toFsPath(self.allocator, uri) catch break :stat;
+    new_handle.mtime = stat: {
+        const now: std.Io.Timestamp = .now(self.io, .real);
+        const file_path = URI.toFsPath(self.allocator, uri) catch break :stat now;
         defer self.allocator.free(file_path);
         if (!std.fs.path.isAbsolute(file_path)) {
             log.err("stat: path is not absolute '{s}'", .{file_path});
-            break :stat;
+            break :stat now;
         }
-        const file = std.Io.Dir.openFileAbsolute(self.io, file_path, .{}) catch break :stat;
+        const file = std.Io.Dir.openFileAbsolute(self.io, file_path, .{}) catch break :stat now;
         defer file.close(self.io);
-        new_handle.mtime = .now(self.io, .real);
-    }
+        const stat = file.stat(self.io) catch |err| switch (err) {
+            error.Canceled => return error.Canceled,
+            else => break :stat now,
+        };
+        break :stat stat.mtime;
+    };
 
     if (supports_build_system and isBuildFile(uri) and !isInStd(uri)) {
         _ = try self.getOrLoadBuildFile(uri);
@@ -1818,7 +1843,8 @@ fn createAndStoreDocument(
         if (lsp_synced) {
             new_handle.impl.associated_build_file = gop.value_ptr.*.impl.associated_build_file;
             gop.value_ptr.*.impl.associated_build_file = .init;
-
+            new_handle.computed_data = gop.value_ptr.*.computed_data;
+            gop.value_ptr.*.computed_data = .{};
             new_handle.uri = gop.key_ptr.*;
             gop.value_ptr.*.deinit();
             gop.value_ptr.*.* = new_handle;

@@ -1275,7 +1275,10 @@ fn saveDocumentHandler(server: *Server, arena: std.mem.Allocator, notification: 
 }
 
 fn closeDocumentHandler(server: *Server, _: std.mem.Allocator, notification: types.TextDocument.DidCloseParams) error{Canceled}!void {
-    server.document_store.closeLspSyncedDocument(notification.textDocument.uri);
+    // server.document_store.closeLspSyncedDocument(notification.textDocument.uri);
+
+    const handle = server.document_store.getHandle(notification.textDocument.uri) orelse return;
+    _ = handle.setLspSynced(false);
 
     if (server.client_capabilities.supports_publish_diagnostics) {
         server.diagnostics_collection.clearSingleDocumentDiagnostics(notification.textDocument.uri);
