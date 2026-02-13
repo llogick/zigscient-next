@@ -81,9 +81,13 @@ fn rationalApproxBinary32(z: f32) f32 {
     const pS2: f32 = -8.6563630030e-03;
     const qS1: f32 = -7.0662963390e-01;
 
-    const p = z * (pS0 + z * (pS1 + z * pS2));
-    const q = 1.0 + z * qS1;
-    return p / q;
+    // f64 is used instead of f32 to avoid
+    // a vectorization on x86_64. The vectorization
+    // causes extra floating point execeptions
+    // that are prohibited by libc-test.
+    const p: f64 = @as(f64, @floatCast(z)) * (pS0 + z * (pS1 + z * pS2));
+    const q: f64 = 1.0 + z * qS1;
+    return @floatCast(p / q);
 }
 
 fn acosBinary32(x: f32) f32 {

@@ -51,6 +51,7 @@ comptime {
         symbol(&pow, "pow");
         symbol(&pow10, "pow10");
         symbol(&pow10f, "pow10f");
+        symbol(&acosf, "acosf");
     }
 
     if (builtin.target.isMuslLibC()) {
@@ -82,6 +83,10 @@ fn atanl(x: c_longdouble) callconv(.c) c_longdouble {
         128 => math.atan(@as(f128, @floatCast(x))),
         else => unreachable,
     };
+}
+
+fn acosf(x: f32) callconv(.c) f32 {
+    return std.math.acos(x);
 }
 
 fn isnan(x: f64) callconv(.c) c_int {

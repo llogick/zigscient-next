@@ -139,7 +139,7 @@ pub fn addCases(cases: *tests.LibcContext) void {
     cases.addLibcTestCase("regression/wcsstr-false-negative.c", true, .{});
 
     cases.addLibcTestCase("math/acos.c", true, .{});
-    // cases.addLibcTestCase("math/acosf.c", true, .{});
+    cases.addLibcTestCase("math/acosf.c", true, .{});
     // cases.addLibcTestCase("math/acosh.c", true, .{});
     cases.addLibcTestCase("math/acoshf.c", true, .{});
     // cases.addLibcTestCase("math/acoshl.c", true, .{});
