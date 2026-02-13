@@ -222,10 +222,29 @@ inline fn div(a: f128, b: f128) f128 {
                 // The rounded result is normal; return it.
                 return @bitCast(absResult | quotientSign);
             }
+            // Result is denormal with exponent 0
+            return @bitCast(absResult | quotientSign);
+        } else {
+            // For denormals with writtenExponent < 0,
+            // the implicit bit must be shifted into the mantissa (IEEE 754)
+            const shiftAmount = @as(u7, @intCast(1 - writtenExponent));
+
+            // Check for underflow
+            if (shiftAmount > significandBits) {
+                return @bitCast(quotientSign);
+            }
+
+            // Round the quotient before pushing
+            const shouldRound = (residual << 1) > bSignificand;
+            const roundedQuotient = quotient +% @as(u113, @intFromBool(shouldRound));
+
+            // Move to the denormal range and apply the mask
+            const denormQuotient = roundedQuotient >> shiftAmount;
+            const absResult = denormQuotient & significandMask;
+
+            //  Add sign to denormal mantissa and return
+            return @bitCast(absResult | quotientSign);
         }
-        // Flush denormals to zero.  In the future, it would be nice to add
-        // code to round them correctly.
-        return @bitCast(quotientSign);
     } else {
         const round = @intFromBool((residual << 1) >= bSignificand);
         // Clear the implicit bit
