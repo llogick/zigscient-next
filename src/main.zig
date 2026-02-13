@@ -55,7 +55,7 @@ pub const std_options: std.Options = .{
     // Always set this to debug to make std.log call into our handler, then control the runtime
     // value in logFn itself
     .log_level = .debug,
-    .logFn = @import("Lsp/src/main.zig").std_options.logFn,
+    .logFn = @import("lsp_server/src/main.zig").std_options.logFn,
 };
 
 pub const std_options_cwd = if (native_os == .wasi) wasi_cwd else null;
@@ -230,7 +230,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
     if (args.len <= 1 or !mem.eql(u8, args[1], "zig")) {
-        _ = try @import("Lsp/src/main.zig").stage2(gpa, io, init, &environ_map);
+        _ = try @import("lsp_server/src/main.zig").stage2(gpa, io, init, &environ_map);
         return;
     }
 

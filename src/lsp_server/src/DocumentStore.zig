@@ -16,34 +16,17 @@ const translate_c = @import("translate_c.zig");
 const DocumentScope = @import("DocumentScope.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
-const compiler_main = if (!builtin.is_test) @import("root") else void;
-pub const Compilation = if (!builtin.is_test and @hasDecl(compiler_main, "Compilation")) compiler_main.Compilation else struct {
-    pub const decoy = {};
-    pub const InternPool = struct {
-        pub const Index = void;
-    };
-    pub const Zcu = struct {
-        pub const PerThread = struct {
-            pub const Id = void;
-        };
-    };
-    pub fn destroy(_: anytype) void {}
-};
-const CompilationState = if (!builtin.is_test and @hasDecl(compiler_main, "CompilationState")) compiler_main.CompilationState else struct {
-    pub fn deinit(_: anytype, _: anytype) void {}
-};
-const buildOutputType = if (!builtin.is_test and @hasDecl(compiler_main, "CompilationState")) compiler_main.buildOutputType else falsebuildOutputType;
-pub fn falsebuildOutputType(
-    _: anytype,
-    _: anytype,
-    _: anytype,
-    _: anytype,
-    _: anytype,
-    _: anytype,
-    _: anytype,
-    _: anytype,
-    _: anytype,
-) !void {}
+
+/// Compiler and Compilation declarations
+pub const compiler_main = if (!builtin.is_test) @import("root") else struct {};
+pub const Compilation =
+    if (@hasDecl(compiler_main, "Compilation")) compiler_main.Compilation else void;
+const CompilationState =
+    if (@hasDecl(compiler_main, "CompilationState")) compiler_main.CompilationState else void;
+const buildOutputType =
+    if (@hasDecl(compiler_main, "CompilationState")) compiler_main.buildOutputType else void;
+
+/// window/workDoneProgress Notification Data
 const ProgressNotification = struct {
     /// Prefix with "s2c-wdp-" (see Server.handleResponse). A suffix of "-{count}" will be added to it
     id: []const u8,
@@ -224,6 +207,7 @@ pub const BuildFile = struct {
     }
 
     fn redoCompilation(self: *BuildFile, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
+        if (!@hasDecl(compiler_main, "Compilation")) return;
         if (self.impl.compilation) |comp| {
             comp.destroy();
             self.impl.compilation_state.deinit(ds.allocator);
@@ -306,10 +290,10 @@ pub const BuildFile = struct {
         if (self.builtin_uri) |builtin_uri| allocator.free(builtin_uri);
         if (self.build_associated_config) |cfg| cfg.deinit();
 
-        if (self.impl.compilation) |comp| {
+        if (@hasDecl(compiler_main, "Compilation")) if (self.impl.compilation) |comp| {
             self.impl.compilation_state.deinit(allocator);
             comp.destroy();
-        }
+        };
         self.impl.arena_instance.deinit();
     }
 };
@@ -336,14 +320,14 @@ pub const Handle = struct {
 
     mtime: std.Io.Timestamp = .{ .nanoseconds = 0 },
 
-    computed_data: struct {
+    computed_data: if (@hasDecl(compiler_main, "Compilation")) struct {
         lock: std.Io.RwLock = .init,
         zcu: ?*Compilation.Zcu = null,
         nodes: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
             ty: Compilation.InternPool.Index,
             tid: Compilation.Zcu.PerThread.Id,
         }) = .empty,
-    } = .{},
+    } else struct {} = .{},
 
     /// private field
     impl: struct {
@@ -478,7 +462,7 @@ pub const Handle = struct {
 
         if (self.closest_build_file_uri) |cbfuri| allocator.free(cbfuri);
 
-        self.computed_data.nodes.deinit(allocator);
+        if (@hasDecl(compiler_main, "Compilation")) self.computed_data.nodes.deinit(allocator);
 
         self.* = undefined;
     }

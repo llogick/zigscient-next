@@ -1623,17 +1623,17 @@ fn cfgLspServer(
         break :blk ls_test_options.createModule();
     };
 
-    const gen_exe = b.addExecutable(.{
-        .name = "ls_cfg_gen",
+    const lsp_server_config_gen_exe = b.addExecutable(.{
+        .name = "lsp_server_config_gen",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/Lsp/src/tools/config_gen.zig"),
+            .root_source_file = b.path("src/lsp_server/src/tools/config_gen.zig"),
             .target = b.graph.host,
             .single_threaded = true,
         }),
     });
 
     const version_data_module = blk: {
-        const gen_version_data_cmd = b.addRunArtifact(gen_exe);
+        const gen_version_data_cmd = b.addRunArtifact(lsp_server_config_gen_exe);
         const version = if (proj_version.pre == null) b.fmt("{f}", .{proj_version}) else "master";
         gen_version_data_cmd.addArgs(&.{ "--langref-version", version });
 
@@ -1649,7 +1649,7 @@ fn cfgLspServer(
     { // zig build gen
         const gen_step = b.step("gen", "Regenerate config files");
 
-        const gen_cmd = b.addRunArtifact(gen_exe);
+        const gen_cmd = b.addRunArtifact(lsp_server_config_gen_exe);
         if (b.args) |args| {
             gen_cmd.addArgs(args);
             gen_step.dependOn(&gen_cmd.step);
@@ -1663,13 +1663,13 @@ fn cfgLspServer(
         }
     }
 
-    const zls_module = createZLSModule(b, .{
+    const lsp_server_module = createLspServerModule(b, .{
         .target = target,
         .optimize = optimize,
         .build_options = ls_build_options,
         .version_data = version_data_module,
     });
-    b.modules.put("zls", zls_module) catch @panic("OOM");
+    b.modules.put("zls", lsp_server_module) catch @panic("OOM");
 
     const known_folders_module = b.dependency("known_folders", .{
         .target = target,
@@ -1677,18 +1677,18 @@ fn cfgLspServer(
     }).module("known-folders");
 
     exe.root_module.addImport("known-folders", known_folders_module);
-    exe.root_module.addImport("zls", zls_module);
-    exe.root_module.addImport("tracy", zls_module.import_table.get("tracy").?);
+    exe.root_module.addImport("zls", lsp_server_module);
+    exe.root_module.addImport("tracy", lsp_server_module.import_table.get("tracy").?);
 
     const ls_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/Lsp/tests/tests.zig"),
+            .root_source_file = b.path("src/lsp_server/tests/tests.zig"),
             .target = target,
             .optimize = optimize,
             .single_threaded = single_threaded,
             .pic = pie,
             .imports = &.{
-                .{ .name = "zls", .module = zls_module },
+                .{ .name = "zls", .module = lsp_server_module },
                 .{ .name = "test_options", .module = ls_test_options },
             },
         }),
@@ -1699,7 +1699,7 @@ fn cfgLspServer(
 
     const src_tests = b.addTest(.{
         .name = "src test",
-        .root_module = zls_module,
+        .root_module = lsp_server_module,
         .filters = test_filters,
         .use_llvm = use_llvm,
         .use_lld = use_llvm,
@@ -1725,8 +1725,8 @@ fn cfgLspServer(
         const test_analysis_step = b.step("test-analysis", "Run all the analysis tests");
 
         // Create run steps
-        @import("src/Lsp/tests/add_build_runner_cases.zig").addCases(b, test_build_runner_step, test_filters);
-        @import("src/Lsp/tests/add_analysis_cases.zig").addCases(b, target, optimize, test_analysis_step, test_filters);
+        @import("src/lsp_server/tests/add_build_runner_cases.zig").addCases(b, test_build_runner_step, test_filters);
+        @import("src/lsp_server/tests/add_analysis_cases.zig").addCases(b, target, optimize, test_analysis_step, test_filters);
 
         const run_tests = b.addRunArtifact(ls_tests);
         const run_src_tests = b.addRunArtifact(src_tests);
@@ -1872,7 +1872,7 @@ fn getVersion(b: *std.Build, opt_version_string: ?[]const u8) std.SemanticVersio
     }
 }
 
-fn createZLSModule(
+fn createLspServerModule(
     b: *std.Build,
     options: struct {
         target: std.Build.ResolvedTarget,
@@ -1902,8 +1902,8 @@ fn createZLSModule(
         .optimize = options.optimize,
     }).module("extended-zccs");
 
-    const zls_module = b.createModule(.{
-        .root_source_file = b.path("src/Lsp/src/zls.zig"),
+    const lsp_server_module = b.createModule(.{
+        .root_source_file = b.path("src/lsp_server/src/zls.zig"),
         .target = options.target,
         .optimize = options.optimize,
         .imports = &.{
@@ -1917,10 +1917,10 @@ fn createZLSModule(
     });
 
     if (options.target.result.os.tag == .windows) {
-        zls_module.linkSystemLibrary("advapi32", .{});
+        lsp_server_module.linkSystemLibrary("advapi32", .{});
     }
 
-    return zls_module;
+    return lsp_server_module;
 }
 
 fn createTracyModule(
@@ -1934,7 +1934,7 @@ fn createTracyModule(
 ) *std.Build.Module {
     const enable = false;
     const tracy_module = b.createModule(.{
-        .root_source_file = b.path("src/Lsp/src/tracy.zig"),
+        .root_source_file = b.path("src/lsp_server/src/tracy.zig"),
         .target = options.target,
         .optimize = options.optimize,
         .imports = &.{

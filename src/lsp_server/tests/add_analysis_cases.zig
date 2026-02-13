@@ -10,13 +10,13 @@ pub fn addCases(
     test_step: *std.Build.Step,
     test_filters: []const []const u8,
 ) void {
-    const cases_dir = b.path("src/Lsp/tests/analysis");
-    const cases_path_from_root = b.pathFromRoot("src/Lsp/tests/analysis");
+    const cases_dir = b.path("src/lsp_server/tests/analysis");
+    const cases_path_from_root = b.pathFromRoot("src/lsp_server/tests/analysis");
 
     const check_exe = b.addExecutable(.{
         .name = "analysis_check",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/Lsp/tests/analysis_check.zig"),
+            .root_source_file = b.path("src/lsp_server/tests/analysis_check.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{

@@ -542,7 +542,7 @@ fn hoverKeyword(
     markup_kind: types.MarkupKind,
     offset_encoding: offsets.Encoding,
 ) error{OutOfMemory}!?types.Hover {
-    if (@hasDecl(DocumentStore.Compilation, "decoy")) return null;
+    if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
     const tree = &handle.tree;
 
     switch (tree.tokenTag(token_index)) {

@@ -8,13 +8,13 @@ pub fn addCases(
     test_step: *std.Build.Step,
     test_filters: []const []const u8,
 ) void {
-    const cases_dir = b.path("src/Lsp/tests/build_runner_cases");
-    const cases_path_from_root = b.pathFromRoot("src/Lsp/tests/build_runner_cases");
+    const cases_dir = b.path("src/lsp_server/tests/build_runner_cases");
+    const cases_path_from_root = b.pathFromRoot("src/lsp_server/tests/build_runner_cases");
 
     const check_exe = b.addExecutable(.{
         .name = "build_runner_check",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/Lsp/tests/build_runner_check.zig"),
+            .root_source_file = b.path("src/lsp_server/tests/build_runner_check.zig"),
             .target = b.graph.host,
             .imports = &.{
                 .{ .name = "zls", .module = b.modules.get("zls").? },
@@ -50,7 +50,7 @@ pub fn addCases(
         build_cmd.addArg("--build-file");
         build_cmd.addFileArg(build_file);
         build_cmd.addArg("--build-runner");
-        build_cmd.addFileArg(b.path("src/Lsp/src/build_runner/build_runner.zig"));
+        build_cmd.addFileArg(b.path("src/lsp_server/src/build_runner/build_runner.zig"));
         build_cmd.addArg("--cache-dir");
         build_cmd.addDirectoryArg(.{ .cwd_relative = b.fmt("{f}", .{b.cache_root}) });
         build_cmd.addArg("--global-cache-dir");
