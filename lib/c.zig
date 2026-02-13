@@ -15,17 +15,32 @@ pub const panic = if (builtin.is_test)
 else
     std.debug.no_panic;
 
-/// It is incorrect to make this conditional on `builtin.is_test`, because it is possible that
-/// libzigc is being linked into a different test compilation, as opposed to being tested itself.
-pub const linkage: std.builtin.GlobalLinkage = .strong;
-
-/// Determines the symbol's visibility to other objects.
-/// For WebAssembly this allows the symbol to be resolved to other modules, but will not
-/// export it to the host runtime.
-pub const visibility: std.builtin.SymbolVisibility = .hidden;
-
+/// It is possible that this libc is being linked into a different test
+/// compilation, as opposed to being tested itself. In such case,
+/// `builtin.link_libc` will be `true` along with `builtin.is_test`.
+///
+/// When we don't have a complete libc, `builtin.link_libc` will be `false` and
+/// we will be missing externally provided symbols, such as `_errno` from
+/// ucrtbase.dll. In such case, we must avoid analyzing otherwise exported
+/// functions because it would cause undefined symbol usage.
+///
+/// Unfortunately such logic cannot be automatically done in this function body
+/// since `func` will always be analyzed by the time we get here, so `comptime`
+/// blocks will need to each check for `builtin.link_libc` and skip exports
+/// when the exported functions have libc dependencies not provided by this
+/// compilation unit.
 pub inline fn symbol(comptime func: *const anyopaque, comptime name: []const u8) void {
-    @export(func, .{ .name = name, .linkage = linkage, .visibility = visibility });
+    @export(func, .{
+        .name = name,
+        // Normally, libc goes into a static archive, making all symbols
+        // overridable. However, Zig supports including the libc functions as part
+        // of the Zig Compilation Unit, so to support this use case we make all
+        // symbols weak.
+        .linkage = .weak,
+        // For WebAssembly, hidden visibility allows the symbol to be resolved to
+        // other modules, but will not export it to the host runtime.
+        .visibility = .hidden,
+    });
 }
 
 /// Given a low-level syscall return value, sets errno and returns `-1`, or on
@@ -47,19 +62,22 @@ pub fn errno(syscall_return_value: usize) c_int {
 }
 
 comptime {
-    _ = @import("c/inttypes.zig");
     _ = @import("c/ctype.zig");
-    _ = @import("c/stdlib.zig");
+    _ = @import("c/inttypes.zig");
+    if (!builtin.target.isMinGW()) {
+        _ = @import("c/malloc.zig");
+    }
     _ = @import("c/math.zig");
+    _ = @import("c/stdlib.zig");
     _ = @import("c/string.zig");
     _ = @import("c/strings.zig");
-    _ = @import("c/wchar.zig");
 
-    _ = @import("c/sys/mman.zig");
-    _ = @import("c/sys/file.zig");
-    _ = @import("c/sys/reboot.zig");
     _ = @import("c/sys/capability.zig");
+    _ = @import("c/sys/file.zig");
+    _ = @import("c/sys/mman.zig");
+    _ = @import("c/sys/reboot.zig");
     _ = @import("c/sys/utsname.zig");
 
     _ = @import("c/unistd.zig");
+    _ = @import("c/wchar.zig");
 }

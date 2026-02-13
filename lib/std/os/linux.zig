@@ -594,6 +594,10 @@ pub fn errno(r: usize) E {
     return @enumFromInt(int);
 }
 
+pub fn brk(addr: usize) usize {
+    return syscall1(.brk, addr);
+}
+
 pub fn dup(old: i32) usize {
     return syscall1(.dup, @as(usize, @bitCast(@as(isize, old))));
 }

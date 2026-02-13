@@ -78,22 +78,6 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
             var libc_sources = std.array_list.Managed(Compilation.CSourceFile).init(arena);
 
             {
-                // Compile emmalloc.
-                var args = std.array_list.Managed([]const u8).init(arena);
-                try addCCArgs(comp, arena, &args, .{ .want_O3 = true, .no_strict_aliasing = true });
-
-                for (emmalloc_src_files) |file_path| {
-                    try libc_sources.append(.{
-                        .src_path = try comp.dirs.zig_lib.join(arena, &.{
-                            "libc", try sanitize(arena, file_path),
-                        }),
-                        .extra_flags = args.items,
-                        .owner = undefined,
-                    });
-                }
-            }
-
-            {
                 // Compile libc-bottom-half.
                 var args = std.array_list.Managed([]const u8).init(arena);
                 try addCCArgs(comp, arena, &args, .{ .want_O3 = true });
@@ -471,10 +455,6 @@ fn addLibcTopHalfIncludes(
         }),
     });
 }
-
-const emmalloc_src_files = [_][]const u8{
-    "wasi/emmalloc/emmalloc.c",
-};
 
 const libc_bottom_half_src_files = [_][]const u8{
     "wasi/libc-bottom-half/cloudlibc/src/libc/dirent/closedir.c",

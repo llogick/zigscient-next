@@ -1,19 +1,28 @@
-const std = @import("../std.zig");
+//! Supports single-threaded targets that have a sbrk-like primitive which includes
+//! Linux and WebAssembly.
+//!
+//! On Linux, assumes exclusive access to the brk syscall.
+const BrkAllocator = @This();
 const builtin = @import("builtin");
+
+const std = @import("../std.zig");
 const Allocator = std.mem.Allocator;
-const mem = std.mem;
+const Alignment = std.mem.Alignment;
 const assert = std.debug.assert;
-const wasm = std.wasm;
 const math = std.math;
 
 comptime {
-    if (!builtin.target.cpu.arch.isWasm()) {
-        @compileError("only available for wasm32 arch");
-    }
-    if (!builtin.single_threaded) {
-        @compileError("TODO implement support for multi-threaded wasm");
-    }
+    if (!builtin.single_threaded) @compileError("unsupported");
 }
+
+next_addrs: [size_class_count]usize = @splat(0),
+/// For each size class, points to the freed pointer.
+frees: [size_class_count]usize = @splat(0),
+/// For each big size class, points to the freed pointer.
+big_frees: [big_size_class_count]usize = @splat(0),
+prev_brk: usize = 0,
+
+var global: BrkAllocator = .{};
 
 pub const vtable: Allocator.VTable = .{
     .alloc = alloc,
@@ -26,8 +35,7 @@ pub const Error = Allocator.Error;
 
 const max_usize = math.maxInt(usize);
 const ushift = math.Log2Int(usize);
-const bigpage_size = 64 * 1024;
-const pages_per_bigpage = bigpage_size / wasm.page_size;
+const bigpage_size: comptime_int = @max(64 * 1024, std.heap.page_size_max);
 const bigpage_count = max_usize / bigpage_size;
 
 /// Because of storing free list pointers, the minimum size class is 3.
@@ -39,13 +47,7 @@ const size_class_count = math.log2(bigpage_size) - min_class;
 /// etc.
 const big_size_class_count = math.log2(bigpage_count);
 
-var next_addrs: [size_class_count]usize = @splat(0);
-/// For each size class, points to the freed pointer.
-var frees: [size_class_count]usize = @splat(0);
-/// For each big size class, points to the freed pointer.
-var big_frees: [big_size_class_count]usize = @splat(0);
-
-fn alloc(ctx: *anyopaque, len: usize, alignment: mem.Alignment, return_address: usize) ?[*]u8 {
+fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, return_address: usize) ?[*]u8 {
     _ = ctx;
     _ = return_address;
     // Make room for the freelist next pointer.
@@ -54,24 +56,24 @@ fn alloc(ctx: *anyopaque, len: usize, alignment: mem.Alignment, return_address: 
     const class = math.log2(slot_size) - min_class;
     if (class < size_class_count) {
         const addr = a: {
-            const top_free_ptr = frees[class];
+            const top_free_ptr = global.frees[class];
             if (top_free_ptr != 0) {
                 const node: *usize = @ptrFromInt(top_free_ptr + (slot_size - @sizeOf(usize)));
-                frees[class] = node.*;
+                global.frees[class] = node.*;
                 break :a top_free_ptr;
             }
 
-            const next_addr = next_addrs[class];
-            if (next_addr % wasm.page_size == 0) {
+            const next_addr = global.next_addrs[class];
+            if (next_addr % bigpage_size == 0) {
                 const addr = allocBigPages(1);
                 if (addr == 0) return null;
                 //std.debug.print("allocated fresh slot_size={d} class={d} addr=0x{x}\n", .{
                 //    slot_size, class, addr,
                 //});
-                next_addrs[class] = addr + slot_size;
+                global.next_addrs[class] = addr + slot_size;
                 break :a addr;
             } else {
-                next_addrs[class] = next_addr + slot_size;
+                global.next_addrs[class] = next_addr + slot_size;
                 break :a next_addr;
             }
         };
@@ -84,7 +86,7 @@ fn alloc(ctx: *anyopaque, len: usize, alignment: mem.Alignment, return_address: 
 fn resize(
     ctx: *anyopaque,
     buf: []u8,
-    alignment: mem.Alignment,
+    alignment: Alignment,
     new_len: usize,
     return_address: usize,
 ) bool {
@@ -112,7 +114,7 @@ fn resize(
 fn remap(
     context: *anyopaque,
     memory: []u8,
-    alignment: mem.Alignment,
+    alignment: Alignment,
     new_len: usize,
     return_address: usize,
 ) ?[*]u8 {
@@ -122,7 +124,7 @@ fn remap(
 fn free(
     ctx: *anyopaque,
     buf: []u8,
-    alignment: mem.Alignment,
+    alignment: Alignment,
     return_address: usize,
 ) void {
     _ = ctx;
@@ -134,16 +136,16 @@ fn free(
     const addr = @intFromPtr(buf.ptr);
     if (class < size_class_count) {
         const node: *usize = @ptrFromInt(addr + (slot_size - @sizeOf(usize)));
-        node.* = frees[class];
-        frees[class] = addr;
+        node.* = global.frees[class];
+        global.frees[class] = addr;
     } else {
         const bigpages_needed = bigPagesNeeded(actual_len);
         const pow2_pages = math.ceilPowerOfTwoAssert(usize, bigpages_needed);
         const big_slot_size_bytes = pow2_pages * bigpage_size;
         const node: *usize = @ptrFromInt(addr + (big_slot_size_bytes - @sizeOf(usize)));
         const big_class = math.log2(pow2_pages);
-        node.* = big_frees[big_class];
-        big_frees[big_class] = addr;
+        node.* = global.big_frees[big_class];
+        global.big_frees[big_class] = addr;
     }
 }
 
@@ -156,16 +158,34 @@ fn allocBigPages(n: usize) usize {
     const slot_size_bytes = pow2_pages * bigpage_size;
     const class = math.log2(pow2_pages);
 
-    const top_free_ptr = big_frees[class];
+    const top_free_ptr = global.big_frees[class];
     if (top_free_ptr != 0) {
         const node: *usize = @ptrFromInt(top_free_ptr + (slot_size_bytes - @sizeOf(usize)));
-        big_frees[class] = node.*;
+        global.big_frees[class] = node.*;
         return top_free_ptr;
     }
 
-    const page_index = @wasmMemoryGrow(0, pow2_pages * pages_per_bigpage);
-    if (page_index == -1) return 0;
-    return @as(usize, @intCast(page_index)) * wasm.page_size;
+    if (builtin.cpu.arch.isWasm()) {
+        comptime assert(std.heap.page_size_max == std.heap.page_size_min);
+        const page_size = std.heap.page_size_max;
+        const pages_per_bigpage = bigpage_size / page_size;
+        const page_index = @wasmMemoryGrow(0, pow2_pages * pages_per_bigpage);
+        if (page_index == -1) return 0;
+        return @as(usize, @intCast(page_index)) * page_size;
+    } else if (builtin.os.tag == .linux) {
+        const prev_brk = global.prev_brk;
+        const start_brk = if (prev_brk == 0)
+            std.mem.alignForward(usize, std.os.linux.brk(0), bigpage_size)
+        else
+            prev_brk;
+        const end_brk = start_brk + pow2_pages * bigpage_size;
+        const new_prev_brk = std.os.linux.brk(end_brk);
+        global.prev_brk = new_prev_brk;
+        if (new_prev_brk != end_brk) return 0;
+        return start_brk;
+    } else {
+        @compileError("no sbrk-like OS primitive available");
+    }
 }
 
 const test_ally: Allocator = .{
@@ -257,12 +277,14 @@ test "shrink" {
 }
 
 test "large object - grow" {
+    if (builtin.os.tag == .linux) return error.SkipZigTest;
+
     var slice1 = try test_ally.alloc(u8, bigpage_size * 2 - 20);
     defer test_ally.free(slice1);
 
     const old = slice1;
     slice1 = try test_ally.realloc(slice1, bigpage_size * 2 - 10);
-    try std.testing.expect(slice1.ptr == old.ptr);
+    try std.testing.expectEqual(slice1.ptr, old.ptr);
 
     slice1 = try test_ally.realloc(slice1, bigpage_size * 2);
     slice1 = try test_ally.realloc(slice1, bigpage_size * 2 + 1);

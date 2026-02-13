@@ -352,8 +352,7 @@ const Ext = enum {
 fn addSrcFile(arena: Allocator, source_table: *std.StringArrayHashMap(Ext), file_path: []const u8) !void {
     const ext: Ext = ext: {
         if (mem.endsWith(u8, file_path, ".c")) {
-            if (mem.startsWith(u8, file_path, "musl/src/malloc/") or
-                mem.startsWith(u8, file_path, "musl/src/string/") or
+            if (mem.startsWith(u8, file_path, "musl/src/string/") or
                 mem.startsWith(u8, file_path, "musl/src/internal/"))
             {
                 break :ext .o3;
@@ -786,24 +785,6 @@ const src_files = [_][]const u8{
     "musl/src/locale/uselocale.c",
     "musl/src/locale/wcscoll.c",
     "musl/src/locale/wcsxfrm.c",
-    "musl/src/malloc/calloc.c",
-    "musl/src/malloc/free.c",
-    "musl/src/malloc/libc_calloc.c",
-    "musl/src/malloc/lite_malloc.c",
-    "musl/src/malloc/mallocng/aligned_alloc.c",
-    "musl/src/malloc/mallocng/donate.c",
-    "musl/src/malloc/mallocng/free.c",
-    "musl/src/malloc/mallocng/malloc.c",
-    "musl/src/malloc/mallocng/malloc_usable_size.c",
-    "musl/src/malloc/mallocng/realloc.c",
-    "musl/src/malloc/memalign.c",
-    "musl/src/malloc/oldmalloc/aligned_alloc.c",
-    "musl/src/malloc/oldmalloc/malloc.c",
-    "musl/src/malloc/oldmalloc/malloc_usable_size.c",
-    "musl/src/malloc/posix_memalign.c",
-    "musl/src/malloc/reallocarray.c",
-    "musl/src/malloc/realloc.c",
-    "musl/src/malloc/replaced.c",
     "musl/src/math/aarch64/fma.c",
     "musl/src/math/aarch64/fmaf.c",
     "musl/src/math/aarch64/llrint.c",
