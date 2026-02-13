@@ -172,7 +172,7 @@ pub fn updateFile(
     };
     defer source_file.close(io);
 
-    const lsp_doc = try file.getOrLoadLspDocHandle(zcu);
+    const lsp_doc = try file.getLspDocHandle(zcu);
 
     var stat = try source_file.stat(io);
 
