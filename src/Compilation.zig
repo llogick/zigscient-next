@@ -5169,6 +5169,8 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
     switch (job) {
         .codegen_func => |func| {
             const zcu = comp.zcu.?;
+            if (zcu.lsp_document_store != null) return;
+
             const gpa = zcu.gpa;
             var owned_air: ?Air = func.air;
             defer if (owned_air) |*air| air.deinit(gpa);
@@ -5196,6 +5198,8 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
         },
         .link_nav => |nav_index| {
             const zcu = comp.zcu.?;
+            if (zcu.lsp_document_store != null) return;
+
             const nav = zcu.intern_pool.getNav(nav_index);
             if (nav.analysis != null) {
                 const unit: InternPool.AnalUnit = .wrap(.{ .nav_val = nav_index });
@@ -5216,6 +5220,7 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
         },
         .link_type => |ty| {
             const zcu = comp.zcu.?;
+            if (zcu.lsp_document_store != null) return;
             if (zcu.failed_types.fetchSwapRemove(ty)) |*entry| entry.value.deinit(zcu.gpa);
             if (!Air.typeFullyResolved(.fromInterned(ty), zcu)) {
                 // Type resolution failed in a way which affects this type. This is a transitive
@@ -5227,6 +5232,7 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
             try comp.link_queue.enqueueZcu(comp, tid, .{ .link_type = ty });
         },
         .update_line_number => |tracked_inst| {
+            if (comp.zcu.?.lsp_document_store != null) return;
             try comp.link_queue.enqueueZcu(comp, tid, .{ .update_line_number = tracked_inst });
         },
         .analyze_func => |func| {
