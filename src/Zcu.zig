@@ -1075,7 +1075,10 @@ pub const File = struct {
         const io = zcu.comp.io;
 
         if (file.source) |source| return source;
-        if (try file.getLspDocHandle(zcu)) |lsp_doc| return lsp_doc.tree.source;
+        if (try file.getLspDocHandle(zcu)) |lsp_doc| {
+            file.source = lsp_doc.tree.source;
+            return file.source.?;
+        }
 
         switch (file.status) {
             .never_loaded => unreachable, // stat must be populated
@@ -1125,7 +1128,10 @@ pub const File = struct {
     /// loaded.
     pub fn getTree(file: *File, zcu: *const Zcu) GetSourceError!*const Ast {
         if (file.tree) |*tree| return tree;
-        if (try file.getLspDocHandle(zcu)) |lsp_doc| return &lsp_doc.tree;
+        if (try file.getLspDocHandle(zcu)) |lsp_doc| {
+            file.tree = lsp_doc.tree;
+            return &file.tree.?;
+        }
 
         const source = try file.getSource(zcu);
         file.tree = try .parse(zcu.gpa, source, file.getMode());
