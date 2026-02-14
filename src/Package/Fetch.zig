@@ -684,15 +684,13 @@ fn runResource(
 
     const arena = f.arena.allocator();
     const eb = &f.error_bundle;
-    const s = fs.path.sep_str;
-    const local_cache_root = job_queue.local_cache;
     const rand_int = r: {
         var x: u64 = undefined;
         io.random(@ptrCast(&x));
         break :r x;
     };
-    const tmp_dir_sub_path = "tmp" ++ s ++ std.fmt.hex(rand_int);
-    const tmp_directory_path = try local_cache_root.join(arena, tmp_dir_sub_path);
+    const tmp_dir_sub_path = ".tmp-" ++ std.fmt.hex(rand_int);
+    const tmp_directory_path = try job_queue.root_pkg_path.join(arena, tmp_dir_sub_path);
 
     const package_sub_path = blk: {
         var tmp_directory: Cache.Directory = .{
