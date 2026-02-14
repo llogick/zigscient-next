@@ -173,6 +173,7 @@ pub fn updateFile(
     defer source_file.close(io);
 
     const lsp_doc = try file.getOrLoadLspDocHandle(zcu);
+    if (lsp_doc != null) file.owned_by_comp = false;
 
     var stat = try source_file.stat(io);
 
