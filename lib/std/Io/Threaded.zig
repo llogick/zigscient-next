@@ -14866,7 +14866,7 @@ fn lookupHostsReader(
             error.ReadFailed => return error.ReadFailed,
             error.EndOfStream => break,
         };
-        reader.toss(1);
+        reader.toss(@min(1, reader.bufferedLen()));
         var split_it = std.mem.splitScalar(u8, line, '#');
         const no_comment_line = split_it.first();
 
