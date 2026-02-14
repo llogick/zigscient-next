@@ -1663,7 +1663,8 @@ fn isBlockingMessage(msg: Message) bool {
             => return true,
             .other => return false,
         },
-        .response => return true,
+        .response => |response| return (response.id != null and response.id.? == .string and
+            std.mem.eql(u8, response.id.?.string, "i_haz_configuration")),
     }
 }
 
@@ -1971,6 +1972,7 @@ fn validateMessage(server: *const Server, message: Message) Error!void {
     }
 }
 
+// If a response needs to be handled in a blocking manner see the condition in isBlockingMessage
 fn handleResponse(server: *Server, response: lsp.JsonRPCMessage.Response) Error!void {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
