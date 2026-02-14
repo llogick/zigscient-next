@@ -172,8 +172,8 @@ pub fn log(
 
 const use_debug_allocator = build_options.debug_gpa or
     (native_os != .wasi and !builtin.link_libc and switch (builtin.mode) {
-        .Debug, .ReleaseSafe => true,
-        .ReleaseFast, .ReleaseSmall => false,
+        .Debug => true,
+        .ReleaseSafe, .ReleaseFast, .ReleaseSmall => false,
     });
 
 const RootAllocator = if (use_debug_allocator) std.heap.DebugAllocator(.{
