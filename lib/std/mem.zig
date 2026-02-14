@@ -3462,7 +3462,7 @@ pub fn SplitIterator(comptime T: type, comptime delimiter_type: DelimiterType) t
 
         /// Returns a slice of the next field, or null if splitting is complete.
         /// This method does not alter self.index.
-        pub fn peek(self: *Self) ?[]const T {
+        pub fn peek(self: *const Self) ?[]const T {
             const start = self.index orelse return null;
             const end = if (switch (delimiter_type) {
                 .sequence => findPos(T, self.buffer, start, self.delimiter),
