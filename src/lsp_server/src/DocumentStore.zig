@@ -104,6 +104,13 @@ pub const BuildFile = struct {
     /// config options extracted from zls.build.json
     build_associated_config: ?std.json.Parsed(BuildAssociatedConfig) = null,
     roots_index: u32 = 0,
+    compilation: struct {
+        mutex: std.Io.Mutex = .init,
+        arena_instance: std.heap.ArenaAllocator = undefined,
+        state: *CompilationState = undefined,
+        instance: ?*Compilation = null,
+        args: []const []const u8 = undefined,
+    } = .{},
     impl: struct {
         mutex: std.Io.Mutex = .init,
         build_runner_state: BuildRunnerState = .idle,
@@ -113,11 +120,6 @@ pub const BuildFile = struct {
         /// TODO this field should not be nullable, callsites should await the build config to be resolved
         /// and then continue instead of dealing with missing information.
         config: ?std.json.Parsed(BuildConfig) = null,
-        // Compilation
-        arena_instance: std.heap.ArenaAllocator = undefined,
-        compilation_state: *CompilationState = undefined,
-        compilation: ?*Compilation = null,
-        args: []const []const u8 = undefined,
     } = .{},
 
     const BuildRunnerState = enum {
@@ -206,47 +208,62 @@ pub const BuildFile = struct {
         return true;
     }
 
+    fn triggerRedoCompilation(self: *BuildFile, ds: *DocumentStore) std.Io.Cancelable!void {
+        self.redoCompilation(ds) catch |err| switch (err) {
+            error.Canceled => return error.Canceled,
+            error.OutOfMemory => @panic("OOM"),
+        };
+    }
+
     fn redoCompilation(self: *BuildFile, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
         if (!@hasDecl(compiler_main, "Compilation")) return;
-        if (self.impl.compilation) |comp| {
+
+        try self.compilation.mutex.lock(ds.io);
+        defer self.compilation.mutex.unlock(ds.io);
+
+        if (self.compilation.instance) |comp| {
             comp.destroy();
-            self.impl.compilation_state.deinit(ds.allocator);
-            self.impl.compilation = null;
-            self.impl.compilation_state = undefined;
-            _ = self.impl.arena_instance.reset(.retain_capacity);
+            self.compilation.state.deinit(ds.allocator);
+            self.compilation.instance = null;
+            self.compilation.state = undefined;
+            _ = self.compilation.arena_instance.reset(.retain_capacity);
         }
         const cfg = self.impl.config orelse return;
         if (cfg.value.roots.len == 0) return;
 
         var cleanup: bool = false;
         defer if (cleanup) {
-            self.impl.compilation_state.deinit(ds.allocator);
-            self.impl.compilation = null;
-            self.impl.compilation_state = undefined;
-            _ = self.impl.arena_instance.reset(.retain_capacity);
+            self.compilation.state.deinit(ds.allocator);
+            self.compilation.instance = null;
+            self.compilation.state = undefined;
+            _ = self.compilation.arena_instance.reset(.retain_capacity);
             log.err("Failed to create a compilation for: {s}", .{self.uri});
         };
 
         const root_id = if (!(self.roots_index < cfg.value.roots.len)) 0 else self.roots_index;
-        const arena = self.impl.arena_instance.allocator();
+        const arena = self.compilation.arena_instance.allocator();
         var args_dups: std.ArrayList([]const u8) = .empty;
+
         for (cfg.value.roots[root_id].args) |item| try args_dups.append(arena, try arena.dupe(u8, item));
-        self.impl.args = try args_dups.toOwnedSlice(arena);
-        log.info("Creating a compilation for: {s}\n{s}", .{ self.uri, try std.json.Stringify.valueAlloc(arena, self.impl.args, .{}) });
-        const cmd = self.impl.args[1];
-        self.impl.compilation_state = try arena.create(CompilationState);
-        self.impl.compilation_state.* = .{};
+        self.compilation.args = try args_dups.toOwnedSlice(arena);
+
+        log.info("Creating a compilation for: {s}\n{s}", .{ self.uri, try std.json.Stringify.valueAlloc(arena, self.compilation.args, .{}) });
+
+        self.compilation.state = try arena.create(CompilationState);
+        self.compilation.state.* = .{};
+
+        const cmd = self.compilation.args[1];
         if (std.mem.eql(u8, cmd, "build-exe")) {
             buildOutputType(
                 ds.allocator,
                 arena,
                 ds.io,
-                self.impl.args,
+                self.compilation.args,
                 .{ .build = .Exe },
                 ds.config.environ_map,
-                self.impl.compilation_state,
+                self.compilation.state,
                 ds,
-                &self.impl.compilation,
+                &self.compilation.instance,
             ) catch |err| switch (err) {
                 error.Canceled, error.OutOfMemory => |e| return e,
                 else => cleanup = true,
@@ -256,12 +273,12 @@ pub const BuildFile = struct {
                 ds.allocator,
                 arena,
                 ds.io,
-                self.impl.args,
+                self.compilation.args,
                 .{ .build = .Lib },
                 ds.config.environ_map,
-                self.impl.compilation_state,
+                self.compilation.state,
                 ds,
-                &self.impl.compilation,
+                &self.compilation.instance,
             ) catch |err| switch (err) {
                 error.Canceled, error.OutOfMemory => |e| return e,
                 else => cleanup = true,
@@ -271,12 +288,12 @@ pub const BuildFile = struct {
                 ds.allocator,
                 arena,
                 ds.io,
-                self.impl.args,
+                self.compilation.args,
                 .{ .build = .Obj },
                 ds.config.environ_map,
-                self.impl.compilation_state,
+                self.compilation.state,
                 ds,
-                &self.impl.compilation,
+                &self.compilation.instance,
             ) catch |err| switch (err) {
                 error.Canceled, error.OutOfMemory => |e| return e,
                 else => cleanup = true,
@@ -290,11 +307,11 @@ pub const BuildFile = struct {
         if (self.builtin_uri) |builtin_uri| allocator.free(builtin_uri);
         if (self.build_associated_config) |cfg| cfg.deinit();
 
-        if (@hasDecl(compiler_main, "Compilation")) if (self.impl.compilation) |comp| {
-            self.impl.compilation_state.deinit(allocator);
+        if (@hasDecl(compiler_main, "Compilation")) if (self.compilation.instance) |comp| {
+            self.compilation.state.deinit(allocator);
             comp.destroy();
         };
-        self.impl.arena_instance.deinit();
+        self.compilation.arena_instance.deinit();
     }
 };
 
@@ -902,9 +919,7 @@ pub const Handle = struct {
                 send_noti = true;
                 for (ds.workspaces.items) |wrkspc_item| {
                     if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
-                        try build_file.impl.mutex.lock(ds.io);
-                        defer build_file.impl.mutex.unlock(ds.io);
-                        try build_file.redoCompilation(ds);
+                        ds.wait_group.async(ds.io, BuildFile.triggerRedoCompilation, .{ build_file, ds });
                         break;
                     }
                 }
@@ -1365,12 +1380,7 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
 
     for (self.workspaces.items) |wrkspc_item| {
         if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
-            try build_file.impl.mutex.lock(self.io);
-            defer build_file.impl.mutex.unlock(self.io);
-            build_file.redoCompilation(self) catch |err| switch (err) {
-                error.Canceled => return error.Canceled,
-                error.OutOfMemory => @panic("OOM"),
-            };
+            self.wait_group.async(self.io, BuildFile.triggerRedoCompilation, .{ build_file, self });
             break;
         }
     }
@@ -1598,7 +1608,14 @@ pub fn buildDotZigExists(io: std.Io, dir_path: []const u8) std.Io.Cancelable!boo
 fn triggerGetOrLoadHandle(self: *DocumentStore, uri: Uri) std.Io.Cancelable!void {
     _ = self.getOrLoadHandle(uri) catch |err| switch (err) {
         error.Canceled => return error.Canceled,
-        else => {},
+        error.OutOfMemory => @panic("OOM"),
+    };
+}
+
+fn triggerGetOrLoadBuildFile(self: *DocumentStore, uri: Uri) std.Io.Cancelable!void {
+    _ = self.getOrLoadBuildFile(uri) catch |err| switch (err) {
+        error.Canceled => return error.Canceled,
+        error.OutOfMemory => @panic("OOM"),
     };
 }
 
@@ -1681,7 +1698,8 @@ fn createBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory 
 
     var build_file: BuildFile = .{
         .uri = try self.allocator.dupe(u8, uri),
-        .impl = .{ .arena_instance = .init(self.allocator) },
+        .compilation = .{ .arena_instance = .init(self.allocator) },
+        .impl = .{},
     };
 
     errdefer build_file.deinit(self.allocator);
@@ -1814,7 +1832,9 @@ fn createAndStoreDocument(
     };
 
     if (supports_build_system and isBuildFile(uri) and !isInStd(uri)) {
-        _ = try self.getOrLoadBuildFile(uri);
+        self.wait_group.concurrent(self.io, triggerGetOrLoadBuildFile, .{ self, uri }) catch {
+            _ = try self.getOrLoadBuildFile(uri);
+        };
     }
 
     try self.mutex.lock(self.io);
@@ -1845,7 +1865,7 @@ fn createAndStoreDocument(
 
         if (!isBuildFile(uri) and !isBuiltinFile(uri) and !isInStd(uri)) {
             new_handle.closest_build_file_uri = findBuildZig(self.io, self.allocator, uri) catch null;
-            if (new_handle.closest_build_file_uri) |bzfuri| self.wait_group.async(self.io, triggerGetOrLoadHandle, .{ self, bzfuri }); // This would trigger getOrLoadBuildFile too
+            if (new_handle.closest_build_file_uri) |bzfuri| self.wait_group.concurrent(self.io, triggerGetOrLoadHandle, .{ self, bzfuri }) catch {}; // This would trigger getOrLoadBuildFile too
         }
 
         new_handle.uri = gop.key_ptr.*;

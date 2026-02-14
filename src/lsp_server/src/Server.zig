@@ -339,11 +339,11 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 const build_file_uri = param_handle.closest_build_file_uri orelse break :comp;
                 const build_file = param_server.document_store.getBuildFile(build_file_uri) orelse break :comp;
 
-                try build_file.impl.mutex.lock(param_server.io);
-                defer build_file.impl.mutex.unlock(param_server.io);
+                try build_file.compilation.mutex.lock(param_server.io);
+                defer build_file.compilation.mutex.unlock(param_server.io);
 
-                const comp = build_file.impl.compilation orelse break :comp;
-                const project_root_path = build_file.impl.compilation_state.project_root_path orelse {
+                const comp = build_file.compilation.instance orelse break :comp;
+                const project_root_path = build_file.compilation.state.project_root_path orelse {
                     log.err("compilation_state.project_root_path is null", .{});
                     break :comp;
                 };
