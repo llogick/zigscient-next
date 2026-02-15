@@ -104,13 +104,7 @@ pub const BuildFile = struct {
     /// config options extracted from zls.build.json
     build_associated_config: ?std.json.Parsed(BuildAssociatedConfig) = null,
     roots_index: u32 = 0,
-    compilation: struct {
-        mutex: std.Io.Mutex = .init,
-        arena_instance: std.heap.ArenaAllocator = undefined,
-        state: *CompilationState = undefined,
-        instance: ?*Compilation = null,
-        args: []const []const u8 = undefined,
-    } = .{},
+    compilation: CompilationBuild = .{},
     impl: struct {
         mutex: std.Io.Mutex = .init,
         build_runner_state: BuildRunnerState = .idle,
@@ -121,6 +115,15 @@ pub const BuildFile = struct {
         /// and then continue instead of dealing with missing information.
         config: ?std.json.Parsed(BuildConfig) = null,
     } = .{},
+
+    pub const CompilationBuild = struct {
+        mutex: std.Io.Mutex = .init,
+        arena_instance: std.heap.ArenaAllocator = undefined,
+        state: *CompilationState = undefined,
+        instance: ?*Compilation = null,
+        args: []const []const u8 = undefined,
+        has_completed_once: bool = false,
+    };
 
     const BuildRunnerState = enum {
         idle,
@@ -227,6 +230,7 @@ pub const BuildFile = struct {
             self.compilation.instance = null;
             self.compilation.state = undefined;
             _ = self.compilation.arena_instance.reset(.retain_capacity);
+            self.compilation.has_completed_once = false;
         }
         const cfg = self.impl.config orelse return;
         if (cfg.value.roots.len == 0) return;
@@ -238,6 +242,7 @@ pub const BuildFile = struct {
             self.compilation.state = undefined;
             _ = self.compilation.arena_instance.reset(.retain_capacity);
             log.err("Failed to create a compilation for: {s}", .{self.uri});
+            self.compilation.has_completed_once = false;
         };
 
         const root_id = if (!(self.roots_index < cfg.value.roots.len)) 0 else self.roots_index;
@@ -253,52 +258,28 @@ pub const BuildFile = struct {
         self.compilation.state.* = .{};
 
         const cmd = self.compilation.args[1];
-        if (std.mem.eql(u8, cmd, "build-exe")) {
-            buildOutputType(
-                ds.allocator,
-                arena,
-                ds.io,
-                self.compilation.args,
-                .{ .build = .Exe },
-                ds.config.environ_map,
-                self.compilation.state,
-                ds,
-                &self.compilation.instance,
-            ) catch |err| switch (err) {
-                error.Canceled, error.OutOfMemory => |e| return e,
-                else => cleanup = true,
+        const arg_mode: compiler_main.ArgMode =
+            if (std.mem.eql(u8, cmd, "build-exe")) .{ .build = .Exe } //
+            else if (std.mem.eql(u8, cmd, "build-lib")) .{ .build = .Lib } //
+            else if (std.mem.eql(u8, cmd, "build-obj")) .{ .build = .Obj } //
+            else {
+                log.err("redoCompilation: unknown cmd: {s}", .{cmd});
+                return;
             };
-        } else if (std.mem.eql(u8, cmd, "build-lib")) {
-            buildOutputType(
-                ds.allocator,
-                arena,
-                ds.io,
-                self.compilation.args,
-                .{ .build = .Lib },
-                ds.config.environ_map,
-                self.compilation.state,
-                ds,
-                &self.compilation.instance,
-            ) catch |err| switch (err) {
-                error.Canceled, error.OutOfMemory => |e| return e,
-                else => cleanup = true,
-            };
-        } else if (std.mem.eql(u8, cmd, "build-obj")) {
-            buildOutputType(
-                ds.allocator,
-                arena,
-                ds.io,
-                self.compilation.args,
-                .{ .build = .Obj },
-                ds.config.environ_map,
-                self.compilation.state,
-                ds,
-                &self.compilation.instance,
-            ) catch |err| switch (err) {
-                error.Canceled, error.OutOfMemory => |e| return e,
-                else => cleanup = true,
-            };
-        }
+        buildOutputType(
+            ds.allocator,
+            arena,
+            ds.io,
+            self.compilation.args,
+            arg_mode,
+            ds.config.environ_map,
+            self.compilation.state,
+            ds,
+            &self.compilation,
+        ) catch |err| switch (err) {
+            error.Canceled, error.OutOfMemory => |e| return e,
+            else => cleanup = true,
+        };
     }
 
     fn deinit(self: *BuildFile, allocator: std.mem.Allocator) void {
@@ -339,7 +320,7 @@ pub const Handle = struct {
 
     computed_data: if (@hasDecl(compiler_main, "Compilation")) struct {
         lock: std.Io.RwLock = .init,
-        zcu: ?*Compilation.Zcu = null,
+        compilation: ?*BuildFile.CompilationBuild = null,
         nodes: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
             ty: Compilation.InternPool.Index,
             tid: Compilation.Zcu.PerThread.Id,

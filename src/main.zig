@@ -783,7 +783,7 @@ const Emit = union(enum) {
     }
 };
 
-const ArgMode = union(enum) {
+pub const ArgMode = union(enum) {
     build: std.builtin.OutputMode,
     cc,
     cpp,
@@ -1090,6 +1090,8 @@ const BuildError = error{
     PrintingErrorsFailed,
 };
 
+const lsp_server = @import("zls");
+
 pub fn buildOutputType(
     gpa: Allocator,
     arena: Allocator,
@@ -1098,8 +1100,8 @@ pub fn buildOutputType(
     arg_mode: ArgMode,
     environ_map: *process.Environ.Map,
     cs: *CompilationState,
-    ds: ?*@import("zls").DocumentStore,
-    compilation: ?*?*Compilation,
+    ds: ?*lsp_server.DocumentStore,
+    lsp_compilation_build: ?*lsp_server.DocumentStore.BuildFile.CompilationBuild,
 ) BuildError!void {
     cs.io = io;
     cs.provided_name = null;
@@ -3946,8 +3948,9 @@ pub fn buildOutputType(
         else => fatal("failed to create compilation: {s}", .{@errorName(err)}),
     };
 
-    if (compilation) |c| {
-        c.* = comp;
+    if (lsp_compilation_build) |lsp_comp_build| {
+        lsp_comp_build.instance = comp;
+        comp.lsp_compilation_build = lsp_comp_build;
         return;
     }
 

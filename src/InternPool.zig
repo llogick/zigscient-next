@@ -158,7 +158,9 @@ pub const TrackedInst = extern struct {
         pub fn resolveFull(tracked_inst_index: TrackedInst.Index, ip: *const InternPool) ?TrackedInst {
             const tracked_inst_unwrapped = tracked_inst_index.unwrap(ip);
             const tracked_insts = ip.getLocalShared(tracked_inst_unwrapped.tid).tracked_insts.acquire();
-            const maybe_lost = tracked_insts.view().items(.@"0")[tracked_inst_unwrapped.index];
+            const items = tracked_insts.view().items(.@"0");
+            if (!(tracked_inst_unwrapped.index < items.len)) return null;
+            const maybe_lost = items[tracked_inst_unwrapped.index];
             return .{
                 .file = maybe_lost.file,
                 .inst = maybe_lost.inst.unwrap() orelse return null,
@@ -732,7 +734,7 @@ pub const Nav = struct {
 
     /// The compact in-memory representation of a `Nav`.
     /// 26 bytes.
-    const Repr = struct {
+    pub const Repr = struct {
         name: NullTerminatedString,
         fqn: NullTerminatedString,
         // The following 1 fields are either both populated, or both `.none`.
@@ -757,7 +759,7 @@ pub const Nav = struct {
             _: u1 = 0,
         };
 
-        fn unpack(repr: Repr) Nav {
+        pub fn unpack(repr: Repr) Nav {
             return .{
                 .name = repr.name,
                 .fqn = repr.fqn,
@@ -1370,7 +1372,7 @@ const Local = struct {
             }
             pub fn view(list: ListSelf) View {
                 const capacity = list.header().capacity;
-                assert(capacity > 0); // optimizes `MultiArrayList.Slice.items`
+                // assert(capacity > 0); // optimizes `MultiArrayList.Slice.items`
                 return .{
                     .bytes = list.bytes,
                     .len = capacity,
@@ -10620,7 +10622,7 @@ fn extraDataTrail(extra: Local.Extra, comptime T: type, index: u32) struct { dat
     };
 }
 
-fn extraData(extra: Local.Extra, comptime T: type, index: u32) T {
+pub fn extraData(extra: Local.Extra, comptime T: type, index: u32) T {
     return extraDataTrail(extra, T, index).data;
 }
 

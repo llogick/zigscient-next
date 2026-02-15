@@ -358,6 +358,8 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                     else => break :comp,
                 };
 
+                build_file.compilation.has_completed_once = true;
+
                 var error_bundle = comp.getAllErrorsAlloc() catch @panic("OOM");
                 defer error_bundle.deinit(param_server.document_store.allocator);
 
