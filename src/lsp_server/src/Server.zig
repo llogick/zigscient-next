@@ -334,31 +334,38 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 return;
             }
 
-            if (!DocumentStore.isBuildFile(param_handle.uri)) comp: {
-                if (!@hasDecl(compiler_main, "Compilation")) break :comp;
-                const build_file_uri = param_handle.closest_build_file_uri orelse break :comp;
-                const build_file = param_server.document_store.getBuildFile(build_file_uri) orelse break :comp;
+            if (!DocumentStore.isBuildFile(param_handle.uri)) proj_diags: {
+                if (!@hasDecl(compiler_main, "Compilation")) break :proj_diags;
 
-                try build_file.compilation.mutex.lock(param_server.io);
-                defer build_file.compilation.mutex.unlock(param_server.io);
-
-                const comp = build_file.compilation.instance orelse break :comp;
-                const project_root_path = build_file.compilation.state.project_root_path orelse {
-                    log.err("compilation_state.project_root_path is null", .{});
-                    break :comp;
+                const compilation = compilation: {
+                    if (param_handle.computed_data.compilation) |comp| break :compilation comp;
+                    if (param_handle.closest_build_file_uri) |build_file_uri| {
+                        const build_file = param_server.document_store.getBuildFile(build_file_uri) orelse break :proj_diags;
+                        break :compilation &build_file.compilation;
+                    }
+                    break :proj_diags;
                 };
 
-                const token = param_server.document_store.notifyProgressStart(.compilation_progress, build_file_uri);
+                try compilation.mutex.lock(param_server.io);
+                defer compilation.mutex.unlock(param_server.io);
+
+                const comp = compilation.instance orelse break :proj_diags;
+                const project_root_path = compilation.state.project_root_path orelse {
+                    log.err("compilation_state.project_root_path is null", .{});
+                    break :proj_diags;
+                };
+
+                const token = param_server.document_store.notifyProgressStart(.compilation_progress, project_root_path);
                 errdefer if (token) |t| param_server.document_store.notifyProgressEnd(t, .failure);
 
                 comp.file_system_inputs.?.clearRetainingCapacity();
                 comp.update(.none) catch |err| switch (err) {
                     error.Canceled => return error.Canceled,
                     error.OutOfMemory => @panic("OOM"),
-                    else => break :comp,
+                    else => break :proj_diags,
                 };
 
-                build_file.compilation.has_completed_once = true;
+                compilation.has_completed_once = true;
 
                 var error_bundle = comp.getAllErrorsAlloc() catch @panic("OOM");
                 defer error_bundle.deinit(param_server.document_store.allocator);
