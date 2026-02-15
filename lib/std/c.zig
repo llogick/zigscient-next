@@ -9812,13 +9812,16 @@ pub const EV = switch (native_os) {
         pub const ONESHOT = 0x0010;
         /// clear event state after reporting
         pub const CLEAR = 0x0020;
-        /// force immediate event output
-        /// ... with or without ERROR
-        /// ... use KEVENT_FLAG_ERROR_EVENTS
-        ///     on syscalls supporting flags
+        /// force EV_ERROR on success, data=0
         pub const RECEIPT = 0x0040;
         /// disable event after reporting
         pub const DISPATCH = 0x0080;
+        /// filter-specific flag
+        pub const FLAG1 = 0x2000;
+        /// error, data contains errno
+        pub const ERROR = 0x4000;
+        /// EOF detected
+        pub const EOF = 0x8000;
     },
     .freebsd => struct {
         /// add event to kq (implies enable)
