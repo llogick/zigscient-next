@@ -75,7 +75,7 @@ pub fn print(
             .empty_tuple => try writer.writeAll(".{}"),
             else => try writer.writeAll(@tagName(simple_value)),
         },
-        .variable => try writer.writeAll("(variable)"),
+        .variable => |v| try print(Value.fromInterned(v.init), writer, 1, pt, null), // try writer.writeAll("(variable)"),
         .@"extern" => |e| try writer.print("(extern '{f}')", .{e.name.fmt(ip)}),
         .func => |func| try writer.print("(function '{f}')", .{ip.getNav(func.owner_nav).name.fmt(ip)}),
         .int => |int| switch (int.storage) {

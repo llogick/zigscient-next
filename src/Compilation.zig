@@ -299,6 +299,8 @@ emit_llvm_bc: ?[]const u8,
 /// Cwd-relative if `cache_use == .none`. Otherwise, relative to our subdirectory in the cache.
 emit_docs: ?[]const u8,
 
+lsp_compilation_build: ?*@import("zls").DocumentStore.BuildFile.CompilationBuild = null,
+
 const QueuedJobs = struct {
     /// hack for stage2_x86_64 + coff
     compiler_rt_dyn_lib: bool = false,
@@ -5320,7 +5322,7 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 const lsp_doc = lsp_doc_store.getHandle(uri) orelse break :rtf;
                 lsp_doc.computed_data.lock.lockUncancelable(lsp_doc_store.io);
                 defer lsp_doc.computed_data.lock.unlock(lsp_doc_store.io);
-                lsp_doc.computed_data.zcu = comp.zcu;
+                lsp_doc.computed_data.compilation = comp.lsp_compilation_build;
                 try lsp_doc.computed_data.nodes.put(
                     lsp_doc_store.allocator,
                     src_node,

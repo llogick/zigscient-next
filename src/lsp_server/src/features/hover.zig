@@ -12,7 +12,7 @@ const Analyser = @import("../analysis.zig");
 const DocumentStore = @import("../DocumentStore.zig");
 const uri = @import("../uri.zig");
 
-const data = @import("version_data");
+const builtins_data = @import("version_data");
 
 fn hoverSymbol(
     ds: *DocumentStore,
@@ -276,7 +276,7 @@ fn hoverDefinitionBuiltin(
         }
     }
 
-    const builtin = data.builtins.get(name) orelse return null;
+    const builtin = builtins_data.builtins.get(name) orelse return null;
     const signature = try Analyser.renderBuiltinFunctionSignature(
         arena,
         name,
@@ -317,14 +317,14 @@ fn hoverDefinitionGlobal(
     analyser: *Analyser,
     arena: std.mem.Allocator,
     handle: *DocumentStore.Handle,
-    pos_index: usize,
+    source_index: usize,
     markup_kind: types.MarkupKind,
     offset_encoding: offsets.Encoding,
 ) Analyser.Error!?types.Hover {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const name_token, const name_loc = offsets.identifierTokenAndLocFromIndex(&handle.tree, pos_index) orelse return null;
+    const name_token, const name_loc = offsets.identifierTokenAndLocFromIndex(&handle.tree, source_index) orelse return null;
     const name = offsets.locToSlice(handle.tree.source, name_loc);
     const hover_text = blk: {
         const is_escaped_identifier = handle.tree.source[handle.tree.tokenStart(name_token)] == '@';
@@ -335,15 +335,18 @@ fn hoverDefinitionGlobal(
                 break :blk try hoverSymbolResolved(arena, markup_kind, &.{}, name, &.{resolved_type_str}, false, &.{});
             }
         }
-        const decl = (try analyser.lookupSymbolGlobal(handle, name, pos_index)) orelse return null;
+        const decl = (try analyser.lookupSymbolGlobal(handle, name, source_index)) orelse return null;
         break :blk (try hoverSymbol(ds, analyser, arena, decl, markup_kind)) orelse return null;
     };
+
+    const nav_info = try lookup(ds, arena, handle, source_index, markup_kind) orelse "";
+    const content = if (nav_info.len != 0) try std.fmt.allocPrint(arena, "{s}" ++ "\n" ++ "{s}", .{ hover_text, nav_info }) else hover_text;
 
     return .{
         .contents = .{
             .markup_content = .{
                 .kind = markup_kind,
-                .value = hover_text,
+                .value = content,
             },
         },
         .range = offsets.tokenToRange(&handle.tree, name_token, offset_encoding),
@@ -543,6 +546,7 @@ fn hoverKeyword(
     offset_encoding: offsets.Encoding,
 ) error{OutOfMemory}!?types.Hover {
     if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
+
     const tree = &handle.tree;
 
     switch (tree.tokenTag(token_index)) {
@@ -559,11 +563,17 @@ fn hoverKeyword(
     handle.computed_data.lock.lockSharedUncancelable(ds.io);
     defer handle.computed_data.lock.unlockShared(ds.io);
 
-    if (handle.computed_data.zcu == null) return null;
-
     const args = handle.computed_data.nodes.get(nodes[0]) orelse return null;
+    const compilation = handle.computed_data.compilation orelse return null;
 
-    const pt: DocumentStore.Compilation.Zcu.PerThread = .activate(handle.computed_data.zcu.?, args.tid);
+    if (!compilation.mutex.tryLock()) return null;
+    defer compilation.mutex.unlock(ds.io);
+
+    if (!compilation.has_completed_once) return null;
+
+    const zcu = compilation.instance.?.zcu orelse return null;
+
+    const pt: DocumentStore.Compilation.Zcu.PerThread = .activate(zcu, args.tid);
     defer pt.deactivate();
 
     switch (pt.zcu.intern_pool.indexToKey(args.ty)) {
@@ -630,4 +640,96 @@ pub fn hover(
     };
 
     return response;
+}
+
+fn lookup(
+    ds: *DocumentStore,
+    arena: std.mem.Allocator,
+    handle: *DocumentStore.Handle,
+    source_index: usize,
+    markup_kind: types.MarkupKind,
+    // offset_encoding: offsets.Encoding,
+) Analyser.Error!?[]const u8 {
+    if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
+
+    const tree = &handle.tree;
+    // this can't tell the diff between the fn decl and it's first param
+    const nodes = try ast.nodesOverlappingIndex(arena, tree, source_index);
+    if (nodes.len == 0) return null;
+    // for (nodes) |node| std.log.err("ntag: {t}", .{tree.nodeTag(node)});
+
+    handle.computed_data.lock.lockSharedUncancelable(ds.io);
+    defer handle.computed_data.lock.unlockShared(ds.io);
+
+    const compilation = handle.computed_data.compilation orelse return null;
+
+    if (!compilation.mutex.tryLock()) return null;
+    defer compilation.mutex.unlock(ds.io);
+
+    if (!compilation.has_completed_once) return null;
+
+    const zcu = compilation.instance.?.zcu orelse return null;
+
+    const ip = zcu.intern_pool;
+    const Ip = DocumentStore.Compilation.InternPool;
+    const Zcu = DocumentStore.Compilation.Zcu;
+
+    for (ip.locals, 0..) |_, tid| {
+        const navs = ip.getLocalShared(@enumFromInt(tid)).navs.acquire();
+        const nav_reprs = navs.view();
+        for (
+            nav_reprs.items(.analysis_zir_index),
+            nav_reprs.items(.bits),
+            0..,
+        ) |opt_zir_index, bits, index| {
+            const zir_index = opt_zir_index.unwrap() orelse continue;
+            if (bits.status == .unresolved) continue;
+            const resolved = zir_index.resolveFull(&ip) orelse continue;
+            // std.log.err("got resolved", .{});
+            const file = zcu.fileByIndex(resolved.file);
+            // std.log.err("got file", .{});
+            const file_uri = file.uri_slice orelse continue;
+            if (!std.mem.eql(u8, handle.uri, file_uri)) continue;
+            // std.log.err("got match uri", .{});
+            const zir = file.zir orelse continue;
+            // std.log.err("got zir", .{});
+            if (zir.instructions.get(@intFromEnum(resolved.inst)).tag != .declaration) continue;
+            const zir_decl = zir.getDeclaration(resolved.inst);
+            const src_node = zir_decl.src_node;
+            // std.log.err("src_node {} vs nodes[0] {}", .{ src_node, nodes[0] });
+            if (src_node != nodes[0]) continue;
+            const nav: Ip.Nav = nav_reprs.get(index).unpack();
+
+            switch (nav.status) {
+                .unresolved => unreachable,
+                .type_resolved => {},
+                .fully_resolved => |r| {
+                    var output: std.ArrayList(u8) = .empty;
+
+                    if (markup_kind == .markdown) {
+                        try output.print(arena, "```zig\n\n", .{});
+                    }
+
+                    const pt: Zcu.PerThread = .activate(zcu, @enumFromInt(tid));
+                    defer pt.deactivate();
+                    const v = Zcu.Value.fromInterned(r.val);
+                    try output.print(arena, "fqn: {f}\n", .{nav.fqn.fmt(&ip)});
+                    try output.print(arena, "val: {f}\n", .{v.fmtValue(pt)});
+                    try output.print(arena, "typ: {f}\n", .{v.typeOf(zcu).fmt(pt)});
+                    // const alignment = nav.getAlignment();
+                    // if (alignment != .none) try output.print(arena, "align({t})\n", .{alignment});
+                    // const link_section = nav.getLinkSection();
+                    // if (link_section != .none) try output.print(arena, "linksection: {s}\n", .{link_section.toSlice(&ip) orelse ""});
+                    // const addr_space = nav.getAddrspace();
+                    // if (addr_space != .generic) try output.print(arena, "address_space: {t}\n", .{addr_space});
+
+                    if (markup_kind == .markdown) {
+                        try output.print(arena, "```\n", .{});
+                    }
+                    return output.items;
+                },
+            }
+        }
+    }
+    return null;
 }
