@@ -144,10 +144,6 @@ pub const VTable = struct {
     swapCancelProtection: *const fn (?*anyopaque, new: CancelProtection) CancelProtection,
     checkCancel: *const fn (?*anyopaque) Cancelable!void,
 
-    /// Blocks until one of the futures from the list has a result ready, such
-    /// that awaiting it will not block. Returns that index.
-    select: *const fn (?*anyopaque, futures: []const *AnyFuture) Cancelable!usize,
-
     futexWait: *const fn (?*anyopaque, ptr: *const u32, expected: u32, Timeout) Cancelable!void,
     futexWaitUncancelable: *const fn (?*anyopaque, ptr: *const u32, expected: u32) void,
     futexWake: *const fn (?*anyopaque, ptr: *const u32, max_waiters: u32) void,
@@ -2120,40 +2116,6 @@ pub fn sleep(io: Io, duration: Duration, clock: Clock) Cancelable!void {
         .raw = duration,
         .clock = clock,
     } });
-}
-
-/// Given a struct with each field a `*Future`, returns a union with the same
-/// fields, each field type the future's result.
-pub fn SelectUnion(S: type) type {
-    const struct_fields = @typeInfo(S).@"struct".fields;
-    var names: [struct_fields.len][]const u8 = undefined;
-    var types: [struct_fields.len]type = undefined;
-    for (struct_fields, &names, &types) |struct_field, *union_field_name, *UnionFieldType| {
-        const FieldFuture = @typeInfo(struct_field.type).pointer.child;
-        union_field_name.* = struct_field.name;
-        UnionFieldType.* = @FieldType(FieldFuture, "result");
-    }
-    return @Union(.auto, std.meta.FieldEnum(S), &names, &types, &@splat(.{}));
-}
-
-/// `s` is a struct with every field a `*Future(T)`, where `T` can be any type,
-/// and can be different for each field.
-pub fn select(io: Io, s: anytype) Cancelable!SelectUnion(@TypeOf(s)) {
-    const U = SelectUnion(@TypeOf(s));
-    const S = @TypeOf(s);
-    const fields = @typeInfo(S).@"struct".fields;
-    var futures: [fields.len]*AnyFuture = undefined;
-    inline for (fields, &futures) |field, *any_future| {
-        const future = @field(s, field.name);
-        any_future.* = future.any_future orelse return @unionInit(U, field.name, future.result);
-    }
-    switch (try io.vtable.select(io.userdata, &futures)) {
-        inline 0...(fields.len - 1) => |selected_index| {
-            const field_name = fields[selected_index].name;
-            return @unionInit(U, field_name, @field(s, field_name).await(io));
-        },
-        else => unreachable,
-    }
 }
 
 pub const LockedStderr = struct {

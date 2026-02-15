@@ -100,15 +100,11 @@ const Fiber = struct {
     required_align: void align(4),
     evented: *Evented,
     context: Io.fiber.Context,
-    await_count: i32,
     link: union {
         awaiter: ?*Fiber,
         group: struct { prev: ?*Fiber, next: ?*Fiber },
     },
-    status: union(enum) {
-        queue_next: ?*Fiber,
-        awaiting_group: Group,
-    },
+    awaiting_group: Group,
     cancel_status: CancelStatus,
     cancel_protection: CancelProtection,
 
@@ -123,7 +119,6 @@ const Fiber = struct {
         const Awaiting = enum(@Int(.unsigned, @bitSizeOf(usize) - shift)) {
             nothing = 0,
             group = 1,
-            select = 2,
             _,
 
             const shift = 1;
@@ -216,7 +211,6 @@ const Fiber = struct {
     }
 
     fn destroy(fiber: *Fiber, ev: *Evented) void {
-        assert(fiber.status.queue_next == null);
         ev.allocator().free(fiber.allocatedSlice());
     }
 
@@ -272,13 +266,10 @@ const Fiber = struct {
             .group => {
                 // The awaiter received a cancelation request while awaiting a group,
                 // so propagate the cancelation to the group.
-                if (fiber.status.awaiting_group.cancel(ev, null)) {
-                    fiber.status = .{ .queue_next = null };
+                if (fiber.awaiting_group.cancel(ev, null)) {
+                    fiber.awaiting_group = undefined;
                     ev.queue.async(fiber, &Fiber.@"resume");
                 }
-            },
-            .select => if (@atomicRmw(i32, &fiber.await_count, .Add, 1, .monotonic) == -1) {
-                ev.queue.async(fiber, &Fiber.@"resume");
             },
             _ => |awaiting| awaiting.toCancelable().async(),
         }
@@ -369,8 +360,6 @@ pub fn io(ev: *Evented) Io {
             .recancel = recancel,
             .swapCancelProtection = swapCancelProtection,
             .checkCancel = checkCancel,
-
-            .select = select,
 
             .futexWait = futexWait,
             .futexWaitUncancelable = futexWaitUncancelable,
@@ -522,9 +511,8 @@ pub fn init(ev: *Evented, backing_allocator: Allocator, options: InitOptions) !v
             .required_align = {},
             .evented = ev,
             .context = undefined,
-            .await_count = 0,
             .link = .{ .awaiter = null },
-            .status = .{ .queue_next = null },
+            .awaiting_group = undefined,
             .cancel_status = .unrequested,
             .cancel_protection = .unblocked,
         },
@@ -642,7 +630,7 @@ const SwitchMessage = struct {
 
     const PendingTask = union(enum) {
         nothing,
-        await: u31,
+        await: *Fiber,
         activate: c.dispatch.object_t,
         @"resume": c.dispatch.object_t,
         group_await: Group,
@@ -661,10 +649,10 @@ const SwitchMessage = struct {
         thread.current_context = message.contexts.new;
         switch (message.pending_task) {
             .nothing => {},
-            .await => |count| {
-                const fiber: *Fiber = @alignCast(@fieldParentPtr("context", message.contexts.old));
-                if (@atomicRmw(i32, &fiber.await_count, .Sub, count, .monotonic) > 0)
-                    ev.queue.async(fiber, &Fiber.@"resume");
+            .await => |awaiting| {
+                const awaiter: *Fiber = @alignCast(@fieldParentPtr("context", message.contexts.old));
+                if (@atomicRmw(?*Fiber, &awaiting.link.awaiter, .Xchg, awaiter, .acq_rel) ==
+                    Fiber.finished) ev.queue.async(awaiter, &Fiber.@"resume");
             },
             .activate => |object| object.activate(),
             .@"resume" => |object| object.@"resume"(),
@@ -998,7 +986,7 @@ fn crashHandler(userdata: ?*anyopaque) void {
 }
 
 const AsyncClosure = struct {
-    ev: *Evented,
+    evented: *Evented,
     fiber: *Fiber,
     start: *const fn (context: *const anyopaque, result: *anyopaque) void,
     result_align: Alignment,
@@ -1035,13 +1023,13 @@ const AsyncClosure = struct {
         closure: *AsyncClosure,
         message: *const SwitchMessage,
     ) callconv(.withStackAlign(.c, @alignOf(AsyncClosure))) noreturn {
-        message.handle(closure.ev);
+        const ev = closure.evented;
         const fiber = closure.fiber;
+        message.handle(ev);
         closure.start(closure.contextPointer(), fiber.resultBytes(closure.result_align));
         if (@atomicRmw(?*Fiber, &fiber.link.awaiter, .Xchg, Fiber.finished, .acq_rel)) |awaiter|
-            if (@atomicRmw(i32, &awaiter.await_count, .Add, 1, .monotonic) == -1)
-                closure.ev.queue.async(awaiter, &Fiber.@"resume");
-        closure.ev.yield(.nothing);
+            ev.queue.async(awaiter, &Fiber.@"resume");
+        ev.yield(.nothing);
         unreachable; // switched to dead fiber
     }
 };
@@ -1096,14 +1084,13 @@ fn concurrent(
             },
             else => |arch| @compileError("unimplemented architecture: " ++ @tagName(arch)),
         },
-        .await_count = 0,
         .link = .{ .awaiter = null },
-        .status = .{ .queue_next = null },
+        .awaiting_group = undefined,
         .cancel_status = .unrequested,
         .cancel_protection = .unblocked,
     };
     closure.* = .{
-        .ev = ev,
+        .evented = ev,
         .fiber = fiber,
         .start = start,
         .result_align = result_alignment,
@@ -1121,18 +1108,11 @@ fn await(
     result_alignment: Alignment,
 ) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    const fiber = Thread.current().currentFiber();
-    const future_fiber: *Fiber = @ptrCast(@alignCast(future));
-    if (@atomicRmw(?*Fiber, &future_fiber.link.awaiter, .Xchg, fiber, .acq_rel)) |awaiter| {
-        assert(awaiter == Fiber.finished);
-    } else while (true) {
-        ev.yield(.{ .await = 1 });
-        const awaiter = @atomicLoad(?*Fiber, &future_fiber.link.awaiter, .acquire);
-        if (awaiter == Fiber.finished) break;
-        assert(awaiter == fiber); // spurious wakeup
-    }
-    @memcpy(result, future_fiber.resultBytes(result_alignment));
-    future_fiber.destroy(ev);
+    const awaiting: *Fiber = @ptrCast(@alignCast(future));
+    if (@atomicLoad(?*Fiber, &awaiting.link.awaiter, .acquire) != Fiber.finished)
+        ev.yield(.{ .await = awaiting });
+    @memcpy(result, awaiting.resultBytes(result_alignment));
+    awaiting.destroy(ev);
 }
 
 fn cancel(
@@ -1267,8 +1247,8 @@ const Group = struct {
                     .awaiter_delayed = false,
                     .fibers = .null,
                 }, .release);
-                assert(awaiter.status.awaiting_group.ptr == group.ptr);
-                awaiter.status = .{ .queue_next = null };
+                assert(awaiter.awaiting_group.ptr == group.ptr);
+                awaiter.awaiting_group = undefined;
                 return awaiter;
             }
             // Race with `Fiber.requestCancel`
@@ -1336,8 +1316,7 @@ const Group = struct {
 
     /// Assumes the mutex is held.
     fn registerAwaiter(group: Group, awaiter: *Fiber) bool {
-        assert(awaiter.status.queue_next == null);
-        awaiter.status = .{ .awaiting_group = group };
+        awaiter.awaiting_group = group;
         assert(@atomicRmw(
             Awaiter,
             group.awaiterPtr(),
@@ -1349,7 +1328,7 @@ const Group = struct {
     }
 
     const AsyncClosure = struct {
-        ev: *Evented,
+        evented: *Evented,
         group: Group,
         fiber: *Fiber,
         start: *const fn (context: *const anyopaque) Io.Cancelable!void,
@@ -1388,19 +1367,15 @@ const Group = struct {
             closure: *Group.AsyncClosure,
             message: *const SwitchMessage,
         ) callconv(.withStackAlign(.c, @alignOf(Group.AsyncClosure))) noreturn {
-            message.handle(closure.ev);
-            assert(closure.fiber.status.queue_next == null);
-            const result = closure.start(closure.contextPointer());
-            const ev = closure.ev;
-            const group = closure.group;
+            const ev = closure.evented;
             const fiber = closure.fiber;
-            const cancel_acknowledged = fiber.cancel_protection.acknowledged;
-            if (result) {
-                assert(!cancel_acknowledged); // group task acknowledged cancelation but did not return `error.Canceled`
+            message.handle(ev);
+            if (closure.start(closure.contextPointer())) {
+                assert(!fiber.cancel_protection.acknowledged); // group task acknowledged cancelation but did not return `error.Canceled`
             } else |err| switch (err) {
-                error.Canceled => assert(cancel_acknowledged), // group task returned `error.Canceled` but was never canceled
+                error.Canceled => assert(fiber.cancel_protection.acknowledged), // group task returned `error.Canceled` but was never canceled
             }
-            if (group.removeFiber(ev, fiber)) |awaiter| ev.queue.async(awaiter, &Fiber.@"resume");
+            if (closure.group.removeFiber(ev, fiber)) |awaiter| ev.queue.async(awaiter, &Fiber.@"resume");
             ev.yield(.destroy);
             unreachable; // switched to dead fiber
         }
@@ -1470,14 +1445,13 @@ fn groupConcurrent(
             },
             else => |arch| @compileError("unimplemented architecture: " ++ @tagName(arch)),
         },
-        .await_count = 0,
         .link = .{ .group = .{ .prev = null, .next = null } },
-        .status = .{ .queue_next = null },
+        .awaiting_group = undefined,
         .cancel_status = .unrequested,
         .cancel_protection = .unblocked,
     };
     closure.* = .{
-        .ev = ev,
+        .evented = ev,
         .group = group,
         .fiber = fiber,
         .start = start,
@@ -1687,50 +1661,6 @@ fn futexForAddress(ev: *Evented, address: usize) *Futex {
     comptime assert(std.math.isPowerOfTwo(ev.futexes.len));
     // The high bits of `hashed` have better entropy than the low bits.
     return &ev.futexes[hashed >> @clz(ev.futexes.len - 1)];
-}
-
-fn select(userdata: ?*anyopaque, futures: []const *Io.AnyFuture) Io.Cancelable!usize {
-    const ev: *Evented = @ptrCast(@alignCast(userdata));
-    const fiber = Thread.current().currentFiber();
-    var await_count: u31, var result = for (futures, 0..) |future, future_index| {
-        const future_fiber: *Fiber = @ptrCast(@alignCast(future));
-        if (@atomicRmw(
-            ?*Fiber,
-            &future_fiber.link.awaiter,
-            .Xchg,
-            fiber,
-            .acq_rel,
-        )) |awaiter| {
-            assert(awaiter == Fiber.finished);
-            break .{ @intCast(future_index), future_index };
-        }
-    } else result: {
-        const await_count: u31 = @intCast(futures.len);
-        ev.yield(.{ .await = 1 });
-        break :result .{ await_count - 1, futures.len };
-    };
-    for (futures[0..result], 0..) |future, future_index| {
-        const future_fiber: *Fiber = @ptrCast(@alignCast(future));
-        const awaiter = @atomicRmw(?*Fiber, &future_fiber.link.awaiter, .Xchg, null, .monotonic);
-        if (awaiter == Fiber.finished) {
-            @atomicStore(?*Fiber, &future_fiber.link.awaiter, Fiber.finished, .monotonic);
-            result = @min(future_index, result);
-        } else {
-            assert(awaiter == fiber);
-            await_count -= 1;
-        }
-    }
-    // Equivalent to `ev.yield(null, .{ .await = await_count });`,
-    // but avoiding a context switch in the common case.
-    switch (std.math.order(
-        @atomicRmw(i32, &fiber.await_count, .Sub, await_count, .monotonic),
-        await_count,
-    )) {
-        .lt => ev.yield(.{ .await = 0 }),
-        .eq => {},
-        .gt => unreachable,
-    }
-    return result;
 }
 
 fn futexWait(

@@ -282,40 +282,6 @@ test "Group.concurrent" {
     try testing.expectEqualSlices(usize, &.{ 45, 245 }, &results);
 }
 
-test "select" {
-    const io = testing.io;
-
-    var queue: Io.Queue(u8) = .init(&.{});
-
-    var get_a = io.concurrent(Io.Queue(u8).getOne, .{ &queue, io }) catch |err| switch (err) {
-        error.ConcurrencyUnavailable => {
-            try testing.expect(builtin.single_threaded);
-            return;
-        },
-    };
-    defer _ = get_a.cancel(io) catch {};
-
-    var get_b = try io.concurrent(Io.Queue(u8).getOne, .{ &queue, io });
-    defer _ = get_b.cancel(io) catch {};
-
-    var timeout = io.async(Io.sleep, .{ io, .fromMilliseconds(1), .awake });
-    defer timeout.cancel(io) catch {};
-
-    switch (try io.select(.{
-        .get_a = &get_a,
-        .get_b = &get_b,
-        .timeout = &timeout,
-    })) {
-        .get_a => return error.TestFailure,
-        .get_b => return error.TestFailure,
-        .timeout => {
-            queue.close(io);
-            try testing.expectError(error.Closed, get_a.await(io));
-            try testing.expectError(error.Closed, get_b.await(io));
-        },
-    }
-}
-
 fn testQueue(comptime len: usize) !void {
     const io = testing.io;
     var buf: [len]usize = undefined;
