@@ -263,7 +263,7 @@ set(ZIG_STAGE2_SOURCES
     lib/std/hash/wyhash.zig
     lib/std/hash_map.zig
     lib/std/heap.zig
-    lib/std/heap/arena_allocator.zig
+    lib/std/heap/ArenaAllocator.zig
     lib/std/json.zig
     lib/std/leb128.zig
     lib/std/log.zig

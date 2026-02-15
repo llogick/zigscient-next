@@ -1346,12 +1346,8 @@ pub fn getDebugInfoAllocator() Allocator {
     // Otherwise, use a global arena backed by the page allocator
     const S = struct {
         var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-        var ts_arena: std.heap.ThreadSafeAllocator = .{
-            .child_allocator = arena.allocator(),
-            .io = std.Options.debug_io,
-        };
     };
-    return S.ts_arena.allocator();
+    return S.arena.allocator();
 }
 
 /// Whether or not the current target can print useful debug information when a segfault occurs.

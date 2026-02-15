@@ -9,7 +9,7 @@ const Allocator = std.mem.Allocator;
 const windows = std.os.windows;
 const Alignment = std.mem.Alignment;
 
-pub const ArenaAllocator = @import("heap/arena_allocator.zig").ArenaAllocator;
+pub const ArenaAllocator = @import("heap/ArenaAllocator.zig");
 pub const SmpAllocator = @import("heap/SmpAllocator.zig");
 pub const FixedBufferAllocator = @import("heap/FixedBufferAllocator.zig");
 pub const PageAllocator = @import("heap/PageAllocator.zig");
