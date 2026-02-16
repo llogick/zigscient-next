@@ -2326,6 +2326,8 @@ pub fn buildOutputType(
                     .nostdlib => {
                         cs.create_module.opts.ensure_libc_on_non_freestanding = false;
                         cs.create_module.opts.ensure_libcpp_on_non_freestanding = false;
+                        cs.want_compiler_rt = false;
+                        cs.want_ubsan_rt = false;
                     },
                     .nostdlib_cpp => cs.create_module.opts.ensure_libcpp_on_non_freestanding = false,
                     .shared => {
