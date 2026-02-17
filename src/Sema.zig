@@ -15651,11 +15651,15 @@ fn zirAsm(
         inputs[arg_i] = .{ .c = constraint, .n = name };
     }
 
+    const clobbers_src = block.src(.{ .asm_clobbers = src.offset.node_offset.x });
+    const clobbers_ty = try sema.getBuiltinType(src, .@"assembly.Clobbers");
     const clobbers = if (extra.data.clobbers == .none) empty: {
-        const clobbers_ty = try sema.getBuiltinType(src, .@"assembly.Clobbers");
         break :empty try sema.structInitEmpty(block, clobbers_ty, src, src);
-    } else sema.resolveInst(extra.data.clobbers); // Already coerced by AstGen.
-    const clobbers_val = try sema.resolveConstDefinedValue(block, src, clobbers, .{ .simple = .clobber });
+    } else clobbers: {
+        const uncoerced = sema.resolveInst(extra.data.clobbers);
+        break :clobbers try sema.coerce(block, clobbers_ty, uncoerced, clobbers_src);
+    };
+    const clobbers_val = try sema.resolveConstDefinedValue(block, clobbers_src, clobbers, .{ .simple = .clobber });
     needed_capacity += asm_source.len / 4 + 1;
 
     try sema.air_extra.ensureUnusedCapacity(gpa, needed_capacity);

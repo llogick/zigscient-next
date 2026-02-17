@@ -1645,6 +1645,12 @@ pub const SrcLoc = struct {
                     // token points to the ')'
                     tree.tokenToSpan(data[1] - 1);
             },
+            .asm_clobbers => |offset| {
+                const tree = try src_loc.file_scope.getTree(zcu);
+                const node = offset.toAbsolute(src_loc.base_node);
+                const full = tree.fullAsm(node).?;
+                return tree.nodeToSpan(full.ast.clobbers.unwrap().?); // this should only be reachable if the clobbers are written in the source
+            },
             .for_input => |for_input| {
                 const tree = try src_loc.file_scope.getTree(zcu);
                 const node = for_input.for_node_offset.toAbsolute(src_loc.base_node);
@@ -2595,6 +2601,8 @@ pub const LazySrcLoc = struct {
             offset: Ast.Node.Offset,
             output_index: u32,
         },
+        /// Points to the assembly node
+        asm_clobbers: Ast.Node.Offset,
         /// The source location points to a for loop input.
         for_input: struct {
             /// Points to the for loop AST node.
