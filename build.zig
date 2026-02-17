@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) !void {
     });
     const optimize = b.standardOptimizeOption(.{});
 
-    const dev_env: DevEnv = b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .sema;
+    const dev_env: DevEnv = b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .lsp_server;
 
     const flat = b.option(bool, "flat", "Put files into the installation prefix in a manner suited for upstream distribution rather than a posix file system hierarchy standard") orelse false;
     const single_threaded = b.option(bool, "single-threaded", "Build artifacts that run in single threaded mode");
@@ -798,6 +798,17 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
     });
 
     compiler_mod.addImport("aro", aro_mod);
+
+    const aro_compiler_util_mod = b.createModule(.{
+        .root_source_file = b.path("lib/compiler/util.zig"),
+    });
+    aro_compiler_util_mod.addImport("aro", aro_mod);
+    const translate_c_mod = b.createModule(.{
+        .root_source_file = b.path("lib/compiler/translate-c/main.zig"),
+    });
+    translate_c_mod.addImport("aro", aro_mod);
+    translate_c_mod.addImport("aro-compiler-util", aro_compiler_util_mod);
+    compiler_mod.addImport("translate-c", translate_c_mod);
 
     return compiler_mod;
 }

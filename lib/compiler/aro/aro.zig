@@ -39,3 +39,5 @@ test {
     _ = @import("aro/Tokenizer.zig");
     _ = @import("aro/Value.zig");
 }
+
+pub const translateC = @import("translate-c").translateC;

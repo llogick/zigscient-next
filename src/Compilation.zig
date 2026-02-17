@@ -5949,8 +5949,9 @@ pub fn translateC(
         if (comp.verbose_cimport) try dumpArgv(io, argv.items);
     }
 
+    const lsp_doc_store = if (comp.zcu) |zcu| if (zcu.lsp_document_store) |lsp_doc_store| lsp_doc_store else null else null;
     var stdout: []u8 = undefined;
-    try @import("main.zig").translateC(gpa, arena, io, argv.items, environ_map, prog_node, comp.thread_limit, &stdout);
+    try @import("main.zig").translateC(gpa, arena, io, argv.items, environ_map, prog_node, comp.thread_limit, &stdout, lsp_doc_store);
 
     if (out_dep_path) |dep_file_path| add_deps: {
         if (comp.verbose_cimport) log.info("processing dep file at {s}", .{dep_file_path});

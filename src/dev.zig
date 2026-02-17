@@ -26,6 +26,10 @@ pub const Env = enum {
     sema,
 
     /// - sema
+    /// - translate-c (via an `aro` subcommand)
+    lsp_server,
+
+    /// - sema
     /// - `zig build-* -fincremental -fno-llvm -fno-lld -target aarch64-linux --listen=-`
     @"aarch64-linux",
 
@@ -156,6 +160,11 @@ pub const Env = enum {
                 .sema,
                 => true,
                 else => Env.ast_gen.supports(feature),
+            },
+            .lsp_server => switch (feature) {
+                .translate_c_command,
+                => true,
+                else => Env.sema.supports(feature),
             },
             .@"aarch64-linux" => switch (feature) {
                 .build_command,

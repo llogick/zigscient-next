@@ -226,9 +226,13 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
 
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
-    if (args.len <= 1 or !mem.eql(u8, args[1], "zig")) {
+    if (args.len <= 1 or (args.len > 1 and !mem.eql(u8, args[1], "zig") and !mem.eql(u8, args[1], "aro"))) {
         _ = try @import("lsp_server/src/main.zig").stage2(gpa, io, init, &environ_map);
         return;
+    }
+
+    if (mem.eql(u8, args[1], "aro")) {
+        process.exit(@import("translate-c").translateC(gpa, arena, io, args[1..], &environ_map));
     }
 
     if (args.len <= 2) {
@@ -349,7 +353,9 @@ fn mainArgs(
         return buildOutputType(gpa, arena, io, args, .cpp, environ_map);
     } else if (mem.eql(u8, cmd, "translate-c")) {
         dev.check(.translate_c_command);
-        return buildOutputType(gpa, arena, io, args, .translate_c, environ_map);
+        var cs: CompilationState = .{};
+        defer cs.deinit(gpa);
+        return buildOutputType(gpa, arena, io, args, .translate_c, environ_map, &cs, null, null);
     } else if (mem.eql(u8, cmd, "rc")) {
         const use_server = cmd_args.len > 0 and std.mem.eql(u8, cmd_args[0], "--zig-integration");
         return jitCmd(gpa, arena, io, cmd_args, environ_map, .{
@@ -1059,37 +1065,6 @@ pub const CompilationState = struct {
     }
 };
 
-const BuildError = error{
-    OutOfMemory,
-    AccessDenied,
-    BrokenPipe,
-    Canceled,
-    DeviceBusy,
-    DiskQuota,
-    FileBusy,
-    FileTooBig,
-    InputOutput,
-    LockViolation,
-    NoDevice,
-    NoSpaceLeft,
-    NotOpenForWriting,
-    PermissionDenied,
-    SystemResources,
-    Unexpected,
-    WouldBlock,
-    ValgrindUnsupportedOnTarget,
-    TargetRequiresSingleThreaded,
-    BackendRequiresSingleThreaded,
-    TargetRequiresPic,
-    PieRequiresPic,
-    DynamicLinkingRequiresPic,
-    TargetHasNoRedZone,
-    StackCheckUnsupportedByTarget,
-    StackProtectorUnsupportedByTarget,
-    StackProtectorUnavailableWithoutLibC,
-    PrintingErrorsFailed,
-};
-
 const lsp_server = @import("zls");
 
 pub fn buildOutputType(
@@ -1102,7 +1077,7 @@ pub fn buildOutputType(
     cs: *CompilationState,
     ds: ?*lsp_server.DocumentStore,
     lsp_compilation_build: ?*lsp_server.DocumentStore.BuildFile.CompilationBuild,
-) BuildError!void {
+) !void {
     cs.io = io;
     cs.provided_name = null;
     cs.root_src_file = null;
@@ -5030,8 +5005,9 @@ pub fn translateC(
     prog_node: std.Progress.Node,
     thread_limit: usize,
     capture: ?*[]u8,
+    lsp_doc_store: ?*lsp_server.DocumentStore,
 ) !void {
-    try jitCmdInner(gpa, arena, io, argv, environ_map, prog_node, thread_limit, .{
+    try jitCmdInner(gpa, arena, io, argv, environ_map, prog_node, thread_limit, lsp_doc_store, .{
         .cmd_name = "translate-c",
         .root_src_path = "translate-c/main.zig",
         .depend_on_aro = true,
@@ -5972,7 +5948,7 @@ fn jitCmd(
     );
     try setThreadLimit(arena, thread_limit);
 
-    return jitCmdInner(gpa, arena, io, args, environ_map, root_prog_node, thread_limit, options);
+    return jitCmdInner(gpa, arena, io, args, environ_map, root_prog_node, thread_limit, null, options);
 }
 
 fn jitCmdInner(
@@ -5983,6 +5959,7 @@ fn jitCmdInner(
     environ_map: *const process.Environ.Map,
     root_prog_node: std.Progress.Node,
     thread_limit: usize,
+    lsp_doc_store: ?*lsp_server.DocumentStore,
     options: JitCmdOptions,
 ) !void {
     const target_query: std.Target.Query = .{};
@@ -6022,7 +5999,7 @@ fn jitCmdInner(
 
     // We want to release all the locks before executing the child process, so we make a nice
     // big block here to ensure the cleanup gets run when we extract out our argv.
-    {
+    if (lsp_doc_store == null) {
         const main_mod_paths: Package.Module.CreateOptions.Paths = .{
             .root = try .fromRoot(arena, dirs, .zig_lib, "compiler"),
             .root_src_path = options.root_src_path,
@@ -6068,6 +6045,23 @@ fn jitCmdInner(
                 .parent = null,
             });
             try root_mod.deps.put(arena, "aro", aro_mod);
+            const aro_compiler_util_mod = try Package.Module.create(arena, .{
+                .paths = .{
+                    .root = try .fromRoot(arena, dirs, .zig_lib, "compiler"),
+                    .root_src_path = "util.zig",
+                },
+                .fully_qualified_name = "aro-compiler-util",
+                .cc_argv = &.{},
+                .inherited = .{
+                    .resolved_target = resolved_target,
+                    .optimize_mode = optimize_mode,
+                    .strip = strip,
+                },
+                .global = config,
+                .parent = null,
+            });
+            try aro_compiler_util_mod.deps.put(arena, "aro", aro_mod);
+            try root_mod.deps.put(arena, "aro-compiler-util", aro_compiler_util_mod);
         }
 
         var create_diag: Compilation.CreateDiagnostic = undefined;
@@ -6116,6 +6110,9 @@ fn jitCmdInner(
             comp.emit_bin.?,
         });
         child_argv.appendAssumeCapacity(exe_path);
+    } else {
+        child_argv.appendAssumeCapacity(self_exe_path);
+        child_argv.appendAssumeCapacity("aro");
     }
 
     if (options.prepend_zig_lib_dir_path)

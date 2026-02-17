@@ -4,7 +4,7 @@ const assert = std.debug.assert;
 const mem = std.mem;
 const process = std.process;
 const aro = @import("aro");
-const compiler_util = @import("../util.zig");
+const compiler_util = @import("aro-compiler-util"); // @import("../util.zig");
 const Translator = @import("Translator.zig");
 
 const fast_exit = @import("builtin").mode != .Debug;
@@ -20,7 +20,16 @@ pub fn main(init: std.process.Init) u8 {
         if (fast_exit) process.exit(1);
         return 1;
     };
+    return translateC(gpa, arena, io, args, environ_map);
+}
 
+pub fn translateC(
+    gpa: mem.Allocator,
+    arena: mem.Allocator,
+    io: std.Io,
+    args: []const [:0]const u8,
+    environ_map: *std.process.Environ.Map,
+) u8 {
     var zig_integration = false;
     if (args.len > 1 and std.mem.eql(u8, args[1], "--zig-integration")) {
         zig_integration = true;
