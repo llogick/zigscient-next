@@ -326,6 +326,7 @@ generation: u32 = 0,
 /// In order to generate an absolute file path
 project_root_path: ?[]const u8 = null,
 lsp_document_store: ?*LspDocumentStore = null,
+cimport_files: std.ArrayList(*File) = .empty,
 
 pub const IncrementalDebugState = struct {
     /// All container types in the ZCU, even dead ones.
@@ -2860,6 +2861,18 @@ pub fn deinit(zcu: *Zcu) void {
             errs.deinit(gpa);
         }
         zcu.cimport_errors.deinit(gpa);
+
+        for (zcu.cimport_files.items) |file| {
+            file.path.deinit(gpa);
+            file.unload(gpa);
+            if (file.uri_slice) |slice| gpa.free(slice);
+            if (file.prev_zir) |prev_zir| {
+                prev_zir.deinit(gpa);
+                gpa.destroy(prev_zir);
+            }
+            gpa.destroy(file);
+        }
+        zcu.cimport_files.deinit(gpa);
 
         zcu.compile_logs.deinit(gpa);
         zcu.compile_log_lines.deinit(gpa);
