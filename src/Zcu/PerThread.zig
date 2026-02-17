@@ -70,7 +70,7 @@ pub const Id = if (InternPool.single_threaded) enum {
     threadlocal var recursive_tid: Id = .main;
 
     pub fn allocate(arena: Allocator, n: usize) Allocator.Error!void {
-        available_tids.items.len = 0;
+        available_tids = .empty;
         try available_tids.ensureTotalCapacityPrecise(arena, n - 1);
         for (1..n) |tid| available_tids.appendAssumeCapacity(@enumFromInt(tid));
     }
