@@ -677,6 +677,7 @@ fn lookup(
     for (ip.locals, 0..) |_, tid| {
         const navs = ip.getLocalShared(@enumFromInt(tid)).navs.acquire();
         const nav_reprs = navs.view();
+        if (nav_reprs.len == 0) continue;
         for (
             nav_reprs.items(.analysis_zir_index),
             nav_reprs.items(.bits),
