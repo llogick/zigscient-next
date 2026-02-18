@@ -157,7 +157,7 @@ pub const TerminalMode = union(enum) {
     ansi_escape_codes,
     /// This is not the same as being run on windows because other terminals
     /// exist like MSYS/git-bash.
-    windows_api: if (is_windows) WindowsApi else void,
+    windows_api: if (is_windows) WindowsApi else noreturn,
 
     pub const WindowsApi = struct {
         /// The output code page of the console.
@@ -620,33 +620,39 @@ pub fn start(io: Io, options: Options) Node {
             if (stderr.enableAnsiEscapeCodes(io)) |_| {
                 global_progress.terminal_mode = .ansi_escape_codes;
             } else |_| if (is_windows) {
-                if (stderr.isTty(io)) |is_tty| {
-                    if (is_tty) global_progress.terminal_mode = TerminalMode{ .windows_api = .{
-                        .code_page = windows.kernel32.GetConsoleOutputCP(),
-                    } };
-                } else |err| switch (err) {
+                var get_console_cp = windows.CONSOLE.USER_IO.GET_CP(.Output);
+                // Normally, we would pass `null` to `operate` here as the kernel32
+                // function does not accept a handle, however, if we pass one anyway,
+                // then we will get an error if the handle is not associated with
+                // this process's console, effectively combining an `isTty` check
+                // into the same syscall.
+                switch (get_console_cp.operate(io, stderr) catch |err| switch (err) {
                     error.Canceled => {
                         io.recancel();
                         return .none;
                     },
+                }) {
+                    .SUCCESS => global_progress.terminal_mode = .{ .windows_api = .{
+                        .code_page = get_console_cp.Data.CodePage,
+                    } },
+                    .INVALID_HANDLE => {},
+                    else => {},
                 }
             }
-
-            if (global_progress.terminal_mode == .off) return .none;
-
-            if (have_sigwinch) {
-                const act: posix.Sigaction = .{
-                    .handler = .{ .sigaction = handleSigWinch },
-                    .mask = posix.sigemptyset(),
-                    .flags = (posix.SA.SIGINFO | posix.SA.RESTART),
-                };
-                posix.sigaction(.WINCH, &act, null);
-            }
-
-            if (switch (global_progress.terminal_mode) {
-                .off => unreachable, // handled a few lines above
-                .ansi_escape_codes => io.concurrent(updateTask, .{io}),
-                .windows_api => if (is_windows) io.concurrent(windowsApiUpdateTask, .{io}) else unreachable,
+            if (future: switch (global_progress.terminal_mode) {
+                .off => return .none,
+                .ansi_escape_codes => {
+                    if (have_sigwinch) {
+                        const act: posix.Sigaction = .{
+                            .handler = .{ .sigaction = handleSigWinch },
+                            .mask = posix.sigemptyset(),
+                            .flags = (posix.SA.SIGINFO | posix.SA.RESTART),
+                        };
+                        posix.sigaction(.WINCH, &act, null);
+                    }
+                    break :future io.concurrent(updateTask, .{io});
+                },
+                .windows_api => io.concurrent(windowsApiUpdateTask, .{io}),
             }) |future| {
                 global_progress.update_worker = future;
             } else |err| {
@@ -721,12 +727,24 @@ fn updateTask(io: Io) WorkerError!void {
     }
 }
 
-fn windowsApiWriteMarker() void {
+const WindowsApiError = Io.Cancelable || Io.UnexpectedError;
+
+fn windowsApiWriteMarker(io: Io) WindowsApiError!void {
     // Write the marker that we will use to find the beginning of the progress when clearing.
     // Note: This doesn't have to use WriteConsoleW, but doing so avoids dealing with the code page.
-    var num_chars_written: windows.DWORD = undefined;
-    const handle = global_progress.terminal.handle;
-    _ = windows.kernel32.WriteConsoleW(handle, &[_]u16{windows_api_start_marker}, 1, &num_chars_written, null);
+    const terminal = global_progress.terminal;
+    var write_console = windows.CONSOLE.USER_IO.WRITE(.WideCharacter);
+    const buffer = [1]windows.WCHAR{windows_api_start_marker};
+    switch ((try io.operate(.{ .device_io_control = .{
+        .file = terminal,
+        .code = windows.IOCTL.CONDRV.ISSUE_USER_IO,
+        .in = @ptrCast(&write_console.request(null, 1, .{
+            .{ .Size = @sizeOf(@TypeOf(buffer)), .Pointer = &buffer },
+        }, 0, .{})),
+    } })).device_io_control.u.Status) {
+        .SUCCESS => {},
+        else => |status| return windows.unexpectedStatus(status),
+    }
 }
 
 fn windowsApiUpdateTask(io: Io) WorkerError!void {
@@ -749,19 +767,19 @@ fn windowsApiUpdateTask(io: Io) WorkerError!void {
             error.Canceled => unreachable, // blocked
         };
         defer io.unlockStderr();
-        clearWrittenWindowsApi() catch {};
+        clearWrittenWindowsApi(io) catch {};
     }
     while (true) {
         const buffer, const nl_n = try computeRedraw(io, &serialized_buffer);
         if (io.vtable.tryLockStderr(io.userdata, null) catch return) |locked_stderr| {
             defer io.unlockStderr();
-            try clearWrittenWindowsApi();
-            windowsApiWriteMarker();
+            try clearWrittenWindowsApi(io);
+            try windowsApiWriteMarker(io);
             global_progress.need_clear = true;
             locked_stderr.file_writer.interface.writeAll(buffer) catch |err| switch (err) {
                 error.WriteFailed => return locked_stderr.file_writer.err.?,
             };
-            windowsApiMoveToMarker(nl_n) catch return;
+            windowsApiMoveToMarker(io, nl_n) catch return;
         }
 
         try maybeUpdateSize(io, try wait(io, global_progress.refresh_rate_ns));
@@ -865,7 +883,7 @@ fn appendTreeSymbol(symbol: TreeSymbol, buf: []u8, start_i: usize) usize {
             return start_i + bytes.len;
         },
         .windows_api => |windows_api| {
-            const bytes = if (!is_windows) unreachable else switch (windows_api.code_page) {
+            const bytes = switch (windows_api.code_page) {
                 // Code page 437 is the default code page and contains the box drawing symbols
                 437 => symbol.bytes(.code_page_437),
                 // UTF-8
@@ -888,7 +906,7 @@ pub fn clearWrittenWithEscapeCodes(file_writer: *Io.File.Writer) Io.Writer.Error
 /// U+25BA or ►
 const windows_api_start_marker = 0x25BA;
 
-fn clearWrittenWindowsApi() error{Unexpected}!void {
+fn clearWrittenWindowsApi(io: Io) WindowsApiError!void {
     // This uses a 'marker' strategy. The idea is:
     // - Always write a marker (in this case U+25BA or ►) at the beginning of the progress
     // - Get the current cursor position (at the end of the progress)
@@ -909,43 +927,60 @@ fn clearWrittenWindowsApi() error{Unexpected}!void {
     //   character in order to be readable via ReadConsoleOutputAttribute. It doesn't seem
     //   like any of the available attributes are invisible/benign.
     if (!global_progress.need_clear) return;
-    const handle = global_progress.terminal.handle;
+    const terminal = global_progress.terminal;
     const screen_area = @as(windows.DWORD, global_progress.cols) * global_progress.rows;
 
-    var console_info: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
-    if (windows.kernel32.GetConsoleScreenBufferInfo(handle, &console_info) == 0) {
-        return error.Unexpected;
+    var get_console_info = windows.CONSOLE.USER_IO.GET_SCREEN_BUFFER_INFO;
+    switch (try get_console_info.operate(io, terminal)) {
+        .SUCCESS => {},
+        else => |status| return windows.unexpectedStatus(status),
     }
-    var num_chars_written: windows.DWORD = undefined;
-    if (windows.kernel32.FillConsoleOutputCharacterW(handle, ' ', screen_area, console_info.dwCursorPosition, &num_chars_written) == 0) {
-        return error.Unexpected;
+    var fill_spaces = windows.CONSOLE.USER_IO.FILL(
+        .{ .WideCharacter = ' ' },
+        screen_area,
+        get_console_info.Data.dwCursorPosition,
+    );
+    switch (try fill_spaces.operate(io, terminal)) {
+        .SUCCESS => {},
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
-fn windowsApiMoveToMarker(nl_n: usize) error{Unexpected}!void {
-    const handle = global_progress.terminal.handle;
-    var console_info: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
-    if (windows.kernel32.GetConsoleScreenBufferInfo(handle, &console_info) == 0) {
-        return error.Unexpected;
+fn windowsApiMoveToMarker(io: Io, nl_n: usize) WindowsApiError!void {
+    const terminal = global_progress.terminal;
+    var get_console_info = windows.CONSOLE.USER_IO.GET_SCREEN_BUFFER_INFO;
+    switch (try get_console_info.operate(io, terminal)) {
+        .SUCCESS => {},
+        else => |status| return windows.unexpectedStatus(status),
     }
-    const cursor_pos = console_info.dwCursorPosition;
+    const cursor_pos = get_console_info.Data.dwCursorPosition;
     const expected_y = cursor_pos.Y - @as(i16, @intCast(nl_n));
     var start_pos: windows.COORD = .{ .X = 0, .Y = expected_y };
-    while (start_pos.Y >= 0) {
-        var wchar: [1]u16 = undefined;
-        var num_console_chars_read: windows.DWORD = undefined;
-        if (windows.kernel32.ReadConsoleOutputCharacterW(handle, &wchar, wchar.len, start_pos, &num_console_chars_read) == 0) {
-            return error.Unexpected;
+    while (start_pos.Y >= 0) : (start_pos.Y -= 1) {
+        var read_output_char = windows.CONSOLE.USER_IO.READ_OUTPUT_CHARACTER(start_pos, .WideCharacter);
+        var buffer: [1]windows.WCHAR = undefined;
+        switch ((try io.operate(.{ .device_io_control = .{
+            .file = .{
+                .handle = windows.peb().ProcessParameters.ConsoleHandle,
+                .flags = .{ .nonblocking = false },
+            },
+            .code = windows.IOCTL.CONDRV.ISSUE_USER_IO,
+            .in = @ptrCast(&read_output_char.request(terminal, 0, .{}, 1, .{
+                .{ .Size = @sizeOf(@TypeOf(buffer)), .Pointer = &buffer },
+            })),
+        } })).device_io_control.u.Status) {
+            .SUCCESS => {},
+            else => |status| return windows.unexpectedStatus(status),
         }
-
-        if (wchar[0] == windows_api_start_marker) break;
-        start_pos.Y -= 1;
+        if (read_output_char.Data.nLength >= 1 and buffer[0] == windows_api_start_marker) break;
     } else {
         // If we couldn't find the marker, then just assume that no lines wrapped
         start_pos = .{ .X = 0, .Y = expected_y };
     }
-    if (windows.kernel32.SetConsoleCursorPosition(handle, start_pos) == 0) {
-        return error.Unexpected;
+    var set_cursor_position = windows.CONSOLE.USER_IO.SET_CURSOR_POSITION(start_pos);
+    switch (try set_cursor_position.operate(io, terminal)) {
+        .SUCCESS => {},
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
@@ -1285,7 +1320,7 @@ fn computeRedraw(io: Io, serialized_buffer: *Serialized.Buffer) !struct { []u8, 
             buf[i..][0..clear.len].* = clear.*;
             i += clear.len;
         },
-        .windows_api => if (!is_windows) unreachable,
+        .windows_api => {},
     }
 
     const root_node_index: Node.Index = @enumFromInt(0);
@@ -1497,19 +1532,17 @@ fn maybeUpdateSize(io: Io, resize_flag: bool) !void {
     const file = global_progress.terminal;
 
     if (is_windows) {
-        var info: windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
-
-        if (windows.kernel32.GetConsoleScreenBufferInfo(file.handle, &info) != windows.FALSE) {
-            // In the old Windows console, dwSize.Y is the line count of the
-            // entire scrollback buffer, so we use this instead so that we
-            // always get the size of the screen.
-            const screen_height = info.srWindow.Bottom - info.srWindow.Top;
-            global_progress.rows = @intCast(screen_height);
-            global_progress.cols = @intCast(info.dwSize.X);
-        } else {
-            std.log.debug("failed to determine terminal size; using conservative guess 80x25", .{});
-            global_progress.rows = 25;
-            global_progress.cols = 80;
+        var get_console_info = windows.CONSOLE.USER_IO.GET_SCREEN_BUFFER_INFO;
+        switch (try get_console_info.operate(io, file)) {
+            .SUCCESS => {
+                global_progress.rows = @intCast(get_console_info.Data.dwWindowSize.Y);
+                global_progress.cols = @intCast(get_console_info.Data.dwWindowSize.X);
+            },
+            else => {
+                std.log.debug("failed to determine terminal size; using conservative guess 80x25", .{});
+                global_progress.rows = 25;
+                global_progress.cols = 80;
+            },
         }
     } else {
         var winsize: posix.winsize = .{

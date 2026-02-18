@@ -331,11 +331,9 @@ pub const Operation = union(enum) {
         .wasi => noreturn,
         .windows => struct {
             file: File,
-            IoControlCode: std.os.windows.CTL_CODE,
-            InputBuffer: ?*const anyopaque,
-            InputBufferLength: u32,
-            OutputBuffer: ?*anyopaque,
-            OutputBufferLength: u32,
+            code: std.os.windows.CTL_CODE,
+            in: []const u8 = &.{},
+            out: []u8 = &.{},
 
             pub const Result = std.os.windows.IO_STATUS_BLOCK;
         },

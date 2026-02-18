@@ -135,8 +135,6 @@ pub const Options = struct {
         args: anytype,
     ) void = log.defaultLog,
 
-    logTerminalMode: fn () Io.Terminal.Mode = log.defaultTerminalMode,
-
     /// Overrides `std.heap.page_size_min`.
     page_size_min: ?usize = null,
     /// Overrides `std.heap.page_size_max`.
@@ -175,6 +173,10 @@ pub const Options = struct {
     /// If this is `false`, then captured stack traces will always be empty, and attempts to write
     /// stack traces will just print an error to the relevant `Io.Writer` and return.
     allow_stack_tracing: bool = !@import("builtin").strip_debug_info,
+
+    /// TODO This is a separate decl instead of a field as a workaround around
+    /// compilation errors due to zig not being lazy enough.
+    pub const logTerminalMode: fn () Io.Terminal.Mode = log.defaultTerminalMode;
 
     /// TODO This is a separate decl instead of a field as a workaround around
     /// compilation errors due to zig not being lazy enough.
