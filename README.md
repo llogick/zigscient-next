@@ -25,14 +25,9 @@ Conditionals like `if` and `else` can influence what is analyzed. Make sure you'
 https://github.com/user-attachments/assets/9e47daca-1d6d-492e-b840-85fbfb83e4c8
 
 ## Building
-> [!WARNING]
-> Currently this project does not build with -Doptimize=ReleaseFast
->
-> https://codeberg.org/ziglang/zig/issues/31080
-
 >[!NOTE]
 > This is a resource-intensive piece of software, so a capable CPU with good single-thread performance is recommended.
 
 ```bash
-zig build -Doptimize=ReleaseSafe
+zig build -Doptimize=ReleaseFast --zig-lib-dir ./lib/
 ```
