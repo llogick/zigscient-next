@@ -4680,7 +4680,7 @@ fn performAllTheWork(
     update_arena: Allocator,
 ) JobError!void {
     defer if (comp.zcu) |zcu| {
-        zcu.codegen_task_pool.cancel(zcu);
+        if (dev.env != .lsp_server) zcu.codegen_task_pool.cancel(zcu);
         // Regardless of errors, `comp.zcu` needs to update its generation number.
         zcu.generation += 1;
     };
@@ -4701,13 +4701,13 @@ fn performAllTheWork(
     var misc_group: Io.Group = .init;
     defer misc_group.cancel(io);
 
-    try comp.link_queue.start(comp, update_arena);
-    defer comp.link_queue.cancel(io);
+    if (dev.env != .lsp_server) try comp.link_queue.start(comp, update_arena);
+    defer if (dev.env != .lsp_server) comp.link_queue.cancel(io);
 
-    misc_group.concurrent(io, dispatchPrelinkWork, .{ comp, main_progress_node }) catch |err| switch (err) {
+    if (dev.env != .lsp_server) misc_group.concurrent(io, dispatchPrelinkWork, .{ comp, main_progress_node }) catch |err| switch (err) {
         error.ConcurrencyUnavailable => {
             // Do it immediately so that the link queue isn't blocked
-            dispatchPrelinkWork(comp, main_progress_node);
+            if (dev.env != .lsp_server) dispatchPrelinkWork(comp, main_progress_node);
         },
     };
 
@@ -4842,10 +4842,10 @@ fn performAllTheWork(
             // However, this means our analysis data is invalid, so we want to omit all analysis errors.
             zcu.skip_analysis_this_update = true;
             // Since we're skipping analysis, there are no ZCU link tasks.
-            comp.link_queue.finishZcuQueue(comp);
+            if (dev.env != .lsp_server) comp.link_queue.finishZcuQueue(comp);
             // Let other compilation work finish to collect as many errors as possible.
             try misc_group.await(io);
-            comp.link_queue.wait(io);
+            if (dev.env != .lsp_server) comp.link_queue.wait(io);
             return;
         }
 
@@ -4891,7 +4891,7 @@ fn performAllTheWork(
             // queue will cause the linker task to exit once prelink finishes. The
             // closed queue also communicates to `enqueueZcu` that it should wait for
             // the linker task to finish and then run ZCU tasks serially.
-            comp.link_queue.finishZcuQueue(comp);
+            if (dev.env != .lsp_server) comp.link_queue.finishZcuQueue(comp);
         }
     }
 
@@ -4926,11 +4926,11 @@ fn performAllTheWork(
         break;
     }
 
-    comp.link_queue.finishZcuQueue(comp);
+    if (dev.env != .lsp_server) comp.link_queue.finishZcuQueue(comp);
 
     // Main thread work is all done, now just wait for all async work.
     try misc_group.await(io);
-    comp.link_queue.wait(io);
+    if (dev.env != .lsp_server) comp.link_queue.wait(io);
 }
 
 fn dispatchPrelinkWork(comp: *Compilation, main_progress_node: std.Progress.Node) void {
@@ -5149,10 +5149,10 @@ fn dispatchPrelinkWork(comp: *Compilation, main_progress_node: std.Progress.Node
         });
     }
 
-    prelink_group.await(io) catch |err| switch (err) {
+    if (dev.env != .lsp_server) prelink_group.await(io) catch |err| switch (err) {
         error.Canceled => unreachable, // see swapCancelProtection above
     };
-    comp.link_queue.finishPrelinkQueue(comp) catch |err| switch (err) {
+    if (dev.env != .lsp_server) comp.link_queue.finishPrelinkQueue(comp) catch |err| switch (err) {
         error.Canceled => unreachable, // see swapCancelProtection above
     };
 }
@@ -5193,10 +5193,10 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
 
             // Begin the codegen task. If the codegen/link queue is backed up, this might
             // block until the linker is able to process some tasks.
-            const codegen_task = try zcu.codegen_task_pool.start(zcu, func.func, &owned_air.?, disown_air);
+            const codegen_task = if (dev.env != .lsp_server) try zcu.codegen_task_pool.start(zcu, func.func, &owned_air.?, disown_air) else void;
             if (disown_air) owned_air = null;
 
-            try comp.link_queue.enqueueZcu(comp, tid, .{ .link_func = codegen_task });
+            if (dev.env != .lsp_server) try comp.link_queue.enqueueZcu(comp, tid, .{ .link_func = codegen_task });
         },
         .link_nav => |nav_index| {
             const zcu = comp.zcu.?;
@@ -5218,7 +5218,7 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 comp.link_prog_node.completeOne();
                 return;
             }
-            try comp.link_queue.enqueueZcu(comp, tid, .{ .link_nav = nav_index });
+            if (dev.env != .lsp_server) try comp.link_queue.enqueueZcu(comp, tid, .{ .link_nav = nav_index });
         },
         .link_type => |ty| {
             const zcu = comp.zcu.?;
@@ -5231,11 +5231,11 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 comp.link_prog_node.completeOne();
                 return;
             }
-            try comp.link_queue.enqueueZcu(comp, tid, .{ .link_type = ty });
+            if (dev.env != .lsp_server) try comp.link_queue.enqueueZcu(comp, tid, .{ .link_type = ty });
         },
         .update_line_number => |tracked_inst| {
             if (comp.zcu.?.lsp_document_store != null) return;
-            try comp.link_queue.enqueueZcu(comp, tid, .{ .update_line_number = tracked_inst });
+            if (dev.env != .lsp_server) try comp.link_queue.enqueueZcu(comp, tid, .{ .update_line_number = tracked_inst });
         },
         .analyze_func => |func| {
             const tracy_trace = traceNamed(@src(), "analyze_func");
@@ -8387,7 +8387,7 @@ pub fn queuePrelinkTaskMode(comp: *Compilation, path: Cache.Path, config: *const
 /// Only valid to call during `update`.
 pub fn queuePrelinkTasks(comp: *Compilation, tasks: []const link.PrelinkTask) Io.Cancelable!void {
     comp.link_prog_node.increaseEstimatedTotalItems(tasks.len);
-    try comp.link_queue.enqueuePrelink(comp, tasks);
+    if (dev.env != .lsp_server) try comp.link_queue.enqueuePrelink(comp, tasks);
 }
 
 pub fn toCrtFile(comp: *Compilation) Allocator.Error!CrtFile {
