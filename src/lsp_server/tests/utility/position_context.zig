@@ -108,6 +108,31 @@ test "var_access no lookahead" {
     , .empty, .{ .lookahead = false });
 }
 
+test "var_access.optional" {
+    try testContext(
+        \\const foo = ?<cursor>
+    , .empty, .{});
+    try testContext(
+        \\const foo = ?<loc>T<cursor></loc>
+    , .var_access, .{});
+}
+
+test "var_access.pointer" {
+    try testContext(
+        \\const foo = *<cursor>
+    , .empty, .{});
+    try testContext(
+        \\const foo = *<loc>T<cursor></loc>
+    , .var_access, .{});
+
+    try testContext(
+        \\const foo = []<cursor>
+    , .empty, .{});
+    try testContext(
+        \\const foo = []<loc>T<cursor></loc>
+    , .var_access, .{});
+}
+
 test "field access" {
     try testContext(
         \\if (<loc>bar.<cursor>field</loc> == foo) {
