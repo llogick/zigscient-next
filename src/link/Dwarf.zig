@@ -18,7 +18,6 @@ const codegen = @import("../codegen.zig");
 const dev = @import("../dev.zig");
 const link = @import("../link.zig");
 const target_info = @import("../target.zig");
-const DebugConstPool = link.DebugConstPool;
 
 gpa: Allocator,
 bin_file: *link.File,
@@ -26,10 +25,10 @@ format: DW.Format,
 endian: std.builtin.Endian,
 address_size: AddressSize,
 
-const_pool: DebugConstPool,
+const_pool: link.ConstPool,
 
 mods: std.AutoArrayHashMapUnmanaged(*Module, ModInfo),
-/// Indices are `DebugConstPool.Index`.
+/// Indices are `link.ConstPool.Index`.
 values: std.ArrayList(struct { Unit.Index, Entry.Index }),
 navs: std.AutoArrayHashMapUnmanaged(InternPool.Nav.Index, Entry.Index),
 decls: std.AutoArrayHashMapUnmanaged(InternPool.TrackedInst.Index, Entry.Index),
@@ -1038,7 +1037,7 @@ const Entry = struct {
             const zcu = dwarf.bin_file.comp.zcu.?;
             const ip = &zcu.intern_pool;
             for (0.., dwarf.values.items) |raw_index, unit_and_entry| {
-                const index: DebugConstPool.Index = @enumFromInt(raw_index);
+                const index: link.ConstPool.Index = @enumFromInt(raw_index);
                 const val = index.val(&dwarf.const_pool);
                 const val_unit, const val_entry = unit_and_entry;
                 if (sec.getUnit(val_unit) == unit and unit.getEntry(val_entry) == entry)
@@ -3291,8 +3290,14 @@ pub fn updateContainerType(
 ) !void {
     try dwarf.const_pool.updateContainerType(pt, .{ .dwarf = dwarf }, ty, success);
 }
-/// Should only be called by the `DebugConstPool` implementation.
-pub fn addConst(dwarf: *Dwarf, pt: Zcu.PerThread, index: DebugConstPool.Index, val: InternPool.Index) !void {
+/// Should only be called by the `link.ConstPool` implementation.
+pub fn addConst(dwarf: *Dwarf, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) Allocator.Error!void {
+    addConstInner(dwarf, pt, index, val) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        else => |e| std.debug.panic("DWARF TODO: '{t}' while registering constant\n", .{e}),
+    };
+}
+fn addConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) !void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
 
@@ -3321,11 +3326,17 @@ pub fn addConst(dwarf: *Dwarf, pt: Zcu.PerThread, index: DebugConstPool.Index, v
     assert(@intFromEnum(index) == dwarf.values.items.len);
     try dwarf.values.append(dwarf.gpa, .{ unit, entry });
 }
-/// Should only be called by the `DebugConstPool` implementation.
+/// Should only be called by the `link.ConstPool` implementation.
 ///
 /// Emits a "dummy" DIE for the given comptime-only value (which may be a type). For types, this is
 /// an opaque type. Otherwise, it is an undefined value of the value's type.
-pub fn updateConstIncomplete(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: DebugConstPool.Index, value_index: InternPool.Index) !void {
+pub fn updateConstIncomplete(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.ConstPool.Index, value_index: InternPool.Index) Allocator.Error!void {
+    updateConstIncompleteInner(dwarf, pt, debug_const_index, value_index) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        else => |e| std.debug.panic("DWARF TODO: '{t}' while updating incomplete constant\n", .{e}),
+    };
+}
+fn updateConstIncompleteInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.ConstPool.Index, value_index: InternPool.Index) !void {
     const zcu = pt.zcu;
 
     const val: Value = .fromInterned(value_index);
@@ -3380,10 +3391,16 @@ pub fn updateConstIncomplete(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index
     try dwarf.debug_info.section.replaceEntry(unit, entry, dwarf, wip_nav.debug_info.written());
     try dwarf.debug_loclists.section.replaceEntry(unit, entry, dwarf, wip_nav.debug_loclists.written());
 }
-/// Should only be called by the `DebugConstPool` implementation.
+/// Should only be called by the `link.ConstPool` implementation.
 ///
 /// Emits a DIE for the given comptime-only value (which may be a type).
-pub fn updateConst(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: DebugConstPool.Index, value_index: InternPool.Index) !void {
+pub fn updateConst(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.ConstPool.Index, value_index: InternPool.Index) Allocator.Error!void {
+    updateConstInner(dwarf, pt, debug_const_index, value_index) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        else => |e| std.debug.panic("DWARF TODO: '{t}' while updating constant\n", .{e}),
+    };
+}
+fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.ConstPool.Index, value_index: InternPool.Index) !void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
 

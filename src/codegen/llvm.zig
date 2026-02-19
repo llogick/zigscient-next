@@ -23,7 +23,6 @@ const Package = @import("../Package.zig");
 const Air = @import("../Air.zig");
 const Value = @import("../Value.zig");
 const Type = @import("../Type.zig");
-const DebugConstPool = link.DebugConstPool;
 const codegen = @import("../codegen.zig");
 const x86_64_abi = @import("x86_64/abi.zig");
 const wasm_c_abi = @import("wasm/abi.zig");
@@ -532,8 +531,8 @@ pub const Object = struct {
     debug_file_map: std.AutoHashMapUnmanaged(Zcu.File.Index, Builder.Metadata),
 
     /// This pool *only* contains types (and does not contain `@as(type, undefined)`).
-    debug_type_pool: DebugConstPool,
-    /// Keyed on `DebugConstPool.Index`.
+    debug_type_pool: link.ConstPool,
+    /// Keyed on `link.ConstPool.Index`.
     debug_types: std.ArrayList(Builder.Metadata),
     /// Initially `.none`, set if the type `anyerror` is lowered to a debug type. The type will not
     /// actually be created until `emit`, which must resolve this reference with an appropriate enum
@@ -1622,10 +1621,7 @@ pub const Object = struct {
     }
 
     fn flushPendingDebugTypes(o: *Object, pt: Zcu.PerThread) Allocator.Error!void {
-        o.debug_type_pool.flushPending(pt, .{ .llvm = o }) catch |err| switch (err) {
-            error.OutOfMemory => |e| return e,
-            else => unreachable, // TODO: stop self-hosted backends from returning all of this crap!
-        };
+        try o.debug_type_pool.flushPending(pt, .{ .llvm = o });
     }
 
     pub fn updateExports(
@@ -1823,17 +1819,14 @@ pub const Object = struct {
 
     pub fn updateContainerType(o: *Object, pt: Zcu.PerThread, ty: InternPool.Index, success: bool) Allocator.Error!void {
         if (!o.builder.strip) {
-            o.debug_type_pool.updateContainerType(pt, .{ .llvm = o }, ty, success) catch |err| switch (err) {
-                error.OutOfMemory => |e| return e,
-                else => unreachable, // TODO: stop self-hosted backends from returning all of this crap!
-            };
+            try o.debug_type_pool.updateContainerType(pt, .{ .llvm = o }, ty, success);
         }
     }
 
-    /// Should only be called by the `DebugConstPool` implementation.
+    /// Should only be called by the `link.ConstPool` implementation.
     ///
     /// `val` is always a type because `o.debug_type_pool` only contains types.
-    pub fn addConst(o: *Object, pt: Zcu.PerThread, index: DebugConstPool.Index, val: InternPool.Index) Allocator.Error!void {
+    pub fn addConst(o: *Object, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) Allocator.Error!void {
         const zcu = pt.zcu;
         const gpa = zcu.comp.gpa;
         assert(zcu.intern_pool.typeOf(val) == .type_type);
@@ -1846,10 +1839,10 @@ pub const Object = struct {
             o.debug_anyerror_fwd_ref = fwd_ref.toOptional();
         }
     }
-    /// Should only be called by the `DebugConstPool` implementation.
+    /// Should only be called by the `link.ConstPool` implementation.
     ///
     /// `val` is always a type because `o.debug_type_pool` only contains types.
-    pub fn updateConstIncomplete(o: *Object, pt: Zcu.PerThread, index: DebugConstPool.Index, val: InternPool.Index) Allocator.Error!void {
+    pub fn updateConstIncomplete(o: *Object, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) Allocator.Error!void {
         assert(pt.zcu.intern_pool.typeOf(val) == .type_type);
         const fwd_ref = o.debug_types.items[@intFromEnum(index)];
         assert(val != .anyerror_type);
@@ -1857,10 +1850,10 @@ pub const Object = struct {
         const debug_incomplete_type = try o.builder.debugSignedType(name_str, 0);
         o.builder.resolveDebugForwardReference(fwd_ref, debug_incomplete_type);
     }
-    /// Should only be called by the `DebugConstPool` implementation.
+    /// Should only be called by the `link.ConstPool` implementation.
     ///
     /// `val` is always a type because `o.debug_type_pool` only contains types.
-    pub fn updateConst(o: *Object, pt: Zcu.PerThread, index: DebugConstPool.Index, val: InternPool.Index) Allocator.Error!void {
+    pub fn updateConst(o: *Object, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) Allocator.Error!void {
         assert(pt.zcu.intern_pool.typeOf(val) == .type_type);
         const fwd_ref = o.debug_types.items[@intFromEnum(index)];
         if (val == .anyerror_type) {
@@ -1890,10 +1883,7 @@ pub const Object = struct {
 
     fn getDebugType(o: *Object, pt: Zcu.PerThread, ty: Type) Allocator.Error!Builder.Metadata {
         assert(!o.builder.strip);
-        const index = o.debug_type_pool.get(pt, .{ .llvm = o }, ty.toIntern()) catch |err| switch (err) {
-            error.OutOfMemory => |e| return e,
-            else => unreachable, // TODO: stop self-hosted backends from returning all of this crap!
-        };
+        const index = try o.debug_type_pool.get(pt, .{ .llvm = o }, ty.toIntern());
         return o.debug_types.items[@intFromEnum(index)];
     }
 

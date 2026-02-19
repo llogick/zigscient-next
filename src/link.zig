@@ -29,7 +29,7 @@ const codegen = @import("codegen.zig");
 pub const aarch64 = @import("link/aarch64.zig");
 pub const LdScript = @import("link/LdScript.zig");
 pub const Queue = @import("link/Queue.zig");
-pub const DebugConstPool = @import("link/DebugConstPool.zig");
+pub const ConstPool = @import("link/ConstPool.zig");
 
 pub const Diags = struct {
     /// Stored here so that function definitions can distinguish between
@@ -804,7 +804,7 @@ pub const File = struct {
         switch (base.tag) {
             .lld => unreachable,
             else => {},
-            inline .elf => |tag| {
+            inline .elf, .c => |tag| {
                 dev.check(tag.devFeature());
                 return @as(*tag.Type(), @fieldParentPtr("base", base)).updateContainerType(pt, ty, success);
             },

@@ -259,7 +259,7 @@
 #endif
 
 #if zig_has_attribute(packed) || defined(zig_tinyc)
-#define zig_packed(definition) __attribute__((packed)) definition
+#define zig_packed(definition) definition __attribute__((packed))
 #elif defined(zig_msvc)
 #define zig_packed(definition) __pragma(pack(1)) definition __pragma(pack())
 #else

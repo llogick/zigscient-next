@@ -3403,7 +3403,7 @@ pub const LoadedStructType = struct {
     /// Iterates over non-comptime fields in the order they are laid out in memory at runtime.
     /// May or may not include zero-bit fields.
     /// Asserts the struct is not packed.
-    pub fn iterateRuntimeOrder(s: *const LoadedStructType, ip: *InternPool) RuntimeOrderIterator {
+    pub fn iterateRuntimeOrder(s: *const LoadedStructType, ip: *const InternPool) RuntimeOrderIterator {
         switch (s.layout) {
             .auto => {
                 const ro = std.mem.sliceTo(s.field_runtime_order.get(ip), .omitted);

@@ -9,14 +9,11 @@
 /// Indices into the pool are dense, and constants are never removed from the pool, so the debug
 /// info implementation can store information for each one with a simple `ArrayList`.
 ///
-/// To use `DebugConstPool`, the debug info implementation is required to:
-/// * forward `updateContainerType` calls to its `DebugConstPool`
-/// * expose some callback functions---see functions in `DebugInfo`
+/// To use `ConstPool`, the debug info implementation is required to:
+/// * forward `updateContainerType` calls to its `ConstPool`
+/// * expose some callback functions---see functions in `User`
 /// * ensure that any `get` call is eventually followed by a `flushPending` call
-///
-/// TODO: everything in this file should have the error set 'Allocator.Error', but right now the
-/// self-hosted linkers can return all kinds of crap for some reason. This needs fixing.
-const DebugConstPool = @This();
+const ConstPool = @This();
 
 values: std.AutoArrayHashMapUnmanaged(InternPool.Index, void),
 pending: std.ArrayList(Index),
@@ -24,7 +21,7 @@ complete_containers: std.AutoArrayHashMapUnmanaged(InternPool.Index, void),
 container_deps: std.AutoArrayHashMapUnmanaged(InternPool.Index, ContainerDepEntry.Index),
 container_dep_entries: std.ArrayList(ContainerDepEntry),
 
-pub const empty: DebugConstPool = .{
+pub const empty: ConstPool = .{
     .values = .empty,
     .pending = .empty,
     .complete_containers = .empty,
@@ -32,7 +29,7 @@ pub const empty: DebugConstPool = .{
     .container_dep_entries = .empty,
 };
 
-pub fn deinit(pool: *DebugConstPool, gpa: Allocator) void {
+pub fn deinit(pool: *ConstPool, gpa: Allocator) void {
     pool.values.deinit(gpa);
     pool.pending.deinit(gpa);
     pool.complete_containers.deinit(gpa);
@@ -42,13 +39,14 @@ pub fn deinit(pool: *DebugConstPool, gpa: Allocator) void {
 
 pub const Index = enum(u32) {
     _,
-    pub fn val(i: Index, pool: *const DebugConstPool) InternPool.Index {
+    pub fn val(i: Index, pool: *const ConstPool) InternPool.Index {
         return pool.values.keys()[@intFromEnum(i)];
     }
 };
 
-pub const DebugInfo = union(enum) {
+pub const User = union(enum) {
     dwarf: *@import("Dwarf.zig"),
+    c: *@import("C.zig"),
     llvm: @import("../codegen/llvm.zig").Object.Ptr,
 
     /// Inform the debug info implementation that the new constant `val` was added to the pool at
@@ -56,12 +54,12 @@ pub const DebugInfo = union(enum) {
     /// that there will eventually be a call to either `updateConst` or `updateConstIncomplete`
     /// following the `addConst` call, to actually populate the constant's debug info.
     fn addConst(
-        di: DebugInfo,
+        user: User,
         pt: Zcu.PerThread,
         index: Index,
         val: InternPool.Index,
-    ) !void {
-        switch (di) {
+    ) Allocator.Error!void {
+        switch (user) {
             inline else => |impl| return impl.addConst(pt, index, val),
         }
     }
@@ -71,12 +69,12 @@ pub const DebugInfo = union(enum) {
     /// * If it is a type, its layout is known.
     /// * Otherwise, the layout of its type is known.
     fn updateConst(
-        di: DebugInfo,
+        user: User,
         pt: Zcu.PerThread,
         index: Index,
         val: InternPool.Index,
-    ) !void {
-        switch (di) {
+    ) Allocator.Error!void {
+        switch (user) {
             inline else => |impl| return impl.updateConst(pt, index, val),
         }
     }
@@ -87,12 +85,12 @@ pub const DebugInfo = union(enum) {
     /// initialized so never had its layout resolved). Instead, the implementation must emit some
     /// form of placeholder entry representing an incomplete/unknown constant.
     fn updateConstIncomplete(
-        di: DebugInfo,
+        user: User,
         pt: Zcu.PerThread,
         index: Index,
         val: InternPool.Index,
-    ) !void {
-        switch (di) {
+    ) Allocator.Error!void {
+        switch (user) {
             inline else => |impl| return impl.updateConstIncomplete(pt, index, val),
         }
     }
@@ -100,7 +98,7 @@ pub const DebugInfo = union(enum) {
 
 const ContainerDepEntry = extern struct {
     next: ContainerDepEntry.Index.Optional,
-    depender: DebugConstPool.Index,
+    depender: ConstPool.Index,
     const Index = enum(u32) {
         _,
         const Optional = enum(u32) {
@@ -116,7 +114,7 @@ const ContainerDepEntry = extern struct {
         fn toOptional(i: ContainerDepEntry.Index) Optional {
             return @enumFromInt(@intFromEnum(i));
         }
-        fn ptr(i: ContainerDepEntry.Index, pool: *DebugConstPool) *ContainerDepEntry {
+        fn ptr(i: ContainerDepEntry.Index, pool: *ConstPool) *ContainerDepEntry {
             return &pool.container_dep_entries.items[@intFromEnum(i)];
         }
     };
@@ -125,12 +123,12 @@ const ContainerDepEntry = extern struct {
 /// Calls to `link.File.updateContainerType` must be forwarded to this function so that the debug
 /// constant pool has up-to-date information about the resolution status of types.
 pub fn updateContainerType(
-    pool: *DebugConstPool,
+    pool: *ConstPool,
     pt: Zcu.PerThread,
-    di: DebugInfo,
+    user: User,
     container_ty: InternPool.Index,
     success: bool,
-) !void {
+) Allocator.Error!void {
     if (success) {
         const gpa = pt.zcu.comp.gpa;
         try pool.complete_containers.put(gpa, container_ty, {});
@@ -139,18 +137,18 @@ pub fn updateContainerType(
     }
     var opt_dep = pool.container_deps.get(container_ty);
     while (opt_dep) |dep| : (opt_dep = dep.ptr(pool).next.unwrap()) {
-        try pool.update(pt, di, dep.ptr(pool).depender);
+        try pool.update(pt, user, dep.ptr(pool).depender);
     }
 }
 
 /// After this is called, there may be a constant for which debug information (complete or not) has
 /// not yet been emitted, so the user must call `flushPending` at some point after this call.
-pub fn get(pool: *DebugConstPool, pt: Zcu.PerThread, di: DebugInfo, val: InternPool.Index) !DebugConstPool.Index {
+pub fn get(pool: *ConstPool, pt: Zcu.PerThread, user: User, val: InternPool.Index) Allocator.Error!ConstPool.Index {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     const gpa = zcu.comp.gpa;
     const gop = try pool.values.getOrPut(gpa, val);
-    const index: DebugConstPool.Index = @enumFromInt(gop.index);
+    const index: ConstPool.Index = @enumFromInt(gop.index);
     if (!gop.found_existing) {
         const ty: Type = switch (ip.typeOf(val)) {
             .type_type => if (ip.isUndef(val)) .type else .fromInterned(val),
@@ -158,17 +156,17 @@ pub fn get(pool: *DebugConstPool, pt: Zcu.PerThread, di: DebugInfo, val: InternP
         };
         try pool.registerTypeDeps(index, ty, zcu);
         try pool.pending.append(gpa, index);
-        try di.addConst(pt, index, val);
+        try user.addConst(pt, index, val);
     }
     return index;
 }
-pub fn flushPending(pool: *DebugConstPool, pt: Zcu.PerThread, di: DebugInfo) !void {
+pub fn flushPending(pool: *ConstPool, pt: Zcu.PerThread, user: User) Allocator.Error!void {
     while (pool.pending.pop()) |pending_ty| {
-        try pool.update(pt, di, pending_ty);
+        try pool.update(pt, user, pending_ty);
     }
 }
 
-fn update(pool: *DebugConstPool, pt: Zcu.PerThread, di: DebugInfo, index: DebugConstPool.Index) !void {
+fn update(pool: *ConstPool, pt: Zcu.PerThread, user: User, index: ConstPool.Index) Allocator.Error!void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     const val = index.val(pool);
@@ -177,12 +175,12 @@ fn update(pool: *DebugConstPool, pt: Zcu.PerThread, di: DebugInfo, index: DebugC
         else => |ty| .fromInterned(ty),
     };
     if (pool.checkType(ty, zcu)) {
-        try di.updateConst(pt, index, val);
+        try user.updateConst(pt, index, val);
     } else {
-        try di.updateConstIncomplete(pt, index, val);
+        try user.updateConstIncomplete(pt, index, val);
     }
 }
-fn checkType(pool: *const DebugConstPool, ty: Type, zcu: *const Zcu) bool {
+fn checkType(pool: *const ConstPool, ty: Type, zcu: *const Zcu) bool {
     if (ty.isGenericPoison()) return true;
     return switch (ty.zigTypeTag(zcu)) {
         .type,
@@ -227,7 +225,7 @@ fn checkType(pool: *const DebugConstPool, ty: Type, zcu: *const Zcu) bool {
         },
     };
 }
-fn registerTypeDeps(pool: *DebugConstPool, root: Index, ty: Type, zcu: *const Zcu) Allocator.Error!void {
+fn registerTypeDeps(pool: *ConstPool, root: Index, ty: Type, zcu: *const Zcu) Allocator.Error!void {
     if (ty.isGenericPoison()) return;
     switch (ty.zigTypeTag(zcu)) {
         .type,

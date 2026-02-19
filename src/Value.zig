@@ -151,7 +151,7 @@ pub fn intFromEnum(val: Value, zcu: *const Zcu) Value {
 }
 
 /// Asserts that `val` is an integer.
-pub fn toBigInt(val: Value, space: *BigIntSpace, zcu: *Zcu) BigIntConst {
+pub fn toBigInt(val: Value, space: *BigIntSpace, zcu: *const Zcu) BigIntConst {
     if (val.getUnsignedInt(zcu)) |x| {
         return BigIntMutable.init(&space.limbs, x).toConst();
     }
@@ -669,7 +669,7 @@ pub fn floatCast(val: Value, dest_ty: Type, pt: Zcu.PerThread) !Value {
 }
 
 /// Asserts the value is comparable. Supports comparisons between heterogeneous types.
-pub fn compareHetero(lhs: Value, op: std.math.CompareOperator, rhs: Value, zcu: *Zcu) bool {
+pub fn compareHetero(lhs: Value, op: std.math.CompareOperator, rhs: Value, zcu: *const Zcu) bool {
     if (lhs.pointerNav(zcu)) |lhs_nav| {
         if (rhs.pointerNav(zcu)) |rhs_nav| {
             switch (op) {
@@ -695,7 +695,7 @@ pub fn compareHetero(lhs: Value, op: std.math.CompareOperator, rhs: Value, zcu: 
     return order(lhs, rhs, zcu).compare(op);
 }
 
-pub fn order(lhs: Value, rhs: Value, zcu: *Zcu) std.math.Order {
+pub fn order(lhs: Value, rhs: Value, zcu: *const Zcu) std.math.Order {
     if (lhs.isFloat(zcu) or rhs.isFloat(zcu)) {
         const lhs_f128 = lhs.toFloat(f128, zcu);
         const rhs_f128 = rhs.toFloat(f128, zcu);
@@ -805,7 +805,7 @@ pub fn canMutateComptimeVarState(val: Value, zcu: *Zcu) bool {
 /// Gets the `Nav` referenced by this pointer.  If the pointer does not point
 /// to a `Nav`, or if it points to some part of one (like a field or element),
 /// returns null.
-pub fn pointerNav(val: Value, zcu: *Zcu) ?InternPool.Nav.Index {
+pub fn pointerNav(val: Value, zcu: *const Zcu) ?InternPool.Nav.Index {
     return switch (zcu.intern_pool.indexToKey(val.toIntern())) {
         // TODO: these 3 cases are weird; these aren't pointer values!
         .variable => |v| v.owner_nav,

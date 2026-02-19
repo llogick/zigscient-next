@@ -3382,9 +3382,6 @@ fn flush(comp: *Compilation, arena: Allocator, tid: Zcu.PerThread.Id) (Io.Cancel
             error.OutOfMemory, error.Canceled => |e| return e,
         };
     }
-    if (comp.zcu) |zcu| {
-        try link.File.C.flushEmitH(zcu);
-    }
 }
 
 /// This function is called by the frontend before flush(). It communicates that

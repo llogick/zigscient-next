@@ -789,7 +789,7 @@ pub fn hasWellDefinedLayout(ty: Type, zcu: *const Zcu) bool {
 /// Determines whether a function type has runtime bits, i.e. whether a
 /// function with this type can exist at runtime.
 /// Asserts that `ty` is a function type.
-pub fn fnHasRuntimeBits(fn_ty: Type, zcu: *Zcu) bool {
+pub fn fnHasRuntimeBits(fn_ty: Type, zcu: *const Zcu) bool {
     assertHasLayout(fn_ty, zcu);
     const fn_info = zcu.typeToFunc(fn_ty).?;
     if (fn_info.comptime_bits != 0) return false;
@@ -830,7 +830,7 @@ pub fn fnHasRuntimeBits(fn_ty: Type, zcu: *Zcu) bool {
 }
 
 /// Like `hasRuntimeBits`, but also returns `true` for runtime functions.
-pub fn isRuntimeFnOrHasRuntimeBits(ty: Type, zcu: *Zcu) bool {
+pub fn isRuntimeFnOrHasRuntimeBits(ty: Type, zcu: *const Zcu) bool {
     switch (ty.zigTypeTag(zcu)) {
         .@"fn" => return ty.fnHasRuntimeBits(zcu),
         else => return ty.hasRuntimeBits(zcu),
