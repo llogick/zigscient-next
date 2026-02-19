@@ -6679,7 +6679,7 @@ pub const SO = switch (native_os) {
         pub const DONTROUTE = 0x0010;
         pub const BROADCAST = 0x0020;
         pub const USELOOPBACK = 0x0040;
-        pub const LINGER = 0x1080;
+        pub const LINGER = 0x0080;
         pub const OOBINLINE = 0x0100;
         pub const REUSEPORT = 0x0200;
         pub const ACCEPTFILTER = 0x1000;
@@ -6698,6 +6698,7 @@ pub const SO = switch (native_os) {
         pub const NOADDRERR = 0x1023;
         pub const NWRITE = 0x1024;
         pub const REUSESHAREUID = 0x1025;
+        pub const LINGER_SEC = 0x1080;
     },
     .freebsd => struct {
         pub const DEBUG = 0x00000001;
