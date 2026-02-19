@@ -112,12 +112,12 @@ pub const Guid = extern struct {
         const time_high_and_version = @byteSwap(self.time_high_and_version);
 
         return writer.print("{x:0>8}-{x:0>4}-{x:0>4}-{x:0>2}{x:0>2}-{x}", .{
-            std.mem.asBytes(&time_low),
-            std.mem.asBytes(&time_mid),
-            std.mem.asBytes(&time_high_and_version),
-            std.mem.asBytes(&self.clock_seq_high_and_reserved),
-            std.mem.asBytes(&self.clock_seq_low),
-            std.mem.asBytes(&self.node),
+            time_low,
+            time_mid,
+            time_high_and_version,
+            self.clock_seq_high_and_reserved,
+            self.clock_seq_low,
+            self.node,
         });
     }
 
