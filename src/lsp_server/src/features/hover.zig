@@ -699,7 +699,8 @@ fn lookupNav(
             // std.log.err("got match uri", .{});
             const zir = file.zir orelse continue;
             // std.log.err("got zir", .{});
-            if (zir.instructions.get(@intFromEnum(resolved.inst)).tag != .declaration) continue;
+            if (zir.instructions.ptrs.len == 0 or zir.instructions.capacity == 0) continue;
+            if (zir.instructions.items(.tag)[@intFromEnum(resolved.inst)] != .declaration) continue;
             const zir_decl = zir.getDeclaration(resolved.inst);
             const src_node = zir_decl.src_node;
             // std.log.err("src_node {} vs nodes[0] {}", .{ src_node, nodes[0] });
