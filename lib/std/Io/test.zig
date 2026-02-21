@@ -810,3 +810,41 @@ test "Event broadcast" {
 
     try ctx.run();
 }
+
+test "Select" {
+    const S = struct {
+        fn foo() bool {
+            return true;
+        }
+
+        fn bar(io: Io) Io.Cancelable!void {
+            try io.sleep(.fromSeconds(300), .awake);
+        }
+    };
+
+    const io = testing.io;
+
+    const U = union(enum) {
+        foo: bool,
+        bar: Io.Cancelable!void,
+    };
+    var buffer: [4]U = undefined;
+    var select: Io.Select(U) = .init(io, &buffer);
+    defer select.cancel();
+
+    select.async(.foo, S.foo, .{});
+    select.concurrent(.bar, S.bar, .{io}) catch |err| switch (err) {
+        error.ConcurrencyUnavailable => return error.SkipZigTest,
+    };
+
+    switch (try select.await()) {
+        .foo => {},
+        .bar => return error.TestFailed, // should be sleeping
+    }
+    select.async(.foo, S.foo, .{});
+    select.async(.foo, S.foo, .{});
+
+    var finished_buffer: [3]U = undefined;
+    const finished = finished_buffer[0..try select.awaitMany(&finished_buffer, 2)];
+    try testing.expectEqualSlices(U, &.{ .{ .foo = true }, .{ .foo = true } }, finished);
+}
