@@ -5323,7 +5323,7 @@ fn processOneJob(tid: Zcu.PerThread.Id, comp: *Compilation, job: Job) JobError!v
                 lsp_doc.computed_data.lock.lockUncancelable(lsp_doc_store.io);
                 defer lsp_doc.computed_data.lock.unlock(lsp_doc_store.io);
                 lsp_doc.computed_data.compilation = comp.lsp_compilation_build;
-                try lsp_doc.computed_data.nodes.put(
+                try lsp_doc.computed_data.type_decls.put(
                     lsp_doc_store.allocator,
                     src_node,
                     .{ .ty = ty, .tid = tid },

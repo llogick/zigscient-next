@@ -321,8 +321,12 @@ pub const Handle = struct {
     computed_data: if (@hasDecl(compiler_main, "Compilation")) struct {
         lock: std.Io.RwLock = .init,
         compilation: ?*BuildFile.CompilationBuild = null,
-        nodes: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
+        type_decls: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
             ty: Compilation.InternPool.Index,
+            tid: Compilation.Zcu.PerThread.Id,
+        }) = .empty,
+        air: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
+            air: Compilation.Zcu.Air,
             tid: Compilation.Zcu.PerThread.Id,
         }) = .empty,
     } else struct {} = .{},
@@ -460,7 +464,12 @@ pub const Handle = struct {
 
         if (self.closest_build_file_uri) |cbfuri| allocator.free(cbfuri);
 
-        if (@hasDecl(compiler_main, "Compilation")) self.computed_data.nodes.deinit(allocator);
+        if (@hasDecl(compiler_main, "Compilation")) {
+            self.computed_data.type_decls.deinit(allocator);
+            var val_it = self.computed_data.air.valueIterator();
+            while (val_it.next()) |val| val.air.deinit(allocator);
+            self.computed_data.air.deinit(allocator);
+        }
 
         self.* = undefined;
     }

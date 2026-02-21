@@ -25,21 +25,30 @@ pub fn write(air: Air, stream: *std.Io.Writer, pt: Zcu.PerThread, liveness: ?Air
 
     // zig fmt: off
     try stream.print(
-        \\# Total AIR+Liveness bytes: {Bi}
+        \\# Total AIR{s}: {Bi}
         \\# AIR Instructions:         {d} ({Bi})
         \\# AIR Extra Data:           {d} ({Bi})
-        \\# Liveness tomb_bits:       {Bi}
-        \\# Liveness Extra Data:      {d} ({Bi})
-        \\# Liveness special table:   {d} ({Bi})
-        \\
     , .{
+        if (liveness != null)
+            "+Liveness bytes"
+        else
+            "               ",
         total_bytes,
         air.instructions.len, instruction_bytes,
         air.extra.items.len, extra_bytes,
-        tomb_bytes,
-        if (liveness) |l| l.extra.len else 0, liveness_extra_bytes,
-        if (liveness) |l| l.special.count() else 0, liveness_special_bytes,
     });
+    if (liveness) |l| {
+        try stream.print(
+            \\# Liveness tomb_bits:       {Bi}
+            \\# Liveness Extra Data:      {d} ({Bi})
+            \\# Liveness special table:   {d} ({Bi})
+            \\
+        , .{
+            tomb_bytes,
+            l.extra.len, liveness_extra_bytes,
+            l.special.count(), liveness_special_bytes,
+        });
+    } else try stream.writeAll("\n");
     // zig fmt: on
 
     var writer: Writer = .{

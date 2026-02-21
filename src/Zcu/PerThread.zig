@@ -1837,6 +1837,26 @@ fn analyzeFuncBody(
     const ies_outdated = !func.analysisUnordered(ip).inferred_error_set or
         func.resolvedErrorSetUnordered(ip) != old_resolved_ies;
 
+    if (zcu.lsp_document_store) |lsp_doc_store| blk: {
+        const func_info = zcu.funcInfo(func_index);
+        const nav = ip.getNav(func_info.owner_nav);
+        const resolved = nav.srcInst(ip).resolveFull(ip) orelse break :blk;
+        const file = zcu.fileByIndex(resolved.file);
+        const uri = file.uri_slice orelse break :blk;
+        const zir = file.zir orelse break :blk;
+        if (zir.instructions.get(@intFromEnum(resolved.inst)).tag != .declaration) break :blk;
+        const zir_decl = zir.getDeclaration(resolved.inst);
+        const src_node = zir_decl.src_node;
+        const lsp_doc = lsp_doc_store.getHandle(uri) orelse break :blk;
+        lsp_doc.computed_data.lock.lockUncancelable(lsp_doc_store.io);
+        defer lsp_doc.computed_data.lock.unlock(lsp_doc_store.io);
+        const gop = try lsp_doc.computed_data.air.getOrPut(lsp_doc_store.allocator, src_node);
+        if (gop.found_existing) gop.value_ptr.air.deinit(lsp_doc_store.allocator);
+        gop.value_ptr.air = air;
+        gop.value_ptr.tid = pt.tid;
+        return .{ .ies_outdated = ies_outdated };
+    }
+
     const comp = zcu.comp;
 
     const dump_air = build_options.enable_debug_extensions and comp.verbose_air;

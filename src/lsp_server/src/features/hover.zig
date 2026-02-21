@@ -74,6 +74,7 @@ fn hoverSymbol(
                         const build_config = build_file.tryLockConfig(ds.io) orelse break :blk;
                         defer build_file.unlockConfig(ds.io);
                         var aw: std.Io.Writer.Allocating = .init(arena);
+                        errdefer aw.deinit();
                         aw.writer.writeAll("```\n") catch break :blk;
                         if (build_config.roots.len != 0) {
                             if (!(build_file.roots_index < build_config.roots.len)) {
@@ -336,17 +337,21 @@ fn hoverDefinitionGlobal(
             }
         }
         const decl = (try analyser.lookupSymbolGlobal(handle, name, source_index)) orelse return null;
-        break :blk (try hoverSymbol(ds, analyser, arena, decl, markup_kind)) orelse return null;
-    };
+        const basic_info = (try hoverSymbol(ds, analyser, arena, decl, markup_kind)) orelse return null;
 
-    const nav_info = try lookup(ds, arena, handle, source_index, markup_kind) orelse "";
-    const content = if (nav_info.len != 0) try std.fmt.allocPrint(arena, "{s}" ++ "\n" ++ "{s}", .{ hover_text, nav_info }) else hover_text;
+        const nav_info = try lookupNav(ds, arena, handle, source_index, markup_kind) orelse "";
+        const extra_info = if (nav_info.len != 0) try std.fmt.allocPrint(arena, "{s}" ++ "\n" ++ "{s}", .{ basic_info, nav_info }) else basic_info;
+
+        const air = try getAirSlice(ds, arena, decl) orelse "";
+        const full_info = if (air.len != 0) try std.fmt.allocPrint(arena, "{s}" ++ "\n" ++ "```\n\n{s}\n```", .{ extra_info, air }) else extra_info;
+        break :blk full_info;
+    };
 
     return .{
         .contents = .{
             .markup_content = .{
                 .kind = markup_kind,
-                .value = content,
+                .value = hover_text,
             },
         },
         .range = offsets.tokenToRange(&handle.tree, name_token, offset_encoding),
@@ -563,7 +568,7 @@ fn hoverKeyword(
     handle.computed_data.lock.lockSharedUncancelable(ds.io);
     defer handle.computed_data.lock.unlockShared(ds.io);
 
-    const args = handle.computed_data.nodes.get(nodes[0]) orelse return null;
+    const args = handle.computed_data.type_decls.get(nodes[0]) orelse return null;
     const compilation = handle.computed_data.compilation orelse return null;
 
     if (!compilation.mutex.tryLock()) return null;
@@ -642,7 +647,7 @@ pub fn hover(
     return response;
 }
 
-fn lookup(
+fn lookupNav(
     ds: *DocumentStore,
     arena: std.mem.Allocator,
     handle: *DocumentStore.Handle,
@@ -733,4 +738,49 @@ fn lookup(
         }
     }
     return null;
+}
+
+fn getAirSlice(
+    ds: *DocumentStore,
+    arena: std.mem.Allocator,
+    decl: Analyser.DeclWithHandle,
+) Analyser.Error!?[]const u8 {
+    if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
+
+    decl.handle.computed_data.lock.lockSharedUncancelable(ds.io);
+    defer decl.handle.computed_data.lock.unlockShared(ds.io);
+
+    const compilation = decl.handle.computed_data.compilation orelse return null;
+
+    if (!compilation.mutex.tryLock()) return null;
+    defer compilation.mutex.unlock(ds.io);
+
+    if (!compilation.has_completed_once) return null;
+
+    const tree = &decl.handle.tree;
+    var buf: [1]Ast.Node.Index = undefined;
+    const node = switch (decl.decl) {
+        .ast_node => |node| switch (tree.nodeTag(node)) {
+            else => return null,
+            .fn_proto,
+            .fn_proto_multi,
+            .fn_proto_one,
+            .fn_proto_simple,
+            .fn_decl,
+            => tree.fullFnProto(&buf, node).?.ast.proto_node,
+        },
+        else => return null,
+    };
+
+    const args = decl.handle.computed_data.air.get(node) orelse return null;
+    const zcu = compilation.instance.?.zcu orelse return null;
+
+    const pt: DocumentStore.Compilation.Zcu.PerThread = .activate(zcu, args.tid);
+    defer pt.deactivate();
+
+    var aw: std.Io.Writer.Allocating = .init(arena);
+    errdefer aw.deinit();
+
+    args.air.write(&aw.writer, pt, null) catch return null;
+    return try aw.toOwnedSlice();
 }
