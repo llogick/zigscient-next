@@ -1393,17 +1393,17 @@ pub fn ensureTypeLayoutUpToDate(
         .@"union" => Sema.type_resolution.resolveUnionLayout(&sema, ty),
         else => unreachable,
     };
-    const new_success: bool = if (result) s: {
-        break :s true;
+    const new_failed: bool = if (result) failed: {
+        break :failed false;
     } else |err| switch (err) {
-        error.AnalysisFail => success: {
+        error.AnalysisFail => failed: {
             if (!zcu.failed_analysis.contains(anal_unit)) {
                 // If this unit caused the error, it would have an entry in `failed_analysis`.
                 // Since it does not, this must be a transitive failure.
                 try zcu.transitive_failed_analysis.put(gpa, anal_unit, {});
                 log.debug("mark transitive analysis failure for {f}", .{zcu.fmtAnalUnit(anal_unit)});
             }
-            break :success false;
+            break :failed true;
         },
         error.OutOfMemory,
         error.Canceled,
@@ -1422,8 +1422,10 @@ pub fn ensureTypeLayoutUpToDate(
     comp.link_prog_node.increaseEstimatedTotalItems(1);
     try comp.link_queue.enqueueZcu(comp, pt.tid, .{ .debug_update_container_type = .{
         .ty = ty.toIntern(),
-        .success = new_success,
+        .success = !new_failed,
     } });
+
+    if (new_failed) return error.AnalysisFail;
 }
 
 /// Ensures that the resolved value of the given `Nav` is fully up-to-date, performing re-analysis

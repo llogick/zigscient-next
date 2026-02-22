@@ -23393,8 +23393,13 @@ fn zirFieldParentPtr(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.Ins
     const field_name_src = block.builtinCallArgSrc(extra.src_node, 0);
     const field_ptr_src = block.builtinCallArgSrc(extra.src_node, 1);
 
-    const parent_ptr_ty = try sema.resolveDestType(block, inst_src, extra.parent_ptr_type, .remove_eu, "@fieldParentPtr");
-    try sema.checkPtrType(block, inst_src, parent_ptr_ty, true);
+    const maybe_opt_parent_ptr_ty = try sema.resolveDestType(block, inst_src, extra.parent_ptr_type, .remove_eu, "@fieldParentPtr");
+    try sema.checkPtrType(block, inst_src, maybe_opt_parent_ptr_ty, true);
+    const parent_ptr_ty = switch (maybe_opt_parent_ptr_ty.zigTypeTag(zcu)) {
+        .optional => maybe_opt_parent_ptr_ty.optionalChild(zcu),
+        .pointer => maybe_opt_parent_ptr_ty,
+        else => unreachable,
+    };
     const parent_ptr_info = parent_ptr_ty.ptrInfo(zcu);
     if (parent_ptr_info.flags.size != .one) {
         return sema.fail(block, inst_src, "expected single pointer type, found '{f}'", .{parent_ptr_ty.fmt(pt)});
@@ -23441,7 +23446,7 @@ fn zirFieldParentPtr(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.Ins
     );
 
     const unaligned_parent_ptr_ty = try pt.ptrType(info: {
-        var info = parent_ptr_ty.ptrInfo(zcu);
+        var info = parent_ptr_info;
         info.flags.alignment = hypothetical_field_ptr_ty.ptrAlignment(zcu);
         break :info info;
     });
@@ -23512,7 +23517,7 @@ fn zirFieldParentPtr(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.Ins
     // a field pointer of type `*align(1) u16`.
     switch (hypothetical_field_ptr_ty.ptrAlignment(zcu).order(parent_ptr_ty.ptrAlignment(zcu))) {
         .gt => unreachable, // getting a field pointer can never increase alignment
-        .eq => return unaligned_parent_ptr,
+        .eq => return sema.coerce(block, maybe_opt_parent_ptr_ty, unaligned_parent_ptr, inst_src),
         .lt => if (flags.align_cast) {
             // Go through `ptrCastFull` for the safety check.
             return sema.ptrCastFull(
@@ -23521,7 +23526,7 @@ fn zirFieldParentPtr(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.Ins
                 inst_src,
                 unaligned_parent_ptr,
                 inst_src,
-                parent_ptr_ty,
+                maybe_opt_parent_ptr_ty,
                 "@fieldParentPtr",
             );
         } else return sema.failWithOwnedErrorMsg(block, msg: {
@@ -25184,7 +25189,7 @@ pub fn explainWhyTypeIsNotExtern(
             }
         },
         .@"union" => {
-            const union_obj = zcu.intern_pool.loadStructType(ty.toIntern());
+            const union_obj = zcu.intern_pool.loadUnionType(ty.toIntern());
             switch (union_obj.layout) {
                 .auto => try sema.errNote(src_loc, msg, "union with automatic layout has no guaranteed in-memory representation", .{}),
                 .@"extern" => unreachable,
