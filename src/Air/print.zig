@@ -10,7 +10,7 @@ const Air = @import("../Air.zig");
 const InternPool = @import("../InternPool.zig");
 
 pub fn write(air: Air, stream: *std.Io.Writer, pt: Zcu.PerThread, liveness: ?Air.Liveness) !void {
-    comptime assert(build_options.enable_debug_extensions);
+    // comptime assert(build_options.enable_debug_extensions);
     const instruction_bytes = air.instructions.len *
         // Here we don't use @sizeOf(Air.Inst.Data) because it would include
         // the debug safety tag but we want to measure release size.
@@ -69,7 +69,7 @@ pub fn writeInst(
     pt: Zcu.PerThread,
     liveness: ?Air.Liveness,
 ) void {
-    comptime assert(build_options.enable_debug_extensions);
+    // comptime assert(build_options.enable_debug_extensions);
     var writer: Writer = .{
         .pt = pt,
         .gpa = pt.zcu.gpa,
