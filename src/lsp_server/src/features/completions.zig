@@ -412,10 +412,7 @@ fn functionTypeCompletion(
         .kind = kind,
         .detail = details,
         .insertTextFormat = insert_text_format,
-        .textEdit = if (builder.server.client_capabilities.supports_completion_insert_replace_support)
-            .{ .insert_replace_edit = .{ .newText = new_text, .insert = insert_range, .replace = replace_range } }
-        else
-            .{ .text_edit = .{ .newText = new_text, .range = insert_range } },
+        .textEdit = createTextEdit(builder, .{ .newText = new_text, .insert = insert_range, .replace = replace_range }),
     };
 }
 
@@ -473,12 +470,27 @@ fn populateSnippedCompletions(builder: *Builder, kind: enum { generic, top_level
     }
 }
 
+fn createTextEdit(builder: *Builder, edit: types.completion.Item.InsertReplaceEdit) types.completion.Item.TextEdit {
+    std.debug.assert(edit.insert.start.line == edit.insert.end.line); // text edit range must be a single line
+    std.debug.assert(edit.replace.start.line == edit.replace.end.line); // text edit range must be a single line
+    std.debug.assert(offsets.orderPosition(edit.insert.start, edit.replace.start) == .eq); // insert and replace text edits must start at the same position
+    std.debug.assert(edit.insert.end.character <= edit.replace.end.character); // insert text edit must be a prefix of the replace text edit
+    if (builder.server.client_capabilities.supports_completion_insert_replace_support) {
+        return .{ .insert_replace_edit = edit };
+    } else {
+        return .{ .text_edit = .{ .newText = edit.newText, .range = edit.insert } };
+    }
+}
+
 fn prepareCompletionLoc(tree: *const Ast, source_index: usize) offsets.Loc {
     const fallback_loc: offsets.Loc = .{ .start = source_index, .end = source_index };
     const token = switch (offsets.sourceIndexToTokenIndex(tree, source_index)) {
         .none => return fallback_loc,
         .one => |token| token,
-        .between => |data| data.left,
+        .between => |data| switch (tree.tokenTag(data.left)) {
+            .identifier, .builtin, .invalid => data.left,
+            else => |tag| if (ast.isKeyword(tag)) data.left else data.right,
+        },
     };
     switch (tree.tokenTag(token)) {
         .identifier, .builtin => |tag| {
@@ -487,21 +499,20 @@ fn prepareCompletionLoc(tree: *const Ast, source_index: usize) offsets.Loc {
             std.debug.assert(token_loc.start <= source_index and source_index <= token_loc.end);
             return offsets.identifierIndexToLoc(tree.source, token_loc.start, if (tag == .builtin) .name else .full);
         },
-        .colon => return fallback_loc,
-        else => {
-            const token_start = tree.tokenStart(token);
+        else => |token_tag| {
+            if (token_tag != .invalid and !ast.isKeyword(token_tag))
+                return fallback_loc;
 
-            var start: usize, var end: usize = start: {
+            const start: usize, var end: usize = start: {
+                const token_start = tree.tokenStart(token);
                 if (std.mem.startsWith(u8, tree.source[token_start..], "@\"")) {
                     break :start .{ token_start, token_start + 2 };
                 } else if (std.mem.startsWith(u8, tree.source[token_start..], "@") or std.mem.startsWith(u8, tree.source[token_start..], ".")) {
-                    if (token_start + 1 < source_index) return fallback_loc;
                     break :start .{ token_start + 1, token_start + 1 };
                 } else {
                     break :start .{ token_start, token_start };
                 }
             };
-            start = @min(start, source_index);
             end = @max(end, source_index);
 
             while (end < tree.source.len and offsets.isSymbolChar(tree.source[end])) {
@@ -597,10 +608,7 @@ fn completeBuiltin(builder: *Builder) error{OutOfMemory}!void {
             .filterText = name[1..],
             .detail = detail,
             .insertTextFormat = insert_text_format,
-            .textEdit = if (builder.server.client_capabilities.supports_completion_insert_replace_support)
-                .{ .insert_replace_edit = .{ .newText = new_text[1..], .insert = insert_range, .replace = replace_range } }
-            else
-                .{ .text_edit = .{ .newText = new_text[1..], .range = insert_range } },
+            .textEdit = createTextEdit(builder, .{ .newText = new_text[1..], .insert = insert_range, .replace = replace_range }),
             .documentation = .{
                 .markup_content = .{
                     .kind = if (builder.server.client_capabilities.completion_doc_supports_md) .markdown else .plaintext,
@@ -817,6 +825,74 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
 
     const completing = offsets.locToSlice(source, .{ .start = string_content_loc.start, .end = previous_separator_index orelse string_content_loc.start });
 
+    const after_separator_index = if (previous_separator_index) |index| index + 1 else string_content_loc.start;
+    const insert_loc: offsets.Loc = .{ .start = after_separator_index, .end = builder.source_index };
+    const replace_loc: offsets.Loc = .{ .start = after_separator_index, .end = next_separator_index orelse string_content_loc.end };
+
+    const insert_range = offsets.locToRange(source, insert_loc, builder.server.offset_encoding);
+    const replace_range = offsets.locToRange(source, replace_loc, builder.server.offset_encoding);
+
+    if (pos_context == .import_string_literal) {
+        try builder.completions.ensureUnusedCapacity(builder.arena, 2);
+        if (store.config.zig_lib_dir) |zig_lib_dir| {
+            builder.completions.appendAssumeCapacity(.{
+                .label = "std",
+                .kind = .Module,
+                .detail = zig_lib_dir.path,
+                .sortText = "1",
+            });
+        }
+        if (store.config.builtin_path) |builtin_path| {
+            builder.completions.appendAssumeCapacity(.{
+                .label = "builtin",
+                .kind = .Module,
+                .detail = builtin_path,
+                .sortText = "2",
+            });
+        }
+
+        if (!DocumentStore.supports_build_system) {
+            // no build system modules
+        } else if (DocumentStore.isBuildFile(builder.orig_handle.uri)) blk: {
+            const build_file = store.getBuildFile(builder.orig_handle.uri) orelse break :blk;
+            const build_config = build_file.tryLockConfig(store.io) orelse break :blk;
+            defer build_file.unlockConfig(store.io);
+
+            try builder.completions.ensureUnusedCapacity(builder.arena, build_config.deps_build_roots.len);
+            for (build_config.deps_build_roots) |dbr| {
+                completions.putAssumeCapacity(.{
+                    .label = dbr.name,
+                    .kind = .Module,
+                    .detail = dbr.path,
+                    .sortText = "4",
+                }, {});
+            }
+        } else if (try builder.orig_handle.getAssociatedBuildFileUri(store)) |uri| blk: {
+            const build_file = store.getBuildFile(uri).?;
+            const build_config = build_file.tryLockConfig(store.io) orelse break :blk;
+            defer build_file.unlockConfig(store.io);
+
+            try completions.ensureUnusedCapacity(builder.arena, build_config.packages.len);
+            for (build_config.packages) |pkg| {
+                completions.putAssumeCapacity(.{
+                    .label = pkg.name,
+                    .kind = .Module,
+                    .detail = pkg.path,
+                    .sortText = "4",
+                }, {});
+            }
+        }
+
+        const string_content_range = offsets.locToRange(source, .{ .start = insert_loc.start, .end = string_content_loc.end }, builder.server.offset_encoding);
+
+        // completions on module replace the entire string literal
+        for (builder.completions.items) |*item| {
+            if (item.kind == .Module and item.textEdit == null) {
+                item.textEdit = createTextEdit(builder, .{ .newText = item.label, .insert = insert_range, .replace = string_content_range });
+            }
+        }
+    }
+
     var search_paths: std.ArrayList([]const u8) = .empty;
     if (std.fs.path.isAbsolute(completing) and pos_context != .import_string_literal) {
         try search_paths.append(builder.arena, completing);
@@ -836,13 +912,6 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
         };
         try search_paths.append(builder.arena, std.fs.path.dirname(document_path).?);
     }
-
-    const after_separator_index = if (previous_separator_index) |index| index + 1 else string_content_loc.start;
-    const insert_loc: offsets.Loc = .{ .start = after_separator_index, .end = builder.source_index };
-    const replace_loc: offsets.Loc = .{ .start = after_separator_index, .end = next_separator_index orelse string_content_loc.end };
-
-    const insert_range = offsets.locToRange(source, insert_loc, builder.server.offset_encoding);
-    const replace_range = offsets.locToRange(source, replace_loc, builder.server.offset_encoding);
 
     for (search_paths.items) |path| {
         if (!std.fs.path.isAbsolute(path)) continue;
@@ -875,7 +944,10 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
 
             const label = try builder.arena.dupe(u8, entry.name);
             const insert_text = if (entry.kind == .directory)
-                try std.fmt.allocPrint(builder.arena, "{s}/", .{entry.name})
+                if (next_separator_index == null)
+                    try std.fmt.allocPrint(builder.arena, "{s}/", .{entry.name})
+                else
+                    label
             else
                 label;
 
@@ -883,80 +955,14 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
                 .label = label,
                 .kind = if (entry.kind == .file) .File else .Folder,
                 .detail = if (pos_context == .cinclude_string_literal) path else null,
-                .textEdit = if (builder.server.client_capabilities.supports_completion_insert_replace_support)
-                    .{ .insert_replace_edit = .{ .newText = insert_text, .insert = insert_range, .replace = replace_range } }
-                else
-                    .{ .text_edit = .{ .newText = insert_text, .range = insert_range } },
+                .textEdit = createTextEdit(builder, .{ .newText = insert_text, .insert = insert_range, .replace = replace_range }),
+                .sortText = if (entry.kind == .file) "6" else "5",
             });
         } else |err| switch (err) {
             error.Canceled => return error.Canceled,
             else => {},
         }
     }
-
-    if (completing.len == 0 and pos_context == .import_string_literal) {
-        no_modules: {
-            if (!DocumentStore.supports_build_system) break :no_modules;
-
-            if (DocumentStore.isBuildFile(builder.orig_handle.uri)) {
-                const build_file = store.getBuildFile(builder.orig_handle.uri) orelse break :no_modules;
-                const build_config = build_file.tryLockConfig(store.io) orelse break :no_modules;
-                defer build_file.unlockConfig(store.io);
-
-                try completions.ensureUnusedCapacity(builder.arena, build_config.deps_build_roots.len);
-                for (build_config.deps_build_roots) |dbr| {
-                    completions.putAssumeCapacity(.{
-                        .label = dbr.name,
-                        .kind = .Module,
-                        .detail = dbr.path,
-                    }, {});
-                }
-            } else if (try builder.orig_handle.getAssociatedBuildFileUri(store)) |uri| {
-                const build_file = store.getBuildFile(uri).?;
-                const build_config = build_file.tryLockConfig(store.io) orelse break :no_modules;
-                defer build_file.unlockConfig(store.io);
-
-                try completions.ensureUnusedCapacity(builder.arena, build_config.packages.len);
-                for (build_config.packages) |pkg| {
-                    completions.putAssumeCapacity(.{
-                        .label = pkg.name,
-                        .kind = .Module,
-                        .detail = pkg.path,
-                    }, {});
-                }
-            }
-        }
-
-        try completions.ensureUnusedCapacity(builder.arena, 2);
-        if (store.config.zig_lib_dir) |zig_lib_dir| {
-            completions.putAssumeCapacity(.{
-                .label = "std",
-                .kind = .Module,
-                .detail = zig_lib_dir.path,
-            }, {});
-        }
-        if (store.config.builtin_path) |builtin_path| {
-            completions.putAssumeCapacity(.{
-                .label = "builtin",
-                .kind = .Module,
-                .detail = builtin_path,
-            }, {});
-        }
-
-        const string_content_range = offsets.locToRange(source, string_content_loc, builder.server.offset_encoding);
-
-        // completions on module replace the entire string literal
-        for (completions.keys()) |*item| {
-            if (item.kind == .Module and item.textEdit == null) {
-                item.textEdit = if (builder.server.client_capabilities.supports_completion_insert_replace_support)
-                    .{ .insert_replace_edit = .{ .newText = item.label, .insert = insert_range, .replace = string_content_range } }
-                else
-                    .{ .text_edit = .{ .newText = item.label, .range = insert_range } };
-            }
-        }
-    }
-
-    try builder.completions.appendSlice(builder.arena, completions.keys());
 }
 
 pub fn completionAtIndex(
@@ -1016,10 +1022,7 @@ pub fn completionAtIndex(
 
     for (completions) |*item| {
         if (item.textEdit == null) {
-            item.textEdit = if (server.client_capabilities.supports_completion_insert_replace_support)
-                .{ .insert_replace_edit = .{ .newText = item.insertText orelse item.label, .insert = insert_range, .replace = replace_range } }
-            else
-                .{ .text_edit = .{ .newText = item.insertText orelse item.label, .range = insert_range } };
+            item.textEdit = createTextEdit(&builder, .{ .newText = item.insertText orelse item.label, .insert = insert_range, .replace = replace_range });
         }
         item.insertText = null;
         // https://github.com/microsoft/language-server-protocol/issues/898#issuecomment-593968008
