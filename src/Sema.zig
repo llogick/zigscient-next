@@ -24756,6 +24756,16 @@ fn zirBuiltinExtern(
     }
     const ptr_info = ty.ptrInfo(zcu);
 
+    if (Type.fromInterned(ptr_info.child).zigTypeTag(zcu) == .@"fn") {
+        const func_type = ip.indexToKey(ptr_info.child).func_type;
+        for (func_type.param_types.get(ip)) |param_ty_ip| {
+            const param_ty: Type = .fromInterned(param_ty_ip);
+            if (param_ty.isPtrAtRuntime(zcu) or param_ty.isSliceAtRuntime(zcu)) {
+                // LLVM wants this information for an "align" attribute on the parameter.
+                try sema.ensureLayoutResolved(param_ty.nullablePtrElem(zcu), ty_src, .parameter);
+            }
+        }
+    }
     const extern_val = try pt.getExtern(.{
         .name = options.name,
         .ty = ptr_info.child,

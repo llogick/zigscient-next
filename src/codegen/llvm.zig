@@ -2327,16 +2327,21 @@ pub const Object = struct {
                 const layout = Type.getUnionLayout(union_type, zcu);
 
                 if (layout.payload_size == 0) {
-                    const tag_member = try o.builder.debugMemberType(
-                        try o.builder.metadataString("tag"),
-                        null, // file
-                        ty_fwd_ref,
-                        0, // line
-                        try o.getDebugType(pt, enum_tag_ty),
-                        layout.tag_size * 8,
-                        layout.tag_align.toByteUnits().? * 8,
-                        0, // offset
-                    );
+                    const fields_tuple: ?Builder.Metadata = fields: {
+                        if (layout.tag_size == 0) break :fields null;
+                        break :fields try o.builder.metadataTuple(&.{
+                            try o.builder.debugMemberType(
+                                try o.builder.metadataString("tag"),
+                                null, // file
+                                ty_fwd_ref,
+                                0, // line
+                                try o.getDebugType(pt, enum_tag_ty),
+                                layout.tag_size * 8,
+                                layout.tag_align.toByteUnits().? * 8,
+                                0, // offset
+                            ),
+                        });
+                    };
                     return o.builder.debugStructType(
                         name,
                         file,
@@ -2345,7 +2350,7 @@ pub const Object = struct {
                         null, // underlying type
                         ty.abiSize(zcu) * 8,
                         ty.abiAlignment(zcu).toByteUnits().? * 8,
-                        try o.builder.metadataTuple(&.{tag_member}),
+                        fields_tuple,
                     );
                 }
 
@@ -3141,12 +3146,16 @@ pub const Object = struct {
                     var struct_kind: Builder.Type.Structure.Kind = .normal;
                     // When we encounter a zero-bit field, we place it here so we know to map it to the next non-zero-bit field (if any).
                     var it = struct_type.iterateRuntimeOrder(ip);
+                    var max_field_ty_align: InternPool.Alignment = .@"1";
                     while (it.next()) |field_index| {
                         const field_ty = Type.fromInterned(struct_type.field_types.get(ip)[field_index]);
+                        const field_ty_align = field_ty.abiAlignment(zcu);
+                        max_field_ty_align = max_field_ty_align.maxStrict(field_ty_align);
+
                         const prev_offset = offset;
                         offset = struct_type.field_offsets.get(ip)[field_index];
-                        if (@ctz(offset) < field_ty.abiAlignment(zcu).toLog2Units()) {
-                            struct_kind = .@"packed";
+                        if (@ctz(offset) < field_ty_align.toLog2Units()) {
+                            struct_kind = .@"packed"; // prevent unexpected padding before this field
                         }
 
                         const padding_len = offset - prev_offset;
@@ -3184,6 +3193,9 @@ pub const Object = struct {
                             o.gpa,
                             try o.builder.arrayType(padding_len, .i8),
                         );
+                        if (@ctz(offset) < max_field_ty_align.toLog2Units()) {
+                            struct_kind = .@"packed"; // prevent unexpected trailing padding
+                        }
                     }
 
                     const ty = try o.builder.opaqueType(try o.builder.string(t.containerTypeName(ip).toSlice(ip)));
@@ -3883,7 +3895,7 @@ pub const Object = struct {
                     const payload = try o.lowerValue(pt, un.val);
                     const payload_ty = payload.typeOf(&o.builder);
                     if (payload_ty != union_ty.structFields(&o.builder)[
-                        @intFromBool(layout.tag_align.compare(.gte, layout.payload_align))
+                        @intFromBool(layout.tag_size > 0 and layout.tag_align.compare(.gte, layout.payload_align))
                     ]) need_unnamed = true;
                     const field_size = field_ty.abiSize(zcu);
                     if (field_size == layout.payload_size) break :p payload;
@@ -6806,7 +6818,7 @@ pub const FuncGen = struct {
             .@"union" => {
                 const union_llvm_ty = try o.lowerType(pt, struct_ty);
                 const layout = struct_ty.unionGetLayout(zcu);
-                const payload_index = @intFromBool(layout.tag_align.compare(.gte, layout.payload_align));
+                const payload_index = @intFromBool(layout.tag_size > 0 and layout.tag_align.compare(.gte, layout.payload_align));
                 const field_ptr =
                     try self.wip.gepStruct(union_llvm_ty, struct_llvm_val, payload_index, "");
                 const payload_alignment = layout.payload_align.toLlvm();
@@ -11063,7 +11075,7 @@ pub const FuncGen = struct {
             .@"union" => {
                 const layout = struct_ty.unionGetLayout(zcu);
                 if (layout.payload_size == 0 or struct_ty.containerLayout(zcu) == .@"packed") return struct_ptr;
-                const payload_index = @intFromBool(layout.tag_align.compare(.gte, layout.payload_align));
+                const payload_index = @intFromBool(layout.tag_size > 0 and layout.tag_align.compare(.gte, layout.payload_align));
                 const union_llvm_ty = try o.lowerType(pt, struct_ty);
                 return self.wip.gepStruct(union_llvm_ty, struct_ptr, payload_index, "");
             },

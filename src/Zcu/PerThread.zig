@@ -1691,6 +1691,16 @@ fn analyzeNavVal(
                 const lib_name_src = block.src(.{ .node_offset_lib_name = .zero });
                 try sema.handleExternLibName(&block, lib_name_src, l);
             }
+            if (nav_ty.zigTypeTag(zcu) == .@"fn") {
+                const func_type = ip.indexToKey(nav_ty.toIntern()).func_type;
+                for (func_type.param_types.get(ip)) |param_ty_ip| {
+                    const param_ty: Type = .fromInterned(param_ty_ip);
+                    if (param_ty.isPtrAtRuntime(zcu) or param_ty.isSliceAtRuntime(zcu)) {
+                        // LLVM wants this information for an "align" attribute on the parameter.
+                        try sema.ensureLayoutResolved(param_ty.nullablePtrElem(zcu), ty_src, .parameter);
+                    }
+                }
+            }
             break :val .fromInterned(try pt.getExtern(.{
                 .name = old_nav.name,
                 .ty = nav_ty.toIntern(),
