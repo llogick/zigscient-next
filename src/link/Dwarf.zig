@@ -3461,7 +3461,7 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
     // without trying to tie them to a bogus source location.
     const src_loc: Zcu.LazySrcLoc = .{
         .base_node_inst = inst: {
-            const mod_root_file_index = zcu.module_roots.get(dwarf.getUnitModule(unit)).?.unwrap().?;
+            const mod_root_file_index = zcu.module_roots.get(zcu.std_mod).?.unwrap().?;
             const mod_root_type_index = zcu.fileRootType(mod_root_file_index);
             break :inst ip.loadStructType(mod_root_type_index).zir_index;
         },
