@@ -41,9 +41,6 @@ pub const MemoryPoolExtra = memory_pool.Extra;
 /// Deprecated; use `memory_pool.Options`.
 pub const MemoryPoolOptions = memory_pool.Options;
 
-/// TODO Utilize this on Windows.
-pub var next_mmap_addr_hint: ?[*]align(page_size_min) u8 = null;
-
 /// comptime-known minimum page size of the target.
 ///
 /// All pointers from `mmap` or `NtAllocateVirtualMemory` are aligned to at least
