@@ -820,6 +820,10 @@ test "Select" {
         fn bar(io: Io) Io.Cancelable!void {
             try io.sleep(.fromSeconds(300), .awake);
         }
+
+        fn baz() error{Ignored}!u8 {
+            return 42;
+        }
     };
 
     const io = testing.io;
@@ -827,6 +831,7 @@ test "Select" {
     const U = union(enum) {
         foo: bool,
         bar: Io.Cancelable!void,
+        baz: error{Ignored}!u8,
     };
     var buffer: [4]U = undefined;
     var select: Io.Select(U) = .init(io, &buffer);
@@ -840,6 +845,7 @@ test "Select" {
     switch (try select.await()) {
         .foo => {},
         .bar => return error.TestFailed, // should be sleeping
+        .baz => return error.TestFailed, // not called yet
     }
     select.async(.foo, S.foo, .{});
     select.async(.foo, S.foo, .{});
@@ -847,4 +853,14 @@ test "Select" {
     var finished_buffer: [3]U = undefined;
     const finished = finished_buffer[0..try select.awaitMany(&finished_buffer, 2)];
     try testing.expectEqualSlices(U, &.{ .{ .foo = true }, .{ .foo = true } }, finished);
+
+    select.async(.baz, S.baz, .{});
+
+    const result = switch (try select.await()) {
+        .baz => |n| try n,
+        .foo => return error.TestFailed, // not called
+        .bar => return error.TestFailed, // should be sleeping
+    };
+
+    try testing.expectEqual(42, result);
 }

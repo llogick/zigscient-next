@@ -1238,7 +1238,7 @@ pub fn Select(comptime U: type) type {
                         error.Closed => unreachable,
                     };
                     if (@typeInfo(@TypeOf(raw_result)) == .error_union)
-                        raw_result catch |err| if (err == error.Canceled) return error.Canceled;
+                        _ = raw_result catch |err| if (err == error.Canceled) return error.Canceled;
                 }
             };
             const context: Context = .{ .select = s, .args = args };
@@ -1277,7 +1277,7 @@ pub fn Select(comptime U: type) type {
                         error.Closed => unreachable,
                     };
                     if (@typeInfo(@TypeOf(raw_result)) == .error_union)
-                        raw_result catch |err| if (err == error.Canceled) return error.Canceled;
+                        _ = raw_result catch |err| if (err == error.Canceled) return error.Canceled;
                 }
             };
             const context: Context = .{ .select = s, .args = args };
