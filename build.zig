@@ -87,6 +87,7 @@ pub fn build(b: *std.Build) !void {
     docs_step.dependOn(std_docs_step);
 
     const no_matrix = b.option(bool, "no-matrix", "Limit test matrix to exactly one target configuration") orelse false;
+    const fuzz_only = b.option(bool, "fuzz-only", "Limit test matrix to one target suitable for fuzzing") orelse false;
     const skip_debug = b.option(bool, "skip-debug", "Main test suite skips debug builds") orelse false;
     const skip_release = b.option(bool, "skip-release", "Main test suite skips release builds") orelse no_matrix;
     const skip_release_small = b.option(bool, "skip-release-small", "Main test suite skips release-small builds") orelse skip_release;
@@ -463,6 +464,13 @@ pub fn build(b: *std.Build) !void {
     }
     const optimization_modes = chosen_opt_modes_buf[0..chosen_mode_index];
 
+    const test_only: ?tests.ModuleTestOptions.TestOnly = if (no_matrix)
+        .default
+    else if (fuzz_only)
+        .{ .fuzz = optimize }
+    else
+        null;
+
     const fmt_include_paths = &.{ "lib", "src", "test", "tools", "build.zig", "build.zig.zon" };
     const fmt_exclude_paths = &.{ "test/cases", "test/behavior/zon" };
     const do_fmt = b.addFmt(.{
@@ -518,7 +526,7 @@ pub fn build(b: *std.Build) !void {
         .include_paths = &.{},
         .skip_single_threaded = skip_single_threaded,
         .skip_non_native = skip_non_native,
-        .test_default_only = no_matrix,
+        .test_only = test_only,
         .skip_spirv = skip_spirv,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
@@ -543,7 +551,7 @@ pub fn build(b: *std.Build) !void {
         .include_paths = &.{},
         .skip_single_threaded = true,
         .skip_non_native = skip_non_native,
-        .test_default_only = no_matrix,
+        .test_only = test_only,
         .skip_spirv = skip_spirv,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
@@ -569,7 +577,7 @@ pub fn build(b: *std.Build) !void {
         .include_paths = &.{},
         .skip_single_threaded = true,
         .skip_non_native = skip_non_native,
-        .test_default_only = no_matrix,
+        .test_only = test_only,
         .skip_spirv = skip_spirv,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
@@ -595,7 +603,7 @@ pub fn build(b: *std.Build) !void {
         .include_paths = &.{},
         .skip_single_threaded = skip_single_threaded,
         .skip_non_native = skip_non_native,
-        .test_default_only = no_matrix,
+        .test_only = test_only,
         .skip_spirv = skip_spirv,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,

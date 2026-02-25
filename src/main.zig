@@ -739,7 +739,8 @@ const usage_build_generic =
     \\  --debug-log [scope]          Enable printing debug/info log messages for scope
     \\  --debug-compile-errors       Crash with helpful diagnostics at the first compile error
     \\  --debug-link-snapshot        Enable dumping of the linker's state in JSON format
-    \\  --debug-rt                   Debug compiler runtime libraries
+    \\  --debug-rt[=mode]            Build compiler runtime libraries with [mode] optimization
+    \\                               (Debug if [=mode] is omitted)
     \\  --debug-incremental          Enable incremental compilation debug features
     \\
 ;
@@ -953,7 +954,7 @@ pub const CompilationState = struct {
     minor_subsystem_version: ?u16 = null,
     mingw_unicode_entry_point: bool = false,
     enable_link_snapshots: bool = false,
-    debug_compiler_runtime_libs: bool = false,
+    debug_compiler_runtime_libs: ?std.builtin.OptimizeMode = null,
     install_name: ?[]const u8 = null,
     hash_style: link.File.Lld.Elf.HashStyle = .both,
     entitlements: ?[]const u8 = null,
@@ -1174,7 +1175,7 @@ pub fn buildOutputType(
     cs.minor_subsystem_version = null;
     cs.mingw_unicode_entry_point = false;
     cs.enable_link_snapshots = false;
-    cs.debug_compiler_runtime_libs = false;
+    cs.debug_compiler_runtime_libs = null;
     cs.install_name = null;
     cs.hash_style = .both;
     cs.entitlements = null;
@@ -1630,7 +1631,9 @@ pub fn buildOutputType(
                             cs.enable_link_snapshots = true;
                         }
                     } else if (mem.eql(u8, arg, "--debug-rt")) {
-                        cs.debug_compiler_runtime_libs = true;
+                        cs.debug_compiler_runtime_libs = .Debug;
+                    } else if (mem.cutPrefix(u8, arg, "--debug-rt=")) |rest| {
+                        cs.debug_compiler_runtime_libs = parseOptimizeMode(rest);
                     } else if (mem.eql(u8, arg, "--debug-incremental")) {
                         if (build_options.enable_debug_extensions) {
                             cs.debug_incremental = true;
