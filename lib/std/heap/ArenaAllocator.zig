@@ -78,7 +78,7 @@ fn countListCapacity(first_node: ?*Node) usize {
     while (it) |node| : (it = node.next) {
         // Compute the actually allocated size excluding the
         // linked list node.
-        capacity += node.size - @sizeOf(Node);
+        capacity += node.size.toInt() - @sizeOf(Node);
     }
     return capacity;
 }
@@ -164,7 +164,10 @@ pub fn reset(arena: *ArenaAllocator, mode: ResetMode) bool {
         };
         const allocated_slice = node.allocatedSliceUnsafe();
 
-        if (new_capacity == 0) {
+        // Align backwards to always stay below limit.
+        const new_size = mem.alignBackward(usize, @sizeOf(Node) + new_capacity, 2);
+
+        if (new_size == @sizeOf(Node)) {
             arena.child_allocator.rawFree(allocated_slice, .of(Node), @returnAddress());
             first_node_ptr.* = null;
             continue;
@@ -173,19 +176,17 @@ pub fn reset(arena: *ArenaAllocator, mode: ResetMode) bool {
         node.end_index = 0;
         first_node_ptr.* = node;
 
-        const adjusted_capacity: usize = mem.alignForward(usize, new_capacity, 2);
-
-        if (allocated_slice.len - @sizeOf(Node) == adjusted_capacity) {
+        if (allocated_slice.len == new_size) {
             // perfect, no need to invoke the child_allocator
             continue;
         }
 
-        if (arena.child_allocator.rawResize(allocated_slice, .of(Node), adjusted_capacity, @returnAddress())) {
+        if (arena.child_allocator.rawResize(allocated_slice, .of(Node), new_size, @returnAddress())) {
             // successful resize
-            node.size = adjusted_capacity;
+            node.size = .fromInt(new_size);
         } else {
             // manual realloc
-            const new_ptr = arena.child_allocator.rawAlloc(adjusted_capacity, .of(Node), @returnAddress()) orelse {
+            const new_ptr = arena.child_allocator.rawAlloc(new_size, .of(Node), @returnAddress()) orelse {
                 // we failed to preheat the arena properly, signal this to the user.
                 ok = false;
                 continue;
@@ -193,7 +194,7 @@ pub fn reset(arena: *ArenaAllocator, mode: ResetMode) bool {
             arena.child_allocator.rawFree(allocated_slice, .of(Node), @returnAddress());
             const new_first_node: *Node = @ptrCast(@alignCast(new_ptr));
             new_first_node.* = .{
-                .size = adjusted_capacity,
+                .size = .fromInt(new_size),
                 .end_index = 0,
                 .next = null,
             };
@@ -213,51 +214,60 @@ pub fn reset(arena: *ArenaAllocator, mode: ResetMode) bool {
 const Node = struct {
     /// Only meant to be accessed indirectly via the methods supplied by this type,
     /// except if the node is owned by the thread accessing it.
-    /// Must always be an even number to accomodate `resize_bit`.
-    size: usize,
-    /// Concurrent accesses to `end_index` can be monotonic since it is only ever
-    /// incremented in `alloc` and `resize` after being compared to `size`.
+    /// Must always be an even number to accomodate `resize` bit.
+    size: Size,
+    /// Concurrent accesses to `end_index` can be monotonic as long as its value
+    /// is compared to a version of `size` before using it to access memory.
     /// Since `size` can only grow and never shrink, memory access depending on
-    /// `end_index` can never be OOB.
+    /// any `end_index` <= any `size` can never be OOB.
     end_index: usize,
     /// This field should only be accessed if the node is owned by the thread
     /// accessing it.
     next: ?*Node,
 
-    const resize_bit: usize = 1;
+    const Size = packed struct(usize) {
+        resizing: bool,
+        _: @Int(.unsigned, @bitSizeOf(usize) - 1) = 0,
 
-    fn loadEndIndex(node: *Node) usize {
-        return @atomicLoad(usize, &node.end_index, .monotonic);
-    }
+        fn fromInt(int: usize) Size {
+            assert(int >= @sizeOf(Node));
+            const size: Size = @bitCast(int);
+            assert(!size.resizing);
+            return size;
+        }
 
-    /// Returns `null` on success and previous value on failure.
-    fn trySetEndIndex(node: *Node, from: usize, to: usize) ?usize {
-        assert(from != to); // check this before attempting to set `end_index`!
-        return @cmpxchgWeak(usize, &node.end_index, from, to, .monotonic, .monotonic);
-    }
+        fn toInt(size: Size) usize {
+            var int = size;
+            int.resizing = false;
+            return @bitCast(int);
+        }
+
+        comptime {
+            assert(Size{ .resizing = true } == @as(Size, @bitCast(@as(usize, 1))));
+        }
+    };
 
     fn loadBuf(node: *Node) []u8 {
         // monotonic is fine since `size` can only ever grow, so the buffer returned
         // by this function is always valid memory.
-        const size = @atomicLoad(usize, &node.size, .monotonic);
-        return @as([*]u8, @ptrCast(node))[0 .. size & ~resize_bit][@sizeOf(Node)..];
+        const size = @atomicLoad(Size, &node.size, .monotonic);
+        return @as([*]u8, @ptrCast(node))[0..size.toInt()][@sizeOf(Node)..];
     }
 
     /// Returns allocated slice or `null` if node is already (being) resized.
     fn beginResize(node: *Node) ?[]u8 {
-        const size = @atomicRmw(usize, &node.size, .Or, resize_bit, .acquire); // syncs with release in `endResize`
-        if (size & resize_bit != 0) return null;
-        return @as([*]u8, @ptrCast(node))[0..size];
+        const size = @atomicRmw(Size, &node.size, .Or, .{ .resizing = true }, .acquire); // syncs with release in `endResize`
+        if (size.resizing) return null;
+        return @as([*]u8, @ptrCast(node))[0..size.toInt()];
     }
 
     fn endResize(node: *Node, size: usize) void {
-        assert(size & resize_bit == 0);
-        return @atomicStore(usize, &node.size, size, .release); // syncs with acquire in `beginResize`
+        return @atomicStore(Size, &node.size, .fromInt(size), .release); // syncs with acquire in `beginResize`
     }
 
     /// Not threadsafe.
     fn allocatedSliceUnsafe(node: *Node) []u8 {
-        return @as([*]u8, @ptrCast(node))[0 .. node.size & ~resize_bit];
+        return @as([*]u8, @ptrCast(node))[0..node.size.toInt()];
     }
 };
 
@@ -326,19 +336,22 @@ fn alloc(ctx: *anyopaque, n: usize, alignment: Alignment, ret_addr: usize) ?[*]u
     retry: while (true) {
         const first_node: ?*Node, const prev_size: usize = first_node: {
             const node = cur_first_node orelse break :first_node .{ null, 0 };
-            var end_index = node.loadEndIndex();
-            while (true) {
-                const buf = node.loadBuf();
-                const aligned_index = alignedIndex(buf.ptr, end_index, alignment);
+            const buf = node.loadBuf();
 
-                if (aligned_index + n > buf.len) {
-                    break :first_node .{ node, buf.len };
-                }
+            // To avoid using a CAS loop in the hot path we atomically increase
+            // `end_index` by a large enough amount to be able to always provide
+            // the required alignment within the reserved memory. To recover the
+            // space this potentially wastes we try to subtract the 'overshoot'
+            // with a single cmpxchg afterwards, which may fail.
 
-                end_index = node.trySetEndIndex(end_index, aligned_index + n) orelse {
-                    return buf[aligned_index..][0..n].ptr;
-                };
-            }
+            const alignable = n + alignment.toByteUnits() - 1;
+            const end_index = @atomicRmw(usize, &node.end_index, .Add, alignable, .monotonic);
+            const aligned_index = alignedIndex(buf.ptr, end_index, alignment);
+            assert(end_index + alignable >= aligned_index + n);
+            _ = @cmpxchgStrong(usize, &node.end_index, end_index + alignable, aligned_index + n, .monotonic, .monotonic);
+
+            if (aligned_index + n > buf.len) break :first_node .{ node, buf.len };
+            return buf[aligned_index..][0..n].ptr;
         };
 
         resize: {
@@ -352,7 +365,7 @@ fn alloc(ctx: *anyopaque, n: usize, alignment: Alignment, ret_addr: usize) ?[*]u
             defer node.endResize(size);
 
             const buf = allocated_slice[@sizeOf(Node)..];
-            const end_index = node.loadEndIndex();
+            const end_index = @atomicLoad(usize, &node.end_index, .monotonic);
             const aligned_index = alignedIndex(buf.ptr, end_index, alignment);
             const new_size = mem.alignForward(usize, @sizeOf(Node) + aligned_index + n, 2);
 
@@ -403,55 +416,59 @@ fn alloc(ctx: *anyopaque, n: usize, alignment: Alignment, ret_addr: usize) ?[*]u
                 }
             }
 
-            var best_fit_prev: ?*Node = null;
-            var best_fit: ?*Node = null;
-            var best_fit_diff: usize = std.math.maxInt(usize);
+            const candidate: ?*Node, const prev: ?*Node = candidate: {
+                var best_fit_prev: ?*Node = null;
+                var best_fit: ?*Node = null;
+                var best_fit_diff: usize = std.math.maxInt(usize);
 
-            var it_prev: ?*Node = null;
-            var it = free_list;
-            const candidate: ?*Node, const prev: ?*Node = find: while (it) |node| : ({
-                it_prev = it;
-                it = node.next;
-            }) {
-                last_free = node;
-                assert(node.size & Node.resize_bit == 0);
-                const buf = node.allocatedSliceUnsafe()[@sizeOf(Node)..];
-                const aligned_index = alignedIndex(buf.ptr, 0, alignment);
-                if (buf.len < aligned_index + n) {
+                var it_prev: ?*Node = null;
+                var it = free_list;
+                while (it) |node| : ({
+                    it_prev = it;
+                    it = node.next;
+                }) {
+                    last_free = node;
+                    assert(!node.size.resizing);
+                    const buf = node.allocatedSliceUnsafe()[@sizeOf(Node)..];
+                    const aligned_index = alignedIndex(buf.ptr, 0, alignment);
+
+                    if (aligned_index + n <= buf.len) {
+                        break :candidate .{ node, it_prev };
+                    }
+
                     const diff = aligned_index + n - buf.len;
                     if (diff <= best_fit_diff) {
                         best_fit_prev = it_prev;
                         best_fit = node;
                         best_fit_diff = diff;
                     }
-                    continue :find;
-                }
-                break :find .{ node, it_prev };
-            } else {
-                // Ideally we want to use all nodes in `free_list` eventually,
-                // so even if none fit we'll try to resize the one that was the
-                // closest to being large enough.
-                if (best_fit) |node| {
-                    const allocated_slice = node.allocatedSliceUnsafe();
-                    const buf = allocated_slice[@sizeOf(Node)..];
-                    const aligned_index = alignedIndex(buf.ptr, 0, alignment);
-                    const new_size = mem.alignForward(usize, @sizeOf(Node) + aligned_index + n, 2);
+                } else {
+                    // Ideally we want to use all nodes in `free_list` eventually,
+                    // so even if none fit we'll try to resize the one that was the
+                    // closest to being large enough.
+                    if (best_fit) |node| {
+                        const allocated_slice = node.allocatedSliceUnsafe();
+                        const buf = allocated_slice[@sizeOf(Node)..];
+                        const aligned_index = alignedIndex(buf.ptr, 0, alignment);
+                        const new_size = mem.alignForward(usize, @sizeOf(Node) + aligned_index + n, 2);
 
-                    if (arena.child_allocator.rawResize(allocated_slice, .of(Node), new_size, @returnAddress())) {
-                        node.size = new_size;
-                        break :find .{ node, best_fit_prev };
+                        if (arena.child_allocator.rawResize(allocated_slice, .of(Node), new_size, @returnAddress())) {
+                            node.size = .fromInt(new_size);
+                            break :candidate .{ node, best_fit_prev };
+                        }
                     }
+                    break :from_free_list;
                 }
-                break :from_free_list;
             };
 
-            it = last_free;
-            while (it) |node| : (it = node.next) {
-                last_free = node;
+            {
+                var it = last_free;
+                while (it) |node| : (it = node.next) {
+                    last_free = node;
+                }
             }
 
             const node = candidate orelse break :from_free_list;
-
             const old_next = node.next;
 
             const buf = node.allocatedSliceUnsafe()[@sizeOf(Node)..];
@@ -489,12 +506,11 @@ fn alloc(ctx: *anyopaque, n: usize, alignment: Alignment, ret_addr: usize) ?[*]u
                 const big_enough_size = prev_size + min_size + 16;
                 break :size mem.alignForward(usize, big_enough_size + big_enough_size / 2, 2);
             };
-            assert(size & Node.resize_bit == 0);
             const ptr = arena.child_allocator.rawAlloc(size, .of(Node), @returnAddress()) orelse
                 return null;
             const new_node: *Node = @ptrCast(@alignCast(ptr));
             new_node.* = .{
-                .size = size,
+                .size = .fromInt(size),
                 .end_index = undefined, // set below
                 .next = undefined, // set below
             };
@@ -504,7 +520,7 @@ fn alloc(ctx: *anyopaque, n: usize, alignment: Alignment, ret_addr: usize) ?[*]u
 
         const buf = new_node.allocatedSliceUnsafe()[@sizeOf(Node)..];
         const aligned_index = alignedIndex(buf.ptr, 0, alignment);
-        assert(new_node.size >= @sizeOf(Node) + aligned_index + n);
+        assert(new_node.size.toInt() >= @sizeOf(Node) + aligned_index + n);
 
         new_node.end_index = aligned_index + n;
         new_node.next = first_node;
@@ -533,7 +549,7 @@ fn resize(ctx: *anyopaque, buf: []u8, alignment: Alignment, new_len: usize, ret_
     const node = arena.loadFirstNode().?;
     const cur_buf_ptr = @as([*]u8, @ptrCast(node)) + @sizeOf(Node);
 
-    var cur_end_index = node.loadEndIndex();
+    var cur_end_index = @atomicLoad(usize, &node.end_index, .monotonic);
     while (true) {
         if (cur_buf_ptr + cur_end_index != buf.ptr + buf.len) {
             // It's not the most recent allocation, so it cannot be expanded,
@@ -554,7 +570,14 @@ fn resize(ctx: *anyopaque, buf: []u8, alignment: Alignment, new_len: usize, ret_
             return false;
         };
 
-        cur_end_index = node.trySetEndIndex(cur_end_index, new_end_index) orelse {
+        cur_end_index = @cmpxchgWeak(
+            usize,
+            &node.end_index,
+            cur_end_index,
+            new_end_index,
+            .monotonic,
+            .monotonic,
+        ) orelse {
             return true;
         };
     }
@@ -580,14 +603,22 @@ fn free(ctx: *anyopaque, buf: []u8, alignment: Alignment, ret_addr: usize) void 
     const node = arena.loadFirstNode().?;
     const cur_buf_ptr: [*]u8 = @as([*]u8, @ptrCast(node)) + @sizeOf(Node);
 
-    var cur_end_index = node.loadEndIndex();
+    var cur_end_index = @atomicLoad(usize, &node.end_index, .monotonic);
     while (true) {
         if (cur_buf_ptr + cur_end_index != buf.ptr + buf.len) {
             // Not the most recent allocation; we cannot free it.
             return;
         }
         const new_end_index = cur_end_index - buf.len;
-        cur_end_index = node.trySetEndIndex(cur_end_index, new_end_index) orelse {
+
+        cur_end_index = @cmpxchgWeak(
+            usize,
+            &node.end_index,
+            cur_end_index,
+            new_end_index,
+            .monotonic,
+            .monotonic,
+        ) orelse {
             return;
         };
     }
@@ -637,6 +668,7 @@ test "reset while retaining a buffer" {
     try std.testing.expect(arena_allocator.state.used_list.?.next != null);
 
     // This retains the first allocated buffer
-    try std.testing.expect(arena_allocator.reset(.{ .retain_with_limit = 1 }));
+    try std.testing.expect(arena_allocator.reset(.{ .retain_with_limit = 2 }));
     try std.testing.expect(arena_allocator.state.used_list.?.next == null);
+    try std.testing.expectEqual(2, arena_allocator.queryCapacity());
 }
