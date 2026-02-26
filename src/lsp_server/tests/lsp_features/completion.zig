@@ -2220,6 +2220,110 @@ test "error." {
     });
 }
 
+test "treat '.' as 'error.'" {
+    // try testCompletion(
+    //     \\const Birdie = error{Canary};
+    //     \\const Errors = error{E1} || error{E2} || nested.Error;
+    //     \\const nested = struct {
+    //     \\    const Error = error{E3};
+    //     \\};
+    //     \\fn foo() (Errors || error{E4})!void {
+    //     \\    return error.<cursor>;
+    //     \\}
+    // , &.{
+    //     .{ .label = "E1", .kind = .EnumMember },
+    //     .{ .label = "E2", .kind = .EnumMember },
+    //     .{ .label = "E3", .kind = .EnumMember },
+    //     .{ .label = "E4", .kind = .EnumMember },
+    // });
+    try testCompletion(
+        \\const Birdie = error{Canary};
+        \\const Errors = error{E1} || error{E2} || nested.Error;
+        \\const nested = struct {
+        \\    const Error = error{E3};
+        \\};
+        \\const nm = struct {
+        \\    fn foo() (Errors || error{E4})!void {}
+        \\};
+        \\fn baz() !void {
+        \\    nm.foo() catch |err| switch (err) {
+        \\        .<cursor>
+        \\    };
+        \\}
+    , &.{
+        .{ .label = "error.E1", .kind = .EnumMember },
+        .{ .label = "error.E2", .kind = .EnumMember },
+        .{ .label = "error.E3", .kind = .EnumMember },
+        .{ .label = "error.E4", .kind = .EnumMember },
+    });
+    try testCompletion(
+        \\const Birdie = error{Canary};
+        \\const Errors = error{E1} || error{E2} || nested.Error;
+        \\const nested = struct {
+        \\    const Error = error{E3};
+        \\};
+        \\const nm = struct {
+        \\    fn foo() (Errors || error{E4})!void {}
+        \\};
+        \\fn baz() !void {
+        \\    nm.foo() catch |err| {
+        \\        const some = switch (err) {
+        \\            .<cursor>
+        \\        }
+        \\    };
+        \\}
+    , &.{
+        .{ .label = "error.E1", .kind = .EnumMember },
+        .{ .label = "error.E2", .kind = .EnumMember },
+        .{ .label = "error.E3", .kind = .EnumMember },
+        .{ .label = "error.E4", .kind = .EnumMember },
+    });
+    // try testCompletion(
+    //     \\const Birdie = error{Canary};
+    //     \\const Errors = error{E1} || error{E2} || nested.Error;
+    //     \\const nested = struct {
+    //     \\    const Error = error{E3};
+    //     \\};
+    //     \\const nm = struct {
+    //     \\    fn foo() error{E5}!void {}
+    //     \\};
+    //     \\fn baz() (Errors || error{E4})!void {
+    //     \\    nm.foo() catch |err| switch (err) {
+    //     \\        error.E5 => return error.<cursor>
+    //     \\    };
+    //     \\}
+    // , &.{
+    //     .{ .label = "E1", .kind = .EnumMember },
+    //     .{ .label = "E2", .kind = .EnumMember },
+    //     .{ .label = "E3", .kind = .EnumMember },
+    //     .{ .label = "E4", .kind = .EnumMember },
+    // });
+    try testCompletionTextEdit(.{
+        .source =
+        \\const err: error{E1, E2} = undefined;
+        \\switch(err) {
+        \\    .<cursor>
+        \\}
+        ,
+        .label = "error.E1",
+        .expected_insert_line = "    error.E1",
+        .expected_replace_line = "    error.E1",
+        .enable_snippets = false,
+    });
+    try testCompletionTextEdit(.{
+        .source =
+        \\const err: error{Err1, Err2} = undefined;
+        \\switch(err) {
+        \\    error.E<cursor>0
+        \\}
+        ,
+        .label = "Err1",
+        .expected_insert_line = "    error.Err1",
+        .expected_replace_line = "    error.Err1",
+        .enable_snippets = false,
+    });
+}
+
 test "structinit" {
     try testCompletion(
         \\const S = struct {
@@ -2861,6 +2965,30 @@ test "deprecated" {
             .documentation = "Deprecated; some message",
             .deprecated = true,
         },
+    });
+}
+
+test "deprecated sorting" {
+    try testCompletionWithOptions(
+        \\pub const Test = struct {
+        \\  pub const a = @compileError("Deprecated; some message");
+        \\  pub const b = true;
+        \\};
+        \\const foo = Test.<cursor>
+    , &.{
+        .{
+            .label = "b",
+            .kind = .Constant,
+            .deprecated = false,
+        },
+        .{
+            .label = "a",
+            .kind = .Constant,
+            .documentation = "Deprecated; some message",
+            .deprecated = true,
+        },
+    }, .{
+        .check_order = true,
     });
 }
 
@@ -4587,6 +4715,7 @@ fn testCompletionWithOptions(
         enable_argument_placeholders: bool = true,
         enable_snippets: bool = true,
         completion_label_details: bool = true,
+        check_order: bool = false,
     },
 ) !void {
     const cursor_idx = std.mem.find(u8, source, "<cursor>").?;
@@ -4762,6 +4891,26 @@ fn testCompletionWithOptions(
         try printLabels(&buffer, unexpected, "unexpected");
         try error_builder.msgAtIndex("invalid completions\n{s}", test_uri, cursor_idx, .err, .{buffer.items});
         return error.MissingOrUnexpectedCompletions;
+    }
+
+    if (options.check_order) {
+        const Item = types.completion.Item;
+
+        const items: []Item = try allocator.dupe(Item, completion_list.items);
+        defer allocator.free(items);
+
+        std.mem.sort(Item, items, {}, struct {
+            fn sort(_: void, lhs: Item, rhs: Item) bool {
+                return std.mem.lessThan(u8, lhs.sortText.?, rhs.sortText.?);
+            }
+        }.sort);
+
+        for (0..expected_completions.len) |i| {
+            const expected_completion = expected_completions[i];
+            const actual_completion = items[i];
+
+            try std.testing.expectEqualStrings(expected_completion.label, actual_completion.label);
+        }
     }
 }
 

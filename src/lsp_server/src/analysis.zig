@@ -4865,11 +4865,11 @@ const Stack = struct {
         ctx: PositionContext,
         scope: State.Scope,
 
-        const Scope = enum { parens, brackets, braces, global };
+        const Scope = enum { parens, brackets, braces, err_set_def, global };
 
         /// Indicates whether the current context is an ErrorSet definition, ie `error{...}`
         pub fn isErrSetDef(self: *Stack.State) bool {
-            return (self.scope == .braces and self.ctx == .error_access);
+            return (self.scope == .err_set_def and self.ctx == .error_access);
         }
     };
 
@@ -5081,6 +5081,7 @@ pub fn getPositionContext(
                 else
                     .{ .var_access = tok.loc },
                 .test_doctest_name => .{ .test_doctest_name = tok.loc },
+                .error_access => curr_ctx.ctx,
                 else => .{ .var_access = tok.loc },
             },
             .builtin => .{ .builtin = tok.loc },
@@ -5134,11 +5135,14 @@ pub fn getPositionContext(
                 continue;
             },
             .l_brace => {
-                try stack.push(allocator, &.{ .ctx = if (curr_ctx.ctx == .error_access) curr_ctx.ctx else .empty, .scope = .braces });
+                try stack.push(allocator, if (curr_ctx.ctx == .error_access)
+                    &.{ .ctx = curr_ctx.ctx, .scope = .err_set_def }
+                else
+                    &.{ .ctx = .empty, .scope = .braces });
                 continue;
             },
             .r_brace => {
-                stack.pop(curr_ctx.scope == .braces);
+                stack.pop((curr_ctx.scope == .braces) or (curr_ctx.scope == .err_set_def));
                 continue;
             },
             .keyword_error => .{ .error_access = current_token },
@@ -5167,7 +5171,6 @@ pub fn getPositionContext(
                 break :new_state .{ .keyword = current_token };
             },
             .keyword_test => .{ .test_doctest_name = .{ .start = tok.loc.end, .end = tok.loc.end } },
-            .keyword_struct, .keyword_enum, .keyword_union => .{ .keyword = current_token },
             .container_doc_comment => .comment,
             .doc_comment => new_state: {
                 if (!curr_ctx.isErrSetDef()) break :new_state .comment; // Intent is to skip everything between the `error{...}` braces
