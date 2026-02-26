@@ -13,7 +13,6 @@ pub const ArenaAllocator = @import("heap/ArenaAllocator.zig");
 pub const SmpAllocator = @import("heap/SmpAllocator.zig");
 pub const FixedBufferAllocator = @import("heap/FixedBufferAllocator.zig");
 pub const PageAllocator = @import("heap/PageAllocator.zig");
-pub const ThreadSafeAllocator = @import("heap/ThreadSafeAllocator.zig");
 pub const WasmAllocator = if (builtin.single_threaded) BrkAllocator else @compileError("unimplemented");
 pub const BrkAllocator = @import("heap/BrkAllocator.zig");
 
@@ -1009,7 +1008,6 @@ test {
     _ = ArenaAllocator;
     _ = GeneralPurposeAllocator;
     _ = FixedBufferAllocator;
-    _ = ThreadSafeAllocator;
     if (builtin.single_threaded) {
         if (builtin.cpu.arch.isWasm() or (builtin.os.tag == .linux and !builtin.link_libc)) {
             _ = brk_allocator;
