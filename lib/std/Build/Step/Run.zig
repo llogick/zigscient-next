@@ -1787,9 +1787,9 @@ fn evalZigTest(
                     // the next test.
                     test_metadata.?.ns_per_test[test_index] = timeout.ns_elapsed;
                     test_results.timeout_count += 1;
-                    try run.step.addError("'{s}' timed out after {D}{s}{s}", .{
+                    try run.step.addError("'{s}' timed out after {f}{s}{s}", .{
                         test_metadata.?.testName(test_index),
-                        timeout.ns_elapsed,
+                        Io.Duration{ .nanoseconds = timeout.ns_elapsed },
                         if (stderr.len != 0) " with stderr:\n" else "",
                         std.mem.trim(u8, stderr, "\n"),
                     });
@@ -1799,7 +1799,7 @@ fn evalZigTest(
                 run.step.result_stderr = try arena.dupe(u8, stderr);
                 // The individual unit test results in `results` are irrelevant: the test runner
                 // is broken! Fail immediately without populating `s.test_results`.
-                return run.step.fail("test runner failed to respond for {D}", .{timeout.ns_elapsed});
+                return run.step.fail("test runner failed to respond for {f}", .{Io.Duration{ .nanoseconds = timeout.ns_elapsed }});
             },
         }
         comptime unreachable;

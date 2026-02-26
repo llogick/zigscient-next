@@ -940,6 +940,130 @@ pub const Duration = struct {
     pub fn toNanoseconds(d: Duration) i96 {
         return d.nanoseconds;
     }
+
+    /// Write number of nanoseconds according to its signed magnitude:
+    /// `[#y][#w][#d][#h][#m]#[.###][n|u|m]s`
+    pub fn format(duration: Duration, w: *Writer) Writer.Error!void {
+        if (duration.nanoseconds < 0) try w.writeByte('-');
+        return formatUnsigned(w, @abs(duration.nanoseconds));
+    }
+
+    fn formatUnsigned(w: *Writer, ns: u96) Writer.Error!void {
+        var ns_remaining = ns;
+        inline for (.{
+            .{ .ns = 365 * std.time.ns_per_day, .sep = 'y' },
+            .{ .ns = std.time.ns_per_week, .sep = 'w' },
+            .{ .ns = std.time.ns_per_day, .sep = 'd' },
+            .{ .ns = std.time.ns_per_hour, .sep = 'h' },
+            .{ .ns = std.time.ns_per_min, .sep = 'm' },
+        }) |unit| {
+            if (ns_remaining >= unit.ns) {
+                const units = ns_remaining / unit.ns;
+                try w.printInt(units, 10, .lower, .{});
+                try w.writeByte(unit.sep);
+                ns_remaining -= units * unit.ns;
+                if (ns_remaining == 0) return;
+            }
+        }
+
+        inline for (.{
+            .{ .ns = std.time.ns_per_s, .sep = "s" },
+            .{ .ns = std.time.ns_per_ms, .sep = "ms" },
+            .{ .ns = std.time.ns_per_us, .sep = "us" },
+        }) |unit| {
+            const kunits = ns_remaining * 1000 / unit.ns;
+            if (kunits >= 1000) {
+                try w.printInt(kunits / 1000, 10, .lower, .{});
+                const frac = kunits % 1000;
+                if (frac > 0) {
+                    // Write up to 3 decimal places
+                    var decimal_buf = [_]u8{ '.', 0, 0, 0 };
+                    var inner: Writer = .fixed(decimal_buf[1..]);
+                    inner.printInt(frac, 10, .lower, .{ .fill = '0', .width = 3 }) catch unreachable;
+                    var end: usize = 4;
+                    while (end > 1) : (end -= 1) {
+                        if (decimal_buf[end - 1] != '0') break;
+                    }
+                    try w.writeAll(decimal_buf[0..end]);
+                }
+                return w.writeAll(unit.sep);
+            }
+        }
+
+        try w.printInt(ns_remaining, 10, .lower, .{});
+        try w.writeAll("ns");
+    }
+
+    test format {
+        try testFormat("0ns", 0);
+        try testFormat("1ns", 1);
+        try testFormat("-1ns", -(1));
+        try testFormat("999ns", std.time.ns_per_us - 1);
+        try testFormat("-999ns", -(std.time.ns_per_us - 1));
+        try testFormat("1us", std.time.ns_per_us);
+        try testFormat("-1us", -(std.time.ns_per_us));
+        try testFormat("1.45us", 1450);
+        try testFormat("-1.45us", -(1450));
+        try testFormat("1.5us", 3 * std.time.ns_per_us / 2);
+        try testFormat("-1.5us", -(3 * std.time.ns_per_us / 2));
+        try testFormat("14.5us", 14500);
+        try testFormat("-14.5us", -(14500));
+        try testFormat("145us", 145000);
+        try testFormat("-145us", -(145000));
+        try testFormat("999.999us", std.time.ns_per_ms - 1);
+        try testFormat("-999.999us", -(std.time.ns_per_ms - 1));
+        try testFormat("1ms", std.time.ns_per_ms + 1);
+        try testFormat("-1ms", -(std.time.ns_per_ms + 1));
+        try testFormat("1.5ms", 3 * std.time.ns_per_ms / 2);
+        try testFormat("-1.5ms", -(3 * std.time.ns_per_ms / 2));
+        try testFormat("1.11ms", 1110000);
+        try testFormat("-1.11ms", -(1110000));
+        try testFormat("1.111ms", 1111000);
+        try testFormat("-1.111ms", -(1111000));
+        try testFormat("1.111ms", 1111100);
+        try testFormat("-1.111ms", -(1111100));
+        try testFormat("999.999ms", std.time.ns_per_s - 1);
+        try testFormat("-999.999ms", -(std.time.ns_per_s - 1));
+        try testFormat("1s", std.time.ns_per_s);
+        try testFormat("-1s", -(std.time.ns_per_s));
+        try testFormat("59.999s", std.time.ns_per_min - 1);
+        try testFormat("-59.999s", -(std.time.ns_per_min - 1));
+        try testFormat("1m", std.time.ns_per_min);
+        try testFormat("-1m", -(std.time.ns_per_min));
+        try testFormat("1h", std.time.ns_per_hour);
+        try testFormat("-1h", -(std.time.ns_per_hour));
+        try testFormat("1d", std.time.ns_per_day);
+        try testFormat("-1d", -(std.time.ns_per_day));
+        try testFormat("1w", std.time.ns_per_week);
+        try testFormat("-1w", -(std.time.ns_per_week));
+        try testFormat("1y", 365 * std.time.ns_per_day);
+        try testFormat("-1y", -(365 * std.time.ns_per_day));
+        try testFormat("1y52w23h59m59.999s", 730 * std.time.ns_per_day - 1); // 365d = 52w1d
+        try testFormat("-1y52w23h59m59.999s", -(730 * std.time.ns_per_day - 1)); // 365d = 52w1d
+        try testFormat("1y1h1.001s", 365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_s + std.time.ns_per_ms);
+        try testFormat("-1y1h1.001s", -(365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_s + std.time.ns_per_ms));
+        try testFormat("1y1h1s", 365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_s + 999 * std.time.ns_per_us);
+        try testFormat("-1y1h1s", -(365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_s + 999 * std.time.ns_per_us));
+        try testFormat("1y1h999.999us", 365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_ms - 1);
+        try testFormat("-1y1h999.999us", -(365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_ms - 1));
+        try testFormat("1y1h1ms", 365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_ms);
+        try testFormat("-1y1h1ms", -(365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_ms));
+        try testFormat("1y1h1ms", 365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_ms + 1);
+        try testFormat("-1y1h1ms", -(365 * std.time.ns_per_day + std.time.ns_per_hour + std.time.ns_per_ms + 1));
+        try testFormat("1y1m999ns", 365 * std.time.ns_per_day + std.time.ns_per_min + 999);
+        try testFormat("-1y1m999ns", -(365 * std.time.ns_per_day + std.time.ns_per_min + 999));
+        try testFormat("292y24w3d23h47m16.854s", std.math.maxInt(i64));
+        try testFormat("-292y24w3d23h47m16.854s", std.math.minInt(i64) + 1);
+        try testFormat("-292y24w3d23h47m16.854s", std.math.minInt(i64));
+    }
+
+    fn testFormat(expected: []const u8, input: i96) !void {
+        // worst case: "-XXXXXXXXXXXXXyXXwXXdXXhXXmXX.XXXs".len = 34
+        var buf: [34]u8 = undefined;
+        var w: Writer = .fixed(&buf);
+        try w.print("{f}", .{Duration{ .nanoseconds = input }});
+        try std.testing.expectEqualStrings(expected, w.buffered());
+    }
 };
 
 /// Declares under what conditions an operation should return `error.Timeout`.
