@@ -830,7 +830,7 @@ fn addCompilerStep(b: *std.Build, options: AddCompilerModOptions) *std.Build.Ste
     exe.stack_size = stack_size;
 
     // Must match the condition in CMakeLists.txt.
-    const function_data_sections = options.target.result.cpu.arch.isPowerPC();
+    const function_data_sections = options.target.result.cpu.arch.isArm() or options.target.result.cpu.arch.isPowerPC();
 
     exe.link_function_sections = function_data_sections;
     exe.link_data_sections = function_data_sections;
