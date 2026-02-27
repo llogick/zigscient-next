@@ -690,9 +690,9 @@ pub fn hasRuntimeBits(ty: Type, zcu: *const Zcu) bool {
     };
 }
 
-/// true if and only if the type has a well-defined memory layout
-/// readFrom/writeToMemory are supported only for types with a well-
-/// defined memory layout
+/// Returns `true` iff the memory layout of `ty` is defined by the Zig language specification.
+///
+/// Does not require `ty` to be resolved.
 pub fn hasWellDefinedLayout(ty: Type, zcu: *const Zcu) bool {
     const ip = &zcu.intern_pool;
     return switch (ip.indexToKey(ty.toIntern())) {
@@ -3140,9 +3140,16 @@ pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool 
                 },
             };
         },
-        .array => {
-            if (position == .ret_ty or position == .param_ty) return false;
-            return ty.childType(zcu).validateExtern(.element, zcu);
+        .array => switch (position) {
+            .ret_ty,
+            .param_ty,
+            => false,
+
+            .union_field,
+            .struct_field,
+            .element,
+            .other,
+            => ty.childType(zcu).validateExtern(.element, zcu),
         },
         .vector => ty.childType(zcu).validateExtern(.element, zcu),
         .optional => ty.isPtrLikeOptional(zcu),
