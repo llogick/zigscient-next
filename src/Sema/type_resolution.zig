@@ -134,6 +134,33 @@ fn ensureLayoutResolvedInner(sema: *Sema, ty: Type, orig_ty: Type, reason: *cons
     }
 }
 
+/// Asserts that `ty` is a non-tuple `struct` type, and ensures that its fields' default values
+/// are resolved. Adds incremental dependencies tracking the required type resolution.
+///
+/// It is not necessary to call this function to query the values of comptime fields: those values
+/// are available from type *layout* resolution, see `ensureLayoutResolved`.
+///
+/// Asserts that the *layout* of `ty` has already been resolved---see `ensureLayoutResolved`.
+pub fn ensureStructDefaultsResolved(sema: *Sema, ty: Type, src: LazySrcLoc) SemaError!void {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const ip = &zcu.intern_pool;
+
+    assert(ip.indexToKey(ty.toIntern()) == .struct_type);
+    if (zcu.comp.config.incremental) assert(sema.dependencies.contains(.{ .type_layout = ty.toIntern() }));
+
+    try sema.declareDependency(.{ .struct_defaults = ty.toIntern() });
+    try sema.addReferenceEntry(null, src, .wrap(.{ .struct_defaults = ty.toIntern() }));
+
+    const reason: Zcu.DependencyReason = .{ .src = src, .type_layout_reason = undefined };
+
+    if (zcu.analysis_in_progress.contains(.wrap(.{ .struct_defaults = ty.toIntern() }))) {
+        return sema.failWithDependencyLoop(.wrap(.{ .struct_defaults = ty.toIntern() }), &reason);
+    }
+
+    try pt.ensureStructDefaultsUpToDate(ty, &reason);
+}
+
 /// Asserts that `struct_ty` is a non-packed non-tuple struct, and that `sema.owner` is that type.
 /// This function *does* register the `src_hash` dependency on the struct.
 pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
@@ -193,14 +220,8 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         @memset(struct_obj.field_is_comptime_bits.getAll(ip), 0);
 
         const zir_struct = sema.code.getStructDecl(zir_index);
-
-        // If we have any default values to resolve, we'll need to map the struct decl instruction
-        // to the result type.
-        if (zir_struct.field_default_body_lens != null) {
-            try sema.inst_map.ensureSpaceForInstructions(gpa, &.{zir_index});
-        }
-
         var field_it = zir_struct.iterateFields();
+        var any_comptime_fields = false;
         while (field_it.next()) |zir_field| {
             {
                 const name_slice = sema.code.nullTerminatedString(zir_field.name);
@@ -212,18 +233,21 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
                 const bit_bag_index = zir_field.idx / 32;
                 const mask = @as(u32, 1) << @intCast(zir_field.idx % 32);
                 struct_obj.field_is_comptime_bits.getAll(ip)[bit_bag_index] |= mask;
+                any_comptime_fields = true;
             }
 
-            const field_ty: Type = field_ty: {
+            {
                 const field_ty_src = block.src(.{ .container_field_type = zir_field.idx });
-                block.comptime_reason = .{ .reason = .{
-                    .src = field_ty_src,
-                    .r = .{ .simple = .struct_field_types },
-                } };
-                const type_ref = try sema.resolveInlineBody(&block, zir_field.type_body, zir_index);
-                break :field_ty try sema.analyzeAsType(&block, field_ty_src, .struct_field_types, type_ref);
-            };
-            struct_obj.field_types.get(ip)[zir_field.idx] = field_ty.toIntern();
+                const field_ty: Type = field_ty: {
+                    block.comptime_reason = .{ .reason = .{
+                        .src = field_ty_src,
+                        .r = .{ .simple = .struct_field_types },
+                    } };
+                    const type_ref = try sema.resolveInlineBody(&block, zir_field.type_body, zir_index);
+                    break :field_ty try sema.analyzeAsType(&block, field_ty_src, .struct_field_types, type_ref);
+                };
+                struct_obj.field_types.get(ip)[zir_field.idx] = field_ty.toIntern();
+            }
 
             if (struct_obj.field_aligns.len == 0) {
                 assert(zir_field.align_body == null);
@@ -240,31 +264,13 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
                 };
                 struct_obj.field_aligns.get(ip)[zir_field.idx] = field_align;
             }
+        }
 
-            if (struct_obj.field_defaults.len == 0) {
-                assert(zir_field.default_body == null);
-            } else {
-                const field_default_src = block.src(.{ .container_field_value = zir_field.idx });
-                const field_default: InternPool.Index = d: {
-                    block.comptime_reason = .{ .reason = .{
-                        .src = field_default_src,
-                        .r = .{ .simple = .struct_field_default_value },
-                    } };
-                    const default_body = zir_field.default_body orelse break :d .none;
-                    // Provide the result type
-                    sema.inst_map.putAssumeCapacity(zir_index, .fromType(field_ty));
-                    defer assert(sema.inst_map.remove(zir_index));
-                    const uncoerced_default_val = try sema.resolveInlineBody(&block, default_body, zir_index);
-                    const coerced_default_val = try sema.coerce(&block, field_ty, uncoerced_default_val, field_default_src);
-                    const default_val = try sema.resolveConstValue(&block, field_default_src, coerced_default_val, null);
-                    if (default_val.canMutateComptimeVarState(zcu)) {
-                        const field_name = struct_obj.field_names.get(ip)[zir_field.idx];
-                        return sema.failWithContainsReferenceToComptimeVar(&block, field_default_src, field_name, "field default value", default_val);
-                    }
-                    break :d default_val.toIntern();
-                };
-                struct_obj.field_defaults.get(ip)[zir_field.idx] = field_default;
-            }
+        // We also resolve the default values of any `comptime` fields now. This is not necessary in
+        // the case of a reified struct because the the default values were already poulated and
+        // validated by `Sema.zirReifyStruct`.
+        if (any_comptime_fields) {
+            try resolveStructDefaultsInner(sema, &block, &struct_obj, .comptime_fields);
         }
     }
 
@@ -521,6 +527,118 @@ fn resolvePackedStructLayout(
         struct_ty.toIntern(),
         backing_int_ty.toIntern(),
     );
+}
+
+/// Asserts that `struct_ty` is a non-tuple struct, and that `sema.owner` is that type.
+///
+/// Also asserts that the layout of `struct_ty` has *already* been resolved (though it is okay for
+/// that resolution to have failed). This requirement exists to ensure better error messages in the
+/// event of a dependency loop.
+///
+/// This function *does* register the `src_hash` dependency on the struct.
+pub fn resolveStructDefaults(sema: *Sema, struct_ty: Type) CompileError!void {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+    const ip = &zcu.intern_pool;
+
+    assert(sema.owner.unwrap().struct_defaults == struct_ty.toIntern());
+
+    // We always depend on the layout of `struct_ty`. However, we don't actually need to resolve it
+    // now, because the caller has done so for us. Just mark the dependency so that the incremental
+    // compilation handling understands the dependency graph.
+    try sema.declareDependency(.{ .type_layout = struct_ty.toIntern() });
+    struct_ty.assertHasLayout(zcu);
+    const layout_unit: InternPool.AnalUnit = .wrap(.{ .type_layout = struct_ty.toIntern() });
+    if (zcu.failed_analysis.contains(layout_unit) or zcu.transitive_failed_analysis.contains(layout_unit)) {
+        return error.AnalysisFail;
+    }
+
+    const struct_obj = ip.loadStructType(struct_ty.toIntern());
+    assert(struct_obj.want_layout);
+
+    if (struct_obj.is_reified) {
+        // `Sema.zirReifyStruct` has already populated the default field values *and* (by loading
+        // the default values from pointers) validated their types, so we have nothing to do.
+        return;
+    }
+
+    try sema.declareDependency(.{ .src_hash = struct_obj.zir_index });
+
+    if (struct_obj.field_defaults.len == 0) {
+        // The struct has no default field values, so the slice has been omitted.
+        return;
+    }
+
+    var block: Block = .{
+        .parent = null,
+        .sema = sema,
+        .namespace = struct_obj.namespace,
+        .instructions = .empty,
+        .inlining = null,
+        .comptime_reason = undefined, // always set before using `block`
+        .src_base_inst = struct_obj.zir_index,
+        .type_name_ctx = struct_obj.name,
+    };
+    defer block.instructions.deinit(gpa);
+
+    return resolveStructDefaultsInner(sema, &block, &struct_obj, .normal_fields);
+}
+
+/// Asserts that the struct is not reified, and that `struct_obj.field_defaults.len` is non-zero.
+fn resolveStructDefaultsInner(
+    sema: *Sema,
+    block: *Block,
+    struct_obj: *const InternPool.LoadedStructType,
+    mode: enum { comptime_fields, normal_fields },
+) CompileError!void {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+    const ip = &zcu.intern_pool;
+
+    assert(struct_obj.field_defaults.len > 0);
+
+    // We'll need to map the struct decl instruction to provide result types
+    const zir_index = struct_obj.zir_index.resolve(ip) orelse return error.AnalysisFail;
+    try sema.inst_map.ensureSpaceForInstructions(gpa, &.{zir_index});
+
+    const field_types = struct_obj.field_types.get(ip);
+
+    const zir_struct = sema.code.getStructDecl(zir_index);
+    var field_it = zir_struct.iterateFields();
+    while (field_it.next()) |zir_field| {
+        switch (mode) {
+            .comptime_fields => if (!zir_field.is_comptime) continue,
+            .normal_fields => if (zir_field.is_comptime) continue,
+        }
+
+        const default_val_src = block.src(.{ .container_field_value = zir_field.idx });
+        block.comptime_reason = .{ .reason = .{
+            .src = default_val_src,
+            .r = .{ .simple = .struct_field_default_value },
+        } };
+        const default_body = zir_field.default_body orelse {
+            struct_obj.field_defaults.get(ip)[zir_field.idx] = .none;
+            continue;
+        };
+        const field_ty: Type = .fromInterned(field_types[zir_field.idx]);
+        const uncoerced = ref: {
+            // Provide the result type
+            sema.inst_map.putAssumeCapacity(zir_index, .fromIntern(field_ty.toIntern()));
+            defer assert(sema.inst_map.remove(zir_index));
+            break :ref try sema.resolveInlineBody(block, default_body, zir_index);
+        };
+        const coerced = try sema.coerce(block, field_ty, uncoerced, default_val_src);
+        const default_val = try sema.resolveConstValue(block, default_val_src, coerced, null);
+        if (default_val.canMutateComptimeVarState(zcu)) {
+            const field_name = struct_obj.field_names.get(ip)[zir_field.idx];
+            return sema.failWithContainsReferenceToComptimeVar(block, default_val_src, field_name, "field default value", default_val);
+        }
+        struct_obj.field_defaults.get(ip)[zir_field.idx] = default_val.toIntern();
+    }
 }
 
 /// This logic must be kept in sync with `Type.getUnionLayout`.

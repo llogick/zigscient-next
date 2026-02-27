@@ -324,6 +324,17 @@ pub fn update(
             .nav_ty => |nav| pt.ensureNavTypeUpToDate(nav, null),
             .nav_val => |nav| pt.ensureNavValUpToDate(nav, null),
             .type_layout => |ty| pt.ensureTypeLayoutUpToDate(.fromInterned(ty), null),
+            .struct_defaults => |ty| res: {
+                // Unlike the other functions, this one requires that the type layout is resolved first.
+                pt.ensureTypeLayoutUpToDate(.fromInterned(ty), null) catch |err| switch (err) {
+                    error.OutOfMemory,
+                    error.Canceled,
+                    => |e| return e,
+
+                    error.AnalysisFail => {}, // already reported
+                };
+                break :res pt.ensureStructDefaultsUpToDate(.fromInterned(ty), null);
+            },
             .memoized_state => |stage| pt.ensureMemoizedStateUpToDate(stage, null),
             .func => |func| pt.ensureFuncBodyUpToDate(func, null),
         };
@@ -1326,6 +1337,7 @@ pub fn ensureTypeLayoutUpToDate(
     defer tracy_trace.end();
 
     const zcu = pt.zcu;
+    const ip = &zcu.intern_pool;
     const comp = zcu.comp;
     const gpa = comp.gpa;
 
@@ -1335,8 +1347,23 @@ pub fn ensureTypeLayoutUpToDate(
 
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
-    const was_outdated = zcu.clearOutdatedState(anal_unit) or
-        zcu.intern_pool.setWantTypeLayout(comp.io, ty.toIntern());
+    const was_outdated: bool = outdated: {
+        if (zcu.clearOutdatedState(anal_unit)) break :outdated true;
+        if (ip.setWantTypeLayout(comp.io, ty.toIntern())) {
+            // We'll analyze the layout for the first time, but if this is a struct type then its
+            // default field values also need to be analyzed.
+            if (ip.indexToKey(ty.toIntern()) == .struct_type) {
+                if (std.debug.runtime_safety) zcu.outdated_lock.lockUncancelable(zcu.comp.io);
+                defer if (std.debug.runtime_safety) zcu.outdated_lock.unlock(zcu.comp.io);
+                try zcu.outdated.ensureUnusedCapacity(gpa, 1);
+                try zcu.outdated_ready.other.ensureUnusedCapacity(gpa, 1);
+                zcu.outdated.putAssumeCapacityNoClobber(.wrap(.{ .struct_defaults = ty.toIntern() }), 0);
+                zcu.outdated_ready.other.putAssumeCapacityNoClobber(.wrap(.{ .struct_defaults = ty.toIntern() }), {});
+            }
+            break :outdated true;
+        }
+        break :outdated false;
+    };
 
     if (was_outdated) {
         // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
@@ -1359,7 +1386,7 @@ pub fn ensureTypeLayoutUpToDate(
         info.deps.clearRetainingCapacity();
     }
 
-    const unit_tracking = zcu.trackUnitSema(ty.containerTypeName(&zcu.intern_pool).toSlice(&zcu.intern_pool), null);
+    const unit_tracking = zcu.trackUnitSema(ty.containerTypeName(ip).toSlice(ip), null);
     defer unit_tracking.end(zcu);
 
     try zcu.analysis_in_progress.put(gpa, anal_unit, reason);
@@ -1424,6 +1451,120 @@ pub fn ensureTypeLayoutUpToDate(
         .ty = ty.toIntern(),
         .success = !new_failed,
     } });
+
+    if (new_failed) return error.AnalysisFail;
+}
+
+/// Ensures that the default field values of the given `struct` type are fully up-to-date,
+/// performing re-analysis if necessary. Asserts that `ty` is a struct (not a tuple!) type. Unlike
+/// the other "ensure X up to date" functions, this particular function also asserts that the
+/// *layout* of `ty` is *already* up-to-date (though it is okay for that resolution to have failed).
+/// Returns `error.AnalysisFail` if an analysis error is encountered while resolving the default
+/// field values; the caller is free to ignore this, since the error is already registered.
+pub fn ensureStructDefaultsUpToDate(
+    pt: Zcu.PerThread,
+    ty: Type,
+    /// `null` is valid only for the "root" analysis, i.e. called from `Compilation.processOneJob`.
+    reason: ?*const Zcu.DependencyReason,
+) Zcu.SemaError!void {
+    const tracy_trace = trace(@src());
+    defer tracy_trace.end();
+
+    const zcu = pt.zcu;
+    const ip = &zcu.intern_pool;
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+
+    assert(ip.indexToKey(ty.toIntern()) == .struct_type);
+
+    const anal_unit: AnalUnit = .wrap(.{ .struct_defaults = ty.toIntern() });
+
+    log.debug("ensureStructDefaultsUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
+
+    assert(!zcu.analysis_in_progress.contains(anal_unit));
+
+    const was_outdated: bool = outdated: {
+        if (zcu.clearOutdatedState(anal_unit)) break :outdated true;
+        // The type layout should already be marked as "wanted" by this point, because a struct's
+        // layout must always be analyzed before its default values are.
+        assert(!ip.setWantTypeLayout(comp.io, ty.toIntern()));
+        break :outdated false;
+    };
+
+    if (was_outdated) {
+        // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
+        if (dev.env.supports(.incremental)) {
+            zcu.resetUnit(anal_unit);
+        }
+        // For types, we already know that we have to invalidate all dependees.
+        // TODO: we actually *could* detect whether everything was the same. should we bother?
+        try zcu.markDependeeOutdated(.marked_po, .{ .struct_defaults = ty.toIntern() });
+    } else {
+        // We can trust the current information about this unit.
+        if (zcu.failed_analysis.contains(anal_unit)) return error.AnalysisFail;
+        if (zcu.transitive_failed_analysis.contains(anal_unit)) return error.AnalysisFail;
+        return;
+    }
+
+    if (zcu.comp.debugIncremental()) {
+        const info = try zcu.incremental_debug_state.getUnitInfo(gpa, anal_unit);
+        info.last_update_gen = zcu.generation;
+        info.deps.clearRetainingCapacity();
+    }
+
+    const unit_tracking = zcu.trackUnitSema(ty.containerTypeName(ip).toSlice(ip), null);
+    defer unit_tracking.end(zcu);
+
+    try zcu.analysis_in_progress.put(gpa, anal_unit, reason);
+    defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
+
+    var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
+    defer analysis_arena.deinit();
+
+    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
+    defer comptime_err_ret_trace.deinit();
+
+    const file = zcu.namespacePtr(ty.getNamespaceIndex(zcu)).fileScope(zcu);
+
+    var sema: Sema = .{
+        .pt = pt,
+        .gpa = gpa,
+        .arena = analysis_arena.allocator(),
+        .code = file.zir.?,
+        .owner = anal_unit,
+        .func_index = .none,
+        .func_is_naked = false,
+        .fn_ret_ty = .void,
+        .fn_ret_ty_ies = null,
+        .comptime_err_ret_trace = &comptime_err_ret_trace,
+    };
+    defer sema.deinit();
+
+    const new_failed: bool = if (Sema.type_resolution.resolveStructDefaults(&sema, ty)) failed: {
+        break :failed false;
+    } else |err| switch (err) {
+        error.AnalysisFail => failed: {
+            if (!zcu.failed_analysis.contains(anal_unit)) {
+                // If this unit caused the error, it would have an entry in `failed_analysis`.
+                // Since it does not, this must be a transitive failure.
+                try zcu.transitive_failed_analysis.put(gpa, anal_unit, {});
+                log.debug("mark transitive analysis failure for {f}", .{zcu.fmtAnalUnit(anal_unit)});
+            }
+            break :failed true;
+        },
+        error.OutOfMemory,
+        error.Canceled,
+        => |e| return e,
+        error.ComptimeReturn => unreachable,
+        error.ComptimeBreak => unreachable,
+    };
+
+    sema.flushExports() catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+    };
+
+    // We don't need to `markDependeeOutdated`/`markPoDependeeUpToDate` here, because we already
+    // marked the struct defaults as outdated at the top of this function.
 
     if (new_failed) return error.AnalysisFail;
 }

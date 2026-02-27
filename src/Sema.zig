@@ -4533,6 +4533,10 @@ fn validateStructInit(
         if (explicit) continue;
         if (struct_ty.structFieldIsComptime(i, zcu)) continue;
 
+        if (!struct_ty.isTuple(zcu)) {
+            try sema.ensureStructDefaultsResolved(struct_ty, init_src);
+        }
+
         const default_val = struct_ty.structFieldDefaultValue(i, zcu) orelse {
             const field_name = struct_ty.structFieldName(i, zcu).unwrap() orelse {
                 const template = "missing tuple field with index {d}";
@@ -5850,6 +5854,7 @@ fn zirDisableInstrumentation(sema: *Sema) CompileError!void {
         .nav_val,
         .nav_ty,
         .type_layout,
+        .struct_defaults,
         .memoized_state,
         => return, // does nothing outside a function
     };
@@ -5868,6 +5873,7 @@ fn zirDisableIntrinsics(sema: *Sema) CompileError!void {
         .nav_val,
         .nav_ty,
         .type_layout,
+        .struct_defaults,
         .memoized_state,
         => return, // does nothing outside a function
     };
@@ -7091,7 +7097,14 @@ fn analyzeCall(
         });
         if (func_ty_info.cc == .auto) {
             switch (sema.owner.unwrap()) {
-                .@"comptime", .nav_ty, .nav_val, .type_layout, .memoized_state => {},
+                .@"comptime",
+                .nav_ty,
+                .nav_val,
+                .type_layout,
+                .struct_defaults,
+                .memoized_state,
+                => {},
+
                 .func => |owner_func| ip.funcSetHasErrorTrace(io, owner_func, true),
             }
         }
@@ -16907,6 +16920,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     .struct_type => ip.loadStructType(ty.toIntern()),
                     else => unreachable,
                 };
+                try sema.ensureStructDefaultsResolved(ty, src); // can't do this sooner, since it's not allowed on tuples
                 struct_field_vals = try gpa.alloc(InternPool.Index, struct_type.field_types.len);
 
                 for (struct_field_vals, 0..) |*field_val, field_index| {
@@ -18788,6 +18802,8 @@ fn finishStructInit(
                     continue;
                 }
 
+                try sema.ensureStructDefaultsResolved(struct_ty, init_src);
+
                 const field_default: InternPool.Index = d: {
                     if (struct_type.field_defaults.len == 0) break :d .none;
                     break :d struct_type.field_defaults.get(ip)[i];
@@ -19454,7 +19470,14 @@ fn getErrorReturnTrace(sema: *Sema, block: *Block) CompileError!Air.Inst.Ref {
         .func => |func| if (ip.funcAnalysisUnordered(func).has_error_trace and block.ownerModule().error_tracing) {
             return block.addTy(.err_return_trace, opt_ptr_stack_trace_ty);
         },
-        .@"comptime", .nav_ty, .nav_val, .type_layout, .memoized_state => {},
+
+        .@"comptime",
+        .nav_ty,
+        .nav_val,
+        .type_layout,
+        .struct_defaults,
+        .memoized_state,
+        => {},
     }
     return Air.internedToRef(try pt.intern(.{ .opt = .{
         .ty = opt_ptr_stack_trace_ty.toIntern(),
@@ -24784,7 +24807,7 @@ fn zirBuiltinExtern(
         // So, for now, just use our containing `declaration`.
         .zir_index = switch (sema.owner.unwrap()) {
             .@"comptime" => |cu| ip.getComptimeUnit(cu).zir_index,
-            .type_layout => |owner_ty| Type.fromInterned(owner_ty).typeDeclInstAllowGeneratedTag(zcu).?,
+            .type_layout, .struct_defaults => |owner_ty| Type.fromInterned(owner_ty).typeDeclInstAllowGeneratedTag(zcu).?,
             .memoized_state => unreachable,
             .nav_ty, .nav_val => |nav| ip.getNav(nav).analysis.?.zir_index,
             .func => |func| zir_index: {
@@ -25276,7 +25299,14 @@ fn getPanicIdFunc(sema: *Sema, src: LazySrcLoc, panic_id: Zcu.SimplePanicId) !In
     try sema.ensureMemoizedStateResolved(src, .panic);
     const panic_fn_index = zcu.builtin_decl_values.get(panic_id.toBuiltin());
     switch (sema.owner.unwrap()) {
-        .@"comptime", .nav_ty, .nav_val, .type_layout, .memoized_state => {},
+        .@"comptime",
+        .nav_ty,
+        .nav_val,
+        .type_layout,
+        .struct_defaults,
+        .memoized_state,
+        => {},
+
         .func => |owner_func| zcu.intern_pool.funcSetHasErrorTrace(io, owner_func, true),
     }
     return panic_fn_index;
@@ -33541,23 +33571,6 @@ pub fn declareDependency(sema: *Sema, dependee: InternPool.Dependee) !void {
     const gop = try sema.dependencies.getOrPut(sema.gpa, dependee);
     if (gop.found_existing) return;
 
-    // Avoid creating dependencies on ourselves. This situation can arise when we analyze the fields
-    // of a type and they use `@This()`. This dependency would be unnecessary, and in fact would
-    // just result in over-analysis since `Zcu.findOutdatedToAnalyze` would never be able to resolve
-    // the loop.
-    // Note that this also disallows a `nav_val`
-    switch (sema.owner.unwrap()) {
-        .nav_val => |this_nav| switch (dependee) {
-            .nav_val => |other_nav| if (this_nav == other_nav) return,
-            else => {},
-        },
-        .nav_ty => |this_nav| switch (dependee) {
-            .nav_ty => |other_nav| if (this_nav == other_nav) return,
-            else => {},
-        },
-        else => {},
-    }
-
     try pt.addDependency(sema.owner, dependee);
 }
 
@@ -33923,6 +33936,7 @@ const ComptimeStoreResult = @import("Sema/comptime_ptr_access.zig").ComptimeStor
 
 pub const type_resolution = @import("Sema/type_resolution.zig");
 pub const ensureLayoutResolved = type_resolution.ensureLayoutResolved;
+pub const ensureStructDefaultsResolved = type_resolution.ensureStructDefaultsResolved;
 
 pub fn getBuiltinType(sema: *Sema, src: LazySrcLoc, decl: Zcu.BuiltinDecl) SemaError!Type {
     assert(decl.kind() == .type);

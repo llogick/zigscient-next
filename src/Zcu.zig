@@ -3175,6 +3175,7 @@ fn markPoDependeeUpToDateInner(zcu: *Zcu, dependee: InternPool.Dependee) !void {
             .nav_val => |nav| try zcu.markPoDependeeUpToDateInner(.{ .nav_val = nav }),
             .nav_ty => |nav| try zcu.markPoDependeeUpToDateInner(.{ .nav_ty = nav }),
             .type_layout => |ty| try zcu.markPoDependeeUpToDateInner(.{ .type_layout = ty }),
+            .struct_defaults => |ty| try zcu.markPoDependeeUpToDateInner(.{ .struct_defaults = ty }),
             .func => |func| try zcu.markPoDependeeUpToDateInner(.{ .func_ies = func }),
             .memoized_state => |stage| try zcu.markPoDependeeUpToDateInner(.{ .memoized_state = stage }),
         }
@@ -3193,6 +3194,7 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
         .nav_val => |nav| .{ .nav_val = nav },
         .nav_ty => |nav| .{ .nav_ty = nav },
         .type_layout => |ty| .{ .type_layout = ty },
+        .struct_defaults => |ty| .{ .struct_defaults = ty },
         .func => |func_index| .{ .func_ies = func_index },
         .memoized_state => |stage| .{ .memoized_state = stage },
     };
@@ -4249,11 +4251,18 @@ fn resolveReferencesInner(zcu: *Zcu) Allocator.Error!std.AutoArrayHashMapUnmanag
             unit_idx += 1;
 
             // `nav_val` and `nav_ty` reference each other *implicitly* to save memory.
+            // Likewise for `type_layout` and `struct_defaults` of a struct type.
             queue_paired: {
                 const other: AnalUnit = .wrap(switch (unit.unwrap()) {
                     .nav_val => |n| .{ .nav_ty = n },
                     .nav_ty => |n| .{ .nav_val = n },
-                    .@"comptime", .type_layout, .func, .memoized_state => break :queue_paired,
+                    .struct_defaults => |ty| .{ .type_layout = ty },
+                    .type_layout => |ty| switch (ip.indexToKey(ty)) {
+                        .struct_type => .{ .struct_defaults = ty },
+                        .union_type, .enum_type, .opaque_type => break :queue_paired,
+                        else => unreachable,
+                    },
+                    .@"comptime", .func, .memoized_state => break :queue_paired,
                 });
                 const gop = try units.getOrPut(gpa, other);
                 if (gop.found_existing) break :queue_paired;
@@ -4406,7 +4415,7 @@ fn formatAnalUnit(data: FormatAnalUnit, writer: *Io.Writer) Io.Writer.Error!void
             }
         },
         .nav_val, .nav_ty => |nav, tag| return writer.print("{t}('{f}' [{}])", .{ tag, ip.getNav(nav).fqn.fmt(ip), @intFromEnum(nav) }),
-        .type_layout => |ty, tag| return writer.print("{t}('{f}' [{}])", .{ tag, Type.fromInterned(ty).containerTypeName(ip).fmt(ip), @intFromEnum(ty) }),
+        .type_layout, .struct_defaults => |ty, tag| return writer.print("{t}('{f}' [{}])", .{ tag, Type.fromInterned(ty).containerTypeName(ip).fmt(ip), @intFromEnum(ty) }),
         .func => |func| {
             const nav = zcu.funcInfo(func).owner_nav;
             return writer.print("func('{f}' [{}])", .{ ip.getNav(nav).fqn.fmt(ip), @intFromEnum(func) });
@@ -4431,7 +4440,7 @@ fn formatDependee(data: FormatDependee, writer: *Io.Writer) Io.Writer.Error!void
             const fqn = ip.getNav(nav).fqn;
             return writer.print("{t}('{f}')", .{ tag, fqn.fmt(ip) });
         },
-        .type_layout => |ip_index, tag| {
+        .type_layout, .struct_defaults => |ip_index, tag| {
             const name = Type.fromInterned(ip_index).containerTypeName(ip);
             return writer.print("{t}('{f}')", .{ tag, name.fmt(ip) });
         },
@@ -4920,6 +4929,10 @@ fn addDependencyLoopErrorLine(
             fmt_source,
             dep_node.reason.type_layout_reason.msg(),
         }),
+        .struct_defaults => |ty| try eb.printString(
+            "default field values of '{f}' depend on themselves for initialization here",
+            .{Type.fromInterned(ty).containerTypeName(ip).fmt(ip)},
+        ),
     } else switch (dep_node.unit.unwrap()) {
         .@"comptime" => unreachable, // cannot be involved in a dependency loop
         .nav_val => |nav| try eb.printString("{f} uses value of declaration '{f}' here", .{
@@ -4940,6 +4953,10 @@ fn addDependencyLoopErrorLine(
             Type.fromInterned(ty).containerTypeName(ip).fmt(ip),
             dep_node.reason.type_layout_reason.msg(),
         }),
+        .struct_defaults => |ty| try eb.printString(
+            "{f} uses default field values of '{f}' here",
+            .{ fmt_source, Type.fromInterned(ty).containerTypeName(ip).fmt(ip) },
+        ),
     };
 
     const src_loc = dep_node.reason.src.upgrade(zcu);
@@ -4980,6 +4997,9 @@ fn formatDependencyLoopSourceUnit(data: FormatAnalUnit, w: *Io.Writer) Io.Writer
             else => try w.writeAll("'std.builtin' declarations"),
         },
         .type_layout => |ty| try w.print("type '{f}'", .{
+            Type.fromInterned(ty).containerTypeName(ip).fmt(ip),
+        }),
+        .struct_defaults => |ty| try w.print("default field value of '{f}'", .{
             Type.fromInterned(ty).containerTypeName(ip).fmt(ip),
         }),
         .func => |func| try w.print("function '{f}'", .{
@@ -5030,7 +5050,7 @@ pub fn populateReferenceTrace(
             const root_name: ?[]const u8 = switch (ref.referencer.unwrap()) {
                 .@"comptime" => "comptime",
                 .nav_val, .nav_ty => |nav| ip.getNav(nav).name.toSlice(ip),
-                .type_layout => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
+                .type_layout, .struct_defaults => |ty| Type.fromInterned(ty).containerTypeName(ip).toSlice(ip),
                 .func => |f| ip.getNav(zcu.funcInfo(f).owner_nav).name.toSlice(ip),
                 .memoized_state => null,
             };

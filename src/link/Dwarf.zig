@@ -3827,7 +3827,15 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
                         try diw.writeUleb128(ty.abiAlignment(zcu).toByteUnits().?);
                         for (0..loaded_struct.field_types.len) |field_index| {
                             const is_comptime = loaded_struct.field_is_comptime_bits.get(ip, field_index);
-                            const field_init = loaded_struct.field_defaults.getOrNone(ip, field_index);
+                            // TODO: we currently don't emit information about default values for
+                            // non-`comptime` fields, because these default values are resolved at a
+                            // separate time in the compiler frontend. To emit this information, the
+                            // frontend needs to tell us when the default values are available: like
+                            // how `Zcu.PerThread.ensureTypeLayoutUpToDate` enqueues a link task to
+                            // indicate completion of the type's layout, a task should be enqueued
+                            // by `Zcu.PerThread.ensureStructDefaultsUpToDate`, and upon receiving
+                            // it we should patch the correct default field values in.
+                            const field_init: InternPool.Index = if (is_comptime) loaded_struct.field_defaults.getOrNone(ip, field_index) else .none;
                             assert(!(is_comptime and field_init == .none));
                             const field_type: Type = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
                             const has_runtime_bits, const has_comptime_state = switch (field_init) {
