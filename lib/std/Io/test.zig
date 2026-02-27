@@ -835,7 +835,7 @@ test "Select" {
     };
     var buffer: [4]U = undefined;
     var select: Io.Select(U) = .init(io, &buffer);
-    defer select.cancel();
+    defer _ = select.cancel();
 
     select.async(.foo, S.foo, .{});
     select.concurrent(.bar, S.bar, .{io}) catch |err| switch (err) {
@@ -863,4 +863,28 @@ test "Select" {
     };
 
     try testing.expectEqual(42, result);
+}
+
+test "Select with empty buffer, no deadlock" {
+    const S = struct {
+        fn sleeper(io: Io, duration: Io.Duration) Io.Cancelable!void {
+            try io.sleep(duration, .awake);
+        }
+    };
+
+    const io = testing.io;
+
+    const U = union(enum) {
+        sleeper: Io.Cancelable!void,
+    };
+    var select: Io.Select(U) = .init(io, &.{});
+    defer select.cancelDiscard();
+
+    select.concurrent(.sleeper, S.sleeper, .{ io, .fromNanoseconds(1) }) catch |err| switch (err) {
+        error.ConcurrencyUnavailable => return error.SkipZigTest,
+    };
+    select.concurrent(.sleeper, S.sleeper, .{ io, .fromSeconds(600) }) catch |err| switch (err) {
+        error.ConcurrencyUnavailable => return error.SkipZigTest,
+    };
+    assert((try select.await()) == .sleeper);
 }
