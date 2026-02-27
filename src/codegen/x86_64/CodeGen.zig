@@ -181111,7 +181111,7 @@ fn resolveCallingConventionValues(
                 var ret_sse = abi.getCAbiSseReturnRegs(cc);
                 var ret_x87 = abi.getCAbiX87ReturnRegs(cc);
 
-                const classes = switch (cc) {
+                const classes: []const abi.Class = switch (cc) {
                     .x86_64_sysv => std.mem.sliceTo(&abi.classifySystemV(ret_ty, zcu, cg.target, .ret), .none),
                     .x86_64_win => &.{abi.classifyWindows(ret_ty, zcu, cg.target, .ret)},
                     else => unreachable,

@@ -3081,7 +3081,7 @@ fn zirRef(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Ins
 
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_tok;
     const operand = sema.resolveInst(inst_data.operand);
-    return sema.analyzeRef(block, block.tokenOffset(inst_data.src_tok), operand);
+    return sema.analyzeRef(block, block.tokenOffset(inst_data.src_tok), operand, .none);
 }
 
 fn zirEnsureResultUsed(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void {
@@ -18690,7 +18690,7 @@ fn zirStructInit(
             const union_val = try sema.bitCast(block, resolved_ty, init_inst, src, field_src);
             const result_val = try sema.coerce(block, result_ty, union_val, src);
             if (is_ref) {
-                return sema.analyzeRef(block, src, result_val);
+                return sema.analyzeRef(block, src, result_val, .none);
             } else {
                 return result_val;
             }
@@ -24192,7 +24192,7 @@ fn zirMemcpy(
         }
     } else if (dest_len == .none and len_val == null) {
         // Change the dest to a slice, since its type must have the length.
-        const dest_ptr_ptr = try sema.analyzeRef(block, dest_src, new_dest_ptr);
+        const dest_ptr_ptr = try sema.analyzeRef(block, dest_src, new_dest_ptr, .none);
         new_dest_ptr = try sema.analyzeSlice(block, dest_src, dest_ptr_ptr, .zero, src_len, .none, LazySrcLoc.unneeded, dest_src, dest_src, dest_src, false);
         const new_src_ptr_ty = sema.typeOf(new_src_ptr);
         if (new_src_ptr_ty.isSlice(zcu)) {
@@ -26301,7 +26301,7 @@ fn structFieldPtr(
     const field_index: u32 = if (struct_ty.isTuple(zcu)) field_index: {
         if (field_name.eqlSlice("len", ip)) {
             const len_inst = try pt.intRef(.usize, struct_ty.structFieldCount(zcu));
-            return sema.analyzeRef(block, src, len_inst);
+            return sema.analyzeRef(block, src, len_inst, .none);
         }
         break :field_index try sema.tupleFieldIndex(block, struct_ty, field_name, field_name_src);
     } else field_index: {
@@ -29787,10 +29787,7 @@ fn coerceTupleToSlicePtrs(
         .child = slice_info.child,
     });
     const array_inst = try sema.coerceTupleToArray(block, array_ty, slice_ty_src, tuple, tuple_src);
-    if (slice_info.flags.alignment != .none) {
-        return sema.fail(block, slice_ty_src, "TODO: override the alignment of the array decl we create here", .{});
-    }
-    const ptr_array = try sema.analyzeRef(block, slice_ty_src, array_inst);
+    const ptr_array = try sema.analyzeRef(block, slice_ty_src, array_inst, slice_info.flags.alignment);
     return sema.coerceArrayPtrToSlice(block, slice_ty, ptr_array, slice_ty_src);
 }
 
@@ -29809,10 +29806,7 @@ fn coerceTupleToArrayPtrs(
     const ptr_info = ptr_array_ty.ptrInfo(zcu);
     const array_ty: Type = .fromInterned(ptr_info.child);
     const array_inst = try sema.coerceTupleToArray(block, array_ty, array_ty_src, tuple, tuple_src);
-    if (ptr_info.flags.alignment != .none) {
-        return sema.fail(block, array_ty_src, "TODO: override the alignment of the array decl we create here", .{});
-    }
-    const ptr_array = try sema.analyzeRef(block, array_ty_src, array_inst);
+    const ptr_array = try sema.analyzeRef(block, array_ty_src, array_inst, ptr_info.flags.alignment);
     return ptr_array;
 }
 
@@ -30137,33 +30131,47 @@ fn analyzeRef(
     block: *Block,
     src: LazySrcLoc,
     operand: Air.Inst.Ref,
+    alignment: Alignment,
 ) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const operand_ty = sema.typeOf(operand);
 
+    const address_space = target_util.defaultAddressSpace(zcu.getTarget(), .local);
+    const ptr_type = try pt.ptrType(.{
+        .child = operand_ty.toIntern(),
+        .flags = .{
+            .alignment = alignment,
+            .is_const = true,
+            .address_space = address_space,
+        },
+    });
+
     if (sema.resolveValue(operand)) |val| {
         switch (zcu.intern_pool.indexToKey(val.toIntern())) {
             .@"extern" => |e| return sema.analyzeNavRef(block, src, e.owner_nav),
             .func => |f| return sema.analyzeNavRef(block, src, f.owner_nav),
-            else => return uavRef(sema, val),
+            else => return .fromIntern(try pt.intern(.{ .ptr = .{
+                .ty = ptr_type.toIntern(),
+                .base_addr = .{ .uav = .{
+                    .val = val.toIntern(),
+                    .orig_ty = ptr_type.toIntern(),
+                } },
+                .byte_offset = 0,
+            } })),
         }
     }
 
     // No `requireRuntimeBlock`; it's okay to `ref` to a runtime value in a comptime context,
     // it's just that we can only use the *type* of the result, since the value is runtime-known.
 
-    const address_space = target_util.defaultAddressSpace(zcu.getTarget(), .local);
-    const ptr_type = try pt.ptrType(.{
-        .child = operand_ty.toIntern(),
-        .flags = .{
-            .is_const = true,
-            .address_space = address_space,
-        },
-    });
     const mut_ptr_type = try pt.ptrType(.{
         .child = operand_ty.toIntern(),
-        .flags = .{ .address_space = address_space },
+        .flags = .{
+            .alignment = alignment,
+            .is_const = false,
+            .address_space = address_space,
+        },
     });
     const alloc = try block.addTy(.alloc, mut_ptr_type);
 

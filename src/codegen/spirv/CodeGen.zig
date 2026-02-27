@@ -689,7 +689,7 @@ fn constInt(cg: *CodeGen, ty: Type, value: anytype) !Id {
         .comptime_int => if (value < 0) .signed else .unsigned,
         else => unreachable,
     };
-    if (@sizeOf(@TypeOf(value)) >= 4 and big_int) {
+    if (@TypeOf(value) != comptime_int and @sizeOf(@TypeOf(value)) >= 4 and big_int) {
         const value64: u64 = switch (signedness) {
             .signed => @bitCast(@as(i64, @intCast(value))),
             .unsigned => @as(u64, @intCast(value)),

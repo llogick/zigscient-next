@@ -147,7 +147,7 @@ pub fn ensureStructDefaultsResolved(sema: *Sema, ty: Type, src: LazySrcLoc) Sema
     const ip = &zcu.intern_pool;
 
     assert(ip.indexToKey(ty.toIntern()) == .struct_type);
-    if (zcu.comp.config.incremental) assert(sema.dependencies.contains(.{ .type_layout = ty.toIntern() }));
+    ty.assertHasLayout(zcu);
 
     try sema.declareDependency(.{ .struct_defaults = ty.toIntern() });
     try sema.addReferenceEntry(null, src, .wrap(.{ .struct_defaults = ty.toIntern() }));

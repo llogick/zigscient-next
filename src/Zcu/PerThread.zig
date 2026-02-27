@@ -4112,7 +4112,27 @@ pub fn enumValueFieldIndex(pt: Zcu.PerThread, ty: Type, field_index: u32) Alloca
 
 pub fn undefValue(pt: Zcu.PerThread, ty: Type) Allocator.Error!Value {
     if (std.debug.runtime_safety) {
-        assert(ty.classify(pt.zcu) != .one_possible_value);
+        // TODO: values of type `struct { comptime x: u8 = undefined }` are currently represented as
+        // undef. This is wrong: they should really be represented as empty aggregates instead,
+        // because `comptime` fields shouldn't factor into that decision! This is implemented
+        // through logic in `aggregateValue` and requires this weird workaround in what ought to be
+        // a straightforward assertion:
+        //assert(ty.classify(pt.zcu) != .one_possible_value);
+        if (ty.classify(pt.zcu) == .one_possible_value) {
+            const ip = &pt.zcu.intern_pool;
+            switch (ip.indexToKey(ty.toIntern())) {
+                else => unreachable, // assertion failure
+                .struct_type => {
+                    const comptime_bits = ip.loadStructType(ty.toIntern()).field_is_comptime_bits.getAll(ip);
+                    for (comptime_bits) |bag| {
+                        if (@popCount(bag) > 0) break;
+                    } else unreachable; // assertion failure
+                },
+                .tuple_type => |tuple| for (tuple.values.get(ip)) |val| {
+                    if (val != .none) break;
+                } else unreachable, // assertion failure
+            }
+        }
     }
     return .fromInterned(try pt.intern(.{ .undef = ty.toIntern() }));
 }

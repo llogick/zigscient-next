@@ -4160,7 +4160,7 @@ pub const RUNTIME_FUNCTION = switch (native_arch) {
         BeginAddress: DWORD,
         DUMMYUNIONNAME: extern union {
             UnwindData: DWORD,
-            DUMMYSTRUCTNAME: packed struct {
+            DUMMYSTRUCTNAME: packed struct(u32) {
                 Flag: u2,
                 FunctionLength: u11,
                 Ret: u2,
@@ -4177,7 +4177,7 @@ pub const RUNTIME_FUNCTION = switch (native_arch) {
         BeginAddress: DWORD,
         DUMMYUNIONNAME: extern union {
             UnwindData: DWORD,
-            DUMMYSTRUCTNAME: packed struct {
+            DUMMYSTRUCTNAME: packed struct(u32) {
                 Flag: u2,
                 FunctionLength: u11,
                 RegF: u3,
@@ -5013,7 +5013,7 @@ pub const KUSER_SHARED_DATA = extern struct {
     KdDebuggerEnabled: BOOLEAN,
     DummyUnion1: extern union {
         MitigationPolicies: UCHAR,
-        Alt: packed struct {
+        Alt: packed struct(u8) {
             NXSupportPolicy: u2,
             SEHValidationPolicy: u2,
             CurDirDevicesSkippedForDlls: u2,
@@ -5029,7 +5029,7 @@ pub const KUSER_SHARED_DATA = extern struct {
     SafeBootMode: BOOLEAN,
     DummyUnion2: extern union {
         VirtualizationFlags: UCHAR,
-        Alt: packed struct {
+        Alt: packed struct(u8) {
             ArchStartedInEl2: u1,
             QcSlIsSupported: u1,
             SpareBits: u6,
@@ -5038,7 +5038,7 @@ pub const KUSER_SHARED_DATA = extern struct {
     Reserved12: [2]UCHAR,
     DummyUnion3: extern union {
         SharedDataFlags: ULONG,
-        Alt: packed struct {
+        Alt: packed struct(u32) {
             DbgErrorPortPresent: u1,
             DbgElevationEnabled: u1,
             DbgVirtEnabled: u1,
