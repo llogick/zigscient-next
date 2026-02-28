@@ -1738,7 +1738,7 @@ const Group = struct {
         evented: *Evented,
         group: Group,
         fiber: *Fiber,
-        start: *const fn (context: *const anyopaque) Io.Cancelable!void,
+        start: *const fn (context: *const anyopaque) void,
 
         fn fromFiber(fiber: *Fiber) *Group.AsyncClosure {
             return @ptrFromInt(Fiber.max_context_align.max(.of(Group.AsyncClosure)).backward(
@@ -1784,11 +1784,7 @@ const Group = struct {
             const fiber = closure.fiber;
             message.handle(ev);
             assert(fiber.status.queue_next == null);
-            if (closure.start(closure.contextPointer())) {
-                assert(!fiber.cancel_protection.acknowledged); // group task acknowledged cancelation but did not return `error.Canceled`
-            } else |err| switch (err) {
-                error.Canceled => assert(fiber.cancel_protection.acknowledged), // group task returned `error.Canceled` but was never canceled
-            }
+            closure.start(closure.contextPointer());
             ev.yield(closure.group.removeFiber(ev, fiber), .destroy);
             unreachable; // switched to dead fiber
         }
@@ -1800,28 +1796,11 @@ fn groupAsync(
     type_erased: *Io.Group,
     context: []const u8,
     context_alignment: Alignment,
-    start: *const fn (context: *const anyopaque) Io.Cancelable!void,
+    start: *const fn (context: *const anyopaque) void,
 ) void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     return groupConcurrent(ev, type_erased, context, context_alignment, start) catch {
-        const fiber = Thread.current().currentFiber();
-        const pre_acknowledged = fiber.cancel_protection.acknowledged;
-        const result = start(context.ptr);
-        const post_acknowledged = fiber.cancel_protection.acknowledged;
-        if (result) {
-            if (pre_acknowledged) {
-                assert(post_acknowledged); // group task called `recancel` but was not canceled
-            } else {
-                assert(!post_acknowledged); // group task acknowledged cancelation but did not return `error.Canceled`
-            }
-        } else |err| switch (err) {
-            // Don't swallow the cancelation: make it visible to the `Group.async` caller.
-            error.Canceled => {
-                assert(!pre_acknowledged); // group task called `recancel` but was not canceled
-                assert(post_acknowledged); // group task returned `error.Canceled` but was never canceled
-                fiber.cancel_protection.recancel();
-            },
-        }
+        start(context.ptr);
     };
 }
 
@@ -1830,7 +1809,7 @@ fn groupConcurrent(
     type_erased: *Io.Group,
     context: []const u8,
     context_alignment: Alignment,
-    start: *const fn (context: *const anyopaque) Io.Cancelable!void,
+    start: *const fn (context: *const anyopaque) void,
 ) Io.ConcurrentError!void {
     assert(context_alignment.compare(.lte, Fiber.max_context_align)); // TODO
     assert(context.len <= Fiber.max_context_size); // TODO

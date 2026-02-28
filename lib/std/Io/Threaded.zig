@@ -412,7 +412,7 @@ const Group = struct {
     const Task = struct {
         runnable: Runnable,
         group: *Io.Group,
-        func: *const fn (context: *const anyopaque) Io.Cancelable!void,
+        func: *const fn (context: *const anyopaque) void,
         context_alignment: Alignment,
         alloc_len: usize,
 
@@ -422,7 +422,7 @@ const Group = struct {
             group: Group,
             context: []const u8,
             context_alignment: Alignment,
-            func: *const fn (context: *const anyopaque) Io.Cancelable!void,
+            func: *const fn (context: *const anyopaque) void,
         ) Allocator.Error!*Task {
             const max_context_misalignment = context_alignment.toByteUnits() -| @alignOf(Task);
             const worst_case_context_offset = context_alignment.forward(@sizeOf(Task) + max_context_misalignment);
@@ -477,21 +477,7 @@ const Group = struct {
                 }, .monotonic);
             }
 
-            const result = task.func(task.contextPointer());
-            const cancel_acknowledged = switch (thread.status.load(.monotonic).cancelation) {
-                .none, .canceling => false,
-                .canceled => true,
-                .parked => unreachable,
-                .blocked => unreachable,
-                .blocked_alertable => unreachable,
-                .blocked_alertable_canceling => unreachable,
-                .blocked_canceling => unreachable,
-            };
-            if (result) {
-                assert(!cancel_acknowledged); // group task acknowledged cancelation but did not return `error.Canceled`
-            } else |err| switch (err) {
-                error.Canceled => assert(cancel_acknowledged), // group task returned `error.Canceled` but was never canceled
-            }
+            task.func(task.contextPointer());
 
             thread.status.store(.{ .cancelation = .none, .awaitable = .null }, .monotonic);
             const old_status = group.status().fetchSub(.{
@@ -2272,7 +2258,7 @@ fn groupAsync(
     type_erased: *Io.Group,
     context: []const u8,
     context_alignment: Alignment,
-    start: *const fn (context: *const anyopaque) Io.Cancelable!void,
+    start: *const fn (context: *const anyopaque) void,
 ) void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     const g: Group = .{ .ptr = type_erased };
@@ -2323,47 +2309,10 @@ fn groupAsync(
     condSignal(&t.cond);
 }
 fn groupAsyncEager(
-    start: *const fn (context: *const anyopaque) Io.Cancelable!void,
+    start: *const fn (context: *const anyopaque) void,
     context: *const anyopaque,
 ) void {
-    const pre_acknowledged = if (Thread.current) |thread| ack: {
-        break :ack switch (thread.status.load(.monotonic).cancelation) {
-            .none, .canceling => false,
-            .canceled => true,
-            .parked => unreachable,
-            .blocked => unreachable,
-            .blocked_alertable => unreachable,
-            .blocked_alertable_canceling => unreachable,
-            .blocked_canceling => unreachable,
-        };
-    } else false;
-    const result = start(context);
-    const post_acknowledged = if (Thread.current) |thread| ack: {
-        break :ack switch (thread.status.load(.monotonic).cancelation) {
-            .none, .canceling => false,
-            .canceled => true,
-            .parked => unreachable,
-            .blocked => unreachable,
-            .blocked_alertable => unreachable,
-            .blocked_alertable_canceling => unreachable,
-            .blocked_canceling => unreachable,
-        };
-    } else false;
-
-    if (result) {
-        if (pre_acknowledged) {
-            assert(post_acknowledged); // group task called `recancel` but was not canceled
-        } else {
-            assert(!post_acknowledged); // group task acknowledged cancelation but did not return `error.Canceled`
-        }
-    } else |err| switch (err) {
-        // Don't swallow the cancelation: make it visible to the `Group.async` caller.
-        error.Canceled => {
-            assert(!pre_acknowledged); // group task called `recancel` but was not canceled
-            assert(post_acknowledged); // group task returned `error.Canceled` but was never canceled
-            recancelInner();
-        },
-    }
+    start(context);
 }
 
 fn groupConcurrent(
@@ -2371,7 +2320,7 @@ fn groupConcurrent(
     type_erased: *Io.Group,
     context: []const u8,
     context_alignment: Alignment,
-    start: *const fn (context: *const anyopaque) Io.Cancelable!void,
+    start: *const fn (context: *const anyopaque) void,
 ) Io.ConcurrentError!void {
     if (builtin.single_threaded) return error.ConcurrencyUnavailable;
 

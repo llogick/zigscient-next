@@ -124,7 +124,7 @@ pub const VTable = struct {
         /// Copied and then passed to `start`.
         context: []const u8,
         context_alignment: std.mem.Alignment,
-        start: *const fn (context: *const anyopaque) Cancelable!void,
+        start: *const fn (context: *const anyopaque) void,
     ) void,
     /// Thread-safe.
     groupConcurrent: *const fn (
@@ -135,7 +135,7 @@ pub const VTable = struct {
         /// Copied and then passed to `start`.
         context: []const u8,
         context_alignment: std.mem.Alignment,
-        start: *const fn (context: *const anyopaque) Cancelable!void,
+        start: *const fn (context: *const anyopaque) void,
     ) ConcurrentError!void,
     groupAwait: *const fn (?*anyopaque, *Group, token: *anyopaque) Cancelable!void,
     groupCancel: *const fn (?*anyopaque, *Group, token: *anyopaque) void,
@@ -1169,19 +1169,18 @@ pub const Group = struct {
     /// instead of becoming associated with a `Future`.
     ///
     /// The return type of `function` must be coercible to `Cancelable!void`.
+    /// `function` returning `error.Canceled` does nothing because it is an
+    /// cancelation propagation boundary.
     ///
     /// Once this function is called, there are resources associated with the
     /// group. To release those resources, `Group.await` or `Group.cancel` must
     /// eventually be called.
-    ///
-    /// If `error.Canceled` is returned from any operation this task performs,
-    /// it is asserted that `function` returns `error.Canceled`.
     pub fn async(g: *Group, io: Io, function: anytype, args: std.meta.ArgsTuple(@TypeOf(function))) void {
         const Args = @TypeOf(args);
         const TypeErased = struct {
-            fn start(context: *const anyopaque) Cancelable!void {
+            fn start(context: *const anyopaque) void {
                 const args_casted: *const Args = @ptrCast(@alignCast(context));
-                return @call(.auto, function, args_casted.*);
+                _ = @as(Cancelable!void, @call(.auto, function, args_casted.*)) catch {};
             }
         };
         io.vtable.groupAsync(io.userdata, g, @ptrCast(&args), .of(Args), TypeErased.start);
@@ -1191,19 +1190,18 @@ pub const Group = struct {
     /// `Group` instead of becoming associated with a `Future`.
     ///
     /// The return type of `function` must be coercible to `Cancelable!void`.
+    /// `function` returning `error.Canceled` does nothing because it is an
+    /// cancelation propagation boundary.
     ///
     /// Once this function is called, there are resources associated with the
     /// group. To release those resources, `Group.await` or `Group.cancel` must
     /// eventually be called.
-    ///
-    /// If `error.Canceled` is returned from any operation this task performs,
-    /// it is asserted that `function` returns `error.Canceled`.
     pub fn concurrent(g: *Group, io: Io, function: anytype, args: std.meta.ArgsTuple(@TypeOf(function))) ConcurrentError!void {
         const Args = @TypeOf(args);
         const TypeErased = struct {
-            fn start(context: *const anyopaque) Cancelable!void {
+            fn start(context: *const anyopaque) void {
                 const args_casted: *const Args = @ptrCast(@alignCast(context));
-                return @call(.auto, function, args_casted.*);
+                _ = @as(Cancelable!void, @call(.auto, function, args_casted.*)) catch {};
             }
         };
         return io.vtable.groupConcurrent(io.userdata, g, @ptrCast(&args), .of(Args), TypeErased.start);
@@ -1352,15 +1350,13 @@ pub fn Select(comptime U: type) type {
             const Context = struct {
                 select: *S,
                 args: @TypeOf(args),
-                fn start(type_erased_context: *const anyopaque) Cancelable!void {
+                fn start(type_erased_context: *const anyopaque) void {
                     const context: *const @This() = @ptrCast(@alignCast(type_erased_context));
-                    const raw_result = @call(.auto, function, context.args);
-                    const elem = @unionInit(U, @tagName(field), raw_result);
+                    const result = @call(.auto, function, context.args);
+                    const elem = @unionInit(U, @tagName(field), result);
                     context.select.queue.putOneUncancelable(context.select.io, elem) catch |err| switch (err) {
                         error.Closed => {},
                     };
-                    if (@typeInfo(@TypeOf(raw_result)) == .error_union)
-                        _ = raw_result catch |err| if (err == error.Canceled) return error.Canceled;
                 }
             };
             const context: Context = .{ .select = s, .args = args };
@@ -1391,15 +1387,13 @@ pub fn Select(comptime U: type) type {
             const Context = struct {
                 select: *S,
                 args: @TypeOf(args),
-                fn start(type_erased_context: *const anyopaque) Cancelable!void {
+                fn start(type_erased_context: *const anyopaque) void {
                     const context: *const @This() = @ptrCast(@alignCast(type_erased_context));
-                    const raw_result = @call(.auto, function, context.args);
-                    const elem = @unionInit(U, @tagName(field), raw_result);
+                    const result = @call(.auto, function, context.args);
+                    const elem = @unionInit(U, @tagName(field), result);
                     context.select.queue.putOneUncancelable(context.select.io, elem) catch |err| switch (err) {
                         error.Closed => {},
                     };
-                    if (@typeInfo(@TypeOf(raw_result)) == .error_union)
-                        _ = raw_result catch |err| if (err == error.Canceled) return error.Canceled;
                 }
             };
             const context: Context = .{ .select = s, .args = args };
