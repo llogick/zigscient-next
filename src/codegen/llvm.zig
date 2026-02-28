@@ -520,6 +520,21 @@ pub const Object = struct {
     gpa: Allocator,
     builder: Builder,
 
+    /// This pool contains only types (and not `@as(type, undefined)`). It has two purposes:
+    ///
+    /// * Lazily tracking ABI alignment of types, so that `@"align"` attributes can be set to a
+    ///   type's ABI alignment before that type is fully resolved. Each type in the pool has a
+    ///   corresponding entry in `lazy_abi_aligns`.
+    ///
+    /// * If `!Object.builder.strip`, lazily tracking debug information types, so that debug
+    ///   information can handle indirect self-reference (and so that debug information works
+    ///   correctly across incremental updates). Each type has a corresponding entry in
+    ///   `debug_types`, provided that `Object.builder.strip` is `false`.
+    type_pool: link.ConstPool,
+
+    /// Keyed on `link.ConstPool.Index`.
+    lazy_abi_aligns: std.ArrayList(Builder.Alignment.Lazy),
+
     debug_compile_unit: Builder.Metadata.Optional,
 
     debug_enums_fwd_ref: Builder.Metadata.Optional,
@@ -530,8 +545,6 @@ pub const Object = struct {
 
     debug_file_map: std.AutoHashMapUnmanaged(Zcu.File.Index, Builder.Metadata),
 
-    /// This pool *only* contains types (and does not contain `@as(type, undefined)`).
-    debug_type_pool: link.ConstPool,
     /// Keyed on `link.ConstPool.Index`.
     debug_types: std.ArrayList(Builder.Metadata),
     /// Initially `.none`, set if the type `anyerror` is lowered to a debug type. The type will not
@@ -660,13 +673,14 @@ pub const Object = struct {
         obj.* = .{
             .gpa = gpa,
             .builder = builder,
+            .type_pool = .empty,
+            .lazy_abi_aligns = .empty,
             .debug_compile_unit = debug_compile_unit,
             .debug_enums_fwd_ref = debug_enums_fwd_ref,
             .debug_globals_fwd_ref = debug_globals_fwd_ref,
             .debug_enums = .empty,
             .debug_globals = .empty,
             .debug_file_map = .empty,
-            .debug_type_pool = .empty,
             .debug_types = .empty,
             .debug_anyerror_fwd_ref = .none,
             .target = target,
@@ -685,10 +699,11 @@ pub const Object = struct {
 
     pub fn deinit(self: *Object) void {
         const gpa = self.gpa;
+        self.type_pool.deinit(gpa);
+        self.lazy_abi_aligns.deinit(gpa);
         self.debug_enums.deinit(gpa);
         self.debug_globals.deinit(gpa);
         self.debug_file_map.deinit(gpa);
-        self.debug_type_pool.deinit(gpa);
         self.debug_types.deinit(gpa);
         self.nav_map.deinit(gpa);
         self.uav_map.deinit(gpa);
@@ -836,7 +851,7 @@ pub const Object = struct {
                     o.builder.resolveDebugForwardReference(fwd_ref, debug_anyerror_type);
                 }
 
-                try o.flushPendingDebugTypes(pt);
+                try o.flushTypePool(pt);
 
                 o.builder.resolveDebugForwardReference(
                     o.debug_enums_fwd_ref.unwrap().?,
@@ -1396,10 +1411,10 @@ pub const Object = struct {
                         if (ptr_info.flags.is_const) {
                             try attributes.addParamAttr(llvm_arg_i, .readonly, &o.builder);
                         }
-                        const elem_align = (if (ptr_info.flags.alignment != .none)
-                            @as(InternPool.Alignment, ptr_info.flags.alignment)
-                        else
-                            Type.fromInterned(ptr_info.child).abiAlignment(zcu).max(.@"1")).toLlvm();
+                        const elem_align: Builder.Alignment.Lazy = switch (ptr_info.flags.alignment) {
+                            else => |a| .wrap(a.toLlvm()),
+                            .none => try o.lazyAbiAlignment(pt, .fromInterned(ptr_info.child)),
+                        };
                         try attributes.addParamAttr(llvm_arg_i, .{ .@"align" = elem_align }, &o.builder);
                         const ptr_param = wip.arg(llvm_arg_i);
                         llvm_arg_i += 1;
@@ -1600,7 +1615,7 @@ pub const Object = struct {
         }
 
         try fg.wip.finish();
-        try o.flushPendingDebugTypes(pt);
+        try o.flushTypePool(pt);
     }
 
     pub fn updateNav(self: *Object, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) !void {
@@ -1617,11 +1632,11 @@ pub const Object = struct {
             },
             else => |e| return e,
         };
-        try self.flushPendingDebugTypes(pt);
+        try self.flushTypePool(pt);
     }
 
-    fn flushPendingDebugTypes(o: *Object, pt: Zcu.PerThread) Allocator.Error!void {
-        try o.debug_type_pool.flushPending(pt, .{ .llvm = o });
+    fn flushTypePool(o: *Object, pt: Zcu.PerThread) Allocator.Error!void {
+        try o.type_pool.flushPending(pt, .{ .llvm = o });
     }
 
     pub fn updateExports(
@@ -1818,51 +1833,81 @@ pub const Object = struct {
     }
 
     pub fn updateContainerType(o: *Object, pt: Zcu.PerThread, ty: InternPool.Index, success: bool) Allocator.Error!void {
-        if (!o.builder.strip) {
-            try o.debug_type_pool.updateContainerType(pt, .{ .llvm = o }, ty, success);
-        }
+        try o.type_pool.updateContainerType(pt, .{ .llvm = o }, ty, success);
     }
 
     /// Should only be called by the `link.ConstPool` implementation.
     ///
-    /// `val` is always a type because `o.debug_type_pool` only contains types.
+    /// `val` is always a type because `o.type_pool` only contains types.
     pub fn addConst(o: *Object, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) Allocator.Error!void {
         const zcu = pt.zcu;
         const gpa = zcu.comp.gpa;
         assert(zcu.intern_pool.typeOf(val) == .type_type);
-        assert(@intFromEnum(index) == o.debug_types.items.len);
-        try o.debug_types.ensureUnusedCapacity(gpa, 1);
-        const fwd_ref = try o.builder.debugForwardReference();
-        o.debug_types.appendAssumeCapacity(fwd_ref);
-        if (val == .anyerror_type) {
-            assert(o.debug_anyerror_fwd_ref.is_none);
-            o.debug_anyerror_fwd_ref = fwd_ref.toOptional();
+
+        {
+            assert(@intFromEnum(index) == o.lazy_abi_aligns.items.len);
+            try o.lazy_abi_aligns.ensureUnusedCapacity(gpa, 1);
+            const fwd_ref = try o.builder.alignmentForwardReference();
+            o.lazy_abi_aligns.appendAssumeCapacity(fwd_ref);
+        }
+
+        if (!o.builder.strip) {
+            assert(@intFromEnum(index) == o.debug_types.items.len);
+            try o.debug_types.ensureUnusedCapacity(gpa, 1);
+            const fwd_ref = try o.builder.debugForwardReference();
+            o.debug_types.appendAssumeCapacity(fwd_ref);
+            if (val == .anyerror_type) {
+                assert(o.debug_anyerror_fwd_ref.is_none);
+                o.debug_anyerror_fwd_ref = fwd_ref.toOptional();
+            }
         }
     }
     /// Should only be called by the `link.ConstPool` implementation.
     ///
-    /// `val` is always a type because `o.debug_type_pool` only contains types.
+    /// `val` is always a type because `o.type_pool` only contains types.
     pub fn updateConstIncomplete(o: *Object, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) Allocator.Error!void {
-        assert(pt.zcu.intern_pool.typeOf(val) == .type_type);
-        const fwd_ref = o.debug_types.items[@intFromEnum(index)];
-        assert(val != .anyerror_type);
-        const name_str = try o.builder.metadataStringFmt("{f}", .{Type.fromInterned(val).fmt(pt)});
-        const debug_incomplete_type = try o.builder.debugSignedType(name_str, 0);
-        o.builder.resolveDebugForwardReference(fwd_ref, debug_incomplete_type);
+        const zcu = pt.zcu;
+        assert(zcu.intern_pool.typeOf(val) == .type_type);
+
+        const ty: Type = .fromInterned(val);
+
+        {
+            const fwd_ref = o.lazy_abi_aligns.items[@intFromEnum(index)];
+            o.builder.resolveAlignmentForwardReference(fwd_ref, .fromByteUnits(1));
+        }
+
+        if (!o.builder.strip) {
+            assert(val != .anyerror_type);
+            const fwd_ref = o.debug_types.items[@intFromEnum(index)];
+            const name_str = try o.builder.metadataStringFmt("{f}", .{ty.fmt(pt)});
+            const debug_incomplete_type = try o.builder.debugSignedType(name_str, 0);
+            o.builder.resolveDebugForwardReference(fwd_ref, debug_incomplete_type);
+        }
     }
     /// Should only be called by the `link.ConstPool` implementation.
     ///
-    /// `val` is always a type because `o.debug_type_pool` only contains types.
+    /// `val` is always a type because `o.type_pool` only contains types.
     pub fn updateConst(o: *Object, pt: Zcu.PerThread, index: link.ConstPool.Index, val: InternPool.Index) Allocator.Error!void {
-        assert(pt.zcu.intern_pool.typeOf(val) == .type_type);
-        const fwd_ref = o.debug_types.items[@intFromEnum(index)];
-        if (val == .anyerror_type) {
-            // Don't lower this now; it will be populated in `emit` instead.
-            assert(o.debug_anyerror_fwd_ref == fwd_ref.toOptional());
-            return;
+        const zcu = pt.zcu;
+        assert(zcu.intern_pool.typeOf(val) == .type_type);
+
+        const ty: Type = .fromInterned(val);
+
+        {
+            const fwd_ref = o.lazy_abi_aligns.items[@intFromEnum(index)];
+            o.builder.resolveAlignmentForwardReference(fwd_ref, ty.abiAlignment(zcu).toLlvm());
         }
-        const debug_type = try o.lowerDebugType(pt, .fromInterned(val), fwd_ref);
-        o.builder.resolveDebugForwardReference(fwd_ref, debug_type);
+
+        if (!o.builder.strip) {
+            const fwd_ref = o.debug_types.items[@intFromEnum(index)];
+            if (val == .anyerror_type) {
+                // Don't lower this now; it will be populated in `emit` instead.
+                assert(o.debug_anyerror_fwd_ref == fwd_ref.toOptional());
+            } else {
+                const debug_type = try o.lowerDebugType(pt, ty, fwd_ref);
+                o.builder.resolveDebugForwardReference(fwd_ref, debug_type);
+            }
+        }
     }
 
     fn getDebugFile(o: *Object, pt: Zcu.PerThread, file_index: Zcu.File.Index) Allocator.Error!Builder.Metadata {
@@ -1883,7 +1928,7 @@ pub const Object = struct {
 
     fn getDebugType(o: *Object, pt: Zcu.PerThread, ty: Type) Allocator.Error!Builder.Metadata {
         assert(!o.builder.strip);
-        const index = try o.debug_type_pool.get(pt, .{ .llvm = o }, ty.toIntern());
+        const index = try o.type_pool.get(pt, .{ .llvm = o }, ty.toIntern());
         return o.debug_types.items[@intFromEnum(index)];
     }
 
@@ -2680,7 +2725,7 @@ pub const Object = struct {
             function_index.setCallConv(cc_info.llvm_cc, &o.builder);
 
             if (cc_info.align_stack) {
-                try attributes.addFnAttr(.{ .alignstack = .fromByteUnits(target.stackAlignment()) }, &o.builder);
+                try attributes.addFnAttr(.{ .alignstack = .wrap(.fromByteUnits(target.stackAlignment())) }, &o.builder);
             } else {
                 _ = try attributes.removeFnAttr(.alignstack);
             }
@@ -4166,11 +4211,11 @@ pub const Object = struct {
             if (ptr_info.flags.is_const) {
                 try attributes.addParamAttr(llvm_arg_i, .readonly, &o.builder);
             }
-            const elem_align = if (ptr_info.flags.alignment != .none)
-                ptr_info.flags.alignment
-            else
-                Type.fromInterned(ptr_info.child).abiAlignment(zcu).max(.@"1");
-            try attributes.addParamAttr(llvm_arg_i, .{ .@"align" = elem_align.toLlvm() }, &o.builder);
+            const elem_align: Builder.Alignment.Lazy = switch (ptr_info.flags.alignment) {
+                else => |a| .wrap(a.toLlvm()),
+                .none => try o.lazyAbiAlignment(pt, .fromInterned(ptr_info.child)),
+            };
+            try attributes.addParamAttr(llvm_arg_i, .{ .@"align" = elem_align }, &o.builder);
         } else if (ccAbiPromoteInt(fn_info.cc, zcu, param_ty)) |s| switch (s) {
             .signed => try attributes.addParamAttr(llvm_arg_i, .signext, &o.builder),
             .unsigned => try attributes.addParamAttr(llvm_arg_i, .zeroext, &o.builder),
@@ -4187,7 +4232,7 @@ pub const Object = struct {
     ) Allocator.Error!void {
         try attributes.addParamAttr(llvm_arg_i, .nonnull, &o.builder);
         try attributes.addParamAttr(llvm_arg_i, .readonly, &o.builder);
-        try attributes.addParamAttr(llvm_arg_i, .{ .@"align" = alignment }, &o.builder);
+        try attributes.addParamAttr(llvm_arg_i, .{ .@"align" = .wrap(alignment) }, &o.builder);
         if (byval) try attributes.addParamAttr(llvm_arg_i, .{ .byval = param_llvm_ty }, &o.builder);
     }
 
@@ -4296,6 +4341,11 @@ pub const Object = struct {
 
         try wip.finish();
         return function_index;
+    }
+
+    fn lazyAbiAlignment(o: *Object, pt: Zcu.PerThread, ty: Type) Allocator.Error!Builder.Alignment.Lazy {
+        const index = try o.type_pool.get(pt, .{ .llvm = o }, ty.toIntern());
+        return o.lazy_abi_aligns.items[@intFromEnum(index)];
     }
 };
 
@@ -5259,10 +5309,10 @@ pub const FuncGen = struct {
                     if (ptr_info.flags.is_const) {
                         try attributes.addParamAttr(llvm_arg_i, .readonly, &o.builder);
                     }
-                    const elem_align = (if (ptr_info.flags.alignment != .none)
-                        @as(InternPool.Alignment, ptr_info.flags.alignment)
-                    else
-                        Type.fromInterned(ptr_info.child).abiAlignment(zcu).max(.@"1")).toLlvm();
+                    const elem_align: Builder.Alignment.Lazy = switch (ptr_info.flags.alignment) {
+                        else => |a| .wrap(a.toLlvm()),
+                        .none => try o.lazyAbiAlignment(pt, .fromInterned(ptr_info.child)),
+                    };
                     try attributes.addParamAttr(llvm_arg_i, .{ .@"align" = elem_align }, &o.builder);
                 },
             };

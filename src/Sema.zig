@@ -7110,12 +7110,7 @@ fn analyzeCall(
         }
         for (args, 0..) |arg, arg_idx| {
             const arg_src = args_info.argSrc(block, arg_idx);
-            const arg_ty = sema.typeOf(arg);
             try sema.validateRuntimeValue(block, arg_src, arg);
-            if (arg_ty.isPtrAtRuntime(zcu) or arg_ty.isSliceAtRuntime(zcu)) {
-                // LLVM wants this information for an "align" attribute on the argument.
-                try sema.ensureLayoutResolved(arg_ty.nullablePtrElem(zcu), arg_src, .init);
-            }
         }
         const runtime_func: Air.Inst.Ref, const runtime_args: []const Air.Inst.Ref = func: {
             if (!any_generic_types and !any_comptime_params) break :func .{ callee, args };
@@ -24779,16 +24774,6 @@ fn zirBuiltinExtern(
     }
     const ptr_info = ty.ptrInfo(zcu);
 
-    if (Type.fromInterned(ptr_info.child).zigTypeTag(zcu) == .@"fn") {
-        const func_type = ip.indexToKey(ptr_info.child).func_type;
-        for (func_type.param_types.get(ip)) |param_ty_ip| {
-            const param_ty: Type = .fromInterned(param_ty_ip);
-            if (param_ty.isPtrAtRuntime(zcu) or param_ty.isSliceAtRuntime(zcu)) {
-                // LLVM wants this information for an "align" attribute on the parameter.
-                try sema.ensureLayoutResolved(param_ty.nullablePtrElem(zcu), ty_src, .parameter);
-            }
-        }
-    }
     const extern_val = try pt.getExtern(.{
         .name = options.name,
         .ty = ptr_info.child,

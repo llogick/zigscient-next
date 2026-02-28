@@ -7,6 +7,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const DW = std.dwarf;
 const log = std.log.scoped(.llvm);
+const maxInt = std.math.maxInt;
 const Writer = std.Io.Writer;
 
 const bitcode_writer = @import("bitcode_writer.zig");
@@ -55,6 +56,8 @@ constant_items: std.MultiArrayList(Constant.Item),
 constant_extra: std.ArrayList(u32),
 constant_limbs: std.ArrayList(std.math.big.Limb),
 
+alignment_forward_references: std.ArrayList(Alignment),
+
 metadata_map: std.AutoArrayHashMapUnmanaged(void, void),
 metadata_items: std.MultiArrayList(Metadata.Item),
 metadata_extra: std.ArrayList(u32),
@@ -85,7 +88,7 @@ pub const Options = struct {
 };
 
 pub const String = enum(u32) {
-    none = std.math.maxInt(u31),
+    none = maxInt(u31),
     empty,
     _,
 
@@ -245,7 +248,7 @@ pub const Type = enum(u32) {
     ptr,
     @"ptr addrspace(4)",
 
-    none = std.math.maxInt(u32),
+    none = maxInt(u32),
     _,
 
     pub const ptr_amdgpu_constant =
@@ -941,7 +944,7 @@ pub const Attribute = union(Kind) {
     inalloca: Type,
     sret: Type,
     elementtype: Type,
-    @"align": Alignment,
+    @"align": Alignment.Lazy,
     @"noalias",
     nocapture,
     nofree,
@@ -956,7 +959,7 @@ pub const Attribute = union(Kind) {
     immarg,
     noundef,
     nofpclass: FpClass,
-    alignstack: Alignment,
+    alignstack: Alignment.Lazy,
     allocalign,
     allocptr,
     readnone,
@@ -964,7 +967,7 @@ pub const Attribute = union(Kind) {
     writeonly,
 
     // Function Attributes
-    //alignstack: Alignment,
+    //alignstack: Alignment.Lazy,
     allockind: AllocKind,
     allocsize: AllocSize,
     alwaysinline,
@@ -1145,7 +1148,7 @@ pub const Attribute = union(Kind) {
                     return @unionInit(Attribute, field.name, switch (field.type) {
                         void => {},
                         u32 => storage.value,
-                        Alignment, String, Type, UwTable => @enumFromInt(storage.value),
+                        Alignment.Lazy, String, Type, UwTable => @enumFromInt(storage.value),
                         AllocKind, AllocSize, FpClass, Memory, VScaleRange => @bitCast(storage.value),
                         else => @compileError("bad payload type: " ++ field.name ++ ": " ++
                             @typeName(field.type)),
@@ -1246,7 +1249,7 @@ pub const Attribute = union(Kind) {
                 .sret,
                 .elementtype,
                 => |ty| try w.print(" {s}({f})", .{ @tagName(attribute), ty.fmt(data.builder, .percent) }),
-                .@"align" => |alignment| try w.print("{f}", .{alignment.fmt(" ")}),
+                .@"align" => |alignment| try w.print("{f}", .{alignment.resolve(data.builder).fmt(" ")}),
                 .dereferenceable,
                 .dereferenceable_or_null,
                 => |size| try w.print(" {s}({d})", .{ @tagName(attribute), size }),
@@ -1270,7 +1273,7 @@ pub const Attribute = union(Kind) {
                 },
                 .alignstack => |alignment| {
                     try w.print(" {t}", .{attribute});
-                    const alignment_bytes = alignment.toByteUnits() orelse return;
+                    const alignment_bytes = alignment.resolve(data.builder).toByteUnits() orelse return;
                     if (data.flags.pound) {
                         try w.print("={d}", .{alignment_bytes});
                     } else {
@@ -1435,8 +1438,8 @@ pub const Attribute = union(Kind) {
         //sanitize_memtag,
         sanitize_address_dyninit = 102,
 
-        string = std.math.maxInt(u31),
-        none = std.math.maxInt(u32),
+        string = maxInt(u31),
+        none = maxInt(u32),
         _,
 
         pub const len = @typeInfo(Kind).@"enum".fields.len - 2;
@@ -1516,12 +1519,12 @@ pub const Attribute = union(Kind) {
         elem_size: u16,
         num_elems: u16,
 
-        pub const none = std.math.maxInt(u16);
+        pub const none = maxInt(u16);
 
         fn toLlvm(self: AllocSize) packed struct(u64) { num_elems: u32, elem_size: u32 } {
             return .{ .num_elems = switch (self.num_elems) {
                 else => self.num_elems,
-                none => std.math.maxInt(u32),
+                none => maxInt(u32),
             }, .elem_size = self.elem_size };
         }
     };
@@ -1577,7 +1580,7 @@ pub const Attribute = union(Kind) {
             inline else => |value, tag| .{ .kind = @as(Kind, self), .value = switch (@TypeOf(value)) {
                 void => 0,
                 u32 => value,
-                Alignment, String, Type, UwTable => @intFromEnum(value),
+                Alignment.Lazy, String, Type, UwTable => @intFromEnum(value),
                 AllocKind, AllocSize, FpClass, Memory, VScaleRange => @bitCast(value),
                 else => @compileError("bad payload type: " ++ @tagName(tag) ++ @typeName(@TypeOf(value))),
             } },
@@ -2017,8 +2020,31 @@ pub const ExternallyInitialized = enum {
 };
 
 pub const Alignment = enum(u6) {
-    default = std.math.maxInt(u6),
+    default = maxInt(u6),
     _,
+
+    pub const Lazy = enum(u32) {
+        /// Values which fit in a `u6` are already-resolved `Alignment` values. Other values are
+        /// indices into `Builder.alignment_forward_references`, offset by `maxInt(u6)`.
+        _,
+
+        pub fn wrap(a: Alignment) Lazy {
+            return @enumFromInt(@intFromEnum(a));
+        }
+        pub fn resolve(l: Lazy, b: *const Builder) Alignment {
+            return switch (@intFromEnum(l)) {
+                0...maxInt(u6) => |raw| @enumFromInt(raw),
+                else => |offset_index| b.alignment_forward_references.items[offset_index - maxInt(u6)],
+            };
+        }
+
+        fn fromFwdRefIndex(index: usize) Lazy {
+            return @enumFromInt(index + maxInt(u6));
+        }
+        fn toFwdRefIndex(l: Lazy) usize {
+            return @intFromEnum(l) - maxInt(u6);
+        }
+    };
 
     pub fn fromByteUnits(bytes: u64) Alignment {
         if (bytes == 0) return .default;
@@ -2028,11 +2054,17 @@ pub const Alignment = enum(u6) {
     }
 
     pub fn toByteUnits(self: Alignment) ?u64 {
-        return if (self == .default) null else @as(u64, 1) << @intFromEnum(self);
+        return switch (self) {
+            .default => null,
+            else => @as(u64, 1) << @intFromEnum(self),
+        };
     }
 
     pub fn toLlvm(self: Alignment) u6 {
-        return if (self == .default) 0 else (@intFromEnum(self) + 1);
+        return switch (self) {
+            .default => 0,
+            else => @intFromEnum(self) + 1,
+        };
     }
 
     pub const Prefixed = struct {
@@ -2180,7 +2212,7 @@ pub const CallConv = enum(u10) {
 };
 
 pub const StrtabString = enum(u32) {
-    none = std.math.maxInt(u31),
+    none = maxInt(u31),
     empty,
     _,
 
@@ -2308,7 +2340,7 @@ pub const Global = struct {
     },
 
     pub const Index = enum(u32) {
-        none = std.math.maxInt(u32),
+        none = maxInt(u32),
         _,
 
         pub fn unwrap(self: Index, builder: *const Builder) Index {
@@ -2478,7 +2510,7 @@ pub const Alias = struct {
     aliasee: Constant = .no_init,
 
     pub const Index = enum(u32) {
-        none = std.math.maxInt(u32),
+        none = maxInt(u32),
         _,
 
         pub fn ptr(self: Index, builder: *Builder) *Alias {
@@ -2530,7 +2562,7 @@ pub const Variable = struct {
     alignment: Alignment = .default,
 
     pub const Index = enum(u32) {
-        none = std.math.maxInt(u32),
+        none = maxInt(u32),
         _,
 
         pub fn ptr(self: Index, builder: *Builder) *Variable {
@@ -3949,7 +3981,7 @@ pub const Intrinsic = enum {
             .params = &.{
                 .{
                     .kind = .{ .type = Type.ptr_amdgpu_constant },
-                    .attrs = &.{.{ .@"align" = Builder.Alignment.fromByteUnits(4) }},
+                    .attrs = &.{.{ .@"align" = .wrap(.fromByteUnits(4)) }},
                 },
             },
             .attrs = &.{ .nocallback, .nofree, .nosync, .nounwind, .speculatable, .willreturn, .{ .memory = Attribute.Memory.all(.none) } },
@@ -4057,7 +4089,7 @@ pub const Function = struct {
     extra: []const u32 = &.{},
 
     pub const Index = enum(u32) {
-        none = std.math.maxInt(u32),
+        none = maxInt(u32),
         _,
 
         pub fn ptr(self: Index, builder: *Builder) *Function {
@@ -4411,7 +4443,7 @@ pub const Function = struct {
         };
 
         pub const Index = enum(u32) {
-            none = std.math.maxInt(u31),
+            none = maxInt(u31),
             _,
 
             pub fn name(self: Instruction.Index, function: *const Function) String {
@@ -5007,7 +5039,7 @@ pub const Function = struct {
                 fsub = 12,
                 fmax = 13,
                 fmin = 14,
-                none = std.math.maxInt(u5),
+                none = maxInt(u5),
             };
         };
 
@@ -6132,8 +6164,8 @@ pub const WipFunction = struct {
         kind: MemoryAccessKind,
         @"inline": bool,
     ) Allocator.Error!Instruction.Index {
-        var dst_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = dst_align })};
-        var src_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = src_align })};
+        var dst_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = .wrap(dst_align) })};
+        var src_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = .wrap(src_align) })};
         const value = try self.callIntrinsic(
             .normal,
             try self.builder.fnAttrs(&.{
@@ -6162,8 +6194,8 @@ pub const WipFunction = struct {
         len: Value,
         kind: MemoryAccessKind,
     ) Allocator.Error!Instruction.Index {
-        var dst_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = dst_align })};
-        var src_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = src_align })};
+        var dst_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = .wrap(dst_align) })};
+        var src_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = .wrap(src_align) })};
         const value = try self.callIntrinsic(
             .normal,
             try self.builder.fnAttrs(&.{
@@ -6192,7 +6224,7 @@ pub const WipFunction = struct {
         kind: MemoryAccessKind,
         @"inline": bool,
     ) Allocator.Error!Instruction.Index {
-        var dst_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = dst_align })};
+        var dst_attrs = [_]Attribute.Index{try self.builder.attr(.{ .@"align" = .wrap(dst_align) })};
         const value = try self.callIntrinsic(
             .normal,
             try self.builder.fnAttrs(&.{ .none, .none, try self.builder.attrs(&dst_attrs) }),
@@ -7329,7 +7361,7 @@ pub const Constant = enum(u32) {
         //indices: [info.indices_len]Constant,
 
         pub const Kind = enum { normal, inbounds };
-        pub const InRangeIndex = enum(u16) { none = std.math.maxInt(u16), _ };
+        pub const InRangeIndex = enum(u16) { none = maxInt(u16), _ };
         pub const Info = packed struct(u32) { indices_len: u16, inrange: InRangeIndex };
     };
 
@@ -7579,7 +7611,7 @@ pub const Constant = enum(u32) {
                             string: [
                                 (std.math.big.int.Const{
                                     .limbs = &([1]std.math.big.Limb{
-                                        std.math.maxInt(std.math.big.Limb),
+                                        maxInt(std.math.big.Limb),
                                     } ** expected_limbs),
                                     .positive = false,
                                 }).sizeInBaseUpperBound(10)
@@ -7643,7 +7675,7 @@ pub const Constant = enum(u32) {
                                     std.math.minInt(Exponent64),
                                 else => @as(Exponent64, repr.exponent) +
                                     (std.math.floatExponentMax(f64) - std.math.floatExponentMax(f32)),
-                                std.math.maxInt(Exponent32) => std.math.maxInt(Exponent64),
+                                maxInt(Exponent32) => maxInt(Exponent64),
                             },
                             .sign = repr.sign,
                         }))});
@@ -7820,7 +7852,7 @@ pub const Constant = enum(u32) {
 };
 
 pub const Value = enum(u32) {
-    none = std.math.maxInt(u31),
+    none = maxInt(u31),
     false = first_constant + @intFromEnum(Constant.false),
     true = first_constant + @intFromEnum(Constant.true),
     @"0" = first_constant + @intFromEnum(Constant.@"0"),
@@ -8688,6 +8720,8 @@ pub fn init(options: Options) Allocator.Error!Builder {
         .constant_extra = .empty,
         .constant_limbs = .empty,
 
+        .alignment_forward_references = .empty,
+
         .metadata_map = .empty,
         .metadata_items = .empty,
         .metadata_extra = .empty,
@@ -8800,51 +8834,55 @@ pub fn clearAndFree(self: *Builder) void {
 }
 
 pub fn deinit(self: *Builder) void {
-    self.module_asm.deinit(self.gpa);
+    const gpa = self.gpa;
 
-    self.string_map.deinit(self.gpa);
-    self.string_indices.deinit(self.gpa);
-    self.string_bytes.deinit(self.gpa);
+    self.module_asm.deinit(gpa);
 
-    self.types.deinit(self.gpa);
-    self.next_unique_type_id.deinit(self.gpa);
-    self.type_map.deinit(self.gpa);
-    self.type_items.deinit(self.gpa);
-    self.type_extra.deinit(self.gpa);
+    self.string_map.deinit(gpa);
+    self.string_indices.deinit(gpa);
+    self.string_bytes.deinit(gpa);
 
-    self.attributes.deinit(self.gpa);
-    self.attributes_map.deinit(self.gpa);
-    self.attributes_indices.deinit(self.gpa);
-    self.attributes_extra.deinit(self.gpa);
+    self.types.deinit(gpa);
+    self.next_unique_type_id.deinit(gpa);
+    self.type_map.deinit(gpa);
+    self.type_items.deinit(gpa);
+    self.type_extra.deinit(gpa);
 
-    self.function_attributes_set.deinit(self.gpa);
+    self.attributes.deinit(gpa);
+    self.attributes_map.deinit(gpa);
+    self.attributes_indices.deinit(gpa);
+    self.attributes_extra.deinit(gpa);
 
-    self.globals.deinit(self.gpa);
-    self.next_unique_global_id.deinit(self.gpa);
-    self.aliases.deinit(self.gpa);
-    self.variables.deinit(self.gpa);
-    for (self.functions.items) |*function| function.deinit(self.gpa);
-    self.functions.deinit(self.gpa);
+    self.function_attributes_set.deinit(gpa);
 
-    self.strtab_string_map.deinit(self.gpa);
-    self.strtab_string_indices.deinit(self.gpa);
-    self.strtab_string_bytes.deinit(self.gpa);
+    self.globals.deinit(gpa);
+    self.next_unique_global_id.deinit(gpa);
+    self.aliases.deinit(gpa);
+    self.variables.deinit(gpa);
+    for (self.functions.items) |*function| function.deinit(gpa);
+    self.functions.deinit(gpa);
 
-    self.constant_map.deinit(self.gpa);
-    self.constant_items.deinit(self.gpa);
-    self.constant_extra.deinit(self.gpa);
-    self.constant_limbs.deinit(self.gpa);
+    self.strtab_string_map.deinit(gpa);
+    self.strtab_string_indices.deinit(gpa);
+    self.strtab_string_bytes.deinit(gpa);
 
-    self.metadata_map.deinit(self.gpa);
-    self.metadata_items.deinit(self.gpa);
-    self.metadata_extra.deinit(self.gpa);
-    self.metadata_limbs.deinit(self.gpa);
-    self.metadata_forward_references.deinit(self.gpa);
-    self.metadata_named.deinit(self.gpa);
+    self.constant_map.deinit(gpa);
+    self.constant_items.deinit(gpa);
+    self.constant_extra.deinit(gpa);
+    self.constant_limbs.deinit(gpa);
 
-    self.metadata_string_map.deinit(self.gpa);
-    self.metadata_string_indices.deinit(self.gpa);
-    self.metadata_string_bytes.deinit(self.gpa);
+    self.alignment_forward_references.deinit(gpa);
+
+    self.metadata_map.deinit(gpa);
+    self.metadata_items.deinit(gpa);
+    self.metadata_extra.deinit(gpa);
+    self.metadata_limbs.deinit(gpa);
+    self.metadata_forward_references.deinit(gpa);
+    self.metadata_named.deinit(gpa);
+
+    self.metadata_string_map.deinit(gpa);
+    self.metadata_string_indices.deinit(gpa);
+    self.metadata_string_bytes.deinit(gpa);
 
     self.* = undefined;
 }
@@ -8962,7 +9000,7 @@ pub fn structType(
 pub fn opaqueType(self: *Builder, name: String) Allocator.Error!Type {
     try self.string_map.ensureUnusedCapacity(self.gpa, 1);
     if (name.slice(self)) |id| {
-        const count: usize = comptime std.fmt.count("{d}", .{std.math.maxInt(u32)});
+        const count: usize = comptime std.fmt.count("{d}", .{maxInt(u32)});
         try self.string_bytes.ensureUnusedCapacity(self.gpa, id.len + count);
     }
     try self.string_indices.ensureUnusedCapacity(self.gpa, 1);
@@ -9576,6 +9614,21 @@ pub fn asmValue(
     constraints: String,
 ) Allocator.Error!Value {
     return (try self.asmConst(ty, info, assembly, constraints)).toValue();
+}
+
+/// The initial "resolved" value of the forward reference is `Alignment.default`.
+pub fn alignmentForwardReference(b: *Builder) Allocator.Error!Alignment.Lazy {
+    const index = b.alignment_forward_references.items.len;
+    try b.alignment_forward_references.append(b.gpa, .default);
+    return .fromFwdRefIndex(index);
+}
+
+/// Updates the "resolved" value of the alignment forward reference `fwd_ref` to `value`.
+///
+/// Asserts that `fwd_ref` is a forward reference, as opposed to a resolved alignment value.
+pub fn resolveAlignmentForwardReference(b: *Builder, fwd_ref: Alignment.Lazy, value: Alignment) void {
+    const index = fwd_ref.toFwdRefIndex();
+    b.alignment_forward_references.items[index] = value;
 }
 
 pub fn dump(b: *Builder, io: Io) void {
@@ -10515,7 +10568,7 @@ pub fn print(self: *Builder, w: *Writer) (Writer.Error || Allocator.Error)!void 
                         string: [
                             (std.math.big.int.Const{
                                 .limbs = &([1]std.math.big.Limb{
-                                    std.math.maxInt(std.math.big.Limb),
+                                    maxInt(std.math.big.Limb),
                                 } ** expected_limbs),
                                 .positive = false,
                             }).sizeInBaseUpperBound(10)
@@ -10665,7 +10718,7 @@ fn printEscapedString(slice: []const u8, quotes: QuoteBehavior, w: *Writer) Writ
 fn ensureUnusedGlobalCapacity(self: *Builder, name: StrtabString) Allocator.Error!void {
     try self.strtab_string_map.ensureUnusedCapacity(self.gpa, 1);
     if (name.slice(self)) |id| {
-        const count: usize = comptime std.fmt.count("{d}", .{std.math.maxInt(u32)});
+        const count: usize = comptime std.fmt.count("{d}", .{maxInt(u32)});
         try self.strtab_string_bytes.ensureUnusedCapacity(self.gpa, id.len + count);
     }
     try self.strtab_string_indices.ensureUnusedCapacity(self.gpa, 1);
@@ -13518,7 +13571,7 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
                                 try record.ensureUnusedCapacity(self.gpa, 3);
                                 record.appendAssumeCapacity(1);
                                 record.appendAssumeCapacity(@intFromEnum(kind));
-                                record.appendAssumeCapacity(alignment.toByteUnits() orelse 0);
+                                record.appendAssumeCapacity(alignment.resolve(self).toByteUnits() orelse 0);
                             },
                             .dereferenceable,
                             .dereferenceable_or_null,
