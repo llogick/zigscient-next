@@ -1250,6 +1250,15 @@ pub const ErrorMsg = struct {
     notes: []ErrorMsg = &.{},
     reference_trace_root: AnalUnit.Optional = .none,
 
+    pub fn order(lhs: *const ErrorMsg, rhs: *const ErrorMsg, zcu: *Zcu) std.math.Order {
+        return lhs.src_loc.order(rhs.src_loc, zcu).differ() orelse
+            std.mem.order(u8, lhs.msg, rhs.msg).differ() orelse
+            std.math.order(lhs.notes.len, rhs.notes.len).differ() orelse
+            for (lhs.notes, rhs.notes) |*lhs_note, *rhs_note| {
+                if (order(lhs_note, rhs_note, zcu).differ()) |o| break o;
+            } else .eq;
+    }
+
     pub fn create(
         gpa: Allocator,
         src_loc: LazySrcLoc,
@@ -2724,36 +2733,34 @@ pub const LazySrcLoc = struct {
         };
     }
 
-    /// Used to sort error messages, so that they're printed in a consistent order.
-    /// If an error is returned, a file could not be read in order to resolve a source location.
-    /// In that case, `bad_file_out` is populated, and sorting is impossible.
-    pub fn lessThan(lhs_lazy: LazySrcLoc, rhs_lazy: LazySrcLoc, zcu: *Zcu, bad_file_out: **Zcu.File) File.GetSourceError!bool {
-        const lhs_src = lhs_lazy.upgradeOrLost(zcu) orelse {
+    pub fn order(lhs: LazySrcLoc, rhs: LazySrcLoc, zcu: *Zcu) std.math.Order {
+        const lhs_resolved = lhs.upgradeOrLost(zcu) orelse {
             // LHS source location lost, so should never be referenced. Just sort it to the end.
-            return false;
+            return .gt;
         };
-        const rhs_src = rhs_lazy.upgradeOrLost(zcu) orelse {
+        const rhs_resolved = rhs.upgradeOrLost(zcu) orelse {
             // RHS source location lost, so should never be referenced. Just sort it to the end.
-            return true;
+            return .lt;
         };
-        if (lhs_src.file_scope != rhs_src.file_scope) {
-            const lhs_path = lhs_src.file_scope.path;
-            const rhs_path = rhs_src.file_scope.path;
-            if (lhs_path.root != rhs_path.root) {
-                return @intFromEnum(lhs_path.root) < @intFromEnum(rhs_path.root);
-            }
-            return std.mem.order(u8, lhs_path.sub_path, rhs_path.sub_path).compare(.lt);
+        if (lhs_resolved.file_scope != rhs_resolved.file_scope) {
+            const lhs_path = lhs_resolved.file_scope.path;
+            const rhs_path = rhs_resolved.file_scope.path;
+            return std.math.order(@intFromEnum(lhs_path.root), @intFromEnum(rhs_path.root)).differ() orelse
+                std.mem.order(u8, lhs_path.sub_path, rhs_path.sub_path).differ().?;
         }
-
-        const lhs_span = lhs_src.span(zcu) catch |err| {
-            bad_file_out.* = lhs_src.file_scope;
-            return err;
+        const prev_prot = zcu.comp.io.swapCancelProtection(.blocked);
+        defer _ = zcu.comp.io.swapCancelProtection(prev_prot);
+        const lhs_span = lhs_resolved.span(zcu) catch |err| {
+            assert(err != error.Canceled); // we're protected
+            // Failed to read LHS, so we'll get a transient error. Just sort it to the end.
+            return .gt;
         };
-        const rhs_span = rhs_src.span(zcu) catch |err| {
-            bad_file_out.* = rhs_src.file_scope;
-            return err;
+        const rhs_span = rhs_resolved.span(zcu) catch |err| {
+            assert(err != error.Canceled); // we're protected
+            // Failed to read RHS, so we'll get a transient error. Just sort it to the end.
+            return .lt;
         };
-        return lhs_span.main < rhs_span.main;
+        return std.math.order(lhs_span.main, rhs_span.main);
     }
 };
 

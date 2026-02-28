@@ -4054,21 +4054,12 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
             const SortOrder = struct {
                 zcu: *Zcu,
                 errors: []const *Zcu.ErrorMsg,
-                read_err: *?ReadError,
-                const ReadError = struct {
-                    file: *Zcu.File,
-                    err: Zcu.File.GetSourceError,
-                };
                 pub fn lessThan(ctx: @This(), lhs_index: usize, rhs_index: usize) bool {
-                    if (ctx.read_err.* != null) return lhs_index < rhs_index;
-                    var bad_file: *Zcu.File = undefined;
-                    return ctx.errors[lhs_index].src_loc.lessThan(ctx.errors[rhs_index].src_loc, ctx.zcu, &bad_file) catch |err| {
-                        ctx.read_err.* = .{
-                            .file = bad_file,
-                            .err = err,
-                        };
-                        return lhs_index < rhs_index;
-                    };
+                    return Zcu.ErrorMsg.order(
+                        ctx.errors[lhs_index],
+                        ctx.errors[rhs_index],
+                        ctx.zcu,
+                    ).compare(.lt);
                 }
             };
 
@@ -4078,16 +4069,10 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
             var entries = try zcu.failed_analysis.entries.clone(gpa);
             errdefer entries.deinit(gpa);
 
-            var read_err: ?SortOrder.ReadError = null;
             entries.sort(SortOrder{
                 .zcu = zcu,
                 .errors = entries.items(.value),
-                .read_err = &read_err,
             });
-            if (read_err) |e| {
-                try unableToLoadZcuFile(zcu, &bundle, e.file, e.err);
-                break :zcu_errors;
-            }
             break :s entries.slice();
         };
         defer sorted_failed_analysis.deinit(gpa);
@@ -4208,33 +4193,11 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
 
         // Okay, there *are* referenced compile logs. Sort them into a consistent order.
 
-        {
-            const SortContext = struct {
-                zcu: *Zcu,
-                read_err: *?ReadError,
-                const ReadError = struct {
-                    file: *Zcu.File,
-                    err: Zcu.File.GetSourceError,
-                };
-                fn lessThan(ctx: @This(), lhs: Zcu.ErrorMsg, rhs: Zcu.ErrorMsg) bool {
-                    if (ctx.read_err.* != null) return false;
-                    var bad_file: *Zcu.File = undefined;
-                    return lhs.src_loc.lessThan(rhs.src_loc, ctx.zcu, &bad_file) catch |err| {
-                        ctx.read_err.* = .{
-                            .file = bad_file,
-                            .err = err,
-                        };
-                        return false;
-                    };
-                }
-            };
-            var read_err: ?SortContext.ReadError = null;
-            std.mem.sort(Zcu.ErrorMsg, messages.items, @as(SortContext, .{ .read_err = &read_err, .zcu = zcu }), SortContext.lessThan);
-            if (read_err) |e| {
-                try unableToLoadZcuFile(zcu, &bundle, e.file, e.err);
-                break :compile_log_text "";
+        std.mem.sort(Zcu.ErrorMsg, messages.items, zcu, struct {
+            fn lessThan(zcu_inner: *Zcu, lhs: Zcu.ErrorMsg, rhs: Zcu.ErrorMsg) bool {
+                return Zcu.ErrorMsg.order(&lhs, &rhs, zcu_inner).compare(.lt);
             }
-        }
+        }.lessThan);
 
         var log_text: std.ArrayList(u8) = .empty;
         defer log_text.deinit(gpa);
