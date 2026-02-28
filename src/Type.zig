@@ -3094,7 +3094,7 @@ pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool 
             if (ty.isSlice(zcu)) return false;
             const child_ty = ty.childType(zcu);
             if (child_ty.zigTypeTag(zcu) == .@"fn") {
-                return ty.isConstPtr(zcu) and child_ty.validateExtern(.other, zcu);
+                return ty.isConstPtr(zcu) and validateExternCallconv(child_ty.fnCallingConvention(zcu));
             }
             return true;
         },
@@ -3104,12 +3104,7 @@ pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool 
         },
         .@"fn" => {
             if (position != .other) return false;
-            // For now we want to authorize PTX kernel to use zig objects, even if we end up exposing the ABI.
-            // The goal is to experiment with more integrated CPU/GPU code.
-            if (ty.fnCallingConvention(zcu) == .nvptx_kernel) {
-                return true;
-            }
-            return !target_util.fnCallConvAllowsZigTypes(ty.fnCallingConvention(zcu));
+            return validateExternCallconv(ty.fnCallingConvention(zcu));
         },
         .@"enum" => {
             const enum_obj = zcu.intern_pool.loadEnumType(ty.toIntern());
@@ -3153,6 +3148,14 @@ pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool 
         },
         .vector => ty.childType(zcu).validateExtern(.element, zcu),
         .optional => ty.isPtrLikeOptional(zcu),
+    };
+}
+fn validateExternCallconv(cc: std.builtin.CallingConvention) bool {
+    return switch (cc) {
+        // For now we want to authorize PTX kernel to use zig objects, even if we end up exposing the ABI.
+        // The goal is to experiment with more integrated CPU/GPU code.
+        .nvptx_kernel => true,
+        else => !target_util.fnCallConvAllowsZigTypes(cc),
     };
 }
 
