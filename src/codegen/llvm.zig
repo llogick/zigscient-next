@@ -3436,9 +3436,9 @@ pub const Object = struct {
         }
 
         if (fn_info.cc == .auto and zcu.comp.config.any_error_tracing) {
-            const stack_trace_ty = zcu.builtin_decl_values.get(.StackTrace);
-            const ptr_ty = try pt.ptrType(.{ .child = stack_trace_ty });
-            try llvm_params.append(o.gpa, try o.lowerType(pt, ptr_ty));
+            // First parameter is a pointer to `std.builtin.StackTrace`.
+            const llvm_ptr_ty = try o.builder.ptrType(toLlvmAddressSpace(.generic, target));
+            try llvm_params.append(o.gpa, llvm_ptr_ty);
         }
 
         var it = iterateParamTypes(o, pt, fn_info);
@@ -6719,16 +6719,11 @@ pub const FuncGen = struct {
         const zcu = pt.zcu;
         const bin_op = self.air.instructions.items(.data)[@intFromEnum(inst)].bin_op;
         const ptr_ty = self.typeOf(bin_op.lhs);
-        const elem_ty = ptr_ty.childType(zcu);
+        const elem_ty = ptr_ty.indexableElem(zcu);
         const llvm_elem_ty = try o.lowerType(pt, elem_ty);
         const base_ptr = try self.resolveInst(bin_op.lhs);
         const rhs = try self.resolveInst(bin_op.rhs);
-        // TODO: when we go fully opaque pointers in LLVM 16 we can remove this branch
-        const ptr = try self.wip.gep(.inbounds, llvm_elem_ty, base_ptr, if (ptr_ty.isSinglePointer(zcu))
-            // If this is a single-item pointer to an array, we need another index in the GEP.
-            &.{ try o.builder.intValue(try o.lowerType(pt, Type.usize), 0), rhs }
-        else
-            &.{rhs}, "");
+        const ptr = try self.wip.gep(.inbounds, llvm_elem_ty, base_ptr, &.{rhs}, "");
         if (isByRef(elem_ty, zcu)) {
             self.maybeMarkAllowZeroAccess(ptr_ty.ptrInfo(zcu));
             const ptr_align = (ptr_ty.ptrAlignment(zcu).min(elem_ty.abiAlignment(zcu))).toLlvm();
@@ -6808,11 +6803,6 @@ pub const FuncGen = struct {
                             const truncated_int =
                                 try self.wip.cast(.trunc, shifted_value, same_size_int, "");
                             return self.wip.cast(.bitcast, truncated_int, elem_llvm_ty, "");
-                        } else if (field_ty.isPtrAtRuntime(zcu)) {
-                            const same_size_int = try o.builder.intType(@intCast(field_ty.bitSize(zcu)));
-                            const truncated_int =
-                                try self.wip.cast(.trunc, shifted_value, same_size_int, "");
-                            return self.wip.cast(.inttoptr, truncated_int, elem_llvm_ty, "");
                         }
                         return self.wip.cast(.trunc, shifted_value, elem_llvm_ty, "");
                     },
@@ -6830,11 +6820,6 @@ pub const FuncGen = struct {
                         const truncated_int =
                             try self.wip.cast(.trunc, containing_int, same_size_int, "");
                         return self.wip.cast(.bitcast, truncated_int, elem_llvm_ty, "");
-                    } else if (field_ty.isPtrAtRuntime(zcu)) {
-                        const same_size_int = try o.builder.intType(@intCast(field_ty.bitSize(zcu)));
-                        const truncated_int =
-                            try self.wip.cast(.trunc, containing_int, same_size_int, "");
-                        return self.wip.cast(.inttoptr, truncated_int, elem_llvm_ty, "");
                     }
                     return self.wip.cast(.trunc, containing_int, elem_llvm_ty, "");
                 },
@@ -10110,7 +10095,7 @@ pub const FuncGen = struct {
         const ip = &zcu.intern_pool;
         const enum_type = ip.loadEnumType(enum_ty.toIntern());
 
-        // TODO: detect when the type changes and re-emit this function.
+        // TODO: detect when the type changes (`updateContainerType` will be called) and re-emit this function
         const gop = try o.named_enum_map.getOrPut(o.gpa, enum_ty.toIntern());
         if (gop.found_existing) return gop.value_ptr.*;
         errdefer assert(o.named_enum_map.remove(enum_ty.toIntern()));
@@ -10728,10 +10713,7 @@ pub const FuncGen = struct {
             const field_ty = Type.fromInterned(union_obj.field_types.get(ip)[extra.field_index]);
             const non_int_val = try self.resolveInst(extra.init);
             const small_int_ty = try o.builder.intType(@intCast(field_ty.bitSize(zcu)));
-            const small_int_val = if (field_ty.isPtrAtRuntime(zcu))
-                try self.wip.cast(.ptrtoint, non_int_val, small_int_ty, "")
-            else
-                try self.wip.cast(.bitcast, non_int_val, small_int_ty, "");
+            const small_int_val = try self.wip.cast(.bitcast, non_int_val, small_int_ty, "");
             return self.wip.conv(.unsigned, small_int_val, int_llvm_ty, "");
         }
 

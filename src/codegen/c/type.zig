@@ -898,13 +898,23 @@ pub const CType = union(enum) {
                     try w.writeAll("fn_"); // intentional double underscore to start
                     for (func_type.param_types.get(ip)) |param_ty_ip| {
                         const param_ty: Type = .fromInterned(param_ty_ip);
-                        try w.print("_P{f}", .{fmtZigType(param_ty, zcu)});
+                        if (param_ty.isGenericPoison()) {
+                            try w.writeAll("_Pgeneric");
+                        } else {
+                            try w.print("_P{f}", .{fmtZigType(param_ty, zcu)});
+                        }
                     }
                     if (func_type.is_var_args) {
                         try w.writeAll("_VA");
                     }
                     const ret_ty: Type = .fromInterned(func_type.return_type);
-                    try w.print("_R{f}", .{fmtZigType(ret_ty, zcu)});
+                    if (ret_ty.isGenericPoison()) {
+                        try w.writeAll("_Rgeneric");
+                    } else if (ret_ty.zigTypeTag(zcu) == .error_union and ret_ty.errorUnionPayload(zcu).isGenericPoison()) {
+                        try w.writeAll("_Rgeneric_ies");
+                    } else {
+                        try w.print("_R{f}", .{fmtZigType(ret_ty, zcu)});
+                    }
                 },
 
                 .vector => try w.print("vec_{d}_{f}", .{

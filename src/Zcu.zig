@@ -2028,9 +2028,15 @@ pub const SrcLoc = struct {
                 const tree = try src_loc.file_scope.getTree(zcu);
                 const node = src_loc.base_node;
                 var buf: [2]Ast.Node.Index = undefined;
-                const container_decl = tree.fullContainerDecl(&buf, node) orelse return tree.nodeToSpan(node);
-                const arg_node = container_decl.ast.arg.unwrap() orelse return tree.nodeToSpan(node);
-                return tree.nodeToSpan(arg_node);
+                if (tree.fullContainerDecl(&buf, node)) |container_decl| {
+                    const arg_node = container_decl.ast.arg.unwrap() orelse return tree.nodeToSpan(node);
+                    return tree.nodeToSpan(arg_node);
+                } else if (tree.builtinCallParams(&buf, node)) |args| {
+                    // Builtin calls (`@Enum` etc) should use the first argument.
+                    return tree.nodeToSpan(if (args.len > 0) args[0] else node);
+                } else {
+                    return tree.nodeToSpan(node);
+                }
             },
             .container_field_name,
             .container_field_value,
@@ -2040,8 +2046,38 @@ pub const SrcLoc = struct {
                 const tree = try src_loc.file_scope.getTree(zcu);
                 const node = src_loc.base_node;
                 var buf: [2]Ast.Node.Index = undefined;
-                const container_decl = tree.fullContainerDecl(&buf, node) orelse
+                const container_decl = tree.fullContainerDecl(&buf, node) orelse {
+                    // This could be a reification builtin. These are the args we care about:
+                    // * `@Enum(_, _, names, values)`
+                    // * `@Struct(_, _, names, types, values_and_aligns)`
+                    // * `@Union(_, _, names, types, aligns)`
+                    if (tree.builtinCallParams(&buf, node)) |args| {
+                        const builtin_name = tree.tokenSlice(tree.firstToken(node));
+                        const arg_index: ?u3 = if (std.mem.eql(u8, builtin_name, "@Enum")) switch (src_loc.lazy) {
+                            .container_field_name => 2,
+                            .container_field_value => 3,
+                            .container_field_type => null,
+                            .container_field_align => null,
+                            else => unreachable,
+                        } else if (std.mem.eql(u8, builtin_name, "@Struct")) switch (src_loc.lazy) {
+                            .container_field_name => 2,
+                            .container_field_value => 4,
+                            .container_field_type => 3,
+                            .container_field_align => 4,
+                            else => unreachable,
+                        } else if (std.mem.eql(u8, builtin_name, "@Union")) switch (src_loc.lazy) {
+                            .container_field_name => 2,
+                            .container_field_value => 4,
+                            .container_field_type => 3,
+                            .container_field_align => null,
+                            else => unreachable,
+                        } else null;
+                        if (arg_index) |i| {
+                            if (args.len >= i) return tree.nodeToSpan(args[i]);
+                        }
+                    }
                     return tree.nodeToSpan(node);
+                };
 
                 var cur_field_idx: usize = 0;
                 for (container_decl.ast.members) |member_node| {

@@ -4180,7 +4180,7 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
             if (!refs.contains(logging_unit)) continue;
             try messages.append(gpa, .{
                 .src_loc = compile_log.src(),
-                .msg = undefined, // populated later
+                .msg = "", // populated later, but must be valid for `sort` call below
                 .notes = &.{},
                 // We actually clear this later for most of these, but we populate
                 // this field for now to avoid having to allocate more data to track
@@ -4221,6 +4221,7 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
 
         break :compile_log_text try log_text.toOwnedSlice(gpa);
     };
+    defer gpa.free(compile_log_text);
 
     // TODO: eventually, this should be behind `std.debug.runtime_safety`. But right now, this is a
     // very common way for incremental compilation bugs to manifest, so let's always check it.

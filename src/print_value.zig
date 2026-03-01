@@ -113,7 +113,7 @@ pub fn print(
                 if (slice.len == .zero_usize) {
                     return writer.writeAll("&.{}");
                 }
-                try print(.fromInterned(slice.ptr), writer, level - 1, pt, opt_sema);
+                try print(.fromInterned(slice.ptr), writer, level, pt, opt_sema);
             } else {
                 const print_contents = switch (ip.getBackingAddrTag(slice.ptr).?) {
                     .field, .arr_elem, .eu_payload, .opt_payload => unreachable,
@@ -170,6 +170,9 @@ pub fn print(
             }
         },
         .bitpack => |bitpack| {
+            if (level == 0) {
+                return writer.writeAll(".{ ... }");
+            }
             const ty: Type = .fromInterned(bitpack.ty);
             switch (ty.zigTypeTag(zcu)) {
                 .@"struct" => {
@@ -464,18 +467,30 @@ pub fn printPtrDerivation(
             .uav_ptr => |uav| {
                 const ty = Value.fromInterned(uav.val).typeOf(zcu);
                 try writer.print("@as({f}, ", .{ty.fmt(pt)});
-                try print(Value.fromInterned(uav.val), writer, x.level - 1, pt, x.opt_sema);
+                if (x.level == 0) {
+                    try writer.writeAll("...");
+                } else {
+                    try print(Value.fromInterned(uav.val), writer, x.level - 1, pt, x.opt_sema);
+                }
                 try writer.writeByte(')');
             },
             .comptime_alloc_ptr => |info| {
                 try writer.print("@as({f}, ", .{info.val.typeOf(zcu).fmt(pt)});
-                try print(info.val, writer, x.level - 1, pt, x.opt_sema);
+                if (x.level == 0) {
+                    try writer.writeAll("...");
+                } else {
+                    try print(info.val, writer, x.level - 1, pt, x.opt_sema);
+                }
                 try writer.writeByte(')');
             },
             .comptime_field_ptr => |val| {
                 const ty = val.typeOf(zcu);
                 try writer.print("@as({f}, ", .{ty.fmt(pt)});
-                try print(val, writer, x.level - 1, pt, x.opt_sema);
+                if (x.level == 0) {
+                    try writer.writeAll("...");
+                } else {
+                    try print(val, writer, x.level - 1, pt, x.opt_sema);
+                }
                 try writer.writeByte(')');
             },
             else => unreachable,

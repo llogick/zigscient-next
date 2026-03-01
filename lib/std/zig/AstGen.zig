@@ -5513,6 +5513,11 @@ fn containerDecl(
                     if (next_field_idx != fields_len) {
                         return astgen.failNode(member_node, "'_' field of non-exhaustive enum must be last", .{});
                     }
+                    if (tag_type_body_len == null) {
+                        return astgen.failNodeNotes(node, "non-exhaustive enum missing integer tag type", .{}, &.{
+                            try astgen.errNoteNode(member_node, "marked non-exhaustive here", .{}),
+                        });
+                    }
                     opt_nonexhaustive_node = member_node.toOptional();
                     continue;
                 }

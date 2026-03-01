@@ -2252,6 +2252,12 @@ pub const WipNav = struct {
                     .generic_decl_const,
                     .generic_decl_func,
                     => true,
+
+                    // This comes from a decl which was previously generated as an incomplete value
+                    // (I think that must mean either a function or an extern which previously had
+                    // incomplete types).
+                    .undefined_comptime_value => false,
+
                     else => |t| std.debug.panic("bad decl abbrev code: {t}", .{t}),
                 };
             if (parent_type.getCaptures(zcu).len == 0) {

@@ -416,7 +416,7 @@ pub const Block = struct {
         return block.comptime_reason != null;
     }
 
-    fn builtinCallArgSrc(block: *Block, builtin_call_node: std.zig.Ast.Node.Offset, arg_index: u32) LazySrcLoc {
+    pub fn builtinCallArgSrc(block: *Block, builtin_call_node: std.zig.Ast.Node.Offset, arg_index: u32) LazySrcLoc {
         return block.src(.{ .node_offset_builtin_call_arg = .{
             .builtin_call_node = builtin_call_node,
             .arg_index = arg_index,
@@ -4654,45 +4654,12 @@ fn zirValidateDeref(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErr
         .slice => return sema.fail(block, src, "index syntax required for slice type '{f}'", .{operand_ty.fmt(pt)}),
     }
 
-    const elem_ty = operand_ty.childType(zcu);
-    try sema.ensureLayoutResolved(elem_ty, src, .ptr_access);
-
-    const need_comptime = switch (elem_ty.classify(zcu)) {
-        .no_possible_value => return sema.fail(block, src, "cannot load {s} type '{f}'", .{
-            if (elem_ty.zigTypeTag(zcu) == .@"opaque") "opaque" else "uninstantiable",
-            elem_ty.fmt(pt),
-        }),
-        .one_possible_value => return, // no need to validate the actual pointer value!
-        .runtime => false,
-        .partially_comptime, .fully_comptime => true,
-    };
-
     if (sema.resolveValue(operand)) |val| {
-        if (val.isUndef(zcu)) {
+        // Error for deref of undef pointer, unless the pointee is OPV in which case it's legal.
+        if (val.isUndef(zcu) and operand_ty.childType(zcu).classify(zcu) != .one_possible_value) {
             return sema.fail(block, src, "cannot dereference undefined value", .{});
         }
-    } else if (need_comptime) {
-        const msg = msg: {
-            const msg = try sema.errMsg(
-                src,
-                "values of type '{f}' must be comptime-known, but operand value is runtime-known",
-                .{elem_ty.fmt(pt)},
-            );
-            errdefer msg.destroy(sema.gpa);
-
-            try sema.explainWhyTypeIsComptime(msg, src, elem_ty);
-            break :msg msg;
-        };
-        return sema.failWithOwnedErrorMsg(block, msg);
     }
-}
-
-fn typeIsDestructurable(ty: Type, zcu: *const Zcu) bool {
-    return switch (ty.zigTypeTag(zcu)) {
-        .array, .vector => true,
-        .@"struct" => ty.isTuple(zcu),
-        else => false,
-    };
 }
 
 fn zirValidateDestructure(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void {
@@ -4705,14 +4672,14 @@ fn zirValidateDestructure(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
     const operand = sema.resolveInst(extra.operand);
     const operand_ty = sema.typeOf(operand);
 
-    if (!typeIsDestructurable(operand_ty, zcu)) {
+    if (!operand_ty.destructurable(zcu)) {
         return sema.failWithOwnedErrorMsg(block, msg: {
             const msg = try sema.errMsg(src, "type '{f}' cannot be destructured", .{operand_ty.fmt(pt)});
             errdefer msg.destroy(sema.gpa);
             try sema.errNote(destructure_src, msg, "result destructured here", .{});
             if (operand_ty.zigTypeTag(pt.zcu) == .error_union) {
                 const base_op_ty = operand_ty.errorUnionPayload(zcu);
-                if (typeIsDestructurable(base_op_ty, zcu))
+                if (base_op_ty.destructurable(zcu))
                     try sema.errNote(src, msg, "consider using 'try', 'catch', or 'if'", .{});
             }
             break :msg msg;
@@ -8247,8 +8214,15 @@ fn zirOptionalPayload(
         else => return sema.failWithExpectedOptionalType(block, src, operand_ty),
     };
 
-    if (try sema.resolveDefinedValue(block, src, operand)) |val| {
-        if (val.optionalValue(zcu)) |payload| return Air.internedToRef(payload.toIntern());
+    ct: {
+        if (try sema.resolveDefinedValue(block, src, operand)) |val| {
+            if (val.optionalValue(zcu)) |payload| return .fromValue(payload); // comptime-known payload
+        } else if (try sema.resolveIsNullFromType(block, src, operand_ty)) |is_null| {
+            if (!is_null) break :ct; // fully runtime-known
+        } else {
+            break :ct; // fully runtime-known
+        }
+        // Comptime-known to be `null`.
         if (block.isComptime()) return sema.fail(block, src, "unable to unwrap null", .{});
         if (safety_check and block.wantSafety()) {
             try sema.safetyPanic(block, src, .unwrap_null);
@@ -21085,7 +21059,8 @@ fn zirErrorCast(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData
                 continue :check ip.funcIesResolvedUnordered(func_index);
             },
             .error_set_type => |dest| {
-                if (operand_err_ty.isAnyError(zcu)) break :check .superset;
+                if (dest.names.len == 0) break :check .disjoint; // dest is 'error{}'
+                if (operand_err_ty.isAnyError(zcu)) break :check .overlap; // anyerror -> error{...} (non-empty)
                 var dest_has_all = true;
                 var dest_has_any = false;
                 for (operand_err_ty.errorSetNames(zcu).get(ip)) |operand_err_name| {
@@ -24741,15 +24716,30 @@ fn zirBuiltinExtern(
     const ty_src = block.builtinCallArgSrc(extra.node, 0);
     const options_src = block.builtinCallArgSrc(extra.node, 1);
 
-    var ty = try sema.resolveType(block, ty_src, extra.lhs);
-    if (!ty.isPtrAtRuntime(zcu)) {
+    const ptr_ty = try sema.resolveType(block, ty_src, extra.lhs);
+    if (!ptr_ty.isPtrAtRuntime(zcu)) {
         return sema.fail(block, ty_src, "expected (optional) pointer", .{});
     }
-    if (!ty.validateExtern(.other, zcu)) {
+
+    const ptr_info = ptr_ty.ptrInfo(zcu);
+
+    const elem_ty: Type = .fromInterned(ptr_info.child);
+    try sema.ensureLayoutResolved(elem_ty, src, .@"extern");
+
+    if (!elem_ty.validateExtern(.other, zcu)) {
         return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(ty_src, "extern symbol cannot have type '{f}'", .{ty.fmt(pt)});
+            const msg = try sema.errMsg(ty_src, "extern symbol cannot have type '{f}'", .{ptr_ty.fmt(pt)});
             errdefer msg.destroy(sema.gpa);
-            try sema.explainWhyTypeIsNotExtern(msg, ty_src, ty, .other);
+            try sema.errNote(ty_src, msg, "pointer element type '{f}' is not extern compatible", .{elem_ty.fmt(pt)});
+            try sema.explainWhyTypeIsNotExtern(msg, ty_src, elem_ty, .other);
+            break :msg msg;
+        });
+    }
+    if (elem_ty.zigTypeTag(zcu) == .@"fn" and !ptr_info.flags.is_const) {
+        return sema.failWithOwnedErrorMsg(block, msg: {
+            const msg = try sema.errMsg(ty_src, "extern symbol cannot have type '{f}'", .{ptr_ty.fmt(pt)});
+            errdefer msg.destroy(sema.gpa);
+            try sema.errNote(ty_src, msg, "pointer to extern function must be 'const'", .{});
             break :msg msg;
         });
     }
@@ -24769,14 +24759,9 @@ fn zirBuiltinExtern(
 
     // TODO: error for threadlocal functions, non-const functions, etc
 
-    if (options.linkage == .weak and !ty.ptrAllowsZero(zcu)) {
-        ty = try pt.optionalType(ty.toIntern());
-    }
-    const ptr_info = ty.ptrInfo(zcu);
-
     const extern_val = try pt.getExtern(.{
         .name = options.name,
-        .ty = ptr_info.child,
+        .ty = elem_ty.toIntern(),
         .lib_name = options.library_name,
         .linkage = options.linkage,
         .visibility = options.visibility,
@@ -24807,13 +24792,17 @@ fn zirBuiltinExtern(
         .source = .builtin,
     });
 
+    // For a weak symbol where the given type is not nullable, make the pointer optional.
+    const result_ptr_ty: Type = if (options.linkage == .weak and !ptr_ty.ptrAllowsZero(zcu)) ty: {
+        break :ty try pt.optionalType(ptr_ty.toIntern());
+    } else ptr_ty;
+
     const uncasted_ptr = try sema.analyzeNavRef(block, src, ip.indexToKey(extern_val).@"extern".owner_nav);
-    // We want to cast to `ty`, but that isn't necessarily an allowed coercion.
     if (sema.resolveValue(uncasted_ptr)) |uncasted_ptr_val| {
-        const casted_ptr_val = try pt.getCoerced(uncasted_ptr_val, ty);
+        const casted_ptr_val = try pt.getCoerced(uncasted_ptr_val, result_ptr_ty);
         return Air.internedToRef(casted_ptr_val.toIntern());
     } else {
-        return block.addBitCast(ty, uncasted_ptr);
+        return block.addBitCast(result_ptr_ty, uncasted_ptr);
     }
 }
 
@@ -25258,6 +25247,7 @@ pub fn explainWhyTypeIsUnpackable(
             try sema.errNote(src, msg, "non-packed unions do not have a bit-packed representation", .{});
             try sema.addDeclaredHereNote(msg, union_ty);
         },
+        .slice => try sema.errNote(src, msg, "slices do not have a bit-packed representation", .{}),
         .other => try sema.errNote(src, msg, "type does not have a bit-packed representation", .{}),
     }
 }
@@ -25501,7 +25491,10 @@ fn addSafetyCheckSentinelMismatch(
     };
     assert(sema.typeOf(actual_sentinel).toIntern() == sentinel_ty.toIntern());
     assert(sentinel_ty.isSelfComparable(zcu, true));
-    const ok = try parent_block.addBinOp(.cmp_eq, expected_sentinel, actual_sentinel);
+    const ok: Air.Inst.Ref = if (sentinel_ty.zigTypeTag(zcu) == .vector) ok: {
+        const elementwise = try parent_block.addCmpVector(expected_sentinel, actual_sentinel, .eq);
+        break :ok try parent_block.addReduce(elementwise, .And);
+    } else try parent_block.addBinOp(.cmp_eq, expected_sentinel, actual_sentinel);
 
     return addSafetyCheckCall(sema, parent_block, src, ok, .@"panic.sentinelMismatch", &.{
         expected_sentinel, actual_sentinel,
@@ -26574,8 +26567,13 @@ fn unionFieldVal(
                 const active_tag_val = union_val.unionTag(zcu).?;
                 const active_index = enum_tag_ty.enumTagFieldIndex(active_tag_val, zcu).?;
                 if (active_index == field_index) return .fromValue(union_val.unionPayload(zcu));
-                return sema.fail(block, src, "access of union field '{f}' while field '{f}' is active", .{
-                    field_name.fmt(ip), enum_tag_ty.enumFieldName(active_index, zcu).fmt(ip),
+                return sema.failWithOwnedErrorMsg(block, msg: {
+                    const msg = try sema.errMsg(src, "access of union field '{f}' while field '{f}' is active", .{
+                        field_name.fmt(ip), enum_tag_ty.enumFieldName(active_index, zcu).fmt(ip),
+                    });
+                    errdefer msg.destroy(zcu.comp.gpa);
+                    try sema.addDeclaredHereNote(msg, union_ty);
+                    break :msg msg;
                 });
             },
             .@"extern" => if (try sema.bitCastVal(union_val, field_ty, 0, 0, 0)) |field_val| {
@@ -26745,9 +26743,17 @@ fn elemVal(
                         return sema.analyzeLoad(block, src, .fromValue(elem_ptr_val), indexable_src);
                     }
 
-                    if (try child_ty.onePossibleValue(pt)) |opv| return .fromValue(opv);
+                    try sema.validateRuntimeElemAccess(block, elem_index_src, child_ty, indexable_ty, src);
+                    switch (child_ty.classify(zcu)) {
+                        .runtime => {},
+                        .one_possible_value => return .fromValue((try child_ty.onePossibleValue(pt)).?),
+                        .no_possible_value => switch (child_ty.zigTypeTag(zcu)) {
+                            .@"opaque" => return sema.fail(block, src, "cannot load opaque type '{f}'", .{child_ty.fmt(pt)}),
+                            else => return sema.fail(block, src, "cannot load uninstantiable type '{f}'", .{child_ty.fmt(pt)}),
+                        },
+                        .partially_comptime, .fully_comptime => unreachable, // caught by `validateRuntimeElemAccess`
+                    }
 
-                    try sema.checkLogicalPtrOperation(block, src, indexable_ty);
                     return block.addBinOp(.ptr_elem_val, indexable, elem_index);
                 },
                 .one => {
@@ -29082,31 +29088,6 @@ fn storePtr2(
 
     const elem_ty = ptr_ty.childType(zcu);
 
-    // To generate better code for tuples, we detect a tuple operand here, and
-    // analyze field loads and stores directly. This avoids an extra allocation + memcpy
-    // which would occur if we used `coerce`.
-    // However, we avoid this mechanism if the destination element type is a tuple,
-    // because the regular store will be better for this case.
-    // If the destination type is a struct we don't want this mechanism to trigger, because
-    // this code does not handle tuple-to-struct coercion which requires dealing with missing
-    // fields.
-    const operand_ty = sema.typeOf(uncasted_operand);
-    if (operand_ty.isTuple(zcu) and elem_ty.zigTypeTag(zcu) == .array) {
-        const field_count = operand_ty.structFieldCount(zcu);
-        var i: u32 = 0;
-        while (i < field_count) : (i += 1) {
-            const elem_src = operand_src; // TODO better source location
-            const elem = try sema.tupleField(block, operand_src, uncasted_operand, elem_src, i);
-            const elem_index = try pt.intRef(.usize, i);
-            const elem_ptr = try sema.elemPtr(block, ptr_src, ptr, elem_index, elem_src, false, true);
-            try sema.storePtr2(block, src, elem_ptr, elem_src, elem, elem_src, .store);
-        }
-        return;
-    }
-
-    // TODO do the same thing for anon structs as for tuples above.
-    // However, beware of the need to handle missing/extra fields.
-
     const is_ret = air_tag == .ret_ptr;
 
     const operand = sema.coerceExtra(block, elem_ty, uncasted_operand, operand_src, .{ .is_ret = is_ret }) catch |err| switch (err) {
@@ -29129,16 +29110,13 @@ fn storePtr2(
         return sema.storePtrVal(block, src, ptr_val, operand_val, elem_ty);
     };
 
-    // We're performing the store at runtime; as such, we need to make sure the pointee type
-    // is not comptime-only. We can hit this case with a `@ptrFromInt` pointer.
-    if (comptime_only) {
-        return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(src, "cannot store comptime-only type '{f}' at runtime", .{elem_ty.fmt(pt)});
-            errdefer msg.destroy(sema.gpa);
-            try sema.errNote(ptr_src, msg, "operation is runtime due to this pointer", .{});
-            break :msg msg;
-        });
-    }
+    // We're performing the store at runtime, so the pointee type must not be comptime-only.
+    if (comptime_only) return sema.failWithOwnedErrorMsg(block, msg: {
+        const msg = try sema.errMsg(src, "cannot store comptime-only type '{f}' at runtime", .{elem_ty.fmt(pt)});
+        errdefer msg.destroy(sema.gpa);
+        try sema.errNote(ptr_src, msg, "operation is runtime due to this pointer", .{});
+        break :msg msg;
+    });
 
     try sema.requireRuntimeBlock(block, src, runtime_src);
 
@@ -29556,7 +29534,10 @@ fn coerceEnumToUnion(
         return sema.failWithOwnedErrorMsg(block, msg);
     }
 
-    if (union_ty.unionHasAllZeroBitFieldTypes(zcu)) {
+    for (union_obj.field_types.get(ip)) |field_ty_ip| {
+        if (Type.fromInterned(field_ty_ip).classify(zcu) != .one_possible_value) break;
+    } else {
+        // All fields are OPV, so the coercion is okay.
         if (try union_ty.onePossibleValue(pt)) |opv| {
             // The tag had redundant bits, but we've omitted the tag from the union's runtime layout, so the union is OPV and hence runtime-known.
             return .fromValue(opv);
@@ -29565,6 +29546,8 @@ fn coerceEnumToUnion(
             return block.addBitCast(union_ty, enum_tag);
         }
     }
+
+    // The coercion is invalid because one or more fields is not OPV.
 
     const msg = msg: {
         const msg = try sema.errMsg(
@@ -30186,12 +30169,18 @@ fn analyzeLoad(
         .pointer => ptr_ty.childType(zcu),
         else => return sema.fail(block, ptr_src, "expected pointer, found '{f}'", .{ptr_ty.fmt(pt)}),
     };
-    if (elem_ty.zigTypeTag(zcu) == .@"opaque") {
-        return sema.fail(block, ptr_src, "cannot load opaque type '{f}'", .{elem_ty.fmt(pt)});
-    }
 
     try sema.ensureLayoutResolved(elem_ty, src, .ptr_access);
-    if (try elem_ty.onePossibleValue(pt)) |opv| return .fromValue(opv);
+
+    const comptime_only = switch (elem_ty.classify(zcu)) {
+        .no_possible_value => switch (elem_ty.zigTypeTag(zcu)) {
+            .@"opaque" => return sema.fail(block, src, "cannot load opaque type '{f}'", .{elem_ty.fmt(pt)}),
+            else => return sema.fail(block, src, "cannot load uninstantiable type '{f}'", .{elem_ty.fmt(pt)}),
+        },
+        .one_possible_value => return .fromValue((try elem_ty.onePossibleValue(pt)).?),
+        .runtime => false,
+        .partially_comptime, .fully_comptime => true,
+    };
 
     if (try sema.resolveDefinedValue(block, ptr_src, ptr)) |ptr_val| {
         if (try sema.pointerDeref(block, src, ptr_val, ptr_ty)) |elem_val| {
@@ -30199,7 +30188,7 @@ fn analyzeLoad(
         }
     }
 
-    if (elem_ty.comptimeOnly(zcu)) return sema.failWithOwnedErrorMsg(block, msg: {
+    if (comptime_only) return sema.failWithOwnedErrorMsg(block, msg: {
         const msg = try sema.errMsg(src, "cannot load comptime-only type '{f}'", .{elem_ty.fmt(pt)});
         errdefer msg.destroy(zcu.gpa);
         try sema.errNote(ptr_src, msg, "pointer of type '{f}' is runtime-known", .{ptr_ty.fmt(pt)});

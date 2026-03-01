@@ -2985,12 +2985,21 @@ pub fn containerTypeName(ty: Type, ip: *const InternPool) InternPool.NullTermina
     };
 }
 
+pub fn destructurable(ty: Type, zcu: *const Zcu) bool {
+    return switch (ty.zigTypeTag(zcu)) {
+        .array, .vector => true,
+        .@"struct" => ty.isTuple(zcu),
+        else => false,
+    };
+}
+
 pub const UnpackableReason = union(enum) {
     comptime_only,
     pointer,
     enum_inferred_int_tag: Type,
     non_packed_struct: Type,
     non_packed_union: Type,
+    slice,
     other,
 };
 
@@ -3027,7 +3036,10 @@ pub fn unpackable(ty: Type, zcu: *const Zcu) ?UnpackableReason {
         else
             .other,
 
-        .pointer => .pointer,
+        .pointer => switch (ty.ptrSize(zcu)) {
+            .slice => .slice,
+            .one, .many, .c => .pointer,
+        },
 
         .@"enum" => switch (zcu.intern_pool.loadEnumType(ty.toIntern()).int_tag_mode) {
             .explicit => null,

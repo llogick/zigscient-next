@@ -33,6 +33,7 @@ pub const LayoutResolveReason = enum {
     align_check,
     bit_ptr_child,
     @"export",
+    @"extern",
     builtin_type,
 
     /// Written after string: "while resolving type 'T' "
@@ -58,6 +59,7 @@ pub const LayoutResolveReason = enum {
             .align_check   => "for alignment check here",
             .bit_ptr_child => "for bit size check here",
             .@"export"     => "for export here",
+            .@"extern"     => "for extern declaration here",
             .builtin_type  => "from 'std.builtin'",
             // zig fmt: on
         };
@@ -198,7 +200,7 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
             const name = struct_obj.field_names.get(ip)[field_index];
             if (ip.addFieldName(struct_obj.field_names, struct_obj.field_name_map, name)) |prev_field_index| {
                 return sema.failWithOwnedErrorMsg(&block, msg: {
-                    const src = block.nodeOffset(.zero);
+                    const src = block.builtinCallArgSrc(.zero, 2);
                     const msg = try sema.errMsg(src, "duplicate struct field '{f}' at index '{d}", .{ name.fmt(ip), field_index });
                     errdefer msg.destroy(gpa);
                     try sema.errNote(src, msg, "previous field at index '{d}'", .{prev_field_index});
@@ -494,20 +496,22 @@ fn resolvePackedStructLayout(
 
     // Finally, either validate or infer the backing int type.
     const backing_int_ty: Type = if (explicit_backing_int_ty) |backing_ty| ty: {
-        // We only need to validate the type.
-        if (backing_ty.zigTypeTag(zcu) != .int) return sema.failWithOwnedErrorMsg(block, msg: {
-            const src = struct_ty.srcLoc(zcu);
-            const msg = try sema.errMsg(src, "expected backing integer type, found '{f}'", .{backing_ty.fmt(pt)});
-            errdefer msg.destroy(gpa);
-            try sema.errNote(src, msg, "backing integer '{f}' has bit width '{d}'", .{ backing_ty.fmt(pt), backing_ty.bitSize(zcu) });
-            try sema.errNote(src, msg, "struct fields have total bit width '{d}'", .{field_bits});
-            break :msg msg;
-        });
+        if (backing_ty.zigTypeTag(zcu) != .int) return sema.fail(
+            block,
+            block.src(.container_arg),
+            "expected backing integer type, found '{f}'",
+            .{backing_ty.fmt(pt)},
+        );
         if (field_bits != backing_ty.intInfo(zcu).bits) return sema.failWithOwnedErrorMsg(block, msg: {
             const src = struct_ty.srcLoc(zcu);
             const msg = try sema.errMsg(src, "backing integer bit width does not match total bit width of fields", .{});
             errdefer msg.destroy(gpa);
-            try sema.errNote(src, msg, "backing integer '{f}' has bit width '{d}'", .{ backing_ty.fmt(pt), backing_ty.bitSize(zcu) });
+            try sema.errNote(
+                block.src(.container_arg),
+                msg,
+                "backing integer '{f}' has bit width '{d}'",
+                .{ backing_ty.fmt(pt), backing_ty.bitSize(zcu) },
+            );
             try sema.errNote(src, msg, "struct fields have total bit width '{d}'", .{field_bits});
             break :msg msg;
         });
@@ -1033,7 +1037,6 @@ fn resolvePackedUnionLayout(
             const msg = try sema.errMsg(field_ty_src, "packed unions cannot contain fields of type '{f}'", .{field_ty.fmt(pt)});
             errdefer msg.destroy(gpa);
             try sema.explainWhyTypeIsUnpackable(msg, field_ty_src, reason);
-            try sema.addDeclaredHereNote(msg, field_ty);
             break :msg msg;
         });
         assert(!field_ty.comptimeOnly(zcu)); // packable types are not comptime-only
@@ -1062,6 +1065,12 @@ fn resolvePackedUnionLayout(
 
     // Finally, either validate or infer the backing int type.
     const backing_int_ty: Type = if (explicit_backing_int_ty) |backing_ty| ty: {
+        if (backing_ty.zigTypeTag(zcu) != .int) return sema.fail(
+            block,
+            block.src(.container_arg),
+            "expected backing integer type, found '{f}'",
+            .{backing_ty.fmt(pt)},
+        );
         const backing_int_bits = backing_ty.intInfo(zcu).bits;
         for (union_obj.field_types.get(ip), 0..) |field_type_ip, field_idx| {
             const field_type: Type = .fromInterned(field_type_ip);
@@ -1071,7 +1080,12 @@ fn resolvePackedUnionLayout(
                 const msg = try sema.errMsg(field_ty_src, "field bit width does not match backing integer", .{});
                 errdefer msg.destroy(gpa);
                 try sema.errNote(field_ty_src, msg, "field type '{f}' has bit width '{d}'", .{ field_type.fmt(pt), field_bits });
-                try sema.errNote(field_ty_src, msg, "backing integer '{f}' has bit width '{d}'", .{ backing_ty.fmt(pt), backing_int_bits });
+                try sema.errNote(
+                    block.src(.container_arg),
+                    msg,
+                    "backing integer '{f}' has bit width '{d}'",
+                    .{ backing_ty.fmt(pt), backing_int_bits },
+                );
                 try sema.errNote(field_ty_src, msg, "all fields in a packed union must have the same bit width", .{});
                 break :msg msg;
             });
@@ -1157,7 +1171,7 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
                 const name = enum_obj.field_names.get(ip)[field_index];
                 if (ip.addFieldName(enum_obj.field_names, enum_obj.field_name_map, name)) |prev_field_index| {
                     return sema.failWithOwnedErrorMsg(&block, msg: {
-                        const src = block.nodeOffset(.zero);
+                        const src = block.builtinCallArgSrc(.zero, 2);
                         const msg = try sema.errMsg(src, "duplicate union field '{f}' at index '{d}", .{ name.fmt(ip), field_index });
                         errdefer msg.destroy(gpa);
                         try sema.errNote(src, msg, "previous field at index '{d}'", .{prev_field_index});
@@ -1183,8 +1197,8 @@ pub fn resolveEnumLayout(sema: *Sema, enum_ty: Type) CompileError!void {
                 const name = enum_obj.field_names.get(ip)[field_index];
                 if (ip.addFieldName(enum_obj.field_names, enum_obj.field_name_map, name)) |prev_field_index| {
                     return sema.failWithOwnedErrorMsg(&block, msg: {
-                        const src = block.nodeOffset(.zero);
-                        const msg = try sema.errMsg(src, "duplicate enum field '{f}' at index '{d}", .{ name.fmt(ip), field_index });
+                        const src = block.builtinCallArgSrc(.zero, 2);
+                        const msg = try sema.errMsg(src, "duplicate enum field '{f}' at index '{d}'", .{ name.fmt(ip), field_index });
                         errdefer msg.destroy(gpa);
                         try sema.errNote(src, msg, "previous field at index '{d}'", .{prev_field_index});
                         break :msg msg;

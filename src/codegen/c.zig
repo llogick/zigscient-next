@@ -2112,7 +2112,7 @@ pub fn genTagNameFn(
     const loaded_enum = ip.loadEnumType(enum_ty.toIntern());
     assert(loaded_enum.field_names.len > 0);
     if (Type.fromInterned(loaded_enum.int_tag_type).bitSize(zcu) > 64) {
-        @panic("TODO CBE: tagName for enum over 128 bits");
+        @panic("TODO CBE: tagName for enum over 64 bits");
     }
 
     try w.print("static {s} zig_tagName_{f}__{d}({s} tag) {{\n", .{
@@ -2130,10 +2130,10 @@ pub fn genTagNameFn(
     try w.writeAll(" switch (tag) {\n");
     const field_values = loaded_enum.field_values.get(ip);
     for (loaded_enum.field_names.get(ip), 0..) |field_name, field_index| {
-        const field_int: u64 = int: {
+        const field_int: i65 = int: {
             if (field_values.len == 0) break :int field_index;
             const field_val: Value = .fromInterned(field_values[field_index]);
-            break :int field_val.toUnsignedInt(zcu);
+            break :int field_val.getUnsignedInt(zcu) orelse field_val.toSignedInt(zcu);
         };
         try w.print("  case {d}: return ({s}){{name{d},{d}}};\n", .{
             field_int,
@@ -3278,7 +3278,10 @@ fn airIntCast(f: *Function, inst: Air.Inst.Index) !CValue {
     const operand_ty = f.typeOf(ty_op.operand);
     const scalar_ty = operand_ty.scalarType(zcu);
 
-    if (f.dg.intCastIsNoop(inst_scalar_ty, scalar_ty)) return f.moveCValue(inst, inst_ty, operand);
+    // `intCastIsNoop` doesn't apply to vectors because every vector lowers to a different C struct.
+    if (inst_ty.zigTypeTag(zcu) != .vector and f.dg.intCastIsNoop(inst_scalar_ty, scalar_ty)) {
+        return f.moveCValue(inst, inst_ty, operand);
+    }
 
     const w = &f.code.writer;
     const local = try f.allocLocal(inst, inst_ty);
@@ -3491,6 +3494,8 @@ fn airOverflow(f: *Function, inst: Air.Inst.Index, operation: []const u8, info: 
     const operand_ty = f.typeOf(bin_op.lhs);
     const scalar_ty = operand_ty.scalarType(zcu);
 
+    const ref_arg = lowersToBigInt(scalar_ty, zcu);
+
     const w = &f.code.writer;
     const local = try f.allocLocal(inst, inst_ty);
     const v = try Vectorize.start(f, inst, w, operand_ty);
@@ -3504,9 +3509,11 @@ fn airOverflow(f: *Function, inst: Air.Inst.Index, operation: []const u8, info: 
     try f.writeCValueMember(w, local, .{ .field = 0 });
     try v.elem(f, w);
     try w.writeAll(", ");
+    if (ref_arg) try w.writeByte('&');
     try f.writeCValue(w, lhs, .other);
     try v.elem(f, w);
     try w.writeAll(", ");
+    if (ref_arg) try w.writeByte('&');
     try f.writeCValue(w, rhs, .other);
     if (f.typeOf(bin_op.rhs).isVector(zcu)) try v.elem(f, w);
     try f.dg.renderBuiltinInfo(w, scalar_ty, info);

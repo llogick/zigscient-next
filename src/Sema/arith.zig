@@ -20,6 +20,9 @@ pub fn incrementDefinedInt(
     const zcu = pt.zcu;
     assert(prev_val.typeOf(zcu).toIntern() == ty.toIntern());
     assert(!prev_val.isUndef(zcu));
+    if (ty.intInfo(zcu).bits == 0) {
+        return .{ .overflow = true, .val = try comptimeIntAdd(sema, prev_val, .one_comptime_int) };
+    }
     const res = try intAdd(sema, prev_val, try pt.intValue(ty, 1), ty);
     return .{ .overflow = res.overflow, .val = res.val };
 }

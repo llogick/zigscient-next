@@ -2176,6 +2176,9 @@ fn analyzeNavType(
     return .{ .type_changed = true };
 }
 
+/// If `func_index` is not a runtime function (e.g. it has a comptime-only parameter type) then it
+/// is still valid to call this function and use its `func_body` unit in general---analysis of the
+/// runtime function body will simply fail.
 pub fn ensureFuncBodyUpToDate(
     pt: Zcu.PerThread,
     func_index: InternPool.Index,
@@ -2277,29 +2280,6 @@ fn analyzeFuncBody(
 
     const func = zcu.funcInfo(func_index);
     const anal_unit = AnalUnit.wrap(.{ .func = func_index });
-
-    // Make sure that this function is still owned by the same `Nav`. Otherwise, analyzing
-    // it would be a waste of time in the best case, and could cause codegen to give bogus
-    // results in the worst case.
-
-    if (func.generic_owner == .none) {
-        // Among another things, this ensures that the function's `zir_body_inst` is correct.
-        try pt.ensureNavValUpToDate(func.owner_nav, reason);
-        if (ip.getNav(func.owner_nav).status.fully_resolved.val != func_index) {
-            // This function is no longer referenced! There's no point in re-analyzing it.
-            // Just mark a transitive failure and move on.
-            return error.AnalysisFail;
-        }
-    } else {
-        const go_nav = zcu.funcInfo(func.generic_owner).owner_nav;
-        // Among another things, this ensures that the function's `zir_body_inst` is correct.
-        try pt.ensureNavValUpToDate(go_nav, reason);
-        if (ip.getNav(go_nav).status.fully_resolved.val != func.generic_owner) {
-            // The generic owner is no longer referenced, so this function is also unreferenced.
-            // There's no point in re-analyzing it. Just mark a transitive failure and move on.
-            return error.AnalysisFail;
-        }
-    }
 
     // We'll want to remember what the IES used to be before the update for
     // dependency invalidation purposes.
@@ -3263,28 +3243,24 @@ fn analyzeFuncBodyInner(
 
     const anal_unit = AnalUnit.wrap(.{ .func = func_index });
     const func = zcu.funcInfo(func_index);
-    const inst_info = func.zir_body_inst.resolveFull(ip) orelse return error.AnalysisFail;
-    const file = zcu.fileByIndex(inst_info.file);
+
+    // This is the `Nav` corresponding to the `declaration` instruction which the function or its generic owner originates from.
+    const decl_analysis = if (func.generic_owner == .none)
+        ip.getNav(func.owner_nav).analysis.?
+    else
+        ip.getNav(zcu.funcInfo(func.generic_owner).owner_nav).analysis.?;
+
+    const file = zcu.fileByIndex(decl_analysis.zir_index.resolveFile(ip));
     const zir = file.zir.?;
 
     try zcu.analysis_in_progress.putNoClobber(gpa, anal_unit, reason);
     defer assert(zcu.analysis_in_progress.swapRemove(anal_unit));
-
-    if (func.analysisUnordered(ip).inferred_error_set) {
-        func.setResolvedErrorSet(ip, io, .none);
-    }
 
     if (zcu.comp.time_report) |*tr| {
         if (func.generic_owner != .none) {
             tr.stats.n_generic_instances += 1;
         }
     }
-
-    // This is the `Nau` corresponding to the `declaration` instruction which the function or its generic owner originates from.
-    const decl_nav = ip.getNav(if (func.generic_owner == .none)
-        func.owner_nav
-    else
-        zcu.funcInfo(func.generic_owner).owner_nav);
 
     const func_nav = ip.getNav(func.owner_nav);
 
@@ -3319,8 +3295,29 @@ fn analyzeFuncBodyInner(
 
     // Every runtime function has a dependency on the source of the Decl it originates from.
     // It also depends on the value of its owner Decl.
-    try sema.declareDependency(.{ .src_hash = decl_nav.analysis.?.zir_index });
+    try sema.declareDependency(.{ .src_hash = decl_analysis.zir_index });
     try sema.declareDependency(.{ .nav_val = func.owner_nav });
+
+    // Make sure that the declaration `Nav` still refers to this function (or its generic owner).
+    // This will not be the case if the incremental update has changed a function type or turned a
+    // `fn` decl into some other declaration. In that case, we must not run analysis: this function
+    // will not be referenced this update, and trying to generate it could be problematic since we
+    // assume the owner NAV actually, um, owns us.
+    //
+    // If we *are* still owned by the right NAV, this analysis updates `zir_body_inst` if necessary.
+
+    if (func.generic_owner == .none) {
+        try pt.ensureNavValUpToDate(func.owner_nav, reason);
+        if (ip.getNav(func.owner_nav).status.fully_resolved.val != func_index) {
+            return error.AnalysisFail;
+        }
+    } else {
+        const go_nav = zcu.funcInfo(func.generic_owner).owner_nav;
+        try pt.ensureNavValUpToDate(go_nav, reason);
+        if (ip.getNav(go_nav).status.fully_resolved.val != func.generic_owner) {
+            return error.AnalysisFail;
+        }
+    }
 
     if (func.analysisUnordered(ip).inferred_error_set) {
         const ies = try analysis_arena.allocator().create(Sema.InferredErrorSet);
@@ -3339,11 +3336,11 @@ fn analyzeFuncBodyInner(
     var inner_block: Sema.Block = .{
         .parent = null,
         .sema = &sema,
-        .namespace = decl_nav.analysis.?.namespace,
+        .namespace = decl_analysis.namespace,
         .instructions = .empty,
         .inlining = null,
         .comptime_reason = null,
-        .src_base_inst = decl_nav.analysis.?.zir_index,
+        .src_base_inst = decl_analysis.zir_index,
         .type_name_ctx = func_nav.fqn,
     };
     defer inner_block.instructions.deinit(gpa);
@@ -3385,6 +3382,13 @@ fn analyzeFuncBodyInner(
         const param_ty: Type = .fromInterned(fn_ty_info.param_types.get(ip)[runtime_param_index]);
         runtime_param_index += 1;
 
+        if (param_ty.isGenericPoison()) {
+            // We're guaranteed to get a compile error on the `fnHasRuntimeBits` check after this
+            // loop (the generic poison means this is a generic function). But `continue` here to
+            // avoid an illegal call to `onePossibleValue` below.
+            continue;
+        }
+
         const param_ty_src = inner_block.src(.{ .func_decl_param_ty = @intCast(zir_param_index) });
 
         try sema.ensureLayoutResolved(param_ty, param_ty_src, .parameter);
@@ -3405,6 +3409,23 @@ fn analyzeFuncBodyInner(
     }
 
     try sema.ensureLayoutResolved(sema.fn_ret_ty, inner_block.src(.{ .node_offset_fn_type_ret_ty = .zero }), .return_type);
+
+    // The function type is now resolved, so we're ready to check whether it even makes sense to ask
+    // for it to be analyzed at runtime.
+    if (!fn_ty.fnHasRuntimeBits(zcu)) {
+        const description: []const u8 = switch (fn_ty_info.cc) {
+            .@"inline" => "inline",
+            else => "generic",
+        };
+        // This error makes sense because the only reason this analysis would ever be requested is
+        // for IES resolution.
+        return sema.fail(
+            &inner_block,
+            inner_block.nodeOffset(.zero),
+            "cannot resolve inferred error set of {s} function type '{f}'",
+            .{ description, fn_ty.fmt(pt) },
+        );
+    }
 
     const last_arg_index = inner_block.instructions.items.len;
 

@@ -2014,7 +2014,11 @@ pub fn pointerDerivation(ptr_val: Value, arena: Allocator, pt: Zcu.PerThread, op
         },
         .field => |field| base: {
             const base_ptr = Value.fromInterned(field.base);
-            const base_ptr_ty = base_ptr.typeOf(zcu);
+            const base_ptr_ty = try pt.ptrType(info: {
+                var info = base_ptr.typeOf(zcu).ptrInfo(zcu);
+                info.flags.size = .one;
+                break :info info;
+            });
             const parent_step = try arena.create(PointerDeriveStep);
             parent_step.* = try pointerDerivation(base_ptr, arena, pt, opt_sema);
             break :base .{ .field_ptr = .{
@@ -2155,13 +2159,17 @@ pub fn pointerDerivation(ptr_val: Value, arena: Allocator, pt: Zcu.PerThread, op
                     const start_off = cur_ty.structFieldOffset(field_idx, zcu);
                     const end_off = start_off + field_ty.abiSize(zcu);
                     if (cur_offset >= start_off and cur_offset + need_bytes <= end_off) {
-                        const old_ptr_ty = try cur_derive.ptrType(pt);
+                        const base_ptr_ty = try pt.ptrType(info: {
+                            var info = (try cur_derive.ptrType(pt)).ptrInfo(zcu);
+                            info.flags.size = .one;
+                            break :info info;
+                        });
                         const parent = try arena.create(PointerDeriveStep);
                         parent.* = cur_derive;
                         cur_derive = .{ .field_ptr = .{
                             .parent = parent,
                             .field_idx = @intCast(field_idx),
-                            .result_ptr_ty = try old_ptr_ty.fieldPtrType(@intCast(field_idx), pt),
+                            .result_ptr_ty = try base_ptr_ty.fieldPtrType(@intCast(field_idx), pt),
                         } };
                         cur_offset -= start_off;
                         break;
