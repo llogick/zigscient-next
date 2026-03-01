@@ -22,4 +22,6 @@ export fn entry4() usize {
 // :5:20: error: no size available for comptime-only type 'comptime_int'
 // :8:20: error: no size available for uninstantiable type 'noreturn'
 // :12:20: error: no size available for comptime-only type 'tmp.S3'
+// :10:12: note: struct declared here
 // :16:20: error: no size available for uninstantiable type 'tmp.S4'
+// :14:12: note: struct declared here

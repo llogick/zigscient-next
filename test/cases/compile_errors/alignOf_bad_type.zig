@@ -9,5 +9,5 @@ export fn entry1() usize {
 // error
 //
 // :2:21: error: no align available for uninstantiable type 'noreturn'
-// :6:21: error: no align available for uninstantiable type 'alignOf_bad_type.S'
+// :6:21: error: no align available for uninstantiable type 'tmp.S'
 // :4:11: note: struct declared here

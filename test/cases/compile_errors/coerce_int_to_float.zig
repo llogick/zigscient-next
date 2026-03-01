@@ -40,13 +40,13 @@ export fn entry() void {
 
 // error
 //
-// :6:20: error: expected type 'f16', found 'u12'
-// :6:20: error: expected type 'f16', found 'i13'
-// :6:20: error: expected type 'f32', found 'u25'
-// :6:20: error: expected type 'f32', found 'i26'
-// :6:20: error: expected type 'f64', found 'u54'
-// :6:20: error: expected type 'f64', found 'i55'
-// :6:20: error: expected type 'f80', found 'u65'
-// :6:20: error: expected type 'f80', found 'i66'
-// :6:20: error: expected type 'f128', found 'u114'
 // :6:20: error: expected type 'f128', found 'i115'
+// :6:20: error: expected type 'f128', found 'u114'
+// :6:20: error: expected type 'f16', found 'i13'
+// :6:20: error: expected type 'f16', found 'u12'
+// :6:20: error: expected type 'f32', found 'i26'
+// :6:20: error: expected type 'f32', found 'u25'
+// :6:20: error: expected type 'f64', found 'i55'
+// :6:20: error: expected type 'f64', found 'u54'
+// :6:20: error: expected type 'f80', found 'i66'
+// :6:20: error: expected type 'f80', found 'u65'

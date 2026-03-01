@@ -49,33 +49,33 @@ export fn deref5(ptr: *const U5) void {
 
 // error
 //
-// :13:17: error: expected type 'initialize_empty_union.U0', found '@TypeOf(undefined)'
-// :13:17: note: cannot coerce to uninstantiable type 'initialize_empty_union.U0'
+// :13:17: error: expected type 'tmp.U0', found '@TypeOf(undefined)'
+// :13:17: note: cannot coerce to uninstantiable type 'tmp.U0'
 // :5:12: note: union declared here
-// :16:17: error: expected type 'initialize_empty_union.U1', found '@TypeOf(undefined)'
-// :16:17: note: cannot coerce to uninstantiable type 'initialize_empty_union.U1'
+// :16:17: error: expected type 'tmp.U1', found '@TypeOf(undefined)'
+// :16:17: note: cannot coerce to uninstantiable type 'tmp.U1'
 // :6:12: note: union declared here
-// :19:17: error: expected type 'initialize_empty_union.U2', found '@TypeOf(undefined)'
-// :19:17: note: cannot coerce to uninstantiable type 'initialize_empty_union.U2'
+// :19:17: error: expected type 'tmp.U2', found '@TypeOf(undefined)'
+// :19:17: note: cannot coerce to uninstantiable type 'tmp.U2'
 // :7:12: note: union declared here
-// :22:17: error: expected type 'initialize_empty_union.U3', found '@TypeOf(undefined)'
-// :22:17: note: cannot coerce to uninstantiable type 'initialize_empty_union.U3'
+// :22:17: error: expected type 'tmp.U3', found '@TypeOf(undefined)'
+// :22:17: note: cannot coerce to uninstantiable type 'tmp.U3'
 // :8:12: note: union declared here
-// :25:17: error: expected type 'initialize_empty_union.U4', found '@TypeOf(undefined)'
-// :25:17: note: cannot coerce to uninstantiable type 'initialize_empty_union.U4'
+// :25:17: error: expected type 'tmp.U4', found '@TypeOf(undefined)'
+// :25:17: note: cannot coerce to uninstantiable type 'tmp.U4'
 // :9:12: note: union declared here
-// :28:17: error: expected type 'initialize_empty_union.U5', found '@TypeOf(undefined)'
-// :28:17: note: cannot coerce to uninstantiable type 'initialize_empty_union.U5'
+// :28:17: error: expected type 'tmp.U5', found '@TypeOf(undefined)'
+// :28:17: note: cannot coerce to uninstantiable type 'tmp.U5'
 // :10:12: note: union declared here
-// :32:12: error: cannot load uninstantiable type 'initialize_empty_union.U0'
+// :32:12: error: cannot load uninstantiable type 'tmp.U0'
 // :5:12: note: union declared here
-// :35:12: error: cannot load uninstantiable type 'initialize_empty_union.U1'
+// :35:12: error: cannot load uninstantiable type 'tmp.U1'
 // :6:12: note: union declared here
-// :38:12: error: cannot load uninstantiable type 'initialize_empty_union.U2'
+// :38:12: error: cannot load uninstantiable type 'tmp.U2'
 // :7:12: note: union declared here
-// :41:12: error: cannot load uninstantiable type 'initialize_empty_union.U3'
+// :41:12: error: cannot load uninstantiable type 'tmp.U3'
 // :8:12: note: union declared here
-// :44:12: error: cannot load uninstantiable type 'initialize_empty_union.U4'
+// :44:12: error: cannot load uninstantiable type 'tmp.U4'
 // :9:12: note: union declared here
-// :47:12: error: cannot load uninstantiable type 'initialize_empty_union.U5'
+// :47:12: error: cannot load uninstantiable type 'tmp.U5'
 // :10:12: note: union declared here

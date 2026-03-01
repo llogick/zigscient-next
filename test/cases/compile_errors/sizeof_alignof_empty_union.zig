@@ -49,27 +49,27 @@ export fn align5() void {
 
 // error
 //
-// :13:17: error: no size available for uninstantiable type 'sizeof_alignof_empty_union.U0'
+// :13:17: error: no size available for uninstantiable type 'tmp.U0'
 // :5:12: note: union declared here
-// :16:17: error: no size available for uninstantiable type 'sizeof_alignof_empty_union.U1'
+// :16:17: error: no size available for uninstantiable type 'tmp.U1'
 // :6:12: note: union declared here
-// :19:17: error: no size available for uninstantiable type 'sizeof_alignof_empty_union.U2'
+// :19:17: error: no size available for uninstantiable type 'tmp.U2'
 // :7:12: note: union declared here
-// :22:17: error: no size available for uninstantiable type 'sizeof_alignof_empty_union.U3'
+// :22:17: error: no size available for uninstantiable type 'tmp.U3'
 // :8:12: note: union declared here
-// :25:17: error: no size available for uninstantiable type 'sizeof_alignof_empty_union.U4'
+// :25:17: error: no size available for uninstantiable type 'tmp.U4'
 // :9:12: note: union declared here
-// :28:17: error: no size available for uninstantiable type 'sizeof_alignof_empty_union.U5'
+// :28:17: error: no size available for uninstantiable type 'tmp.U5'
 // :10:12: note: union declared here
-// :32:18: error: no align available for uninstantiable type 'sizeof_alignof_empty_union.U0'
+// :32:18: error: no align available for uninstantiable type 'tmp.U0'
 // :5:12: note: union declared here
-// :35:18: error: no align available for uninstantiable type 'sizeof_alignof_empty_union.U1'
+// :35:18: error: no align available for uninstantiable type 'tmp.U1'
 // :6:12: note: union declared here
-// :38:18: error: no align available for uninstantiable type 'sizeof_alignof_empty_union.U2'
+// :38:18: error: no align available for uninstantiable type 'tmp.U2'
 // :7:12: note: union declared here
-// :41:18: error: no align available for uninstantiable type 'sizeof_alignof_empty_union.U3'
+// :41:18: error: no align available for uninstantiable type 'tmp.U3'
 // :8:12: note: union declared here
-// :44:18: error: no align available for uninstantiable type 'sizeof_alignof_empty_union.U4'
+// :44:18: error: no align available for uninstantiable type 'tmp.U4'
 // :9:12: note: union declared here
-// :47:18: error: no align available for uninstantiable type 'sizeof_alignof_empty_union.U5'
+// :47:18: error: no align available for uninstantiable type 'tmp.U5'
 // :10:12: note: union declared here
