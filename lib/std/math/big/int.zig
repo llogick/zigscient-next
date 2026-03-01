@@ -2678,7 +2678,9 @@ pub const Const = struct {
 
     /// Calculate the base 2 logarithm, rounded down.
     pub fn log2(a: Const) Limb {
-        return a.limbs.len * @bitSizeOf(Limb) - 1 - @clz(a.limbs[a.limbs.len - 1]);
+        assert(a.positive);
+        assert(!a.eqlZero());
+        return a.bitCountAbs() - 1;
     }
 
     /// Calculate the base 10 logarithm, rounded down.
@@ -2695,13 +2697,9 @@ pub const Const = struct {
     ///
     /// `limbs_buffer` is used for temporary storage. The amount required is given by `calcLog10LimbsBufferLen`.
     pub fn log10(a: Const, limbs_buffer: []Limb) Limb {
-        const max_digits_per_limb = std.math.log10(std.math.maxInt(Limb));
-        const limb_base = comptime calc: {
-            var limb_base: comptime_int = 1;
-            for (0..max_digits_per_limb) |_| limb_base *= 10;
-            break :calc limb_base;
-        };
-        const limb_base_as_bigint: Const = .{ .limbs = &.{limb_base}, .positive = true };
+        assert(a.positive);
+        assert(!a.eqlZero());
+        const limb_base_as_bigint: Const = .{ .limbs = &.{constants.big_bases[10]}, .positive = true };
 
         var q: Mutable = .{
             .limbs = limbs_buffer[0 .. a.limbs.len + 2],
@@ -2721,7 +2719,7 @@ pub const Const = struct {
         var num_digits: Limb = 0;
         while (q.len >= 2) {
             q.divTrunc(&remainder, q.toConst(), limb_base_as_bigint, division_buf);
-            num_digits += max_digits_per_limb;
+            num_digits += constants.digits_per_limb[10];
         }
         var remaining_limb = q.limbs[0];
         while (remaining_limb != 0) {
