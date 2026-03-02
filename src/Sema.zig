@@ -15249,15 +15249,25 @@ fn analyzeArithmetic(
                     return sema.failWithInvalidPtrArithmetic(block, src, "pointer-pointer", "subtraction");
                 }
 
-                // MLUGG TODO: these semantics are insane and matching them is causing my soul to fragment into a thousand pieces
+                // TODO: these semantics are really weird. Pointer subtraction works in increments
+                // of the pointer child for indexable pointers (excluding pointers to vectors),
+                // which makes sense, but we also allow it for arbitrary single-item pointers, which
+                // leads to the weird result that subtraction of '*T' works completely differently
+                // depending on whether 'T' is an array. That seems dangerous and confusing, and
+                // requires the odd logic below. This behavior originally came from a now-removed
+                // function `Type.elemType2`, which was removed precisely *because* the thing it did
+                // wasn't really well-defined; for that reason, these semantics were probably
+                // largely accidental to begin with. We should change the langauge to avoid this
+                // confusing behavior. For instance, perhaps pointer subtraction should only work on
+                // indexable pointers.
                 const lhs_elem_ty = ty: {
                     const ptr_elem_ty = lhs_ty.childType(zcu);
-                    if (lhs_ty.ptrSize(zcu) == .one and ptr_elem_ty.isArrayOrVector(zcu)) break :ty ptr_elem_ty.childType(zcu);
+                    if (lhs_ty.ptrSize(zcu) == .one and ptr_elem_ty.zigTypeTag(zcu) == .array) break :ty ptr_elem_ty.childType(zcu);
                     break :ty ptr_elem_ty;
                 };
                 const rhs_elem_ty = ty: {
                     const ptr_elem_ty = rhs_ty.childType(zcu);
-                    if (rhs_ty.ptrSize(zcu) == .one and ptr_elem_ty.isArrayOrVector(zcu)) break :ty ptr_elem_ty.childType(zcu);
+                    if (rhs_ty.ptrSize(zcu) == .one and ptr_elem_ty.zigTypeTag(zcu) == .array) break :ty ptr_elem_ty.childType(zcu);
                     break :ty ptr_elem_ty;
                 };
                 if (lhs_elem_ty.toIntern() != rhs_elem_ty.toIntern()) {
