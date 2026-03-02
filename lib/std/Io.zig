@@ -1446,11 +1446,8 @@ pub fn Select(comptime U: type) type {
         /// Threadsafe.
         pub fn cancel(s: *S) ?U {
             const io = s.io;
-            if (s.group.token.load(.acquire)) |token| {
-                io.vtable.groupCancel(io.userdata, &s.group, token);
-                assert(s.group.token.raw == null);
-                s.queue.close(io);
-            }
+            s.group.cancel(io);
+            s.queue.close(io);
             return s.queue.getOneUncancelable(io) catch |err| switch (err) {
                 error.Closed => return null,
             };
@@ -1855,7 +1852,7 @@ pub const TypeErasedQueue = struct {
     /// there is space in the buffer. However, existing elements of the
     /// queue are retrieved before `error.Closed` is returned.
     ///
-    /// Threadsafe.
+    /// Idempotent. Threadsafe.
     pub fn close(q: *TypeErasedQueue, io: Io) void {
         q.mutex.lockUncancelable(io);
         defer q.mutex.unlock(io);

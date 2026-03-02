@@ -937,3 +937,14 @@ test "Select with empty buffer, no deadlock" {
     };
     assert((try select.await()) == .sleeper);
 }
+
+test "Select.cancel with no tasks, no deadlock" {
+    const io = testing.io;
+
+    const U = union(enum) {
+        nothing: void,
+        also_nothing: void,
+    };
+    var select: Io.Select(U) = .init(io, &.{});
+    try expectEqual(null, select.cancel());
+}
