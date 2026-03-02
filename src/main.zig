@@ -7499,6 +7499,8 @@ fn cmdFetch(
         error.FetchFailed => {}, // error bundle checked below
     };
 
+    try job_queue.group.await(io);
+
     if (fetch.error_bundle.root_list.items.len > 0) {
         var errors = try fetch.error_bundle.toOwnedBundle("");
         errors.renderToStderr(io, .{}, color) catch {};
