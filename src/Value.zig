@@ -895,7 +895,7 @@ pub fn fieldValue(val: Value, pt: Zcu.PerThread, index: usize) !Value {
             // Avoid hitting gpa for accesses to small packed structs
             var sfba_state = std.heap.stackFallback(128, zcu.comp.gpa);
             const sfba = sfba_state.get();
-            const buf = try sfba.alloc(u8, (ty.bitSize(zcu) + 7) / 8);
+            const buf = try sfba.alloc(u8, @intCast((ty.bitSize(zcu) + 7) / 8));
             defer sfba.free(buf);
             int_val.writeToPackedMemory(pt, buf, 0) catch |err| switch (err) {
                 error.ReinterpretDeclRef => unreachable, // it's an integer
@@ -2419,7 +2419,7 @@ pub fn uninterpret(val: anytype, ty: Type, pt: Zcu.PerThread) error{ OutOfMemory
                 }
                 for (field_vals, 0..) |*field_val, field_idx| {
                     if (field_val.* == .none) {
-                        const default_init = struct_obj.field_inits.get(ip)[field_idx];
+                        const default_init = struct_obj.field_defaults.get(ip)[field_idx];
                         if (default_init == .none) return error.TypeMismatch;
                         field_val.* = default_init;
                     }

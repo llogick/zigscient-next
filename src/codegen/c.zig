@@ -7134,9 +7134,9 @@ fn formatIntLiteral(data: FormatIntLiteralContext, w: *Writer) Writer.Error!void
             var limb_buf: [std.math.big.int.calcTwosCompLimbCount(65535)]std.math.big.Limb = undefined;
             for (0..big.limbs_len) |limb_index| {
                 if (limb_index != 0) try w.writeAll(", ");
-                const limb_bit_offset: u64 = switch (target.cpu.arch.endian()) {
-                    .little => limb_index * big.limb_size.bits(),
-                    .big => (big.limbs_len - limb_index - 1) * big.limb_size.bits(),
+                const limb_bit_offset: u16 = switch (target.cpu.arch.endian()) {
+                    .little => @intCast(limb_index * big.limb_size.bits()),
+                    .big => @intCast((big.limbs_len - limb_index - 1) * big.limb_size.bits()),
                 };
                 var limb_bigint: std.math.big.int.Mutable = .{
                     .limbs = &limb_buf,

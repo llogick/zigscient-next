@@ -1075,7 +1075,6 @@ pub fn ensureMemoizedStateUpToDate(
     const prev_failed = zcu.failed_analysis.contains(unit) or zcu.transitive_failed_analysis.contains(unit);
 
     if (was_outdated) {
-        dev.check(.incremental);
         zcu.resetUnit(unit);
     } else {
         if (prev_failed) return error.AnalysisFail;
@@ -1193,10 +1192,7 @@ pub fn ensureComptimeUnitUpToDate(pt: Zcu.PerThread, cu_id: InternPool.ComptimeU
     const was_outdated = zcu.clearOutdatedState(anal_unit);
 
     if (was_outdated) {
-        // `was_outdated` can be true in the initial update for comptime units, so this isn't a `dev.check`.
-        if (dev.env.supports(.incremental)) {
-            zcu.resetUnit(anal_unit);
-        }
+        zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
         if (zcu.failed_analysis.contains(anal_unit)) return error.AnalysisFail;
@@ -1366,10 +1362,7 @@ pub fn ensureTypeLayoutUpToDate(
     };
 
     if (was_outdated) {
-        // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
-        if (dev.env.supports(.incremental)) {
-            zcu.resetUnit(anal_unit);
-        }
+        zcu.resetUnit(anal_unit);
         // For types, we already know that we have to invalidate all dependees.
         // TODO: we actually *could* detect whether everything was the same. should we bother?
         try zcu.markDependeeOutdated(.marked_po, .{ .type_layout = ty.toIntern() });
@@ -1492,10 +1485,7 @@ pub fn ensureStructDefaultsUpToDate(
     };
 
     if (was_outdated) {
-        // `was_outdated` is true in the initial update, so this isn't a `dev.check`.
-        if (dev.env.supports(.incremental)) {
-            zcu.resetUnit(anal_unit);
-        }
+        zcu.resetUnit(anal_unit);
         // For types, we already know that we have to invalidate all dependees.
         // TODO: we actually *could* detect whether everything was the same. should we bother?
         try zcu.markDependeeOutdated(.marked_po, .{ .struct_defaults = ty.toIntern() });
@@ -1609,7 +1599,6 @@ pub fn ensureNavValUpToDate(
         zcu.transitive_failed_analysis.contains(anal_unit);
 
     if (was_outdated) {
-        dev.check(.incremental);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
@@ -1973,7 +1962,6 @@ pub fn ensureNavTypeUpToDate(
         zcu.transitive_failed_analysis.contains(anal_unit);
 
     if (was_outdated) {
-        dev.check(.incremental);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this unit.
@@ -2210,7 +2198,6 @@ pub fn ensureFuncBodyUpToDate(
     const prev_failed = zcu.failed_analysis.contains(anal_unit) or zcu.transitive_failed_analysis.contains(anal_unit);
 
     if (was_outdated) {
-        dev.check(.incremental);
         zcu.resetUnit(anal_unit);
     } else {
         // We can trust the current information about this function.
@@ -2292,7 +2279,7 @@ fn analyzeFuncBody(
 
     var air = try pt.analyzeFuncBodyInner(func_index, reason);
     var air_owned = true;
-    errdefer if (air_owned) air.deinit(gpa);
+    defer if (air_owned) air.deinit(gpa);
 
     const ies_outdated = !func.analysisUnordered(ip).inferred_error_set or
         func.resolvedErrorSetUnordered(ip) != old_resolved_ies;

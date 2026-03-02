@@ -1557,7 +1557,10 @@ pub fn doZcuTask(comp: *Compilation, tid: Zcu.PerThread.Id, task: ZcuTask) void 
         .link_func => |codegen_task| nav: {
             timer.pause(io);
             const func, var mir = codegen_task.wait(&zcu.codegen_task_pool, io) catch |err| switch (err) {
-                error.Canceled, error.AlreadyReported => return,
+                error.Canceled, error.AlreadyReported => {
+                    comp.link_prog_node.completeOne();
+                    return;
+                },
             };
             defer mir.deinit(zcu);
             timer.@"resume"(io);

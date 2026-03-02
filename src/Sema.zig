@@ -13777,45 +13777,44 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             const many_alloc = try block.addBitCast(many_ty, mutable_alloc);
 
             // lhs_dest_slice = dest[0..lhs.len]
-            const slice_ty_ref = Air.internedToRef(slice_ty.toIntern());
-            const lhs_len_ref = try pt.intRef(.usize, lhs_len);
-            const lhs_dest_slice = try block.addInst(.{
-                .tag = .slice,
-                .data = .{ .ty_pl = .{
-                    .ty = slice_ty_ref,
-                    .payload = try sema.addExtra(Air.Bin{
-                        .lhs = many_alloc,
-                        .rhs = lhs_len_ref,
-                    }),
-                } },
-            });
-
-            _ = try block.addBinOp(.memcpy, lhs_dest_slice, lhs);
+            if (lhs_len > 0) {
+                const lhs_dest_slice = try block.addInst(.{
+                    .tag = .slice,
+                    .data = .{ .ty_pl = .{
+                        .ty = .fromType(slice_ty),
+                        .payload = try sema.addExtra(Air.Bin{
+                            .lhs = many_alloc,
+                            .rhs = try pt.intRef(.usize, lhs_len),
+                        }),
+                    } },
+                });
+                _ = try block.addBinOp(.memcpy, lhs_dest_slice, lhs);
+            }
 
             // rhs_dest_slice = dest[lhs.len..][0..rhs.len]
-            const rhs_len_ref = try pt.intRef(.usize, rhs_len);
-            const rhs_dest_offset = try block.addInst(.{
-                .tag = .ptr_add,
-                .data = .{ .ty_pl = .{
-                    .ty = Air.internedToRef(many_ty.toIntern()),
-                    .payload = try sema.addExtra(Air.Bin{
-                        .lhs = many_alloc,
-                        .rhs = lhs_len_ref,
-                    }),
-                } },
-            });
-            const rhs_dest_slice = try block.addInst(.{
-                .tag = .slice,
-                .data = .{ .ty_pl = .{
-                    .ty = slice_ty_ref,
-                    .payload = try sema.addExtra(Air.Bin{
-                        .lhs = rhs_dest_offset,
-                        .rhs = rhs_len_ref,
-                    }),
-                } },
-            });
-
-            _ = try block.addBinOp(.memcpy, rhs_dest_slice, rhs);
+            if (rhs_len > 0) {
+                const rhs_dest_offset = try block.addInst(.{
+                    .tag = .ptr_add,
+                    .data = .{ .ty_pl = .{
+                        .ty = Air.internedToRef(many_ty.toIntern()),
+                        .payload = try sema.addExtra(Air.Bin{
+                            .lhs = many_alloc,
+                            .rhs = try pt.intRef(.usize, lhs_len),
+                        }),
+                    } },
+                });
+                const rhs_dest_slice = try block.addInst(.{
+                    .tag = .slice,
+                    .data = .{ .ty_pl = .{
+                        .ty = .fromType(slice_ty),
+                        .payload = try sema.addExtra(Air.Bin{
+                            .lhs = rhs_dest_offset,
+                            .rhs = try pt.intRef(.usize, rhs_len),
+                        }),
+                    } },
+                });
+                _ = try block.addBinOp(.memcpy, rhs_dest_slice, rhs);
+            }
 
             if (res_sent_val) |sent_val| {
                 const elem_index = try pt.intRef(.usize, result_len);
@@ -18829,7 +18828,7 @@ fn finishStructInit(
             return sema.addConstantMaybeRef(sema.resolveValue(final_val_ref).?, is_ref);
         },
         .@"packed" => {
-            const buf = try sema.arena.alloc(u8, (struct_ty.bitSize(zcu) + 7) / 8);
+            const buf = try sema.arena.alloc(u8, @intCast((struct_ty.bitSize(zcu) + 7) / 8));
             var bit_offset: u16 = 0;
             for (field_inits) |field_init| {
                 const field_val = sema.resolveValue(field_init).?;

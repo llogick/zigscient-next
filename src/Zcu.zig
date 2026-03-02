@@ -3686,6 +3686,11 @@ pub const ImportResult = struct {
 pub fn resetUnit(zcu: *Zcu, unit: AnalUnit) void {
     const gpa = zcu.comp.gpa;
 
+    if (!dev.env.supports(.incremental)) {
+        // This is the first time `unit` is being analyzed, so there is no stale data to clear.
+        return;
+    }
+
     // Compile errors
     if (zcu.failed_analysis.fetchSwapRemove(unit)) |kv| {
         kv.value.destroy(gpa);
