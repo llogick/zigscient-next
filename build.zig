@@ -537,7 +537,7 @@ pub fn build(b: *std.Build) !void {
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
         .skip_libc = skip_libc,
-        .max_rss = 3_500_000_000,
+        .max_rss = 4_000_000_000,
     }));
 
     test_modules_step.dependOn(tests.addModuleTests(b, .{
@@ -563,7 +563,7 @@ pub fn build(b: *std.Build) !void {
         .skip_llvm = skip_llvm,
         .skip_libc = true,
         .no_builtin = true,
-        .max_rss = 2_000_000_000,
+        .max_rss = 4_000_000_000,
     }));
 
     test_modules_step.dependOn(tests.addModuleTests(b, .{
