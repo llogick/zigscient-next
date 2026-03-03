@@ -1221,7 +1221,7 @@ pub const File = struct {
         const file_path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
         defer gpa.free(file_path);
 
-        return pathToUriFn(gpa, zcu.project_root_path, file_path);
+        return pathToUriFn(gpa, zcu.comp.dirs.cwd, file_path);
     }
 
     pub fn getLspDocHandle(file: *File, zcu: *const Zcu) Allocator.Error!?*LspDocumentStore.Handle {
