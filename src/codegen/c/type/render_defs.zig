@@ -246,6 +246,8 @@ pub fn defineComplete(
                 ptr_cty.fmtDeclaratorPrefix(zcu),
                 ptr_cty.fmtDeclaratorSuffix(zcu),
             });
+            // Don't bother with `writeStaticAssertLayout`---there's not really any way we could mess
+            // slices up, and they're all obviously the same layout.
         },
         .optional => switch (CType.classifyOptional(ty, zcu)) {
             .error_set,
@@ -260,6 +262,7 @@ pub fn defineComplete(
                     name_cty.fmtTypeName(zcu),
                     ty.fmt(pt),
                 });
+                try writeStaticAssertLayout(ty, name_cty, w, zcu);
             },
 
             .@"struct" => {
@@ -277,6 +280,7 @@ pub fn defineComplete(
                     payload_cty.fmtDeclaratorPrefix(zcu),
                     payload_cty.fmtDeclaratorSuffix(zcu),
                 });
+                try writeStaticAssertLayout(ty, name_cty, w, zcu);
             },
         },
         .array => if (ty.hasRuntimeBits(zcu)) {
@@ -297,6 +301,7 @@ pub fn defineComplete(
                 array_cty.fmtDeclaratorSuffix(zcu),
                 ty.fmt(pt),
             });
+            try writeStaticAssertLayout(ty, name_cty, w, zcu);
         },
         .vector => if (ty.hasRuntimeBits(zcu)) {
             const name_cty: CType = .{ .vec = ty };
@@ -312,6 +317,7 @@ pub fn defineComplete(
                 array_cty.fmtDeclaratorSuffix(zcu),
                 ty.fmt(pt),
             });
+            try writeStaticAssertLayout(ty, name_cty, w, zcu);
         },
         else => {},
     }
@@ -374,18 +380,21 @@ fn defineTuple(
         zig_offset = field_align.forward(zig_offset);
         if (!field_ty.hasRuntimeBits(zcu)) continue;
         c_offset = field_align.forward(c_offset);
+        try w.writeByte(' ');
         if (zig_offset == 0 and overalign) {
             // This is the first field; specify its alignment to align the tuple.
-            try w.print(" zig_align({d})", .{tuple_align.toByteUnits().?});
+            try writeFieldAlign(field_ty, tuple_align, w, zcu);
         } else if (zig_offset > c_offset) {
             // This field needs to be overaligned compared to what its offset would otherwise be.
-            const need_align: Alignment = .fromLog2Units(@ctz(zig_offset));
-            try w.print(" zig_align({d})", .{need_align.toByteUnits().?});
+            const need_align: Alignment = .minStrict(
+                tuple_align, // don't make the struct more aligned than it should be
+                .fromLog2Units(@ctz(zig_offset)),
+            );
+            try writeFieldAlign(field_ty, need_align, w, zcu);
             c_offset = need_align.forward(c_offset);
-            assert(c_offset == zig_offset);
         }
         const field_cty: CType = try .lower(field_ty, deps, arena, zcu);
-        try w.print(" {f}f{d}{f};\n", .{
+        try w.print("{f}f{d}{f};\n", .{
             field_cty.fmtDeclaratorPrefix(zcu),
             field_index,
             field_cty.fmtDeclaratorSuffix(zcu),
@@ -395,6 +404,8 @@ fn defineTuple(
         c_offset += field_size;
     }
     try w.writeAll("};\n");
+
+    try writeStaticAssertLayout(ty, name_cty, w, zcu);
 }
 fn defineStruct(
     ty: Type,
@@ -420,6 +431,8 @@ fn defineStruct(
             const natural_offset = natural_align.forward(offset);
             const actual_offset = struct_type.field_offsets.get(ip)[field_index];
             if (actual_offset < natural_offset) break :pack true;
+            // Also pack if any field is more aligned than the struct should be.
+            if (natural_align.compareStrict(.gt, struct_type.alignment)) break :pack true;
             offset = actual_offset + field_ty.abiSize(zcu);
         }
         break :pack false;
@@ -459,22 +472,22 @@ fn defineStruct(
             false => natural_align.forward(offset),
         };
         const actual_offset = struct_type.field_offsets.get(ip)[field_index];
+        try w.writeByte(' ');
         if (actual_offset == 0 and overalign) {
             // This is the first field; specify its alignment to align the struct.
-            try w.print(" zig_align({d})", .{struct_type.alignment.toByteUnits().?});
+            try writeFieldAlign(field_ty, struct_type.alignment, w, zcu);
         } else if (actual_offset > natural_offset) {
             // This field needs to be underaligned or overaligned compared to what its
             // offset would otherwise be.
-            const need_align: Alignment = .fromLog2Units(@ctz(actual_offset));
-            if (need_align.compareStrict(.lt, natural_align)) {
-                try w.print(" zig_under_align({d})", .{need_align.toByteUnits().?});
-            } else {
-                try w.print(" zig_align({d})", .{need_align.toByteUnits().?});
-            }
+            const need_align: Alignment = .minStrict(
+                struct_type.alignment, // don't make the struct more aligned than it should be
+                .fromLog2Units(@ctz(actual_offset)),
+            );
+            try writeFieldAlign(field_ty, need_align, w, zcu);
         }
         const field_cty: CType = try .lower(field_ty, deps, arena, zcu);
         const field_name = struct_type.field_names.get(ip)[field_index].toSlice(ip);
-        try w.print(" {f}{f}{f};\n", .{
+        try w.print("{f}{f}{f};\n", .{
             field_cty.fmtDeclaratorPrefix(zcu),
             fmtIdentSolo(field_name),
             field_cty.fmtDeclaratorSuffix(zcu),
@@ -485,6 +498,8 @@ fn defineStruct(
     try w.writeByte('}');
     if (pack) try w.writeByte(')');
     try w.writeAll(";\n");
+
+    try writeStaticAssertLayout(ty, name_cty, w, zcu);
 }
 fn defineUnionAuto(
     ty: Type,
@@ -500,12 +515,20 @@ fn defineUnionAuto(
     const union_type = ip.loadUnionType(ty.toIntern());
     const enum_tag_ty: Type = .fromInterned(union_type.enum_tag_type);
 
+    const layout = Type.getUnionLayout(union_type, zcu);
+
     // If there are any underaligned fields, we need to byte-pack the union.
     const pack: bool = for (union_type.field_types.get(ip)) |field_ty_ip| {
         const field_ty: Type = .fromInterned(field_ty_ip);
         if (!field_ty.hasRuntimeBits(zcu)) continue;
         const natural_align = field_ty.abiAlignment(zcu);
         if (natural_align.compareStrict(.gt, union_type.alignment)) break true;
+        // The tag will immediately follow the payload. This layout may put the tag in what would
+        // otherwise be padding on the payload union, because if the most-aligned union field is not
+        // the largest one, a larger field may make the payload "underaligned" overall. As such, we
+        // need to check whether this field is okay with the payload size, and if not then we must
+        // byte-pack.
+        if (!natural_align.check(layout.payload_size)) break true;
     } else false;
 
     // If the alignment of other fields would not give the union sufficient alignment, we
@@ -536,6 +559,10 @@ fn defineUnionAuto(
     });
     if (payload_has_bits) {
         try w.writeByte(' ');
+        if (overalign) {
+            // Specify the alignment of `union { ... } payload;` to align the union's `struct`.
+            try w.print("zig_align({d}) ", .{union_type.alignment.toByteUnits().?});
+        }
         if (pack) try w.writeAll("zig_packed(");
         try w.writeAll("union {\n");
         for (0..enum_tag_ty.enumFieldCount(zcu)) |field_index| {
@@ -543,12 +570,7 @@ fn defineUnionAuto(
             if (!field_ty.hasRuntimeBits(zcu)) continue;
             const field_name = enum_tag_ty.enumFieldName(field_index, zcu).toSlice(ip);
             const field_cty: CType = try .lower(field_ty, deps, arena, zcu);
-            try w.writeAll("  ");
-            if (overalign and field_index == 0) {
-                // This is the first field; specify its alignment to align the union.
-                try w.print("zig_align({d}) ", .{union_type.alignment.toByteUnits().?});
-            }
-            try w.print("{f}{f}{f};\n", .{
+            try w.print("  {f}{f}{f};\n", .{
                 field_cty.fmtDeclaratorPrefix(zcu),
                 fmtIdentSolo(field_name),
                 field_cty.fmtDeclaratorSuffix(zcu),
@@ -566,6 +588,8 @@ fn defineUnionAuto(
         });
     }
     try w.writeAll("};\n");
+
+    try writeStaticAssertLayout(ty, name_cty, w, zcu);
 }
 fn defineUnionExtern(
     ty: Type,
@@ -622,11 +646,12 @@ fn defineUnionExtern(
         if (!field_ty.hasRuntimeBits(zcu)) continue;
         const field_name = enum_tag_ty.enumFieldName(field_index, zcu).toSlice(ip);
         const field_cty: CType = try .lower(field_ty, deps, arena, zcu);
+        try w.writeByte(' ');
         if (overalign and field_index == 0) {
             // This is the first field; specify its alignment to align the union.
-            try w.print(" zig_align({d})", .{union_type.alignment.toByteUnits().?});
+            try writeFieldAlign(field_ty, union_type.alignment, w, zcu);
         }
-        try w.print(" {f}{f}{f};\n", .{
+        try w.print("{f}{f}{f};\n", .{
             field_cty.fmtDeclaratorPrefix(zcu),
             fmtIdentSolo(field_name),
             field_cty.fmtDeclaratorSuffix(zcu),
@@ -635,6 +660,40 @@ fn defineUnionExtern(
     try w.writeByte('}');
     if (pack) try w.writeByte(')');
     try w.writeAll(";\n");
+
+    try writeStaticAssertLayout(ty, name_cty, w, zcu);
+}
+
+/// Writes an annotation which, placed before a struct/union field declaration with field type `ty`,
+/// will specify that field as having the given alignment.
+fn writeFieldAlign(
+    ty: Type,
+    alignment: Alignment,
+    w: *Writer,
+    zcu: *const Zcu,
+) Writer.Error!void {
+    if (alignment.compareStrict(.lt, ty.abiAlignment(zcu))) {
+        try w.print("zig_under_align({d}) ", .{alignment.toByteUnits().?});
+    } else {
+        try w.print("zig_align({d}) ", .{alignment.toByteUnits().?});
+    }
+}
+
+/// Emits static assertions that the size and alignment of `cty` match those of the Zig type `ty`.
+fn writeStaticAssertLayout(
+    ty: Type,
+    cty: CType,
+    w: *Writer,
+    zcu: *const Zcu,
+) Writer.Error!void {
+    try w.print(
+        \\zig_static_assert(sizeof ({f}) == {d}, "incorrect size");
+        \\zig_static_assert(_Alignof ({f}) == {d}, "incorrect alignment");
+        \\
+    , .{
+        cty.fmtTypeName(zcu), ty.abiSize(zcu),
+        cty.fmtTypeName(zcu), ty.abiAlignment(zcu).toByteUnits().?,
+    });
 }
 
 const std = @import("std");
