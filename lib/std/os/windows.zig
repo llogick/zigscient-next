@@ -15,7 +15,6 @@ const math = std.math;
 const maxInt = std.math.maxInt;
 const UnexpectedError = std.posix.UnexpectedError;
 
-pub const advapi32 = @import("windows/advapi32.zig");
 pub const kernel32 = @import("windows/kernel32.zig");
 pub const ntdll = @import("windows/ntdll.zig");
 pub const ws2_32 = @import("windows/ws2_32.zig");
@@ -3506,6 +3505,16 @@ pub const GUID = extern struct {
         }
         return @as(GUID, @bitCast(bytes));
     }
+
+    pub fn format(self: GUID, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        return w.print("{{{x:0>8}-{x:0>4}-{x:0>4}-{x}-{x}}}", .{
+            self.Data1,
+            self.Data2,
+            self.Data3,
+            self.Data4[0..2],
+            self.Data4[2..8],
+        });
+    }
 };
 
 test GUID {
@@ -3517,6 +3526,16 @@ test GUID {
             .Data4 = "\x32\x54\x76\x98\xba\xdc\xfe\x91".*,
         },
         GUID.parse("{01234567-89AB-EF10-3254-7698badcfe91}"),
+    );
+    try std.testing.expectFmt(
+        "{01234567-89ab-ef10-3254-7698badcfe91}",
+        "{f}",
+        .{GUID.parse("{01234567-89AB-EF10-3254-7698badcfe91}")},
+    );
+    try std.testing.expectFmt(
+        "{00000001-0001-0001-0001-000000000001}",
+        "{f}",
+        .{GUID{ .Data1 = 1, .Data2 = 1, .Data3 = 1, .Data4 = [_]u8{ 0, 1, 0, 0, 0, 0, 0, 1 } }},
     );
 }
 
@@ -3560,7 +3579,7 @@ pub const RTL_QUERY_REGISTRY_TABLE = extern struct {
     Flags: ULONG,
     Name: ?PWSTR,
     EntryContext: ?*anyopaque,
-    DefaultType: ULONG,
+    DefaultType: REG.ValueType,
     DefaultData: ?*anyopaque,
     DefaultLength: ULONG,
 };
@@ -3625,34 +3644,120 @@ pub const RTL_QUERY_REGISTRY_DELETE = 0x00000040;
 /// If the types do not match, the call fails.
 pub const RTL_QUERY_REGISTRY_TYPECHECK = 0x00000100;
 
+/// REG_ is a crowded namespace with a lot of overlapping and unrelated
+/// defines in the Windows headers, so instead of strictly following the
+/// Windows headers names, extra namespaces are added here for clarity.
 pub const REG = struct {
-    /// No value type
-    pub const NONE: ULONG = 0;
-    /// Unicode nul terminated string
-    pub const SZ: ULONG = 1;
-    /// Unicode nul terminated string (with environment variable references)
-    pub const EXPAND_SZ: ULONG = 2;
-    /// Free form binary
-    pub const BINARY: ULONG = 3;
-    /// 32-bit number
-    pub const DWORD: ULONG = 4;
-    /// 32-bit number (same as REG_DWORD)
-    pub const DWORD_LITTLE_ENDIAN: ULONG = 4;
-    /// 32-bit number
-    pub const DWORD_BIG_ENDIAN: ULONG = 5;
-    /// Symbolic Link (unicode)
-    pub const LINK: ULONG = 6;
-    /// Multiple Unicode strings
-    pub const MULTI_SZ: ULONG = 7;
-    /// Resource list in the resource map
-    pub const RESOURCE_LIST: ULONG = 8;
-    /// Resource list in the hardware description
-    pub const FULL_RESOURCE_DESCRIPTOR: ULONG = 9;
-    pub const RESOURCE_REQUIREMENTS_LIST: ULONG = 10;
-    /// 64-bit number
-    pub const QWORD: ULONG = 11;
-    /// 64-bit number (same as REG_QWORD)
-    pub const QWORD_LITTLE_ENDIAN: ULONG = 11;
+    pub const ValueType = enum(ULONG) {
+        /// No value type
+        NONE = 0,
+        /// Unicode nul terminated string
+        SZ = 1,
+        /// Unicode nul terminated string (with environment variable references)
+        EXPAND_SZ = 2,
+        /// Free form binary
+        BINARY = 3,
+        /// 32-bit number
+        DWORD = 4,
+        /// 32-bit number
+        DWORD_BIG_ENDIAN = 5,
+        /// Symbolic Link (unicode)
+        LINK = 6,
+        /// Multiple Unicode strings
+        MULTI_SZ = 7,
+        /// Resource list in the resource map
+        RESOURCE_LIST = 8,
+        /// Resource list in the hardware description
+        FULL_RESOURCE_DESCRIPTOR = 9,
+        RESOURCE_REQUIREMENTS_LIST = 10,
+        /// 64-bit number
+        QWORD = 11,
+        _,
+
+        /// 32-bit number (same as REG_DWORD)
+        pub const DWORD_LITTLE_ENDIAN: ValueType = .DWORD;
+        /// 64-bit number (same as REG_QWORD)
+        pub const QWORD_LITTLE_ENDIAN: ValueType = .QWORD;
+    };
+
+    /// Used with NtOpenKeyEx, maybe others
+    pub const OpenOptions = packed struct(ULONG) {
+        Reserved0: u2 = 0,
+        /// Open for backup or restore
+        /// special access rules privilege required
+        BACKUP_RESTORE: bool = false,
+        /// Open symbolic link
+        OPEN_LINK: bool = false,
+        Reserved3: u28 = 0,
+    };
+
+    /// Used with NtLoadKeyEx, maybe others
+    pub const LoadOptions = packed struct(ULONG) {
+        /// Restore whole hive volatile
+        WHOLE_HIVE_VOLATILE: bool = false,
+        /// Unwind changes to last flush
+        REFRESH_HIVE: bool = false,
+        /// Never lazy flush this hive
+        NO_LAZY_FLUSH: bool = false,
+        /// Force the restore process even when we have open handles on subkeys
+        FORCE_RESTORE: bool = false,
+        /// Loads the hive visible to the calling process
+        APP_HIVE: bool = false,
+        /// Hive cannot be mounted by any other process while in use
+        PROCESS_PRIVATE: bool = false,
+        /// Starts Hive Journal
+        START_JOURNAL: bool = false,
+        /// Grow hive file in exact 4k increments
+        HIVE_EXACT_FILE_GROWTH: bool = false,
+        /// No RM is started for this hive (no transactions)
+        HIVE_NO_RM: bool = false,
+        /// Legacy single logging is used for this hive
+        HIVE_SINGLE_LOG: bool = false,
+        /// This hive might be used by the OS loader
+        BOOT_HIVE: bool = false,
+        /// Load the hive and return a handle to its root kcb
+        LOAD_HIVE_OPEN_HANDLE: bool = false,
+        /// Flush changes to primary hive file size as part of all flushes
+        FLUSH_HIVE_FILE_GROWTH: bool = false,
+        /// Open a hive's files in read-only mode
+        /// The same flag is used for REG_APP_HIVE_OPEN_READ_ONLY:
+        /// Open an app hive's files in read-only mode (if the hive was not previously loaded).
+        OPEN_READ_ONLY: bool = false,
+        /// Load the hive, but don't allow any modification of it
+        IMMUTABLE: bool = false,
+        /// Do not fall back to impersonating the caller if hive file access fails
+        NO_IMPERSONATION_FALLBACK: bool = false,
+        Reserved16: u16 = 0,
+    };
+};
+
+pub const KEY = struct {
+    pub const VALUE = struct {
+        /// https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_key_value_information_class
+        pub const INFORMATION_CLASS = enum(c_int) {
+            Basic = 0,
+            Full = 1,
+            Partial = 2,
+            FullAlign64 = 3,
+            PartialAlign64 = 4,
+            Layer = 5,
+            _,
+
+            pub const Max: @typeInfo(@This()).@"enum".tag_type = @typeInfo(@This()).@"enum".fields.len;
+        };
+
+        pub const PARTIAL_INFORMATION = extern struct {
+            TitleIndex: ULONG,
+            Type: REG.ValueType,
+            DataLength: ULONG,
+            Data: [0]UCHAR,
+
+            pub fn data(info: *const PARTIAL_INFORMATION) []const UCHAR {
+                const ptr: [*]const UCHAR = @ptrCast(&info.Data);
+                return ptr[0..info.DataLength];
+            }
+        };
+    };
 };
 
 pub const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x4;

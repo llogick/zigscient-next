@@ -22,6 +22,7 @@ const HANDLE = windows.HANDLE;
 const HEAP = windows.HEAP;
 const IO_APC_ROUTINE = windows.IO_APC_ROUTINE;
 const IO_STATUS_BLOCK = windows.IO_STATUS_BLOCK;
+const KEY = windows.KEY;
 const KNONVOLATILE_CONTEXT_POINTERS = windows.KNONVOLATILE_CONTEXT_POINTERS;
 const LARGE_INTEGER = windows.LARGE_INTEGER;
 const LDR = windows.LDR;
@@ -37,6 +38,7 @@ const PCWSTR = windows.PCWSTR;
 const PROCESS = windows.PROCESS;
 const PVOID = windows.PVOID;
 const PWSTR = windows.PWSTR;
+const REG = windows.REG;
 const RTL_OSVERSIONINFOW = windows.RTL_OSVERSIONINFOW;
 const RTL_QUERY_REGISTRY_TABLE = windows.RTL_QUERY_REGISTRY_TABLE;
 const RUNTIME_FUNCTION = windows.RUNTIME_FUNCTION;
@@ -724,3 +726,36 @@ pub extern "ntdll" fn RtlWakeConditionVariable(
 pub extern "ntdll" fn RtlWakeAllConditionVariable(
     ConditionVariable: *CONDITION_VARIABLE,
 ) callconv(.winapi) void;
+
+pub extern "ntdll" fn NtOpenKeyEx(
+    KeyHandle: *HANDLE,
+    DesiredAccess: ACCESS_MASK,
+    ObjectAttributes: *const OBJECT.ATTRIBUTES,
+    OpenOptions: REG.OpenOptions,
+) callconv(.winapi) NTSTATUS;
+pub extern "ntdll" fn RtlOpenCurrentUser(
+    DesiredAccess: ACCESS_MASK,
+    CurrentUserKey: *HANDLE,
+) callconv(.winapi) NTSTATUS;
+pub extern "ntdll" fn NtQueryValueKey(
+    KeyHandle: HANDLE,
+    ValueName: *const UNICODE_STRING,
+    KeyValueInformationClass: KEY.VALUE.INFORMATION_CLASS,
+    KeyValueInformation: *anyopaque,
+    /// Length of KeyValueInformation buffer in bytes
+    Length: ULONG,
+    /// On STATUS_SUCCESS, contains the length of the populated portion of the
+    /// provided buffer. On STATUS_BUFFER_OVERFLOW or STATUS_BUFFER_TOO_SMALL,
+    /// contains the minimum `Length` value that would be required to hold the information.
+    ResultLength: *ULONG,
+) callconv(.winapi) NTSTATUS;
+pub extern "ntdll" fn NtLoadKeyEx(
+    TargetKey: *const OBJECT.ATTRIBUTES,
+    SourceFile: *const OBJECT.ATTRIBUTES,
+    Flags: REG.LoadOptions,
+    TrustClassKey: ?HANDLE,
+    Event: ?HANDLE,
+    DesiredAccess: ACCESS_MASK,
+    RootHandle: ?*HANDLE,
+    Reserved: ?*anyopaque,
+) callconv(.winapi) NTSTATUS;
