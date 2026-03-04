@@ -102,6 +102,26 @@ int main(int argc, char **argv) {
     const char *cc = get_c_compiler();
     const char *host_triple = get_host_triple();
 
+    // GCC versions 13.0--14.1 have a miscompilation where some bytes of a union may get clobbered
+    // depending on the union layout and the order in which types are defined. This miscompilation
+    // affects the output of the C backend, and thus can affect the bootstrap process. Specifically,
+    // we observe that using the self-hosted x86_64 backend in 'zig2' will cause all function calls
+    // to be relocated incorrectly, causing immediate crashes on any binary produced by it.
+    //
+    // The only reliable workaround for this bug is to disable the optimization pass containing it,
+    // so here we check for a CLI flag requesting that workaround.
+    //
+    // The upstream bug is fixed in GCC version 15.2 onwards (and was also backported to the 13 and
+    // 14 branches). Once this bug is no longer widespread, we can remove this CLI flag.
+    //
+    // Upstream bug report: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=119085
+    bool workaround_gcc_sra_miscomp = false;
+    for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "--workaround-gcc-sra-miscomp")) {
+            workaround_gcc_sra_miscomp = true;
+        }
+    }
+
     {
         const char *child_argv[] = {
             cc, "-o", "zig-wasm2c", "stage1/wasm2c.c", "-O2", "-std=c99", NULL,
@@ -193,6 +213,7 @@ int main(int argc, char **argv) {
 #if defined(__GNUC__)
             "-pthread",
 #endif
+            workaround_gcc_sra_miscomp ? "-fno-tree-sra" : NULL,
             NULL,
         };
         print_and_run(child_argv);

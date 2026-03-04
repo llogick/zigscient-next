@@ -21,7 +21,8 @@ export ZIG_LOCAL_CACHE_DIR="$PWD/zig-local-cache"
 
 # Test building from source without LLVM.
 cc -o bootstrap bootstrap.c
-./bootstrap
+# See comments in bootstrap.c for an explanation of the flag given here.
+./bootstrap --workaround-gcc-sra-miscomp
 ./zig2 build -Dno-lib
 ./zig-out/bin/zig test test/behavior.zig
 
