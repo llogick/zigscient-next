@@ -4519,30 +4519,7 @@ fn unionInit(
     const layout = cg.unionLayout(ty);
     const payload_ty: Type = .fromInterned(union_ty.field_types.get(ip)[active_field]);
 
-    if (union_ty.layout == .@"packed") {
-        if (!payload_ty.hasRuntimeBits(zcu)) {
-            const int_ty = try pt.intType(.unsigned, @intCast(ty.bitSize(zcu)));
-            return cg.constInt(int_ty, 0);
-        }
-
-        assert(payload != null);
-        if (payload_ty.isInt(zcu)) {
-            if (ty.bitSize(zcu) == payload_ty.bitSize(zcu)) {
-                return cg.bitCast(ty, payload_ty, payload.?);
-            }
-
-            const trunc = try cg.buildConvert(ty, .{ .ty = payload_ty, .value = .{ .singleton = payload.? } });
-            return try trunc.materialize(cg);
-        }
-
-        const payload_int_ty = try pt.intType(.unsigned, @intCast(payload_ty.bitSize(zcu)));
-        const payload_int = if (payload_ty.ip_index == .bool_type)
-            try cg.convertToIndirect(payload_ty, payload.?)
-        else
-            try cg.bitCast(payload_int_ty, payload_ty, payload.?);
-        const trunc = try cg.buildConvert(ty, .{ .ty = payload_int_ty, .value = .{ .singleton = payload_int } });
-        return try trunc.materialize(cg);
-    }
+    assert(union_ty.layout != .@"packed");
 
     const tag_int = if (layout.tag_size != 0) blk: {
         const tag_val = try pt.enumValueFieldIndex(tag_ty, active_field);
@@ -4761,33 +4738,36 @@ fn structFieldPtr(
         },
         .@"struct" => switch (object_ty.containerLayout(zcu)) {
             .@"packed" => return cg.todo("implement field access for packed structs", .{}),
-            else => {
+            .auto, .@"extern" => {
                 return try cg.accessChain(result_ty_id, object_ptr, &.{field_index});
             },
         },
-        .@"union" => {
-            const layout = cg.unionLayout(object_ty);
-            if (!layout.has_payload) {
-                // Asked to get a pointer to a zero-sized field. Just lower this
-                // to undefined, there is no reason to make it be a valid pointer.
-                return try cg.module.constUndef(result_ty_id);
-            }
+        .@"union" => switch (object_ty.containerLayout(zcu)) {
+            .@"packed" => return cg.todo("implement field access for packed unions", .{}),
+            .auto, .@"extern" => {
+                const layout = cg.unionLayout(object_ty);
+                if (!layout.has_payload) {
+                    // Asked to get a pointer to a zero-sized field. Just lower this
+                    // to undefined, there is no reason to make it be a valid pointer.
+                    return try cg.module.constUndef(result_ty_id);
+                }
 
-            const storage_class = cg.module.storageClass(object_ptr_ty.ptrAddressSpace(zcu));
-            const layout_payload_ty_id = try cg.resolveType(layout.payload_ty, .indirect);
-            const pl_ptr_ty_id = try cg.module.ptrType(layout_payload_ty_id, storage_class);
-            const pl_ptr_id = blk: {
-                if (object_ty.containerLayout(zcu) == .@"packed") break :blk object_ptr;
-                break :blk try cg.accessChain(pl_ptr_ty_id, object_ptr, &.{layout.payload_index});
-            };
+                const storage_class = cg.module.storageClass(object_ptr_ty.ptrAddressSpace(zcu));
+                const layout_payload_ty_id = try cg.resolveType(layout.payload_ty, .indirect);
+                const pl_ptr_ty_id = try cg.module.ptrType(layout_payload_ty_id, storage_class);
+                const pl_ptr_id = blk: {
+                    if (object_ty.containerLayout(zcu) == .@"packed") break :blk object_ptr;
+                    break :blk try cg.accessChain(pl_ptr_ty_id, object_ptr, &.{layout.payload_index});
+                };
 
-            const active_pl_ptr_id = cg.module.allocId();
-            try cg.body.emit(cg.module.gpa, .OpBitcast, .{
-                .id_result_type = result_ty_id,
-                .id_result = active_pl_ptr_id,
-                .operand = pl_ptr_id,
-            });
-            return active_pl_ptr_id;
+                const active_pl_ptr_id = cg.module.allocId();
+                try cg.body.emit(cg.module.gpa, .OpBitcast, .{
+                    .id_result_type = result_ty_id,
+                    .id_result = active_pl_ptr_id,
+                    .operand = pl_ptr_id,
+                });
+                return active_pl_ptr_id;
+            },
         },
         else => unreachable,
     }

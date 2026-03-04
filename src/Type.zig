@@ -1571,6 +1571,7 @@ pub fn externUnionBackingType(ty: Type, pt: Zcu.PerThread) !Type {
     }
 }
 
+/// Asserts that `ty` is a non-packed union type.
 pub fn unionGetLayout(ty: Type, zcu: *const Zcu) Zcu.UnionLayout {
     assertHasLayout(ty, zcu);
     const union_obj = zcu.intern_pool.loadUnionType(ty.toIntern());
@@ -2689,7 +2690,10 @@ pub fn arrayBase(ty: Type, zcu: *const Zcu) struct { Type, u64 } {
     return .{ cur_ty, cur_len };
 }
 
+/// Asserts that `loaded_union.layout` is not `.@"packed"`.
 pub fn getUnionLayout(loaded_union: InternPool.LoadedUnionType, zcu: *const Zcu) Zcu.UnionLayout {
+    assert(loaded_union.layout != .@"packed");
+
     const ip = &zcu.intern_pool;
     var most_aligned_field: u32 = 0;
     var most_aligned_field_align: InternPool.Alignment = .@"1";

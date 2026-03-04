@@ -2369,6 +2369,30 @@ pub const Object = struct {
                 const line = ty.typeDeclSrcLine(zcu).? + 1;
 
                 const enum_tag_ty: Type = .fromInterned(union_type.enum_tag_type);
+
+                if (union_type.layout == .@"packed") {
+                    const bitpack_field = try o.builder.debugMemberType(
+                        try o.builder.metadataString("bits"),
+                        null, // file
+                        ty_fwd_ref,
+                        0, // line
+                        try o.getDebugType(pt, .fromInterned(union_type.packed_backing_int_type)),
+                        ty.abiSize(zcu) * 8,
+                        ty.abiAlignment(zcu).toByteUnits().? * 8,
+                        0, // offset
+                    );
+                    return o.builder.debugStructType(
+                        name,
+                        file,
+                        scope,
+                        line,
+                        null, // underlying type
+                        ty.abiSize(zcu) * 8,
+                        ty.abiAlignment(zcu).toByteUnits().? * 8,
+                        try o.builder.metadataTuple(&.{bitpack_field}),
+                    );
+                }
+
                 const layout = Type.getUnionLayout(union_type, zcu);
 
                 if (layout.payload_size == 0) {
@@ -2411,10 +2435,7 @@ pub const Object = struct {
                     const field_ty = union_type.field_types.get(ip)[field_index];
 
                     const field_size = Type.fromInterned(field_ty).abiSize(zcu);
-                    const field_align: InternPool.Alignment = switch (union_type.layout) {
-                        .@"packed" => .none,
-                        .auto, .@"extern" => ty.explicitFieldAlignment(field_index, zcu),
-                    };
+                    const field_align: InternPool.Alignment = ty.explicitFieldAlignment(field_index, zcu);
 
                     const field_name = enum_tag_ty.enumFieldName(field_index, zcu);
                     fields.appendAssumeCapacity(try o.builder.debugMemberType(
@@ -3318,13 +3339,14 @@ pub const Object = struct {
                     if (o.type_map.get(t.toIntern())) |value| return value;
 
                     const union_obj = ip.loadUnionType(t.toIntern());
-                    const layout = Type.getUnionLayout(union_obj, zcu);
 
                     if (union_obj.layout == .@"packed") {
                         const int_ty = try o.lowerType(pt, .fromInterned(union_obj.packed_backing_int_type));
                         try o.type_map.put(o.gpa, t.toIntern(), int_ty);
                         return int_ty;
                     }
+
+                    const layout = Type.getUnionLayout(union_obj, zcu);
 
                     if (layout.payload_size == 0) {
                         const enum_tag_ty = try o.lowerType(pt, .fromInterned(union_obj.enum_tag_type));
@@ -6760,7 +6782,7 @@ pub const FuncGen = struct {
         const struct_field = self.air.extraData(Air.StructField, ty_pl.payload).data;
         const struct_ptr = try self.resolveInst(struct_field.struct_operand);
         const struct_ptr_ty = self.typeOf(struct_field.struct_operand);
-        return self.fieldPtr(inst, struct_ptr, struct_ptr_ty, struct_field.field_index);
+        return self.fieldPtr(struct_ptr, struct_ptr_ty, struct_field.field_index);
     }
 
     fn airStructFieldPtrIndex(
@@ -6771,7 +6793,7 @@ pub const FuncGen = struct {
         const ty_op = self.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
         const struct_ptr = try self.resolveInst(ty_op.operand);
         const struct_ptr_ty = self.typeOf(ty_op.operand);
-        return self.fieldPtr(inst, struct_ptr, struct_ptr_ty, field_index);
+        return self.fieldPtr(struct_ptr, struct_ptr_ty, field_index);
     }
 
     fn airStructFieldVal(self: *FuncGen, inst: Air.Inst.Index) !Builder.Value {
@@ -10704,18 +10726,11 @@ pub const FuncGen = struct {
         const extra = self.air.extraData(Air.UnionInit, ty_pl.payload).data;
         const union_ty = self.typeOfIndex(inst);
         const union_llvm_ty = try o.lowerType(pt, union_ty);
-        const layout = union_ty.unionGetLayout(zcu);
         const union_obj = zcu.typeToUnion(union_ty).?;
 
-        if (union_obj.layout == .@"packed") {
-            const big_bits = union_ty.bitSize(zcu);
-            const int_llvm_ty = try o.builder.intType(@intCast(big_bits));
-            const field_ty = Type.fromInterned(union_obj.field_types.get(ip)[extra.field_index]);
-            const non_int_val = try self.resolveInst(extra.init);
-            const small_int_ty = try o.builder.intType(@intCast(field_ty.bitSize(zcu)));
-            const small_int_val = try self.wip.cast(.bitcast, non_int_val, small_int_ty, "");
-            return self.wip.conv(.unsigned, small_int_val, int_llvm_ty, "");
-        }
+        assert(union_obj.layout != .@"packed");
+
+        const layout = Type.getUnionLayout(union_obj, zcu);
 
         const tag_int_val = blk: {
             const tag_ty = union_ty.unionTagTypeHypothetical(zcu);
@@ -11051,65 +11066,45 @@ pub const FuncGen = struct {
 
     fn fieldPtr(
         self: *FuncGen,
-        inst: Air.Inst.Index,
-        struct_ptr: Builder.Value,
-        struct_ptr_ty: Type,
+        aggregate_ptr: Builder.Value,
+        aggregate_ptr_ty: Type,
         field_index: u32,
     ) !Builder.Value {
         const o = self.ng.object;
         const pt = self.ng.pt;
         const zcu = pt.zcu;
-        const struct_ty = struct_ptr_ty.childType(zcu);
-        switch (struct_ty.zigTypeTag(zcu)) {
-            .@"struct" => switch (struct_ty.containerLayout(zcu)) {
-                .@"packed" => {
-                    const result_ty = self.typeOfIndex(inst);
-                    const result_ty_info = result_ty.ptrInfo(zcu);
-                    const struct_ptr_ty_info = struct_ptr_ty.ptrInfo(zcu);
-                    const struct_type = zcu.typeToStruct(struct_ty).?;
-
-                    if (result_ty_info.packed_offset.host_size != 0) {
-                        // From LLVM's perspective, a pointer to a packed struct and a pointer
-                        // to a field of a packed struct are the same. The difference is in the
-                        // Zig pointer type which provides information for how to mask and shift
-                        // out the relevant bits when accessing the pointee.
-                        return struct_ptr;
-                    }
-
-                    // We have a pointer to a packed struct field that happens to be byte-aligned.
-                    // Offset our operand pointer by the correct number of bytes.
-                    const byte_offset = @divExact(zcu.structPackedFieldBitOffset(struct_type, field_index) + struct_ptr_ty_info.packed_offset.bit_offset, 8);
-                    if (byte_offset == 0) return struct_ptr;
-                    const usize_ty = try o.lowerType(pt, Type.usize);
-                    const llvm_index = try o.builder.intValue(usize_ty, byte_offset);
-                    return self.wip.gep(.inbounds, .i8, struct_ptr, &.{llvm_index}, "");
-                },
-                else => {
-                    if (!struct_ty.hasRuntimeBits(zcu)) {
-                        return struct_ptr;
-                    }
-                    const struct_llvm_ty = try o.lowerType(pt, struct_ty);
-                    if (o.llvmFieldIndex(struct_ty, field_index)) |llvm_field_index| {
-                        return self.wip.gepStruct(struct_llvm_ty, struct_ptr, llvm_field_index, "");
-                    } else {
-                        // If we found no index then this means this is a zero sized field at the
-                        // end of the struct. Treat our struct pointer as an array of two and get
-                        // the index to the element at index `1` to get a pointer to the end of
-                        // the struct.
-                        const llvm_index = try o.builder.intValue(
-                            try o.lowerType(pt, Type.usize),
-                            @intFromBool(struct_ty.hasRuntimeBits(zcu)),
-                        );
-                        return self.wip.gep(.inbounds, struct_llvm_ty, struct_ptr, &.{llvm_index}, "");
-                    }
-                },
+        const aggregate_ty = aggregate_ptr_ty.childType(zcu);
+        if (aggregate_ty.containerLayout(zcu) == .@"packed") {
+            // A pointer to a bitpack field is equivalent to a pointer to the whole bitpack; the
+            // bit offset is represented in the pointer *type*.
+            return aggregate_ptr;
+        }
+        switch (aggregate_ty.zigTypeTag(zcu)) {
+            .@"struct" => {
+                if (!aggregate_ty.hasRuntimeBits(zcu)) {
+                    return aggregate_ptr;
+                }
+                const struct_llvm_ty = try o.lowerType(pt, aggregate_ty);
+                if (o.llvmFieldIndex(aggregate_ty, field_index)) |llvm_field_index| {
+                    return self.wip.gepStruct(struct_llvm_ty, aggregate_ptr, llvm_field_index, "");
+                } else {
+                    // If we found no index then this means this is a zero sized field at the
+                    // end of the struct. Treat our struct pointer as an array of two and get
+                    // the index to the element at index `1` to get a pointer to the end of
+                    // the struct.
+                    const llvm_index = try o.builder.intValue(
+                        try o.lowerType(pt, Type.usize),
+                        @intFromBool(aggregate_ty.hasRuntimeBits(zcu)),
+                    );
+                    return self.wip.gep(.inbounds, struct_llvm_ty, aggregate_ptr, &.{llvm_index}, "");
+                }
             },
             .@"union" => {
-                const layout = struct_ty.unionGetLayout(zcu);
-                if (layout.payload_size == 0 or struct_ty.containerLayout(zcu) == .@"packed") return struct_ptr;
+                const layout = aggregate_ty.unionGetLayout(zcu);
+                if (layout.payload_size == 0) return aggregate_ptr;
                 const payload_index = @intFromBool(layout.tag_size > 0 and layout.tag_align.compare(.gte, layout.payload_align));
-                const union_llvm_ty = try o.lowerType(pt, struct_ty);
-                return self.wip.gepStruct(union_llvm_ty, struct_ptr, payload_index, "");
+                const union_llvm_ty = try o.lowerType(pt, aggregate_ty);
+                return self.wip.gepStruct(union_llvm_ty, aggregate_ptr, payload_index, "");
             },
             else => unreachable,
         }

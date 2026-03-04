@@ -3917,69 +3917,86 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
         .union_type => {
             const loaded_union = ip.loadUnionType(value_index);
             const file = loaded_union.zir_index.resolveFile(ip);
-            const need_terminator: bool = if (loaded_union.name_nav.unwrap()) |nav_index| t: {
-                const nav = ip.getNav(nav_index);
-                const decl_inst = nav.srcInst(ip).resolve(ip).?;
-                const decl = zcu.fileByIndex(file).zir.?.getDeclaration(decl_inst);
-                try wip_nav.declCommon(.{
-                    .decl = .decl_union,
-                    .generic_decl = .generic_decl_const,
-                    .decl_instance = .decl_instance_union,
-                }, &nav, file, &decl);
-                break :t true;
-            } else t: {
-                const file_gop = try dwarf.getModInfo(unit).files.getOrPut(dwarf.gpa, file);
-                try wip_nav.abbrevCode(if (loaded_union.field_types.len > 0) .union_type else .empty_union_type);
-                try diw.writeUleb128(file_gop.index);
-                try wip_nav.strp(loaded_union.name.toSlice(ip));
-                break :t loaded_union.field_types.len > 0;
-            };
-            const union_layout = Type.getUnionLayout(loaded_union, zcu);
-            try diw.writeUleb128(union_layout.abi_size);
-            try diw.writeUleb128(union_layout.abi_align.toByteUnits().?);
-            const loaded_tag = ip.loadEnumType(loaded_union.enum_tag_type);
-            if (loaded_union.has_runtime_tag) {
-                try wip_nav.abbrevCode(.tagged_union);
-                try wip_nav.infoSectionOffset(
-                    .debug_info,
-                    wip_nav.unit,
-                    wip_nav.entry,
-                    @intCast(diw.end + dwarf.sectionOffsetBytes()),
-                );
-                {
-                    try wip_nav.abbrevCode(.generated_field);
-                    try wip_nav.strp("tag");
-                    try wip_nav.refType(.fromInterned(loaded_union.enum_tag_type));
-                    try diw.writeUleb128(union_layout.tagOffset());
-
-                    for (0..loaded_union.field_types.len) |field_index| {
-                        try wip_nav.enumConstValue(loaded_tag, .{
-                            .sdata = .signed_tagged_union_field,
-                            .udata = .unsigned_tagged_union_field,
-                            .block = .big_tagged_union_field,
-                        }, field_index);
+            switch (loaded_union.layout) {
+                .auto, .@"extern" => {
+                    const need_terminator: bool = if (loaded_union.name_nav.unwrap()) |nav_index| t: {
+                        const nav = ip.getNav(nav_index);
+                        const decl_inst = nav.srcInst(ip).resolve(ip).?;
+                        const decl = zcu.fileByIndex(file).zir.?.getDeclaration(decl_inst);
+                        try wip_nav.declCommon(.{
+                            .decl = .decl_union,
+                            .generic_decl = .generic_decl_const,
+                            .decl_instance = .decl_instance_union,
+                        }, &nav, file, &decl);
+                        break :t true;
+                    } else t: {
+                        const file_gop = try dwarf.getModInfo(unit).files.getOrPut(dwarf.gpa, file);
+                        try wip_nav.abbrevCode(if (loaded_union.field_types.len > 0) .union_type else .empty_union_type);
+                        try diw.writeUleb128(file_gop.index);
+                        try wip_nav.strp(loaded_union.name.toSlice(ip));
+                        break :t loaded_union.field_types.len > 0;
+                    };
+                    const union_layout = Type.getUnionLayout(loaded_union, zcu);
+                    try diw.writeUleb128(union_layout.abi_size);
+                    try diw.writeUleb128(union_layout.abi_align.toByteUnits().?);
+                    const loaded_tag = ip.loadEnumType(loaded_union.enum_tag_type);
+                    if (loaded_union.has_runtime_tag) {
+                        try wip_nav.abbrevCode(.tagged_union);
+                        try wip_nav.infoSectionOffset(
+                            .debug_info,
+                            wip_nav.unit,
+                            wip_nav.entry,
+                            @intCast(diw.end + dwarf.sectionOffsetBytes()),
+                        );
                         {
-                            try wip_nav.abbrevCode(.struct_field);
-                            try wip_nav.strp(loaded_tag.field_names.get(ip)[field_index].toSlice(ip));
-                            const field_type: Type = .fromInterned(loaded_union.field_types.get(ip)[field_index]);
-                            try wip_nav.refType(field_type);
-                            try diw.writeUleb128(union_layout.payloadOffset());
-                            try diw.writeUleb128(loaded_union.field_aligns.getOrNone(ip, field_index).toByteUnits() orelse
-                                if (field_type.isNoReturn(zcu)) 1 else field_type.abiAlignment(zcu).toByteUnits().?);
+                            try wip_nav.abbrevCode(.generated_field);
+                            try wip_nav.strp("tag");
+                            try wip_nav.refType(.fromInterned(loaded_union.enum_tag_type));
+                            try diw.writeUleb128(union_layout.tagOffset());
+
+                            for (0..loaded_union.field_types.len) |field_index| {
+                                try wip_nav.enumConstValue(loaded_tag, .{
+                                    .sdata = .signed_tagged_union_field,
+                                    .udata = .unsigned_tagged_union_field,
+                                    .block = .big_tagged_union_field,
+                                }, field_index);
+                                {
+                                    try wip_nav.abbrevCode(.struct_field);
+                                    try wip_nav.strp(loaded_tag.field_names.get(ip)[field_index].toSlice(ip));
+                                    const field_type: Type = .fromInterned(loaded_union.field_types.get(ip)[field_index]);
+                                    try wip_nav.refType(field_type);
+                                    try diw.writeUleb128(union_layout.payloadOffset());
+                                    try diw.writeUleb128(loaded_union.field_aligns.getOrNone(ip, field_index).toByteUnits() orelse
+                                        if (field_type.isNoReturn(zcu)) 1 else field_type.abiAlignment(zcu).toByteUnits().?);
+                                }
+                                try diw.writeUleb128(@intFromEnum(AbbrevCode.null));
+                            }
                         }
                         try diw.writeUleb128(@intFromEnum(AbbrevCode.null));
+                    } else for (0..loaded_union.field_types.len) |field_index| {
+                        try wip_nav.abbrevCode(.untagged_union_field);
+                        try wip_nav.strp(loaded_tag.field_names.get(ip)[field_index].toSlice(ip));
+                        const field_type: Type = .fromInterned(loaded_union.field_types.get(ip)[field_index]);
+                        try wip_nav.refType(field_type);
+                        try diw.writeUleb128(loaded_union.field_aligns.getOrNone(ip, field_index).toByteUnits() orelse
+                            if (field_type.isNoReturn(zcu)) 1 else field_type.abiAlignment(zcu).toByteUnits().?);
                     }
-                }
-                try diw.writeUleb128(@intFromEnum(AbbrevCode.null));
-            } else for (0..loaded_union.field_types.len) |field_index| {
-                try wip_nav.abbrevCode(.untagged_union_field);
-                try wip_nav.strp(loaded_tag.field_names.get(ip)[field_index].toSlice(ip));
-                const field_type: Type = .fromInterned(loaded_union.field_types.get(ip)[field_index]);
-                try wip_nav.refType(field_type);
-                try diw.writeUleb128(loaded_union.field_aligns.getOrNone(ip, field_index).toByteUnits() orelse
-                    if (field_type.isNoReturn(zcu)) 1 else field_type.abiAlignment(zcu).toByteUnits().?);
+                    if (need_terminator) try diw.writeUleb128(@intFromEnum(AbbrevCode.null));
+                },
+                .@"packed" => {
+                    // TODO: debug info for packed unions
+                    try wip_nav.abbrevCode(.numeric_type);
+                    try wip_nav.strp(loaded_union.name.toSlice(ip));
+                    const backing_int_ty: Type = .fromInterned(loaded_union.packed_backing_int_type);
+                    const int_info = backing_int_ty.intInfo(zcu);
+                    try diw.writeByte(switch (int_info.signedness) {
+                        inline .signed, .unsigned => |signedness| @field(DW.ATE, @tagName(signedness)),
+                    });
+                    try diw.writeUleb128(int_info.bits);
+                    try diw.writeUleb128(backing_int_ty.abiSize(zcu));
+                    try diw.writeUleb128(backing_int_ty.abiAlignment(zcu).toByteUnits().?);
+                },
             }
-            if (need_terminator) try diw.writeUleb128(@intFromEnum(AbbrevCode.null));
         },
         .enum_type => {
             const loaded_enum = ip.loadEnumType(value_index);
