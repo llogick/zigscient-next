@@ -63,7 +63,7 @@ pub fn alignment(comptime T: type) comptime_int {
             .pointer, .@"fn" => alignment(info.child),
             else => @alignOf(T),
         },
-        .pointer => |info| info.alignment,
+        .pointer => |info| info.alignment orelse @alignOf(info.child),
         else => @alignOf(T),
     };
 }

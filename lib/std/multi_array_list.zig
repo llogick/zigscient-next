@@ -194,9 +194,9 @@ pub fn MultiArrayList(comptime T: type) type {
                 data[i] = .{
                     .size = @sizeOf(field_info.type),
                     .size_index = i,
-                    .alignment = if (@sizeOf(field_info.type) == 0) 1 else field_info.alignment,
+                    .alignment = field_info.alignment orelse @alignOf(field_info.type),
                 };
-                big_align = @max(big_align, @alignOf(field_info.type));
+                big_align = @max(big_align, data[i].alignment);
             }
             const Sort = struct {
                 fn lessThan(context: void, lhs: Data, rhs: Data) bool {
