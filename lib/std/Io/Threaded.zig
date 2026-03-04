@@ -2868,7 +2868,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
             break :t @min(@max(0, duration.raw.toMilliseconds()), std.math.maxInt(i32));
         };
         const syscall = try Syscall.start();
-        const rc = posix.system.poll(&poll_buffer, poll_storage.len, timeout_ms);
+        const rc = posix.system.poll(poll_storage.slice.ptr, poll_storage.len, timeout_ms);
         syscall.finish();
         switch (posix.errno(rc)) {
             .SUCCESS => {
