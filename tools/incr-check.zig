@@ -338,7 +338,7 @@ const Eval = struct {
 
                     if (eval.target.backend == .sema) {
                         try eval.checkSuccessOutcome(update, null, prog_node);
-                        // This message indicates the end of the update.
+                        continue;
                     }
 
                     const digest = r.takeArray(Cache.bin_digest_len) catch unreachable;
@@ -352,7 +352,6 @@ const Eval = struct {
                     const bin_path = try Dir.path.join(arena, &.{ result_dir, bin_name });
 
                     try eval.checkSuccessOutcome(update, bin_path, prog_node);
-                    // This message indicates the end of the update.
                 },
                 else => {
                     // Ignore other messages.
