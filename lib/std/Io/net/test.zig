@@ -177,6 +177,7 @@ test "resolve DNS" {
 }
 
 test "listen on a port, send bytes, receive bytes" {
+    if (true) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31388
     if (builtin.single_threaded) return error.SkipZigTest;
     if (builtin.os.tag == .wasi) return error.SkipZigTest;
 
