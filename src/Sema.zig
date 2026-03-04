@@ -16250,11 +16250,6 @@ fn zirBuiltinSrc(
     return Air.internedToRef((try pt.aggregateValue(src_loc_ty, &fields)).toIntern());
 }
 
-/// MLUGG TODO: once this branch is in a more stable state, I need to make a language change so that
-/// `std.builtin.Type` makes all `alignment` fields `?usize` instead of `comptime_int`, to prevent
-/// explicit alignment annotations from sneaking in without the user requesting any; but doing that
-/// right now would be really annoying because it would break the base compiler. I need to have the
-/// compiler more-or-less fully migrated first.
 fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
@@ -16432,12 +16427,17 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
         },
         .pointer => {
             const info = ty.ptrInfo(zcu);
-            const alignment_val = try pt.intValue(.comptime_int, bytes: {
-                if (info.flags.alignment.toByteUnits()) |b| break :bytes b;
-                const elem_ty: Type = .fromInterned(info.child);
-                try sema.ensureLayoutResolved(elem_ty, src, .type_info);
-                break :bytes elem_ty.abiAlignment(zcu).toByteUnits().?;
-            });
+            const alignment_ty = try pt.optionalType(.usize_type);
+            const alignment_val: Value = val: {
+                const bytes = info.flags.alignment.toByteUnits() orelse {
+                    break :val try pt.nullValue(alignment_ty);
+                };
+                const int_val = try pt.intValue(.usize, bytes);
+                break :val .fromInterned(try pt.intern(.{ .opt = .{
+                    .ty = alignment_ty.toIntern(),
+                    .val = int_val.toIntern(),
+                } }));
+            };
 
             const addrspace_ty = try sema.getBuiltinType(src, .AddressSpace);
             const pointer_ty = try sema.getBuiltinType(src, .@"Type.Pointer");
@@ -16450,7 +16450,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 Value.makeBool(info.flags.is_const).toIntern(),
                 // is_volatile: bool,
                 Value.makeBool(info.flags.is_volatile).toIntern(),
-                // alignment: comptime_int,
+                // alignment: ?usize,
                 alignment_val.toIntern(),
                 // address_space: AddressSpace
                 (try pt.enumValueFieldIndex(addrspace_ty, @intFromEnum(info.flags.address_space))).toIntern(),
@@ -16766,12 +16766,20 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
 
                 const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[field_index]);
 
-                const alignment = switch (layout) {
-                    .auto, .@"extern" => switch (ty.explicitFieldAlignment(field_index, zcu)) {
-                        .none => field_ty.abiAlignment(zcu),
-                        else => |a| a,
-                    },
-                    .@"packed" => .none,
+                const alignment_ty = try pt.optionalType(.usize_type);
+                const alignment_val: Value = val: {
+                    const a: Alignment = switch (layout) {
+                        .auto, .@"extern" => ty.explicitFieldAlignment(field_index, zcu),
+                        .@"packed" => .none,
+                    };
+                    const bytes = a.toByteUnits() orelse {
+                        break :val try pt.nullValue(alignment_ty);
+                    };
+                    const int_val = try pt.intValue(.usize, bytes);
+                    break :val .fromInterned(try pt.intern(.{ .opt = .{
+                        .ty = alignment_ty.toIntern(),
+                        .val = int_val.toIntern(),
+                    } }));
                 };
 
                 const union_field_fields = .{
@@ -16779,8 +16787,8 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                     name_val,
                     // type: type,
                     field_ty.toIntern(),
-                    // alignment: comptime_int,
-                    (try pt.intValue(.comptime_int, alignment.toByteUnits() orelse 0)).toIntern(),
+                    // alignment: ?usize,
+                    alignment_val.toIntern(),
                 };
                 field_val.* = (try pt.aggregateValue(union_field_ty, &union_field_fields)).toIntern();
             }
@@ -16881,6 +16889,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                             const is_comptime = field_val != .none;
                             const opt_default_val = if (is_comptime) Value.fromInterned(field_val) else null;
                             const default_val_ptr = try sema.optRefValue(opt_default_val);
+
                             const struct_field_fields = .{
                                 // name: [:0]const u8,
                                 name_val,
@@ -16890,8 +16899,8 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                                 default_val_ptr.toIntern(),
                                 // is_comptime: bool,
                                 Value.makeBool(is_comptime).toIntern(),
-                                // alignment: comptime_int,
-                                (try pt.intValue(.comptime_int, Type.fromInterned(field_ty).abiAlignment(zcu).toByteUnits() orelse 0)).toIntern(),
+                                // alignment: ?usize,
+                                (try pt.nullValue(try pt.optionalType(.usize_type))).toIntern(),
                             };
                             struct_field_val.* = (try pt.aggregateValue(struct_field_ty, &struct_field_fields)).toIntern();
                         }
@@ -16937,12 +16946,21 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
 
                     const opt_default_val: ?Value = if (field_default == .none) null else .fromInterned(field_default);
                     const default_val_ptr = try sema.optRefValue(opt_default_val);
-                    const alignment = switch (struct_type.layout) {
-                        .auto, .@"extern" => switch (ty.explicitFieldAlignment(field_index, zcu)) {
-                            .none => field_ty.defaultStructFieldAlignment(struct_type.layout, zcu),
-                            else => |a| a,
-                        },
-                        .@"packed" => .none,
+
+                    const alignment_ty = try pt.optionalType(.usize_type);
+                    const alignment_val: Value = val: {
+                        const a: Alignment = switch (struct_type.layout) {
+                            .auto, .@"extern" => ty.explicitFieldAlignment(field_index, zcu),
+                            .@"packed" => .none,
+                        };
+                        const bytes = a.toByteUnits() orelse {
+                            break :val try pt.nullValue(alignment_ty);
+                        };
+                        const int_val = try pt.intValue(.usize, bytes);
+                        break :val .fromInterned(try pt.intern(.{ .opt = .{
+                            .ty = alignment_ty.toIntern(),
+                            .val = int_val.toIntern(),
+                        } }));
                     };
 
                     const struct_field_fields = .{
@@ -16954,8 +16972,8 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                         default_val_ptr.toIntern(),
                         // is_comptime: bool,
                         Value.makeBool(field_is_comptime).toIntern(),
-                        // alignment: comptime_int,
-                        (try pt.intValue(.comptime_int, alignment.toByteUnits() orelse 0)).toIntern(),
+                        // alignment: ?usize,
+                        alignment_val.toIntern(),
                     };
                     field_val.* = (try pt.aggregateValue(struct_field_ty, &struct_field_fields)).toIntern();
                 }
@@ -27425,7 +27443,7 @@ fn coerceExtra(
                 const array_elem_ty = array_ty.childType(zcu);
                 if (array_ty.arrayLen(zcu) != 1) break :single_item;
                 const dest_is_mut = !dest_info.flags.is_const;
-                switch (try sema.coerceInMemoryAllowed(block, array_elem_ty, ptr_elem_ty, dest_is_mut, target, dest_ty_src, inst_src, maybe_inst_val)) {
+                switch (try sema.coerceInMemoryAllowed(block, array_elem_ty, ptr_elem_ty, dest_is_mut, target, dest_ty_src, inst_src, null)) {
                     .ok => {},
                     else => break :single_item,
                 }
@@ -27443,7 +27461,7 @@ fn coerceExtra(
                 const dest_is_mut = !dest_info.flags.is_const;
 
                 const dst_elem_type: Type = .fromInterned(dest_info.child);
-                const elem_res = try sema.coerceInMemoryAllowed(block, dst_elem_type, array_elem_type, dest_is_mut, target, dest_ty_src, inst_src, maybe_inst_val);
+                const elem_res = try sema.coerceInMemoryAllowed(block, dst_elem_type, array_elem_type, dest_is_mut, target, dest_ty_src, inst_src, null);
                 switch (elem_res) {
                     .ok => {},
                     else => {
@@ -27504,7 +27522,7 @@ fn coerceExtra(
                 const src_elem_ty = inst_ty.childType(zcu);
                 const dest_is_mut = !dest_info.flags.is_const;
                 const dst_elem_type: Type = .fromInterned(dest_info.child);
-                switch (try sema.coerceInMemoryAllowed(block, dst_elem_type, src_elem_ty, dest_is_mut, target, dest_ty_src, inst_src, maybe_inst_val)) {
+                switch (try sema.coerceInMemoryAllowed(block, dst_elem_type, src_elem_ty, dest_is_mut, target, dest_ty_src, inst_src, null)) {
                     .ok => {},
                     else => break :src_c_ptr,
                 }
@@ -27575,7 +27593,7 @@ fn coerceExtra(
                             target,
                             dest_ty_src,
                             inst_src,
-                            maybe_inst_val,
+                            null,
                         )) {
                             .ok => {},
                             else => break :p,
@@ -27646,7 +27664,7 @@ fn coerceExtra(
                         target,
                         dest_ty_src,
                         inst_src,
-                        maybe_inst_val,
+                        null,
                     )) {
                         .ok => {},
                         else => break :p,
@@ -27852,7 +27870,7 @@ fn coerceExtra(
                     target,
                     dest_ty_src,
                     inst_src,
-                    maybe_inst_val,
+                    null,
                 )) {
                     break :array_to_array;
                 }
@@ -27931,7 +27949,7 @@ fn coerceExtra(
 
         // E!T to T
         if (inst_ty.zigTypeTag(zcu) == .error_union and
-            (try sema.coerceInMemoryAllowed(block, inst_ty.errorUnionPayload(zcu), dest_ty, false, target, dest_ty_src, inst_src, maybe_inst_val)) == .ok)
+            (try sema.coerceInMemoryAllowed(block, inst_ty.errorUnionPayload(zcu), dest_ty, false, target, dest_ty_src, inst_src, null)) == .ok)
         {
             try sema.errNote(inst_src, msg, "cannot convert error union to payload type", .{});
             try sema.errNote(inst_src, msg, "consider using 'try', 'catch', or 'if'", .{});
@@ -27939,7 +27957,7 @@ fn coerceExtra(
 
         // ?T to T
         if (inst_ty.zigTypeTag(zcu) == .optional and
-            (try sema.coerceInMemoryAllowed(block, inst_ty.optionalChild(zcu), dest_ty, false, target, dest_ty_src, inst_src, maybe_inst_val)) == .ok)
+            (try sema.coerceInMemoryAllowed(block, inst_ty.optionalChild(zcu), dest_ty, false, target, dest_ty_src, inst_src, null)) == .ok)
         {
             try sema.errNote(inst_src, msg, "cannot convert optional to payload type", .{});
             try sema.errNote(inst_src, msg, "consider using '.?', 'orelse', or 'if'", .{});
@@ -28385,6 +28403,10 @@ pub fn coerceInMemoryAllowed(
 ) CompileError!InMemoryCoercionResult {
     const pt = sema.pt;
     const zcu = pt.zcu;
+
+    if (src_val) |val| {
+        assert(val.typeOf(zcu).toIntern() == src_ty.toIntern());
+    }
 
     if (dest_ty.eql(src_ty, zcu))
         return .ok;
