@@ -112,10 +112,17 @@ pub const Class = enum(u3) {
 };
 
 /// Returns the `Class` for the type `ty`. Asserts that the layout of `ty` is resolved.
-pub fn classify(ty: Type, zcu: *const Zcu) Class {
-    ty.assertHasLayout(zcu);
+pub fn classify(start_ty: Type, zcu: *const Zcu) Class {
     const ip = &zcu.intern_pool;
-    return switch (ip.indexToKey(ty.toIntern())) {
+
+    // We avoid recursion in most cases to make us more optimizer-friendly because this can be a
+    // very hot code path. The only case where recursion is necessary is tuples, so that case is
+    // outlined into a separate function; see `classifyTuple`.
+
+    var extra_states: enum { none, one, many } = .none;
+
+    var cur_ty = start_ty;
+    const base: Class = while (true) break switch (ip.indexToKey(cur_ty.toIntern())) {
         .simple_type => |t| switch (t) {
             .f16,
             .f32,
@@ -165,17 +172,10 @@ pub fn classify(ty: Type, zcu: *const Zcu) Class {
 
         .opaque_type => .no_possible_value,
 
-        .error_union_type => |eu| switch (Type.fromInterned(eu.payload_type).classify(zcu)) {
-            .no_possible_value,
-            .one_possible_value,
-            .runtime,
-            => .runtime,
-
-            .partially_comptime => .partially_comptime,
-            // It may seem that this should be `.partially_comptime` due to the error set, however
-            // there is no way to take a pointer to the error set of an error union, so it does not
-            // actually necessitate runtime bits.
-            .fully_comptime => .fully_comptime,
+        .error_union_type => |eu| {
+            extra_states = .many;
+            cur_ty = .fromInterned(eu.payload_type);
+            continue;
         },
 
         .int_type => |int| switch (int.bits) {
@@ -183,55 +183,58 @@ pub fn classify(ty: Type, zcu: *const Zcu) Class {
             else => .runtime,
         },
         .array_type => |arr| {
-            if (arr.len == 0 and arr.sentinel == .none) return .one_possible_value;
-            return Type.fromInterned(arr.child).classify(zcu);
+            if (arr.len == 0 and arr.sentinel == .none) break .one_possible_value;
+            cur_ty = .fromInterned(arr.child);
+            continue;
         },
         .vector_type => |vec| {
-            if (vec.len == 0) return .one_possible_value;
-            return Type.fromInterned(vec.child).classify(zcu);
+            if (vec.len == 0) break .one_possible_value;
+            cur_ty = .fromInterned(vec.child);
+            continue;
         },
-        .opt_type => |child| switch (Type.fromInterned(child).classify(zcu)) {
-            .no_possible_value => .one_possible_value,
-            .one_possible_value => .runtime,
-            else => |class| class,
+        .opt_type => |child_ty_ip| {
+            extra_states = switch (extra_states) {
+                .none => .one,
+                .one, .many => .many,
+            };
+            cur_ty = .fromInterned(child_ty_ip);
+            continue;
         },
         .tuple_type => |tuple| {
-            var has_runtime_state = false;
-            var has_comptime_state = false;
-            for (tuple.types.get(ip), tuple.values.get(ip)) |field_ty, field_comptime_val| {
-                if (field_comptime_val != .none) continue;
-                switch (Type.fromInterned(field_ty).classify(zcu)) {
-                    .no_possible_value => return .no_possible_value,
-                    .one_possible_value => {},
-                    .runtime => has_runtime_state = true,
-                    .fully_comptime => has_comptime_state = true,
-                    .partially_comptime => {
-                        has_runtime_state = true;
-                        has_comptime_state = true;
-                    },
-                }
-            }
-            if (has_comptime_state) {
-                return if (has_runtime_state) .partially_comptime else .fully_comptime;
-            } else {
-                return if (has_runtime_state) .runtime else .one_possible_value;
-            }
+            @branchHint(.unlikely);
+            break classifyTuple(tuple.types.get(ip), tuple.values.get(ip), zcu);
         },
         .struct_type => {
-            const struct_obj = ip.loadStructType(ty.toIntern());
-            return switch (struct_obj.layout) {
-                .auto, .@"extern" => struct_obj.class,
-                .@"packed" => Type.fromInterned(struct_obj.packed_backing_int_type).classify(zcu),
-            };
+            const struct_obj = ip.loadStructType(cur_ty.toIntern());
+            switch (struct_obj.layout) {
+                .auto, .@"extern" => {
+                    zcu.assertUpToDate(.wrap(.{ .type_layout = cur_ty.toIntern() }));
+                    break struct_obj.class;
+                },
+                .@"packed" => {
+                    cur_ty = .fromInterned(struct_obj.packed_backing_int_type);
+                    continue;
+                },
+            }
         },
         .union_type => {
-            const union_obj = ip.loadUnionType(ty.toIntern());
-            return switch (union_obj.layout) {
-                .auto, .@"extern" => union_obj.class,
-                .@"packed" => Type.fromInterned(union_obj.packed_backing_int_type).classify(zcu),
-            };
+            const union_obj = ip.loadUnionType(cur_ty.toIntern());
+            switch (union_obj.layout) {
+                .auto, .@"extern" => {
+                    zcu.assertUpToDate(.wrap(.{ .type_layout = cur_ty.toIntern() }));
+                    break union_obj.class;
+                },
+                .@"packed" => {
+                    cur_ty = .fromInterned(union_obj.packed_backing_int_type);
+                    continue;
+                },
+            }
         },
-        .enum_type => Type.fromInterned(ip.loadEnumType(ty.toIntern()).int_tag_type).classify(zcu),
+        .enum_type => {
+            zcu.assertUpToDate(.wrap(.{ .type_layout = cur_ty.toIntern() }));
+            cur_ty = .fromInterned(ip.loadEnumType(cur_ty.toIntern()).int_tag_type);
+            continue;
+        },
 
         // values, not types
         .undef,
@@ -255,6 +258,53 @@ pub fn classify(ty: Type, zcu: *const Zcu) Class {
         .memoized_call,
         => unreachable,
     };
+
+    return switch (base) {
+        .runtime => .runtime, // extra states are irrelevant, we already have many!
+        .partially_comptime => .partially_comptime, // likewise
+        .fully_comptime => {
+            // We do not need to change to `.partially_comptime` here because the extra states do
+            // not necessarily require runtime bits. This is because Zig does not provide a way to
+            // take the address of the "is null" bit of an optional or the error set "inside" of an
+            // error union.
+            return .fully_comptime;
+        },
+
+        .no_possible_value => switch (extra_states) {
+            .none => .no_possible_value,
+            .one => .one_possible_value,
+            .many => .runtime,
+        },
+
+        .one_possible_value => switch (extra_states) {
+            .none => .one_possible_value,
+            .one, .many => .runtime,
+        },
+    };
+}
+/// This is a separate function to `classify` to avoid recursion in the main `classify` function,
+/// which can encourage the optimizer to e.g. inline `classify` where it would be beneficial.
+fn classifyTuple(types: []const InternPool.Index, values: []const InternPool.Index, zcu: *const Zcu) Class {
+    var has_runtime_state = false;
+    var has_comptime_state = false;
+    for (types, values) |field_ty, field_comptime_val| {
+        if (field_comptime_val != .none) continue;
+        switch (Type.fromInterned(field_ty).classify(zcu)) {
+            .no_possible_value => return .no_possible_value,
+            .one_possible_value => {},
+            .runtime => has_runtime_state = true,
+            .fully_comptime => has_comptime_state = true,
+            .partially_comptime => {
+                has_runtime_state = true;
+                has_comptime_state = true;
+            },
+        }
+    }
+    if (has_comptime_state) {
+        return if (has_runtime_state) .partially_comptime else .fully_comptime;
+    } else {
+        return if (has_runtime_state) .runtime else .one_possible_value;
+    }
 }
 
 /// Asserts the type is resolved.
@@ -1061,7 +1111,10 @@ pub fn abiSize(ty: Type, zcu: *const Zcu) u64 {
         .error_union_type => |error_union| {
             const payload_ty: Type = .fromInterned(error_union.payload_type);
             switch (payload_ty.classify(zcu)) {
-                .fully_comptime => return 0, // error set does not require runtime bits, see comment in `classify`
+                // Zig has no way to take the address of the error set "in" an error union (giving
+                // implementations more freedom in terms of data layout), so if the payload type is
+                // fully comptime, we don't need to dedicate runtime bits to the error set.
+                .fully_comptime => return 0,
                 else => {},
             }
             // The layout will either be (code, payload, padding) or (payload, code, padding)
@@ -3177,6 +3230,12 @@ fn validateExternCallconv(cc: std.builtin.CallingConvention) bool {
 
 /// Asserts that `ty` has resolved layout.
 pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
+    if (!std.debug.runtime_safety) {
+        // This early exit isn't necessary (`Zcu.assertUpToDate` checks `std.debug.runtime_safety`
+        // itself), but LLVM has been observed to fail at optimizing away this safety check, which
+        // has a major performance impact on ReleaseFast compiler builds.
+        return;
+    }
     switch (zcu.intern_pool.indexToKey(ty.toIntern())) {
         .int_type,
         .ptr_type,

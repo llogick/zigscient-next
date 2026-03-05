@@ -2287,13 +2287,15 @@ fn resolveValue(sema: *Sema, inst: Air.Inst.Ref) ?Value {
             .inferred_alloc_comptime => unreachable, // assertion failure
             else => {},
         }
-        switch (sema.typeOf(inst).classify(zcu)) {
+        // LLVM fails to eliminate this `classify` call in ReleaseFast, which hurts performance, so
+        // we must explicitly check for `std.debug.runtime_safety`.
+        if (std.debug.runtime_safety) switch (sema.typeOf(inst).classify(zcu)) {
             .no_possible_value => unreachable, // values of this type do not exist
             .one_possible_value => unreachable, // the value should be comptime-known
             .partially_comptime => unreachable, // the value should be comptime-known
             .fully_comptime => unreachable, // the value should be comptime-known
             .runtime => {},
-        }
+        };
         return null;
     }
 }
