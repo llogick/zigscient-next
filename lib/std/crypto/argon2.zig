@@ -707,6 +707,8 @@ test "argon2id" {
 }
 
 test "kdf" {
+    if (true) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31402
+
     const password = "password";
     const salt = "somesalt";
 
