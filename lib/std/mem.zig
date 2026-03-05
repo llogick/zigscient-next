@@ -4002,7 +4002,9 @@ test reverse {
         try testing.expectEqualSlices(MyType, &arr, &([_]MyType{ .c, .{ .b = 0 }, .{ .a = .{ 0, 0, 0 } } }));
     }
 }
-fn ReverseIterator(comptime T: type) type {
+
+/// Returned by `reverseIterator`.
+pub fn ReverseIterator(comptime T: type) type {
     const ptr = switch (@typeInfo(T)) {
         .pointer => |ptr| ptr,
         else => @compileError("expected slice or pointer to array, found '" ++ @typeName(T) ++ "'"),
