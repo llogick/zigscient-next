@@ -2103,8 +2103,9 @@ or
       less than {#syntax#}1 << 29{#endsyntax#}.
       </p>
       <p>
-      In Zig, a pointer type has an alignment value. If the value is equal to the
-      alignment of the underlying type, it can be omitted from the type:
+      Pointer types may explicitly specify an alignment in bytes. If it is not
+      specified, the alignment is assumed to be equal to the alignment of the
+      underlying type.
       </p>
       {#code|test_variable_alignment.zig#}
 
