@@ -4404,10 +4404,7 @@ fn setUpChildIo(
         .close => closeFd(std_fileno),
         .inherit => {},
         .ignore => try ev.dup2(dev_null_fd, std_fileno),
-        .file => |file| {
-            if (file.flags.nonblocking) @panic("TODO implement setUpChildIo when nonblocking file is used");
-            try ev.dup2(file.handle, std_fileno);
-        },
+        .file => |file| try ev.dup2(file.handle, std_fileno),
     }
 }
 

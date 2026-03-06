@@ -409,6 +409,12 @@ pub const SpawnOptions = struct {
         /// Inherit the corresponding stream from the parent process.
         inherit,
         /// Pass an already open file from the parent to the child.
+        ///
+        /// Nonblocking mode will be kept in the child process if present. This is
+        /// likely not supported by the child process. For example:
+        /// - Zig's std.Io.File.stdout() assumes blocking mode
+        /// - Rust explicity documents that nonblocking stdio may cause panics
+        /// - C++ standard streams do not support nonblocking file descriptors
         file: File,
         /// Pass a null stream to the child process by opening "/dev/null" on POSIX
         /// and "NUL" on Windows.
