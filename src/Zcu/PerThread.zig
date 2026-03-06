@@ -498,7 +498,12 @@ pub fn updateFile(
     defer source_file.close(io);
 
     const lsp_doc = try file.getOrLoadLspDocHandle(zcu);
-    if (lsp_doc != null) file.owned_by_comp = false;
+    if (lsp_doc) |doc| {
+        file.owned_by_comp = false;
+        doc.computed_data.lock.lockUncancelable(zcu.lsp_document_store.?.io);
+        defer doc.computed_data.lock.unlock(zcu.lsp_document_store.?.io);
+        doc.computed_data.compilation = zcu.comp.lsp_compilation_build;
+    }
 
     var stat = try source_file.stat(io);
 
@@ -2300,14 +2305,13 @@ fn analyzeFuncBody(
         func.resolvedErrorSetUnordered(ip) != old_resolved_ies;
 
     if (zcu.lsp_document_store) |lsp_doc_store| blk: {
-        const func_info = zcu.funcInfo(func_index);
-        const nav = ip.getNav(func_info.owner_nav);
-        const resolved = nav.srcInst(ip).resolveFull(ip) orelse break :blk;
-        const file = zcu.fileByIndex(resolved.file);
+        const nav = ip.getNav(func.owner_nav);
+        const inst_info = nav.srcInst(ip).resolveFull(ip) orelse break :blk;
+        const file = zcu.fileByIndex(inst_info.file);
         const uri = file.uri_slice orelse break :blk;
         const zir = file.zir orelse break :blk;
-        if (zir.instructions.get(@intFromEnum(resolved.inst)).tag != .declaration) break :blk;
-        const zir_decl = zir.getDeclaration(resolved.inst);
+        if (zir.instructions.get(@intFromEnum(inst_info.inst)).tag != .declaration) break :blk;
+        const zir_decl = zir.getDeclaration(inst_info.inst);
         const src_node = zir_decl.src_node;
         const lsp_doc = lsp_doc_store.getHandle(uri) orelse break :blk;
         lsp_doc.computed_data.lock.lockUncancelable(lsp_doc_store.io);
@@ -2316,6 +2320,7 @@ fn analyzeFuncBody(
         if (gop.found_existing) gop.value_ptr.air.deinit(lsp_doc_store.allocator);
         gop.value_ptr.air = air;
         gop.value_ptr.tid = pt.tid;
+        air_owned = false;
         return .{ .ies_outdated = ies_outdated };
     }
 
@@ -2581,6 +2586,7 @@ pub fn populateModuleRootTable(pt: Zcu.PerThread) error{
             .prev_zir = null,
             .zoir_invalidated = false,
         };
+        new_file.uri_slice = new_file.pathToUriSlice(zcu) catch null;
     }
 }
 

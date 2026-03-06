@@ -5278,7 +5278,7 @@ fn zirCImport(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileEr
     const parent_mod = parent_block.ownerModule();
     const digest = Cache.binToHex(c_import_res.digest);
 
-    const new_file_index = file: {
+    const new_file_index, const c_import_file = file: {
         const c_import_zig_path = try comp.arena.dupe(u8, "o" ++ std.fs.path.sep_str ++ digest);
         const c_import_mod = Package.Module.create(comp.arena, .{
             .paths = .{
@@ -5330,14 +5330,16 @@ fn zirCImport(sema: *Sema, parent_block: *Block, inst: Zir.Inst.Index) CompileEr
             .prev_zir = null,
             .zoir_invalidated = false,
         };
-        break :file c_import_file_index;
+        c_import_file.uri_slice = c_import_file.pathToUriSlice(zcu) catch null;
+        break :file .{ c_import_file_index, c_import_file };
     };
-    pt.updateFile(new_file_index, zcu.fileByIndex(new_file_index)) catch |err|
+    pt.updateFile(new_file_index, c_import_file) catch |err|
         return sema.fail(&child_block, src, "C import failed: {s}", .{@errorName(err)});
 
     try pt.ensureFilePopulated(new_file_index);
     const ty: Type = .fromInterned(zcu.fileRootType(new_file_index));
     try sema.addTypeReferenceEntry(src, ty);
+    try zcu.cimport_files.append(gpa, c_import_file);
     return .fromType(ty);
 }
 
