@@ -759,7 +759,7 @@ fn resolveInst(cg: *CodeGen, ref: Air.Inst.Ref) InnerError!WValue {
     const zcu = pt.zcu;
     const val = (try cg.air.value(ref, pt)).?;
     const ty = cg.typeOf(ref);
-    if (!ty.hasRuntimeBitsIgnoreComptime(zcu) and !ty.isInt(zcu) and !ty.isError(zcu)) {
+    if (!ty.hasRuntimeBits(zcu) and !ty.isInt(zcu) and !ty.isError(zcu)) {
         gop.value_ptr.* = .none;
         return .none;
     }
@@ -773,7 +773,7 @@ fn resolveInst(cg: *CodeGen, ref: Air.Inst.Ref) InnerError!WValue {
     const result: WValue = if (isByRef(ty, zcu, cg.target))
         .{ .uav_ref = .{ .ip_index = val.toIntern() } }
     else
-        try cg.lowerConstant(val, ty);
+        try cg.lowerConstant(val);
 
     gop.value_ptr.* = result;
     return result;
@@ -786,7 +786,7 @@ fn resolveValue(cg: *CodeGen, val: Value) InnerError!WValue {
     return if (isByRef(ty, zcu, cg.target))
         .{ .uav_ref = .{ .ip_index = val.toIntern() } }
     else
-        try cg.lowerConstant(val, ty);
+        try cg.lowerConstant(val);
 }
 
 /// NOTE: if result == .stack, it will be stored in .local
@@ -980,7 +980,6 @@ fn addExtraAssumeCapacity(cg: *CodeGen, extra: anytype) error{OutOfMemory}!u32 {
 
 /// For `std.builtin.CallingConvention.auto`.
 pub fn typeToValtype(ty: Type, zcu: *const Zcu, target: *const std.Target) std.wasm.Valtype {
-    const ip = &zcu.intern_pool;
     return switch (ty.zigTypeTag(zcu)) {
         .float => switch (ty.floatBits(target)) {
             16 => .i32, // stored/loaded as u16
@@ -994,25 +993,13 @@ pub fn typeToValtype(ty: Type, zcu: *const Zcu, target: *const std.Target) std.w
             33...64 => .i64,
             else => .i32,
         },
-        .@"struct" => blk: {
-            if (zcu.typeToPackedStruct(ty)) |packed_struct| {
-                const backing_int_ty = Type.fromInterned(packed_struct.backingIntTypeUnordered(ip));
-                break :blk typeToValtype(backing_int_ty, zcu, target);
-            } else {
-                break :blk .i32;
-            }
-        },
         .vector => switch (CodeGen.determineSimdStoreStrategy(ty, zcu, target)) {
             .direct => .v128,
             .unrolled => .i32,
         },
-        .@"union" => switch (ty.containerLayout(zcu)) {
-            .@"packed" => switch (ty.bitSize(zcu)) {
-                0...32 => .i32,
-                33...64 => .i64,
-                else => .i32,
-            },
-            else => .i32,
+        .@"union", .@"struct" => switch (ty.containerLayout(zcu)) {
+            .@"packed" => typeToValtype(ty.bitpackBackingInt(zcu), zcu, target),
+            .auto, .@"extern" => .i32,
         },
         else => .i32, // all represented as reference/immediate
     };
@@ -1185,7 +1172,7 @@ pub fn generate(
     const fn_ty = zcu.navValue(cg.owner_nav).typeOf(zcu);
     const fn_info = zcu.typeToFunc(fn_ty).?;
     const ret_ty: Type = .fromInterned(fn_info.return_type);
-    const any_returns = !firstParamSRet(fn_info.cc, ret_ty, zcu, target) and ret_ty.hasRuntimeBitsIgnoreComptime(zcu);
+    const any_returns = !firstParamSRet(fn_info.cc, ret_ty, zcu, target) and ret_ty.hasRuntimeBits(zcu);
 
     var cc_result = try resolveCallingConventionValues(zcu, fn_ty, target);
     defer cc_result.deinit(gpa);
@@ -1244,7 +1231,7 @@ fn generateInner(cg: *CodeGen, any_returns: bool) InnerError!Mir {
     if (any_returns and cg.air.instructions.len > 0) {
         const inst: Air.Inst.Index = @enumFromInt(cg.air.instructions.len - 1);
         const last_inst_ty = cg.typeOfIndex(inst);
-        if (!last_inst_ty.hasRuntimeBitsIgnoreComptime(zcu) or last_inst_ty.isNoReturn(zcu)) {
+        if (!last_inst_ty.hasRuntimeBits(zcu)) {
             try cg.addTag(.@"unreachable");
         }
     }
@@ -1316,7 +1303,7 @@ fn resolveCallingConventionValues(
     switch (cc) {
         .auto => {
             for (fn_info.param_types.get(ip)) |ty| {
-                if (!Type.fromInterned(ty).hasRuntimeBitsIgnoreComptime(zcu)) {
+                if (!Type.fromInterned(ty).hasRuntimeBits(zcu)) {
                     continue;
                 }
 
@@ -1326,7 +1313,7 @@ fn resolveCallingConventionValues(
         },
         .wasm_mvp => {
             for (fn_info.param_types.get(ip)) |ty| {
-                if (!Type.fromInterned(ty).hasRuntimeBitsIgnoreComptime(zcu)) {
+                if (!Type.fromInterned(ty).hasRuntimeBits(zcu)) {
                     continue;
                 }
                 switch (abi.classifyType(.fromInterned(ty), zcu)) {
@@ -1357,7 +1344,7 @@ pub fn firstParamSRet(
     zcu: *const Zcu,
     target: *const std.Target,
 ) bool {
-    if (!return_type.hasRuntimeBitsIgnoreComptime(zcu)) return false;
+    if (!return_type.hasRuntimeBits(zcu)) return false;
     switch (cc) {
         .@"inline" => unreachable,
         .auto => return isByRef(return_type, zcu, target),
@@ -1457,7 +1444,7 @@ fn restoreStackPointer(cg: *CodeGen) !void {
 fn allocStack(cg: *CodeGen, ty: Type) !WValue {
     const pt = cg.pt;
     const zcu = pt.zcu;
-    assert(ty.hasRuntimeBitsIgnoreComptime(zcu));
+    assert(ty.hasRuntimeBits(zcu));
     if (cg.initial_stack_value == .none) {
         try cg.initializeStack();
     }
@@ -1491,7 +1478,7 @@ fn allocStackPtr(cg: *CodeGen, inst: Air.Inst.Index) !WValue {
         try cg.initializeStack();
     }
 
-    if (!pointee_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    if (!pointee_ty.hasRuntimeBits(zcu)) {
         return cg.allocStack(Type.usize); // create a value containing just the stack pointer.
     }
 
@@ -1676,7 +1663,6 @@ fn ptrSize(cg: *const CodeGen) u16 {
 /// For a given `Type`, will return true when the type will be passed
 /// by reference, rather than by value
 fn isByRef(ty: Type, zcu: *const Zcu, target: *const std.Target) bool {
-    const ip = &zcu.intern_pool;
     switch (ty.zigTypeTag(zcu)) {
         .type,
         .comptime_int,
@@ -1697,20 +1683,10 @@ fn isByRef(ty: Type, zcu: *const Zcu, target: *const std.Target) bool {
 
         .array,
         .frame,
-        => return ty.hasRuntimeBitsIgnoreComptime(zcu),
-        .@"union" => {
-            if (zcu.typeToUnion(ty)) |union_obj| {
-                if (union_obj.flagsUnordered(ip).layout == .@"packed") {
-                    return ty.abiSize(zcu) > 8;
-                }
-            }
-            return ty.hasRuntimeBitsIgnoreComptime(zcu);
-        },
-        .@"struct" => {
-            if (zcu.typeToPackedStruct(ty)) |packed_struct| {
-                return isByRef(Type.fromInterned(packed_struct.backingIntTypeUnordered(ip)), zcu, target);
-            }
-            return ty.hasRuntimeBitsIgnoreComptime(zcu);
+        => return ty.hasRuntimeBits(zcu),
+        .@"struct", .@"union" => switch (ty.containerLayout(zcu)) {
+            .@"packed" => return isByRef(ty.bitpackBackingInt(zcu), zcu, target),
+            .@"extern", .auto => return ty.hasRuntimeBits(zcu),
         },
         .vector => return determineSimdStoreStrategy(ty, zcu, target) == .unrolled,
         .int => return ty.intInfo(zcu).bits > 64,
@@ -1718,7 +1694,7 @@ fn isByRef(ty: Type, zcu: *const Zcu, target: *const std.Target) bool {
         .float => return ty.floatBits(target) > 64,
         .error_union => {
             const pl_ty = ty.errorUnionPayload(zcu);
-            if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+            if (!pl_ty.hasRuntimeBits(zcu)) {
                 return false;
             }
             return true;
@@ -1727,7 +1703,7 @@ fn isByRef(ty: Type, zcu: *const Zcu, target: *const std.Target) bool {
             if (ty.isPtrLikeOptional(zcu)) return false;
             const pl_type = ty.optionalChild(zcu);
             if (pl_type.zigTypeTag(zcu) == .error_set) return false;
-            return pl_type.hasRuntimeBitsIgnoreComptime(zcu);
+            return pl_type.hasRuntimeBits(zcu);
         },
         .pointer => {
             // Slices act like struct and will be passed by reference
@@ -2069,7 +2045,7 @@ fn airRet(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     // to the stack instead
     if (cg.return_value != .none) {
         try cg.store(cg.return_value, operand, ret_ty, 0);
-    } else if (fn_info.cc == .wasm_mvp and ret_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    } else if (fn_info.cc == .wasm_mvp and ret_ty.hasRuntimeBits(zcu)) {
         switch (abi.classifyType(ret_ty, zcu)) {
             .direct => |scalar_type| {
                 assert(!abi.lowerAsDoubleI64(scalar_type, zcu));
@@ -2082,7 +2058,7 @@ fn airRet(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
             .indirect => unreachable,
         }
     } else {
-        if (!ret_ty.hasRuntimeBitsIgnoreComptime(zcu) and ret_ty.isError(zcu)) {
+        if (!ret_ty.hasRuntimeBits(zcu) and ret_ty.isError(zcu)) {
             try cg.addImm32(0);
         } else {
             try cg.emitWValue(operand);
@@ -2099,7 +2075,7 @@ fn airRetPtr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const child_type = cg.typeOfIndex(inst).childType(zcu);
 
     const result = result: {
-        if (!child_type.isFnOrHasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!child_type.hasRuntimeBits(zcu)) {
             break :result try cg.allocStack(Type.usize); // create pointer to void
         }
 
@@ -2121,7 +2097,7 @@ fn airRetLoad(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const ret_ty = cg.typeOf(un_op).childType(zcu);
 
     const fn_info = zcu.typeToFunc(zcu.navValue(cg.owner_nav).typeOf(zcu)).?;
-    if (!ret_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    if (!ret_ty.hasRuntimeBits(zcu)) {
         if (ret_ty.isError(zcu)) {
             try cg.addImm32(0);
         }
@@ -2177,7 +2153,7 @@ fn airCall(cg: *CodeGen, inst: Air.Inst.Index, modifier: std.builtin.CallModifie
         const arg_val = try cg.resolveInst(arg);
 
         const arg_ty = cg.typeOf(arg);
-        if (!arg_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+        if (!arg_ty.hasRuntimeBits(zcu)) continue;
 
         try cg.lowerArg(zcu.typeToFunc(fn_ty).?.cc, arg_ty, arg_val);
     }
@@ -2199,10 +2175,7 @@ fn airCall(cg: *CodeGen, inst: Air.Inst.Index, modifier: std.builtin.CallModifie
     }
 
     const result_value = result_value: {
-        if (!ret_ty.hasRuntimeBitsIgnoreComptime(zcu) and !ret_ty.isError(zcu)) {
-            break :result_value .none;
-        } else if (ret_ty.isNoReturn(zcu)) {
-            try cg.addTag(.@"unreachable");
+        if (!ret_ty.hasRuntimeBits(zcu) and !ret_ty.isError(zcu)) {
             break :result_value .none;
         } else if (first_param_sret) {
             break :result_value sret;
@@ -2323,12 +2296,12 @@ fn store(cg: *CodeGen, lhs: WValue, rhs: WValue, ty: Type, offset: u32) InnerErr
     const zcu = pt.zcu;
     const abi_size = ty.abiSize(zcu);
 
-    if (!ty.hasRuntimeBitsIgnoreComptime(zcu)) return;
+    if (!ty.hasRuntimeBits(zcu)) return;
 
     switch (ty.zigTypeTag(zcu)) {
         .error_union => {
             const pl_ty = ty.errorUnionPayload(zcu);
-            if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+            if (!pl_ty.hasRuntimeBits(zcu)) {
                 return cg.store(lhs, rhs, Type.anyerror, offset);
             }
 
@@ -2341,7 +2314,7 @@ fn store(cg: *CodeGen, lhs: WValue, rhs: WValue, ty: Type, offset: u32) InnerErr
                 return cg.store(lhs, rhs, Type.usize, offset);
             }
             const pl_ty = ty.optionalChild(zcu);
-            if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+            if (!pl_ty.hasRuntimeBits(zcu)) {
                 return cg.store(lhs, rhs, Type.u8, offset);
             }
             if (pl_ty.zigTypeTag(zcu) == .error_set) {
@@ -2441,7 +2414,7 @@ fn airLoad(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const ptr_ty = cg.typeOf(ty_op.operand);
     const ptr_info = ptr_ty.ptrInfo(zcu);
 
-    if (!ty.hasRuntimeBitsIgnoreComptime(zcu)) return cg.finishAir(inst, .none, &.{ty_op.operand});
+    if (!ty.hasRuntimeBits(zcu)) return cg.finishAir(inst, .none, &.{ty_op.operand});
 
     const result = result: {
         if (isByRef(ty, zcu, cg.target)) {
@@ -3092,7 +3065,7 @@ fn lowerPtr(cg: *CodeGen, ptr_val: InternPool.Index, prev_offset: u64) InnerErro
     return switch (ptr.base_addr) {
         .nav => |nav| return .{ .nav_ref = .{ .nav_index = nav, .offset = @intCast(offset) } },
         .uav => |uav| return .{ .uav_ref = .{ .ip_index = uav.val, .offset = @intCast(offset), .orig_ptr_ty = uav.orig_ty } },
-        .int => return cg.lowerConstant(try pt.intValue(Type.usize, offset), Type.usize),
+        .int => return cg.lowerConstant(try pt.intValue(.usize, offset)),
         .eu_payload => |eu_ptr| try cg.lowerPtr(
             eu_ptr,
             offset + codegen.errUnionPayloadOffset(
@@ -3129,10 +3102,11 @@ fn lowerPtr(cg: *CodeGen, ptr_val: InternPool.Index, prev_offset: u64) InnerErro
     };
 }
 
-/// Asserts that `isByRef` returns `false` for `ty`.
-fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
+/// Asserts that `isByRef` returns `false` for `val.typeOf(zcu)`.
+fn lowerConstant(cg: *CodeGen, val: Value) InnerError!WValue {
     const pt = cg.pt;
     const zcu = pt.zcu;
+    const ty = val.typeOf(zcu);
     assert(!isByRef(ty, zcu, cg.target));
     const ip = &zcu.intern_pool;
     if (val.isUndef(zcu)) return cg.emitUndefined(ty);
@@ -3158,10 +3132,8 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
 
         .undef => unreachable, // handled above
         .simple_value => |simple_value| switch (simple_value) {
-            .undefined,
             .void,
             .null,
-            .empty_tuple,
             .@"unreachable",
             => unreachable, // non-runtime values
             .false, .true => return .{ .imm32 = switch (simple_value) {
@@ -3174,7 +3146,6 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
         .@"extern",
         .func,
         .enum_literal,
-        .empty_enum_value,
         => unreachable, // non-runtime values
         .int => {
             const int_info = ty.intInfo(zcu);
@@ -3197,31 +3168,22 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
         },
         .error_union => |error_union| {
             const err_int_ty = try pt.errorIntType();
-            const err_ty, const err_val = switch (error_union.val) {
-                .err_name => |err_name| .{
-                    ty.errorUnionSet(zcu),
-                    Value.fromInterned(try pt.intern(.{ .err = .{
-                        .ty = ty.errorUnionSet(zcu).toIntern(),
-                        .name = err_name,
-                    } })),
-                },
-                .payload => .{
-                    err_int_ty,
-                    try pt.intValue(err_int_ty, 0),
-                },
+            const err_val: Value = switch (error_union.val) {
+                .err_name => |err_name| .fromInterned(try pt.intern(.{ .err = .{
+                    .ty = ty.errorUnionSet(zcu).toIntern(),
+                    .name = err_name,
+                } })),
+                .payload => try pt.intValue(err_int_ty, 0),
             };
             const payload_type = ty.errorUnionPayload(zcu);
-            if (!payload_type.hasRuntimeBitsIgnoreComptime(zcu)) {
+            if (!payload_type.hasRuntimeBits(zcu)) {
                 // We use the error type directly as the type.
-                return cg.lowerConstant(err_val, err_ty);
+                return cg.lowerConstant(err_val);
             }
 
             return cg.fail("Wasm TODO: lowerConstant error union with non-zero-bit payload type", .{});
         },
-        .enum_tag => |enum_tag| {
-            const int_tag_ty = ip.typeOf(enum_tag.int);
-            return cg.lowerConstant(Value.fromInterned(enum_tag.int), Type.fromInterned(int_tag_ty));
-        },
+        .enum_tag => |enum_tag| return cg.lowerConstant(.fromInterned(enum_tag.int)),
         .float => |float| switch (float.storage) {
             .f16 => |f16_val| return .{ .imm32 = @as(u16, @bitCast(f16_val)) },
             .f32 => |f32_val| return .{ .float32 = f32_val },
@@ -3231,9 +3193,8 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
         .slice => unreachable, // isByRef == true
         .ptr => return cg.lowerPtr(val.toIntern(), 0),
         .opt => if (ty.optionalReprIsPayload(zcu)) {
-            const pl_ty = ty.optionalChild(zcu);
             if (val.optionalValue(zcu)) |payload| {
-                return cg.lowerConstant(payload, pl_ty);
+                return cg.lowerConstant(payload);
             } else {
                 return .{ .imm32 = 0 };
             }
@@ -3248,33 +3209,11 @@ fn lowerConstant(cg: *CodeGen, val: Value, ty: Type) InnerError!WValue {
                 val.writeToMemory(pt, &buf) catch unreachable;
                 return cg.storeSimdImmd(buf);
             },
-            .struct_type => {
-                const struct_type = ip.loadStructType(ty.toIntern());
-                // non-packed structs are not handled in this function because they
-                // are by-ref types.
-                assert(struct_type.layout == .@"packed");
-                var buf: [8]u8 = .{0} ** 8; // zero the buffer so we do not read 0xaa as integer
-                val.writeToPackedMemory(ty, pt, &buf, 0) catch unreachable;
-                const backing_int_ty = Type.fromInterned(struct_type.backingIntTypeUnordered(ip));
-                const int_val = try pt.intValue(
-                    backing_int_ty,
-                    mem.readInt(u64, &buf, .little),
-                );
-                return cg.lowerConstant(int_val, backing_int_ty);
-            },
+            .struct_type => unreachable, // packed structs use `bitpack`
             else => unreachable,
         },
-        .un => {
-            const int_type = try pt.intType(.unsigned, @intCast(ty.bitSize(zcu)));
-
-            var buf: [8]u8 = .{0} ** 8; // zero the buffer so we do not read 0xaa as integer
-            val.writeToPackedMemory(ty, pt, &buf, 0) catch unreachable;
-            const int_val = try pt.intValue(
-                int_type,
-                mem.readInt(u64, &buf, .little),
-            );
-            return cg.lowerConstant(int_val, int_type);
-        },
+        .un => unreachable, // packed unions use `bitpack`
+        .bitpack => |bitpack| return cg.lowerConstant(.fromInterned(bitpack.backing_int_val)),
         .memoized_call => unreachable,
     }
 }
@@ -3289,7 +3228,6 @@ fn storeSimdImmd(cg: *CodeGen, value: [16]u8) !WValue {
 
 fn emitUndefined(cg: *CodeGen, ty: Type) InnerError!WValue {
     const zcu = cg.pt.zcu;
-    const ip = &zcu.intern_pool;
     switch (ty.zigTypeTag(zcu)) {
         .bool, .error_set => return .{ .imm32 = 0xaaaaaaaa },
         .int, .@"enum" => switch (ty.intInfo(zcu).bits) {
@@ -3317,17 +3255,9 @@ fn emitUndefined(cg: *CodeGen, ty: Type) InnerError!WValue {
         .error_union => {
             return .{ .imm32 = 0xaaaaaaaa };
         },
-        .@"struct" => {
-            const packed_struct = zcu.typeToPackedStruct(ty).?;
-            return cg.emitUndefined(Type.fromInterned(packed_struct.backingIntTypeUnordered(ip)));
-        },
-        .@"union" => switch (ty.containerLayout(zcu)) {
-            .@"packed" => switch (ty.bitSize(zcu)) {
-                0...32 => return .{ .imm32 = 0xaaaaaaaa },
-                33...64 => return .{ .imm64 = 0xaaaaaaaaaaaaaaaa },
-                else => unreachable,
-            },
-            else => unreachable,
+        .@"struct", .@"union" => {
+            const backing_int_ty = ty.bitpackBackingInt(zcu);
+            return cg.emitUndefined(backing_int_ty);
         },
         else => return cg.fail("Wasm TODO: emitUndefined for type: {t}\n", .{ty.zigTypeTag(zcu)}),
     }
@@ -3341,7 +3271,7 @@ fn airBlock(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
 fn lowerBlock(cg: *CodeGen, inst: Air.Inst.Index, block_ty: Type, body: []const Air.Inst.Index) InnerError!void {
     const zcu = cg.pt.zcu;
     // if wasm_block_ty is non-empty, we create a register to store the temporary value
-    const block_result: WValue = if (block_ty.hasRuntimeBitsIgnoreComptime(zcu))
+    const block_result: WValue = if (block_ty.hasRuntimeBits(zcu))
         try cg.allocLocal(block_ty)
     else
         .none;
@@ -3455,7 +3385,7 @@ fn cmp(cg: *CodeGen, lhs: WValue, rhs: WValue, ty: Type, op: std.math.CompareOpe
     const zcu = cg.pt.zcu;
     if (ty.zigTypeTag(zcu) == .optional and !ty.optionalReprIsPayload(zcu)) {
         const payload_ty = ty.optionalChild(zcu);
-        if (payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (payload_ty.hasRuntimeBits(zcu)) {
             // When we hit this case, we must check the value of optionals
             // that are not pointers. This means first checking against non-null for
             // both lhs and rhs, as well as checking the payload are matching of lhs and rhs
@@ -3798,7 +3728,6 @@ fn structFieldPtr(
 fn airStructFieldVal(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const pt = cg.pt;
     const zcu = pt.zcu;
-    const ip = &zcu.intern_pool;
     const ty_pl = cg.air.instructions.items(.data)[@intFromEnum(inst)].ty_pl;
     const struct_field = cg.air.extraData(Air.StructField, ty_pl.payload).data;
 
@@ -3806,14 +3735,14 @@ fn airStructFieldVal(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const operand = try cg.resolveInst(struct_field.struct_operand);
     const field_index = struct_field.field_index;
     const field_ty = struct_ty.fieldType(field_index, zcu);
-    if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) return cg.finishAir(inst, .none, &.{struct_field.struct_operand});
+    if (!field_ty.hasRuntimeBits(zcu)) return cg.finishAir(inst, .none, &.{struct_field.struct_operand});
 
     const result: WValue = switch (struct_ty.containerLayout(zcu)) {
         .@"packed" => switch (struct_ty.zigTypeTag(zcu)) {
             .@"struct" => result: {
                 const packed_struct = zcu.typeToPackedStruct(struct_ty).?;
                 const offset = zcu.structPackedFieldBitOffset(packed_struct, field_index);
-                const backing_ty = Type.fromInterned(packed_struct.backingIntTypeUnordered(ip));
+                const backing_ty = Type.fromInterned(packed_struct.packed_backing_int_type);
                 const host_bits = backing_ty.intInfo(zcu).bits;
 
                 const const_wvalue: WValue = if (33 <= host_bits and host_bits <= 64)
@@ -3891,7 +3820,7 @@ fn airSwitchBr(cg: *CodeGen, inst: Air.Inst.Index, is_dispatch_loop: bool) Inner
     const switch_br = cg.air.unwrapSwitch(inst);
     const target_ty = cg.typeOf(switch_br.operand);
 
-    assert(target_ty.hasRuntimeBitsIgnoreComptime(zcu));
+    assert(target_ty.hasRuntimeBits(zcu));
 
     // swap target value with placeholder local, for dispatching
     const target = if (is_dispatch_loop) target: {
@@ -4125,7 +4054,7 @@ fn airIsErr(cg: *CodeGen, inst: Air.Inst.Index, opcode: std.wasm.Opcode, op_kind
         }
 
         try cg.emitWValue(operand);
-        if (op_kind == .ptr or pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (op_kind == .ptr or pl_ty.hasRuntimeBits(zcu)) {
             try cg.addMemArg(.i32_load16_u, .{
                 .offset = operand.offset() + @as(u32, @intCast(errUnionErrorOffset(pl_ty, zcu))),
                 .alignment = @intCast(Type.anyerror.abiAlignment(zcu).toByteUnits().?),
@@ -4152,7 +4081,7 @@ fn airUnwrapErrUnionPayload(cg: *CodeGen, inst: Air.Inst.Index, op_is_ptr: bool)
     const payload_ty = eu_ty.errorUnionPayload(zcu);
 
     const result: WValue = result: {
-        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!payload_ty.hasRuntimeBits(zcu)) {
             if (op_is_ptr) {
                 break :result cg.reuseOperand(ty_op.operand, operand);
             } else {
@@ -4172,7 +4101,7 @@ fn airUnwrapErrUnionPayload(cg: *CodeGen, inst: Air.Inst.Index, op_is_ptr: bool)
 }
 
 /// E!T -> E op_is_ptr == false
-/// *(E!T) -> E op_is_prt == true
+/// *(E!T) -> E op_is_ptr == true
 /// NOTE: op_is_ptr will not change return type
 fn airUnwrapErrUnionError(cg: *CodeGen, inst: Air.Inst.Index, op_is_ptr: bool) InnerError!void {
     const zcu = cg.pt.zcu;
@@ -4192,7 +4121,7 @@ fn airUnwrapErrUnionError(cg: *CodeGen, inst: Air.Inst.Index, op_is_ptr: bool) I
         if (op_is_ptr or isByRef(eu_ty, zcu, cg.target)) {
             break :result try cg.load(operand, Type.anyerror, err_offset);
         } else {
-            assert(!payload_ty.hasRuntimeBitsIgnoreComptime(zcu));
+            assert(!payload_ty.hasRuntimeBits(zcu));
             break :result cg.reuseOperand(ty_op.operand, operand);
         }
     };
@@ -4208,7 +4137,7 @@ fn airWrapErrUnionPayload(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
 
     const pl_ty = cg.typeOf(ty_op.operand);
     const result = result: {
-        if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!pl_ty.hasRuntimeBits(zcu)) {
             break :result cg.reuseOperand(ty_op.operand, operand);
         }
 
@@ -4238,7 +4167,7 @@ fn airWrapErrUnionErr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const pl_ty = err_ty.errorUnionPayload(zcu);
 
     const result = result: {
-        if (!pl_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!pl_ty.hasRuntimeBits(zcu)) {
             break :result cg.reuseOperand(ty_op.operand, operand);
         }
 
@@ -4354,7 +4283,7 @@ fn isNull(cg: *CodeGen, operand: WValue, optional_ty: Type, opcode: std.wasm.Opc
     if (!optional_ty.optionalReprIsPayload(zcu)) {
         // When payload is zero-bits, we can treat operand as a value, rather than
         // a pointer to the stack value
-        if (payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (payload_ty.hasRuntimeBits(zcu)) {
             const offset = std.math.cast(u32, payload_ty.abiSize(zcu)) orelse {
                 return cg.fail("Optional type {f} too big to fit into stack frame", .{optional_ty.fmt(pt)});
             };
@@ -4379,7 +4308,7 @@ fn airOptionalPayload(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const ty_op = cg.air.instructions.items(.data)[@intFromEnum(inst)].ty_op;
     const opt_ty = cg.typeOf(ty_op.operand);
     const payload_ty = cg.typeOfIndex(inst);
-    if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    if (!payload_ty.hasRuntimeBits(zcu)) {
         return cg.finishAir(inst, .none, &.{ty_op.operand});
     }
 
@@ -4404,7 +4333,7 @@ fn airOptionalPayloadPtr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
 
     const result = result: {
         const payload_ty = opt_ty.optionalChild(zcu);
-        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu) or opt_ty.optionalReprIsPayload(zcu)) {
+        if (!payload_ty.hasRuntimeBits(zcu) or opt_ty.optionalReprIsPayload(zcu)) {
             break :result cg.reuseOperand(ty_op.operand, operand);
         }
 
@@ -4444,7 +4373,7 @@ fn airWrapOptional(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const zcu = pt.zcu;
 
     const result = result: {
-        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!payload_ty.hasRuntimeBits(zcu)) {
             const non_null_bit = try cg.allocStack(Type.u1);
             try cg.emitWValue(non_null_bit);
             try cg.addImm32(1);
@@ -4612,7 +4541,7 @@ fn airArrayToSlice(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const slice_local = try cg.allocStack(slice_ty);
 
     // store the array ptr in the slice
-    if (array_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+    if (array_ty.hasRuntimeBits(zcu)) {
         try cg.store(slice_local, operand, Type.usize, 0);
     }
 
@@ -5111,7 +5040,7 @@ fn airShuffleOne(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         try cg.emitWValue(dest_alloc);
         const elem_val = switch (mask_elem.unwrap()) {
             .elem => |idx| try cg.load(operand, elem_ty, @intCast(elem_size * idx)),
-            .value => |val| try cg.lowerConstant(.fromInterned(val), elem_ty),
+            .value => |val| try cg.lowerConstant(.fromInterned(val)),
         };
         try cg.store(.stack, elem_val, elem_ty, @intCast(dest_alloc.offset() + elem_size * out_idx));
     }
@@ -5252,7 +5181,7 @@ fn airAggregateInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
                     }
                     const packed_struct = zcu.typeToPackedStruct(result_ty).?;
                     const field_types = packed_struct.field_types;
-                    const backing_type = Type.fromInterned(packed_struct.backingIntTypeUnordered(ip));
+                    const backing_type = Type.fromInterned(packed_struct.packed_backing_int_type);
 
                     // ensure the result is zero'd
                     const result = try cg.allocLocal(backing_type);
@@ -5265,7 +5194,7 @@ fn airAggregateInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
                     var current_bit: u16 = 0;
                     for (elements, 0..) |elem, elem_index| {
                         const field_ty = Type.fromInterned(field_types.get(ip)[elem_index]);
-                        if (!field_ty.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+                        if (!field_ty.hasRuntimeBits(zcu)) continue;
 
                         const shift_val: WValue = if (backing_type.bitSize(zcu) <= 32)
                             .{ .imm32 = current_bit }
@@ -5338,13 +5267,13 @@ fn airUnionInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         const layout = union_ty.unionGetLayout(zcu);
         const union_obj = zcu.typeToUnion(union_ty).?;
         const field_ty = Type.fromInterned(union_obj.field_types.get(ip)[extra.field_index]);
-        const field_name = union_obj.loadTagType(ip).names.get(ip)[extra.field_index];
+        const field_name = ip.loadEnumType(union_obj.enum_tag_type).field_names.get(ip)[extra.field_index];
 
         const tag_int = blk: {
             const tag_ty = union_ty.unionTagTypeHypothetical(zcu);
             const enum_field_index = tag_ty.enumFieldIndex(field_name, zcu).?;
             const tag_val = try pt.enumValueFieldIndex(tag_ty, enum_field_index);
-            break :blk try cg.lowerConstant(tag_val, tag_ty);
+            break :blk try cg.lowerConstant(tag_val);
         };
         if (layout.payload_size == 0) {
             if (layout.tag_size == 0) {
@@ -5366,7 +5295,7 @@ fn airUnionInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
                 }
 
                 if (layout.tag_size > 0) {
-                    try cg.store(result_ptr, tag_int, Type.fromInterned(union_obj.enum_tag_ty), 0);
+                    try cg.store(result_ptr, tag_int, .fromInterned(union_obj.enum_tag_type), 0);
                 }
             } else {
                 try cg.store(result_ptr, payload, field_ty, 0);
@@ -5374,7 +5303,7 @@ fn airUnionInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
                     try cg.store(
                         result_ptr,
                         tag_int,
-                        Type.fromInterned(union_obj.enum_tag_ty),
+                        .fromInterned(union_obj.enum_tag_type),
                         @intCast(layout.payload_size),
                     );
                 }
@@ -5421,7 +5350,7 @@ fn airWasmMemoryGrow(cg: *CodeGen, inst: Air.Inst.Index) !void {
 
 fn cmpOptionals(cg: *CodeGen, lhs: WValue, rhs: WValue, operand_ty: Type, op: std.math.CompareOperator) InnerError!WValue {
     const zcu = cg.pt.zcu;
-    assert(operand_ty.hasRuntimeBitsIgnoreComptime(zcu));
+    assert(operand_ty.hasRuntimeBits(zcu));
     assert(op == .eq or op == .neq);
     const payload_ty = operand_ty.optionalChild(zcu);
     assert(!isByRef(payload_ty, zcu, cg.target));
@@ -5675,7 +5604,7 @@ fn airErrUnionPayloadPtrSet(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void 
     );
 
     const result = result: {
-        if (!payload_ty.hasRuntimeBitsIgnoreComptime(zcu)) {
+        if (!payload_ty.hasRuntimeBits(zcu)) {
             break :result cg.reuseOperand(ty_op.operand, operand);
         }
 
@@ -6464,7 +6393,7 @@ fn lowerTry(
     const zcu = cg.pt.zcu;
 
     const pl_ty = err_union_ty.errorUnionPayload(zcu);
-    const pl_has_bits = pl_ty.hasRuntimeBitsIgnoreComptime(zcu);
+    const pl_has_bits = pl_ty.hasRuntimeBits(zcu);
 
     if (!err_union_ty.errorUnionSet(zcu).errorSetIsEmpty(zcu)) {
         // Block we can jump out of when error is not set
@@ -7102,16 +7031,13 @@ fn callIntrinsic(
     // Lower all arguments to the stack before we call our function
     for (args, 0..) |arg, arg_i| {
         assert(!(want_sret_param and arg == .stack));
-        assert(Type.fromInterned(param_types[arg_i]).hasRuntimeBitsIgnoreComptime(zcu));
+        assert(Type.fromInterned(param_types[arg_i]).hasRuntimeBits(zcu));
         try cg.lowerArg(.{ .wasm_mvp = .{} }, Type.fromInterned(param_types[arg_i]), arg);
     }
 
     try cg.addInst(.{ .tag = .call_intrinsic, .data = .{ .intrinsic = intrinsic } });
 
-    if (!return_type.hasRuntimeBitsIgnoreComptime(zcu)) {
-        return .none;
-    } else if (return_type.isNoReturn(zcu)) {
-        try cg.addTag(.@"unreachable");
+    if (!return_type.hasRuntimeBits(zcu)) {
         return .none;
     } else if (want_sret_param) {
         return sret;

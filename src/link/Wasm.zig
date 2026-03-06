@@ -78,7 +78,7 @@ export_table: bool,
 /// Output name of the file
 name: []const u8,
 /// List of relocatable files to be linked into the final binary.
-objects: std.ArrayList(Object) = .{},
+objects: std.ArrayList(Object) = .empty,
 
 func_types: std.AutoArrayHashMapUnmanaged(FunctionType, void) = .empty,
 /// Provides a mapping of both imports and provided functions to symbol name.
@@ -278,7 +278,7 @@ any_tls_relocs: bool = false,
 any_passive_inits: bool = false,
 
 /// All MIR instructions for all Zcu functions.
-mir_instructions: std.MultiArrayList(Mir.Inst) = .{},
+mir_instructions: std.MultiArrayList(Mir.Inst) = .empty,
 /// Corresponds to `mir_instructions`.
 mir_extra: std.ArrayList(u32) = .empty,
 /// All local types for all Zcu functions.
@@ -4226,7 +4226,7 @@ fn convertZcuFnType(
 
     if (CodeGen.firstParamSRet(cc, return_type, zcu, target)) {
         try params_buffer.append(gpa, .i32); // memory address is always a 32-bit handle
-    } else if (return_type.hasRuntimeBitsIgnoreComptime(zcu)) {
+    } else if (return_type.hasRuntimeBits(zcu)) {
         if (cc == .wasm_mvp) {
             switch (abi.classifyType(return_type, zcu)) {
                 .direct => |scalar_ty| {
@@ -4245,7 +4245,7 @@ fn convertZcuFnType(
     // param types
     for (params) |param_type_ip| {
         const param_type = Zcu.Type.fromInterned(param_type_ip);
-        if (!param_type.hasRuntimeBitsIgnoreComptime(zcu)) continue;
+        if (!param_type.hasRuntimeBits(zcu)) continue;
 
         switch (cc) {
             .wasm_mvp => {

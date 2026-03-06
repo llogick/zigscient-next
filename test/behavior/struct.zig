@@ -2177,7 +2177,7 @@ test "avoid unused field function body compile error" {
 
 test "pass a pointer to a comptime-only struct field to a function" {
     const S = struct {
-        fn checkField(field_ptr: *const type) !void {
+        fn checkField(comptime field_ptr: *const type) !void {
             try expect(field_ptr.* == u42);
         }
     };
@@ -2232,4 +2232,25 @@ test "overaligned extern struct fields" {
     try expect(std.mem.isAligned(@intFromPtr(&e.b), @alignOf(A)));
     try expect(std.mem.isAligned(@intFromPtr(&e.c), @alignOf(u32)));
     try expect(std.mem.isAligned(@intFromPtr(&e.d), @alignOf(B)));
+}
+
+test "runtime-known slice of comptime-only struct" {
+    const Mixed = struct { index: u32, T: type };
+
+    const static = struct {
+        fn doTheTest(index_offset: usize, s: []const Mixed) !void {
+            for (s, index_offset..) |*mixed, index| {
+                try expect(mixed.index == index);
+            }
+        }
+    };
+
+    try static.doTheTest(10, &.{
+        .{ .index = 10, .T = u8 },
+        .{ .index = 11, .T = noreturn },
+        .{ .index = 12, .T = *opaque {} },
+        .{ .index = 13, .T = undefined },
+        .{ .index = 14, .T = @TypeOf(undefined) },
+        .{ .index = 15, .T = Mixed },
+    });
 }

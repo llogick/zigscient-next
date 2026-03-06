@@ -708,7 +708,7 @@ pub fn build(b: *std.Build) !void {
         .test_filters = test_filters,
         .test_target_filters = test_target_filters,
         .skip_wasm = skip_wasm,
-        .max_rss = 2_496_066_355,
+        .max_rss = 3_500_000_000,
     })) |test_libc_step| test_step.dependOn(test_libc_step);
 }
 

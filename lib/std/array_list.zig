@@ -582,10 +582,10 @@ pub fn Aligned(comptime T: type, comptime alignment: ?mem.Alignment) type {
         /// functions of this ArrayList in accordance with the respective
         /// documentation. In all cases, "invalidated" means that the memory
         /// has been passed to an allocator's resize or free function.
-        items: Slice = &[_]T{},
+        items: Slice,
         /// How many T values this list can hold without allocating
         /// additional memory.
-        capacity: usize = 0,
+        capacity: usize,
 
         /// An ArrayList containing no elements.
         pub const empty: Self = .{

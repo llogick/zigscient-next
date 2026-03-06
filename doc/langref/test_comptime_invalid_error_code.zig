@@ -5,4 +5,4 @@ comptime {
     _ = invalid_err;
 }
 
-// test_error=integer value '11' represents no error
+// test_error=integer value '172' represents no error

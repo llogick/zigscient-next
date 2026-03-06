@@ -7113,7 +7113,7 @@ pub const io_uring_buf_reg = extern struct {
     flags: Flags,
     resv: [3]u64,
 
-    pub const Flags = packed struct {
+    pub const Flags = packed struct(u16) {
         _0: u1 = 0,
         /// Incremental buffer consumption.
         inc: bool,

@@ -330,7 +330,6 @@ set(ZIG_STAGE2_SOURCES
     src/Air/Liveness.zig
     src/Air/Liveness/Verify.zig
     src/Air/print.zig
-    src/Air/types_resolved.zig
     src/Builtin.zig
     src/Compilation.zig
     src/Compilation/Config.zig
@@ -344,6 +343,7 @@ set(ZIG_STAGE2_SOURCES
     src/Sema.zig
     src/Sema/bitcast.zig
     src/Sema/comptime_ptr_access.zig
+    src/Sema/type_resolution.zig
     src/Type.zig
     src/Value.zig
     src/Zcu.zig
@@ -360,7 +360,8 @@ set(ZIG_STAGE2_SOURCES
     src/codegen/aarch64/Mir.zig
     src/codegen/aarch64/Select.zig
     src/codegen/c.zig
-    src/codegen/c/Type.zig
+    src/codegen/c/type.zig
+    src/codegen/c/type/render_defs.zig
     src/codegen/llvm.zig
     src/codegen/llvm/bindings.zig
     src/crash_report.zig
@@ -375,6 +376,7 @@ set(ZIG_STAGE2_SOURCES
     src/libs/libunwind.zig
     src/link.zig
     src/link/C.zig
+    src/link/ConstPool.zig
     src/link/Coff.zig
     src/link/Dwarf.zig
     src/link/Elf.zig
@@ -622,6 +624,12 @@ else()
     unset(ZIG2_LINK_FLAGS)
   else()
     set(ZIG2_LINK_FLAGS "-Wl,-z,stack-size=0x10000000")
+  endif()
+  # Prevent GCC from miscompiling 'zig2.c'. See also 'workaround_gcc_sra_miscomp' in 'bootstrap.c'.
+  if (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND
+      CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "13.0" AND
+      CMAKE_C_COMPILER_VERSION VERSION_LESS_EQUAL "15.2")
+    set(ZIG2_COMPILE_FLAGS "${ZIG2_COMPILE_FLAGS} -fno-tree-sra")
   endif()
 endif()
 

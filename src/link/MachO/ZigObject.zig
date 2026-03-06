@@ -3,7 +3,7 @@ data: std.ArrayList(u8) = .empty,
 basename: []const u8,
 index: File.Index,
 
-symtab: std.MultiArrayList(Nlist) = .{},
+symtab: std.MultiArrayList(Nlist) = .empty,
 strtab: StringTable = .{},
 
 symbols: std.ArrayList(Symbol) = .empty,
@@ -29,7 +29,7 @@ uavs: UavTable = .{},
 tlv_initializers: TlvInitializerTable = .{},
 
 /// A table of relocations.
-relocs: RelocationTable = .{},
+relocs: RelocationTable = .empty,
 
 dwarf: ?Dwarf = null,
 
@@ -150,7 +150,7 @@ fn newAtom(self: *ZigObject, allocator: Allocator, name: MachO.String, macho_fil
     atom.name = name;
 
     const relocs_index = @as(u32, @intCast(self.relocs.items.len));
-    self.relocs.addOneAssumeCapacity().* = .{};
+    self.relocs.addOneAssumeCapacity().* = .empty;
     atom.addExtra(.{ .rel_index = relocs_index, .rel_count = 0 }, macho_file);
 
     return index;
@@ -925,7 +925,7 @@ pub fn updateNav(
 
         const sect_index = try self.getNavOutputSection(macho_file, zcu, nav_index, code);
         if (isThreadlocal(macho_file, nav_index))
-            try self.updateTlv(macho_file, pt, nav_index, sym_index, sect_index, code)
+            try self.updateTlv(macho_file, zcu, nav_index, sym_index, sect_index, code)
         else
             try self.updateNavCode(macho_file, pt, nav_index, sym_index, sect_index, code);
 
@@ -1030,13 +1030,13 @@ fn updateNavCode(
 fn updateTlv(
     self: *ZigObject,
     macho_file: *MachO,
-    pt: Zcu.PerThread,
+    zcu: *Zcu,
     nav_index: InternPool.Nav.Index,
     sym_index: Symbol.Index,
     sect_index: u8,
     code: []const u8,
 ) !void {
-    const ip = &pt.zcu.intern_pool;
+    const ip = &zcu.intern_pool;
     const nav = ip.getNav(nav_index);
 
     log.debug("updateTlv {f} (0x{x})", .{ nav.fqn.fmt(ip), nav_index });
@@ -1045,7 +1045,7 @@ fn updateTlv(
     const init_sym_index = try self.createTlvInitializer(
         macho_file,
         nav.fqn.toSlice(ip),
-        pt.navAlignment(nav_index),
+        zcu.navAlignment(nav_index),
         sect_index,
         code,
     );

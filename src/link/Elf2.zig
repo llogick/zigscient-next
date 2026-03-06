@@ -2906,7 +2906,7 @@ fn updateNavInner(elf: *Elf, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index)
                 try elf.nodes.ensureUnusedCapacity(gpa, 1);
                 const sec_si = elf.navSection(ip, nav.status.fully_resolved);
                 const ni = try elf.mf.addLastChildNode(gpa, sec_si.node(elf), .{
-                    .alignment = pt.navAlignment(nav_index).toStdMem(),
+                    .alignment = zcu.navAlignment(nav_index).toStdMem(),
                     .moved = true,
                 });
                 elf.nodes.appendAssumeCapacity(.{ .nav = nmi });

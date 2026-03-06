@@ -57,7 +57,6 @@ pub const std_options: std.Options = .{
     .log_level = .debug,
     .logFn = @import("lsp_server/src/main.zig").std_options.logFn,
 };
-
 pub const std_options_cwd = if (native_os == .wasi) wasi_cwd else null;
 
 pub const panic = crash_report.panic;
@@ -168,8 +167,8 @@ pub fn log(
 
 const use_debug_allocator = build_options.debug_gpa or
     (native_os != .wasi and !builtin.link_libc and switch (builtin.mode) {
-        .Debug => true,
-        .ReleaseSafe, .ReleaseFast, .ReleaseSmall => false,
+        .Debug, .ReleaseSafe => true,
+        .ReleaseFast, .ReleaseSmall => false,
     });
 
 const RootAllocator = if (use_debug_allocator) std.heap.DebugAllocator(.{
@@ -1004,7 +1003,7 @@ pub const CompilationState = struct {
         .dirs = undefined,
         .object_format = null,
         .dynamic_linker = null,
-        .modules = .{},
+        .modules = .empty,
         .opts = .{
             .is_test = undefined,
             // Populated while parsing CLI args.
@@ -1028,18 +1027,18 @@ pub const CompilationState = struct {
         .windows_libs = .empty,
         .link_inputs = .empty,
 
-        .c_source_files = .{},
-        .rc_source_files = .{},
+        .c_source_files = .empty,
+        .rc_source_files = .empty,
 
-        .llvm_m_args = .{},
+        .llvm_m_args = .empty,
         .sysroot = null,
-        .lib_directories = .{}, // populated by createModule()
-        .lib_dir_args = .{}, // populated from CLI arg parsing
+        .lib_directories = .empty, // populated by createModule()
+        .lib_dir_args = .empty, // populated from CLI arg parsing
         .libc_installation = null,
         .want_native_include_dirs = false,
-        .frameworks = .{},
-        .framework_dirs = .{},
-        .rpath_list = .{},
+        .frameworks = .empty,
+        .framework_dirs = .empty,
+        .rpath_list = .empty,
         .each_lib_rpath = null,
         .libc_paths_file = undefined,
         .native_system_include_paths = &.{},
@@ -1252,18 +1251,18 @@ pub fn buildOutputType(
         .windows_libs = .empty,
         .link_inputs = .empty,
 
-        .c_source_files = .{},
-        .rc_source_files = .{},
+        .c_source_files = .empty,
+        .rc_source_files = .empty,
 
-        .llvm_m_args = .{},
+        .llvm_m_args = .empty,
         .sysroot = null,
-        .lib_directories = .{}, // populated by createModule()
-        .lib_dir_args = .{}, // populated from CLI arg parsing
+        .lib_directories = .empty, // populated by createModule()
+        .lib_dir_args = .empty, // populated from CLI arg parsing
         .libc_installation = null,
         .want_native_include_dirs = false,
-        .frameworks = .{},
-        .framework_dirs = .{},
-        .rpath_list = .{},
+        .frameworks = .empty,
+        .framework_dirs = .empty,
+        .rpath_list = .empty,
         .each_lib_rpath = null,
         .libc_paths_file = EnvVar.ZIG_LIBC.get(environ_map),
         .native_system_include_paths = &.{},
@@ -2639,6 +2638,74 @@ pub fn buildOutputType(
                             try linker_args.append(it.only_arg);
                         }
                     },
+                    .for_linker => blk: {
+                        // Unfortunately duplicated with the `wl` handling above.
+
+                        // Handle joined args like `--dependency-file=foo.d`.
+                        // Must be prefixed with 1 or 2 dashes.
+                        if (it.only_arg.len >= 3 and it.only_arg[0] == '-' and it.only_arg[2] != '-') {
+                            if (mem.indexOfScalar(u8, it.only_arg, '=')) |equals_pos| {
+                                const key = it.only_arg[0..equals_pos];
+                                const value = it.only_arg[equals_pos + 1 ..];
+
+                                // We have to handle these here because they would be ambiguous
+                                // if split and added to `linker_args`, as there are argument-less
+                                // variants of them.
+                                if (mem.eql(u8, key, "--build-id")) {
+                                    cs.build_id = std.zig.BuildId.parse(value) catch |err| {
+                                        fatal("unable to parse --build-id style '{s}': {s}", .{
+                                            value, @errorName(err),
+                                        });
+                                    };
+                                    continue;
+                                } else if (mem.eql(u8, key, "--sort-common")) {
+                                    // this ignores --sort-common=<anything>
+                                    continue;
+                                }
+
+                                try linker_args.append(key);
+                                try linker_args.append(value);
+                                break :blk;
+                            }
+                        }
+
+                        // These options are handled inline because their order matters for
+                        // other non-linker options.
+                        if (mem.eql(u8, it.only_arg, "--as-needed")) {
+                            needed = false;
+                        } else if (mem.eql(u8, it.only_arg, "--no-as-needed")) {
+                            needed = true;
+                        } else if (mem.eql(u8, it.only_arg, "--whole-archive") or
+                            mem.eql(u8, it.only_arg, "-whole-archive"))
+                        {
+                            must_link = true;
+                        } else if (mem.eql(u8, it.only_arg, "--no-whole-archive") or
+                            mem.eql(u8, it.only_arg, "-no-whole-archive"))
+                        {
+                            must_link = false;
+                        } else if (mem.eql(u8, it.only_arg, "-Bdynamic") or
+                            mem.eql(u8, it.only_arg, "-dy") or
+                            mem.eql(u8, it.only_arg, "-call_shared"))
+                        {
+                            cs.lib_search_strategy = .no_fallback;
+                            cs.lib_preferred_mode = .dynamic;
+                        } else if (mem.eql(u8, it.only_arg, "-Bstatic") or
+                            mem.eql(u8, it.only_arg, "-dn") or
+                            mem.eql(u8, it.only_arg, "-non_shared") or
+                            mem.eql(u8, it.only_arg, "-static"))
+                        {
+                            cs.lib_search_strategy = .no_fallback;
+                            cs.lib_preferred_mode = .static;
+                        } else if (mem.eql(u8, it.only_arg, "-search_paths_first")) {
+                            cs.lib_search_strategy = .paths_first;
+                            cs.lib_preferred_mode = .dynamic;
+                        } else if (mem.eql(u8, it.only_arg, "-search_dylibs_first")) {
+                            cs.lib_search_strategy = .mode_first;
+                            cs.lib_preferred_mode = .dynamic;
+                        } else {
+                            try linker_args.append(it.only_arg);
+                        }
+                    },
                     .linker_input_z => {
                         try linker_args.append("-z");
                         try linker_args.append(it.only_arg);
@@ -3263,6 +3330,14 @@ pub fn buildOutputType(
         fatal("translate-c expects exactly 1 source file (found {d})", .{cs.create_module.c_source_files.items.len});
     }
 
+    if (cs.time_report and cs.listen == .none) {
+        fatal("--time-report requires --listen", .{});
+    }
+
+    if (arg_mode == .translate_c and cs.create_module.c_source_files.items.len != 1) {
+        fatal("translate-c expects exactly 1 source file (found {d})", .{cs.create_module.c_source_files.items.len});
+    }
+
     if (cs.show_builtin and cs.root_src_file == null) {
         // Without this, there will be no main module created and no zig
         // compilation unit, and therefore also no builtin.zig contents
@@ -3460,6 +3535,14 @@ pub fn buildOutputType(
     };
 
     const target = &main_mod.resolved_target.result;
+
+    if (target.cpu.arch == .arc or target.cpu.arch.isNvptx()) {
+        if (cs.emit_bin != .no and cs.create_module.resolved_options.use_llvm) {
+            fatal("cannot emit {s} binary with the LLVM backend; only '-femit-asm' is supported", .{
+                @tagName(target.cpu.arch),
+            });
+        }
+    }
 
     if (target.cpu.arch == .arc or target.cpu.arch.isNvptx()) {
         if (cs.emit_bin != .no and cs.create_module.resolved_options.use_llvm) {
