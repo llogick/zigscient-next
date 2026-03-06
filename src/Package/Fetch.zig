@@ -402,6 +402,10 @@ pub const JobQueue = struct {
                     },
                 }
                 const entry_path = try arena.dupe(u8, entry.path);
+                // If necessary, normalize path separators to POSIX-style since the tar format requires that.
+                if (comptime std.fs.path.sep != std.fs.path.sep_posix) {
+                    std.mem.replaceScalar(u8, entry_path, std.fs.path.sep, std.fs.path.sep_posix);
+                }
                 try scanned_files.append(gpa, entry_path);
             }
 

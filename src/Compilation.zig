@@ -5527,6 +5527,9 @@ fn docsCopyModule(
     var archiver: std.tar.Writer = .{ .underlying_writer = &tar_file_writer.interface };
     archiver.prefix = name;
 
+    var path_buf: std.ArrayList(u8) = .empty;
+    defer path_buf.deinit(comp.gpa);
+
     var buffer: [1024]u8 = undefined;
 
     while (try walker.next(io)) |entry| {
@@ -5547,7 +5550,16 @@ fn docsCopyModule(
         const stat = try file.stat(io);
         var file_reader: Io.File.Reader = .initSize(file, io, &buffer, stat.size);
 
-        archiver.writeFileTimestamp(entry.path, &file_reader, stat.mtime) catch |err| {
+        const posix_path = if (comptime std.fs.path.sep == std.fs.path.sep_posix)
+            entry.path
+        else blk: {
+            path_buf.clearRetainingCapacity();
+            try path_buf.appendSlice(comp.gpa, entry.path);
+            std.mem.replaceScalar(u8, path_buf.items, std.fs.path.sep, std.fs.path.sep_posix);
+            break :blk path_buf.items;
+        };
+
+        archiver.writeFileTimestamp(posix_path, &file_reader, stat.mtime) catch |err| {
             return comp.lockAndSetMiscFailure(.docs_copy, "unable to archive {f}{s}: {t}", .{
                 root.fmt(comp), entry.path, err,
             });

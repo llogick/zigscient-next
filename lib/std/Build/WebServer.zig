@@ -526,6 +526,10 @@ pub fn serveTarFile(ws: *WebServer, request: *http.Server.Request, paths: []cons
         // resulting in modules named "" and "src". The compiler needs to tell the build system
         // about the module graph so that the build system can correctly encode this information in
         // the tar file.
+        //
+        // Additionally, this needs to ensure that all path separators for both prefix and
+        // sub_path are using the POSIX-style `/` on platforms that don't use it as their native
+        // path separator.
         archiver.prefix = path.root_dir.path orelse graph.cache.cwd;
         try archiver.writeFile(path.sub_path, &file_reader, @intCast(stat.mtime.toSeconds()));
     }
