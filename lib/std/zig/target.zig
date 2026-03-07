@@ -49,6 +49,7 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .loongarch64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 36, .patch = 0 }, .glibc_triple = "loongarch64-linux-gnuf64" },
     .{ .arch = .loongarch64, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 36, .patch = 0 }, .glibc_triple = "loongarch64-linux-gnusf" },
     .{ .arch = .loongarch64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 } },
+    .{ .arch = .loongarch64, .os = .linux, .abi = .muslf32, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 } },
     .{ .arch = .loongarch64, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 } },
     .{ .arch = .m68k, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 1, .minor = 3, .patch = 94 } },
     .{ .arch = .m68k, .os = .linux, .abi = .musl, .os_ver = .{ .major = 1, .minor = 3, .patch = 94 } },
