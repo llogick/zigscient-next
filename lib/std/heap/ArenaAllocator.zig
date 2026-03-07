@@ -248,8 +248,8 @@ const Node = struct {
     };
 
     fn loadBuf(node: *Node) []u8 {
-        // monotonic is fine since `size` can only ever grow, so the buffer returned
-        // by this function is always valid memory.
+        // `size` can only ever grow, so the buffer returned by this function is
+        // always valid memory.
         const size = @atomicLoad(Size, &node.size, .monotonic);
         return @as([*]u8, @ptrCast(node))[0..size.toInt()][@sizeOf(Node)..];
     }
@@ -298,8 +298,9 @@ fn tryPushNode(arena: *ArenaAllocator, node: *Node) PushResult {
 }
 
 fn stealFreeList(arena: *ArenaAllocator) ?*Node {
-    // syncs with acq_rel in other `stealFreeList` calls or release in `pushFreeList`
-    return @atomicRmw(?*Node, &arena.state.free_list, .Xchg, null, .acq_rel);
+    // We don't need acq_rel here because we're always swapping in `null`, so
+    // there's no node we'd need to release.
+    return @atomicRmw(?*Node, &arena.state.free_list, .Xchg, null, .acquire); // syncs with release in `pushFreeList`
 }
 
 fn pushFreeList(arena: *ArenaAllocator, first: *Node, last: *Node) void {
@@ -311,7 +312,7 @@ fn pushFreeList(arena: *ArenaAllocator, first: *Node, last: *Node) void {
         &arena.state.free_list,
         last.next,
         first,
-        .release, // syncs with acquire part of acq_rel in `stealFreeList`
+        .release, // syncs with acquire in `stealFreeList`
         .monotonic, // we never access any fields of `old_free_list`, we only care about the pointer
     )) |old_free_list| {
         last.next = old_free_list;
