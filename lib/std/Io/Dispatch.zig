@@ -434,6 +434,7 @@ pub fn io(ev: *Evented) Io {
             .unlockStderr = unlockStderr,
             .processCurrentPath = processCurrentPath,
             .processSetCurrentDir = processSetCurrentDir,
+            .processSetCurrentPath = processSetCurrentPath,
             .processReplace = processReplace,
             .processReplacePath = processReplacePath,
             .processSpawn = processSpawn,
@@ -4046,7 +4047,7 @@ fn processSetCurrentDir(userdata: ?*anyopaque, dir: Dir) process.SetCurrentDirEr
     };
 }
 
-fn processSetCurrentPath(userdata: ?*anyopaque, dir_path: []const u8) ChdirError!void {
+fn processSetCurrentPath(userdata: ?*anyopaque, dir_path: []const u8) process.SetCurrentPathError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     var path_buffer: [c.PATH_MAX]u8 = undefined;

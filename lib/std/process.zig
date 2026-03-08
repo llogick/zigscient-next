@@ -900,6 +900,35 @@ pub fn setCurrentDir(io: Io, dir: Io.Dir) !void {
     return io.vtable.processSetCurrentDir(io.userdata, dir);
 }
 
+pub const SetCurrentPathError = error{
+    AccessDenied,
+    SymLinkLoop,
+    SystemResources,
+    BadPathName,
+    FileNotFound,
+    FileSystem,
+    NoDevice,
+    NotDir,
+    NameTooLong,
+    OperationUnsupported,
+    /// Windows-only. The path is invalid WTF-8.
+    /// https://wtf-8.codeberg.page/
+    InvalidWtf8,
+} || Io.Cancelable || Io.UnexpectedError;
+
+/// Changes the current working directory to the given path.
+/// Corresponds to "chdir" in libc.
+///
+/// This modifies global process state and can have surprising effects in
+/// multithreaded applications. Most applications and especially libraries
+/// should not call this function as a general rule, however it can have use
+/// cases in, for example, implementing a shell, or child process execution.
+///
+/// Calling this function makes code less portable and less reusable.
+pub fn setCurrentPath(io: Io, path: []const u8) !void {
+    return io.vtable.processSetCurrentPath(io.userdata, path);
+}
+
 pub const LockMemoryError = error{
     UnsupportedOperation,
     PermissionDenied,

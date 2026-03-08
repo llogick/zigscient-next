@@ -1841,6 +1841,7 @@ pub fn io(t: *Threaded) Io {
             .unlockStderr = unlockStderr,
             .processCurrentPath = processCurrentPath,
             .processSetCurrentDir = processSetCurrentDir,
+            .processSetCurrentPath = processSetCurrentPath,
             .processReplace = processReplace,
             .processReplacePath = processReplacePath,
             .processSpawn = processSpawn,
@@ -2006,6 +2007,7 @@ pub fn ioBasic(t: *Threaded) Io {
             .unlockStderr = unlockStderr,
             .processCurrentPath = processCurrentPath,
             .processSetCurrentDir = processSetCurrentDir,
+            .processSetCurrentPath = processSetCurrentPath,
             .processReplace = processReplace,
             .processReplacePath = processReplacePath,
             .processSpawn = processSpawn,
@@ -14174,6 +14176,43 @@ fn processSetCurrentDir(userdata: ?*anyopaque, dir: Dir) process.SetCurrentDirEr
     }
 
     return fchdir(dir.handle);
+}
+
+fn processSetCurrentPath(userdata: ?*anyopaque, path: []const u8) process.SetCurrentPathError!void {
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
+
+    if (native_os == .wasi) return error.OperationUnsupported;
+
+    if (is_windows) {
+        var path_w_buf: [windows.PATH_MAX_WIDE]u16 = undefined;
+        const len = std.unicode.calcWtf16LeLen(path) catch return error.InvalidWtf8;
+        if (len > path_w_buf.len) return error.NameTooLong;
+        const path_w_len = std.unicode.wtf8ToWtf16Le(&path_w_buf, path) catch |err| switch (err) {
+            error.InvalidWtf8 => unreachable, // already validated
+        };
+        const path_w = path_w_buf[0..path_w_len];
+
+        const syscall: Syscall = try .start();
+        while (true) switch (windows.ntdll.RtlSetCurrentDirectory_U(&.init(path_w))) {
+            .SUCCESS => return syscall.finish(),
+            .OBJECT_NAME_INVALID => return syscall.fail(error.BadPathName),
+            .OBJECT_NAME_NOT_FOUND => return syscall.fail(error.FileNotFound),
+            .OBJECT_PATH_NOT_FOUND => return syscall.fail(error.FileNotFound),
+            .NO_MEDIA_IN_DEVICE => return syscall.fail(error.NoDevice),
+            .INVALID_PARAMETER => |err| return syscall.ntstatusBug(err),
+            .ACCESS_DENIED => return syscall.fail(error.AccessDenied),
+            .OBJECT_PATH_SYNTAX_BAD => |err| return syscall.ntstatusBug(err),
+            .NOT_A_DIRECTORY => return syscall.fail(error.NotDir),
+            .CANCELLED => {
+                try syscall.checkCancel();
+                continue;
+            },
+            else => |status| return syscall.unexpectedNtstatus(status),
+        };
+    }
+
+    return chdir(path);
 }
 
 pub const PosixAddress = extern union {
