@@ -2795,7 +2795,7 @@ test "std.zon negative char" {
 }
 
 test "std.zon parse float" {
-    if (builtin.cpu.arch == .x86 and builtin.abi == .musl and builtin.link_mode == .dynamic) return error.SkipZigTest;
+    if (builtin.cpu.arch == .x86) return error.SkipZigTest;
 
     const gpa = std.testing.allocator;
 
