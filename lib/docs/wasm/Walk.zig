@@ -567,66 +567,11 @@ fn struct_decl(
         .aligned_var_decl,
         => {
             const decl_index = try w.file.add_decl(member, parent_decl);
-            try w.global_var_decl(&namespace.base, decl_index, true, ast.fullVarDecl(member).?);
+            try w.global_var_decl(&namespace.base, decl_index, ast.fullVarDecl(member).?);
         },
 
         .@"comptime",
         => try w.expr(&namespace.base, parent_decl, ast.nodeData(member).node),
-
-        .test_decl => try w.expr(&namespace.base, parent_decl, ast.nodeData(member).opt_token_and_node[1]),
-
-        else => unreachable,
-    };
-}
-
-/// Traverses a container decl used as an expression without registering its members
-/// as `Decl` entries. This prevents local/test-only helper declarations from
-/// leaking into autodoc symbol lists.
-fn struct_expr(
-    w: *Walk,
-    scope: *Scope,
-    parent_decl: Decl.Index,
-    node: Ast.Node.Index,
-    container_decl: Ast.full.ContainerDecl,
-) Oom!void {
-    const ast = w.file.get_ast();
-
-    const namespace = try gpa.create(Scope.Namespace);
-    namespace.* = .{
-        .parent = scope,
-        .decl_index = parent_decl,
-    };
-    try w.file.get().scopes.putNoClobber(gpa, node, &namespace.base);
-    try w.scanDecls(namespace, container_decl.ast.members);
-
-    for (container_decl.ast.members) |member| switch (ast.nodeTag(member)) {
-        .container_field_init,
-        .container_field_align,
-        .container_field,
-        => try w.container_field(&namespace.base, parent_decl, ast.fullContainerField(member).?),
-
-        .fn_proto,
-        .fn_proto_multi,
-        .fn_proto_one,
-        .fn_proto_simple,
-        .fn_decl,
-        => {
-            var buf: [1]Ast.Node.Index = undefined;
-            const full = ast.fullFnProto(&buf, member).?;
-            const body = if (ast.nodeTag(member) == .fn_decl) ast.nodeData(member).node_and_node[1].toOptional() else .none;
-            try w.fn_decl(&namespace.base, parent_decl, body, full);
-        },
-
-        .global_var_decl,
-        .local_var_decl,
-        .simple_var_decl,
-        .aligned_var_decl,
-        => {
-            // Do not create Decl entries; just walk initializer expressions.
-            try w.global_var_decl(&namespace.base, parent_decl, false, ast.fullVarDecl(member).?);
-        },
-
-        .@"comptime" => try w.expr(&namespace.base, parent_decl, ast.nodeData(member).node),
 
         .test_decl => try w.expr(&namespace.base, parent_decl, ast.nodeData(member).opt_token_and_node[1]),
 
@@ -651,38 +596,13 @@ fn global_var_decl(
     w: *Walk,
     scope: *Scope,
     parent_decl: Decl.Index,
-    register_container_members: bool,
     full: Ast.full.VarDecl,
 ) Oom!void {
     try w.maybe_expr(scope, parent_decl, full.ast.type_node);
     try w.maybe_expr(scope, parent_decl, full.ast.align_node);
     try w.maybe_expr(scope, parent_decl, full.ast.addrspace_node);
     try w.maybe_expr(scope, parent_decl, full.ast.section_node);
-
-    if (full.ast.init_node.unwrap()) |init_node| {
-        if (register_container_members) {
-            switch (w.file.get_ast().nodeTag(init_node)) {
-                .container_decl,
-                .container_decl_trailing,
-                .container_decl_arg,
-                .container_decl_arg_trailing,
-                .container_decl_two,
-                .container_decl_two_trailing,
-                .tagged_union,
-                .tagged_union_trailing,
-                .tagged_union_enum_tag,
-                .tagged_union_enum_tag_trailing,
-                .tagged_union_two,
-                .tagged_union_two_trailing,
-                => {
-                    var buf: [2]Ast.Node.Index = undefined;
-                    return struct_decl(w, scope, parent_decl, init_node, w.file.get_ast().fullContainerDecl(&buf, init_node).?);
-                },
-                else => {},
-            }
-        }
-        try w.expr(scope, parent_decl, init_node);
-    }
+    try w.maybe_expr(scope, parent_decl, full.ast.init_node);
 }
 
 fn container_field(
@@ -967,7 +887,7 @@ fn expr(w: *Walk, scope: *Scope, parent_decl: Decl.Index, node: Ast.Node.Index) 
         .tagged_union_two_trailing,
         => {
             var buf: [2]Ast.Node.Index = undefined;
-            return struct_expr(w, scope, parent_decl, node, ast.fullContainerDecl(&buf, node).?);
+            return struct_decl(w, scope, parent_decl, node, ast.fullContainerDecl(&buf, node).?);
         },
 
         .array_type_sentinel => {
@@ -1078,7 +998,7 @@ fn block(
             .aligned_var_decl,
             => {
                 const full = ast.fullVarDecl(node).?;
-                try global_var_decl(w, scope, parent_decl, false, full);
+                try global_var_decl(w, scope, parent_decl, full);
                 const local = try gpa.create(Scope.Local);
                 local.* = .{
                     .parent = scope,
