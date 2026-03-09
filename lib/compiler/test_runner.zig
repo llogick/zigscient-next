@@ -17,7 +17,7 @@ var fba: std.heap.FixedBufferAllocator = .init(&fba_buffer);
 var fba_buffer: [8192]u8 = undefined;
 var stdin_buffer: [4096]u8 = undefined;
 var stdout_buffer: [4096]u8 = undefined;
-const runner_threaded_io: Io = Io.Threaded.global_single_threaded.ioBasic();
+const runner_threaded_io: Io = Io.Threaded.global_single_threaded.io();
 
 /// Keep in sync with logic in `std.Build.addRunArtifact` which decides whether
 /// the test runner will communicate with the build runner via `std.zig.Server`.

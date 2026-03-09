@@ -661,17 +661,20 @@ pub const IOC_OUT = 1073741824;
 pub const IOC_IN = 2147483648;
 
 pub const MSG = struct {
-    pub const TRUNC = 256;
-    pub const CTRUNC = 512;
-    pub const BCAST = 1024;
-    pub const MCAST = 2048;
-    pub const ERRQUEUE = 4096;
+    pub const OOB = 0x1;
+    pub const PEEK = 0x2;
+    pub const DONTROUTE = 0x4;
+    pub const WAITALL = 0x8;
+    pub const INTERRUPT = 0x10;
+    pub const PUSH_IMMEDIATE = 0x20;
 
-    pub const PEEK = 2;
-    pub const WAITALL = 8;
-    pub const PUSH_IMMEDIATE = 32;
-    pub const PARTIAL = 32768;
-    pub const INTERRUPT = 16;
+    pub const TRUNC = 0x0100;
+    pub const CTRUNC = 0x0200;
+    pub const BCAST = 0x0400;
+    pub const MCAST = 0x0800;
+
+    pub const PARTIAL = 0x8000;
+
     pub const MAXIOVLEN = 16;
 };
 

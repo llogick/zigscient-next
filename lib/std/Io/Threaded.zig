@@ -61,7 +61,7 @@ disable_memory_mapping: bool,
 
 stderr_writer: File.Writer = .{
     .io = undefined,
-    .interface = Io.File.Writer.initInterface(&.{}),
+    .interface = File.Writer.initInterface(&.{}),
     .file = if (is_windows) undefined else .stderr(),
     .mode = .streaming,
 },
@@ -160,7 +160,7 @@ pub const Environ = struct {
         },
     };
 
-    pub fn scan(environ: *Environ, allocator: std.mem.Allocator) void {
+    pub fn scan(environ: *Environ, allocator: Allocator) void {
         if (is_windows) {
             // This value expires with any call that modifies the environment,
             // which is outside of this Io implementation's control, so references
@@ -1901,10 +1901,6 @@ pub fn io(t: *Threaded) Io {
                 .windows => netSendWindows,
                 else => netSendPosix,
             },
-            .netReceive = switch (native_os) {
-                .windows => netReceiveWindows,
-                else => netReceivePosix,
-            },
             .netInterfaceNameResolve = netInterfaceNameResolve,
             .netInterfaceName = netInterfaceName,
             .netLookup = netLookup,
@@ -1912,143 +1908,10 @@ pub fn io(t: *Threaded) Io {
     };
 }
 
-/// Same as `io` but disables all networking functionality, which has
-/// an additional dependency on Windows (ws2_32).
-pub fn ioBasic(t: *Threaded) Io {
-    return .{
-        .userdata = t,
-        .vtable = &.{
-            .crashHandler = crashHandler,
-
-            .async = async,
-            .concurrent = concurrent,
-            .await = await,
-            .cancel = cancel,
-
-            .groupAsync = groupAsync,
-            .groupConcurrent = groupConcurrent,
-            .groupAwait = groupAwait,
-            .groupCancel = groupCancel,
-
-            .recancel = recancel,
-            .swapCancelProtection = swapCancelProtection,
-            .checkCancel = checkCancel,
-
-            .futexWait = futexWait,
-            .futexWaitUncancelable = futexWaitUncancelable,
-            .futexWake = futexWake,
-
-            .operate = operate,
-            .batchAwaitAsync = batchAwaitAsync,
-            .batchAwaitConcurrent = batchAwaitConcurrent,
-            .batchCancel = batchCancel,
-
-            .dirCreateDir = dirCreateDir,
-            .dirCreateDirPath = dirCreateDirPath,
-            .dirCreateDirPathOpen = dirCreateDirPathOpen,
-            .dirStat = dirStat,
-            .dirStatFile = dirStatFile,
-            .dirAccess = dirAccess,
-            .dirCreateFile = dirCreateFile,
-            .dirCreateFileAtomic = dirCreateFileAtomic,
-            .dirOpenFile = dirOpenFile,
-            .dirOpenDir = dirOpenDir,
-            .dirClose = dirClose,
-            .dirRead = dirRead,
-            .dirRealPath = dirRealPath,
-            .dirRealPathFile = dirRealPathFile,
-            .dirDeleteFile = dirDeleteFile,
-            .dirDeleteDir = dirDeleteDir,
-            .dirRename = dirRename,
-            .dirRenamePreserve = dirRenamePreserve,
-            .dirSymLink = dirSymLink,
-            .dirReadLink = dirReadLink,
-            .dirSetOwner = dirSetOwner,
-            .dirSetFileOwner = dirSetFileOwner,
-            .dirSetPermissions = dirSetPermissions,
-            .dirSetFilePermissions = dirSetFilePermissions,
-            .dirSetTimestamps = dirSetTimestamps,
-            .dirHardLink = dirHardLink,
-
-            .fileStat = fileStat,
-            .fileLength = fileLength,
-            .fileClose = fileClose,
-            .fileWritePositional = fileWritePositional,
-            .fileWriteFileStreaming = fileWriteFileStreaming,
-            .fileWriteFilePositional = fileWriteFilePositional,
-            .fileReadPositional = fileReadPositional,
-            .fileSeekBy = fileSeekBy,
-            .fileSeekTo = fileSeekTo,
-            .fileSync = fileSync,
-            .fileIsTty = fileIsTty,
-            .fileEnableAnsiEscapeCodes = fileEnableAnsiEscapeCodes,
-            .fileSupportsAnsiEscapeCodes = fileSupportsAnsiEscapeCodes,
-            .fileSetLength = fileSetLength,
-            .fileSetOwner = fileSetOwner,
-            .fileSetPermissions = fileSetPermissions,
-            .fileSetTimestamps = fileSetTimestamps,
-            .fileLock = fileLock,
-            .fileTryLock = fileTryLock,
-            .fileUnlock = fileUnlock,
-            .fileDowngradeLock = fileDowngradeLock,
-            .fileRealPath = fileRealPath,
-            .fileHardLink = fileHardLink,
-
-            .fileMemoryMapCreate = fileMemoryMapCreate,
-            .fileMemoryMapDestroy = fileMemoryMapDestroy,
-            .fileMemoryMapSetLength = fileMemoryMapSetLength,
-            .fileMemoryMapRead = fileMemoryMapRead,
-            .fileMemoryMapWrite = fileMemoryMapWrite,
-
-            .processExecutableOpen = processExecutableOpen,
-            .processExecutablePath = processExecutablePath,
-            .lockStderr = lockStderr,
-            .tryLockStderr = tryLockStderr,
-            .unlockStderr = unlockStderr,
-            .processCurrentPath = processCurrentPath,
-            .processSetCurrentDir = processSetCurrentDir,
-            .processSetCurrentPath = processSetCurrentPath,
-            .processReplace = processReplace,
-            .processReplacePath = processReplacePath,
-            .processSpawn = processSpawn,
-            .processSpawnPath = processSpawnPath,
-            .childWait = childWait,
-            .childKill = childKill,
-
-            .progressParentFile = progressParentFile,
-
-            .now = now,
-            .clockResolution = clockResolution,
-            .sleep = sleep,
-
-            .random = random,
-            .randomSecure = randomSecure,
-
-            .netListenIp = netListenIpUnavailable,
-            .netListenUnix = netListenUnixUnavailable,
-            .netAccept = netAcceptUnavailable,
-            .netBindIp = netBindIpUnavailable,
-            .netConnectIp = netConnectIpUnavailable,
-            .netSocketCreatePair = netSocketCreatePairUnavailable,
-            .netConnectUnix = netConnectUnixUnavailable,
-            .netClose = netCloseUnavailable,
-            .netShutdown = netShutdownUnavailable,
-            .netRead = netReadUnavailable,
-            .netWrite = netWriteUnavailable,
-            .netWriteFile = netWriteFileUnavailable,
-            .netSend = netSendUnavailable,
-            .netReceive = netReceiveUnavailable,
-            .netInterfaceNameResolve = netInterfaceNameResolveUnavailable,
-            .netInterfaceName = netInterfaceNameUnavailable,
-            .netLookup = netLookupUnavailable,
-        },
-    };
-}
-
 pub const socket_flags_unsupported = is_darwin or native_os == .haiku;
 const have_accept4 = !socket_flags_unsupported;
 const have_flock_open_flags = @hasField(posix.O, "EXLOCK");
-const have_networking = native_os != .wasi;
+const have_networking = std.options.networking and native_os != .wasi;
 const have_flock = @TypeOf(posix.system.flock) != void;
 const have_sendmmsg = native_os == .linux;
 const have_futex = switch (builtin.cpu.arch) {
@@ -2600,7 +2463,7 @@ fn futexWait(userdata: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Io.
         return;
     }
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    const t_io = ioBasic(t);
+    const t_io = io(t);
     const timeout_ns: ?u64 = ns: {
         const d = timeout.toDurationFromNow(t_io) orelse break :ns null;
         break :ns std.math.lossyCast(u64, d.raw.toNanoseconds());
@@ -2638,13 +2501,23 @@ fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Oper
             },
         },
         .device_io_control => |*o| return .{ .device_io_control = try deviceIoControl(o) },
+        .net_receive => |*o| return .{ .net_receive = o: {
+            if (!have_networking) break :o .{ error.NetworkDown, 0 };
+            if (is_windows) break :o netReceiveWindows(t, o.socket_handle, o.message_buffer, o.data_buffer, o.flags);
+            netReceivePosix(o.socket_handle, &o.message_buffer[0], o.data_buffer, o.flags, false) catch |err| switch (err) {
+                error.Canceled => |e| return e,
+                error.WouldBlock => unreachable,
+                else => |e| break :o .{ e, 0 },
+            };
+            break :o .{ null, 1 };
+        } },
     }
 }
 
 fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (is_windows) {
-        batchDrainSubmittedWindows(b, false) catch |err| switch (err) {
+        batchDrainSubmittedWindows(t, b, false) catch |err| switch (err) {
             error.ConcurrencyUnavailable => unreachable, // passed concurrency=false
             else => |e| return e,
         };
@@ -2662,17 +2535,33 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
                 const submission = &b.storage[index.toIndex()].submission;
                 switch (submission.operation) {
                     .file_read_streaming => |o| {
-                        poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.IN, .revents = 0 };
+                        poll_buffer[poll_len] = .{
+                            .fd = o.file.handle,
+                            .events = posix.POLL.IN | posix.POLL.ERR,
+                            .revents = 0,
+                        };
                         poll_len += 1;
                     },
                     .file_write_streaming => |o| {
-                        poll_buffer[poll_len] = .{ .fd = o.file.handle, .events = posix.POLL.OUT, .revents = 0 };
+                        poll_buffer[poll_len] = .{
+                            .fd = o.file.handle,
+                            .events = posix.POLL.OUT | posix.POLL.ERR,
+                            .revents = 0,
+                        };
                         poll_len += 1;
                     },
                     .device_io_control => |o| {
                         poll_buffer[poll_len] = .{
                             .fd = o.file.handle,
                             .events = posix.POLL.OUT | posix.POLL.IN | posix.POLL.ERR,
+                            .revents = 0,
+                        };
+                        poll_len += 1;
+                    },
+                    .net_receive => |*o| {
+                        poll_buffer[poll_len] = .{
+                            .fd = o.socket_handle,
+                            .events = posix.POLL.IN | posix.POLL.ERR,
                             .revents = 0,
                         };
                         poll_len += 1;
@@ -2767,8 +2656,8 @@ fn batchAwaitAsync(userdata: ?*anyopaque, b: *Io.Batch) Io.Cancelable!void {
 fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     if (is_windows) {
-        const deadline: ?Io.Clock.Timestamp = timeout.toTimestamp(ioBasic(t));
-        try batchDrainSubmittedWindows(b, true);
+        const deadline: ?Io.Clock.Timestamp = timeout.toTimestamp(io(t));
+        try batchDrainSubmittedWindows(t, b, true);
         while (b.pending.head != .none and b.completed.head == .none) {
             var delay_interval: windows.LARGE_INTEGER = interval: {
                 const d = deadline orelse break :interval std.math.minInt(windows.LARGE_INTEGER);
@@ -2796,12 +2685,12 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
     if (!have_poll) return error.ConcurrencyUnavailable;
     var poll_buffer: [poll_buffer_len]posix.pollfd = undefined;
     var poll_storage: struct {
-        gpa: std.mem.Allocator,
+        gpa: Allocator,
         batch: *Io.Batch,
         slice: []posix.pollfd,
         len: u32,
 
-        fn add(storage: *@This(), file: Io.File, events: @FieldType(posix.pollfd, "events")) Io.ConcurrentError!void {
+        fn add(storage: *@This(), fd: File.Handle, events: @FieldType(posix.pollfd, "events")) Io.ConcurrentError!void {
             const len = storage.len;
             if (len == poll_buffer_len) {
                 const slice: []posix.pollfd = if (storage.batch.userdata) |batch_userdata|
@@ -2816,7 +2705,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
                 storage.slice = slice;
             }
             storage.slice[len] = .{
-                .fd = file.handle,
+                .fd = fd,
                 .events = events,
                 .revents = 0,
             };
@@ -2826,18 +2715,41 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
     {
         var index = b.submitted.head;
         while (index != .none) {
-            const submission = &b.storage[index.toIndex()].submission;
+            const storage = &b.storage[index.toIndex()];
+            const submission = storage.submission;
             switch (submission.operation) {
-                .file_read_streaming => |o| try poll_storage.add(o.file, posix.POLL.IN),
-                .file_write_streaming => |o| try poll_storage.add(o.file, posix.POLL.OUT),
-                .device_io_control => |o| try poll_storage.add(o.file, posix.POLL.IN | posix.POLL.OUT | posix.POLL.ERR),
+                .file_read_streaming => |o| try poll_storage.add(o.file.handle, posix.POLL.IN | posix.POLL.ERR),
+                .file_write_streaming => |o| try poll_storage.add(o.file.handle, posix.POLL.OUT | posix.POLL.ERR),
+                .device_io_control => |o| try poll_storage.add(o.file.handle, posix.POLL.IN | posix.POLL.OUT | posix.POLL.ERR),
+                .net_receive => |*o| nb: {
+                    var data_i: usize = 0;
+                    const result: Io.Operation.Result = .{ .net_receive = for (o.message_buffer, 0..) |*msg, msg_i| {
+                        const remaining_data_buffer = o.data_buffer[data_i..];
+                        netReceivePosix(o.socket_handle, msg, remaining_data_buffer, o.flags, true) catch |err| switch (err) {
+                            error.Canceled => |e| return e,
+                            error.WouldBlock => {
+                                if (msg_i != 0) break .{ null, msg_i };
+                                try poll_storage.add(o.socket_handle, posix.POLL.IN | posix.POLL.ERR);
+                                break :nb;
+                            },
+                            else => |e| break .{ e, 0 },
+                        };
+                        data_i += msg.data.len;
+                    } else .{ null, o.message_buffer.len } };
+                    switch (b.completed.tail) {
+                        .none => b.completed.head = index,
+                        else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
+                    }
+                    storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+                    b.completed.tail = index;
+                },
             }
             index = submission.node.next;
         }
     }
     switch (poll_storage.len) {
         0 => return,
-        1 => if (timeout == .none) {
+        1 => if (timeout == .none and b.completed.head == .none) {
             const index = b.submitted.head;
             const storage = &b.storage[index.toIndex()];
             const result = try operate(t, storage.submission.operation);
@@ -2854,7 +2766,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
         },
         else => {},
     }
-    const t_io = ioBasic(t);
+    const t_io = io(t);
     const deadline = timeout.toTimestamp(t_io);
     while (true) {
         const timeout_ms: i32 = t: {
@@ -2961,6 +2873,31 @@ fn batchCancel(userdata: ?*anyopaque, b: *Io.Batch) void {
     }
 }
 
+fn batchCompleteBlockingWindows(
+    b: *Io.Batch,
+    operation_userdata: *WindowsBatchOperationUserdata,
+    result: Io.Operation.Result,
+) void {
+    const erased_userdata = operation_userdata.toErased();
+    const pending: *Io.Operation.Storage.Pending = @fieldParentPtr("userdata", erased_userdata);
+    switch (pending.node.prev) {
+        .none => b.pending.head = pending.node.next,
+        else => |prev_index| b.storage[prev_index.toIndex()].pending.node.next = pending.node.next,
+    }
+    switch (pending.node.next) {
+        .none => b.pending.tail = pending.node.prev,
+        else => |next_index| b.storage[next_index.toIndex()].pending.node.prev = pending.node.prev,
+    }
+    const storage: *Io.Operation.Storage = @fieldParentPtr("pending", pending);
+    const index: Io.Operation.OptionalIndex = .fromIndex(storage - b.storage.ptr);
+    switch (b.completed.tail) {
+        .none => b.completed.head = index,
+        else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
+    }
+    b.completed.tail = index;
+    storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+}
+
 fn batchApc(
     apc_context: ?*anyopaque,
     iosb: *windows.IO_STATUS_BLOCK,
@@ -3000,6 +2937,7 @@ fn batchApc(
                 .file_read_streaming => .{ .file_read_streaming = ntReadFileResult(iosb) },
                 .file_write_streaming => .{ .file_write_streaming = ntWriteFileResult(iosb) },
                 .device_io_control => .{ .device_io_control = iosb.* },
+                .net_receive => unreachable,
             };
             storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
         },
@@ -3007,7 +2945,7 @@ fn batchApc(
 }
 
 /// If `concurrency` is false, `error.ConcurrencyUnavailable` is unreachable.
-fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentError || Io.Cancelable)!void {
+fn batchDrainSubmittedWindows(t: *Threaded, b: *Io.Batch, concurrency: bool) (Io.ConcurrentError || Io.Cancelable)!void {
     var index = b.submitted.head;
     errdefer b.submitted.head = index;
     while (index != .none) {
@@ -3200,6 +3138,13 @@ fn batchDrainSubmittedWindows(b: *Io.Batch, concurrency: bool) (Io.ConcurrentErr
                         },
                     };
                 }
+            },
+            .net_receive => |*o| {
+                // TODO integrate with overlapped I/O or equivalent to avoid this error
+                if (concurrency) return error.ConcurrencyUnavailable;
+                batchCompleteBlockingWindows(b, operation_userdata, .{
+                    .net_receive = netReceiveWindows(t, o.socket_handle, o.message_buffer, o.data_buffer, o.flags),
+                });
             },
         }
         index = submission.node.next;
@@ -3459,7 +3404,7 @@ fn dirCreateDirPathOpenPosix(
     options: Dir.OpenOptions,
 ) Dir.CreateDirPathOpenError!Dir {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    const t_io = ioBasic(t);
+    const t_io = io(t);
     return dirOpenDirPosix(t, dir, sub_path, options) catch |err| switch (err) {
         error.FileNotFound => {
             _ = try dir.createDirPathStatus(t_io, sub_path, permissions);
@@ -3580,7 +3525,7 @@ fn dirCreateDirPathOpenWasi(
     options: Dir.OpenOptions,
 ) Dir.CreateDirPathOpenError!Dir {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    const t_io = ioBasic(t);
+    const t_io = io(t);
     return dirOpenDirWasi(t, dir, sub_path, options) catch |err| switch (err) {
         error.FileNotFound => {
             _ = try dir.createDirPathStatus(t_io, sub_path, permissions);
@@ -4621,7 +4566,7 @@ fn dirCreateFileAtomic(
     options: Dir.CreateFileAtomicOptions,
 ) Dir.CreateFileAtomicError!File.Atomic {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    const t_io = ioBasic(t);
+    const t_io = io(t);
 
     // Linux has O_TMPFILE, but linkat() does not support AT_REPLACE, so it's
     // useless when we have to make up a bogus path name to do the rename()
@@ -10249,19 +10194,19 @@ fn processExecutablePath(userdata: ?*anyopaque, out_buffer: []u8) process.Execut
             const rc = std.c._NSGetExecutablePath(&symlink_path_buf, &n);
             if (rc != 0) return error.NameTooLong;
             const symlink_path = std.mem.sliceTo(&symlink_path_buf, 0);
-            return Io.Dir.realPathFileAbsolute(ioBasic(t), symlink_path, out_buffer) catch |err| switch (err) {
+            return Io.Dir.realPathFileAbsolute(io(t), symlink_path, out_buffer) catch |err| switch (err) {
                 error.NetworkNotFound => unreachable, // Windows-only
                 error.FileBusy => unreachable, // Windows-only
                 else => |e| return e,
             };
         },
-        .linux, .serenity => return Io.Dir.readLinkAbsolute(ioBasic(t), "/proc/self/exe", out_buffer) catch |err| switch (err) {
+        .linux, .serenity => return Io.Dir.readLinkAbsolute(io(t), "/proc/self/exe", out_buffer) catch |err| switch (err) {
             error.UnsupportedReparsePointType => unreachable, // Windows-only
             error.NetworkNotFound => unreachable, // Windows-only
             error.FileBusy => unreachable, // Windows-only
             else => |e| return e,
         },
-        .illumos => return Io.Dir.readLinkAbsolute(ioBasic(t), "/proc/self/path/a.out", out_buffer) catch |err| switch (err) {
+        .illumos => return Io.Dir.readLinkAbsolute(io(t), "/proc/self/path/a.out", out_buffer) catch |err| switch (err) {
             error.UnsupportedReparsePointType => unreachable, // Windows-only
             error.NetworkNotFound => unreachable, // Windows-only
             error.FileBusy => unreachable, // Windows-only
@@ -11623,7 +11568,7 @@ fn sleepPosix(timeout: Io.Timeout) Io.Cancelable!void {
 }
 
 fn sleepWasi(t: *Threaded, timeout: Io.Timeout) Io.Cancelable!void {
-    const t_io = ioBasic(t);
+    const t_io = io(t);
     const w = std.os.wasi;
 
     const clock: w.subscription_clock_t = if (timeout.toDurationFromNow(t_io)) |d| .{
@@ -11652,7 +11597,7 @@ fn sleepWasi(t: *Threaded, timeout: Io.Timeout) Io.Cancelable!void {
 }
 
 fn sleepNanosleep(t: *Threaded, timeout: Io.Timeout) Io.Cancelable!void {
-    const t_io = ioBasic(t);
+    const t_io = io(t);
     const sec_type = @typeInfo(posix.timespec).@"struct".fields[0].type;
     const nsec_type = @typeInfo(posix.timespec).@"struct".fields[1].type;
 
@@ -11884,6 +11829,7 @@ fn netListenUnixWindows(
     options: net.UnixAddress.ListenOptions,
 ) net.UnixAddress.ListenError!net.Socket.Handle {
     if (!net.has_unix_sockets) return error.AddressFamilyUnsupported;
+    if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
 
     const socket_handle = openSocketWsa(t, posix.AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
@@ -12380,6 +12326,7 @@ fn netConnectUnixWindows(
     address: *const net.UnixAddress,
 ) net.UnixAddress.ConnectError!net.Socket.Handle {
     if (!net.has_unix_sockets) return error.AddressFamilyUnsupported;
+    if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
 
     const socket_handle = try openSocketWsa(t, posix.AF.UNIX, .{ .mode = .stream });
@@ -12995,11 +12942,76 @@ fn netSendWindows(
 ) struct { ?net.Socket.SendError, usize } {
     if (!have_networking) return .{ error.NetworkDown, 0 };
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    _ = t;
-    _ = handle;
-    _ = messages;
-    _ = flags;
-    @panic("TODO netSendWindows");
+
+    // Ignored flags: confirm, eor, fastopen
+    const windows_flags: u32 =
+        @as(u32, if (flags.oob) ws2_32.MSG.OOB else 0) |
+        @as(u32, if (flags.dont_route) ws2_32.MSG.DONTROUTE else 0);
+
+    for (messages, 0..) |*m, i| {
+        netSendWindowsOne(t, handle, m, windows_flags) catch |err| return .{ err, i };
+    }
+    return .{ null, messages.len };
+}
+
+fn netSendWindowsOne(
+    t: *Threaded,
+    handle: net.Socket.Handle,
+    message: *net.OutgoingMessage,
+    flags: u32,
+) net.Socket.SendError!void {
+    var buf: ws2_32.WSABUF = .{
+        .buf = @constCast(message.data_ptr),
+        .len = std.math.cast(u32, message.data_len) orelse return error.MessageOversize,
+    };
+    var n: u32 = undefined;
+    var address: WsaAddress = undefined;
+    const address_size = addressToWsa(message.address, &address);
+    var syscall: Syscall = try .start();
+    while (true) {
+        const rc = ws2_32.WSASendTo(
+            handle,
+            (&buf)[0..1],
+            1,
+            &n,
+            flags,
+            &address.any,
+            address_size,
+            null,
+            null,
+        );
+        if (rc != ws2_32.SOCKET_ERROR) {
+            syscall.finish();
+            return;
+        }
+        switch (ws2_32.WSAGetLastError()) {
+            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
+                try syscall.checkCancel();
+                continue;
+            },
+            .NOTINITIALISED => {
+                syscall.finish();
+                try initializeWsa(t);
+                syscall = try .start();
+                continue;
+            },
+
+            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
+            .EFAULT => unreachable, // a pointer is not completely contained in user address space.
+
+            else => |err| {
+                syscall.finish();
+                switch (err) {
+                    .EINVAL => return wsaErrorBug(err),
+                    .EMSGSIZE => return wsaErrorBug(err),
+                    else => return windows.unexpectedWSAError(err),
+                }
+            },
+        }
+    }
 }
 
 fn netSendUnavailable(
@@ -13190,70 +13202,44 @@ fn netSendMany(
 }
 
 fn netReceivePosix(
-    userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
-    message_buffer: []net.IncomingMessage,
+    socket_handle: net.Socket.Handle,
+    message: *net.IncomingMessage,
     data_buffer: []u8,
     flags: net.ReceiveFlags,
-    timeout: Io.Timeout,
-) struct { ?net.Socket.ReceiveTimeoutError, usize } {
-    if (!have_networking) return .{ error.NetworkDown, 0 };
-    const t: *Threaded = @ptrCast(@alignCast(userdata));
-    const t_io = io(t);
-
+    nonblocking: bool,
+) (net.Socket.ReceiveError || error{WouldBlock})!void {
     // recvmmsg is useless, here's why:
     // * [timeout bug](https://bugzilla.kernel.org/show_bug.cgi?id=75371)
     // * it wants iovecs for each message but we have a better API: one data
     //   buffer to handle all the messages. The better API cannot be lowered to
     //   the split vectors though because reducing the buffer size might make
     //   some messages unreceivable.
-
-    // So the strategy instead is to use non-blocking recvmsg calls, calling
-    // poll() with timeout if the first one returns EAGAIN.
     const posix_flags: u32 =
         @as(u32, if (flags.oob) posix.MSG.OOB else 0) |
         @as(u32, if (flags.peek) posix.MSG.PEEK else 0) |
         @as(u32, if (flags.trunc) posix.MSG.TRUNC else 0) |
-        posix.MSG.DONTWAIT | posix.MSG.NOSIGNAL;
+        posix.MSG.NOSIGNAL |
+        @as(u32, if (nonblocking) posix.MSG.DONTWAIT else 0);
 
-    var poll_fds: [1]posix.pollfd = .{
-        .{
-            .fd = handle,
-            .events = posix.POLL.IN,
-            .revents = undefined,
-        },
+    var storage: PosixAddress = undefined;
+    var iov: posix.iovec = .{ .base = data_buffer.ptr, .len = data_buffer.len };
+    var msg: posix.msghdr = .{
+        .name = &storage.any,
+        .namelen = @sizeOf(PosixAddress),
+        .iov = (&iov)[0..1],
+        .iovlen = 1,
+        .control = message.control.ptr,
+        .controllen = @intCast(message.control.len),
+        .flags = undefined,
     };
-    var message_i: usize = 0;
-    var data_i: usize = 0;
 
-    const deadline = timeout.toTimestamp(t_io);
-
-    recv: while (true) {
-        if (message_buffer.len - message_i == 0) return .{ null, message_i };
-        const message = &message_buffer[message_i];
-        const remaining_data_buffer = data_buffer[data_i..];
-        var storage: PosixAddress = undefined;
-        var iov: posix.iovec = .{ .base = remaining_data_buffer.ptr, .len = remaining_data_buffer.len };
-        var msg: posix.msghdr = .{
-            .name = &storage.any,
-            .namelen = @sizeOf(PosixAddress),
-            .iov = (&iov)[0..1],
-            .iovlen = 1,
-            .control = message.control.ptr,
-            .controllen = @intCast(message.control.len),
-            .flags = undefined,
-        };
-
-        const recv_rc = rc: {
-            const syscall = Syscall.start() catch |err| return .{ err, message_i };
-            const rc = posix.system.recvmsg(handle, &msg, posix_flags);
-            syscall.finish();
-            break :rc rc;
-        };
-        switch (posix.errno(recv_rc)) {
+    const syscall = try Syscall.start();
+    while (true) {
+        const rc = posix.system.recvmsg(socket_handle, &msg, posix_flags);
+        switch (posix.errno(rc)) {
             .SUCCESS => {
-                const data = remaining_data_buffer[0..@intCast(recv_rc)];
-                data_i += data.len;
+                syscall.finish();
+                const data = data_buffer[0..@intCast(rc)];
                 message.* = .{
                     .from = addressFromPosix(&storage),
                     .data = data,
@@ -13266,96 +13252,122 @@ fn netReceivePosix(
                         .errqueue = if (@hasDecl(posix.MSG, "ERRQUEUE")) (msg.flags & posix.MSG.ERRQUEUE) != 0 else false,
                     },
                 };
-                message_i += 1;
+                return;
+            },
+            .INTR => {
+                try syscall.checkCancel();
                 continue;
             },
-            .AGAIN => while (true) {
-                if (message_i != 0) return .{ null, message_i };
-
-                const max_poll_ms = std.math.maxInt(u31);
-                const timeout_ms: u31 = if (deadline) |d| t: {
-                    const duration = d.durationFromNow(t_io);
-                    if (duration.raw.nanoseconds <= 0) return .{ error.Timeout, message_i };
-                    break :t @intCast(@min(max_poll_ms, duration.raw.toMilliseconds()));
-                } else max_poll_ms;
-
-                const syscall = Syscall.start() catch |err| return .{ err, message_i };
-                const poll_rc = posix.system.poll(&poll_fds, poll_fds.len, timeout_ms);
-                syscall.finish();
-
-                switch (posix.errno(poll_rc)) {
-                    .SUCCESS => {
-                        if (poll_rc == 0) {
-                            // Although spurious timeouts are OK, when no deadline
-                            // is passed we must not return `error.Timeout`.
-                            if (deadline == null) continue;
-                            return .{ error.Timeout, message_i };
-                        }
-                        continue :recv;
-                    },
-                    .INTR => continue,
-
-                    .FAULT => |err| return .{ errnoBug(err), message_i },
-                    .INVAL => |err| return .{ errnoBug(err), message_i },
-                    .NOMEM => return .{ error.SystemResources, message_i },
-                    else => |err| return .{ posix.unexpectedErrno(err), message_i },
-                }
-            },
-            .INTR => continue,
-
-            .BADF => |err| return .{ errnoBug(err), message_i },
-            .NFILE => return .{ error.SystemFdQuotaExceeded, message_i },
-            .MFILE => return .{ error.ProcessFdQuotaExceeded, message_i },
-            .FAULT => |err| return .{ errnoBug(err), message_i },
-            .INVAL => |err| return .{ errnoBug(err), message_i },
-            .NOBUFS => return .{ error.SystemResources, message_i },
-            .NOMEM => return .{ error.SystemResources, message_i },
-            .NOTCONN => return .{ error.SocketUnconnected, message_i },
-            .NOTSOCK => |err| return .{ errnoBug(err), message_i },
-            .MSGSIZE => return .{ error.MessageOversize, message_i },
-            .PIPE => return .{ error.SocketUnconnected, message_i },
-            .OPNOTSUPP => |err| return .{ errnoBug(err), message_i },
-            .CONNRESET => return .{ error.ConnectionResetByPeer, message_i },
-            .NETDOWN => return .{ error.NetworkDown, message_i },
-            else => |err| return .{ posix.unexpectedErrno(err), message_i },
+            .NFILE => return syscall.fail(error.SystemFdQuotaExceeded),
+            .MFILE => return syscall.fail(error.ProcessFdQuotaExceeded),
+            .NOBUFS => return syscall.fail(error.SystemResources),
+            .NOMEM => return syscall.fail(error.SystemResources),
+            .NOTCONN => return syscall.fail(error.SocketUnconnected),
+            .MSGSIZE => return syscall.fail(error.MessageOversize),
+            .PIPE => return syscall.fail(error.SocketUnconnected),
+            .CONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .NETDOWN => return syscall.fail(error.NetworkDown),
+            .AGAIN => return syscall.fail(error.WouldBlock),
+            .BADF => |err| return syscall.errnoBug(err),
+            .FAULT => |err| return syscall.errnoBug(err),
+            .INVAL => |err| return syscall.errnoBug(err),
+            .NOTSOCK => |err| return syscall.errnoBug(err),
+            .OPNOTSUPP => |err| return syscall.errnoBug(err),
+            else => |err| return syscall.unexpectedErrno(err),
         }
     }
 }
 
 fn netReceiveWindows(
-    userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
+    t: *Threaded,
+    socket_handle: net.Socket.Handle,
     message_buffer: []net.IncomingMessage,
     data_buffer: []u8,
     flags: net.ReceiveFlags,
-    timeout: Io.Timeout,
-) struct { ?net.Socket.ReceiveTimeoutError, usize } {
-    if (!have_networking) return .{ error.NetworkDown, 0 };
-    const t: *Threaded = @ptrCast(@alignCast(userdata));
-    _ = t;
-    _ = handle;
-    _ = message_buffer;
-    _ = data_buffer;
-    _ = flags;
-    _ = timeout;
-    @panic("TODO implement netReceiveWindows");
+) struct { ?net.Socket.ReceiveError, usize } {
+    netReceiveWindowsOne(t, socket_handle, &message_buffer[0], data_buffer, flags) catch |err| return .{ err, 0 };
+    return .{ null, 1 };
 }
 
-fn netReceiveUnavailable(
-    userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
-    message_buffer: []net.IncomingMessage,
+fn netReceiveWindowsOne(
+    t: *Threaded,
+    socket_handle: net.Socket.Handle,
+    message: *net.IncomingMessage,
     data_buffer: []u8,
     flags: net.ReceiveFlags,
-    timeout: Io.Timeout,
-) struct { ?net.Socket.ReceiveTimeoutError, usize } {
-    _ = userdata;
-    _ = handle;
-    _ = message_buffer;
-    _ = data_buffer;
-    _ = flags;
-    _ = timeout;
-    return .{ error.NetworkDown, 0 };
+) net.Socket.ReceiveError!void {
+    if (!have_networking) return error.NetworkDown;
+
+    var windows_flags: u32 =
+        @as(u32, if (flags.oob) ws2_32.MSG.OOB else 0) |
+        @as(u32, if (flags.peek) ws2_32.MSG.PEEK else 0) |
+        @as(u32, if (flags.trunc) ws2_32.MSG.TRUNC else 0);
+
+    var buf: ws2_32.WSABUF = .{
+        .buf = data_buffer.ptr,
+        .len = std.math.cast(u32, data_buffer.len) orelse return error.MessageOversize,
+    };
+    var n: u32 = undefined;
+    var syscall: Syscall = try .start();
+    var from_storage: WsaAddress = undefined;
+    var from_storage_len: i32 = @sizeOf(WsaAddress);
+
+    while (true) {
+        const rc = ws2_32.WSARecvFrom(
+            socket_handle,
+            (&buf)[0..1],
+            1,
+            &n,
+            &windows_flags,
+            &from_storage.any,
+            &from_storage_len,
+            null,
+            null,
+        );
+        if (rc != ws2_32.SOCKET_ERROR) {
+            syscall.finish();
+            message.* = .{
+                .from = addressFromWsa(&from_storage),
+                .data = data_buffer[0..n],
+                .control = &.{},
+                .flags = .{
+                    .eor = false,
+                    .trunc = (windows_flags & ws2_32.MSG.TRUNC) != 0,
+                    .ctrunc = (windows_flags & ws2_32.MSG.CTRUNC) != 0,
+                    .oob = false,
+                    .errqueue = false,
+                },
+            };
+            return;
+        }
+        switch (ws2_32.WSAGetLastError()) {
+            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
+                try syscall.checkCancel();
+                continue;
+            },
+            .NOTINITIALISED => {
+                syscall.finish();
+                try initializeWsa(t);
+                syscall = try .start();
+                continue;
+            },
+
+            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
+            .EFAULT => unreachable, // a pointer is not completely contained in user address space.
+
+            else => |err| {
+                syscall.finish();
+                switch (err) {
+                    .EINVAL => return wsaErrorBug(err),
+                    .EMSGSIZE => return wsaErrorBug(err),
+                    else => return windows.unexpectedWSAError(err),
+                }
+            },
+        }
+    }
 }
 
 fn netWritePosix(
@@ -13459,6 +13471,7 @@ fn netWriteWindows(
     data: []const []const u8,
     splat: usize,
 ) net.Stream.Writer.Error!usize {
+    if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     comptime assert(is_windows);
 
@@ -13581,6 +13594,7 @@ fn addBuf(v: []posix.iovec_const, i: *iovlen_t, bytes: []const u8) void {
 }
 
 fn netClose(userdata: ?*anyopaque, handles: []const net.Socket.Handle) void {
+    if (!have_networking) unreachable;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
     switch (native_os) {
@@ -13789,7 +13803,7 @@ fn netLookupUnavailable(
     _ = host_name;
     _ = options;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    resolved.close(ioBasic(t));
+    resolved.close(io(t));
     return error.NetworkDown;
 }
 
@@ -14072,7 +14086,7 @@ fn tryLockStderr(userdata: ?*anyopaque, terminal_mode: ?Io.Terminal.Mode) Io.Can
 
 fn initLockedStderr(t: *Threaded, terminal_mode: ?Io.Terminal.Mode) Io.Cancelable!Io.LockedStderr {
     if (!t.stderr_writer_initialized) {
-        const io_t = ioBasic(t);
+        const io_t = io(t);
         if (is_windows) t.stderr_writer.file = .stderr();
         t.stderr_writer.io = io_t;
         t.stderr_writer_initialized = true;
