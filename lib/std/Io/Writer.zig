@@ -518,6 +518,17 @@ test "writeSplatAll works with a single buffer" {
     try testing.expectEqualStrings("hellohellohello", aw.writer.buffered());
 }
 
+/// Transfers `bytes` to the stream, calling `drain` at most once.
+///
+/// Returns the number of bytes transferred, which may be less than
+/// `bytes.len`, including zero.
+///
+/// A return value less than `bytes.len` does not indicate failure; a
+/// subsequent call may return nonzero, or fail with `error.WriteFailed`.
+///
+/// See also:
+/// * `writeAll`
+/// * `writeVec`
 pub fn write(w: *Writer, bytes: []const u8) Error!usize {
     if (w.end + bytes.len <= w.buffer.len) {
         @branchHint(.likely);
@@ -528,8 +539,13 @@ pub fn write(w: *Writer, bytes: []const u8) Error!usize {
     return w.vtable.drain(w, &.{bytes}, 1);
 }
 
-/// Calls `drain` as many times as necessary such that all of `bytes` are
-/// transferred.
+/// Transfers `bytes` to the stream, calling `drain` as many times as necessary
+/// such that all `bytes` are transferred.
+///
+/// See also:
+/// * `print`
+/// * `writeVecAll`
+/// * `write`
 pub fn writeAll(w: *Writer, bytes: []const u8) Error!void {
     var index: usize = 0;
     while (index < bytes.len) index += try w.write(bytes[index..]);
