@@ -114,7 +114,7 @@ test "internal state" {
 }
 
 test "smoke test" {
-    if (builtin.target.cpu.arch.isAARCH64() and builtin.target.os.tag == .netbsd) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31393
+    if (builtin.target.cpu.arch.isAARCH64()) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31393
 
     const io = testing.io;
 
