@@ -1310,7 +1310,7 @@ pub fn deinit(client: *Client) void {
 /// Asserts the client has no active connections.
 /// Uses `arena` for a few small allocations that must outlive the client, or
 /// at least until those fields are set to different values.
-pub fn initDefaultProxies(client: *Client, arena: Allocator, environ_map: *std.process.Environ.Map) !void {
+pub fn initDefaultProxies(client: *Client, arena: Allocator, environ_map: *const std.process.Environ.Map) !void {
     const io = client.io;
 
     // Prevent any new connections from being created.
@@ -1334,7 +1334,7 @@ pub fn initDefaultProxies(client: *Client, arena: Allocator, environ_map: *std.p
 
 fn createProxyFromEnvVar(
     arena: Allocator,
-    environ_map: *std.process.Environ.Map,
+    environ_map: *const std.process.Environ.Map,
     env_var_names: []const []const u8,
 ) !?*Proxy {
     const content = for (env_var_names) |name| {
