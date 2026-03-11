@@ -9515,7 +9515,7 @@ pub const perf_event_attr = extern struct {
     sample_type: u64 = 0,
     read_format: u64 = 0,
 
-    flags: packed struct {
+    flags: packed struct(u64) {
         /// off by default
         disabled: bool = false,
         /// children inherit it
