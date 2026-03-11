@@ -1935,6 +1935,18 @@ pub fn floatBits(ty: Type, target: *const Target) u16 {
     };
 }
 
+/// Asserts the type is a fixed-size float or comptime_float.
+pub fn floatSignificandBits(ty: Type, target: *const Target) u16 {
+    return switch (ty.floatBits(target)) {
+        16 => 11,
+        32 => 24,
+        64 => 53,
+        80 => 64,
+        128 => 113,
+        else => unreachable,
+    };
+}
+
 /// Asserts the type is a function or a function pointer.
 pub fn fnReturnType(ty: Type, zcu: *const Zcu) Type {
     return Type.fromInterned(zcu.intern_pool.funcTypeReturnType(ty.toIntern()));
