@@ -2513,6 +2513,13 @@ or
       <p>A {#syntax#}packed union{#endsyntax#} has well-defined in-memory layout and is eligible
           to be in a {#link|packed struct#}.</p>
       <p>All fields in a packed union must have the same {#link|@bitSizeOf#}.</p>
+
+      <p>
+      Equating packed unions results in a comparison of the backing integer,
+      and only works for the {#syntax#}=={#endsyntax#} and {#syntax#}!={#endsyntax#} {#link|Operators#}.
+      </p>
+      {#code|test_packed_union_equality.zig#}
+
       {#header_close#}
 
       {#header_open|Anonymous Union Literals#}

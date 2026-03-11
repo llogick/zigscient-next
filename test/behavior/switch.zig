@@ -1327,3 +1327,135 @@ test "single range switch prong capture" {
     try S.doTheTest(2);
     try comptime S.doTheTest(2);
 }
+
+test "switch on packed struct" {
+    const P = packed struct {
+        a: u1,
+        b: u1,
+
+        fn doTheTest(p: @This()) !void {
+            switch (p) {
+                .{ .a = 0, .b = 1 } => {},
+                else => return error.TestFailed,
+            }
+
+            switch (p) {
+                .{ .a = 0, .b = 1 } => {},
+                .{ .a = 0, .b = 0 },
+                .{ .a = 1, .b = 0 },
+                .{ .a = 1, .b = 1 },
+                => return error.TestFailed,
+            }
+
+            switch (p) {
+                inline else => |val| {
+                    if (val != @This(){ .a = 0, .b = 1 }) return error.TestFailed;
+                },
+            }
+        }
+    };
+    try P.doTheTest(.{ .a = 0, .b = 1 });
+    try comptime P.doTheTest(.{ .a = 0, .b = 1 });
+}
+
+test "switch on packed union" {
+    const P = packed union(u2) {
+        a: u2,
+        b: i2,
+        c: packed struct(u2) { x: u1, y: i1 },
+
+        fn doTheTest(p: @This()) !void {
+            switch (p) {
+                .{ .a = 1 } => {},
+                else => return error.TestFailed,
+            }
+
+            switch (p) {
+                .{ .a = 1 } => {},
+                .{ .a = 0 },
+                .{ .a = 2 },
+                .{ .a = 3 },
+                => return error.TestFailed,
+            }
+
+            switch (p) {
+                .{ .a = 1 } => {},
+                .{ .a = 0 },
+                .{ .b = -2 },
+                .{ .b = -1 },
+                => return error.TestFailed,
+            }
+
+            switch (p) {
+                .{ .c = .{ .x = 1, .y = 0 } } => {},
+                .{ .b = 0 },
+                .{ .a = 2 },
+                .{ .c = .{ .x = 1, .y = -1 } },
+                => return error.TestFailed,
+            }
+
+            switch (p) {
+                inline else => |val| {
+                    if (val != @This(){ .c = .{ .x = 1, .y = 0 } }) return error.TestFailed;
+                },
+            }
+        }
+    };
+    try P.doTheTest(.{ .a = 1 });
+    try comptime P.doTheTest(.{ .a = 1 });
+}
+
+test "switch on nested packed containers" {
+    if (builtin.object_format == .c) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31467
+
+    const P = packed struct {
+        iu: u17,
+        is: i31,
+        b: bool,
+        e: enum(u5) { a = 5, b = 3, c = 12 },
+        un: packed union {
+            a: i9,
+            b: u9,
+            c: packed struct(u9) { a: i5, b: u4 },
+        },
+        p: packed struct(u9) { a: u3, b: u6 },
+
+        fn doTheTest(p: @This()) !void {
+            switch (p) {
+                .{
+                    .iu = 72,
+                    .is = 124,
+                    .b = false,
+                    .e = .c,
+                    .un = .{ .b = 13 },
+                    .p = .{ .a = 0, .b = 12 },
+                } => return error.TestFailed,
+                .{
+                    .iu = 129,
+                    .is = -162784612,
+                    .b = true,
+                    .e = .a,
+                    .un = .{ .c = .{ .a = -3, .b = 9 } },
+                    .p = .{ .a = 2, .b = 17 },
+                } => {},
+                else => return error.TestFailed,
+            }
+        }
+    };
+    try P.doTheTest(.{
+        .iu = 129,
+        .is = -162784612,
+        .b = true,
+        .e = .a,
+        .un = .{ .c = .{ .a = -3, .b = 9 } },
+        .p = .{ .a = 2, .b = 17 },
+    });
+    try comptime P.doTheTest(.{
+        .iu = 129,
+        .is = -162784612,
+        .b = true,
+        .e = .a,
+        .un = .{ .c = .{ .a = -3, .b = 9 } },
+        .p = .{ .a = 2, .b = 17 },
+    });
+}

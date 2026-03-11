@@ -509,3 +509,58 @@ test "switch loop for error handling" {
     try S.doTheTest();
     try comptime S.doTheTest();
 }
+
+test "switch loop with packed structs" {
+    const P = packed struct {
+        a: u7,
+        b: u20,
+
+        fn doTheTest(p: @This()) !void {
+            const result = s: switch (p) {
+                .{ .a = 5, .b = 10 } => |x| x,
+                else => |x| continue :s .{ .a = x.a, .b = x.b + 1 },
+            };
+            try expect(result == @This(){ .a = 5, .b = 10 });
+        }
+    };
+    try P.doTheTest(.{ .a = 5, .b = 0 });
+    try comptime P.doTheTest(.{ .a = 5, .b = 0 });
+}
+
+test "switch loop with packed unions" {
+    const P = packed union {
+        a: u7,
+        b: i7,
+
+        fn doTheTest(p: @This()) !void {
+            const result = s: switch (p) {
+                .{ .a = 10 } => |x| x,
+                else => |x| continue :s .{ .b = @intCast(x.a + 1) },
+            };
+            try expect(result == @This(){ .b = 10 });
+        }
+    };
+    try P.doTheTest(.{ .a = 5 });
+    try comptime P.doTheTest(.{ .a = 5 });
+}
+
+test "switch loop with packed unions with OPV" {
+    const P = packed union {
+        a: u0,
+        b: i0,
+
+        fn doTheTest(p: @This()) !void {
+            var looped = false;
+            s: switch (p) {
+                .{ .b = 0 } => |x| {
+                    comptime assert(x.a == 0);
+                    if (looped) break :s;
+                    looped = true;
+                    continue :s .{ .a = 0 };
+                },
+            }
+        }
+    };
+    try P.doTheTest(.{ .a = 0 });
+    try comptime P.doTheTest(.{ .a = 0 });
+}

@@ -334,11 +334,10 @@ pub fn isSelfComparable(ty: Type, zcu: *const Zcu, is_equality_cmp: bool) bool {
         .undefined,
         .null,
         .error_union,
-        .@"union",
         .frame,
         => false,
 
-        .@"struct" => is_equality_cmp and ty.containerLayout(zcu) == .@"packed",
+        .@"struct", .@"union" => is_equality_cmp and ty.containerLayout(zcu) == .@"packed",
         .pointer => !ty.isSlice(zcu) and (is_equality_cmp or ty.isCPtr(zcu)),
         .optional => {
             if (!is_equality_cmp) return false;

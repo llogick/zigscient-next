@@ -199,3 +199,23 @@ test "packed union with explicit backing integer" {
     try U.check(.{ .raw = -2 });
     try comptime U.check(.{ .raw = -2 });
 }
+
+test "packed union equality" {
+    const Foo = packed union {
+        a: u4,
+        b: i4,
+    };
+
+    const S = struct {
+        fn doTest(x: Foo, y: Foo) !void {
+            try expect(x == y);
+            try expect(!(x != y));
+        }
+    };
+
+    const x: Foo = .{ .a = 3 };
+    const y: Foo = .{ .b = 3 };
+
+    try S.doTest(x, y);
+    comptime try S.doTest(x, y);
+}

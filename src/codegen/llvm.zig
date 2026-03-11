@@ -5750,7 +5750,7 @@ pub const FuncGen = struct {
                 return phi.toValue();
             },
             .float => return self.buildFloatCmp(fast, op, operand_ty, .{ lhs, rhs }),
-            .@"struct" => scalar_ty.bitpackBackingInt(zcu),
+            .@"struct", .@"union" => scalar_ty.bitpackBackingInt(zcu),
             else => unreachable,
         };
         const is_signed = int_ty.isSignedInt(zcu);
@@ -6252,7 +6252,7 @@ pub const FuncGen = struct {
             const cond_ty = self.typeOf(switch_br.operand);
             switch (cond_ty.zigTypeTag(zcu)) {
                 .bool, .pointer => break :jmp_table null,
-                .@"enum", .int, .error_set => {},
+                .@"enum", .int, .error_set, .@"struct", .@"union" => {},
                 else => unreachable,
             }
 
