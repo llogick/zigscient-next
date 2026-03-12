@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     const char *cc = get_c_compiler();
     const char *host_triple = get_host_triple();
 
-    // GCC versions 13.0--14.1 have a miscompilation where some bytes of a union may get clobbered
+    // GCC versions 10.0--15.1 have a miscompilation where some bytes of a union may get clobbered
     // depending on the union layout and the order in which types are defined. This miscompilation
     // affects the output of the C backend, and thus can affect the bootstrap process. Specifically,
     // we observe that using the self-hosted x86_64 backend in 'zig2' will cause all function calls
