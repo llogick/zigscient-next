@@ -88,9 +88,10 @@ dep_output_file: ?*Output,
 
 has_side_effects: bool,
 
-/// If this is a Zig unit test binary, this tracks the indexes of the unit
-/// tests that are also fuzz tests.
-fuzz_tests: std.ArrayList(u32),
+/// If this is a Zig unit test binary, this tracks the names of the unit
+/// tests that are also fuzz tests. Indexes cannot be used as they may
+/// change between reruns.
+fuzz_tests: std.ArrayList([]const u8),
 cached_test_metadata: ?CachedTestMetadata = null,
 
 /// Populated during the fuzz phase if this run step corresponds to a unit test
@@ -1067,7 +1068,7 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
 pub fn rerunInFuzzMode(
     run: *Run,
     fuzz: *std.Build.Fuzz,
-    unit_test_index: u32,
+    unit_test_name: []const u8,
     prog_node: std.Progress.Node,
 ) !void {
     const step = &run.step;
@@ -1138,7 +1139,7 @@ pub fn rerunInFuzzMode(
         .unit_test_timeout_ns = null, // don't time out fuzz tests for now
         .gpa = fuzz.gpa,
     }, .{
-        .unit_test_index = unit_test_index,
+        .unit_test_name = unit_test_name,
         .fuzz = fuzz,
     });
 }
@@ -1210,7 +1211,7 @@ fn termMatches(expected: ?process.Child.Term, actual: process.Child.Term) bool {
 
 const FuzzContext = struct {
     fuzz: *std.Build.Fuzz,
-    unit_test_index: u32,
+    unit_test_name: []const u8,
 };
 
 fn runCommand(
@@ -1843,7 +1844,7 @@ fn waitZigTest(
                 sendRunFuzzTestMessage(
                     io,
                     child.stdin.?,
-                    ctx.unit_test_index,
+                    ctx.unit_test_name,
                     .forever,
                     0, // instance ID; will be used by multiprocess forever fuzzing in the future
                 ) catch |err| return .{ .write_failed = err };
@@ -1852,7 +1853,7 @@ fn waitZigTest(
                 sendRunFuzzTestMessage(
                     io,
                     child.stdin.?,
-                    ctx.unit_test_index,
+                    ctx.unit_test_name,
                     .iterations,
                     limit.amount,
                 ) catch |err| return .{ .write_failed = err };
@@ -2001,10 +2002,10 @@ fn waitZigTest(
                 results.leak_count +|= leak_count;
                 results.log_err_count +|= log_err_count;
 
-                if (tr_hdr.flags.fuzz) try run.fuzz_tests.append(gpa, tr_hdr.index);
+                if (tr_hdr.flags.fuzz) try run.fuzz_tests.append(gpa, md.testName(tr_hdr.index));
 
                 if (tr_hdr.flags.status == .fail) {
-                    const name = std.mem.sliceTo(md.testName(tr_hdr.index), 0);
+                    const name = md.testName(tr_hdr.index);
                     const stderr_bytes = std.mem.trim(u8, stderr.buffered(), "\n");
                     stderr.tossBuffered();
                     if (stderr_bytes.len == 0) {
@@ -2013,12 +2014,12 @@ fn waitZigTest(
                         try run.step.addError("'{s}' failed:\n{s}", .{ name, stderr_bytes });
                     }
                 } else if (leak_count > 0) {
-                    const name = std.mem.sliceTo(md.testName(tr_hdr.index), 0);
+                    const name = md.testName(tr_hdr.index);
                     const stderr_bytes = std.mem.trim(u8, stderr.buffered(), "\n");
                     stderr.tossBuffered();
                     try run.step.addError("'{s}' leaked {d} allocations:\n{s}", .{ name, leak_count, stderr_bytes });
                 } else if (log_err_count > 0) {
-                    const name = std.mem.sliceTo(md.testName(tr_hdr.index), 0);
+                    const name = md.testName(tr_hdr.index);
                     const stderr_bytes = std.mem.trim(u8, stderr.buffered(), "\n");
                     stderr.tossBuffered();
                     try run.step.addError("'{s}' logged {d} errors:\n{s}", .{ name, log_err_count, stderr_bytes });
@@ -2148,7 +2149,7 @@ fn sendRunTestMessage(io: Io, file: Io.File, tag: std.zig.Client.Message.Tag, in
 fn sendRunFuzzTestMessage(
     io: Io,
     file: Io.File,
-    index: u32,
+    test_name: []const u8,
     kind: std.Build.abi.fuzz.LimitKind,
     amount_or_instance: u64,
 ) !void {
@@ -2160,7 +2161,10 @@ fn sendRunFuzzTestMessage(
     w.interface.writeStruct(header, .little) catch |err| switch (err) {
         error.WriteFailed => return w.err.?,
     };
-    w.interface.writeInt(u32, index, .little) catch |err| switch (err) {
+    w.interface.writeInt(u32, @intCast(test_name.len), .little) catch |err| switch (err) {
+        error.WriteFailed => return w.err.?,
+    };
+    w.interface.writeAll(test_name) catch |err| switch (err) {
         error.WriteFailed => return w.err.?,
     };
     w.interface.writeByte(@intFromEnum(kind)) catch |err| switch (err) {

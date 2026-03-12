@@ -180,7 +180,23 @@ fn mainServer(init: std.process.Init.Minimal) !void {
                 // since they are not present.
                 if (!builtin.fuzz) unreachable;
 
-                const index = try server.receiveBody_u32();
+                const index: u32 = @intCast(index: {
+                    testing.allocator_instance = .{};
+                    defer if (testing.allocator_instance.deinit() == .leak) {
+                        @panic("internal test runner memory leak");
+                    };
+
+                    const name_len = try server.receiveBody_u32();
+                    const name = try server.in.readAlloc(testing.allocator, @intCast(name_len));
+                    defer testing.allocator.free(name);
+                    for (0.., builtin.test_functions) |i, test_fn| {
+                        if (std.mem.eql(u8, name, test_fn.name)) {
+                            break :index i;
+                        }
+                    } else {
+                        std.debug.panic("fuzz test {s} no longer exists", .{name});
+                    }
+                });
                 const mode: fuzz_abi.LimitKind = @enumFromInt(try server.receiveBody_u8());
                 const amount_or_instance = try server.receiveBody_u64();
 
@@ -406,13 +422,13 @@ pub fn fuzz(
     const global = struct {
         var ctx: @TypeOf(context) = undefined;
 
-        fn test_one() callconv(.c) void {
+        fn test_one() callconv(.c) bool {
             @disableInstrumentation();
             testing.allocator_instance = .{};
             defer if (testing.allocator_instance.deinit() == .leak) std.process.exit(1);
             log_err_count = 0;
             testOne(ctx, @constCast(&testing.Smith{ .in = null })) catch |err| switch (err) {
-                error.SkipZigTest => return,
+                error.SkipZigTest => return true,
                 else => {
                     const stderr = std.debug.lockStderr(&.{}).terminal();
                     p: {
@@ -429,6 +445,7 @@ pub fn fuzz(
                 stderr.writer.print("error logs detected\n", .{}) catch {};
                 std.process.exit(1);
             }
+            return false;
         }
     };
     if (builtin.fuzz) {
