@@ -11667,10 +11667,9 @@ fn validateSwitchBlock(
                 },
             };
         },
-        .int, .comptime_int, .@"union", .@"struct" => |type_tag| {
+        .int, .@"union", .@"struct" => |type_tag| {
             check_range: {
                 const int_ty = switch (type_tag) {
-                    .comptime_int => break :check_range, // comptime_int has 'infinite' range
                     .int => item_ty,
                     .@"union", .@"struct" => item_ty.bitpackBackingInt(zcu),
                     else => unreachable,
@@ -11698,7 +11697,7 @@ fn validateSwitchBlock(
                 }
             }
         },
-        .enum_literal, .@"fn", .pointer, .type => {
+        .comptime_int, .enum_literal, .@"fn", .pointer, .type => {
             if (!has_else) {
                 return sema.fail(
                     block,
