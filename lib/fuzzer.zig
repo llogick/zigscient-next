@@ -13,7 +13,7 @@ pub const std_options = std.Options{
     .logFn = logOverride,
 };
 
-const io = std.Io.Threaded.global_single_threaded.ioBasic();
+const io = std.Io.Threaded.global_single_threaded.io();
 
 fn logOverride(
     comptime level: std.log.Level,

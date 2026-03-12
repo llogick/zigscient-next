@@ -434,6 +434,7 @@ pub fn io(ev: *Evented) Io {
             .unlockStderr = unlockStderr,
             .processCurrentPath = processCurrentPath,
             .processSetCurrentDir = processSetCurrentDir,
+            .processSetCurrentPath = processSetCurrentPath,
             .processReplace = processReplace,
             .processReplacePath = processReplacePath,
             .processSpawn = processSpawn,
@@ -458,7 +459,6 @@ pub fn io(ev: *Evented) Io {
             .netConnectUnix = netConnectUnixUnavailable,
             .netSocketCreatePair = netSocketCreatePairUnavailable,
             .netSend = netSendUnavailable,
-            .netReceive = netReceiveUnavailable,
             .netRead = netReadUnavailable,
             .netWrite = netWriteUnavailable,
             .netWriteFile = netWriteFileUnavailable,
@@ -1713,6 +1713,7 @@ fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Oper
             },
         },
         .device_io_control => |*o| return .{ .device_io_control = try deviceIoControl(o) },
+        .net_receive => @panic("TODO implement net_receive operation"),
     }
 }
 
@@ -2133,6 +2134,7 @@ fn batchDrainSubmitted(
                     break :result null;
                 },
                 .device_io_control => {},
+                .net_receive => @panic("TODO implement batched net_receive"),
             };
             if (concurrency) return error.ConcurrencyUnavailable;
             break :result try operate(ev, storage.submission.operation);
@@ -2191,6 +2193,7 @@ fn batchSourceEvent(context: ?*anyopaque) callconv(.c) void {
             } };
         },
         .device_io_control => unreachable,
+        .net_receive => @panic("TODO implement batched net_receive"),
     };
 
     switch (pending.node.prev) {
@@ -4046,7 +4049,7 @@ fn processSetCurrentDir(userdata: ?*anyopaque, dir: Dir) process.SetCurrentDirEr
     };
 }
 
-fn processSetCurrentPath(userdata: ?*anyopaque, dir_path: []const u8) ChdirError!void {
+fn processSetCurrentPath(userdata: ?*anyopaque, dir_path: []const u8) process.SetCurrentPathError!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     var path_buffer: [c.PATH_MAX]u8 = undefined;
@@ -4404,10 +4407,7 @@ fn setUpChildIo(
         .close => closeFd(std_fileno),
         .inherit => {},
         .ignore => try ev.dup2(dev_null_fd, std_fileno),
-        .file => |file| {
-            if (file.flags.nonblocking) @panic("TODO implement setUpChildIo when nonblocking file is used");
-            try ev.dup2(file.handle, std_fileno);
-        },
+        .file => |file| try ev.dup2(file.handle, std_fileno),
     }
 }
 
@@ -4871,24 +4871,6 @@ fn netSendUnavailable(
     _ = handle;
     _ = messages;
     _ = flags;
-    return .{ error.NetworkDown, 0 };
-}
-
-fn netReceiveUnavailable(
-    userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
-    message_buffer: []net.IncomingMessage,
-    data_buffer: []u8,
-    flags: net.ReceiveFlags,
-    timeout: Io.Timeout,
-) struct { ?net.Socket.ReceiveTimeoutError, usize } {
-    const ev: *Evented = @ptrCast(@alignCast(userdata));
-    _ = ev;
-    _ = handle;
-    _ = message_buffer;
-    _ = data_buffer;
-    _ = flags;
-    _ = timeout;
     return .{ error.NetworkDown, 0 };
 }
 

@@ -7127,8 +7127,6 @@ fn formatIntLiteral(data: FormatIntLiteralContext, w: *Writer) Writer.Error!void
                 try w.print("({f})", .{data.cty.fmtTypeName(zcu)});
             }
 
-            const signedness = ty.intInfo(zcu).signedness;
-
             try w.writeAll("{{");
 
             var limb_buf: [std.math.big.int.calcTwosCompLimbCount(65535)]std.math.big.Limb = undefined;
@@ -7144,28 +7142,15 @@ fn formatIntLiteral(data: FormatIntLiteralContext, w: *Writer) Writer.Error!void
                     .positive = undefined,
                 };
                 limb_bigint.shiftRight(val_bigint, limb_bit_offset);
-                if (limb_index == big.limbs_len - 1 and signedness == .signed) {
-                    // The most significant limb of a signed integer is signed.
-                    limb_bigint.truncate(limb_bigint.toConst(), .signed, big.limb_size.bits());
-                    try FormatInt128.format(.{
-                        .target = zcu.getTarget(),
-                        .int_cty = big.limb_size.signed(),
-                        .val = limb_bigint.toConst(),
-                        .is_global = data.loc == .static_initializer,
-                        .base = data.base,
-                        .case = data.case,
-                    }, w);
-                } else {
-                    limb_bigint.truncate(limb_bigint.toConst(), .unsigned, big.limb_size.bits());
-                    try FormatInt128.format(.{
-                        .target = zcu.getTarget(),
-                        .int_cty = big.limb_size.unsigned(),
-                        .val = limb_bigint.toConst(),
-                        .is_global = data.loc == .static_initializer,
-                        .base = data.base,
-                        .case = data.case,
-                    }, w);
-                }
+                limb_bigint.truncate(limb_bigint.toConst(), .unsigned, big.limb_size.bits());
+                try FormatInt128.format(.{
+                    .target = zcu.getTarget(),
+                    .int_cty = big.limb_size.unsigned(),
+                    .val = limb_bigint.toConst(),
+                    .is_global = data.loc == .static_initializer,
+                    .base = data.base,
+                    .case = data.case,
+                }, w);
             }
 
             try w.writeAll("}}");

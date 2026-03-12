@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
     }
     {
         const char *child_argv[] = {
-            cc, "-o", "zig1", "zig1.c", "stage1/wasi.c", "-std=c99", "-Os", "-lm", NULL,
+            cc, "-o", "zig1", "zig1.c", "stage1/wasi.c", "-std=c99", "-Os", "-fno-strict-aliasing", "-lm", NULL,
         };
         print_and_run(child_argv);
     }
@@ -213,6 +213,7 @@ int main(int argc, char **argv) {
 #if defined(__GNUC__)
             "-pthread",
 #endif
+            "-fno-strict-aliasing",
             workaround_gcc_sra_miscomp ? "-fno-tree-sra" : NULL,
             NULL,
         };

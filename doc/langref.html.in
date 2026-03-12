@@ -4866,7 +4866,7 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       {#header_close#}
 
       {#header_open|@errorFromInt#}
-      <pre>{#syntax#}@errorFromInt(value: std.meta.Int(.unsigned, @bitSizeOf(anyerror))) anyerror{#endsyntax#}</pre>
+      <pre>{#syntax#}@errorFromInt(value: @Int(.unsigned, @bitSizeOf(anyerror))) anyerror{#endsyntax#}</pre>
       <p>
       Converts from the integer representation of an error into {#link|The Global Error Set#} type.
       </p>
@@ -5107,7 +5107,7 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       {#header_close#}
 
       {#header_open|@intFromError#}
-      <pre>{#syntax#}@intFromError(err: anytype) std.meta.Int(.unsigned, @bitSizeOf(anyerror)){#endsyntax#}</pre>
+      <pre>{#syntax#}@intFromError(err: anytype) @Int(.unsigned, @bitSizeOf(anyerror)){#endsyntax#}</pre>
       <p>
       Supports the following types:
       </p>
@@ -6368,7 +6368,7 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       </p>
       <p>
       Zig has a general purpose allocator available to be imported
-      with {#syntax#}std.heap.GeneralPurposeAllocator{#endsyntax#}. However, it is still recommended to
+      with {#syntax#}std.heap.DebugAllocator{#endsyntax#}. However, it is still recommended to
       follow the {#link|Choosing an Allocator#} guide.
       </p>
 

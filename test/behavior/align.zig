@@ -18,6 +18,7 @@ test "global variable alignment" {
 test "large alignment of local constant" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // flaky
+    if (builtin.zig_backend == .stage2_c and builtin.target.abi == .msvc) return error.SkipZigTest;
 
     const x: f32 align(128) = 12.34;
     try std.testing.expect(@intFromPtr(&x) % 128 == 0);

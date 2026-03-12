@@ -21134,7 +21134,7 @@ fn zirErrorCast(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData
             else => unreachable,
         };
 
-        if (!dest_err_ty.isAnyError(zcu) and !dest_err_ty.errorSetHasField(err_name, zcu)) {
+        if (result != .superset and !dest_err_ty.errorSetHasField(err_name, zcu)) {
             return sema.fail(block, src, "'error.{f}' not a member of error set '{f}'", .{
                 err_name.fmt(ip), dest_err_ty.fmt(pt),
             });
@@ -25207,9 +25207,18 @@ pub fn explainWhyTypeIsNotExtern(
             else => |cc| try sema.errNote(src_loc, msg, "{t} function cannot be extern", .{cc}),
         },
         .@"enum" => {
-            const tag_ty = ty.intTagType(zcu);
-            try sema.errNote(src_loc, msg, "enum tag type '{f}' is not extern compatible", .{tag_ty.fmt(pt)});
-            try sema.explainWhyTypeIsNotExtern(msg, src_loc, tag_ty, position);
+            const enum_obj = zcu.intern_pool.loadEnumType(ty.toIntern());
+            switch (enum_obj.int_tag_mode) {
+                .auto => {
+                    try sema.errNote(ty.srcLoc(zcu), msg, "integer tag type of enum is inferred", .{});
+                    try sema.errNote(ty.srcLoc(zcu), msg, "consider explicitly specifying the integer tag type", .{});
+                },
+                .explicit => {
+                    const tag_ty: Type = .fromInterned(enum_obj.int_tag_type);
+                    try sema.errNote(ty.srcLoc(zcu), msg, "enum tag type '{f}' is not extern compatible", .{tag_ty.fmt(pt)});
+                    try sema.explainWhyTypeIsNotExtern(msg, ty.srcLoc(zcu), tag_ty, position);
+                },
+            }
         },
         .@"struct" => {
             const struct_obj = zcu.intern_pool.loadStructType(ty.toIntern());
@@ -29937,7 +29946,6 @@ pub fn addReferenceEntry(
         .func => |f| assert(ip.unwrapCoercedFunc(f) == f), // for `.{ .func = f }`, `f` must be uncoerced
         else => {},
     }
-    if (!zcu.comp.config.incremental and zcu.comp.reference_trace == 0) return;
     const gop = try sema.references.getOrPut(sema.gpa, referenced_unit);
     if (gop.found_existing) return;
     try zcu.addUnitReference(sema.owner, referenced_unit, src, inline_frame: {
@@ -29954,7 +29962,6 @@ pub fn addTypeReferenceEntry(
     referenced_type: Type,
 ) !void {
     const zcu = sema.pt.zcu;
-    if (!zcu.comp.config.incremental and zcu.comp.reference_trace == 0) return;
     const gop = try sema.type_references.getOrPut(sema.gpa, referenced_type.toIntern());
     if (gop.found_existing) return;
     try zcu.addTypeReference(sema.owner, referenced_type.toIntern(), src);

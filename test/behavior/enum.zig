@@ -1354,3 +1354,18 @@ test "empty enum passed as argument" {
     };
     E.f(@as(E, undefined));
 }
+
+test "enum int tag type uses declaration inside the enum" {
+    const static = struct {
+        const E = enum(E.IntTag) {
+            const IntTag = u8;
+            a,
+            b,
+            c,
+        };
+    };
+    try expect(@sizeOf(static.E) == @sizeOf(u8));
+    const val: static.E = .b;
+    try expect(val == .b);
+    try expect(@intFromEnum(val) == 1);
+}

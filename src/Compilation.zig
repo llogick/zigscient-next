@@ -4189,7 +4189,7 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
             if (!refs.contains(logging_unit)) continue;
             try messages.append(gpa, .{
                 .src_loc = compile_log.src(),
-                .msg = "", // populated later, but must be valid for `sort` call below
+                .msg = undefined, // populated later
                 .notes = &.{},
                 // We actually clear this later for most of these, but we populate
                 // this field for now to avoid having to allocate more data to track
@@ -4499,13 +4499,13 @@ fn performAllTheWork(
     var misc_group: Io.Group = .init;
     defer misc_group.cancel(io);
 
-    if (dev.env != .lsp_server) try comp.link_queue.start(comp, update_arena);
-    defer if (dev.env != .lsp_server) comp.link_queue.cancel(io);
+    try comp.link_queue.start(comp, update_arena);
+    defer comp.link_queue.cancel(io);
 
-    if (dev.env != .lsp_server) misc_group.concurrent(io, dispatchPrelinkWork, .{ comp, main_progress_node }) catch |err| switch (err) {
+    misc_group.concurrent(io, dispatchPrelinkWork, .{ comp, main_progress_node }) catch |err| switch (err) {
         error.ConcurrencyUnavailable => {
             // Do it immediately so that the link queue isn't blocked
-            if (dev.env != .lsp_server) dispatchPrelinkWork(comp, main_progress_node);
+            dispatchPrelinkWork(comp, main_progress_node);
         },
     };
 
@@ -4515,7 +4515,7 @@ fn performAllTheWork(
         misc_group.async(io, workerDocsWasm, .{ comp, main_progress_node });
     }
 
-    defer if (dev.env != .lsp_server) if (comp.zcu) |zcu| zcu.codegen_task_pool.cancel(zcu);
+    defer if (comp.zcu) |zcu| zcu.codegen_task_pool.cancel(zcu);
     if (comp.zcu) |zcu| {
         const pt: Zcu.PerThread = .activate(zcu, .main);
         defer {
@@ -4526,7 +4526,7 @@ fn performAllTheWork(
         try pt.update(main_progress_node, &decl_work_timer);
     }
 
-    if (dev.env != .lsp_server) comp.link_queue.finishZcuQueue(comp);
+    comp.link_queue.finishZcuQueue(comp);
 
     // This has to happen after the main semantic analysis loop because it is possible for Sema to
     // call `addLinkLib` and hence add more items to `comp.windows_libs`.
@@ -4544,7 +4544,7 @@ fn performAllTheWork(
 
     // Main thread work is all done, now just wait for all async work.
     try misc_group.await(io);
-    if (dev.env != .lsp_server) comp.link_queue.wait(io);
+    comp.link_queue.wait(io);
 }
 
 fn dispatchPrelinkWork(comp: *Compilation, main_progress_node: std.Progress.Node) void {
@@ -4763,10 +4763,10 @@ fn dispatchPrelinkWork(comp: *Compilation, main_progress_node: std.Progress.Node
         });
     }
 
-    if (dev.env != .lsp_server) prelink_group.await(io) catch |err| switch (err) {
+    prelink_group.await(io) catch |err| switch (err) {
         error.Canceled => unreachable, // see swapCancelProtection above
     };
-    if (dev.env != .lsp_server) comp.link_queue.finishPrelinkQueue(comp) catch |err| switch (err) {
+    comp.link_queue.finishPrelinkQueue(comp) catch |err| switch (err) {
         error.Canceled => unreachable, // see swapCancelProtection above
     };
 }
@@ -4897,6 +4897,9 @@ fn docsCopyModule(
     var archiver: std.tar.Writer = .{ .underlying_writer = &tar_file_writer.interface };
     archiver.prefix = name;
 
+    var path_buf: std.ArrayList(u8) = .empty;
+    defer path_buf.deinit(comp.gpa);
+
     var buffer: [1024]u8 = undefined;
 
     while (try walker.next(io)) |entry| {
@@ -4917,7 +4920,16 @@ fn docsCopyModule(
         const stat = try file.stat(io);
         var file_reader: Io.File.Reader = .initSize(file, io, &buffer, stat.size);
 
-        archiver.writeFileTimestamp(entry.path, &file_reader, stat.mtime) catch |err| {
+        const posix_path = if (comptime std.fs.path.sep == std.fs.path.sep_posix)
+            entry.path
+        else blk: {
+            path_buf.clearRetainingCapacity();
+            try path_buf.appendSlice(comp.gpa, entry.path);
+            std.mem.replaceScalar(u8, path_buf.items, std.fs.path.sep, std.fs.path.sep_posix);
+            break :blk path_buf.items;
+        };
+
+        archiver.writeFileTimestamp(posix_path, &file_reader, stat.mtime) catch |err| {
             return comp.lockAndSetMiscFailure(.docs_copy, "unable to archive {f}{s}: {t}", .{
                 root.fmt(comp), entry.path, err,
             });
@@ -7652,7 +7664,7 @@ pub fn queuePrelinkTaskMode(comp: *Compilation, path: Cache.Path, config: *const
 /// Only valid to call during `update`.
 pub fn queuePrelinkTasks(comp: *Compilation, tasks: []const link.PrelinkTask) Io.Cancelable!void {
     comp.link_prog_node.increaseEstimatedTotalItems(tasks.len);
-    if (dev.env != .lsp_server) try comp.link_queue.enqueuePrelink(comp, tasks);
+    try comp.link_queue.enqueuePrelink(comp, tasks);
 }
 
 pub fn toCrtFile(comp: *Compilation) Allocator.Error!CrtFile {

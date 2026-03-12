@@ -15,6 +15,9 @@ const S4 = struct { a: u32, b: noreturn };
 export fn entry4() usize {
     return @sizeOf(S4);
 }
+export fn entry5() usize {
+    return @sizeOf([1]fn () void);
+}
 
 // error
 //
@@ -25,3 +28,4 @@ export fn entry4() usize {
 // :10:12: note: struct declared here
 // :16:20: error: no size available for uninstantiable type 'tmp.S4'
 // :14:12: note: struct declared here
+// :19:20: error: no size available for comptime-only type '[1]fn () void'

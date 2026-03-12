@@ -311,12 +311,12 @@ const Eval = struct {
                 .error_bundle => {
                     const result_error_bundle = try std.zig.Server.allocErrorBundle(arena, body);
                     if (stderr.bufferedLen() > 0) {
-                        const stderr_data = try mr.toOwnedSlice(1);
                         if (eval.allow_stderr) {
-                            std.log.info("error_bundle stderr:\n{s}", .{stderr_data});
+                            std.log.info("error_bundle stderr:\n{s}", .{stderr.buffered()});
                         } else {
-                            eval.fatal("error_bundle unexpected stderr:\n{s}", .{stderr_data});
+                            eval.fatal("error_bundle unexpected stderr:\n{s}", .{stderr.buffered()});
                         }
+                        stderr.tossBuffered();
                     }
                     if (result_error_bundle.errorMessageCount() != 0) {
                         try eval.checkErrorOutcome(update, result_error_bundle);
@@ -327,15 +327,15 @@ const Eval = struct {
                 .emit_digest => {
                     var r: std.Io.Reader = .fixed(body);
                     _ = r.takeStruct(std.zig.Server.Message.EmitDigest, .little) catch unreachable;
-                    if (stderr.bufferedLen() > 0) {
-                        const stderr_data = try mr.toOwnedSlice(1);
-                        if (eval.allow_stderr) {
-                            std.log.info("emit_digest stderr:\n{s}", .{stderr_data});
-                        } else {
-                            eval.fatal("emit_digest unexpected stderr:\n{s}", .{stderr_data});
-                        }
-                    }
 
+                    if (stderr.bufferedLen() > 0) {
+                        if (eval.allow_stderr) {
+                            std.log.info("emit_digest stderr:\n{s}", .{stderr.buffered()});
+                        } else {
+                            eval.fatal("emit_digest unexpected stderr:\n{s}", .{stderr.buffered()});
+                        }
+                        stderr.tossBuffered();
+                    }
                     if (eval.target.backend == .sema) {
                         try eval.checkSuccessOutcome(update, null, prog_node);
                         continue;
@@ -369,7 +369,7 @@ const Eval = struct {
         }
 
         waitChild(eval.child, eval);
-        eval.fatal("compiler failed to send error_bundle or emit_bin_path", .{});
+        eval.fatal("compiler failed to send terminating error_bundle", .{});
     }
 
     fn checkErrorOutcome(eval: *Eval, update: Case.Update, error_bundle: std.zig.ErrorBundle) !void {

@@ -165,7 +165,9 @@ pub const TrackedInst = extern struct {
         pub fn resolveFull(tracked_inst_index: TrackedInst.Index, ip: *const InternPool) ?TrackedInst {
             const tracked_inst_unwrapped = tracked_inst_index.unwrap(ip);
             const tracked_insts = ip.getLocalShared(tracked_inst_unwrapped.tid).tracked_insts.acquire();
-            const maybe_lost = tracked_insts.view().items(.@"0")[tracked_inst_unwrapped.index];
+            const items = tracked_insts.view().items(.@"0");
+            if (!(tracked_inst_unwrapped.index < items.len)) return null;
+            const maybe_lost = items[tracked_inst_unwrapped.index];
             return .{
                 .file = maybe_lost.file,
                 .inst = maybe_lost.inst.unwrap() orelse return null,
@@ -1355,7 +1357,7 @@ const Local = struct {
                 }
                 pub fn view(mutable: Mutable) View {
                     const capacity = mutable.list.header().capacity;
-                    assert(capacity > 0); // optimizes `MultiArrayList.Slice.items`
+                    // assert(capacity > 0); // optimizes `MultiArrayList.Slice.items`
                     return .{
                         .bytes = mutable.list.bytes,
                         .len = mutable.mutate.len,
@@ -1392,7 +1394,7 @@ const Local = struct {
             }
             pub fn view(list: ListSelf) View {
                 const capacity = list.header().capacity;
-                assert(capacity > 0); // optimizes `MultiArrayList.Slice.items`
+                // assert(capacity > 0); // optimizes `MultiArrayList.Slice.items`
                 return .{
                     .bytes = list.bytes,
                     .len = capacity,
@@ -3334,11 +3336,17 @@ pub const LoadedStructType = struct {
     field_defaults: Index.Slice,
     field_aligns: Alignment.Slice,
     field_is_comptime_bits: ComptimeBits,
+    /// If `layout` is `.@"packed"`, this is `.empty`.
     field_runtime_order: RuntimeOrder.Slice,
+    /// If `layout` is `.@"packed"`, this is `.empty`.
     field_offsets: Offsets,
+    /// Only valid if `layout` is `.@"packed"`.
     packed_backing_int_type: Index,
+    /// Only valid if `layout` is *not* `.@"packed"`.
     class: TypeClass,
+    /// Only valid if `layout` is *not* `.@"packed"`.
     size: u32,
+    /// Only valid if `layout` is *not* `.@"packed"`.
     alignment: Alignment,
 
     pub const ComptimeBits = struct {
@@ -3516,15 +3524,21 @@ pub const LoadedUnionType = struct {
     tag_usage: TagUsage,
     /// While `tag_usage` indicates whether the union should logically contain a tag, it may be
     /// omitted if the union layout is resolved as OPV or NPV. This field is `true` iff there is an
-    /// actual runtime tag in the union layout.
+    /// actual runtime tag, with one or more runtime bits, in the union layout. It is always `false`
+    /// if `layout` is not `.auto`.
     has_runtime_tag: bool,
     /// Even if `tag_usage == .none` and `has_runtime_tag == false`, this is still populated with
     /// the union's "hypothetical" tag type.
     enum_tag_type: Index,
+    /// Only valid if `layout` is `.@"packed"`.
     packed_backing_int_type: Index,
+    /// Not valid if `layout` is `.@"packed"`.
     class: TypeClass,
+    /// Not valid if `layout` is `.@"packed"`.
     size: u32,
+    /// Not valid if `layout` is `.@"packed"`.
     padding: u32,
+    /// Not valid if `layout` is `.@"packed"`.
     alignment: Alignment,
 
     pub const TagUsage = enum(u2) {
@@ -3898,7 +3912,7 @@ pub fn loadUnionType(ip: *const InternPool, index: Index) LoadedUnionType {
         .want_layout = extra.data.bits.want_layout,
         .field_types = field_types,
         .field_aligns = .empty,
-        .has_runtime_tag = undefined,
+        .has_runtime_tag = false,
         .class = undefined,
         .size = undefined,
         .padding = undefined,

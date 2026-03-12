@@ -4369,7 +4369,7 @@ fn resolveReferencesInner(zcu: *Zcu) Allocator.Error!std.AutoArrayHashMapUnmanag
                 });
                 const gop = try units.getOrPut(gpa, other);
                 if (gop.found_existing) break :queue_paired;
-                gop.value_ptr.* = units.values()[unit_idx]; // same reference location
+                gop.value_ptr.* = units.values()[unit_idx - 1]; // same reference location
             }
 
             refs_log.debug("handle unit '{f}'", .{zcu.fmtAnalUnit(unit)});

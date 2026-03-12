@@ -3231,8 +3231,13 @@ pub fn unexpectedError(err: Win32Error) UnexpectedError {
     return error.Unexpected;
 }
 
-pub fn unexpectedWSAError(err: ws2_32.WinsockError) UnexpectedError {
+pub fn unexpectedWsaError(err: ws2_32.WinsockError) UnexpectedError {
     return unexpectedError(@as(Win32Error, @enumFromInt(@intFromEnum(err))));
+}
+
+pub fn wsaErrorBug(err: ws2_32.WinsockError) UnexpectedError {
+    if (builtin.mode == .Debug) std.debug.panic("programmer bug caused syscall error: {t}", .{err});
+    return error.Unexpected;
 }
 
 /// Call this when you made a windows NtDll call

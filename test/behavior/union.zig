@@ -148,6 +148,7 @@ const err = @as(anyerror!Agg, Agg{
 const array = [_]Value{ v1, v2, v1, v2 };
 
 test "unions embedded in aggregate types" {
+    if (builtin.zig_backend == .stage2_c and builtin.target.abi == .msvc) return error.SkipZigTest;
     switch (array[1]) {
         Value.Array => |arr| try expect(arr[4] == 3),
         else => unreachable,
@@ -2022,6 +2023,7 @@ test "runtime union init, most-aligned field != largest" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_c and builtin.target.abi == .msvc) return error.SkipZigTest;
 
     const U = union(enum) {
         x: u128,

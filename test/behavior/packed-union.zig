@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
+const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
 test "flags in packed union" {
@@ -176,4 +177,25 @@ test "assigning to non-active field at comptime" {
         var test_bits: FlagBits = .{ .flags = .{} };
         test_bits.bits = .{};
     }
+}
+
+test "packed union with explicit backing integer" {
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
+    const U = packed union(i32) {
+        raw: i32,
+        unsigned_halves: packed struct { low: u16, high: u16 },
+
+        fn check(val: @This()) !void {
+            try expect(@as(i32, @bitCast(val)) == -2);
+            try expect(@as(u32, @bitCast(val)) == 0xFFFFFFFE);
+            try expect(val.raw == -2);
+            try expect(val.unsigned_halves.low == 0xFFFE);
+            try expect(val.unsigned_halves.high == 0xFFFF);
+        }
+    };
+    try U.check(.{ .raw = -2 });
+    try comptime U.check(.{ .raw = -2 });
 }

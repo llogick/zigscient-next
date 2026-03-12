@@ -4713,10 +4713,8 @@ pub const FuncGen = struct {
                 const ptr = if (poi_index == 0) base_ptr else try self.wip.gep(.inbounds, .i8, base_ptr, &.{
                     try o.builder.intValue(.i32, poi_index),
                 }, "");
-                const counter = try self.wip.load(.normal, .i8, ptr, .default, "");
                 const one = try o.builder.intValue(.i8, 1);
-                const counter_incremented = try self.wip.bin(.add, counter, one, "");
-                _ = try self.wip.store(.normal, counter_incremented, ptr, .default);
+                _ = try self.wip.atomicrmw(.normal, .add, ptr, one, self.sync_scope, .monotonic, .default, "");
 
                 // LLVM does not allow blockaddress on the entry block.
                 const pc = if (self.wip.cursor.block == .entry)

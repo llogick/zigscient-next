@@ -31,6 +31,7 @@ pub const dependencies = @import("@dependencies");
 pub const std_options: std.Options = .{
     .side_channels_mitigations = .none,
     .http_disable_tls = true,
+    .networking = false,
 };
 
 var self_path: [:0]const u8 = undefined;
@@ -49,7 +50,7 @@ pub fn main(init: process.Init.Minimal) !void {
         .argv0 = .init(init.args),
     });
     defer threaded.deinit();
-    const io = threaded.ioBasic();
+    const io = threaded.io();
 
     var arena_instance: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     defer arena_instance.deinit();

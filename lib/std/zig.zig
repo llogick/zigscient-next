@@ -651,10 +651,20 @@ pub fn putAstErrorsIntoBundle(
     path: []const u8,
     wip_errors: *std.zig.ErrorBundle.Wip,
 ) Allocator.Error!void {
-    var zir = try AstGen.generate(gpa, tree);
-    defer zir.deinit(gpa);
+    switch (tree.mode) {
+        .zig => {
+            var zir = try AstGen.generate(gpa, tree);
+            defer zir.deinit(gpa);
 
-    try wip_errors.addZirErrorMessages(zir, tree, tree.source, path);
+            try wip_errors.addZirErrorMessages(zir, tree, tree.source, path);
+        },
+        .zon => {
+            var zoir = try ZonGen.generate(gpa, tree, .{});
+            defer zoir.deinit(gpa);
+
+            try wip_errors.addZoirErrorMessages(zoir, tree, tree.source, path);
+        },
+    }
 }
 
 pub fn resolveTargetQueryOrFatal(io: Io, target_query: std.Target.Query) std.Target {

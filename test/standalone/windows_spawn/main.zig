@@ -9,8 +9,6 @@ pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
     const process_cwd_path = try std.process.currentPathAlloc(io, init.arena.allocator());
-    var initial_process_cwd = try Io.Dir.cwd().openDir(io, ".", .{});
-    defer initial_process_cwd.close(io);
 
     var it = try init.minimal.args.iterateAllocator(gpa);
     defer it.deinit();
@@ -127,7 +125,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Now let's set the tmp dir as the cwd and set the path only include the "something" sub dir
     try std.process.setCurrentDir(io, tmp_dir);
-    defer std.process.setCurrentDir(io, initial_process_cwd) catch {};
+    defer std.process.setCurrentPath(io, process_cwd_path) catch {};
     const something_subdir_abs_path = try std.mem.concatWithSentinel(gpa, u16, &.{ tmp_absolute_path_w, utf16Literal("\\something") }, 0);
     defer gpa.free(something_subdir_abs_path);
 

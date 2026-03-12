@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     b.default_step = test_step;
 
     const optimize: std.builtin.OptimizeMode = .Debug;
-    const target = b.graph.host;
+    const target = b.standardTargetOptions(.{});
 
     const exe_names: []const []const u8 = &.{ "test", "test-dync" };
     const lib_names: []const []const u8 = &.{ "mathtest", "mathtest-dync" };
@@ -23,6 +23,9 @@ pub fn build(b: *std.Build) void {
                 .link_libc = dyn_libc,
             }),
         });
+
+        if (target.result.os.tag == .windows)
+            lib.root_module.linkSystemLibrary("ws2_32", .{});
 
         const exe = b.addExecutable(.{
             .name = exe_name,

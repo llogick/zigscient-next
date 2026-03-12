@@ -17,7 +17,7 @@ var fba: std.heap.FixedBufferAllocator = .init(&fba_buffer);
 var fba_buffer: [8192]u8 = undefined;
 var stdin_buffer: [4096]u8 = undefined;
 var stdout_buffer: [4096]u8 = undefined;
-const runner_threaded_io: Io = Io.Threaded.global_single_threaded.ioBasic();
+const runner_threaded_io: Io = Io.Threaded.global_single_threaded.io();
 
 /// Keep in sync with logic in `std.Build.addRunArtifact` which decides whether
 /// the test runner will communicate with the build runner via `std.zig.Server`.
@@ -38,10 +38,10 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
 
     if (need_simple) {
-        return mainSimple() catch @panic("test failure");
+        return mainSimple() catch |err| std.debug.panic("test failure: {t}", .{err});
     }
 
-    const args = init.args.toSlice(fba.allocator()) catch @panic("unable to parse command line args");
+    const args = init.args.toSlice(fba.allocator()) catch |err| std.debug.panic("unable to parse command line args: {t}", .{err});
 
     var listen = false;
     var opt_cache_dir: ?[]const u8 = null;
@@ -55,7 +55,7 @@ pub fn main(init: std.process.Init.Minimal) void {
         } else if (std.mem.startsWith(u8, arg, "--cache-dir")) {
             opt_cache_dir = arg["--cache-dir=".len..];
         } else {
-            @panic("unrecognized command line argument");
+            std.debug.panic("unrecognized command line argument: {s}", .{arg});
         }
     }
 
@@ -65,7 +65,7 @@ pub fn main(init: std.process.Init.Minimal) void {
     }
 
     if (listen) {
-        return mainServer(init) catch @panic("internal test runner failure");
+        return mainServer(init) catch |err| std.debug.panic("internal test runner failure: {t}", .{err});
     } else {
         return mainTerminal(init);
     }

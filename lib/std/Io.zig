@@ -218,6 +218,7 @@ pub const VTable = struct {
     unlockStderr: *const fn (?*anyopaque) void,
     processCurrentPath: *const fn (?*anyopaque, buffer: []u8) std.process.CurrentPathError!usize,
     processSetCurrentDir: *const fn (?*anyopaque, Dir) std.process.SetCurrentDirError!void,
+    processSetCurrentPath: *const fn (?*anyopaque, []const u8) std.process.SetCurrentPathError!void,
     processReplace: *const fn (?*anyopaque, std.process.ReplaceOptions) std.process.ReplaceError,
     processReplacePath: *const fn (?*anyopaque, Dir, std.process.ReplaceOptions) std.process.ReplaceError,
     processSpawn: *const fn (?*anyopaque, std.process.SpawnOptions) std.process.SpawnError!std.process.Child,
@@ -242,7 +243,6 @@ pub const VTable = struct {
     netConnectUnix: *const fn (?*anyopaque, *const net.UnixAddress) net.UnixAddress.ConnectError!net.Socket.Handle,
     netSocketCreatePair: *const fn (?*anyopaque, net.Socket.CreatePairOptions) net.Socket.CreatePairError![2]net.Socket,
     netSend: *const fn (?*anyopaque, net.Socket.Handle, []net.OutgoingMessage, net.SendFlags) struct { ?net.Socket.SendError, usize },
-    netReceive: *const fn (?*anyopaque, net.Socket.Handle, message_buffer: []net.IncomingMessage, data_buffer: []u8, net.ReceiveFlags, Timeout) struct { ?net.Socket.ReceiveTimeoutError, usize },
     /// Returns 0 on end of stream.
     netRead: *const fn (?*anyopaque, src: net.Socket.Handle, data: [][]u8) net.Stream.Reader.Error!usize,
     netWrite: *const fn (?*anyopaque, dest: net.Socket.Handle, header: []const u8, data: []const []const u8, splat: usize) net.Stream.Writer.Error!usize,
@@ -260,6 +260,7 @@ pub const Operation = union(enum) {
     /// On Windows this is NtDeviceIoControlFile. On POSIX this is ioctl. On
     /// other systems this tag is unreachable.
     device_io_control: DeviceIoControl,
+    net_receive: NetReceive,
 
     pub const Tag = @typeInfo(Operation).@"union".tag_type.?;
 
@@ -349,6 +350,35 @@ pub const Operation = union(enum) {
         },
     };
 
+    pub const NetReceive = struct {
+        socket_handle: net.Socket.Handle,
+        message_buffer: []net.IncomingMessage,
+        data_buffer: []u8,
+        flags: net.ReceiveFlags,
+
+        pub const Error = error{
+            /// Insufficient memory or other resource internal to the operating system.
+            SystemResources,
+            /// Per-process limit on the number of open file descriptors has been reached.
+            ProcessFdQuotaExceeded,
+            /// System-wide limit on the total number of open files has been reached.
+            SystemFdQuotaExceeded,
+            /// Local end has been shut down on a connection-oriented socket, or
+            /// the socket was never connected.
+            SocketUnconnected,
+            /// The socket type requires that message be sent atomically, and the
+            /// size of the message to be sent made this impossible. The message
+            /// was not transmitted, or was partially transmitted.
+            MessageOversize,
+            /// Network connection was unexpectedly closed by sender.
+            ConnectionResetByPeer,
+            /// The local network interface used to reach the destination is offline.
+            NetworkDown,
+        } || Io.UnexpectedError;
+
+        pub const Result = struct { ?net.Socket.ReceiveError, usize };
+    };
+
     pub const Result = Result: {
         const operation_fields = @typeInfo(Operation).@"union".fields;
         var field_names: [operation_fields.len][]const u8 = undefined;
@@ -414,6 +444,19 @@ pub const Operation = union(enum) {
 /// Performs one `Operation`.
 pub fn operate(io: Io, operation: Operation) Cancelable!Operation.Result {
     return io.vtable.operate(io.userdata, operation);
+}
+
+pub const OperateTimeoutError = Cancelable || Timeout.Error || ConcurrentError;
+
+/// Performs one `Operation` with provided `timeout`.
+pub fn operateTimeout(io: Io, operation: Operation, timeout: Timeout) OperateTimeoutError!Operation.Result {
+    var storage: [1]Operation.Storage = undefined;
+    var batch: Batch = .init(&storage);
+    batch.addAt(0, operation);
+    try batch.awaitConcurrent(io, timeout);
+    const completion = batch.next().?;
+    assert(completion.index == 0);
+    return completion.result;
 }
 
 /// Submits many operations together without waiting for all of them to
@@ -1534,11 +1577,11 @@ pub const Mutex = extern struct {
     };
 
     pub fn tryLock(m: *Mutex) bool {
-        return m.state.cmpxchgWeak(.unlocked, .locked_once, .acquire, .monotonic) == null;
+        return m.state.cmpxchgStrong(.unlocked, .locked_once, .acquire, .monotonic) == null;
     }
 
     pub fn lock(m: *Mutex, io: Io) Cancelable!void {
-        const initial_state = m.state.cmpxchgWeak(
+        const initial_state = m.state.cmpxchgStrong(
             .unlocked,
             .locked_once,
             .acquire,
@@ -1559,7 +1602,7 @@ pub const Mutex = extern struct {
     ///
     /// For a description of cancelation and cancelation points, see `Future.cancel`.
     pub fn lockUncancelable(m: *Mutex, io: Io) void {
-        const initial_state = m.state.cmpxchgWeak(
+        const initial_state = m.state.cmpxchgStrong(
             .unlocked,
             .locked_once,
             .acquire,
@@ -1715,7 +1758,7 @@ pub const Event = enum(u32) {
     }
 
     /// Blocks until the logical boolean is `true`.
-    pub fn wait(event: *Event, io: Io) Io.Cancelable!void {
+    pub fn wait(event: *Event, io: Io) Cancelable!void {
         if (@cmpxchgStrong(Event, event, .unset, .waiting, .acquire, .acquire)) |prev| switch (prev) {
             .unset => unreachable,
             .waiting => {},

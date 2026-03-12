@@ -46,6 +46,9 @@ pub fn build(b: *std.Build) void {
     lib.root_module.addCSourceFile(.{ .file = b.path("shared_lib.c"), .flags = &.{"-gdwarf"} });
     exe.root_module.linkLibrary(lib);
 
+    if (target.result.os.tag == .windows)
+        exe.root_module.linkSystemLibrary("ws2_32", .{});
+
     const run = b.addRunArtifact(exe);
     run.expectExitCode(0);
     run.skip_foreign_checks = true;

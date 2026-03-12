@@ -409,6 +409,12 @@ pub const SpawnOptions = struct {
         /// Inherit the corresponding stream from the parent process.
         inherit,
         /// Pass an already open file from the parent to the child.
+        ///
+        /// Nonblocking mode will be kept in the child process if present. This is
+        /// likely not supported by the child process. For example:
+        /// - Zig's std.Io.File.stdout() assumes blocking mode
+        /// - Rust explicity documents that nonblocking stdio may cause panics
+        /// - C++ standard streams do not support nonblocking file descriptors
         file: File,
         /// Pass a null stream to the child process by opening "/dev/null" on POSIX
         /// and "NUL" on Windows.
@@ -892,6 +898,35 @@ pub const SetCurrentDirError = error{
 /// Calling this function makes code less portable and less reusable.
 pub fn setCurrentDir(io: Io, dir: Io.Dir) !void {
     return io.vtable.processSetCurrentDir(io.userdata, dir);
+}
+
+pub const SetCurrentPathError = error{
+    AccessDenied,
+    SymLinkLoop,
+    SystemResources,
+    BadPathName,
+    FileNotFound,
+    FileSystem,
+    NoDevice,
+    NotDir,
+    NameTooLong,
+    OperationUnsupported,
+    /// Windows-only. The path is invalid WTF-8.
+    /// https://wtf-8.codeberg.page/
+    InvalidWtf8,
+} || Io.Cancelable || Io.UnexpectedError;
+
+/// Changes the current working directory to the given path.
+/// Corresponds to "chdir" in libc.
+///
+/// This modifies global process state and can have surprising effects in
+/// multithreaded applications. Most applications and especially libraries
+/// should not call this function as a general rule, however it can have use
+/// cases in, for example, implementing a shell, or child process execution.
+///
+/// Calling this function makes code less portable and less reusable.
+pub fn setCurrentPath(io: Io, path: []const u8) !void {
+    return io.vtable.processSetCurrentPath(io.userdata, path);
 }
 
 pub const LockMemoryError = error{

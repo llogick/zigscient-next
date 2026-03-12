@@ -3344,6 +3344,7 @@ pub fn updateConstIncomplete(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index
 }
 fn updateConstIncompleteInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.ConstPool.Index, value_index: InternPool.Index) !void {
     const zcu = pt.zcu;
+    const ip = &zcu.intern_pool;
 
     const val: Value = .fromInterned(value_index);
 
@@ -3383,19 +3384,108 @@ fn updateConstIncompleteInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_inde
         .debug_loclists = .init(dwarf.gpa),
     };
     defer wip_nav.deinit();
-    switch (val.typeOf(zcu).toIntern()) {
-        .type_type => {
-            try wip_nav.abbrevCode(.generated_empty_struct_type);
-            try wip_nav.strpFmt("{f}", .{val.toType().fmt(pt)});
-            try wip_nav.debug_info.writer.writeByte(@intFromBool(true));
+
+    switch (ip.indexToKey(value_index)) {
+        // Container types still need to be valid namespaces.
+        .struct_type => {
+            const loaded_struct = ip.loadStructType(value_index);
+            const root_of_file: ?Zcu.File.Index = if (loaded_struct.zir_index.resolveFull(ip)) |r| f: {
+                if (r.inst != .main_struct_inst) break :f null;
+                break :f r.file;
+            } else null;
+            if (root_of_file) |file_index| {
+                assert(loaded_struct.name_nav == .none);
+                const file_gop = try dwarf.getModInfo(unit).files.getOrPut(dwarf.gpa, file_index);
+                try wip_nav.abbrevCode(.empty_file);
+                try wip_nav.debug_info.writer.writeUleb128(file_gop.index);
+                try wip_nav.strp(loaded_struct.name.toSlice(ip));
+            } else {
+                try dwarf.emitIncompleteContainerType(
+                    &wip_nav,
+                    loaded_struct.zir_index,
+                    loaded_struct.name,
+                    loaded_struct.name_nav,
+                );
+            }
         },
-        else => |ty| {
-            try wip_nav.abbrevCode(.undefined_comptime_value);
-            try wip_nav.refType(.fromInterned(ty));
+        .union_type => {
+            const loaded_union = ip.loadUnionType(value_index);
+            try dwarf.emitIncompleteContainerType(
+                &wip_nav,
+                loaded_union.zir_index,
+                loaded_union.name,
+                loaded_union.name_nav,
+            );
+        },
+        .enum_type => {
+            const loaded_enum = ip.loadEnumType(value_index);
+            if (loaded_enum.zir_index.unwrap()) |zir_index| {
+                try dwarf.emitIncompleteContainerType(
+                    &wip_nav,
+                    zir_index,
+                    loaded_enum.name,
+                    loaded_enum.name_nav,
+                );
+            } else {
+                try wip_nav.abbrevCode(.generated_empty_struct_type);
+                try wip_nav.strp(loaded_enum.name.toSlice(ip));
+                try wip_nav.debug_info.writer.writeByte(@intFromBool(true));
+            }
+        },
+        .opaque_type => {
+            const loaded_opaque = ip.loadOpaqueType(value_index);
+            try dwarf.emitIncompleteContainerType(
+                &wip_nav,
+                loaded_opaque.zir_index,
+                loaded_opaque.name,
+                loaded_opaque.name_nav,
+            );
+        },
+        // Not a container type, so just emit a dummy entry. If `val` happens to be a type, we'll
+        // emit it as if it were an opaque type so that we can name it.
+        else => |val_key| switch (val_key.typeOf()) {
+            .type_type => {
+                try wip_nav.abbrevCode(.generated_empty_struct_type);
+                try wip_nav.strpFmt("{f}", .{val.toType().fmt(pt)});
+                try wip_nav.debug_info.writer.writeByte(@intFromBool(true));
+            },
+            else => |ty| {
+                try wip_nav.abbrevCode(.undefined_comptime_value);
+                try wip_nav.refType(.fromInterned(ty));
+            },
         },
     }
     try dwarf.debug_info.section.replaceEntry(unit, entry, dwarf, wip_nav.debug_info.written());
     try dwarf.debug_loclists.section.replaceEntry(unit, entry, dwarf, wip_nav.debug_loclists.written());
+}
+fn emitIncompleteContainerType(
+    dwarf: *Dwarf,
+    wip_nav: *WipNav,
+    zir_index: InternPool.TrackedInst.Index,
+    name: InternPool.NullTerminatedString,
+    name_nav: InternPool.Nav.Index.Optional,
+) !void {
+    const zcu = wip_nav.pt.zcu;
+    const ip = &zcu.intern_pool;
+    const file = zir_index.resolveFile(ip);
+    if (name_nav.unwrap()) |nav_index| {
+        const nav = ip.getNav(nav_index);
+        const decl_inst = nav.srcInst(ip).resolve(ip).?;
+        const decl = zcu.fileByIndex(file).zir.?.getDeclaration(decl_inst);
+        try wip_nav.declCommon(.{
+            .decl = .decl_namespace_struct,
+            .generic_decl = .generic_decl_const,
+            .decl_instance = .decl_instance_namespace_struct,
+        }, &nav, file, &decl);
+        try wip_nav.debug_info.writer.writeByte(@intFromBool(true));
+    } else {
+        const diw = &wip_nav.debug_info.writer;
+        const file_gop = try dwarf.getModInfo(wip_nav.unit).files.getOrPut(dwarf.gpa, file);
+        try wip_nav.abbrevCode(.empty_struct_type);
+        try diw.writeUleb128(file_gop.index);
+        try wip_nav.strp(name.toSlice(ip));
+        try diw.writeByte(@intFromBool(true));
+    }
 }
 /// Should only be called by the `link.ConstPool` implementation.
 ///
@@ -3417,6 +3507,8 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
     } else {
         val.typeOf(zcu).assertHasLayout(zcu);
     }
+
+    if (value_index == .anyerror_type) return; // handled in `flush` instead
 
     const value_ip_key = ip.indexToKey(value_index);
     switch (value_ip_key) {
@@ -3746,7 +3838,7 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
                 try wip_nav.abbrevCode(.void_type);
                 try wip_nav.strpFmt("{f}", .{val.toType().fmt(pt)});
             },
-            .anyerror => return, // delay until flush
+            .anyerror => unreachable, // already did early return above
             .adhoc_inferred_error_set => unreachable,
         },
         .tuple_type => |tuple_type| if (tuple_type.types.len == 0) {
