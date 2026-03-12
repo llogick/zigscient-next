@@ -420,12 +420,21 @@ fn render_cmake(
         };
         defer allocator.free(line);
 
-        if (!std.mem.startsWith(u8, line, "#")) {
+        const line_start = std.mem.findNone(u8, line, " \t\r") orelse {
+            try bw.writeAll(line);
+            if (!last_line) try bw.writeByte('\n');
+            continue;
+        };
+        const whitespace_prefix = line[0..line_start];
+        const trimmed_line = line[line_start..];
+
+        if (!std.mem.startsWith(u8, trimmed_line, "#")) {
             try bw.writeAll(line);
             if (!last_line) try bw.writeByte('\n');
             continue;
         }
-        var it = std.mem.tokenizeAny(u8, line[1..], " \t\r");
+
+        var it = std.mem.tokenizeAny(u8, trimmed_line[1..], " \t\r");
         const cmakedefine = it.next().?;
         if (!std.mem.eql(u8, cmakedefine, "cmakedefine") and
             !std.mem.eql(u8, cmakedefine, "cmakedefine01"))
@@ -502,6 +511,7 @@ fn render_cmake(
             value = Value{ .ident = it.rest() };
         }
 
+        try bw.writeAll(whitespace_prefix);
         try renderValueC(bw, name, value);
     }
 
