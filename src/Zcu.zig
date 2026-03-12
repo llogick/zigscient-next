@@ -1020,7 +1020,7 @@ pub const File = struct {
     /// changed -- this field is just a simple boolean.
     ///
     /// When `zoir` is updated, this field is set to `true`. In `updateZirRefs`, if this is `true`,
-    /// we invalidate the corresponding `zon_file` dependency, and reset it to `false`.
+    /// we invalidate the corresponding `source_file` dependency, and reset it to `false`.
     zoir_invalidated: bool,
 
     /// A Uri slice to query the LSP Component's DocumentStore
@@ -4551,9 +4551,9 @@ fn formatDependee(data: FormatDependee, writer: *Io.Writer) Io.Writer.Error!void
             const fqn = ip.getNav(ip.indexToKey(ip_index).func.owner_nav).fqn;
             return writer.print("func_ies('{f}')", .{fqn.fmt(ip)});
         },
-        .zon_file => |file| {
+        .source_file => |file| {
             const file_path = zcu.fileByIndex(file).path;
-            return writer.print("zon_file('{f}')", .{file_path.fmt(zcu.comp)});
+            return writer.print("source_file('{f}')", .{file_path.fmt(zcu.comp)});
         },
         .embed_file => |ef_idx| {
             const ef = ef_idx.get(zcu);

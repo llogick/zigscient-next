@@ -858,7 +858,7 @@ fn updateZirRefs(pt: Zcu.PerThread) (Io.Cancelable || Allocator.Error)!void {
             .zig => {}, // logic below
             .zon => {
                 if (file.zoir_invalidated) {
-                    try zcu.markDependeeOutdated(.not_marked_po, .{ .zon_file = file_index });
+                    try zcu.markDependeeOutdated(.not_marked_po, .{ .source_file = file_index });
                     file.zoir_invalidated = false;
                 }
                 continue;
@@ -1008,8 +1008,8 @@ fn updateZirRefs(pt: Zcu.PerThread) (Io.Cancelable || Allocator.Error)!void {
         // be re-analyzed (causing the struct's namespace to be re-scanned). It's fine to do this
         // now because this work is fast (no actual Sema work is happening, we're just updating the
         // namespace contents). We must do this after updating ZIR refs above, since `scanNamespace`
-        // will track some instructions.
-        try pt.updateFileNamespace(file_index);
+        // calls will track some instructions.
+        try pt.updateFileRootStructType(file_index);
     }
 }
 
@@ -2390,27 +2390,49 @@ fn analyzeFuncBody(
     return .{ .ies_outdated = ies_outdated };
 }
 
-/// Re-scan the namespace of a file's root struct type on an incremental update.
-/// The file must have successfully populated ZIR.
-/// If the file's root struct type is not populated (the file is unreferenced), nothing is done.
-/// This is called by `updateZirRefs` for all updated files before the main work loop.
-/// This function does not perform any semantic analysis.
-fn updateFileNamespace(pt: Zcu.PerThread, file_index: Zcu.File.Index) Allocator.Error!void {
+/// The given file has been modified on this incremental update, so if it has a populated root
+/// struct type, either re-scan its namespace, or clear it and invalidate dependencies if the
+/// type is no longer valid. See comments in body for more details.
+///
+/// Called by `updateZirRefs` for all updated Zig source files before the main update loop.
+///
+/// Asserts that the file has successfully populated ZIR.
+fn updateFileRootStructType(pt: Zcu.PerThread, file_index: Zcu.File.Index) Allocator.Error!void {
     const zcu = pt.zcu;
+    const ip = &zcu.intern_pool;
 
     const file = zcu.fileByIndex(file_index);
     const file_root_type = zcu.fileRootType(file_index);
-    if (file_root_type == .none) return;
+    if (file_root_type == .none) {
+        // We haven't analyzed any `@import` of this file so far, so there's nothing to update. If
+        // an `@import` gets analyzed, then `ensureFilePopulated` will create the root struct type
+        // and scan the namespace.
+        return;
+    }
 
-    log.debug("updateFileNamespace mod={s} sub_file_path={s}", .{
+    const loaded_struct = ip.loadStructType(file_root_type);
+
+    log.debug("updateFileRootStructType mod={s} sub_file_path={s}", .{
         file.mod.?.fully_qualified_name,
         file.sub_file_path,
     });
 
-    const namespace_index = Type.fromInterned(file_root_type).getNamespaceIndex(zcu);
-    const decls = file.zir.?.getStructDecl(.main_struct_inst).decls;
-    try pt.scanNamespace(namespace_index, decls);
-    zcu.namespacePtr(namespace_index).generation = zcu.generation;
+    if (loaded_struct.zir_index.resolve(ip) == null) {
+        // The file's root struct decl has been lost, so a new struct type must be interned at a new
+        // `InternPool.Index`. Clear the file's root type so that `ensureFilePopulated` will do that
+        // work, and invalidate dependencies on this file to force re-analysis of `@import` sites.
+        zcu.setFileRootType(file_index, .none);
+        try zcu.markDependeeOutdated(.not_marked_po, .{ .source_file = file_index });
+    } else {
+        // The existing struct type is valid, but the namespace contents might have changed. For
+        // most struct types, that would cause the surrounding declaration to be invalidated which
+        // causes `Sema.zirStructType` (or whatever) to call `ensureNamespaceUpToDate`. However,
+        // there is no "surrounding declaration" for the root struct type of a Zig source file, so
+        // update this namespace now.
+        const decls = file.zir.?.getStructDecl(.main_struct_inst).decls;
+        try pt.scanNamespace(loaded_struct.namespace, decls);
+        zcu.namespacePtr(loaded_struct.namespace).generation = zcu.generation;
+    }
 }
 
 /// Called by AstGen worker threads when an import is seen. If `new_file` is returned, the caller is

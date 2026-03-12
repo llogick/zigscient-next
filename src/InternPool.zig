@@ -57,9 +57,14 @@ type_layout_deps: std.AutoArrayHashMapUnmanaged(Index, DepEntry.Index),
 /// Dependencies on the resolved default field values of a `struct` type.
 /// Value is index into `dep_entries` of the first dependency on this type's inits.
 struct_defaults_deps: std.AutoArrayHashMapUnmanaged(Index, DepEntry.Index),
-/// Dependencies on a ZON file. Triggered by `@import` of ZON.
-/// Value is index into `dep_entries` of the first dependency on this ZON file.
-zon_file_deps: std.AutoArrayHashMapUnmanaged(FileIndex, DepEntry.Index),
+/// Dependencies on a Zig or ZON source file. Triggered by `@import`.
+/// * For ZON source files, the dependency is invalidated if the file changes at all. The `@import`
+///   must be re-analyzed to return the new data structure.
+/// * For Zig source files, the dependency is invalidated if the file's root struct type changes
+///   (which can only happen because the `.main_struct_inst` got lost). The `@import` must be
+///   re-analyzed to return the new type.
+/// Value is index into `dep_entries` of the first dependency on this Zig/ZON file.
+source_file_deps: std.AutoArrayHashMapUnmanaged(FileIndex, DepEntry.Index),
 /// Dependencies on an embedded file.
 /// Introduced by `@embedFile`; invalidated when the file changes.
 /// Value is index into `dep_entries` of the first dependency on this `Zcu.EmbedFile`.
@@ -112,7 +117,7 @@ pub const empty: InternPool = .{
     .func_ies_deps = .empty,
     .type_layout_deps = .empty,
     .struct_defaults_deps = .empty,
-    .zon_file_deps = .empty,
+    .source_file_deps = .empty,
     .embed_file_deps = .empty,
     .namespace_deps = .empty,
     .namespace_name_deps = .empty,
@@ -861,7 +866,7 @@ pub const Dependee = union(enum) {
     func_ies: Index,
     type_layout: Index,
     struct_defaults: Index,
-    zon_file: FileIndex,
+    source_file: FileIndex,
     embed_file: Zcu.EmbedFile.Index,
     namespace: TrackedInst.Index,
     namespace_name: NamespaceNameKey,
@@ -915,7 +920,7 @@ pub fn dependencyIterator(ip: *const InternPool, dependee: Dependee) DependencyI
         .func_ies => |x| ip.func_ies_deps.get(x),
         .type_layout => |x| ip.type_layout_deps.get(x),
         .struct_defaults => |x| ip.struct_defaults_deps.get(x),
-        .zon_file => |x| ip.zon_file_deps.get(x),
+        .source_file => |x| ip.source_file_deps.get(x),
         .embed_file => |x| ip.embed_file_deps.get(x),
         .namespace => |x| ip.namespace_deps.get(x),
         .namespace_name => |x| ip.namespace_name_deps.get(x),
@@ -990,7 +995,7 @@ pub fn addDependency(ip: *InternPool, gpa: Allocator, depender: AnalUnit, depend
                 .func_ies => ip.func_ies_deps,
                 .type_layout => ip.type_layout_deps,
                 .struct_defaults => ip.struct_defaults_deps,
-                .zon_file => ip.zon_file_deps,
+                .source_file => ip.source_file_deps,
                 .embed_file => ip.embed_file_deps,
                 .namespace => ip.namespace_deps,
                 .namespace_name => ip.namespace_name_deps,
@@ -6479,7 +6484,7 @@ pub fn deinit(ip: *InternPool, gpa: Allocator, io: Io) void {
     ip.func_ies_deps.deinit(gpa);
     ip.type_layout_deps.deinit(gpa);
     ip.struct_defaults_deps.deinit(gpa);
-    ip.zon_file_deps.deinit(gpa);
+    ip.source_file_deps.deinit(gpa);
     ip.embed_file_deps.deinit(gpa);
     ip.namespace_deps.deinit(gpa);
     ip.namespace_name_deps.deinit(gpa);
@@ -10645,7 +10650,7 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
     const func_ies_deps_len = ip.func_ies_deps.count();
     const type_layout_deps_len = ip.type_layout_deps.count();
     const struct_defaults_deps_len = ip.struct_defaults_deps.count();
-    const zon_file_deps_len = ip.zon_file_deps.count();
+    const source_file_deps_len = ip.source_file_deps.count();
     const embed_file_deps_len = ip.embed_file_deps.count();
     const namespace_deps_len = ip.namespace_deps.count();
     const namespace_name_deps_len = ip.namespace_name_deps.count();
@@ -10656,7 +10661,7 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
     const func_ies_deps_size = func_ies_deps_len * 8;
     const type_layout_deps_size = type_layout_deps_len * 8;
     const struct_defaults_deps_size = struct_defaults_deps_len * 8;
-    const zon_file_deps_size = zon_file_deps_len * 8;
+    const source_file_deps_size = source_file_deps_len * 8;
     const embed_file_deps_size = embed_file_deps_len * 8;
     const namespace_deps_size = namespace_deps_len * 8;
     const namespace_name_deps_size = namespace_name_deps_len * (@sizeOf(NamespaceNameKey) + 4);
@@ -10670,14 +10675,14 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
         \\  {d} func_ies: {d} bytes
         \\  {d} type_layout: {d} bytes
         \\  {d} struct_defaults: {d} bytes
-        \\  {d} zon_file: {d} bytes
+        \\  {d} source_file: {d} bytes
         \\  {d} embed_file: {d} bytes
         \\  {d} namespace: {d} bytes
         \\  {d} namespace_name: {d} bytes
         \\
     , .{
         dep_entries_size + src_hash_deps_size + nav_val_deps_size + nav_ty_deps_size +
-            func_ies_deps_size + type_layout_deps_size + struct_defaults_deps_size + zon_file_deps_size +
+            func_ies_deps_size + type_layout_deps_size + struct_defaults_deps_size + source_file_deps_size +
             embed_file_deps_size + namespace_deps_size + namespace_name_deps_size,
         dep_entries_len,
         dep_entries_size,
@@ -10693,8 +10698,8 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) !void {
         type_layout_deps_size,
         struct_defaults_deps_len,
         struct_defaults_deps_size,
-        zon_file_deps_len,
-        zon_file_deps_size,
+        source_file_deps_len,
+        source_file_deps_size,
         embed_file_deps_len,
         embed_file_deps_size,
         namespace_deps_len,

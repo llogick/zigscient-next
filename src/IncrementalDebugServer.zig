@@ -305,7 +305,7 @@ fn handleCommand(zcu: *Zcu, w: *Io.Writer, cmd_str: []const u8, arg_str: []const
         for (unit_info.deps.items, 0..) |dependee, i| {
             try w.print("[{d}] ", .{i});
             switch (dependee) {
-                .src_hash, .namespace, .namespace_name, .zon_file, .embed_file => try w.print("{f}", .{zcu.fmtDependee(dependee)}),
+                .src_hash, .namespace, .namespace_name, .source_file, .embed_file => try w.print("{f}", .{zcu.fmtDependee(dependee)}),
                 .nav_val, .nav_ty => |nav| try w.print("{t} {d}", .{ dependee, @intFromEnum(nav) }),
                 .type_layout, .struct_defaults, .func_ies => |ip_index| try w.print("{t} {d}", .{ dependee, @intFromEnum(ip_index) }),
                 .memoized_state => |stage| try w.print("memoized_state {s}", .{@tagName(stage)}),

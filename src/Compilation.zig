@@ -3657,7 +3657,7 @@ const Header = extern struct {
         type_layout_deps_len: u32,
         struct_defaults_deps_len: u32,
         func_ies_deps_len: u32,
-        zon_file_deps_len: u32,
+        source_file_deps_len: u32,
         embed_file_deps_len: u32,
         namespace_deps_len: u32,
         namespace_name_deps_len: u32,
@@ -3707,7 +3707,7 @@ pub fn saveState(comp: *Compilation) !void {
                 .type_layout_deps_len = @intCast(ip.type_layout_deps.count()),
                 .struct_defaults_deps_len = @intCast(ip.struct_defaults_deps.count()),
                 .func_ies_deps_len = @intCast(ip.func_ies_deps.count()),
-                .zon_file_deps_len = @intCast(ip.zon_file_deps.count()),
+                .source_file_deps_len = @intCast(ip.source_file_deps.count()),
                 .embed_file_deps_len = @intCast(ip.embed_file_deps.count()),
                 .namespace_deps_len = @intCast(ip.namespace_deps.count()),
                 .namespace_name_deps_len = @intCast(ip.namespace_name_deps.count()),
@@ -3746,8 +3746,8 @@ pub fn saveState(comp: *Compilation) !void {
         addBuf(&bufs, @ptrCast(ip.struct_defaults_deps.values()));
         addBuf(&bufs, @ptrCast(ip.func_ies_deps.keys()));
         addBuf(&bufs, @ptrCast(ip.func_ies_deps.values()));
-        addBuf(&bufs, @ptrCast(ip.zon_file_deps.keys()));
-        addBuf(&bufs, @ptrCast(ip.zon_file_deps.values()));
+        addBuf(&bufs, @ptrCast(ip.source_file_deps.keys()));
+        addBuf(&bufs, @ptrCast(ip.source_file_deps.values()));
         addBuf(&bufs, @ptrCast(ip.embed_file_deps.keys()));
         addBuf(&bufs, @ptrCast(ip.embed_file_deps.values()));
         addBuf(&bufs, @ptrCast(ip.namespace_deps.keys()));

@@ -13013,6 +13013,7 @@ fn zirImport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
     };
     const file_index = result.file;
     const file = zcu.fileByIndex(file_index);
+    try sema.declareDependency(.{ .source_file = file_index });
     switch (file.getMode()) {
         .zig => {
             try pt.ensureFilePopulated(file_index);
@@ -13030,8 +13031,6 @@ fn zirImport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
                 if (res_ty.isGenericPoison()) break :b .none;
                 break :b res_ty.toIntern();
             };
-
-            try sema.declareDependency(.{ .zon_file = file_index });
             const interned = try LowerZon.run(
                 sema,
                 file,
@@ -34086,6 +34085,7 @@ pub fn analyzeMemoizedState(sema: *Sema, stage: InternPool.MemoizedStateStage) C
         // Get the main struct type of the root source file of `std`. No need for a reference entry
         // because `std` is always an analysis root.
         const std_file_index = zcu.module_roots.get(zcu.std_mod).?.unwrap().?;
+        try sema.declareDependency(.{ .source_file = std_file_index });
         try pt.ensureFilePopulated(std_file_index);
         const std_type: Type = .fromInterned(zcu.fileRootType(std_file_index));
         break :block .{
