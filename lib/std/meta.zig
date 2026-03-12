@@ -636,22 +636,22 @@ pub fn eql(a: anytype, b: @TypeOf(a)) bool {
             }
         },
         .@"union" => |info| {
-            if (info.tag_type) |UnionTag| {
-                const tag_a: UnionTag = a;
-                const tag_b: UnionTag = b;
-                if (tag_a != tag_b) return false;
+            if (info.layout == .@"packed") return a == b;
+            const UnionTag = info.tag_type orelse
+                @compileError("cannot compare untagged union type " ++ @typeName(T));
 
-                return switch (a) {
-                    inline else => |val, tag| return eql(val, @field(b, @tagName(tag))),
-                };
-            }
+            const tag_a: UnionTag = a;
+            const tag_b: UnionTag = b;
+            if (tag_a != tag_b) return false;
 
-            @compileError("cannot compare untagged union type " ++ @typeName(T));
+            return switch (a) {
+                inline else => |val, tag| return eql(val, @field(b, @tagName(tag))),
+            };
         },
         .array => {
-            if (a.len != b.len) return false;
-            for (a, 0..) |e, i|
-                if (!eql(e, b[i])) return false;
+            for (a, b) |x, y| {
+                if (!eql(x, y)) return false;
+            }
             return true;
         },
         .vector => return @reduce(.And, a == b),
@@ -662,9 +662,9 @@ pub fn eql(a: anytype, b: @TypeOf(a)) bool {
             };
         },
         .optional => {
-            if (a == null and b == null) return true;
-            if (a == null or b == null) return false;
-            return eql(a.?, b.?);
+            const some_a = a orelse return b == null;
+            const some_b = b orelse return false;
+            return eql(some_a, some_b);
         },
         else => return a == b,
     }
