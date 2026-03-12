@@ -925,6 +925,10 @@ pub const Timestamp = struct {
         return .{ .nanoseconds = x };
     }
 
+    pub fn toMicroseconds(t: Timestamp) i64 {
+        return @intCast(@divTrunc(t.nanoseconds, std.time.ns_per_us));
+    }
+
     pub fn toMilliseconds(t: Timestamp) i64 {
         return @intCast(@divTrunc(t.nanoseconds, std.time.ns_per_ms));
     }
@@ -964,12 +968,20 @@ pub const Duration = struct {
         return .{ .nanoseconds = x };
     }
 
+    pub fn fromMicroseconds(x: i64) Duration {
+        return .{ .nanoseconds = @as(i96, x) * std.time.ns_per_us };
+    }
+
     pub fn fromMilliseconds(x: i64) Duration {
         return .{ .nanoseconds = @as(i96, x) * std.time.ns_per_ms };
     }
 
     pub fn fromSeconds(x: i64) Duration {
         return .{ .nanoseconds = @as(i96, x) * std.time.ns_per_s };
+    }
+
+    pub fn toMicroseconds(d: Duration) i64 {
+        return @intCast(@divTrunc(d.nanoseconds, std.time.ns_per_us));
     }
 
     pub fn toMilliseconds(d: Duration) i64 {
