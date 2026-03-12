@@ -19,10 +19,6 @@ pub const BrkAllocator = @import("heap/BrkAllocator.zig");
 pub const DebugAllocatorConfig = @import("heap/debug_allocator.zig").Config;
 pub const DebugAllocator = @import("heap/debug_allocator.zig").DebugAllocator;
 pub const Check = enum { ok, leak };
-/// Deprecated; to be removed after 0.14.0 is tagged.
-pub const GeneralPurposeAllocatorConfig = DebugAllocatorConfig;
-/// Deprecated; to be removed after 0.14.0 is tagged.
-pub const GeneralPurposeAllocator = DebugAllocator;
 
 /// A memory pool that can allocate objects of a single type very quickly.
 /// Use this when you need to allocate a lot of objects of the same type,
@@ -1006,7 +1002,7 @@ const page_size_max_default: ?usize = switch (builtin.os.tag) {
 test {
     _ = @import("heap/memory_pool.zig");
     _ = ArenaAllocator;
-    _ = GeneralPurposeAllocator;
+    _ = DebugAllocator(.{});
     _ = FixedBufferAllocator;
     if (builtin.single_threaded) {
         if (builtin.cpu.arch.isWasm() or (builtin.os.tag == .linux and !builtin.link_libc)) {

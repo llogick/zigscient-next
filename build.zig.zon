@@ -23,8 +23,8 @@
             // .path = "../../../zig-lsp-kit",
         },
         .extended_zccs = .{
-            .url = "https://github.com/llogick/extended-zccs/archive/e1353077ac3df69d3cbee858218b7332bead143a.tar.gz",
-            .hash = "extended_zccs-0.16.0-dev-zEaUNqfSDgDSbKVDXEUA00_Ywmk8-fBGy4ehcLsNFioq",
+            .url = "https://github.com/llogick/extended-zccs/archive/f7475204edb98b04d80d8fa257f8cddcf22eba67.tar.gz",
+            .hash = "extended_zccs-0.16.0-dev-zEaUNoSPDgDWNN7Nko4ZA9Otv1KFVBmCaRS1aOlnYzFE",
             // .path = "../../../extended-zccs",
         },
         .tracy = .{

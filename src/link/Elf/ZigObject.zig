@@ -84,7 +84,7 @@ pub fn init(self: *ZigObject, elf_file: *Elf, options: InitOptions) !void {
     const ptr_size = elf_file.ptrWidthBytes();
 
     try self.atoms.append(gpa, .{ .extra_index = try self.addAtomExtra(gpa, .{}) }); // null input section
-    try self.relocs.append(gpa, .{}); // null relocs section
+    try self.relocs.append(gpa, .empty); // null relocs section
     try self.strtab.buffer.append(gpa, 0);
 
     {
@@ -546,7 +546,7 @@ fn newAtom(self: *ZigObject, allocator: Allocator, name_off: u32) !Atom.Index {
     atom_ptr.name_offset = name_off;
 
     const relocs_index: u32 = @intCast(self.relocs.items.len);
-    self.relocs.addOneAssumeCapacity().* = .{};
+    self.relocs.addOneAssumeCapacity().* = .empty;
     atom_ptr.relocs_section_index = relocs_index;
 
     return index;
@@ -730,7 +730,7 @@ pub fn checkDuplicates(self: *ZigObject, dupes: anytype, elf_file: *Elf) error{O
 
         const gop = try dupes.getOrPut(self.symbols_resolver.items[i]);
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{};
+            gop.value_ptr.* = .empty;
         }
         try gop.value_ptr.append(elf_file.base.comp.gpa, self.index);
     }
@@ -1479,7 +1479,7 @@ fn updateTlv(
 
     log.debug("updateTlv {f}({d})", .{ nav.fqn.fmt(ip), nav_index });
 
-    const required_alignment = pt.navAlignment(nav_index);
+    const required_alignment = zcu.navAlignment(nav_index);
 
     const sym = self.symbol(sym_index);
     const esym = &self.symtab.items(.elf_sym)[sym.esym_index];
@@ -1719,11 +1719,12 @@ pub fn updateContainerType(
     self: *ZigObject,
     pt: Zcu.PerThread,
     ty: InternPool.Index,
+    success: bool,
 ) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    if (self.dwarf) |*dwarf| try dwarf.updateContainerType(pt, ty);
+    if (self.dwarf) |*dwarf| try dwarf.updateContainerType(pt, ty, success);
 }
 
 fn updateLazySymbol(

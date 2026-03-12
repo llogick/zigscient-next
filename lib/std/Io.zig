@@ -1577,11 +1577,11 @@ pub const Mutex = extern struct {
     };
 
     pub fn tryLock(m: *Mutex) bool {
-        return m.state.cmpxchgWeak(.unlocked, .locked_once, .acquire, .monotonic) == null;
+        return m.state.cmpxchgStrong(.unlocked, .locked_once, .acquire, .monotonic) == null;
     }
 
     pub fn lock(m: *Mutex, io: Io) Cancelable!void {
-        const initial_state = m.state.cmpxchgWeak(
+        const initial_state = m.state.cmpxchgStrong(
             .unlocked,
             .locked_once,
             .acquire,
@@ -1602,7 +1602,7 @@ pub const Mutex = extern struct {
     ///
     /// For a description of cancelation and cancelation points, see `Future.cancel`.
     pub fn lockUncancelable(m: *Mutex, io: Io) void {
-        const initial_state = m.state.cmpxchgWeak(
+        const initial_state = m.state.cmpxchgStrong(
             .unlocked,
             .locked_once,
             .acquire,

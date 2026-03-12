@@ -390,7 +390,7 @@ fn prepareTables(fuzz: *Fuzz, run_step: *Step.Run, coverage_id: u64) error{ OutO
         .coverage = std.debug.Coverage.init,
         .mapped_memory = undefined, // populated below
         .source_locations = undefined, // populated below
-        .entry_points = .{},
+        .entry_points = .empty,
         .start_timestamp = ws.now(),
         .start_n_runs = undefined, // populated below
     };
@@ -450,7 +450,7 @@ fn prepareTables(fuzz: *Fuzz, run_step: *Step.Run, coverage_id: u64) error{ OutO
 
     // Unfortunately the PCs array that LLVM gives us from the 8-bit PC
     // counters feature is not sorted.
-    var sorted_pcs: std.MultiArrayList(struct { pc: u64, index: u32, sl: Coverage.SourceLocation }) = .{};
+    var sorted_pcs: std.MultiArrayList(struct { pc: u64, index: u32, sl: Coverage.SourceLocation }) = .empty;
     defer sorted_pcs.deinit(gpa);
     try sorted_pcs.resize(gpa, pcs.len);
     @memcpy(sorted_pcs.items(.pc), pcs);

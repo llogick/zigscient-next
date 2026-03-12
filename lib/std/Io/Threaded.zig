@@ -1496,6 +1496,18 @@ const AlertableSyscall = struct {
         s.finish();
         return windows.unexpectedStatus(status);
     }
+
+    fn unexpectedWsaError(s: AlertableSyscall, err: ws2_32.WinsockError) Io.UnexpectedError {
+        @branchHint(.cold);
+        s.finish();
+        return windows.unexpectedWsaError(err);
+    }
+
+    fn wsaErrorBug(s: AlertableSyscall, err: ws2_32.WinsockError) Io.UnexpectedError {
+        @branchHint(.cold);
+        s.finish();
+        return windows.wsaErrorBug(err);
+    }
 };
 
 pub fn waitForApcOrAlert() void {
@@ -11692,7 +11704,7 @@ fn netListenIpWindows(
     var storage: WsaAddress = undefined;
     var addr_len = addressToWsa(&address, &storage);
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.bind(socket_handle, &storage.any, addr_len);
         if (rc != ws2_32.SOCKET_ERROR) {
@@ -11710,19 +11722,14 @@ fn netListenIpWindows(
                 try syscall.checkCancel();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .EADDRINUSE => return error.AddressInUse,
-                    .EADDRNOTAVAIL => return error.AddressUnavailable,
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EFAULT => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .ENOBUFS => return error.SystemResources,
-                    .ENETDOWN => return error.NetworkDown,
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .EADDRINUSE => return syscall.fail(error.AddressInUse),
+            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .ENOBUFS => return syscall.fail(error.SystemResources),
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 
@@ -11744,20 +11751,15 @@ fn netListenIpWindows(
                 try syscall.checkCancel();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ENETDOWN => return error.NetworkDown,
-                    .EADDRINUSE => return error.AddressInUse,
-                    .EISCONN => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .EMFILE, .ENOBUFS => return error.SystemResources,
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EOPNOTSUPP => |err| return wsaErrorBug(err),
-                    .EINPROGRESS => |err| return wsaErrorBug(err),
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .EADDRINUSE => return syscall.fail(error.AddressInUse),
+            .EMFILE, .ENOBUFS => return syscall.fail(error.SystemResources),
+            .EISCONN => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
+            .EINPROGRESS => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 
@@ -11841,7 +11843,7 @@ fn netListenUnixWindows(
     var storage: WsaAddress = undefined;
     const addr_len = addressUnixToWsa(address, &storage);
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.bind(socket_handle, &storage.any, addr_len);
         if (rc != ws2_32.SOCKET_ERROR) break;
@@ -11856,19 +11858,14 @@ fn netListenUnixWindows(
                 try syscall.checkCancel();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .EADDRINUSE => return error.AddressInUse,
-                    .EADDRNOTAVAIL => return error.AddressUnavailable,
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EFAULT => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .ENOBUFS => return error.SystemResources,
-                    .ENETDOWN => return error.NetworkDown,
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .EADDRINUSE => return syscall.fail(error.AddressInUse),
+            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
+            .ENOBUFS => return syscall.fail(error.SystemResources),
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 
@@ -11887,20 +11884,15 @@ fn netListenUnixWindows(
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ENETDOWN => return error.NetworkDown,
-                    .EADDRINUSE => return error.AddressInUse,
-                    .EISCONN => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .EMFILE, .ENOBUFS => return error.SystemResources,
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EOPNOTSUPP => |err| return wsaErrorBug(err),
-                    .EINPROGRESS => |err| return wsaErrorBug(err),
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .EADDRINUSE => return syscall.fail(error.AddressInUse),
+            .EMFILE, .ENOBUFS => return syscall.fail(error.SystemResources),
+            .EISCONN => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
+            .EINPROGRESS => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -12111,7 +12103,7 @@ fn wsaGetSockName(
     addr: *ws2_32.sockaddr,
     addr_len: *i32,
 ) !void {
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.getsockname(handle, addr, addr_len);
         if (rc != ws2_32.SOCKET_ERROR) {
@@ -12129,16 +12121,11 @@ fn wsaGetSockName(
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ENETDOWN => return error.NetworkDown,
-                    .EFAULT => |err| return wsaErrorBug(err),
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -12172,7 +12159,7 @@ fn setSocketOption(fd: posix.fd_t, level: i32, opt_name: u32, option: u32) !void
 
 fn setSocketOptionWsa(t: *Threaded, socket: Io.net.Socket.Handle, level: i32, opt_name: u32, option: u32) !void {
     const o: []const u8 = @ptrCast(&option);
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     const rc = ws2_32.setsockopt(socket, level, @bitCast(opt_name), o.ptr, @intCast(o.len));
     while (true) {
         if (rc != ws2_32.SOCKET_ERROR) return syscall.finish();
@@ -12188,14 +12175,8 @@ fn setSocketOptionWsa(t: *Threaded, socket: Io.net.Socket.Handle, level: i32, op
                 continue;
             },
             .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .EFAULT, .ENOTSOCK, .EINVAL => |err| {
-                syscall.finish();
-                return wsaErrorBug(err);
-            },
-            else => |err| {
-                syscall.finish();
-                return windows.unexpectedWSAError(err);
-            },
+            .EFAULT, .ENOTSOCK, .EINVAL => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -12243,7 +12224,7 @@ fn netConnectIpWindows(
     var storage: WsaAddress = undefined;
     var addr_len = addressToWsa(address, &storage);
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.connect(socket_handle, &storage.any, addr_len);
         if (rc != ws2_32.SOCKET_ERROR) {
@@ -12261,26 +12242,21 @@ fn netConnectIpWindows(
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .EADDRNOTAVAIL => return error.AddressUnavailable,
-                    .ECONNREFUSED => return error.ConnectionRefused,
-                    .ECONNRESET => return error.ConnectionResetByPeer,
-                    .ETIMEDOUT => return error.Timeout,
-                    .EHOSTUNREACH => return error.HostUnreachable,
-                    .ENETUNREACH => return error.NetworkUnreachable,
-                    .EFAULT => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .EISCONN => |err| return wsaErrorBug(err),
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EWOULDBLOCK => return error.WouldBlock,
-                    .EACCES => return error.AccessDenied,
-                    .ENOBUFS => return error.SystemResources,
-                    .EAFNOSUPPORT => return error.AddressFamilyUnsupported,
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
+            .ECONNREFUSED => return syscall.fail(error.ConnectionRefused),
+            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .ETIMEDOUT => return syscall.fail(error.Timeout),
+            .EHOSTUNREACH => return syscall.fail(error.HostUnreachable),
+            .ENETUNREACH => return syscall.fail(error.NetworkUnreachable),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EISCONN => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EWOULDBLOCK => return syscall.fail(error.WouldBlock),
+            .EACCES => return syscall.fail(error.AccessDenied),
+            .ENOBUFS => return syscall.fail(error.SystemResources),
+            .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 
@@ -12334,7 +12310,7 @@ fn netConnectUnixWindows(
     var storage: WsaAddress = undefined;
     const addr_len = addressUnixToWsa(address, &storage);
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.connect(socket_handle, &storage.any, addr_len);
         if (rc != ws2_32.SOCKET_ERROR) break;
@@ -12349,21 +12325,16 @@ fn netConnectUnixWindows(
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ECONNREFUSED => return error.FileNotFound,
-                    .EFAULT => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .EISCONN => |err| return wsaErrorBug(err),
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EWOULDBLOCK => return error.WouldBlock,
-                    .EACCES => return error.AccessDenied,
-                    .ENOBUFS => return error.SystemResources,
-                    .EAFNOSUPPORT => return error.AddressFamilyUnsupported,
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .ECONNREFUSED => return syscall.fail(error.FileNotFound),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EISCONN => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EWOULDBLOCK => return syscall.fail(error.WouldBlock),
+            .EACCES => return syscall.fail(error.AccessDenied),
+            .ENOBUFS => return syscall.fail(error.SystemResources),
+            .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 
@@ -12417,7 +12388,7 @@ fn netBindIpWindows(
     var storage: WsaAddress = undefined;
     var addr_len = addressToWsa(address, &storage);
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.bind(socket_handle, &storage.any, addr_len);
         if (rc != ws2_32.SOCKET_ERROR) {
@@ -12435,19 +12406,14 @@ fn netBindIpWindows(
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .EADDRINUSE => return error.AddressInUse,
-                    .EADDRNOTAVAIL => return error.AddressUnavailable,
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EFAULT => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .ENOBUFS => return error.SystemResources,
-                    .ENETDOWN => return error.NetworkDown,
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .EADDRINUSE => return syscall.fail(error.AddressInUse),
+            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .ENOBUFS => return syscall.fail(error.SystemResources),
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 
@@ -12611,10 +12577,8 @@ fn openSocketWsa(
     const protocol = posixProtocol(options.protocol);
     // WSA_FLAG_OVERLAPPED is chosen here because without this different
     // threads cannot use the same open socket handle.
-    // TODO: the below code needs to use the AlertableSyscall mechanism instead in
-    // order to make cancelation work.
     const flags: u32 = ws2_32.WSA_FLAG_OVERLAPPED | ws2_32.WSA_FLAG_NO_HANDLE_INHERIT;
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.WSASocketW(family, @bitCast(mode), @bitCast(protocol), null, 0, flags);
         if (rc != ws2_32.INVALID_SOCKET) {
@@ -12632,16 +12596,11 @@ fn openSocketWsa(
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .EAFNOSUPPORT => return error.AddressFamilyUnsupported,
-                    .EMFILE => return error.ProcessFdQuotaExceeded,
-                    .ENOBUFS => return error.SystemResources,
-                    .EPROTONOSUPPORT => return error.ProtocolUnsupportedByAddressFamily,
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
+            .EMFILE => return syscall.fail(error.ProcessFdQuotaExceeded),
+            .ENOBUFS => return syscall.fail(error.SystemResources),
+            .EPROTONOSUPPORT => return syscall.fail(error.ProtocolUnsupportedByAddressFamily),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -12702,7 +12661,7 @@ fn netAcceptWindows(userdata: ?*anyopaque, listen_handle: net.Socket.Handle) net
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     var storage: WsaAddress = undefined;
     var addr_len: i32 = @sizeOf(WsaAddress);
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.accept(listen_handle, &storage.any, &addr_len);
         if (rc != ws2_32.INVALID_SOCKET) {
@@ -12723,20 +12682,15 @@ fn netAcceptWindows(userdata: ?*anyopaque, listen_handle: net.Socket.Handle) net
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ECONNRESET => return error.ConnectionAborted,
-                    .EFAULT => |err| return wsaErrorBug(err),
-                    .ENOTSOCK => |err| return wsaErrorBug(err),
-                    .EINVAL => |err| return wsaErrorBug(err),
-                    .EMFILE => return error.ProcessFdQuotaExceeded,
-                    .ENETDOWN => return error.NetworkDown,
-                    .ENOBUFS => return error.SystemResources,
-                    .EOPNOTSUPP => |err| return wsaErrorBug(err),
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .ECONNRESET => return syscall.fail(error.ConnectionAborted),
+            .EMFILE => return syscall.fail(error.ProcessFdQuotaExceeded),
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .ENOBUFS => return syscall.fail(error.SystemResources),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -12859,7 +12813,7 @@ fn netReadWindows(userdata: ?*anyopaque, handle: net.Socket.Handle, data: [][]u8
         break :b bufs;
     };
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         var flags: u32 = 0;
         var n: u32 = undefined;
@@ -12885,15 +12839,9 @@ fn netReadWindows(userdata: ?*anyopaque, handle: net.Socket.Handle, data: [][]u8
             .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
             .ENOTCONN => return syscall.fail(error.SocketUnconnected),
             .EFAULT => unreachable, // a pointer is not completely contained in user address space.
-
-            else => |err| {
-                syscall.finish();
-                switch (err) {
-                    .EINVAL => return wsaErrorBug(err),
-                    .EMSGSIZE => return wsaErrorBug(err),
-                    else => return windows.unexpectedWSAError(err),
-                }
-            },
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EMSGSIZE => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -12967,7 +12915,7 @@ fn netSendWindowsOne(
     var n: u32 = undefined;
     var address: WsaAddress = undefined;
     const address_size = addressToWsa(message.address, &address);
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.WSASendTo(
             handle,
@@ -13001,15 +12949,9 @@ fn netSendWindowsOne(
             .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
             .ENOTCONN => return syscall.fail(error.SocketUnconnected),
             .EFAULT => unreachable, // a pointer is not completely contained in user address space.
-
-            else => |err| {
-                syscall.finish();
-                switch (err) {
-                    .EINVAL => return wsaErrorBug(err),
-                    .EMSGSIZE => return wsaErrorBug(err),
-                    else => return windows.unexpectedWSAError(err),
-                }
-            },
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EMSGSIZE => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -13045,7 +12987,7 @@ fn netSendOne(
         .controllen = @intCast(message.control.len),
         .flags = 0,
     };
-    var syscall: Syscall = try .start();
+    var syscall: if (is_windows) AlertableSyscall else Syscall = try .start();
     while (true) {
         const rc = posix.system.sendmsg(handle, &msg, flags);
         if (is_windows) {
@@ -13065,28 +13007,23 @@ fn netSendOne(
                     syscall = try .start();
                     continue;
                 },
-                else => |e| {
-                    syscall.finish();
-                    switch (e) {
-                        .EACCES => return error.AccessDenied,
-                        .EADDRNOTAVAIL => return error.AddressUnavailable,
-                        .ECONNRESET => return error.ConnectionResetByPeer,
-                        .EMSGSIZE => return error.MessageOversize,
-                        .ENOBUFS => return error.SystemResources,
-                        .ENOTSOCK => return error.FileDescriptorNotASocket,
-                        .EAFNOSUPPORT => return error.AddressFamilyUnsupported,
-                        .EDESTADDRREQ => unreachable, // A destination address is required.
-                        .EFAULT => unreachable, // The lpBuffers, lpTo, lpOverlapped, lpNumberOfBytesSent, or lpCompletionRoutine parameters are not part of the user address space, or the lpTo parameter is too small.
-                        .EHOSTUNREACH => return error.NetworkUnreachable,
-                        .EINVAL => unreachable,
-                        .ENETDOWN => return error.NetworkDown,
-                        .ENETRESET => return error.ConnectionResetByPeer,
-                        .ENETUNREACH => return error.NetworkUnreachable,
-                        .ENOTCONN => return error.SocketUnconnected,
-                        .ESHUTDOWN => |err| return wsaErrorBug(err),
-                        else => |err| return windows.unexpectedWSAError(err),
-                    }
-                },
+                .EACCES => return syscall.fail(error.AccessDenied),
+                .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
+                .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+                .EMSGSIZE => return syscall.fail(error.MessageOversize),
+                .ENOBUFS => return syscall.fail(error.SystemResources),
+                .ENOTSOCK => return syscall.fail(error.FileDescriptorNotASocket),
+                .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
+                .EHOSTUNREACH => return syscall.fail(error.NetworkUnreachable),
+                .ENETDOWN => return syscall.fail(error.NetworkDown),
+                .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
+                .ENETUNREACH => return syscall.fail(error.NetworkUnreachable),
+                .ENOTCONN => return syscall.fail(error.SocketUnconnected),
+                .EDESTADDRREQ => unreachable, // A destination address is required.
+                .EFAULT => unreachable, // The lpBuffers, lpTo, lpOverlapped, lpNumberOfBytesSent, or lpCompletionRoutine parameters are not part of the user address space, or the lpTo parameter is too small.
+                .EINVAL => unreachable,
+                .ESHUTDOWN => |err| return syscall.wsaErrorBug(err),
+                else => |err| return syscall.unexpectedWsaError(err),
             }
         }
         switch (posix.errno(rc)) {
@@ -13099,31 +13036,26 @@ fn netSendOne(
                 try syscall.checkCancel();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ACCES => return error.AccessDenied,
-                    .ALREADY => return error.FastOpenAlreadyInProgress,
-                    .BADF => |err| return errnoBug(err), // File descriptor used after closed.
-                    .CONNRESET => return error.ConnectionResetByPeer,
-                    .DESTADDRREQ => |err| return errnoBug(err),
-                    .FAULT => |err| return errnoBug(err),
-                    .INVAL => |err| return errnoBug(err),
-                    .ISCONN => |err| return errnoBug(err),
-                    .MSGSIZE => return error.MessageOversize,
-                    .NOBUFS => return error.SystemResources,
-                    .NOMEM => return error.SystemResources,
-                    .NOTSOCK => |err| return errnoBug(err),
-                    .OPNOTSUPP => |err| return errnoBug(err),
-                    .PIPE => return error.SocketUnconnected,
-                    .AFNOSUPPORT => return error.AddressFamilyUnsupported,
-                    .HOSTUNREACH => return error.HostUnreachable,
-                    .NETUNREACH => return error.NetworkUnreachable,
-                    .NOTCONN => return error.SocketUnconnected,
-                    .NETDOWN => return error.NetworkDown,
-                    else => |err| return posix.unexpectedErrno(err),
-                }
-            },
+            .ACCES => return syscall.fail(error.AccessDenied),
+            .ALREADY => return syscall.fail(error.FastOpenAlreadyInProgress),
+            .CONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .MSGSIZE => return syscall.fail(error.MessageOversize),
+            .NOBUFS => return syscall.fail(error.SystemResources),
+            .NOMEM => return syscall.fail(error.SystemResources),
+            .PIPE => return syscall.fail(error.SocketUnconnected),
+            .AFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
+            .HOSTUNREACH => return syscall.fail(error.HostUnreachable),
+            .NETUNREACH => return syscall.fail(error.NetworkUnreachable),
+            .NOTCONN => return syscall.fail(error.SocketUnconnected),
+            .NETDOWN => return syscall.fail(error.NetworkDown),
+            .BADF => |err| return syscall.errnoBug(err), // File descriptor used after closed.
+            .DESTADDRREQ => |err| return syscall.errnoBug(err),
+            .FAULT => |err| return syscall.errnoBug(err),
+            .INVAL => |err| return syscall.errnoBug(err),
+            .ISCONN => |err| return syscall.errnoBug(err),
+            .NOTSOCK => |err| return syscall.errnoBug(err),
+            .OPNOTSUPP => |err| return syscall.errnoBug(err),
+            else => |err| return syscall.unexpectedErrno(err),
         }
     }
 }
@@ -13308,9 +13240,9 @@ fn netReceiveWindowsOne(
         .len = std.math.cast(u32, data_buffer.len) orelse return error.MessageOversize,
     };
     var n: u32 = undefined;
-    var syscall: Syscall = try .start();
     var from_storage: WsaAddress = undefined;
     var from_storage_len: i32 = @sizeOf(WsaAddress);
+    var syscall: AlertableSyscall = try .start();
 
     while (true) {
         const rc = ws2_32.WSARecvFrom(
@@ -13351,21 +13283,14 @@ fn netReceiveWindowsOne(
                 syscall = try .start();
                 continue;
             },
-
             .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
             .ENETDOWN => return syscall.fail(error.NetworkDown),
             .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
             .ENOTCONN => return syscall.fail(error.SocketUnconnected),
             .EFAULT => unreachable, // a pointer is not completely contained in user address space.
-
-            else => |err| {
-                syscall.finish();
-                switch (err) {
-                    .EINVAL => return wsaErrorBug(err),
-                    .EMSGSIZE => return wsaErrorBug(err),
-                    else => return windows.unexpectedWSAError(err),
-                }
-            },
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EMSGSIZE => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -13505,7 +13430,7 @@ fn netWriteWindows(
         },
     };
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         var n: u32 = undefined;
         const rc = ws2_32.WSASend(handle, &iovecs, len, &n, 0, null, null);
@@ -13533,16 +13458,10 @@ fn netWriteWindows(
             .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
             .ENOBUFS => return syscall.fail(error.SystemResources),
             .ENOTCONN => return syscall.fail(error.SocketUnconnected),
-
-            else => |err| {
-                syscall.finish();
-                switch (err) {
-                    .ENOTSOCK => return wsaErrorBug(err),
-                    .EOPNOTSUPP => return wsaErrorBug(err),
-                    .ESHUTDOWN => return wsaErrorBug(err),
-                    else => return windows.unexpectedWSAError(err),
-                }
-            },
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
+            .ESHUTDOWN => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -13651,7 +13570,7 @@ fn netShutdownWindows(userdata: ?*anyopaque, handle: net.Socket.Handle, how: net
         .both => ws2_32.SD_BOTH,
     };
 
-    var syscall: Syscall = try .start();
+    var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.shutdown(handle, wsa_how);
         if (rc != ws2_32.SOCKET_ERROR) {
@@ -13669,17 +13588,12 @@ fn netShutdownWindows(userdata: ?*anyopaque, handle: net.Socket.Handle, how: net
                 syscall = try .start();
                 continue;
             },
-            else => |e| {
-                syscall.finish();
-                switch (e) {
-                    .ECONNABORTED => return error.ConnectionAborted,
-                    .ECONNRESET => return error.ConnectionResetByPeer,
-                    .ENETDOWN => return error.NetworkDown,
-                    .ENOTCONN => return error.SocketUnconnected,
-                    .EINVAL, .ENOTSOCK => |err| return wsaErrorBug(err),
-                    else => |err| return windows.unexpectedWSAError(err),
-                }
-            },
+            .ECONNABORTED => return syscall.fail(error.ConnectionAborted),
+            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
+            .ENETDOWN => return syscall.fail(error.NetworkDown),
+            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
+            .EINVAL, .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            else => |err| return syscall.unexpectedWsaError(err),
         }
     }
 }
@@ -13866,14 +13780,14 @@ fn netLookupFallible(
                     continue;
                 },
                 .TRY_AGAIN => return error.NameServerFailure,
-                .EINVAL => |err| return wsaErrorBug(err),
                 .NO_RECOVERY => return error.NameServerFailure,
                 .EAFNOSUPPORT => return error.AddressFamilyUnsupported,
                 .NOT_ENOUGH_MEMORY => return error.SystemResources,
                 .HOST_NOT_FOUND => return error.UnknownHostName,
                 .TYPE_NOT_FOUND => return error.ProtocolUnsupportedByAddressFamily,
                 .ESOCKTNOSUPPORT => return error.ProtocolUnsupportedBySystem,
-                else => |err| return windows.unexpectedWSAError(err),
+                .EINVAL => |err| return windows.wsaErrorBug(err),
+                else => |err| return windows.unexpectedWsaError(err),
             }
         }
         defer ws2_32.FreeAddrInfoExW(res);
@@ -14359,11 +14273,6 @@ fn address6ToPosix(a: *const net.Ip6Address) posix.sockaddr.in6 {
 }
 
 pub fn errnoBug(err: posix.E) Io.UnexpectedError {
-    if (is_debug) std.debug.panic("programmer bug caused syscall error: {t}", .{err});
-    return error.Unexpected;
-}
-
-fn wsaErrorBug(err: ws2_32.WinsockError) Io.UnexpectedError {
     if (is_debug) std.debug.panic("programmer bug caused syscall error: {t}", .{err});
     return error.Unexpected;
 }
@@ -15003,7 +14912,7 @@ fn initializeWsa(t: *Threaded) error{ NetworkDown, Canceled }!void {
                         .VERNOTSUPPORTED => error.VersionUnsupported,
                         .EINPROGRESS => error.BlockingOperationInProgress,
                         .EPROCLIM => error.ProcessFdQuotaExceeded,
-                        else => |err| windows.unexpectedWSAError(err),
+                        else => |err| windows.unexpectedWsaError(err),
                     };
                 },
             }

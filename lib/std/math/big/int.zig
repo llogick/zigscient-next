@@ -924,7 +924,12 @@ pub const Mutable = struct {
     /// Asserts the result fits in `r`. Upper bound on the number of limbs needed by
     /// r is `calcTwosCompLimbCount(bit_count)`.
     pub fn bitReverse(r: *Mutable, a: Const, signedness: Signedness, bit_count: usize) void {
-        if (bit_count == 0) return;
+        if (bit_count == 0) {
+            r.limbs[0] = 0;
+            r.len = 1;
+            r.positive = true;
+            return;
+        }
 
         r.copy(a);
 
@@ -986,7 +991,12 @@ pub const Mutable = struct {
     /// Asserts the result fits in `r`. Upper bound on the number of limbs needed by
     /// r is `calcTwosCompLimbCount(8*byte_count)`.
     pub fn byteSwap(r: *Mutable, a: Const, signedness: Signedness, byte_count: usize) void {
-        if (byte_count == 0) return;
+        if (byte_count == 0) {
+            r.limbs[0] = 0;
+            r.len = 1;
+            r.positive = true;
+            return;
+        }
 
         r.copy(a);
         const limbs_required = calcTwosCompLimbCount(8 * byte_count);

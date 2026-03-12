@@ -38,6 +38,10 @@ pub const Alignment = enum(math.Log2Int(usize)) {
         return @enumFromInt(@ctz(n));
     }
 
+    pub fn fromByteUnitsOptional(maybe_n: ?usize) ?Alignment {
+        return if (maybe_n) |n| .fromByteUnits(n) else null;
+    }
+
     pub inline fn of(comptime T: type) Alignment {
         return comptime fromByteUnits(@alignOf(T));
     }
@@ -2287,8 +2291,8 @@ pub fn byteSwapAllFieldsAligned(comptime S: type, comptime a: Alignment, ptr: *a
                 ptr.* = @bitCast(@byteSwap(@as(Int, @bitCast(ptr.*))));
             } else inline for (std.meta.fields(S)) |f| {
                 switch (@typeInfo(f.type)) {
-                    .@"struct" => byteSwapAllFieldsAligned(f.type, .fromByteUnits(f.alignment), &@field(ptr, f.name)),
-                    .@"union", .array => byteSwapAllFieldsAligned(f.type, .fromByteUnits(f.alignment), &@field(ptr, f.name)),
+                    .@"struct" => byteSwapAllFieldsAligned(f.type, .fromByteUnits(f.alignment orelse @alignOf(f.type)), &@field(ptr, f.name)),
+                    .@"union", .array => byteSwapAllFieldsAligned(f.type, .fromByteUnits(f.alignment orelse @alignOf(f.type)), &@field(ptr, f.name)),
                     .@"enum" => {
                         @field(ptr, f.name) = @enumFromInt(@byteSwap(@intFromEnum(@field(ptr, f.name))));
                     },
@@ -4330,7 +4334,7 @@ pub fn alignPointerOffset(ptr: anytype, align_to: usize) ?usize {
         @compileError("expected many item pointer, got " ++ @typeName(T));
 
     // Do nothing if the pointer is already well-aligned.
-    if (align_to <= info.pointer.alignment)
+    if (align_to <= info.pointer.alignment orelse @alignOf(info.pointer.child))
         return 0;
 
     // Calculate the aligned base address with an eye out for overflow.
@@ -4388,7 +4392,11 @@ fn CopyPtrAttrs(
         .@"const" = ptr.is_const,
         .@"volatile" = ptr.is_volatile,
         .@"allowzero" = ptr.is_allowzero,
-        .@"align" = ptr.alignment,
+        .@"align" = ptr.alignment orelse a: {
+            // If the new child is aligned differently than the old one, explicitly align the type.
+            const want = @alignOf(ptr.child);
+            break :a if (@alignOf(child) == want) null else want;
+        },
         .@"addrspace" = ptr.address_space,
     }, child, null);
 }

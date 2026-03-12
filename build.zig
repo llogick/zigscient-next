@@ -524,6 +524,7 @@ pub fn build(b: *std.Build) !void {
         .desc = "Run the behavior tests",
         .optimize_modes = optimization_modes,
         .include_paths = &.{},
+        .sanitize_thread = sanitize_thread,
         .skip_single_threaded = skip_single_threaded,
         .skip_non_native = skip_non_native,
         .test_only = test_only,
@@ -549,6 +550,7 @@ pub fn build(b: *std.Build) !void {
         .desc = "Run the compiler_rt tests",
         .optimize_modes = optimization_modes,
         .include_paths = &.{},
+        .sanitize_thread = sanitize_thread,
         .skip_single_threaded = true,
         .skip_non_native = skip_non_native,
         .test_only = test_only,
@@ -575,6 +577,7 @@ pub fn build(b: *std.Build) !void {
         .desc = "Run the zig libc implementation unit tests",
         .optimize_modes = optimization_modes,
         .include_paths = &.{},
+        .sanitize_thread = sanitize_thread,
         .skip_single_threaded = true,
         .skip_non_native = skip_non_native,
         .test_only = test_only,
@@ -601,6 +604,7 @@ pub fn build(b: *std.Build) !void {
         .desc = "Run the standard library tests",
         .optimize_modes = optimization_modes,
         .include_paths = &.{},
+        .sanitize_thread = sanitize_thread,
         .skip_single_threaded = skip_single_threaded,
         .skip_non_native = skip_non_native,
         .test_only = test_only,
@@ -614,7 +618,7 @@ pub fn build(b: *std.Build) !void {
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
         .skip_libc = skip_libc,
-        .max_rss = 8_500_000_000,
+        .max_rss = 9_300_000_000,
     }));
 
     const unit_tests_step = b.step("test-unit", "Run the compiler source unit tests");
@@ -624,13 +628,14 @@ pub fn build(b: *std.Build) !void {
         .root_module = addCompilerMod(b, .{
             .optimize = optimize,
             .target = target,
+            .sanitize_thread = sanitize_thread,
             .single_threaded = single_threaded,
         }),
         .filters = test_filters,
         .use_llvm = use_llvm,
         .use_lld = use_llvm,
         .zig_lib_dir = b.path("lib"),
-        .max_rss = 2_500_000_000,
+        .max_rss = 2_700_000_000,
     });
     if (link_libc) {
         unit_tests.root_module.link_libc = true;
@@ -657,7 +662,7 @@ pub fn build(b: *std.Build) !void {
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
         .skip_release = skip_release,
-        .max_rss = 3_000_000_000,
+        .max_rss = 3_300_000_000,
     }));
     test_step.dependOn(tests.addLinkTests(b, enable_macos_sdk, enable_ios_sdk, enable_symlinks_windows));
     test_step.dependOn(tests.addStackTraceTests(b, test_filters, skip_non_native));
@@ -708,7 +713,7 @@ pub fn build(b: *std.Build) !void {
         .test_filters = test_filters,
         .test_target_filters = test_target_filters,
         .skip_wasm = skip_wasm,
-        .max_rss = 2_496_066_355,
+        .max_rss = 3_500_000_000,
     })) |test_libc_step| test_step.dependOn(test_libc_step);
 }
 
@@ -824,7 +829,7 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
 fn addCompilerStep(b: *std.Build, options: AddCompilerModOptions) *std.Build.Step.Compile {
     const exe = b.addExecutable(.{
         .name = "zigscient",
-        // .max_rss = 7_900_000_000,
+        // .max_rss = 8_700_000_000,
         .root_module = addCompilerMod(b, options),
     });
     exe.stack_size = stack_size;

@@ -350,9 +350,6 @@ test "comptime @bitCast packed struct to int and back" {
         iint_neg2: i3 = -2,
         float: f32 = 3.14,
         @"enum": enum(u2) { A, B = 1, C, D } = .B,
-        vectorb: @Vector(3, bool) = .{ true, false, true },
-        vectori: @Vector(2, u8) = .{ 127, 42 },
-        vectorf: @Vector(2, f16) = .{ 3.14, 2.71 },
     };
     const Int = @typeInfo(S).@"struct".backing_integer.?;
 
@@ -509,35 +506,6 @@ test "@bitCast of packed struct of bools all false" {
     p.b2 = false;
     p.b3 = false;
     try expect(@as(u8, @as(u4, @bitCast(p))) == 0);
-}
-
-test "@bitCast of packed struct containing pointer" {
-    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://discourse.llvm.org/t/rfc-remove-most-constant-expressions/63179
-
-    const S = struct {
-        const A = packed struct {
-            ptr: *const u32,
-        };
-
-        const B = packed struct {
-            ptr: *const i32,
-        };
-
-        fn doTheTest() !void {
-            const x: u32 = 123;
-            var a: A = undefined;
-            a = .{ .ptr = &x };
-            const b: B = @bitCast(a);
-            try expect(b.ptr.* == 123);
-        }
-    };
-
-    try S.doTheTest();
-    try comptime S.doTheTest();
 }
 
 test "@bitCast of extern struct containing pointer" {

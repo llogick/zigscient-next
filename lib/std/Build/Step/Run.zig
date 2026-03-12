@@ -213,13 +213,13 @@ pub fn create(owner: *std.Build, name: []const u8) *Run {
             .owner = owner,
             .makeFn = make,
         }),
-        .argv = .{},
+        .argv = .empty,
         .cwd = null,
         .environ_map = null,
         .disable_zig_progress = false,
         .stdio = .infer_from_args,
         .stdin = .none,
-        .file_inputs = .{},
+        .file_inputs = .empty,
         .rename_step_with_output_arg = true,
         .skip_foreign_checks = false,
         .failing_to_execute_foreign_is_an_error = true,
@@ -228,7 +228,7 @@ pub fn create(owner: *std.Build, name: []const u8) *Run {
         .captured_stderr = null,
         .dep_output_file = null,
         .has_side_effects = false,
-        .fuzz_tests = .{},
+        .fuzz_tests = .empty,
         .rebuilt_executable = null,
         .producer = null,
     };
@@ -642,7 +642,7 @@ pub fn addCheck(run: *Run, new_check: StdIo.Check) void {
 
     switch (run.stdio) {
         .infer_from_args => {
-            run.stdio = .{ .check = .{} };
+            run.stdio = .{ .check = .empty };
             run.stdio.check.append(b.allocator, new_check) catch @panic("OOM");
         },
         .check => |*checks| checks.append(b.allocator, new_check) catch @panic("OOM"),

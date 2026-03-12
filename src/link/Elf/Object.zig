@@ -775,7 +775,7 @@ pub fn checkDuplicates(self: *Object, dupes: anytype, elf_file: *Elf) error{OutO
 
         const gop = try dupes.getOrPut(self.symbols_resolver.items[i]);
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{};
+            gop.value_ptr.* = .empty;
         }
         try gop.value_ptr.append(elf_file.base.comp.gpa, self.index);
     }

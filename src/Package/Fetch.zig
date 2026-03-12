@@ -447,7 +447,7 @@ pub const JobQueue = struct {
 
         // intentionally omitting the pointless trailer
         //try archiver.finish();
-        compress.writer.flush() catch |err| switch (err) {
+        compress.finish() catch |err| switch (err) {
             error.WriteFailed => return file_writer.err.?,
         };
         try file_writer.flush();
@@ -602,7 +602,7 @@ pub fn run(f: *Fetch) RunError!void {
         } else |err| switch (err) {
             error.FileNotFound => {
                 log.debug("FileNotFound: {f}", .{package_root});
-                if (job_queue.read_only) return f.fail(
+                if (job_queue.read_only and f.lazy_status == .eager) return f.fail(
                     f.name_tok,
                     try eb.printString("package not found at '{f}'", .{package_root}),
                 );

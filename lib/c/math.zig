@@ -14,23 +14,24 @@ comptime {
         symbol(&isnanl, "isnanl");
         symbol(&isnanl, "__isnanl");
 
+        symbol(&math.floatTrueMin(f64), "__DENORM");
+        symbol(&math.inf(f64), "__INF");
         symbol(&math.nan(f64), "__QNAN");
         symbol(&math.snan(f64), "__SNAN");
-        symbol(&math.inf(f64), "__INF");
-        symbol(&math.floatTrueMin(f64), "__DENORM");
 
+        symbol(&math.floatTrueMin(f32), "__DENORMF");
+        symbol(&math.inf(f32), "__INFF");
         symbol(&math.nan(f32), "__QNANF");
         symbol(&math.snan(f32), "__SNANF");
-        symbol(&math.inf(f32), "__INFF");
-        symbol(&math.floatTrueMin(f32), "__DENORMF");
 
+        symbol(&math.floatTrueMin(c_longdouble), "__DENORML");
+        symbol(&math.inf(c_longdouble), "__INFL");
         symbol(&math.nan(c_longdouble), "__QNANL");
         symbol(&math.snan(c_longdouble), "__SNANL");
-        symbol(&math.inf(c_longdouble), "__INFL");
-        symbol(&math.floatTrueMin(c_longdouble), "__DENORML");
     }
 
     if (builtin.target.isMinGW() or builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
+        symbol(&coshf, "coshf");
         symbol(&hypotf, "hypotf");
         symbol(&hypotl, "hypotl");
         symbol(&nan, "nan");
@@ -40,25 +41,27 @@ comptime {
 
     if (builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
         symbol(&acos, "acos");
-        symbol(&atanf, "atanf");
+        symbol(&acosf, "acosf");
         symbol(&atan, "atan");
+        symbol(&atanf, "atanf");
         symbol(&atanl, "atanl");
         symbol(&cbrt, "cbrt");
         symbol(&cbrtf, "cbrtf");
+        symbol(&cosh, "cosh");
         symbol(&exp10, "exp10");
         symbol(&exp10f, "exp10f");
         symbol(&hypot, "hypot");
         symbol(&pow, "pow");
         symbol(&pow10, "pow10");
         symbol(&pow10f, "pow10f");
-        symbol(&acosf, "acosf");
     }
 
     if (builtin.target.isMuslLibC()) {
-        symbol(&copysignf, "copysignf");
         symbol(&copysign, "copysign");
+        symbol(&copysignf, "copysignf");
         symbol(&rint, "rint");
     }
+
     symbol(&copysignl, "copysignl");
 }
 
@@ -66,11 +69,15 @@ fn acos(x: f64) callconv(.c) f64 {
     return math.acos(x);
 }
 
-fn atanf(x: f32) callconv(.c) f32 {
-    return math.atan(x);
+fn acosf(x: f32) callconv(.c) f32 {
+    return std.math.acos(x);
 }
 
 fn atan(x: f64) callconv(.c) f64 {
+    return math.atan(x);
+}
+
+fn atanf(x: f32) callconv(.c) f32 {
     return math.atan(x);
 }
 
@@ -85,8 +92,52 @@ fn atanl(x: c_longdouble) callconv(.c) c_longdouble {
     };
 }
 
-fn acosf(x: f32) callconv(.c) f32 {
-    return std.math.acos(x);
+fn cbrt(x: f64) callconv(.c) f64 {
+    return math.cbrt(x);
+}
+
+fn cbrtf(x: f32) callconv(.c) f32 {
+    return math.cbrt(x);
+}
+
+fn copysign(x: f64, y: f64) callconv(.c) f64 {
+    return math.copysign(x, y);
+}
+
+fn copysignf(x: f32, y: f32) callconv(.c) f32 {
+    return math.copysign(x, y);
+}
+
+fn copysignl(x: c_longdouble, y: c_longdouble) callconv(.c) c_longdouble {
+    return math.copysign(x, y);
+}
+
+fn cosh(x: f64) callconv(.c) f64 {
+    return math.cosh(x);
+}
+
+fn coshf(x: f32) callconv(.c) f32 {
+    return math.cosh(x);
+}
+
+fn exp10(x: f64) callconv(.c) f64 {
+    return math.pow(f64, 10.0, x);
+}
+
+fn exp10f(x: f32) callconv(.c) f32 {
+    return math.pow(f32, 10.0, x);
+}
+
+fn hypot(x: f64, y: f64) callconv(.c) f64 {
+    return math.hypot(x, y);
+}
+
+fn hypotf(x: f32, y: f32) callconv(.c) f32 {
+    return math.hypot(x, y);
+}
+
+fn hypotl(x: c_longdouble, y: c_longdouble) callconv(.c) c_longdouble {
+    return math.hypot(x, y);
 }
 
 fn isnan(x: f64) callconv(.c) c_int {
@@ -111,46 +162,6 @@ fn nanf(_: [*:0]const c_char) callconv(.c) f32 {
 
 fn nanl(_: [*:0]const c_char) callconv(.c) c_longdouble {
     return math.nan(c_longdouble);
-}
-
-fn copysignf(x: f32, y: f32) callconv(.c) f32 {
-    return math.copysign(x, y);
-}
-
-fn copysign(x: f64, y: f64) callconv(.c) f64 {
-    return math.copysign(x, y);
-}
-
-fn copysignl(x: c_longdouble, y: c_longdouble) callconv(.c) c_longdouble {
-    return math.copysign(x, y);
-}
-
-fn cbrt(x: f64) callconv(.c) f64 {
-    return math.cbrt(x);
-}
-
-fn cbrtf(x: f32) callconv(.c) f32 {
-    return math.cbrt(x);
-}
-
-fn exp10(x: f64) callconv(.c) f64 {
-    return math.pow(f64, 10.0, x);
-}
-
-fn exp10f(x: f32) callconv(.c) f32 {
-    return math.pow(f32, 10.0, x);
-}
-
-fn hypot(x: f64, y: f64) callconv(.c) f64 {
-    return math.hypot(x, y);
-}
-
-fn hypotf(x: f32, y: f32) callconv(.c) f32 {
-    return math.hypot(x, y);
-}
-
-fn hypotl(x: c_longdouble, y: c_longdouble) callconv(.c) c_longdouble {
-    return math.hypot(x, y);
 }
 
 fn pow(x: f64, y: f64) callconv(.c) f64 {

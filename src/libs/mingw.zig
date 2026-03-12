@@ -347,7 +347,7 @@ pub fn buildImportLib(comp: *Compilation, lib_name: []const u8) !void {
             if (msg.kind == .@"fatal error" or msg.kind == .@"error") {
                 msg.write(stderr.terminal(), true) catch |err| switch (err) {
                     error.WriteFailed => return stderr.file_writer.err.?,
-                    error.Unexpected => |e| return e,
+                    error.Canceled, error.Unexpected => |e| return e,
                 };
                 return error.AroPreprocessorFailed;
             }
@@ -977,7 +977,6 @@ const mingw32_x86_src = [_][]const u8{
 
 const mingw32_x86_32_src = [_][]const u8{
     // ucrtbase
-    "math" ++ path.sep_str ++ "coshf.c",
     "math" ++ path.sep_str ++ "modff.c",
     "math" ++ path.sep_str ++ "powf.c",
     "math" ++ path.sep_str ++ "sinhf.c",
