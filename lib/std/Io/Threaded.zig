@@ -11846,7 +11846,10 @@ fn netListenUnixWindows(
     var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.bind(socket_handle, &storage.any, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) break;
+        if (rc != ws2_32.SOCKET_ERROR) {
+            syscall.finish();
+            break;
+        }
         switch (ws2_32.WSAGetLastError()) {
             .NOTINITIALISED => {
                 syscall.finish();
@@ -11869,15 +11872,18 @@ fn netListenUnixWindows(
         }
     }
 
+    syscall = try .start();
     while (true) {
-        try syscall.checkCancel();
         const rc = ws2_32.listen(socket_handle, options.kernel_backlog);
         if (rc != ws2_32.SOCKET_ERROR) {
             syscall.finish();
             return socket_handle;
         }
         switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => continue,
+            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
+                try syscall.checkCancel();
+                continue;
+            },
             .NOTINITIALISED => {
                 syscall.finish();
                 try initializeWsa(t);
@@ -12160,9 +12166,12 @@ fn setSocketOption(fd: posix.fd_t, level: i32, opt_name: u32, option: u32) !void
 fn setSocketOptionWsa(t: *Threaded, socket: Io.net.Socket.Handle, level: i32, opt_name: u32, option: u32) !void {
     const o: []const u8 = @ptrCast(&option);
     var syscall: AlertableSyscall = try .start();
-    const rc = ws2_32.setsockopt(socket, level, @bitCast(opt_name), o.ptr, @intCast(o.len));
     while (true) {
-        if (rc != ws2_32.SOCKET_ERROR) return syscall.finish();
+        const rc = ws2_32.setsockopt(socket, level, @bitCast(opt_name), o.ptr, @intCast(o.len));
+        if (rc != ws2_32.SOCKET_ERROR) {
+            syscall.finish();
+            return;
+        }
         switch (ws2_32.WSAGetLastError()) {
             .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
                 try syscall.checkCancel();
@@ -12175,7 +12184,9 @@ fn setSocketOptionWsa(t: *Threaded, socket: Io.net.Socket.Handle, level: i32, op
                 continue;
             },
             .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .EFAULT, .ENOTSOCK, .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
             else => |err| return syscall.unexpectedWsaError(err),
         }
     }
@@ -12313,7 +12324,10 @@ fn netConnectUnixWindows(
     var syscall: AlertableSyscall = try .start();
     while (true) {
         const rc = ws2_32.connect(socket_handle, &storage.any, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) break;
+        if (rc != ws2_32.SOCKET_ERROR) {
+            syscall.finish();
+            break;
+        }
         switch (ws2_32.WSAGetLastError()) {
             .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
                 try syscall.checkCancel();
@@ -12326,14 +12340,14 @@ fn netConnectUnixWindows(
                 continue;
             },
             .ECONNREFUSED => return syscall.fail(error.FileNotFound),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .EISCONN => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
             .EWOULDBLOCK => return syscall.fail(error.WouldBlock),
             .EACCES => return syscall.fail(error.AccessDenied),
             .ENOBUFS => return syscall.fail(error.SystemResources),
             .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
+            .EFAULT => |err| return syscall.wsaErrorBug(err),
+            .EINVAL => |err| return syscall.wsaErrorBug(err),
+            .EISCONN => |err| return syscall.wsaErrorBug(err),
+            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
             else => |err| return syscall.unexpectedWsaError(err),
         }
     }
@@ -13439,7 +13453,6 @@ fn netWriteWindows(
             return n;
         }
         switch (ws2_32.WSAGetLastError()) {
-            .IO_PENDING => unreachable, // not overlapped
             .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
                 try syscall.checkCancel();
                 continue;
@@ -13461,6 +13474,7 @@ fn netWriteWindows(
             .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
             .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
             .ESHUTDOWN => |err| return syscall.wsaErrorBug(err),
+            .IO_PENDING => |err| return syscall.wsaErrorBug(err),
             else => |err| return syscall.unexpectedWsaError(err),
         }
     }
@@ -15321,7 +15335,7 @@ fn childKillWindows(t: *Threaded, child: *process.Child, exit_code: windows.UINT
     const handle = child.id.?;
     _ = windows.ntdll.RtlReportSilentProcessExit(handle, @enumFromInt(exit_code));
     switch (windows.ntdll.NtTerminateProcess(handle, @enumFromInt(exit_code))) {
-        .SUCCESS => {
+        .SUCCESS, .PROCESS_IS_TERMINATING => {
             const infinite_timeout: windows.LARGE_INTEGER = std.math.minInt(windows.LARGE_INTEGER);
             _ = windows.ntdll.NtWaitForSingleObject(handle, windows.FALSE, &infinite_timeout);
             childCleanupWindows(child);
