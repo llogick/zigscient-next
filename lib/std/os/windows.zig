@@ -4408,13 +4408,14 @@ pub const PEB = extern struct {
     // note: there is padding here on 64 bit
     TlsBitmap: *RTL_BITMAP,
     TlsBitmapBits: [2]ULONG,
+    /// Our base address of the memory region shared with the CSR server.
     ReadOnlySharedMemoryBase: PVOID,
 
     // Versions: 1703+
     SharedData: PVOID,
 
     // Versions: all
-    ReadOnlyStaticServerData: *PVOID,
+    ReadOnlyStaticServerData: *UnknownStaticServerDataIndirection,
     AnsiCodePageData: PVOID,
     OemCodePageData: PVOID,
     UnicodeCaseTableData: PVOID,
@@ -4501,6 +4502,7 @@ pub const PEB = extern struct {
     TracingFlags: ULONG,
 
     // Fields appended in 6.2 (Windows 8):
+    /// Base address in the CSRSS address space of the memory region shared with the CSR server.
     CsrServerReadOnlySharedMemoryBase: ULONGLONG,
 
     // Fields appended in 1511:
@@ -4511,6 +4513,14 @@ pub const PEB = extern struct {
     // Fields appended in 1709:
     TelemetryCoverageHeader: PVOID,
     CloudFileFlags: ULONG,
+
+    /// Details of this structure are unknown, but the existence of the field at offset 8 is known
+    /// from experimentation and from reverse-engineering kernelbase.dll.
+    const UnknownStaticServerDataIndirection = extern struct {
+        unknown: u64,
+        /// In the CSRSS address space.
+        base_static_server_data_addr: u64,
+    };
 };
 
 /// The `PEB_LDR_DATA` structure is the main record of what modules are loaded in a process.
@@ -5138,4 +5148,43 @@ pub fn wtf8ToWtf16Le(wtf16le: []u16, wtf8: []const u8) error{ BadPathName, NameT
     return std.unicode.wtf8ToWtf16Le(wtf16le, wtf8) catch |err| switch (err) {
         error.InvalidWtf8 => return error.BadPathName,
     };
+}
+
+/// Returns the path to the system directory, typically "C:\\WINDOWS\\System32".
+///
+/// Equivalent to `GetSystemDirectoryW` in kernel32.
+pub fn getSystemDirectoryWtf16Le() [:0]const u16 {
+    const ssd: *const BASE_STATIC_SERVER_DATA = @ptrCast(@alignCast(relocateCsrssAddress(
+        peb().ReadOnlyStaticServerData.base_static_server_data_addr,
+    )));
+    return ssd.windows_system_directory.relocate().sliceZ();
+}
+// https://github.com/reactos/reactos/blob/4b75ec5508d47b726d1210e24f5a849dae4e3bda/sdk/include/reactos/subsys/win/base.h#L119
+const BASE_STATIC_SERVER_DATA = extern struct {
+    windows_directory: ForeignString,
+    windows_system_directory: ForeignString,
+    named_object_directory: ForeignString,
+    /// This matches the 64-bit version of `UNICODE_STRING`---even on 32-bit targets, this string is
+    /// from 64-bit code (since it comes from CSRSS which is running outside of WOW64).
+    const ForeignString = extern struct {
+        length: u16,
+        maximum_length: u16,
+        /// Address in the CSRSS address space. To convert this to a valid pointer in *our* address
+        /// space, see `relocateCsrssAddress` (or the `ForeignString.relocate` wrapper function).
+        buffer_address: u64,
+        fn relocate(str: ForeignString) UNICODE_STRING {
+            return .{
+                .Length = str.length,
+                .MaximumLength = str.maximum_length,
+                .Buffer = @ptrCast(@alignCast(@constCast(relocateCsrssAddress(str.buffer_address)))),
+            };
+        }
+    };
+};
+/// Takes an address in the CSRSS address space's mapped view of the shared memory region, and
+/// returns the corresponding address in *our* mapped view of the shared memory region.
+fn relocateCsrssAddress(addr: u64) *const anyopaque {
+    const base: [*]const u8 = @ptrCast(peb().ReadOnlySharedMemoryBase);
+    const offset: usize = @intCast(addr - peb().CsrServerReadOnlySharedMemoryBase);
+    return base + offset;
 }

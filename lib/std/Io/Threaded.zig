@@ -16602,42 +16602,20 @@ const WindowsCommandLineCache = struct {
         return self.script_cmd_line.?;
     }
 
-    fn cmdExePath(self: *WindowsCommandLineCache) ![:0]u16 {
+    fn cmdExePath(self: *WindowsCommandLineCache) Allocator.Error![:0]u16 {
         if (self.cmd_exe_path == null) {
-            self.cmd_exe_path = try windowsCmdExePath(self.allocator);
+            // Remove trailing slash from system directory path; we'll re-add it below
+            const system_dir = std.mem.trimEnd(u16, windows.getSystemDirectoryWtf16Le(), &.{ '/', '\\' });
+            const suffix = std.unicode.utf8ToUtf16LeStringLiteral("\\cmd.exe");
+            const buf = try self.allocator.allocSentinel(u16, system_dir.len + suffix.len, 0);
+            errdefer comptime unreachable;
+            @memcpy(buf[0..system_dir.len], system_dir);
+            @memcpy(buf[system_dir.len..], suffix);
+            self.cmd_exe_path = buf;
         }
         return self.cmd_exe_path.?;
     }
 };
-
-/// Returns the absolute path of `cmd.exe` within the Windows system directory.
-/// The caller owns the returned slice.
-fn windowsCmdExePath(allocator: Allocator) error{ OutOfMemory, Unexpected }![:0]u16 {
-    var buf = try std.ArrayList(u16).initCapacity(allocator, 128);
-    errdefer buf.deinit(allocator);
-    while (true) {
-        const unused_slice = buf.unusedCapacitySlice();
-        // TODO: Get the system directory from PEB.ReadOnlyStaticServerData
-        const len = windows.kernel32.GetSystemDirectoryW(@ptrCast(unused_slice), @intCast(unused_slice.len));
-        if (len == 0) {
-            switch (windows.GetLastError()) {
-                else => |err| return windows.unexpectedError(err),
-            }
-        }
-        if (len > unused_slice.len) {
-            try buf.ensureUnusedCapacity(allocator, len);
-        } else {
-            buf.items.len = len;
-            break;
-        }
-    }
-    switch (buf.items[buf.items.len - 1]) {
-        '/', '\\' => {},
-        else => try buf.append(allocator, Dir.path.sep),
-    }
-    try buf.appendSlice(allocator, std.unicode.utf8ToUtf16LeStringLiteral("cmd.exe"));
-    return try buf.toOwnedSliceSentinel(allocator, 0);
-}
 
 const ArgvToScriptCommandLineError = error{
     OutOfMemory,
@@ -16659,8 +16637,8 @@ const ArgvToScriptCommandLineError = error{
 ///
 /// The return of this function will look like
 /// `cmd.exe /d /e:ON /v:OFF /c "<escaped command line>"`
-/// and should be used as the `lpCommandLine` of `CreateProcessW`, while the
-/// return of `windowsCmdExePath` should be used as `lpApplicationName`.
+/// and should be used as the `lpCommandLine` of `CreateProcessW`, while the return of
+/// `WindowsCommandLineCache.cmdExePath` should be used as `lpApplicationName`.
 ///
 /// Should only be used when spawning `.bat`/`.cmd` scripts, see `argvToCommandLineWindows` otherwise.
 /// The `.bat`/`.cmd` file must be known to both have the `.bat`/`.cmd` extension and exist on the filesystem.
