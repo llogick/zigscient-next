@@ -3211,21 +3211,9 @@ inline fn MAKELANGID(p: c_ushort, s: c_ushort) LANGID {
 /// Call this when you made a windows DLL call or something that does SetLastError
 /// and you get an unexpected error.
 pub fn unexpectedError(err: Win32Error) UnexpectedError {
+    @branchHint(.cold);
     if (std.posix.unexpected_error_tracing) {
-        // 614 is the length of the longest windows error description
-        var buf_wstr: [614:0]WCHAR = undefined;
-        const len = kernel32.FormatMessageW(
-            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            null,
-            err,
-            MAKELANGID(LANG.NEUTRAL, SUBLANG.DEFAULT),
-            &buf_wstr,
-            buf_wstr.len,
-            null,
-        );
-        std.debug.print("error.Unexpected: GetLastError({d}): {f}\n", .{
-            err, std.unicode.fmtUtf16Le(buf_wstr[0..len]),
-        });
+        std.debug.print("error.Unexpected: GetLastError({d}): {t}\n", .{ err, err });
         std.debug.dumpCurrentStackTrace(.{ .first_address = @returnAddress() });
     }
     return error.Unexpected;
