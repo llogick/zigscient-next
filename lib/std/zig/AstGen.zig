@@ -7693,7 +7693,7 @@ fn switchExpr(
                 payload_sub_scope = switch_scope;
             } else {
                 const capture_name = try astgen.identAsString(ident);
-                try astgen.detectLocalShadowing(&scratch_scope.base, capture_name, ident, ident_slice, .capture);
+                try astgen.detectLocalShadowing(switch_scope, capture_name, ident, ident_slice, .capture);
                 payload_capture_scope = .{
                     .parent = switch_scope,
                     .gen_zir = &scratch_scope,
