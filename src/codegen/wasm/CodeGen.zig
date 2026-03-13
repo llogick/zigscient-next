@@ -498,6 +498,10 @@ fn addAtomicTag(cg: *CodeGen, tag: std.wasm.AtomicsOpcode) error{OutOfMemory}!vo
     try cg.addInst(.{ .tag = .atomics_prefix, .data = .{ .payload = extra_index } });
 }
 
+fn addCallIntrinsic(cg: *CodeGen, intrinsic: Mir.Intrinsic) error{OutOfMemory}!void {
+    try cg.addInst(.{ .tag = .call_intrinsic, .data = .{ .intrinsic = intrinsic } });
+}
+
 /// Appends entries to `mir_extra` based on the type of `extra`.
 /// Returns the index into `mir_extra`
 fn addExtra(cg: *CodeGen, extra: anytype) error{OutOfMemory}!u32 {
@@ -1001,6 +1005,24 @@ fn allocStack(cg: *CodeGen, ty: Type) !WValue {
         });
     };
     const abi_align = ty.abiAlignment(zcu);
+
+    cg.stack_alignment = cg.stack_alignment.max(abi_align);
+
+    const offset: u32 = @intCast(abi_align.forward(cg.stack_size));
+    defer cg.stack_size = offset + abi_size;
+
+    return .{ .stack_offset = .{ .value = offset, .references = 1 } };
+}
+
+fn allocInt(cg: *CodeGen, int_ty: IntType) !WValue {
+    if (cg.initial_stack_value == .none) {
+        try cg.initializeStack();
+    }
+
+    const abi_size = std.math.cast(u32, std.zig.target.intByteSize(cg.target, int_ty.bits)) orelse {
+        return cg.fail("Integer ABI size exceeds max stack size", .{});
+    };
+    const abi_align: Alignment = .fromByteUnits(std.zig.target.intAlignment(cg.target, int_ty.bits));
 
     cg.stack_alignment = cg.stack_alignment.max(abi_align);
 
@@ -2393,7 +2415,18 @@ fn intAdd(cg: *CodeGen, ty: IntType, lhs: WValue, rhs: WValue) InnerError!WValue
             try cg.store(result, tmp_op, Type.u64, 8);
             return result;
         },
-        else => return cg.fail("TODO: Support intAdd for integer bitsize: {d}", .{ty.bits}),
+        else => {
+            const result = try cg.allocInt(ty);
+
+            try cg.lowerToStack(result);
+            try cg.lowerToStack(lhs);
+            try cg.lowerToStack(rhs);
+            try cg.addImm32(@intFromBool(ty.is_signed));
+            try cg.addImm32(ty.bits);
+            try cg.addCallIntrinsic(.__addo_limb64);
+            try cg.addTag(.drop);
+            return result;
+        },
     }
 }
 
@@ -2435,7 +2468,19 @@ fn intSub(cg: *CodeGen, ty: IntType, lhs: WValue, rhs: WValue) InnerError!WValue
             try cg.store(result, tmp_op, Type.u64, 8);
             return result;
         },
-        else => return cg.fail("TODO: Support intSub for integer bitsize: {d}", .{ty.bits}),
+        else => {
+            const result = try cg.allocInt(ty);
+
+            try cg.lowerToStack(result);
+            try cg.lowerToStack(lhs);
+            try cg.lowerToStack(rhs);
+            try cg.addImm32(@intFromBool(ty.is_signed));
+            try cg.addImm32(ty.bits);
+            try cg.addCallIntrinsic(.__subo_limb64);
+            try cg.addTag(.drop);
+
+            return result;
+        },
     }
 }
 
@@ -3434,45 +3479,66 @@ const OverflowResult = struct {
     ov: WValue,
 };
 
-fn intAddOverflow(cg: *CodeGen, int_ty: IntType, lhs: WValue, rhs: WValue) InnerError!OverflowResult {
-    switch (int_ty.bits) {
+fn intAddOverflow(cg: *CodeGen, ty: IntType, lhs: WValue, rhs: WValue) InnerError!OverflowResult {
+    switch (ty.bits) {
         0 => unreachable,
         1...128 => {
-            const raw_result = try cg.intAdd(int_ty, lhs, rhs);
-            const op_result = try cg.intWrap(int_ty, raw_result);
-            const op_tmp = try cg.toLocalInt(op_result, int_ty);
+            const raw_result = try cg.intAdd(ty, lhs, rhs);
+            const op_result = try cg.intWrap(ty, raw_result);
+            const op_tmp = try cg.toLocalInt(op_result, ty);
 
-            const overflow_bit = if (int_ty.is_signed) blk: {
-                const zero = try cg.intZeroValue(int_ty);
-                const rhs_is_neg = try cg.intCmp(int_ty, .lt, rhs, zero);
-                const overflow_cmp = try cg.intCmp(int_ty, .lt, op_tmp, lhs);
+            const overflow_bit = if (ty.is_signed) blk: {
+                const zero = try cg.intZeroValue(ty);
+                const rhs_is_neg = try cg.intCmp(ty, .lt, rhs, zero);
+                const overflow_cmp = try cg.intCmp(ty, .lt, op_tmp, lhs);
                 break :blk try cg.intCmp(.u32, .neq, rhs_is_neg, overflow_cmp);
-            } else try cg.intCmp(int_ty, .lt, op_tmp, lhs);
+            } else try cg.intCmp(ty, .lt, op_tmp, lhs);
 
             return .{ .result = op_tmp, .ov = overflow_bit };
         },
-        else => return cg.fail("TODO: Support intAddOverflow for integer bitsize: {d}", .{int_ty.bits}),
+        else => {
+            const result = try cg.allocInt(ty);
+
+            try cg.lowerToStack(result);
+            try cg.lowerToStack(lhs);
+            try cg.lowerToStack(rhs);
+            try cg.addImm32(@intFromBool(ty.is_signed));
+            try cg.addImm32(ty.bits);
+            try cg.addCallIntrinsic(.__addo_limb64);
+
+            return .{ .result = result, .ov = .stack };
+        },
     }
 }
 
-fn intSubOverflow(cg: *CodeGen, int_ty: IntType, lhs: WValue, rhs: WValue) InnerError!OverflowResult {
-    switch (int_ty.bits) {
+fn intSubOverflow(cg: *CodeGen, ty: IntType, lhs: WValue, rhs: WValue) InnerError!OverflowResult {
+    switch (ty.bits) {
         0 => unreachable,
         1...128 => {
-            const raw_result = try cg.intSub(int_ty, lhs, rhs);
-            const op_result = try cg.intWrap(int_ty, raw_result);
-            const op_tmp = try cg.toLocalInt(op_result, int_ty);
+            const raw_result = try cg.intSub(ty, lhs, rhs);
+            const op_result = try cg.intWrap(ty, raw_result);
+            const op_tmp = try cg.toLocalInt(op_result, ty);
 
-            const overflow_bit = if (int_ty.is_signed) blk: {
-                const zero = try cg.intZeroValue(int_ty);
-                const rhs_is_neg = try cg.intCmp(int_ty, .lt, rhs, zero);
-                const overflow_cmp = try cg.intCmp(int_ty, .gt, op_tmp, lhs);
+            const overflow_bit = if (ty.is_signed) blk: {
+                const zero = try cg.intZeroValue(ty);
+                const rhs_is_neg = try cg.intCmp(ty, .lt, rhs, zero);
+                const overflow_cmp = try cg.intCmp(ty, .gt, op_tmp, lhs);
                 break :blk try cg.intCmp(.u32, .neq, rhs_is_neg, overflow_cmp);
-            } else try cg.intCmp(int_ty, .gt, op_tmp, lhs);
+            } else try cg.intCmp(ty, .gt, op_tmp, lhs);
 
             return .{ .result = op_tmp, .ov = overflow_bit };
         },
-        else => return cg.fail("TODO: Support intSubOverflow for integer bitsize: {d}", .{int_ty.bits}),
+        else => {
+            const result = try cg.allocInt(ty);
+
+            try cg.lowerToStack(result);
+            try cg.lowerToStack(lhs);
+            try cg.lowerToStack(rhs);
+            try cg.addImm32(@intFromBool(ty.is_signed));
+            try cg.addImm32(ty.bits);
+            try cg.addCallIntrinsic(.__subo_limb64);
+            return .{ .result = result, .ov = .stack };
+        },
     }
 }
 
@@ -4764,7 +4830,23 @@ fn intCmp(cg: *CodeGen, ty: IntType, op: std.math.CompareOperator, lhs: WValue, 
 
             return .stack;
         },
-        else => return cg.fail("TODO: Support intCmp for integer bitsize: {d}", .{ty.bits}),
+        else => {
+            try cg.lowerToStack(lhs);
+            try cg.lowerToStack(rhs);
+            try cg.addImm32(@intFromBool(ty.is_signed));
+            try cg.addImm32(ty.bits);
+            try cg.addCallIntrinsic(.__cmp_limb64);
+            try cg.addImm32(0);
+            try cg.addTag(switch (op) {
+                .eq => .i32_eq,
+                .neq => .i32_ne,
+                .lt => .i32_lt_s,
+                .lte => .i32_le_s,
+                .gte => .i32_ge_s,
+                .gt => .i32_gt_s,
+            });
+            return .stack;
+        },
     }
 }
 
