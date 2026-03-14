@@ -234,6 +234,11 @@ test "listen on an in use port" {
 }
 
 test "listen on a unix socket, send bytes, receive bytes" {
+    if (builtin.os.tag == .windows) {
+        // https://codeberg.org/ziglang/zig/issues/31499
+        return error.SkipZigTest;
+    }
+
     const io = testing.io;
     const gpa = testing.allocator;
 
