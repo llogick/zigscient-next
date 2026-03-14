@@ -4199,7 +4199,7 @@ fn processSetCurrentPath(userdata: ?*anyopaque, dir_path: []const u8) process.Se
     const dir_path_posix = try pathToPosix(dir_path, &path_buffer);
     var sync: CancelRegion.Sync = try .init(ev);
     defer sync.deinit(ev);
-    return ev.chdir(&sync, dir_path_posix);
+    return chdir(&sync, dir_path_posix);
 }
 
 fn processReplace(userdata: ?*anyopaque, options: process.ReplaceOptions) process.ReplaceError {
