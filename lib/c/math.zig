@@ -59,6 +59,7 @@ comptime {
         symbol(&cosh, "cosh");
         symbol(&exp10, "exp10");
         symbol(&exp10f, "exp10f");
+        symbol(&fdim, "fdim");
         symbol(&hypot, "hypot");
         symbol(&modf, "modf");
         symbol(&pow, "pow");
@@ -145,6 +146,19 @@ fn exp10(x: f64) callconv(.c) f64 {
 
 fn exp10f(x: f32) callconv(.c) f32 {
     return math.pow(f32, 10.0, x);
+}
+
+fn fdim(x: f64, y: f64) callconv(.c) f64 {
+    if (math.isNan(x)) {
+        return x;
+    }
+    if (math.isNan(y)) {
+        return y;
+    }
+    if (x > y) {
+        return x - y;
+    }
+    return 0;
 }
 
 fn hypot(x: f64, y: f64) callconv(.c) f64 {

@@ -695,7 +695,6 @@ const libc_top_half_src_files = [_][]const u8{
     "musl/src/math/expm1.c",
     "musl/src/math/expm1f.c",
     "musl/src/math/expm1l.c",
-    "musl/src/math/fdim.c",
     "musl/src/math/fdimf.c",
     "musl/src/math/fdiml.c",
     "musl/src/math/finite.c",
