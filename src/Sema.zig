@@ -7196,7 +7196,11 @@ fn analyzeCall(
                 .pointer => func_or_ptr_ty.childType(zcu),
                 else => unreachable,
             };
-            return sema.handleTailCall(block, call_src, runtime_func_ty, call_ref);
+            const result = sema.coerceExtra(block, sema.fn_ret_ty, call_ref, call_src, .{ .is_ret = true }) catch |err| switch (err) {
+                error.NotCoercible => unreachable,
+                else => |e| return e,
+            };
+            return sema.handleTailCall(block, call_src, runtime_func_ty, result);
         }
 
         switch (actual_ret_ty.classify(zcu)) {
