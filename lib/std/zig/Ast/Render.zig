@@ -3675,26 +3675,6 @@ const AutoIndentingStream = struct {
             try ais.insertNewline();
     }
 
-    /// Push an indent that is automatically popped after being applied
-    pub fn pushIndentOneShot(ais: *AutoIndentingStream) void {
-        ais.indent_one_shot_count += 1;
-        ais.pushIndent();
-    }
-
-    /// Turns all one-shot indents into regular indents
-    /// Returns number of indents that must now be manually popped
-    pub fn lockOneShotIndent(ais: *AutoIndentingStream) usize {
-        const locked_count = ais.indent_one_shot_count;
-        ais.indent_one_shot_count = 0;
-        return locked_count;
-    }
-
-    /// Push an indent that should not take effect until the next line
-    pub fn pushIndentNextLine(ais: *AutoIndentingStream) void {
-        ais.indent_next_line += 1;
-        ais.pushIndent();
-    }
-
     /// Checks to see if the most recent indentation exceeds the currently pushed indents
     pub fn isLineOverIndented(ais: *AutoIndentingStream) bool {
         if (ais.current_line_empty) return false;
