@@ -1,4 +1,4 @@
-name: Build and Test
+name: Check Formatting
 
 on:
   push:
@@ -8,13 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-check-test:
+  test-fmt:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest, windows-latest]
+        os: [ubuntu-22.04]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
@@ -22,5 +22,5 @@ jobs:
         with:
           version: master
 
-      - name: Run zig build check test
-        run: zig build check test --summary all --zig-lib-dir ./lib/
+      - name: Run zig build test-fmt
+        run: zig build test-fmt --zig-lib-dir ./lib/
