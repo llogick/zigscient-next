@@ -32,8 +32,7 @@ const pathToPosix = Io.Threaded.pathToPosix;
 const pid_t = linux.pid_t;
 const PosixAddress = Io.Threaded.PosixAddress;
 const posixAddressFamily = Io.Threaded.posixAddressFamily;
-const posixProtocol = Io.Threaded.posixProtocol;
-const posixSocketMode = Io.Threaded.posixSocketMode;
+const posixSocketModeProtocol = Io.Threaded.posixSocketModeProtocol;
 const process = std.process;
 const recoverableOsBugDetected = Io.Threaded.recoverableOsBugDetected;
 const setTimestampToPosix = Io.Threaded.setTimestampToPosix;
@@ -4952,9 +4951,9 @@ fn randomSecure(userdata: ?*anyopaque, buffer: []u8) Io.RandomSecureError!void {
 
 fn netListenIpUnavailable(
     userdata: ?*anyopaque,
-    address: net.IpAddress,
+    address: *const net.IpAddress,
     options: net.IpAddress.ListenOptions,
-) net.IpAddress.ListenError!net.Server {
+) net.IpAddress.ListenError!net.Socket {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     _ = address;
@@ -4965,10 +4964,12 @@ fn netListenIpUnavailable(
 fn netAcceptUnavailable(
     userdata: ?*anyopaque,
     listen_handle: net.Socket.Handle,
-) net.Server.AcceptError!net.Stream {
+    options: net.Server.AcceptOptions,
+) net.Server.AcceptError!net.Socket {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     _ = listen_handle;
+    _ = options;
     return error.NetworkDown;
 }
 
@@ -4987,17 +4988,14 @@ fn netBindIp(
     var addr_len = addressToPosix(address, &storage);
     try ev.bind(&maybe_sync.cancel_region, socket_fd, &storage.any, addr_len);
     try ev.getsockname(try maybe_sync.enterSync(ev), socket_fd, &storage.any, &addr_len);
-    return .{
-        .handle = socket_fd,
-        .address = addressFromPosix(&storage),
-    };
+    return .{ .handle = socket_fd, .address = addressFromPosix(&storage) };
 }
 
 fn netConnectIpUnavailable(
     userdata: ?*anyopaque,
     address: *const net.IpAddress,
     options: net.IpAddress.ConnectOptions,
-) net.IpAddress.ConnectError!net.Stream {
+) net.IpAddress.ConnectError!net.Socket {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     _ = address;
@@ -5941,8 +5939,7 @@ fn socket(
     Unexpected,
     Canceled,
 }!fd_t {
-    const mode = posixSocketMode(options.mode);
-    const protocol = posixProtocol(options.protocol);
+    const mode, const protocol = try posixSocketModeProtocol(family, options.mode, options.protocol);
     const socket_fd = while (true) {
         const thread = try cancel_region.awaitIoUring();
         thread.enqueue().* = .{

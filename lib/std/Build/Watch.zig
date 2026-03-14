@@ -354,7 +354,7 @@ const Os = switch (builtin.os.tag) {
                 }
             }
 
-            fn notifyApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows.ULONG) callconv(.winapi) void {
+            fn notifyApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows.ULONG) align(std.Io.Threaded.apc_align) callconv(.winapi) void {
                 const w: *Watch = @ptrCast(@alignCast(apc_context));
                 const dir: *Directory = @fieldParentPtr("iosb", iosb);
                 assert(iosb.u.Status != .PENDING);
@@ -369,7 +369,7 @@ const Os = switch (builtin.os.tag) {
                 var dir_handle: windows.HANDLE = undefined;
                 const root_fd = path.root_dir.handle.handle;
                 const sub_path = path.subPathOrDot();
-                const sub_path_w = try Io.Threaded.sliceToPrefixedFileW(root_fd, sub_path); // TODO eliminate this call
+                const sub_path_w = try Io.Threaded.sliceToPrefixedFileW(root_fd, sub_path, .{}); // TODO eliminate this call
                 var iosb: windows.IO_STATUS_BLOCK = undefined;
                 switch (windows.ntdll.NtCreateFile(
                     &dir_handle,

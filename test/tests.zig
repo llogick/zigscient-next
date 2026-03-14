@@ -2587,7 +2587,6 @@ fn addOneModuleTest(
                     compile_c.linkSystemLibrary("advapi32", .{});
                 }
                 compile_c.linkSystemLibrary("crypt32", .{});
-                compile_c.linkSystemLibrary("ws2_32", .{});
                 compile_c.linkSystemLibrary("ole32", .{});
             }
         }

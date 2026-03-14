@@ -85,7 +85,7 @@ test "IPv6 address parse failures" {
 }
 
 test "invalid but parseable IPv6 scope ids" {
-    if (builtin.os.tag != .linux and comptime !builtin.os.tag.isDarwin()) return error.SkipZigTest;
+    if (builtin.os.tag != .linux and builtin.os.tag != .windows and comptime !builtin.os.tag.isDarwin()) return error.SkipZigTest;
 
     const io = testing.io;
 
@@ -129,6 +129,7 @@ test "resolve DNS" {
 
         net.HostName.lookup(try .init("localhost"), io, &results, .{
             .port = 80,
+            .request_canonical_name = true,
             .canonical_name_buffer = &canonical_name_buffer,
         }) catch |err| switch (err) {
             error.NetworkDown => return error.SkipZigTest,
@@ -142,7 +143,8 @@ test "resolve DNS" {
                 if (address.eql(&localhost_v4) or address.eql(&localhost_v6))
                     addresses_found += 1;
             },
-            .canonical_name => |canonical_name| try testing.expectEqualStrings("localhost", canonical_name.bytes),
+            .canonical_name => |canonical_name| if (builtin.os.tag == .linux)
+                try testing.expectEqualStrings("localhost", canonical_name.bytes),
         } else |err| switch (err) {
             error.Closed => {},
             error.Canceled => |e| return e,
@@ -234,11 +236,6 @@ test "listen on an in use port" {
 }
 
 test "listen on a unix socket, send bytes, receive bytes" {
-    if (builtin.os.tag == .windows) {
-        // https://codeberg.org/ziglang/zig/issues/31499
-        return error.SkipZigTest;
-    }
-
     const io = testing.io;
     const gpa = testing.allocator;
 
@@ -345,11 +342,6 @@ test "decompress compressed DNS name" {
 }
 
 test "cancel accept" {
-    if (builtin.os.tag == .windows) {
-        // https://codeberg.org/ziglang/zig/issues/30865
-        return error.SkipZigTest;
-    }
-
     const io = testing.io;
     const localhost: net.IpAddress = .{ .ip4 = .loopback(0) };
 

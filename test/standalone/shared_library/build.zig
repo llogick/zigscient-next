@@ -24,9 +24,6 @@ pub fn build(b: *std.Build) void {
             }),
         });
 
-        if (target.result.os.tag == .windows)
-            lib.root_module.linkSystemLibrary("ws2_32", .{});
-
         const exe = b.addExecutable(.{
             .name = exe_name,
             .root_module = b.createModule(.{

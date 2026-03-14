@@ -11,8 +11,8 @@ const Io = std.Io;
 const net = std.Io.net;
 const File = std.Io.File;
 const Dir = std.Io.Dir;
-const HostName = std.Io.net.HostName;
-const IpAddress = std.Io.net.IpAddress;
+const HostName = net.HostName;
+const IpAddress = net.IpAddress;
 const process = std.process;
 const Allocator = std.mem.Allocator;
 const Alignment = std.mem.Alignment;
@@ -47,8 +47,6 @@ busy_count: usize = 0,
 worker_threads: std.atomic.Value(?*Thread),
 pid: Pid = .unknown,
 
-wsa: if (is_windows) Wsa else struct {} = .{},
-
 have_signal_handler: bool,
 old_sig_io: if (have_sig_io) posix.Sigaction else void,
 old_sig_pipe: if (have_sig_pipe) posix.Sigaction else void,
@@ -77,6 +75,8 @@ argv0: Argv0,
 environ_initialized: bool,
 environ: Environ,
 
+dl: Dl = .init,
+
 null_file: NullFile = .{},
 random_file: RandomFile = .{},
 pipe_file: PipeFile = .{},
@@ -88,6 +88,67 @@ system_basic_information: SystemBasicInformation = .{},
 const SystemBasicInformation = if (!is_windows) struct {} else struct {
     buffer: windows.SYSTEM.BASIC_INFORMATION = undefined,
     initialized: std.atomic.Value(bool) = .{ .raw = false },
+};
+
+const Dl = switch (native_os) {
+    .windows => struct {
+        iphlpapi_dll: std.atomic.Value(?*anyopaque),
+        ConvertInterfaceNameToLuidW: std.atomic.Value(?*const fn (
+            InterfaceName: [*:0]const windows.WCHAR,
+            InterfaceLuid: *windows.NET.LUID,
+        ) callconv(.winapi) windows.Win32Error),
+        ConvertInterfaceLuidToIndex: std.atomic.Value(?*const fn (
+            InterfaceLuid: *const windows.NET.LUID,
+            InterfaceIndex: *windows.NET.IFINDEX,
+        ) callconv(.winapi) windows.Win32Error),
+        ConvertInterfaceIndexToLuid: std.atomic.Value(?*const fn (
+            InterfaceIndex: std.os.windows.NET.IFINDEX,
+            InterfaceLuid: *std.os.windows.NET.LUID,
+        ) callconv(.winapi) windows.Win32Error),
+        ConvertInterfaceLuidToNameW: std.atomic.Value(?*const fn (
+            InterfaceLuid: *const std.os.windows.NET.LUID,
+            InterfaceName: std.os.windows.PWSTR,
+            Length: std.os.windows.SIZE_T,
+        ) callconv(.winapi) std.os.windows.Win32Error),
+
+        dnsapi_dll: std.atomic.Value(?*anyopaque),
+        DnsQueryEx: std.atomic.Value(?*const fn (
+            pQueryRequest: *const windows.DNS.QUERY.REQUEST,
+            pQueryResults: *windows.DNS.QUERY.RESULT,
+            pCancelHandle: ?*windows.DNS.QUERY.CANCEL,
+        ) callconv(.winapi) windows.DNS.STATUS),
+        //DnsCancelQuery: std.atomic.Value(?*const fn (
+        //    pCancelHandle: *const windows.DNS.QUERY.CANCEL,
+        //) callconv(.winapi) windows.DNS.STATUS),
+        DnsFree: std.atomic.Value(?*const fn (
+            pRecordList: ?*anyopaque,
+            FreeType: windows.DNS.FREE_TYPE,
+        ) callconv(.winapi) void),
+
+        const init: Dl = .{
+            .iphlpapi_dll = .init(null),
+            .ConvertInterfaceNameToLuidW = .init(null),
+            .ConvertInterfaceLuidToIndex = .init(null),
+            .ConvertInterfaceIndexToLuid = .init(null),
+            .ConvertInterfaceLuidToNameW = .init(null),
+
+            .dnsapi_dll = .init(null),
+            .DnsQueryEx = .init(null),
+            //.DnsCancelQuery = .init(null),
+            .DnsFree = .init(null),
+        };
+        fn deinit(dl: *Dl) void {
+            if (dl.iphlpapi_dll.raw) |iphlpapi_dll| switch (windows.ntdll.LdrUnloadDll(iphlpapi_dll)) {
+                .SUCCESS => {},
+                else => |status| windows.unexpectedStatus(status) catch {},
+            };
+            dl.* = .init;
+        }
+    },
+    else => struct {
+        const init: Dl = .{};
+        fn deinit(_: Dl) void {}
+    },
 };
 
 pub const Csprng = struct {
@@ -373,6 +434,17 @@ pub const UseFchmodat2 = if (have_fchmodat2 and !have_fchmodat_flags) enum {
 } else enum {
     disabled,
     pub const default: UseFchmodat2 = .disabled;
+};
+
+pub const apc_align = @max(default_fn_align, 2);
+
+const default_fn_align = switch (builtin.mode) {
+    .Debug, .ReleaseSafe, .ReleaseFast => switch (builtin.cpu.arch) {
+        else => |arch| @compileError("Unsupported architecture: " ++ @tagName(arch)),
+        .arm, .thumb => 4,
+        .aarch64, .x86, .x86_64 => 16,
+    },
+    .ReleaseSmall => 1,
 };
 
 const Runnable = struct {
@@ -1496,18 +1568,6 @@ const AlertableSyscall = struct {
         s.finish();
         return windows.unexpectedStatus(status);
     }
-
-    fn unexpectedWsaError(s: AlertableSyscall, err: ws2_32.WinsockError) Io.UnexpectedError {
-        @branchHint(.cold);
-        s.finish();
-        return windows.unexpectedWsaError(err);
-    }
-
-    fn wsaErrorBug(s: AlertableSyscall, err: ws2_32.WinsockError) Io.UnexpectedError {
-        @branchHint(.cold);
-        s.finish();
-        return windows.wsaErrorBug(err);
-    }
 };
 
 pub fn waitForApcOrAlert() void {
@@ -1667,13 +1727,11 @@ pub fn setAsyncLimit(t: *Threaded, new_limit: Io.Limit) void {
 
 pub fn deinit(t: *Threaded) void {
     t.join();
-    if (is_windows and t.wsa.status == .initialized) {
-        if (ws2_32.WSACleanup() != 0) recoverableOsBugDetected();
-    }
     if (posix.Sigaction != void and t.have_signal_handler) {
         if (have_sig_io) posix.sigaction(.IO, &t.old_sig_io, null);
         if (have_sig_pipe) posix.sigaction(.PIPE, &t.old_sig_pipe, null);
     }
+    t.dl.deinit();
     t.null_file.deinit();
     t.random_file.deinit();
     t.pipe_file.deinit();
@@ -1717,6 +1775,7 @@ fn worker(t: *Threaded) void {
                 .SPECIFIC = .{
                     .THREAD = .{
                         .TERMINATE = true, // for `NtCancelSynchronousIoFile`
+                        .ALERT = true, // for `NtAlertThread`
                     },
                 },
             },
@@ -2914,7 +2973,7 @@ fn batchApc(
     apc_context: ?*anyopaque,
     iosb: *windows.IO_STATUS_BLOCK,
     _: windows.ULONG,
-) callconv(.winapi) void {
+) align(apc_align) callconv(.winapi) void {
     const b: *Io.Batch = @ptrCast(@alignCast(apc_context));
     const operation_userdata: *WindowsBatchOperationUserdata = @fieldParentPtr("iosb", iosb);
     const erased_userdata = operation_userdata.toErased();
@@ -3278,7 +3337,7 @@ fn dirCreateDirWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, pe
     _ = t;
     _ = permissions; // TODO use this value
 
-    const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
     const attr: windows.OBJECT.ATTRIBUTES = .{
         .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w.span())) null else dir.handle,
         .Attributes = .{ .INHERIT = false },
@@ -3446,7 +3505,7 @@ fn dirCreateDirPathOpenWindows(
     };
 
     components: while (true) {
-        const sub_path_w = try sliceToPrefixedFileW(dir.handle, component.path);
+        const sub_path_w = try sliceToPrefixedFileW(dir.handle, component.path, .{});
         const attr: windows.OBJECT.ATTRIBUTES = .{
             .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w.span())) null else dir.handle,
             .ObjectName = @constCast(&sub_path_w.string()),
@@ -4144,7 +4203,7 @@ fn dirAccessWindows(
     _ = options; // TODO
 
     if (std.mem.eql(u8, sub_path, ".") or std.mem.eql(u8, sub_path, "..")) return;
-    const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
     const attr: windows.OBJECT.ATTRIBUTES = .{
         .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w.span())) null else dir.handle,
         .ObjectName = @constCast(&sub_path_w.string()),
@@ -4353,7 +4412,7 @@ fn dirCreateFileWindows(
     if (std.mem.eql(u8, sub_path, ".")) return error.IsDir;
     if (std.mem.eql(u8, sub_path, "..")) return error.IsDir;
 
-    const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
     const attr: windows.OBJECT.ATTRIBUTES = .{
         .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w.span())) null else dir.handle,
         .ObjectName = @constCast(&sub_path_w.string()),
@@ -4943,7 +5002,7 @@ fn dirOpenFileWindows(
 ) File.OpenError!File {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    const sub_path_w_array = try sliceToPrefixedFileW(dir.handle, sub_path);
+    const sub_path_w_array = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
     const sub_path_w = sub_path_w_array.span();
     const dir_handle = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w)) null else dir.handle;
     return dirOpenFileWtf16(dir_handle, sub_path_w, flags);
@@ -5197,7 +5256,7 @@ fn dirOpenDirPosix(
     _ = t;
 
     if (is_windows) {
-        const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path);
+        const sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
         return dirOpenDirWindows(dir, sub_path_w.span(), options);
     }
 
@@ -6027,7 +6086,7 @@ fn dirRealPathFileWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8,
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
 
-    var path_name_w = try sliceToPrefixedFileW(dir.handle, sub_path);
+    var path_name_w = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
 
     const h_file = handle: {
         if (OpenFile(path_name_w.span(), .{
@@ -6182,6 +6241,7 @@ pub fn GetFinalPathNameByHandle(
                 .out = &output_buf,
             })).u.Status) {
                 .SUCCESS => {},
+                .CANCELLED => unreachable,
                 .OBJECT_NAME_NOT_FOUND => return error.FileNotFound,
                 else => |status| return windows.unexpectedStatus(status),
             }
@@ -6241,6 +6301,7 @@ pub fn GetFinalPathNameByHandle(
                         .out = &vol_output_buf,
                     })).u.Status) {
                         .SUCCESS => {},
+                        .CANCELLED => unreachable,
                         .UNRECOGNIZED_VOLUME => return error.UnrecognizedVolume,
                         else => |status| return windows.unexpectedStatus(status),
                     }
@@ -6383,6 +6444,10 @@ const Wtf16ToPrefixedFileWError = error{
     FileNotFound,
 } || Dir.PathNameError || Io.Cancelable || Io.UnexpectedError;
 
+const Wtf16ToPrefixedFileWOptions = struct {
+    allow_relative: bool = true,
+};
+
 /// Converts the `path` to WTF16, null-terminated. If the path contains any
 /// namespace prefix, or is anything but a relative path (rooted, drive relative,
 /// etc) the result will have the NT-style prefix `\??\`.
@@ -6394,7 +6459,7 @@ const Wtf16ToPrefixedFileWError = error{
 ///   is non-null, or the CWD if it is null.
 /// - Special case device names like COM1, NUL, etc are not handled specially (TODO)
 /// - . and space are not stripped from the end of relative paths (potential TODO)
-pub fn wToPrefixedFileW(dir: ?windows.HANDLE, path: [:0]const u16) Wtf16ToPrefixedFileWError!WindowsPathSpace {
+pub fn wToPrefixedFileW(dir: ?windows.HANDLE, path: [:0]const u16, options: Wtf16ToPrefixedFileWOptions) Wtf16ToPrefixedFileWError!WindowsPathSpace {
     const nt_prefix = [_]u16{ '\\', '?', '?', '\\' };
     if (windows.hasCommonNtPrefix(u16, path)) {
         // TODO: Figure out a way to design an API that can avoid the copy for NT,
@@ -6409,58 +6474,54 @@ pub fn wToPrefixedFileW(dir: ?windows.HANDLE, path: [:0]const u16) Wtf16ToPrefix
     } else {
         const path_type = Dir.path.getWin32PathType(u16, path);
         var path_space: WindowsPathSpace = undefined;
-        if (path_type == .local_device) {
-            switch (getLocalDevicePathType(u16, path)) {
-                .verbatim => {
-                    path_space.data[0..nt_prefix.len].* = nt_prefix;
-                    const len_after_prefix = path.len - nt_prefix.len;
-                    @memcpy(path_space.data[nt_prefix.len..][0..len_after_prefix], path[nt_prefix.len..]);
-                    path_space.len = path.len;
-                    path_space.data[path_space.len] = 0;
-                    return path_space;
-                },
-                .local_device, .fake_verbatim => {
-                    const path_byte_len = windows.ntdll.RtlGetFullPathName_U(
-                        path.ptr,
-                        path_space.data.len * 2,
-                        &path_space.data,
-                        null,
-                    );
-                    if (path_byte_len == 0) {
-                        // TODO: This may not be the right error
-                        return error.BadPathName;
-                    } else if (path_byte_len / 2 > path_space.data.len) {
-                        return error.NameTooLong;
-                    }
-                    path_space.len = path_byte_len / 2;
-                    // Both prefixes will be normalized but retained, so all
-                    // we need to do now is replace them with the NT prefix
-                    path_space.data[0..nt_prefix.len].* = nt_prefix;
-                    return path_space;
-                },
-            }
-        }
-        relative: {
-            if (path_type == .relative) {
-                // TODO: Handle special case device names like COM1, AUX, NUL, CONIN$, CONOUT$, etc.
-                //       See https://googleprojectzero.blogspot.com/2016/02/the-definitive-guide-on-win32-to-nt.html
-
-                // TODO: Potentially strip all trailing . and space characters from the
-                //       end of the path. This is something that both RtlDosPathNameToNtPathName_U
-                //       and RtlGetFullPathName_U do. Technically, trailing . and spaces
-                //       are allowed, but such paths may not interact well with Windows (i.e.
-                //       files with these paths can't be deleted from explorer.exe, etc).
-                //       This could be something that normalizePath may want to do.
-
-                @memcpy(path_space.data[0..path.len], path);
-                // Try to normalize, but if we get too many parent directories,
-                // then we need to start over and use RtlGetFullPathName_U instead.
-                path_space.len = windows.normalizePath(u16, path_space.data[0..path.len]) catch |err| switch (err) {
-                    error.TooManyParentDirs => break :relative,
-                };
+        if (path_type == .local_device) switch (getLocalDevicePathType(u16, path)) {
+            .verbatim => {
+                path_space.data[0..nt_prefix.len].* = nt_prefix;
+                const len_after_prefix = path.len - nt_prefix.len;
+                @memcpy(path_space.data[nt_prefix.len..][0..len_after_prefix], path[nt_prefix.len..]);
+                path_space.len = path.len;
                 path_space.data[path_space.len] = 0;
                 return path_space;
-            }
+            },
+            .local_device, .fake_verbatim => {
+                const path_byte_len = windows.ntdll.RtlGetFullPathName_U(
+                    path.ptr,
+                    path_space.data.len * 2,
+                    &path_space.data,
+                    null,
+                );
+                if (path_byte_len == 0) {
+                    // TODO: This may not be the right error
+                    return error.BadPathName;
+                } else if (path_byte_len / 2 > path_space.data.len) {
+                    return error.NameTooLong;
+                }
+                path_space.len = path_byte_len / 2;
+                // Both prefixes will be normalized but retained, so all
+                // we need to do now is replace them with the NT prefix
+                path_space.data[0..nt_prefix.len].* = nt_prefix;
+                return path_space;
+            },
+        };
+        if (options.allow_relative and path_type == .relative) relative: {
+            // TODO: Handle special case device names like COM1, AUX, NUL, CONIN$, CONOUT$, etc.
+            //       See https://googleprojectzero.blogspot.com/2016/02/the-definitive-guide-on-win32-to-nt.html
+
+            // TODO: Potentially strip all trailing . and space characters from the
+            //       end of the path. This is something that both RtlDosPathNameToNtPathName_U
+            //       and RtlGetFullPathName_U do. Technically, trailing . and spaces
+            //       are allowed, but such paths may not interact well with Windows (i.e.
+            //       files with these paths can't be deleted from explorer.exe, etc).
+            //       This could be something that normalizePath may want to do.
+
+            @memcpy(path_space.data[0..path.len], path);
+            // Try to normalize, but if we get too many parent directories,
+            // then we need to start over and use RtlGetFullPathName_U instead.
+            path_space.len = windows.normalizePath(u16, path_space.data[0..path.len]) catch |err| switch (err) {
+                error.TooManyParentDirs => break :relative,
+            };
+            path_space.data[path_space.len] = 0;
+            return path_space;
         }
         // We now know we are going to return an absolute NT path, so
         // we can unconditionally prefix it with the NT prefix.
@@ -6591,13 +6652,13 @@ pub const Wtf8ToPrefixedFileWError = Wtf16ToPrefixedFileWError;
 
 /// Same as `wToPrefixedFileW` but accepts a WTF-8 encoded path.
 /// https://wtf-8.codeberg.page/
-pub fn sliceToPrefixedFileW(dir: ?windows.HANDLE, path: []const u8) Wtf8ToPrefixedFileWError!WindowsPathSpace {
+pub fn sliceToPrefixedFileW(dir: ?windows.HANDLE, path: []const u8, options: Wtf16ToPrefixedFileWOptions) Wtf8ToPrefixedFileWError!WindowsPathSpace {
     var temp_path: WindowsPathSpace = undefined;
     temp_path.len = std.unicode.wtf8ToWtf16Le(&temp_path.data, path) catch |err| switch (err) {
         error.InvalidWtf8 => return error.BadPathName,
     };
     temp_path.data[temp_path.len] = 0;
-    return wToPrefixedFileW(dir, temp_path.span());
+    return wToPrefixedFileW(dir, temp_path.span(), options);
 }
 
 pub const WindowsPathSpace = struct {
@@ -7068,7 +7129,7 @@ fn dirDeleteWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, remov
         // Can't remove the parent directory with an open handle.
         return error.FileBusy;
     }
-    var sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path);
+    var sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
     if (std.mem.eql(u8, sub_path, ".")) {
         // Windows does not recognize this, but it does work with empty string.
         sub_path_w.len = 0;
@@ -7336,9 +7397,9 @@ fn dirRenameWindowsInner(
     replace_if_exists: bool,
 ) Dir.RenamePreserveError!void {
     const w = windows;
-    const old_path_w_buf = try sliceToPrefixedFileW(old_dir.handle, old_sub_path);
+    const old_path_w_buf = try sliceToPrefixedFileW(old_dir.handle, old_sub_path, .{});
     const old_path_w = old_path_w_buf.span();
-    const new_path_w_buf = try sliceToPrefixedFileW(new_dir.handle, new_sub_path);
+    const new_path_w_buf = try sliceToPrefixedFileW(new_dir.handle, new_sub_path, .{});
     const new_path_w = new_path_w_buf.span();
 
     const src_fd = src_fd: {
@@ -7673,7 +7734,7 @@ fn dirSymLinkWindows(
         std.mem.nativeToLittle(u16, '\\'),
     );
 
-    const sym_link_path_w = try sliceToPrefixedFileW(dir.handle, sym_link_path);
+    const sym_link_path_w = try sliceToPrefixedFileW(dir.handle, sym_link_path, .{});
 
     const SYMLINK_DATA = extern struct {
         ReparseTag: w.IO_REPARSE_TAG,
@@ -7738,7 +7799,7 @@ fn dirSymLinkWindows(
                     break :target_path target_path_w.span(),
             }
         }
-        var prefixed_target_path = try wToPrefixedFileW(dir.handle, target_path_w.span());
+        var prefixed_target_path = try wToPrefixedFileW(dir.handle, target_path_w.span(), .{});
         // We do this after prefixing to ensure that drive-relative paths are treated as absolute
         is_target_absolute = Dir.path.isAbsoluteWindowsWtf16(prefixed_target_path.span());
         break :target_path prefixed_target_path.span();
@@ -7770,6 +7831,8 @@ fn dirSymLinkWindows(
         .in = buffer[0..buf_len],
     })).u.Status) {
         .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
         .PRIVILEGE_NOT_HELD => return error.PermissionDenied,
         .ACCESS_DENIED => return error.AccessDenied,
         .INVALID_DEVICE_REQUEST => return error.FileSystem,
@@ -7887,7 +7950,7 @@ fn dirReadLink(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, buffer: []
 fn dirReadLinkWindows(dir: Dir, sub_path: []const u8, buffer: []u8) Dir.ReadLinkError!usize {
     // This gets used once for `sub_path` and then reused again temporarily
     // before converting back to `buffer`.
-    var sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path);
+    var sub_path_w = try sliceToPrefixedFileW(dir.handle, sub_path, .{});
     const attr: windows.OBJECT.ATTRIBUTES = .{
         .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w.span())) null else dir.handle,
         .ObjectName = @constCast(&sub_path_w.string()),
@@ -8532,6 +8595,7 @@ fn isTty(file: File) Io.Cancelable!bool {
             .in = @ptrCast(&get_console_mode.request(file, 0, .{}, 0, .{})),
         })).u.Status) {
             .SUCCESS => return true,
+            .CANCELLED => unreachable,
             .INVALID_HANDLE => return isCygwinPty(file),
             else => return false,
         }
@@ -8618,6 +8682,7 @@ fn fileEnableAnsiEscapeCodes(userdata: ?*anyopaque, file: File) File.EnableAnsiE
         .in = @ptrCast(&get_console_mode.request(file, 0, .{}, 0, .{})),
     })).u.Status) {
         .SUCCESS => {},
+        .CANCELLED => unreachable,
         .INVALID_HANDLE => return if (!try isCygwinPty(file)) error.NotTerminalDevice,
         else => return error.NotTerminalDevice,
     }
@@ -8644,6 +8709,7 @@ fn fileEnableAnsiEscapeCodes(userdata: ?*anyopaque, file: File) File.EnableAnsiE
         .in = @ptrCast(&set_console_mode.request(file, 0, .{}, 0, .{})),
     })).u.Status) {
         .SUCCESS => {},
+        .CANCELLED => unreachable,
         else => |status| return windows.unexpectedStatus(status),
     }
 }
@@ -8667,6 +8733,7 @@ fn supportsAnsiEscapeCodes(file: File) Io.Cancelable!bool {
         })).u.Status) {
             .SUCCESS => if (get_console_mode.Data & windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0)
                 return true,
+            .CANCELLED => unreachable,
             .INVALID_HANDLE => return isCygwinPty(file),
             else => return false,
         }
@@ -9673,7 +9740,7 @@ fn fileReadStreamingWindows(file: File, data: []const []u8) File.ReadStreamingEr
     return ntReadFileResult(&iosb);
 }
 
-fn flagApc(userdata: ?*anyopaque, _: *windows.IO_STATUS_BLOCK, _: windows.ULONG) callconv(.winapi) void {
+fn flagApc(userdata: ?*anyopaque, _: *windows.IO_STATUS_BLOCK, _: windows.ULONG) align(apc_align) callconv(.winapi) void {
     const flag: *bool = @ptrCast(userdata);
     flag.* = true;
 }
@@ -10157,7 +10224,7 @@ fn processExecutableOpen(userdata: ?*anyopaque, flags: File.OpenFlags) process.O
             // not the path that the symlink points to. However, because we are opening
             // the file, we can let the openFileW call follow the symlink for us.
             const image_path_name = windows.peb().ProcessParameters.ImagePathName.sliceZ();
-            const prefixed_path_w = try wToPrefixedFileW(null, image_path_name);
+            const prefixed_path_w = try wToPrefixedFileW(null, image_path_name, .{});
             return dirOpenFileWtf16(null, prefixed_path_w.span(), flags);
         },
         .driverkit,
@@ -10364,6 +10431,7 @@ fn processExecutablePath(userdata: ?*anyopaque, out_buffer: []u8) process.Execut
             var path_name_w_buf = try wToPrefixedFileW(
                 null,
                 windows.peb().ProcessParameters.ImagePathName.sliceZ(),
+                .{},
             );
 
             const h_file = handle: {
@@ -11177,22 +11245,6 @@ fn netWriteFile(
     @panic("TODO implement netWriteFile");
 }
 
-fn netWriteFileUnavailable(
-    userdata: ?*anyopaque,
-    socket_handle: net.Socket.Handle,
-    header: []const u8,
-    file_reader: *File.Reader,
-    limit: Io.Limit,
-) net.Stream.Writer.WriteFileError!usize {
-    const t: *Threaded = @ptrCast(@alignCast(userdata));
-    _ = t;
-    _ = socket_handle;
-    _ = header;
-    _ = file_reader;
-    _ = limit;
-    return error.NetworkDown;
-}
-
 fn fileWriteFilePositional(
     userdata: ?*anyopaque,
     file: File,
@@ -11635,27 +11687,24 @@ fn sleepNanosleep(t: *Threaded, timeout: Io.Timeout) Io.Cancelable!void {
 
 fn netListenIpPosix(
     userdata: ?*anyopaque,
-    address: IpAddress,
+    address: *const IpAddress,
     options: IpAddress.ListenOptions,
-) IpAddress.ListenError!net.Server {
+) IpAddress.ListenError!net.Socket {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    const family = posixAddressFamily(&address);
-    const socket_fd = try openSocketPosix(family, .{
-        .mode = options.mode,
-        .protocol = options.protocol,
-    });
+    const family = posixAddressFamily(address);
+    const socket_fd = try openSocketPosix(family, .{ .mode = options.mode, .protocol = options.protocol });
     errdefer closeFd(socket_fd);
 
     if (options.reuse_address) {
-        try setSocketOption(socket_fd, posix.SOL.SOCKET, posix.SO.REUSEADDR, 1);
+        try setSocketOptionPosix(socket_fd, posix.SOL.SOCKET, posix.SO.REUSEADDR, 1);
         if (@hasDecl(posix.SO, "REUSEPORT"))
-            try setSocketOption(socket_fd, posix.SOL.SOCKET, posix.SO.REUSEPORT, 1);
+            try setSocketOptionPosix(socket_fd, posix.SOL.SOCKET, posix.SO.REUSEPORT, 1);
     }
 
     var storage: PosixAddress = undefined;
-    var addr_len = addressToPosix(&address, &storage);
+    var addr_len = addressToPosix(address, &storage);
     try posixBind(socket_fd, &storage.any, addr_len);
 
     const syscall: Syscall = try .start();
@@ -11676,112 +11725,37 @@ fn netListenIpPosix(
     }
 
     try posixGetSockName(socket_fd, &storage.any, &addr_len);
-    return .{
-        .socket = .{
-            .handle = socket_fd,
-            .address = addressFromPosix(&storage),
-        },
-    };
+    return .{ .handle = socket_fd, .address = addressFromPosix(&storage) };
 }
 
 fn netListenIpWindows(
     userdata: ?*anyopaque,
-    address: IpAddress,
+    address: *const IpAddress,
     options: IpAddress.ListenOptions,
-) IpAddress.ListenError!net.Server {
+) IpAddress.ListenError!net.Socket {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    const family = posixAddressFamily(&address);
-    const socket_handle = try openSocketWsa(t, family, .{
-        .mode = options.mode,
-        .protocol = options.protocol,
-    });
-    errdefer closeSocketWindows(socket_handle);
-
-    if (options.reuse_address)
-        try setSocketOptionWsa(t, socket_handle, posix.SOL.SOCKET, posix.SO.REUSEADDR, 1);
-
-    var storage: WsaAddress = undefined;
-    var addr_len = addressToWsa(&address, &storage);
-
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.bind(socket_handle, &storage.any, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            break;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .EADDRINUSE => return syscall.fail(error.AddressInUse),
-            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    _ = t;
+    const family = posixAddressFamily(address);
+    const socket_handle = try openSocketAfd(family, .{ .mode = options.mode, .protocol = options.protocol });
+    errdefer windows.CloseHandle(socket_handle);
+    if (options.reuse_address) try setSocketOptionAfd(socket_handle, ws2_32.SOL.SOCKET, ws2_32.SO.REUSEADDR, true);
+    const bound_address = try bindSocketIpAfd(socket_handle, address, .Passive);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.START_LISTEN,
+        .in = @ptrCast(&windows.AFD.LISTEN_INFO{
+            .UseSAN = windows.FALSE,
+            .MaximumConnectionQueue = options.kernel_backlog,
+            .UseDelayedAcceptance = windows.FALSE,
+        }),
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
-
-    syscall = try .start();
-    while (true) {
-        const rc = ws2_32.listen(socket_handle, options.kernel_backlog);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            break;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .EADDRINUSE => return syscall.fail(error.AddressInUse),
-            .EMFILE, .ENOBUFS => return syscall.fail(error.SystemResources),
-            .EISCONN => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
-            .EINPROGRESS => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
-    }
-
-    try wsaGetSockName(t, socket_handle, &storage.any, &addr_len);
-
-    return .{
-        .socket = .{
-            .handle = socket_handle,
-            .address = addressFromWsa(&storage),
-        },
-    };
-}
-
-fn netListenIpUnavailable(
-    userdata: ?*anyopaque,
-    address: IpAddress,
-    options: IpAddress.ListenOptions,
-) IpAddress.ListenError!net.Server {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.NetworkDown;
+    return .{ .handle = socket_handle, .address = bound_address };
 }
 
 fn netListenUnixPosix(
@@ -11833,85 +11807,40 @@ fn netListenUnixWindows(
     if (!net.has_unix_sockets) return error.AddressFamilyUnsupported;
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-
-    const socket_handle = openSocketWsa(t, posix.AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
+    _ = t;
+    const is_abstract = address.isAbstract();
+    const wps = if (!is_abstract) sliceToPrefixedFileW(null, address.path, .{
+        .allow_relative = false,
+    }) catch |err| switch (err) {
+        error.NameTooLong, error.BadPathName => return error.AddressUnavailable,
+        else => |e| return e,
+    } else undefined;
+    const socket_handle = openSocketAfd(ws2_32.AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
         error.ProtocolUnsupportedByAddressFamily => return error.AddressFamilyUnsupported,
         else => |e| return e,
     };
-    errdefer closeSocketWindows(socket_handle);
-
-    var storage: WsaAddress = undefined;
-    const addr_len = addressUnixToWsa(address, &storage);
-
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.bind(socket_handle, &storage.any, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            break;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .EADDRINUSE => return syscall.fail(error.AddressInUse),
-            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    errdefer windows.CloseHandle(socket_handle);
+    if (!is_abstract) try socketOptionAfd(socket_handle, .special, 0, ws2_32.SO.UNIX_PATH, @constCast(
+        @as([]const u8, @ptrCast(&windows.AFD.SOCKOPT_INFO.UNIX_PATH{
+            .Path = wps.data,
+        }))[0 .. @offsetOf(windows.AFD.SOCKOPT_INFO.UNIX_PATH, "Path") + @sizeOf(windows.WCHAR) * wps.len],
+    ));
+    try bindSocketUnixAfd(socket_handle, address);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.START_LISTEN,
+        .in = @ptrCast(&windows.AFD.LISTEN_INFO{
+            .UseSAN = windows.FALSE,
+            .MaximumConnectionQueue = options.kernel_backlog,
+            .UseDelayedAcceptance = windows.FALSE,
+        }),
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
-
-    syscall = try .start();
-    while (true) {
-        const rc = ws2_32.listen(socket_handle, options.kernel_backlog);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            return socket_handle;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .EADDRINUSE => return syscall.fail(error.AddressInUse),
-            .EMFILE, .ENOBUFS => return syscall.fail(error.SystemResources),
-            .EISCONN => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
-            .EINPROGRESS => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
-    }
-}
-
-fn netListenUnixUnavailable(
-    userdata: ?*anyopaque,
-    address: *const net.UnixAddress,
-    options: net.UnixAddress.ListenOptions,
-) net.UnixAddress.ListenError!net.Socket.Handle {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.AddressFamilyUnsupported;
+    return socket_handle;
 }
 
 fn posixBindUnix(
@@ -12103,40 +12032,7 @@ fn posixGetSockName(
     }
 }
 
-fn wsaGetSockName(
-    t: *Threaded,
-    handle: ws2_32.SOCKET,
-    addr: *ws2_32.sockaddr,
-    addr_len: *i32,
-) !void {
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.getsockname(handle, addr, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            return;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
-    }
-}
-
-fn setSocketOption(fd: posix.fd_t, level: i32, opt_name: u32, option: u32) !void {
+fn setSocketOptionPosix(fd: posix.fd_t, level: i32, opt_name: u32, option: u32) !void {
     const o: []const u8 = @ptrCast(&option);
     const syscall: Syscall = try .start();
     while (true) {
@@ -12163,32 +12059,26 @@ fn setSocketOption(fd: posix.fd_t, level: i32, opt_name: u32, option: u32) !void
     }
 }
 
-fn setSocketOptionWsa(t: *Threaded, socket: Io.net.Socket.Handle, level: i32, opt_name: u32, option: u32) !void {
-    const o: []const u8 = @ptrCast(&option);
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.setsockopt(socket, level, @bitCast(opt_name), o.ptr, @intCast(o.len));
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            return;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+fn setSocketOptionAfd(socket: net.Socket.Handle, level: i32, opt_name: u32, opt_val: anytype) !void {
+    try socketOptionAfd(socket, .set, level, opt_name, @ptrCast(@constCast(&opt_val)));
+}
+
+fn socketOptionAfd(socket: net.Socket.Handle, mode: windows.AFD.SOCKOPT_INFO.Mode, level: i32, opt_name: u32, opt_val: []u8) !void {
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.SOCKOPT,
+        .in = @ptrCast(&windows.AFD.SOCKOPT_INFO{
+            .mode = mode,
+            .level = level,
+            .optname = opt_name,
+            .optval = opt_val.ptr,
+            .optlen = opt_val.len,
+        }),
+    })).u.Status) {
+        .SUCCESS => return,
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
@@ -12196,98 +12086,55 @@ fn netConnectIpPosix(
     userdata: ?*anyopaque,
     address: *const IpAddress,
     options: IpAddress.ConnectOptions,
-) IpAddress.ConnectError!net.Stream {
+) IpAddress.ConnectError!net.Socket {
     if (!have_networking) return error.NetworkDown;
     if (options.timeout != .none) @panic("TODO implement netConnectIpPosix with timeout");
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
     const family = posixAddressFamily(address);
-    const socket_fd = try openSocketPosix(family, .{
-        .mode = options.mode,
-        .protocol = options.protocol,
-    });
+    const socket_fd = try openSocketPosix(family, .{ .mode = options.mode, .protocol = options.protocol });
     errdefer closeFd(socket_fd);
     var storage: PosixAddress = undefined;
     var addr_len = addressToPosix(address, &storage);
     try posixConnect(socket_fd, &storage.any, addr_len);
     try posixGetSockName(socket_fd, &storage.any, &addr_len);
-    return .{ .socket = .{
-        .handle = socket_fd,
-        .address = addressFromPosix(&storage),
-    } };
+    return .{ .handle = socket_fd, .address = addressFromPosix(&storage) };
 }
 
 fn netConnectIpWindows(
     userdata: ?*anyopaque,
     address: *const IpAddress,
     options: IpAddress.ConnectOptions,
-) IpAddress.ConnectError!net.Stream {
+) IpAddress.ConnectError!net.Socket {
     if (!have_networking) return error.NetworkDown;
     if (options.timeout != .none) @panic("TODO implement netConnectIpWindows with timeout");
     const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
     const family = posixAddressFamily(address);
-    const socket_handle = try openSocketWsa(t, family, .{
-        .mode = options.mode,
-        .protocol = options.protocol,
-    });
-    errdefer closeSocketWindows(socket_handle);
-
-    var storage: WsaAddress = undefined;
-    var addr_len = addressToWsa(address, &storage);
-
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.connect(socket_handle, &storage.any, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            break;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
-            .ECONNREFUSED => return syscall.fail(error.ConnectionRefused),
-            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ETIMEDOUT => return syscall.fail(error.Timeout),
-            .EHOSTUNREACH => return syscall.fail(error.HostUnreachable),
-            .ENETUNREACH => return syscall.fail(error.NetworkUnreachable),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .EISCONN => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EWOULDBLOCK => return syscall.fail(error.WouldBlock),
-            .EACCES => return syscall.fail(error.AccessDenied),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    const socket_handle = try openSocketAfd(family, .{ .mode = options.mode, .protocol = options.protocol });
+    errdefer windows.CloseHandle(socket_handle);
+    try setSocketOptionAfd(socket_handle, ws2_32.SOL.SOCKET, ws2_32.SO.REUSE_UNICASTPORT, true);
+    const bound_address = bindSocketIpAfd(socket_handle, &switch (address.*) {
+        .ip4 => .{ .ip4 = .unspecified(0) },
+        .ip6 => .{ .ip6 = .unspecified(0) },
+    }, .Active) catch |err| switch (err) {
+        error.AddressInUse => return error.Unexpected,
+        else => |e| return e,
+    };
+    const Storage = extern struct { Reserved0: [3]usize = @splat(0), Address: PosixAddress };
+    var storage: Storage = .{ .Address = undefined };
+    const addr_len = addressToPosix(address, &storage.Address);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.CONNECT,
+        .in = @as([]const u8, @ptrCast(&storage))[0 .. @offsetOf(Storage, "Address") + addr_len],
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
-
-    try wsaGetSockName(t, socket_handle, &storage.any, &addr_len);
-
-    return .{ .socket = .{
-        .handle = socket_handle,
-        .address = addressFromWsa(&storage),
-    } };
-}
-
-fn netConnectIpUnavailable(
-    userdata: ?*anyopaque,
-    address: *const IpAddress,
-    options: IpAddress.ConnectOptions,
-) IpAddress.ConnectError!net.Stream {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.NetworkDown;
+    return .{ .handle = socket_handle, .address = bound_address };
 }
 
 fn netConnectUnixPosix(
@@ -12298,6 +12145,7 @@ fn netConnectUnixPosix(
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
     const socket_fd = openSocketPosix(posix.AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
+        error.ProtocolUnsupportedByAddressFamily => return error.AddressFamilyUnsupported,
         error.OptionUnsupported => return error.Unexpected,
         else => |e| return e,
     };
@@ -12315,53 +12163,44 @@ fn netConnectUnixWindows(
     if (!net.has_unix_sockets) return error.AddressFamilyUnsupported;
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-
-    const socket_handle = try openSocketWsa(t, posix.AF.UNIX, .{ .mode = .stream });
-    errdefer closeSocketWindows(socket_handle);
-    var storage: WsaAddress = undefined;
-    const addr_len = addressUnixToWsa(address, &storage);
-
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.connect(socket_handle, &storage.any, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            break;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .ECONNREFUSED => return syscall.fail(error.FileNotFound),
-            .EWOULDBLOCK => return syscall.fail(error.WouldBlock),
-            .EACCES => return syscall.fail(error.AccessDenied),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .EISCONN => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    _ = t;
+    const is_abstract = address.isAbstract();
+    const wps = if (!is_abstract) sliceToPrefixedFileW(null, address.path, .{
+        .allow_relative = false,
+    }) catch |err| switch (err) {
+        error.NameTooLong, error.BadPathName => return error.FileNotFound,
+        else => |e| return e,
+    } else undefined;
+    const socket_handle = openSocketAfd(ws2_32.AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
+        error.ProtocolUnsupportedByAddressFamily => return error.AddressFamilyUnsupported,
+        else => |e| return e,
+    };
+    errdefer windows.CloseHandle(socket_handle);
+    if (!is_abstract) try socketOptionAfd(socket_handle, .special, 0, ws2_32.SO.UNIX_PATH, @constCast(
+        @as([]const u8, @ptrCast(&windows.AFD.SOCKOPT_INFO.UNIX_PATH{
+            .Path = wps.data,
+        }))[0 .. @offsetOf(windows.AFD.SOCKOPT_INFO.UNIX_PATH, "Path") + @sizeOf(windows.WCHAR) * wps.len],
+    ));
+    bindSocketUnixAfd(socket_handle, &(net.UnixAddress.init("") catch |err| switch (err) {
+        error.NameTooLong => unreachable,
+    })) catch |err| switch (err) {
+        error.AddressInUse => return error.Unexpected,
+        else => |e| return e,
+    };
+    const Storage = extern struct { Reserved0: [3]usize = @splat(0), Address: UnixAddress };
+    var storage: Storage = .{ .Address = undefined };
+    const addr_len = addressUnixToPosix(address, &storage.Address);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.CONNECT,
+        .in = @as([]const u8, @ptrCast(&storage))[0 .. @offsetOf(Storage, "Address") + addr_len],
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
-
     return socket_handle;
-}
-
-fn netConnectUnixUnavailable(
-    userdata: ?*anyopaque,
-    address: *const net.UnixAddress,
-) net.UnixAddress.ConnectError!net.Socket.Handle {
-    _ = userdata;
-    _ = address;
-    return error.AddressFamilyUnsupported;
 }
 
 fn netBindIpPosix(
@@ -12379,10 +12218,7 @@ fn netBindIpPosix(
     var addr_len = addressToPosix(address, &storage);
     try posixBind(socket_fd, &storage.any, addr_len);
     try posixGetSockName(socket_fd, &storage.any, &addr_len);
-    return .{
-        .handle = socket_fd,
-        .address = addressFromPosix(&storage),
-    };
+    return .{ .handle = socket_fd, .address = addressFromPosix(&storage) };
 }
 
 fn netBindIpWindows(
@@ -12392,62 +12228,12 @@ fn netBindIpWindows(
 ) IpAddress.BindError!net.Socket {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
     const family = posixAddressFamily(address);
-    const socket_handle = try openSocketWsa(t, family, .{
-        .mode = options.mode,
-        .protocol = options.protocol,
-    });
-    errdefer closeSocketWindows(socket_handle);
-
-    var storage: WsaAddress = undefined;
-    var addr_len = addressToWsa(address, &storage);
-
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.bind(socket_handle, &storage.any, addr_len);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            break;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .EADDRINUSE => return syscall.fail(error.AddressInUse),
-            .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
-    }
-
-    try wsaGetSockName(t, socket_handle, &storage.any, &addr_len);
-
-    return .{
-        .handle = socket_handle,
-        .address = addressFromWsa(&storage),
-    };
-}
-
-fn netBindIpUnavailable(
-    userdata: ?*anyopaque,
-    address: *const IpAddress,
-    options: IpAddress.BindOptions,
-) IpAddress.BindError!net.Socket {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.NetworkDown;
+    const socket_handle = try openSocketAfd(family, options);
+    errdefer windows.CloseHandle(socket_handle);
+    const bound_address = try bindSocketIpAfd(socket_handle, address, .Active);
+    return .{ .handle = socket_handle, .address = bound_address };
 }
 
 fn openSocketPosix(
@@ -12465,8 +12251,7 @@ fn openSocketPosix(
     Unexpected,
     Canceled,
 }!posix.socket_t {
-    const mode = posixSocketMode(options.mode);
-    const protocol = posixProtocol(options.protocol);
+    const mode, const protocol = try posixSocketModeProtocol(family, options.mode, options.protocol);
     const flags: u32 = mode | if (socket_flags_unsupported) 0 else posix.SOCK.CLOEXEC;
     const syscall: Syscall = try .start();
     const socket_fd = while (true) {
@@ -12498,7 +12283,7 @@ fn openSocketPosix(
 
     if (options.ip6_only) {
         if (posix.IPV6 == void) return error.OptionUnsupported;
-        try setSocketOption(socket_fd, posix.IPPROTO.IPV6, posix.IPV6.V6ONLY, 0);
+        try setSocketOptionPosix(socket_fd, posix.IPPROTO.IPV6, posix.IPV6.V6ONLY, 0);
     }
 
     return socket_fd;
@@ -12530,8 +12315,7 @@ fn netSocketCreatePair(
         .ip4 => posix.AF.INET,
         .ip6 => posix.AF.INET6,
     };
-    const mode = posixSocketMode(options.mode);
-    const protocol = posixProtocol(options.protocol);
+    const mode, const protocol = try posixSocketModeProtocol(family, options.mode, options.protocol);
     const flags: u32 = mode | if (socket_flags_unsupported) 0 else posix.SOCK.CLOEXEC;
 
     var sockets: [2]posix.socket_t = undefined;
@@ -12573,56 +12357,102 @@ fn netSocketCreatePair(
     };
 }
 
-fn netSocketCreatePairUnavailable(
-    userdata: ?*anyopaque,
-    options: net.Socket.CreatePairOptions,
-) net.Socket.CreatePairError![2]net.Socket {
-    _ = userdata;
-    _ = options;
-    return error.OperationUnsupported;
+fn openSocketAfd(family: ws2_32.ADDRESS_FAMILY, options: IpAddress.BindOptions) !net.Socket.Handle {
+    const mode, const protocol = try posixSocketModeProtocol(family, options.mode, options.protocol);
+    var handle: windows.HANDLE = undefined;
+    var iosb: windows.IO_STATUS_BLOCK = undefined;
+    var syscall: Syscall = try .start();
+    while (true) switch (windows.ntdll.NtCreateFile(
+        &handle,
+        .{
+            .STANDARD = .{ .RIGHTS = .{ .WRITE_DAC = true }, .SYNCHRONIZE = true },
+            .GENERIC = .{ .WRITE = true, .READ = true },
+        },
+        &.{
+            .ObjectName = @constCast(&windows.UNICODE_STRING.init(
+                windows.AFD.DEVICE_NAME ++ .{ '\\', 'E', 'n', 'd', 'p', 'o', 'i', 'n', 't' },
+            )),
+        },
+        &iosb,
+        null,
+        .{},
+        .{ .READ = true, .WRITE = true },
+        .OPEN_IF,
+        .{ .IO = .ASYNCHRONOUS },
+        &windows.AFD.OPEN_PACKET.FULL_EA_INFORMATION{ .Value = .{
+            .EndpointType = .{
+                .CONNECTIONLESS = switch (options.mode) {
+                    .stream, .seqpacket, .rdm => false,
+                    .dgram, .raw => true,
+                },
+                .MESSAGEMODE = options.mode != .stream,
+                .RAW = options.mode == .raw,
+            },
+            .GroupID = 0,
+            .AddressFamily = family,
+            .SocketType = @bitCast(mode),
+            .Protocol = @bitCast(protocol),
+            .TransportDeviceNameLength = 0,
+            .TransportDeviceName = undefined,
+        } },
+        @sizeOf(windows.AFD.OPEN_PACKET.FULL_EA_INFORMATION),
+    )) {
+        .SUCCESS => {
+            syscall.finish();
+            return handle;
+        },
+        .CANCELLED => {
+            try syscall.checkCancel();
+            continue;
+        },
+        .PROTOCOL_NOT_SUPPORTED => return syscall.fail(error.AddressFamilyUnsupported),
+        .NO_SUCH_FILE => return syscall.fail(error.ProtocolUnsupportedByAddressFamily),
+        else => |status| return syscall.unexpectedNtstatus(status),
+    };
 }
 
-fn openSocketWsa(
-    t: *Threaded,
-    family: posix.sa_family_t,
-    options: IpAddress.BindOptions,
-) !ws2_32.SOCKET {
-    const mode = posixSocketMode(options.mode);
-    const protocol = posixProtocol(options.protocol);
-    // WSA_FLAG_OVERLAPPED is chosen here because without this different
-    // threads cannot use the same open socket handle.
-    const flags: u32 = ws2_32.WSA_FLAG_OVERLAPPED | ws2_32.WSA_FLAG_NO_HANDLE_INHERIT;
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.WSASocketW(family, @bitCast(mode), @bitCast(protocol), null, 0, flags);
-        if (rc != ws2_32.INVALID_SOCKET) {
-            syscall.finish();
-            return rc;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
-            .EMFILE => return syscall.fail(error.ProcessFdQuotaExceeded),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .EPROTONOSUPPORT => return syscall.fail(error.ProtocolUnsupportedByAddressFamily),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+fn bindSocketIpAfd(socket_handle: net.Socket.Handle, address: *const IpAddress, mode: windows.AFD.BIND_INFO.MODE) !IpAddress {
+    const Storage = extern struct { Info: windows.AFD.BIND_INFO, Address: PosixAddress };
+    var storage: Storage = .{ .Info = .{ .Mode = mode }, .Address = undefined };
+    const addr_len = addressToPosix(address, &storage.Address);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.BIND,
+        .in = @as([]const u8, @ptrCast(&storage))[0 .. @offsetOf(Storage, "Address") + addr_len],
+        .out = @as([]u8, @ptrCast(&storage.Address))[0..addr_len],
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        .SHARING_VIOLATION => return error.AddressInUse,
+        else => |status| return windows.unexpectedStatus(status),
+    }
+    return addressFromPosix(&storage.Address);
+}
+
+fn bindSocketUnixAfd(socket_handle: net.Socket.Handle, address: *const net.UnixAddress) !void {
+    const Storage = extern struct { Info: windows.AFD.BIND_INFO, Address: UnixAddress };
+    var storage: Storage = .{ .Info = .{ .Mode = .Unix }, .Address = undefined };
+    const addr_len = addressUnixToPosix(address, &storage.Address);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.BIND,
+        .in = @as([]const u8, @ptrCast(&storage))[0 .. @offsetOf(Storage, "Address") + addr_len],
+        .out = @ptrCast(&storage.Address),
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        .ADDRESS_ALREADY_EXISTS => return error.AddressInUse,
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
-fn netAcceptPosix(userdata: ?*anyopaque, listen_fd: net.Socket.Handle) net.Server.AcceptError!net.Stream {
+fn netAcceptPosix(userdata: ?*anyopaque, listen_fd: net.Socket.Handle, options: net.Server.AcceptOptions) net.Server.AcceptError!net.Socket {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
+    options;
     var storage: PosixAddress = undefined;
     var addr_len: posix.socklen_t = @sizeOf(PosixAddress);
     const syscall: Syscall = try .start();
@@ -12664,55 +12494,71 @@ fn netAcceptPosix(userdata: ?*anyopaque, listen_fd: net.Socket.Handle) net.Serve
             },
         }
     };
-    return .{ .socket = .{
-        .handle = fd,
-        .address = addressFromPosix(&storage),
-    } };
+    return .{ .handle = fd, .address = addressFromPosix(&storage) };
 }
 
-fn netAcceptWindows(userdata: ?*anyopaque, listen_handle: net.Socket.Handle) net.Server.AcceptError!net.Stream {
+fn netAcceptWindows(userdata: ?*anyopaque, listen_handle: net.Socket.Handle, options: net.Server.AcceptOptions) net.Server.AcceptError!net.Socket {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    var storage: WsaAddress = undefined;
-    var addr_len: i32 = @sizeOf(WsaAddress);
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.accept(listen_handle, &storage.any, &addr_len);
-        if (rc != ws2_32.INVALID_SOCKET) {
-            syscall.finish();
-            return .{ .socket = .{
-                .handle = rc,
-                .address = addressFromWsa(&storage),
-            } };
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .ECONNRESET => return syscall.fail(error.ConnectionAborted),
-            .EMFILE => return syscall.fail(error.ProcessFdQuotaExceeded),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .EFAULT => |err| return syscall.wsaErrorBug(err),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    const Storage = extern struct {
+        Info: windows.AFD.LISTEN_RESPONSE_INFO,
+        RemoteAddress: extern union { posix: PosixAddress, unix: UnixAddress },
+    };
+    var storage: Storage = undefined;
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = listen_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.WAIT_FOR_LISTEN,
+        .out = @ptrCast(&storage),
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
+    errdefer t.deferAcceptAfd(listen_handle, storage.Info);
+    const accept_handle = openSocketAfd(
+        storage.RemoteAddress.posix.any.family,
+        .{ .mode = options.mode, .protocol = options.protocol },
+    ) catch |err| switch (err) {
+        error.AddressFamilyUnsupported => return error.Unexpected,
+        error.ProtocolUnsupportedByAddressFamily => return error.Unexpected,
+        else => |e| return e,
+    };
+    errdefer windows.CloseHandle(accept_handle);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = listen_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.ACCEPT,
+        .in = @ptrCast(&windows.AFD.ACCEPT_INFO{
+            .UseSAN = windows.FALSE,
+            .Sequence = storage.Info.Sequence,
+            .AcceptHandle = accept_handle,
+        }),
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
+    }
+    return .{ .handle = accept_handle, .address = addressFromPosix(&storage.RemoteAddress.posix) };
 }
 
-fn netAcceptUnavailable(userdata: ?*anyopaque, listen_handle: net.Socket.Handle) net.Server.AcceptError!net.Stream {
-    _ = userdata;
-    _ = listen_handle;
-    return error.NetworkDown;
+fn deferAcceptAfd(t: *Threaded, listen_handle: net.Socket.Handle, info: windows.AFD.LISTEN_RESPONSE_INFO) void {
+    const cancel_protection = swapCancelProtection(t, .blocked);
+    defer _ = swapCancelProtection(t, cancel_protection);
+    switch ((deviceIoControl(&.{
+        .file = .{ .handle = listen_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.DEFER_ACCEPT,
+        .in = @ptrCast(&windows.AFD.DEFER_ACCEPT_INFO{
+            .Sequence = info.Sequence,
+            .Reject = windows.FALSE,
+        }),
+    }) catch |err| switch (err) {
+        error.Canceled => unreachable, // blocked
+    }).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        else => |status| windows.unexpectedStatus(status) catch {},
+    }
 }
 
 fn netReadPosix(userdata: ?*anyopaque, fd: net.Socket.Handle, data: [][]u8) net.Stream.Reader.Error!usize {
@@ -12798,78 +12644,39 @@ fn netReadPosix(userdata: ?*anyopaque, fd: net.Socket.Handle, data: [][]u8) net.
     }
 }
 
-fn netReadWindows(userdata: ?*anyopaque, handle: net.Socket.Handle, data: [][]u8) net.Stream.Reader.Error!usize {
+fn netReadWindows(userdata: ?*anyopaque, socket_handle: net.Socket.Handle, data: [][]u8) net.Stream.Reader.Error!usize {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
 
-    var iovec_buffer: [max_iovecs_len]ws2_32.WSABUF = undefined;
-    const bufs = b: {
-        var i: usize = 0;
-        var n: usize = 0;
-        for (data) |buf| {
-            if (iovec_buffer.len - i == 0) break;
-            if (buf.len == 0) continue;
-            if (std.math.cast(u32, buf.len)) |len| {
-                iovec_buffer[i] = .{ .buf = buf.ptr, .len = len };
-                i += 1;
-                n += len;
-                continue;
-            }
-            iovec_buffer[i] = .{ .buf = buf.ptr, .len = std.math.maxInt(u32) };
-            i += 1;
-            n += std.math.maxInt(u32);
-            break;
-        }
-
-        const bufs = iovec_buffer[0..i];
-        assert(bufs[0].len != 0);
-
-        break :b bufs;
-    };
-
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        var flags: u32 = 0;
-        var n: u32 = undefined;
-        const rc = ws2_32.WSARecv(handle, bufs.ptr, @intCast(bufs.len), &n, &flags, null, null);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            return n;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-
-            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
-            .EFAULT => unreachable, // a pointer is not completely contained in user address space.
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .EMSGSIZE => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    var iovecs: [max_iovecs_len]windows.AFD.WSABUF(.@"var") = undefined;
+    var len: u32 = 0;
+    for (data) |buf| {
+        if (iovecs.len - len == 0) break;
+        addAfdBuf(.@"var", &iovecs, &len, buf);
     }
-}
 
-fn netReadUnavailable(userdata: ?*anyopaque, fd: net.Socket.Handle, data: [][]u8) net.Stream.Reader.Error!usize {
-    _ = userdata;
-    _ = fd;
-    _ = data;
-    return error.NetworkDown;
+    const iosb = try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.RECEIVE,
+        .in = @ptrCast(&windows.AFD.RECV_INFO{
+            .BufferArray = &iovecs,
+            .BufferCount = len,
+            .AfdFlags = .{ .NO_FAST_IO = true, .OVERLAPPED = true },
+            .TdiFlags = .{ .NORMAL = true },
+        }),
+    });
+    switch (iosb.u.Status) {
+        .SUCCESS => return iosb.Information,
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
+    }
 }
 
 fn netSendPosix(
     userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
+    socket_handle: net.Socket.Handle,
     messages: []net.OutgoingMessage,
     flags: net.SendFlags,
 ) struct { ?net.Socket.SendError, usize } {
@@ -12887,10 +12694,10 @@ fn netSendPosix(
     var i: usize = 0;
     while (messages.len - i != 0) {
         if (have_sendmmsg) {
-            i += netSendMany(handle, messages[i..], posix_flags) catch |err| return .{ err, i };
+            i += netSendManyPosix(socket_handle, messages[i..], posix_flags) catch |err| return .{ err, i };
             continue;
         }
-        netSendOne(t, handle, &messages[i], posix_flags) catch |err| return .{ err, i };
+        t.netSendOnePosix(socket_handle, &messages[i], posix_flags) catch |err| return .{ err, i };
         i += 1;
     }
     return .{ null, i };
@@ -12898,97 +12705,65 @@ fn netSendPosix(
 
 fn netSendWindows(
     userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
+    socket_handle: net.Socket.Handle,
     messages: []net.OutgoingMessage,
     flags: net.SendFlags,
 ) struct { ?net.Socket.SendError, usize } {
     if (!have_networking) return .{ error.NetworkDown, 0 };
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-
-    // Ignored flags: confirm, eor, fastopen
-    const windows_flags: u32 =
-        @as(u32, if (flags.oob) ws2_32.MSG.OOB else 0) |
-        @as(u32, if (flags.dont_route) ws2_32.MSG.DONTROUTE else 0);
-
     for (messages, 0..) |*m, i| {
-        netSendWindowsOne(t, handle, m, windows_flags) catch |err| return .{ err, i };
+        t.netSendOneWindows(socket_handle, m, flags) catch |err| return .{ err, i };
     }
     return .{ null, messages.len };
 }
 
-fn netSendWindowsOne(
+fn netSendOneWindows(
     t: *Threaded,
-    handle: net.Socket.Handle,
+    socket_handle: net.Socket.Handle,
     message: *net.OutgoingMessage,
-    flags: u32,
+    flags: net.SendFlags,
 ) net.Socket.SendError!void {
-    var buf: ws2_32.WSABUF = .{
-        .buf = @constCast(message.data_ptr),
-        .len = std.math.cast(u32, message.data_len) orelse return error.MessageOversize,
-    };
-    var n: u32 = undefined;
-    var address: WsaAddress = undefined;
-    const address_size = addressToWsa(message.address, &address);
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.WSASendTo(
-            handle,
-            (&buf)[0..1],
-            1,
-            &n,
-            flags,
-            &address.any,
-            address_size,
-            null,
-            null,
-        );
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            return;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
+    _ = t;
+    _ = flags;
+    const iovecs: [1]windows.AFD.WSABUF(.@"const") = .{.{
+        .buf = message.data_ptr,
+        .len = std.math.cast(std.os.windows.ULONG, message.data_len) orelse
+            return error.MessageOversize,
+    }};
+    var storage: PosixAddress = undefined;
+    const addr_len = addressToPosix(message.address, &storage);
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.SEND_DATAGRAM,
+        .in = @ptrCast(&windows.AFD.SEND_DATAGRAM_INFO{
+            .BufferArray = &iovecs,
+            .BufferCount = iovecs.len,
+            .AfdFlags = .{ .NO_FAST_IO = true, .OVERLAPPED = true },
+            .TdiRequest = undefined,
+            .TdiConnInfo = .{
+                .UserDataLength = undefined,
+                .UserData = undefined,
+                .OptionsLength = undefined,
+                .Options = undefined,
+                .RemoteAddressLength = @bitCast(addr_len),
+                .RemoteAddress = &storage,
             },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-
-            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
-            .EFAULT => unreachable, // a pointer is not completely contained in user address space.
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .EMSGSIZE => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+        }),
+    })).u.Status) {
+        .SUCCESS => return,
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
-fn netSendUnavailable(
-    userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
-    messages: []net.OutgoingMessage,
-    flags: net.SendFlags,
-) struct { ?net.Socket.SendError, usize } {
-    _ = userdata;
-    _ = handle;
-    _ = messages;
-    _ = flags;
-    return .{ error.NetworkDown, 0 };
-}
-
-fn netSendOne(
+fn netSendOnePosix(
     t: *Threaded,
-    handle: net.Socket.Handle,
+    socket_handle: net.Socket.Handle,
     message: *net.OutgoingMessage,
     flags: u32,
 ) net.Socket.SendError!void {
+    _ = t;
     var addr: PosixAddress = undefined;
     var iovec: posix.iovec_const = .{ .base = @constCast(message.data_ptr), .len = message.data_len };
     const msg: posix.msghdr_const = .{
@@ -13003,43 +12778,7 @@ fn netSendOne(
     };
     var syscall: if (is_windows) AlertableSyscall else Syscall = try .start();
     while (true) {
-        const rc = posix.system.sendmsg(handle, &msg, flags);
-        if (is_windows) {
-            if (rc != ws2_32.SOCKET_ERROR) {
-                syscall.finish();
-                message.data_len = @intCast(rc);
-                return;
-            }
-            switch (ws2_32.WSAGetLastError()) {
-                .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                    try syscall.checkCancel();
-                    continue;
-                },
-                .NOTINITIALISED => {
-                    syscall.finish();
-                    try initializeWsa(t);
-                    syscall = try .start();
-                    continue;
-                },
-                .EACCES => return syscall.fail(error.AccessDenied),
-                .EADDRNOTAVAIL => return syscall.fail(error.AddressUnavailable),
-                .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
-                .EMSGSIZE => return syscall.fail(error.MessageOversize),
-                .ENOBUFS => return syscall.fail(error.SystemResources),
-                .ENOTSOCK => return syscall.fail(error.FileDescriptorNotASocket),
-                .EAFNOSUPPORT => return syscall.fail(error.AddressFamilyUnsupported),
-                .EHOSTUNREACH => return syscall.fail(error.NetworkUnreachable),
-                .ENETDOWN => return syscall.fail(error.NetworkDown),
-                .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
-                .ENETUNREACH => return syscall.fail(error.NetworkUnreachable),
-                .ENOTCONN => return syscall.fail(error.SocketUnconnected),
-                .EDESTADDRREQ => unreachable, // A destination address is required.
-                .EFAULT => unreachable, // The lpBuffers, lpTo, lpOverlapped, lpNumberOfBytesSent, or lpCompletionRoutine parameters are not part of the user address space, or the lpTo parameter is too small.
-                .EINVAL => unreachable,
-                .ESHUTDOWN => |err| return syscall.wsaErrorBug(err),
-                else => |err| return syscall.unexpectedWsaError(err),
-            }
-        }
+        const rc = posix.system.sendmsg(socket_handle, &msg, flags);
         switch (posix.errno(rc)) {
             .SUCCESS => {
                 syscall.finish();
@@ -13074,8 +12813,8 @@ fn netSendOne(
     }
 }
 
-fn netSendMany(
-    handle: net.Socket.Handle,
+fn netSendManyPosix(
+    socket_handle: net.Socket.Handle,
     messages: []net.OutgoingMessage,
     flags: u32,
 ) net.Socket.SendError!usize {
@@ -13106,7 +12845,7 @@ fn netSendMany(
 
     const syscall: Syscall = try .start();
     while (true) {
-        const rc = posix.system.sendmmsg(handle, clamped_msgs.ptr, @intCast(clamped_msgs.len), flags);
+        const rc = posix.system.sendmmsg(socket_handle, clamped_msgs.ptr, @intCast(clamped_msgs.len), flags);
         switch (posix.errno(rc)) {
             .SUCCESS => {
                 syscall.finish();
@@ -13231,11 +12970,12 @@ fn netReceiveWindows(
     data_buffer: []u8,
     flags: net.ReceiveFlags,
 ) struct { ?net.Socket.ReceiveError, usize } {
-    netReceiveWindowsOne(t, socket_handle, &message_buffer[0], data_buffer, flags) catch |err| return .{ err, 0 };
+    t.netReceiveOneWindows(socket_handle, &message_buffer[0], data_buffer, flags) catch |err|
+        return .{ err, 0 };
     return .{ null, 1 };
 }
 
-fn netReceiveWindowsOne(
+fn netReceiveOneWindows(
     t: *Threaded,
     socket_handle: net.Socket.Handle,
     message: *net.IncomingMessage,
@@ -13243,69 +12983,49 @@ fn netReceiveWindowsOne(
     flags: net.ReceiveFlags,
 ) net.Socket.ReceiveError!void {
     if (!have_networking) return error.NetworkDown;
-
-    var windows_flags: u32 =
-        @as(u32, if (flags.oob) ws2_32.MSG.OOB else 0) |
-        @as(u32, if (flags.peek) ws2_32.MSG.PEEK else 0) |
-        @as(u32, if (flags.trunc) ws2_32.MSG.TRUNC else 0);
-
-    var buf: ws2_32.WSABUF = .{
+    _ = t;
+    const iovecs: [1]windows.AFD.WSABUF(.@"var") = .{.{
         .buf = data_buffer.ptr,
-        .len = std.math.cast(u32, data_buffer.len) orelse return error.MessageOversize,
-    };
-    var n: u32 = undefined;
-    var from_storage: WsaAddress = undefined;
-    var from_storage_len: i32 = @sizeOf(WsaAddress);
-    var syscall: AlertableSyscall = try .start();
-
-    while (true) {
-        const rc = ws2_32.WSARecvFrom(
-            socket_handle,
-            (&buf)[0..1],
-            1,
-            &n,
-            &windows_flags,
-            &from_storage.any,
-            &from_storage_len,
-            null,
-            null,
-        );
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            message.* = .{
-                .from = addressFromWsa(&from_storage),
-                .data = data_buffer[0..n],
-                .control = &.{},
-                .flags = .{
-                    .eor = false,
-                    .trunc = (windows_flags & ws2_32.MSG.TRUNC) != 0,
-                    .ctrunc = (windows_flags & ws2_32.MSG.CTRUNC) != 0,
-                    .oob = false,
-                    .errqueue = false,
+        .len = std.math.cast(std.os.windows.ULONG, data_buffer.len) orelse return error.MessageOversize,
+    }};
+    var storage: PosixAddress = undefined;
+    var addr_len: windows.ULONG = @sizeOf(PosixAddress);
+    const iosb = try deviceIoControl(&.{
+        .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.RECEIVE_DATAGRAM,
+        .in = @ptrCast(&windows.AFD.RECV_DATAGRAM_INFO{
+            .BufferArray = &iovecs,
+            .BufferCount = iovecs.len,
+            .AfdFlags = .{ .NO_FAST_IO = true, .OVERLAPPED = true },
+            .TdiFlags = .{ .NORMAL = !flags.oob, .EXPEDITED = flags.oob, .PEEK = flags.peek },
+            .Address = &storage,
+            .AddressLength = &addr_len,
+        }),
+    });
+    switch (iosb.u.Status) {
+        .SUCCESS, .RECEIVE_PARTIAL => |status| message.* = .{
+            .from = addressFromPosix(&storage),
+            .data = data_buffer[0..iosb.Information],
+            .control = &.{},
+            .flags = .{
+                .eor = false,
+                .trunc = false,
+                .ctrunc = false,
+                .oob = switch (status) {
+                    else => unreachable,
+                    .SUCCESS, .RECEIVE_PARTIAL, .BUFFER_OVERFLOW => false,
+                    .RECEIVE_EXPEDITED, .RECEIVE_PARTIAL_EXPEDITED => true,
                 },
-            };
-            return;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
+                .errqueue = false,
             },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
-            .EFAULT => unreachable, // a pointer is not completely contained in user address space.
-            .EINVAL => |err| return syscall.wsaErrorBug(err),
-            .EMSGSIZE => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+        },
+        .RECEIVE_EXPEDITED,
+        .RECEIVE_PARTIAL_EXPEDITED,
+        .BUFFER_OVERFLOW,
+        => |status| return windows.unexpectedStatus(status), // TdiFlags.PARTIAL = false
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
@@ -13412,17 +13132,17 @@ fn netWriteWindows(
 ) net.Stream.Writer.Error!usize {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    comptime assert(is_windows);
+    _ = t;
 
-    var iovecs: [max_iovecs_len]ws2_32.WSABUF = undefined;
+    var iovecs: [max_iovecs_len]windows.AFD.WSABUF(.@"const") = undefined;
     var len: u32 = 0;
-    addWsaBuf(&iovecs, &len, header);
-    for (data[0 .. data.len - 1]) |bytes| addWsaBuf(&iovecs, &len, bytes);
+    addAfdBuf(.@"const", &iovecs, &len, header);
+    for (data[0 .. data.len - 1]) |bytes| addAfdBuf(.@"const", &iovecs, &len, bytes);
     const pattern = data[data.len - 1];
     var backup_buffer: [64]u8 = undefined;
     if (iovecs.len - len != 0) switch (splat) {
         0 => {},
-        1 => addWsaBuf(&iovecs, &len, pattern),
+        1 => addAfdBuf(.@"const", &iovecs, &len, pattern),
         else => switch (pattern.len) {
             0 => {},
             1 => {
@@ -13430,85 +13150,61 @@ fn netWriteWindows(
                 const memset_len = @min(splat_buffer.len, splat);
                 const buf = splat_buffer[0..memset_len];
                 @memset(buf, pattern[0]);
-                addWsaBuf(&iovecs, &len, buf);
+                addAfdBuf(.@"const", &iovecs, &len, buf);
                 var remaining_splat = splat - buf.len;
                 while (remaining_splat > splat_buffer.len and len < iovecs.len) {
-                    addWsaBuf(&iovecs, &len, splat_buffer);
+                    addAfdBuf(.@"const", &iovecs, &len, splat_buffer);
                     remaining_splat -= splat_buffer.len;
                 }
-                addWsaBuf(&iovecs, &len, splat_buffer[0..@min(remaining_splat, splat_buffer.len)]);
+                addAfdBuf(.@"const", &iovecs, &len, splat_buffer[0..@min(remaining_splat, splat_buffer.len)]);
             },
             else => for (0..@min(splat, iovecs.len - len)) |_| {
-                addWsaBuf(&iovecs, &len, pattern);
+                addAfdBuf(.@"const", &iovecs, &len, pattern);
             },
         },
     };
 
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        var n: u32 = undefined;
-        const rc = ws2_32.WSASend(handle, &iovecs, len, &n, 0, null, null);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            return n;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-
-            .ECONNABORTED => return syscall.fail(error.ConnectionResetByPeer),
-            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .EINVAL => return syscall.fail(error.SocketUnconnected),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .ENETRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENOBUFS => return syscall.fail(error.SystemResources),
-            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
-            .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            .EOPNOTSUPP => |err| return syscall.wsaErrorBug(err),
-            .ESHUTDOWN => |err| return syscall.wsaErrorBug(err),
-            .IO_PENDING => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    const iosb = try deviceIoControl(&.{
+        .file = .{ .handle = handle, .flags = .{ .nonblocking = true } },
+        .code = windows.IOCTL.AFD.SEND,
+        .in = @ptrCast(&windows.AFD.SEND_INFO{
+            .BufferArray = &iovecs,
+            .BufferCount = len,
+            .AfdFlags = .{ .NO_FAST_IO = true, .OVERLAPPED = true },
+            .TdiFlags = .{},
+        }),
+    });
+    switch (iosb.u.Status) {
+        .SUCCESS => return iosb.Information,
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
 }
 
-fn addWsaBuf(v: []ws2_32.WSABUF, i: *u32, bytes: []const u8) void {
+fn addAfdBuf(
+    comptime mutability: windows.AFD.Mutability,
+    iovecs: []windows.AFD.WSABUF(mutability),
+    len: *u32,
+    bytes: switch (mutability) {
+        .@"const" => []const u8,
+        .@"var" => []u8,
+    },
+) void {
+    if (bytes.len == 0) return;
     const cap = std.math.maxInt(u32);
     var remaining = bytes;
     while (remaining.len > cap) {
-        if (v.len - i.* == 0) return;
-        v[i.*] = .{ .buf = @constCast(remaining.ptr), .len = cap };
-        i.* += 1;
+        if (iovecs.len - len.* == 0) return;
+        iovecs[len.*] = .{ .buf = remaining.ptr, .len = cap };
+        len.* += 1;
         remaining = remaining[cap..];
     } else {
         @branchHint(.likely);
-        if (v.len - i.* == 0) return;
-        v[i.*] = .{ .buf = @constCast(remaining.ptr), .len = @intCast(remaining.len) };
-        i.* += 1;
+        if (iovecs.len - len.* == 0) return;
+        iovecs[len.*] = .{ .buf = remaining.ptr, .len = @intCast(remaining.len) };
+        len.* += 1;
     }
-}
-
-fn netWriteUnavailable(
-    userdata: ?*anyopaque,
-    handle: net.Socket.Handle,
-    header: []const u8,
-    data: []const []const u8,
-    splat: usize,
-) net.Stream.Writer.Error!usize {
-    _ = userdata;
-    _ = handle;
-    _ = header;
-    _ = data;
-    _ = splat;
-    return error.NetworkDown;
 }
 
 /// This is either usize or u32. Since, either is fine, let's use the same
@@ -13530,16 +13226,10 @@ fn netClose(userdata: ?*anyopaque, handles: []const net.Socket.Handle) void {
     if (!have_networking) unreachable;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    switch (native_os) {
-        .windows => for (handles) |handle| closeSocketWindows(handle),
-        else => for (handles) |handle| closeFd(handle),
-    }
-}
-
-fn netCloseUnavailable(userdata: ?*anyopaque, handles: []const net.Socket.Handle) void {
-    _ = userdata;
-    _ = handles;
-    unreachable; // How you gonna close something that was impossible to open?
+    for (handles) |handle| switch (native_os) {
+        .windows => windows.CloseHandle(handle),
+        else => closeFd(handle),
+    };
 }
 
 fn netShutdownPosix(userdata: ?*anyopaque, handle: net.Socket.Handle, how: net.ShutdownHow) net.ShutdownError!void {
@@ -13577,43 +13267,22 @@ fn netShutdownPosix(userdata: ?*anyopaque, handle: net.Socket.Handle, how: net.S
 fn netShutdownWindows(userdata: ?*anyopaque, handle: net.Socket.Handle, how: net.ShutdownHow) net.ShutdownError!void {
     if (!have_networking) return error.NetworkDown;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
 
-    const wsa_how: i32 = switch (how) {
-        .recv => ws2_32.SD_RECEIVE,
-        .send => ws2_32.SD_SEND,
-        .both => ws2_32.SD_BOTH,
-    };
-
-    var syscall: AlertableSyscall = try .start();
-    while (true) {
-        const rc = ws2_32.shutdown(handle, wsa_how);
-        if (rc != ws2_32.SOCKET_ERROR) {
-            syscall.finish();
-            return;
-        }
-        switch (ws2_32.WSAGetLastError()) {
-            .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => {
-                try syscall.checkCancel();
-                continue;
-            },
-            .NOTINITIALISED => {
-                syscall.finish();
-                try initializeWsa(t);
-                syscall = try .start();
-                continue;
-            },
-            .ECONNABORTED => return syscall.fail(error.ConnectionAborted),
-            .ECONNRESET => return syscall.fail(error.ConnectionResetByPeer),
-            .ENETDOWN => return syscall.fail(error.NetworkDown),
-            .ENOTCONN => return syscall.fail(error.SocketUnconnected),
-            .EINVAL, .ENOTSOCK => |err| return syscall.wsaErrorBug(err),
-            else => |err| return syscall.unexpectedWsaError(err),
-        }
+    // shutdown does not support apcs at all
+    switch ((try deviceIoControl(&.{
+        .file = .{ .handle = handle, .flags = .{ .nonblocking = false } },
+        .code = windows.IOCTL.AFD.PARTIAL_DISCONNECT,
+        .in = @ptrCast(&windows.AFD.PARTIAL_DISCONNECT_INFO{
+            .DisconnectMode = .{ .SEND = how != .recv, .RECEIVE = how != .send },
+            .Timeout = -1,
+        }),
+    })).u.Status) {
+        .SUCCESS => {},
+        .CANCELLED => unreachable,
+        .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        else => |status| return windows.unexpectedStatus(status),
     }
-}
-
-fn netShutdownUnavailable(_: ?*anyopaque, _: net.Socket.Handle, _: net.ShutdownHow) net.ShutdownError!void {
-    unreachable; // How you gonna shutdown something that was impossible to open?
 }
 
 fn netInterfaceNameResolve(
@@ -13622,7 +13291,6 @@ fn netInterfaceNameResolve(
 ) net.Interface.Name.ResolveError!net.Interface {
     if (!have_networking) return error.InterfaceNotFound;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    _ = t;
 
     if (native_os == .linux) {
         const sock_fd = openSocketPosix(posix.AF.UNIX, .{ .mode = .dgram }) catch |err| switch (err) {
@@ -13658,8 +13326,66 @@ fn netInterfaceNameResolve(
     }
 
     if (is_windows) {
+        var ConvertInterfaceNameToLuidW = t.dl.ConvertInterfaceNameToLuidW.load(.acquire);
+        var ConvertInterfaceLuidToIndex = t.dl.ConvertInterfaceLuidToIndex.load(.acquire);
+        if (ConvertInterfaceNameToLuidW == null or ConvertInterfaceLuidToIndex == null) {
+            const iphlpapi_dll = t.dl.iphlpapi_dll.load(.acquire) orelse iphlpapi_dll: {
+                try Thread.checkCancel();
+                var iphlpapi_dll: *anyopaque = undefined;
+                switch (windows.ntdll.LdrLoadDll(null, null, &.init(
+                    &.{ 'I', 'P', 'H', 'L', 'P', 'A', 'P', 'I', '.', 'D', 'L', 'L' },
+                ), &iphlpapi_dll)) {
+                    .SUCCESS => {},
+                    .DLL_NOT_FOUND => return error.Unexpected,
+                    else => |status| return windows.unexpectedStatus(status),
+                }
+                const handle = t.dl.iphlpapi_dll.cmpxchgStrong(null, iphlpapi_dll, .release, .monotonic) orelse
+                    break :iphlpapi_dll iphlpapi_dll;
+                switch (windows.ntdll.LdrUnloadDll(iphlpapi_dll)) {
+                    .SUCCESS => break :iphlpapi_dll handle.?,
+                    else => |status| return windows.unexpectedStatus(status),
+                }
+            };
+            switch (windows.ntdll.LdrGetProcedureAddress(iphlpapi_dll, &.init(
+                &.{
+                    'C', 'o', 'n', 'v', 'e', 'r', 't', 'I', 'n', 't', 'e', 'r', 'f', 'a', 'c', 'e',
+                    'N', 'a', 'm', 'e', 'T', 'o', 'L', 'u', 'i', 'd', 'W',
+                },
+            ), 0, @ptrCast(&ConvertInterfaceNameToLuidW))) {
+                .SUCCESS => t.dl.ConvertInterfaceNameToLuidW.store(ConvertInterfaceNameToLuidW, .release),
+                else => |status| return windows.unexpectedStatus(status),
+            }
+            switch (windows.ntdll.LdrGetProcedureAddress(iphlpapi_dll, &.init(
+                &.{
+                    'C', 'o', 'n', 'v', 'e', 'r', 't', 'I', 'n', 't', 'e', 'r', 'f', 'a', 'c', 'e',
+                    'L', 'u', 'i', 'd', 'T', 'o', 'I', 'n', 'd', 'e', 'x',
+                },
+            ), 0, @ptrCast(&ConvertInterfaceLuidToIndex))) {
+                .SUCCESS => t.dl.ConvertInterfaceLuidToIndex.store(ConvertInterfaceLuidToIndex, .release),
+                else => |status| return windows.unexpectedStatus(status),
+            }
+        }
         try Thread.checkCancel();
-        @panic("TODO implement netInterfaceNameResolve for Windows");
+        var name_w: [net.Interface.Name.max_len:0]windows.WCHAR = undefined;
+        name_w[
+            std.unicode.wtf8ToWtf16Le(&name_w, name.toSlice()) catch |err| switch (err) {
+                error.InvalidWtf8 => return error.InterfaceNotFound,
+            }
+        ] = 0;
+        var luid: windows.NET.LUID = undefined;
+        switch (ConvertInterfaceNameToLuidW.?(&name_w, &luid)) {
+            .SUCCESS => {},
+            .INVALID_NAME => return error.InterfaceNotFound,
+            .INVALID_PARAMETER => unreachable,
+            else => |err| return windows.unexpectedError(err),
+        }
+        var index: windows.NET.IFINDEX = undefined;
+        switch (ConvertInterfaceLuidToIndex.?(&luid, &index)) {
+            .SUCCESS => {},
+            .INVALID_PARAMETER => unreachable,
+            else => |err| return windows.unexpectedError(err),
+        }
+        return .{ .index = @intFromEnum(index) };
     }
 
     if (builtin.link_libc) {
@@ -13672,40 +13398,79 @@ fn netInterfaceNameResolve(
     @panic("unimplemented");
 }
 
-fn netInterfaceNameResolveUnavailable(
-    userdata: ?*anyopaque,
-    name: *const net.Interface.Name,
-) net.Interface.Name.ResolveError!net.Interface {
-    _ = userdata;
-    _ = name;
-    return error.InterfaceNotFound;
-}
-
 fn netInterfaceName(userdata: ?*anyopaque, interface: net.Interface) net.Interface.NameError!net.Interface.Name {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
-    _ = t;
-    try Thread.checkCancel();
 
     if (native_os == .linux) {
-        _ = interface;
+        try Thread.checkCancel();
         @panic("TODO implement netInterfaceName for linux");
     }
 
     if (is_windows) {
-        @panic("TODO implement netInterfaceName for windows");
+        var ConvertInterfaceIndexToLuid = t.dl.ConvertInterfaceIndexToLuid.load(.acquire);
+        var ConvertInterfaceLuidToNameW = t.dl.ConvertInterfaceLuidToNameW.load(.acquire);
+        if (ConvertInterfaceIndexToLuid == null or ConvertInterfaceLuidToNameW == null) {
+            const iphlpapi_dll = t.dl.iphlpapi_dll.load(.acquire) orelse iphlpapi_dll: {
+                try Thread.checkCancel();
+                var iphlpapi_dll: *anyopaque = undefined;
+                switch (windows.ntdll.LdrLoadDll(null, null, &.init(
+                    &.{ 'I', 'P', 'H', 'L', 'P', 'A', 'P', 'I', '.', 'D', 'L', 'L' },
+                ), &iphlpapi_dll)) {
+                    .SUCCESS => {},
+                    .DLL_NOT_FOUND => return error.Unexpected,
+                    else => |status| return windows.unexpectedStatus(status),
+                }
+                const handle = t.dl.iphlpapi_dll.cmpxchgStrong(null, iphlpapi_dll, .release, .monotonic) orelse
+                    break :iphlpapi_dll iphlpapi_dll;
+                switch (windows.ntdll.LdrUnloadDll(iphlpapi_dll)) {
+                    .SUCCESS => break :iphlpapi_dll handle.?,
+                    else => |status| return windows.unexpectedStatus(status),
+                }
+            };
+            switch (windows.ntdll.LdrGetProcedureAddress(iphlpapi_dll, &.init(
+                &.{
+                    'C', 'o', 'n', 'v', 'e', 'r', 't', 'I', 'n', 't', 'e', 'r', 'f', 'a', 'c', 'e',
+                    'I', 'n', 'd', 'e', 'x', 'T', 'o', 'L', 'u', 'i', 'd',
+                },
+            ), 0, @ptrCast(&ConvertInterfaceIndexToLuid))) {
+                .SUCCESS => t.dl.ConvertInterfaceIndexToLuid.store(ConvertInterfaceIndexToLuid, .release),
+                else => |status| return windows.unexpectedStatus(status),
+            }
+            switch (windows.ntdll.LdrGetProcedureAddress(iphlpapi_dll, &.init(
+                &.{
+                    'C', 'o', 'n', 'v', 'e', 'r', 't', 'I', 'n', 't', 'e', 'r', 'f', 'a', 'c', 'e',
+                    'L', 'u', 'i', 'd', 'T', 'o', 'N', 'a', 'm', 'e', 'W',
+                },
+            ), 0, @ptrCast(&ConvertInterfaceLuidToNameW))) {
+                .SUCCESS => t.dl.ConvertInterfaceLuidToNameW.store(ConvertInterfaceLuidToNameW, .release),
+                else => |status| return windows.unexpectedStatus(status),
+            }
+        }
+        try Thread.checkCancel();
+        var luid: windows.NET.LUID = undefined;
+        switch (ConvertInterfaceIndexToLuid.?(@enumFromInt(interface.index), &luid)) {
+            .SUCCESS => {},
+            .FILE_NOT_FOUND => return error.InterfaceNotFound,
+            .INVALID_PARAMETER => unreachable,
+            else => |err| return windows.unexpectedError(err),
+        }
+        var name_w: [net.Interface.Name.max_len:0]windows.WCHAR = undefined;
+        switch (ConvertInterfaceLuidToNameW.?(&luid, &name_w, name_w.len)) {
+            .SUCCESS => {},
+            .INVALID_PARAMETER => unreachable,
+            .NOT_ENOUGH_MEMORY => return error.NameTooLong,
+            else => |err| return windows.unexpectedError(err),
+        }
+        var name: [3 * net.Interface.Name.max_len]u8 = undefined;
+        return .fromSlice(name[0..std.unicode.wtf16LeToWtf8(&name, std.mem.sliceTo(&name_w, 0))]);
     }
 
     if (builtin.link_libc) {
+        try Thread.checkCancel();
         @panic("TODO implement netInterfaceName for libc");
     }
 
     @panic("unimplemented");
-}
-
-fn netInterfaceNameUnavailable(userdata: ?*anyopaque, interface: net.Interface) net.Interface.NameError!net.Interface.Name {
-    _ = userdata;
-    _ = interface;
-    return error.Unexpected;
 }
 
 fn netLookup(
@@ -13716,23 +13481,10 @@ fn netLookup(
 ) net.HostName.LookupError!void {
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     defer resolved.close(io(t));
-    netLookupFallible(t, host_name, resolved, options) catch |err| switch (err) {
+    t.netLookupFallible(host_name, resolved, options) catch |err| switch (err) {
         error.Closed => unreachable, // `resolved` must not be closed until `netLookup` returns
         else => |e| return e,
     };
-}
-
-fn netLookupUnavailable(
-    userdata: ?*anyopaque,
-    host_name: HostName,
-    resolved: *Io.Queue(HostName.LookupResult),
-    options: HostName.LookupOptions,
-) net.HostName.LookupError!void {
-    _ = host_name;
-    _ = options;
-    const t: *Threaded = @ptrCast(@alignCast(userdata));
-    resolved.close(io(t));
-    return error.NetworkDown;
 }
 
 fn netLookupFallible(
@@ -13743,88 +13495,128 @@ fn netLookupFallible(
 ) (net.HostName.LookupError || Io.QueueClosedError)!void {
     if (!have_networking) return error.NetworkDown;
 
-    const t_io = io(t);
+    const t_io = t.io();
     const name = host_name.bytes;
     assert(name.len <= HostName.max_len);
 
     if (is_windows) {
-        var name_buffer: [HostName.max_len + 1]u16 = undefined;
-        const name_len = std.unicode.wtf8ToWtf16Le(&name_buffer, host_name.bytes) catch
-            unreachable; // HostName is prevalidated.
-        name_buffer[name_len] = 0;
-        const name_w = name_buffer[0..name_len :0];
-
-        var port_buffer: [8]u8 = undefined;
-        var port_buffer_wide: [8]u16 = undefined;
-        const port = std.fmt.bufPrint(&port_buffer, "{d}", .{options.port}) catch
-            unreachable; // `port_buffer` is big enough for decimal u16.
-        for (port, port_buffer_wide[0..port.len]) |byte, *wide|
-            wide.* = std.mem.nativeToLittle(u16, byte);
-        port_buffer_wide[port.len] = 0;
-        const port_w = port_buffer_wide[0..port.len :0];
-
-        const hints: ws2_32.ADDRINFOEXW = .{
-            .flags = .{ .NUMERICSERV = true },
-            .family = if (options.family) |f| switch (f) {
-                .ip4 => posix.AF.INET,
-                .ip6 => posix.AF.INET6,
-            } else posix.AF.UNSPEC,
-            .socktype = posix.SOCK.STREAM,
-            .protocol = posix.IPPROTO.TCP,
-            .canonname = null,
-            .addr = null,
-            .addrlen = 0,
-            .blob = null,
-            .bloblen = 0,
-            .provider = null,
-            .next = null,
-        };
-        var res: *ws2_32.ADDRINFOEXW = undefined;
-        const timeout: ?*ws2_32.timeval = null;
-        while (true) {
-            // TODO: hook this up to cancelation with `NtDelayExecution` and APC callbacks.
-            try Thread.checkCancel();
-            // TODO make this append to the queue eagerly rather than blocking until the whole thing finishes
-            const rc: ws2_32.WinsockError = @enumFromInt(ws2_32.GetAddrInfoExW(name_w, port_w, .DNS, null, &hints, &res, timeout, null, null, null));
-            switch (rc) {
-                @as(ws2_32.WinsockError, @enumFromInt(0)) => break,
-                .EINTR, .ECANCELLED, .E_CANCELLED, .OPERATION_ABORTED => continue,
-                .NOTINITIALISED => {
-                    try initializeWsa(t);
-                    continue;
-                },
-                .TRY_AGAIN => return error.NameServerFailure,
-                .NO_RECOVERY => return error.NameServerFailure,
-                .EAFNOSUPPORT => return error.AddressFamilyUnsupported,
-                .NOT_ENOUGH_MEMORY => return error.SystemResources,
-                .HOST_NOT_FOUND => return error.UnknownHostName,
-                .TYPE_NOT_FOUND => return error.ProtocolUnsupportedByAddressFamily,
-                .ESOCKTNOSUPPORT => return error.ProtocolUnsupportedBySystem,
-                .EINVAL => |err| return windows.wsaErrorBug(err),
-                else => |err| return windows.unexpectedWsaError(err),
-            }
+        if (options.family == null) {
+            if (IpAddress.parseIp4(name, options.port)) |addr| {
+                try resolved.putAll(t_io, &.{
+                    .{ .address = addr },
+                    .{ .canonical_name = copyCanon(options.canonical_name_buffer, name) },
+                });
+                return;
+            } else |_| {}
         }
-        defer ws2_32.FreeAddrInfoExW(res);
 
-        var it: ?*ws2_32.ADDRINFOEXW = res;
-        var canon_name: ?[*:0]const u16 = null;
-        while (it) |info| : (it = info.next) {
-            const addr = info.addr orelse continue;
-            try resolved.putOne(t_io, .{ .address = addressFromWsa(@alignCast(@fieldParentPtr("any", addr))) });
-
-            if (info.canonname) |n| {
-                if (canon_name == null) {
-                    canon_name = n;
+        var DnsQueryEx = t.dl.DnsQueryEx.load(.acquire);
+        //var DnsCancelQuery = t.dl.DnsCancelQuery.load(.acquire);
+        var DnsFree = t.dl.DnsFree.load(.acquire);
+        if (DnsQueryEx == null or
+            //DnsCancelQuery == null or
+            DnsFree == null)
+        {
+            const dnsapi_dll = t.dl.dnsapi_dll.load(.acquire) orelse dnsapi_dll: {
+                try Thread.checkCancel();
+                var dnsapi_dll: *anyopaque = undefined;
+                switch (windows.ntdll.LdrLoadDll(null, null, &.init(
+                    &.{ 'd', 'n', 's', 'a', 'p', 'i', '.', 'd', 'l', 'l' },
+                ), &dnsapi_dll)) {
+                    .SUCCESS => {},
+                    .DLL_NOT_FOUND => return error.Unexpected,
+                    else => |status| return windows.unexpectedStatus(status),
                 }
+                const handle = t.dl.dnsapi_dll.cmpxchgStrong(null, dnsapi_dll, .release, .monotonic) orelse
+                    break :dnsapi_dll dnsapi_dll;
+                switch (windows.ntdll.LdrUnloadDll(dnsapi_dll)) {
+                    .SUCCESS => break :dnsapi_dll handle.?,
+                    else => |status| return windows.unexpectedStatus(status),
+                }
+            };
+            switch (windows.ntdll.LdrGetProcedureAddress(dnsapi_dll, &.init(
+                &.{ 'D', 'n', 's', 'Q', 'u', 'e', 'r', 'y', 'E', 'x' },
+            ), 0, @ptrCast(&DnsQueryEx))) {
+                .SUCCESS => t.dl.DnsQueryEx.store(DnsQueryEx, .release),
+                else => |status| return windows.unexpectedStatus(status),
+            }
+            //switch (windows.ntdll.LdrGetProcedureAddress(dnsapi_dll, &.init(
+            //    &.{ 'D', 'n', 's', 'C', 'a', 'n', 'c', 'e', 'l', 'Q', 'u', 'e', 'r', 'y' },
+            //), 0, @ptrCast(&DnsCancelQuery))) {
+            //    .SUCCESS => t.dl.DnsCancelQuery.store(DnsCancelQuery, .release),
+            //    else => |status| return windows.unexpectedStatus(status),
+            //}
+            switch (windows.ntdll.LdrGetProcedureAddress(dnsapi_dll, &.init(
+                &.{ 'D', 'n', 's', 'F', 'r', 'e', 'e' },
+            ), 0, @ptrCast(&DnsFree))) {
+                .SUCCESS => t.dl.DnsFree.store(DnsFree, .release),
+                else => |status| return windows.unexpectedStatus(status),
             }
         }
-        if (canon_name) |n| {
-            const len = std.unicode.wtf16LeToWtf8(options.canonical_name_buffer, std.mem.sliceTo(n, 0));
-            try resolved.putOne(t_io, .{ .canonical_name = .{
-                .bytes = options.canonical_name_buffer[0..len],
-            } });
+        const current_thread = Thread.current;
+        var lookup_dns: LookupDnsWindows = .{
+            .threaded = t,
+            .thread = if (current_thread) |thread| thread.handle else undefined,
+            .resolved = resolved,
+            .options = options,
+            .results = .{
+                .Version = 1,
+                .QueryStatus = undefined,
+                .QueryOptions = undefined,
+                .pQueryRecords = undefined,
+                .Reserved = undefined,
+            },
+            .done = false,
+        };
+        var host_name_w: [HostName.max_len:0]windows.WCHAR = undefined;
+        host_name_w[
+            std.unicode.wtf8ToWtf16Le(&host_name_w, name) catch |err| switch (err) {
+                error.InvalidWtf8 => return error.UnknownHostName,
+            }
+        ] = 0;
+        //var cancel_token: windows.DNS.QUERY.CANCEL = undefined;
+        switch (DnsQueryEx.?(&.{
+            .Version = 1,
+            .QueryName = &host_name_w,
+            .QueryType = if (options.family == .ip4) .A else .AAAA,
+            .QueryOptions = .{
+                .ADDRCONFIG = true,
+                .DUAL_ADDR = options.family == null,
+                .MULTICAST_WAIT = true,
+            },
+            .pQueryCompletionCallback = if (current_thread) |_| &LookupDnsWindows.completed else null,
+        }, &lookup_dns.results,
+            //&cancel_token,
+            null)) {
+            // We must wait for the APC routine.
+            .SUCCESS, .REQUEST_PENDING => |status| if (current_thread) |_| {
+                while (!@atomicLoad(bool, &lookup_dns.done, .acquire)) {
+                    // Once we get here we must not return from the function until the
+                    // operation completes, thereby releasing references to `host_name_w`,
+                    // `lookup_dns.results`, and `cancel_token`.
+                    const alertable_syscall = AlertableSyscall.start() catch |err| switch (err) {
+                        error.Canceled => |e| {
+                            //_ = DnsCancelQuery.?(&cancel_token);
+                            while (!@atomicLoad(bool, &lookup_dns.done, .acquire)) waitForApcOrAlert();
+                            return e;
+                        },
+                    };
+                    waitForApcOrAlert();
+                    alertable_syscall.finish();
+                }
+            } else switch (status) {
+                .SUCCESS => try lookup_dns.completedFallible(),
+                .REQUEST_PENDING => unreachable, // `pQueryCompletionCallback` was `null`
+                else => unreachable,
+            },
+            else => |status| lookup_dns.results.QueryStatus = status,
         }
-        return;
+        switch (lookup_dns.results.QueryStatus) {
+            .SUCCESS => return,
+            .REQUEST_PENDING => unreachable, // already handled
+            .INVALID_NAME, .NO_RECORDS => return error.UnknownHostName,
+            else => |status| return windows.unexpectedError(@enumFromInt(@intFromEnum(status))),
+        }
     }
 
     // On Linux, glibc provides getaddrinfo_a which is capable of supporting our semantics.
@@ -13855,7 +13647,7 @@ fn netLookupFallible(
             } else |_| {}
         }
 
-        lookupHosts(t, host_name, resolved, options) catch |err| switch (err) {
+        t.lookupHosts(host_name, resolved, options) catch |err| switch (err) {
             error.UnknownHostName => {},
             else => |e| return e,
         };
@@ -13890,7 +13682,7 @@ fn netLookupFallible(
             return;
         }
 
-        return lookupDnsSearch(t, host_name, resolved, options);
+        return t.lookupDnsSearch(host_name, resolved, options);
     }
 
     if (native_os == .openbsd) {
@@ -13908,16 +13700,16 @@ fn netLookupFallible(
     if (builtin.link_libc) {
         // This operating system lacks a way to resolve asynchronously. We are
         // stuck with getaddrinfo.
-        var name_buffer: [HostName.max_len + 1]u8 = undefined;
-        @memcpy(name_buffer[0..host_name.bytes.len], host_name.bytes);
-        name_buffer[host_name.bytes.len] = 0;
-        const name_c = name_buffer[0..host_name.bytes.len :0];
+        var name_buffer: [HostName.max_len:0]u8 = undefined;
+        @memcpy(name_buffer[0..name.len], name);
+        name_buffer[name.len] = 0;
+        const name_c = name_buffer[0..name.len :0];
 
         var port_buffer: [8]u8 = undefined;
         const port_c = std.fmt.bufPrintZ(&port_buffer, "{d}", .{options.port}) catch unreachable;
 
         const hints: posix.addrinfo = .{
-            .flags = .{ .NUMERICSERV = true },
+            .flags = .{ .CANONNAME = options.request_canonical_name, .NUMERICSERV = true },
             .family = posix.AF.UNSPEC,
             .socktype = posix.SOCK.STREAM,
             .protocol = posix.IPPROTO.TCP,
@@ -14168,13 +13960,6 @@ const UnixAddress = extern union {
     un: posix.sockaddr.un,
 };
 
-const WsaAddress = extern union {
-    any: ws2_32.sockaddr,
-    in: ws2_32.sockaddr.in,
-    in6: ws2_32.sockaddr.in6,
-    un: ws2_32.sockaddr.un,
-};
-
 pub fn posixAddressFamily(a: *const IpAddress) posix.sa_family_t {
     return switch (a.*) {
         .ip4 => posix.AF.INET,
@@ -14186,14 +13971,6 @@ pub fn addressFromPosix(posix_address: *const PosixAddress) IpAddress {
     return switch (posix_address.any.family) {
         posix.AF.INET => .{ .ip4 = address4FromPosix(&posix_address.in) },
         posix.AF.INET6 => .{ .ip6 = address6FromPosix(&posix_address.in6) },
-        else => .{ .ip4 = .loopback(0) },
-    };
-}
-
-fn addressFromWsa(wsa_address: *const WsaAddress) IpAddress {
-    return switch (wsa_address.any.family) {
-        posix.AF.INET => .{ .ip4 = address4FromWsa(&wsa_address.in) },
-        posix.AF.INET6 => .{ .ip6 = address6FromWsa(&wsa_address.in6) },
         else => .{ .ip4 = .loopback(0) },
     };
 }
@@ -14211,31 +13988,27 @@ pub fn addressToPosix(a: *const IpAddress, storage: *PosixAddress) posix.socklen
     };
 }
 
-fn addressToWsa(a: *const IpAddress, storage: *WsaAddress) i32 {
-    return switch (a.*) {
-        .ip4 => |ip4| {
-            storage.in = address4ToPosix(ip4);
-            return @sizeOf(posix.sockaddr.in);
-        },
-        .ip6 => |*ip6| {
-            storage.in6 = address6ToPosix(ip6);
-            return @sizeOf(posix.sockaddr.in6);
-        },
-    };
-}
-
 fn addressUnixToPosix(a: *const net.UnixAddress, storage: *UnixAddress) posix.socklen_t {
-    @memcpy(storage.un.path[0..a.path.len], a.path);
     storage.un.family = posix.AF.UNIX;
-    storage.un.path[a.path.len] = 0;
-    return @sizeOf(posix.sockaddr.un);
-}
-
-fn addressUnixToWsa(a: *const net.UnixAddress, storage: *WsaAddress) i32 {
-    @memcpy(storage.un.path[0..a.path.len], a.path);
-    storage.un.family = posix.AF.UNIX;
-    storage.un.path[a.path.len] = 0;
-    return @sizeOf(posix.sockaddr.un);
+    var path_len = switch (native_os) {
+        .windows => @min(a.path.len, storage.un.path.len),
+        else => a.path.len,
+    };
+    // With the AFD API, `sockaddr.un` is purely informational, so
+    // use a suffix which is usually the most relevant part of a path.
+    @memcpy(storage.un.path[0..path_len], a.path[a.path.len - path_len ..]);
+    if (storage.un.path.len - path_len > 0) {
+        @branchHint(.likely);
+        storage.un.path[path_len] = 0;
+        path_len += 1;
+    }
+    switch (native_os) {
+        .windows => {
+            if (storage.un.path[0] == 0) @memset(storage.un.path[path_len..], 0);
+            return @sizeOf(posix.sockaddr.un);
+        },
+        else => return @intCast(@offsetOf(posix.sockaddr.un, "path") + path_len),
+    }
 }
 
 fn address4FromPosix(in: *const posix.sockaddr.in) net.Ip4Address {
@@ -14246,22 +14019,6 @@ fn address4FromPosix(in: *const posix.sockaddr.in) net.Ip4Address {
 }
 
 fn address6FromPosix(in6: *const posix.sockaddr.in6) net.Ip6Address {
-    return .{
-        .port = std.mem.bigToNative(u16, in6.port),
-        .bytes = in6.addr,
-        .flow = in6.flowinfo,
-        .interface = .{ .index = in6.scope_id },
-    };
-}
-
-fn address4FromWsa(in: *const ws2_32.sockaddr.in) net.Ip4Address {
-    return .{
-        .port = std.mem.bigToNative(u16, in.port),
-        .bytes = @bitCast(in.addr),
-    };
-}
-
-fn address6FromWsa(in6: *const ws2_32.sockaddr.in6) net.Ip6Address {
     return .{
         .port = std.mem.bigToNative(u16, in6.port),
         .bytes = in6.addr,
@@ -14291,18 +14048,28 @@ pub fn errnoBug(err: posix.E) Io.UnexpectedError {
     return error.Unexpected;
 }
 
-pub fn posixSocketMode(mode: net.Socket.Mode) u32 {
-    return switch (mode) {
-        .stream => posix.SOCK.STREAM,
-        .dgram => posix.SOCK.DGRAM,
-        .seqpacket => posix.SOCK.SEQPACKET,
-        .raw => posix.SOCK.RAW,
-        .rdm => posix.SOCK.RDM,
+pub fn posixSocketModeProtocol(family: posix.sa_family_t, mode: net.Socket.Mode, protocol: ?net.Protocol) !struct { u32, u32 } {
+    return .{
+        switch (mode) {
+            .stream => posix.SOCK.STREAM,
+            .dgram => posix.SOCK.DGRAM,
+            .seqpacket => posix.SOCK.SEQPACKET,
+            .raw => posix.SOCK.RAW,
+            .rdm => posix.SOCK.RDM,
+        },
+        if (protocol) |p| @intFromEnum(p) else if (is_windows) switch (family) {
+            posix.AF.UNIX => switch (mode) {
+                .stream => 0,
+                else => return error.ProtocolUnsupportedByAddressFamily,
+            },
+            posix.AF.INET, posix.AF.INET6 => @intFromEnum(@as(net.Protocol, switch (mode) {
+                .stream => .tcp,
+                .dgram => .udp,
+                else => return error.ProtocolUnsupportedByAddressFamily,
+            })),
+            else => return error.ProtocolUnsupportedByAddressFamily,
+        } else 0,
     };
-}
-
-pub fn posixProtocol(protocol: ?net.Protocol) u32 {
-    return @intFromEnum(protocol orelse return 0);
 }
 
 pub fn recoverableOsBugDetected() void {
@@ -14528,7 +14295,7 @@ fn lookupDnsSearch(
     while (it.next()) |token| {
         @memcpy(options.canonical_name_buffer[canon_name.len + 1 ..][0..token.len], token);
         const lookup_canon_name = options.canonical_name_buffer[0 .. canon_name.len + 1 + token.len];
-        if (lookupDns(t, lookup_canon_name, &rc, resolved, options)) |result| {
+        if (t.lookupDns(lookup_canon_name, &rc, resolved, options)) |result| {
             return result;
         } else |err| switch (err) {
             error.UnknownHostName, error.NoAddressReturned => continue,
@@ -14537,7 +14304,7 @@ fn lookupDnsSearch(
     }
 
     const lookup_canon_name = options.canonical_name_buffer[0..canon_name.len];
-    return lookupDns(t, lookup_canon_name, &rc, resolved, options);
+    return t.lookupDns(lookup_canon_name, &rc, resolved, options);
 }
 
 fn lookupDns(
@@ -14610,7 +14377,7 @@ fn lookupDns(
     send: while (now_ts.nanoseconds < final_ts.nanoseconds) : (now_ts = clock.now(t_io)) {
         const max_messages = queries_buffer.len * HostName.ResolvConf.max_nameservers;
         {
-            var message_buffer: [max_messages]Io.net.OutgoingMessage = undefined;
+            var message_buffer: [max_messages]net.OutgoingMessage = undefined;
             var message_i: usize = 0;
             for (queries, answers) |query, *answer| {
                 if (answer.len != 0) continue;
@@ -14632,7 +14399,7 @@ fn lookupDns(
         } };
 
         while (true) {
-            var message_buffer: [max_messages]Io.net.IncomingMessage = @splat(.init);
+            var message_buffer: [max_messages]net.IncomingMessage = @splat(.init);
             const buf = answer_buffer[answer_buffer_i..];
             const recv_err, const recv_n = socket.receiveManyTimeout(t_io, &message_buffer, buf, .{}, timeout);
             for (message_buffer[0..recv_n]) |*received_message| {
@@ -14666,7 +14433,7 @@ fn lookupDns(
                         if (answers_remaining == 0) break :send;
                     },
                     2 => {
-                        var retry_message: Io.net.OutgoingMessage = .{
+                        var retry_message: net.OutgoingMessage = .{
                             .address = ns,
                             .data_ptr = query.ptr,
                             .data_len = query.len,
@@ -14753,7 +14520,7 @@ fn lookupHosts(
 
     var line_buf: [512]u8 = undefined;
     var file_reader = file.reader(t_io, &line_buf);
-    return lookupHostsReader(t, host_name, resolved, options, &file_reader.interface) catch |err| switch (err) {
+    return t.lookupHostsReader(host_name, resolved, options, &file_reader.interface) catch |err| switch (err) {
         error.ReadFailed => switch (file_reader.err.?) {
             error.Canceled => |e| return e,
             else => {
@@ -14863,6 +14630,58 @@ fn writeResolutionQuery(q: *[280]u8, op: u4, dname: []const u8, class: u8, ty: H
     return n;
 }
 
+const LookupDnsWindows = struct {
+    threaded: *Threaded,
+    thread: Thread.Handle,
+    resolved: *Io.Queue(HostName.LookupResult),
+    options: HostName.LookupOptions,
+    results: windows.DNS.QUERY.RESULT,
+    done: bool,
+
+    fn completed(
+        pQueryContext: ?*anyopaque,
+        pQueryResults: *windows.DNS.QUERY.RESULT,
+    ) callconv(.winapi) void {
+        _ = pQueryContext;
+        const lookup_dns: *LookupDnsWindows = @fieldParentPtr("results", pQueryResults);
+        lookup_dns.completedFallible() catch |err| switch (err) {
+            error.Closed => unreachable, // `resolved` must not be closed until `netLookup` returns
+            error.Canceled => unreachable, // called from an uncancelable thread
+        };
+        @atomicStore(bool, &lookup_dns.done, true, .release);
+        _ = windows.ntdll.NtAlertThread(lookup_dns.thread);
+    }
+    fn completedFallible(lookup_dns: *LookupDnsWindows) (Io.QueueClosedError || Io.Cancelable)!void {
+        assert(!lookup_dns.done);
+        const t = lookup_dns.threaded;
+        defer t.dl.DnsFree.raw.?(lookup_dns.results.pQueryRecords, .RecordList);
+        if (lookup_dns.results.QueryStatus != .SUCCESS) return;
+        const t_io = t.io();
+        var record_it = lookup_dns.results.pQueryRecords;
+        while (record_it) |record| : (record_it = record.pNext) switch (record.wType) {
+            else => {},
+            .A => try lookup_dns.resolved.putOne(t_io, .{
+                .address = .{ .ip4 = .{ .bytes = record.Data.A, .port = lookup_dns.options.port } },
+            }),
+            .AAAA => {
+                const ip6: net.Ip6Address = .{
+                    .bytes = record.Data.AAAA,
+                    .port = lookup_dns.options.port,
+                };
+                try lookup_dns.resolved.putOne(t_io, .{
+                    .address = if (lookup_dns.options.family) |_| .{ .ip6 = ip6 } else .fromIp6(ip6),
+                });
+            },
+        };
+        if (lookup_dns.results.pQueryRecords) |record| try lookup_dns.resolved.putOne(t_io, .{
+            .canonical_name = .{ .bytes = lookup_dns.options.canonical_name_buffer[0..std.unicode.wtf16LeToWtf8(
+                lookup_dns.options.canonical_name_buffer,
+                std.mem.span(@as([*:0]const windows.WCHAR, @ptrCast(@alignCast(record.pName)))),
+            )] },
+        });
+    }
+};
+
 fn copyCanon(canonical_name_buffer: *[HostName.max_len]u8, name: []const u8) HostName {
     const dest = canonical_name_buffer[0..name.len];
     @memcpy(dest, name);
@@ -14878,64 +14697,6 @@ fn copyCanon(canonical_name_buffer: *[HostName.max_len]u8, name: []const u8) Hos
 /// ulock_wait() uses 32-bit micro-second timeouts where 0 = INFINITE or no-timeout
 /// ulock_wait2() uses 64-bit nano-second timeouts (with the same convention)
 const darwin_supports_ulock_wait2 = builtin.os.version_range.semver.min.major >= 11;
-
-fn closeSocketWindows(s: ws2_32.SOCKET) void {
-    const rc = ws2_32.closesocket(s);
-    if (is_debug) switch (rc) {
-        0 => {},
-        ws2_32.SOCKET_ERROR => switch (ws2_32.WSAGetLastError()) {
-            else => recoverableOsBugDetected(),
-        },
-        else => recoverableOsBugDetected(),
-    };
-}
-
-const Wsa = struct {
-    status: Status = .uninitialized,
-    mutex: Io.Mutex = .init,
-    init_error: ?Wsa.InitError = null,
-
-    const Status = enum { uninitialized, initialized, failure };
-
-    const InitError = error{
-        ProcessFdQuotaExceeded,
-        NetworkDown,
-        VersionUnsupported,
-        BlockingOperationInProgress,
-    } || Io.UnexpectedError;
-};
-
-fn initializeWsa(t: *Threaded) error{ NetworkDown, Canceled }!void {
-    const wsa = &t.wsa;
-    mutexLock(&wsa.mutex);
-    defer mutexUnlock(&wsa.mutex);
-    switch (wsa.status) {
-        .uninitialized => {
-            var wsa_data: ws2_32.WSADATA = undefined;
-            const minor_version = 2;
-            const major_version = 2;
-            switch (ws2_32.WSAStartup((@as(windows.WORD, minor_version) << 8) | major_version, &wsa_data)) {
-                0 => {
-                    wsa.status = .initialized;
-                    return;
-                },
-                else => |err_int| {
-                    wsa.status = .failure;
-                    wsa.init_error = switch (@as(ws2_32.WinsockError, @enumFromInt(@as(u16, @intCast(err_int))))) {
-                        .SYSNOTREADY => error.NetworkDown,
-                        .VERNOTSUPPORTED => error.VersionUnsupported,
-                        .EINPROGRESS => error.BlockingOperationInProgress,
-                        .EPROCLIM => error.ProcessFdQuotaExceeded,
-                        else => |err| windows.unexpectedWsaError(err),
-                    };
-                },
-            }
-        },
-        .initialized => return,
-        .failure => {},
-    }
-    return error.NetworkDown;
-}
 
 fn doNothingSignalHandler(_: posix.SIG) callconv(.c) void {}
 
@@ -16196,7 +15957,7 @@ fn windowsCreateProcessPathExt(
         try dir_buf.append(arena, 0);
         defer dir_buf.shrinkRetainingCapacity(dir_path_len);
         const dir_path_z = dir_buf.items[0 .. dir_buf.items.len - 1 :0];
-        const prefixed_path = try wToPrefixedFileW(null, dir_path_z);
+        const prefixed_path = try wToPrefixedFileW(null, dir_path_z, .{});
         break :dir dirOpenDirWindows(.cwd(), prefixed_path.span(), .{
             .iterate = true,
         }) catch |err| switch (err) {

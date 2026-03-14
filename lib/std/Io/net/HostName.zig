@@ -125,6 +125,7 @@ pub fn eql(a: HostName, b: HostName) bool {
 
 pub const LookupOptions = struct {
     port: u16,
+    request_canonical_name: bool = false,
     canonical_name_buffer: *[max_len]u8,
     /// `null` means either.
     family: ?IpAddress.Family = null,

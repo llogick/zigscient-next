@@ -4784,9 +4784,9 @@ fn randomSecure(userdata: ?*anyopaque, buffer: []u8) Io.RandomSecureError!void {
 
 fn netListenIpUnavailable(
     userdata: ?*anyopaque,
-    address: net.IpAddress,
+    address: *const net.IpAddress,
     options: net.IpAddress.ListenOptions,
-) net.IpAddress.ListenError!net.Server {
+) net.IpAddress.ListenError!net.Socket {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     _ = address;
@@ -4797,10 +4797,12 @@ fn netListenIpUnavailable(
 fn netAcceptUnavailable(
     userdata: ?*anyopaque,
     listen_handle: net.Socket.Handle,
-) net.Server.AcceptError!net.Stream {
+    options: net.Server.AcceptOptions,
+) net.Server.AcceptError!net.Socket {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     _ = listen_handle;
+    _ = options;
     return error.NetworkDown;
 }
 
@@ -4820,7 +4822,7 @@ fn netConnectIpUnavailable(
     userdata: ?*anyopaque,
     address: *const net.IpAddress,
     options: net.IpAddress.ConnectOptions,
-) net.IpAddress.ConnectError!net.Stream {
+) net.IpAddress.ConnectError!net.Socket {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     _ = address;

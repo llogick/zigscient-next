@@ -20,7 +20,6 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
-    lib_gnu.root_module.linkSystemLibrary("ws2_32", .{});
 
     const verify_gnu = b.addExecutable(.{
         .name = "verify-gnu",
@@ -103,7 +102,6 @@ pub fn build(b: *std.Build) !void {
             .flags = &.{ "-DUNICODE", "-D_UNICODE" },
         });
         verify_msvc.root_module.linkLibrary(lib_msvc);
-        verify_msvc.root_module.linkSystemLibrary("ws2_32", .{});
         verify_msvc.root_module.link_libc = true;
 
         const run_msvc = b.addRunArtifact(fuzz);

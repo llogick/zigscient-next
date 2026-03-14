@@ -114,14 +114,14 @@ pub extern "ntdll" fn NtCreateFile(
     ShareAccess: FILE.SHARE,
     CreateDisposition: FILE.CREATE_DISPOSITION,
     CreateOptions: FILE.MODE,
-    EaBuffer: ?*anyopaque,
+    EaBuffer: ?*const anyopaque,
     EaLength: ULONG,
 ) callconv(.winapi) NTSTATUS;
 
 pub extern "ntdll" fn NtDeviceIoControlFile(
     FileHandle: HANDLE,
     Event: ?HANDLE,
-    ApcRoutine: ?*const IO_APC_ROUTINE,
+    ApcRoutine: ?*align(2) const IO_APC_ROUTINE,
     ApcContext: ?*anyopaque,
     IoStatusBlock: *IO_STATUS_BLOCK,
     IoControlCode: CTL_CODE,
@@ -134,7 +134,7 @@ pub extern "ntdll" fn NtDeviceIoControlFile(
 pub extern "ntdll" fn NtFsControlFile(
     FileHandle: HANDLE,
     Event: ?HANDLE,
-    ApcRoutine: ?*const IO_APC_ROUTINE,
+    ApcRoutine: ?*align(2) const IO_APC_ROUTINE,
     ApcContext: ?*anyopaque,
     IoStatusBlock: *IO_STATUS_BLOCK,
     FsControlCode: CTL_CODE,
@@ -147,7 +147,7 @@ pub extern "ntdll" fn NtFsControlFile(
 pub extern "ntdll" fn NtLockFile(
     FileHandle: HANDLE,
     Event: ?HANDLE,
-    ApcRoutine: ?*const IO_APC_ROUTINE,
+    ApcRoutine: ?*align(2) const IO_APC_ROUTINE,
     ApcContext: ?*anyopaque,
     IoStatusBlock: *IO_STATUS_BLOCK,
     ByteOffset: *const LARGE_INTEGER,
@@ -169,7 +169,7 @@ pub extern "ntdll" fn NtOpenFile(
 pub extern "ntdll" fn NtQueryDirectoryFile(
     FileHandle: HANDLE,
     Event: ?HANDLE,
-    ApcRoutine: ?*const IO_APC_ROUTINE,
+    ApcRoutine: ?*align(2) const IO_APC_ROUTINE,
     ApcContext: ?*anyopaque,
     IoStatusBlock: *IO_STATUS_BLOCK,
     FileInformation: *anyopaque,
@@ -199,7 +199,7 @@ pub extern "ntdll" fn NtQueryVolumeInformationFile(
 pub extern "ntdll" fn NtReadFile(
     FileHandle: HANDLE,
     Event: ?HANDLE,
-    ApcRoutine: ?*const IO_APC_ROUTINE,
+    ApcRoutine: ?*align(2) const IO_APC_ROUTINE,
     ApcContext: ?*anyopaque,
     IoStatusBlock: *IO_STATUS_BLOCK,
     Buffer: *anyopaque,
@@ -222,7 +222,7 @@ pub extern "ntdll" fn NtSetInformationFile(
 pub extern "ntdll" fn NtWriteFile(
     FileHandle: HANDLE,
     Event: ?HANDLE,
-    ApcRoutine: ?*const IO_APC_ROUTINE,
+    ApcRoutine: ?*align(2) const IO_APC_ROUTINE,
     ApcContext: ?*anyopaque,
     IoStatusBlock: *IO_STATUS_BLOCK,
     Buffer: *const anyopaque,
@@ -527,7 +527,7 @@ pub extern "ntdll" fn NtDelayExecution(
 pub extern "ntdll" fn NtNotifyChangeDirectoryFileEx(
     FileHandle: HANDLE,
     Event: ?HANDLE,
-    ApcRoutine: ?*const IO_APC_ROUTINE,
+    ApcRoutine: ?*align(2) const IO_APC_ROUTINE,
     ApcContext: ?*anyopaque,
     IoStatusBlock: *IO_STATUS_BLOCK,
     Buffer: *anyopaque,

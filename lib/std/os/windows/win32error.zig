@@ -2503,5 +2503,271 @@ pub const Win32Error = enum(u32) {
     REQUEST_PAUSED = 3050,
     /// Reissue the given operation as a cached IO operation.
     IO_REISSUE_AS_CACHED = 3950,
+    /// DNS server unable to interpret format.
+    DNS_FORMAT_ERROR = 9001,
+    /// DNS server failure.
+    DNS_SERVER_FAILURE = 9002,
+    /// DNS name does not exist.
+    DNS_NAME_ERROR = 9003,
+    /// DNS request not supported by name server.
+    DNS_NOT_IMPLEMENTED = 9004,
+    /// DNS operation refused.
+    DNS_REFUSED = 9005,
+    /// DNS name that ought not exist, does exist.
+    DNS_YXDOMAIN = 9006,
+    /// DNS RR set that ought not exist, does exist.
+    DNS_YXRRSET = 9007,
+    /// DNS RR set that ought to exist, does not exist.
+    DNS_NXRRSET = 9008,
+    /// DNS server not authoritative for zone.
+    DNS_NOTAUTH = 9009,
+    /// DNS name in update or prereq is not in zone.
+    DNS_NOTZONE = 9010,
+    /// DNS signature failed to verify.
+    DNS_BADSIG = 9016,
+    /// DNS bad key.
+    DNS_BADKEY = 9017,
+    /// DNS signature validity expired.
+    DNS_BADTIME = 9018,
+    /// Only the DNS server acting as the key master for the zone may perform this operation.
+    DNS_KEYMASTER_REQUIRED = 9101,
+    /// This operation is not allowed on a zone that is signed or has signing keys.
+    DNS_NOT_ALLOWED_ON_SIGNED_ZONE = 9102,
+    /// NSEC3 is not compatible with the RSA-SHA-1 algorithm. Choose a different algorithm or use NSEC.
+    ///
+    /// This value was also named DNS_INVALID_NSEC3_PARAMETERS
+    DNS_NSEC3_INCOMPATIBLE_WITH_RSA_SHA1 = 9103,
+    /// The zone does not have enough signing keys. There must be at least one key signing key (KSK) and at least one zone signing key (ZSK).
+    DNS_NOT_ENOUGH_SIGNING_KEY_DESCRIPTORS = 9104,
+    /// The specified algorithm is not supported.
+    DNS_UNSUPPORTED_ALGORITHM = 9105,
+    /// The specified key size is not supported.
+    DNS_INVALID_KEY_SIZE = 9106,
+    /// One or more of the signing keys for a zone are not accessible to the DNS server. Zone signing will not be operational until this error is resolved.
+    DNS_SIGNING_KEY_NOT_ACCESSIBLE = 9107,
+    /// The specified key storage provider does not support DPAPI++ data protection. Zone signing will not be operational until this error is resolved.
+    DNS_KSP_DOES_NOT_SUPPORT_PROTECTION = 9108,
+    /// An unexpected DPAPI++ error was encountered. Zone signing will not be operational until this error is resolved.
+    DNS_UNEXPECTED_DATA_PROTECTION_ERROR = 9109,
+    /// An unexpected crypto error was encountered. Zone signing may not be operational until this error is resolved.
+    DNS_UNEXPECTED_CNG_ERROR = 9110,
+    /// The DNS server encountered a signing key with an unknown version. Zone signing will not be operational until this error is resolved.
+    DNS_UNKNOWN_SIGNING_PARAMETER_VERSION = 9111,
+    /// The specified key service provider cannot be opened by the DNS server.
+    DNS_KSP_NOT_ACCESSIBLE = 9112,
+    /// The DNS server cannot accept any more signing keys with the specified algorithm and KSK flag value for this zone.
+    DNS_TOO_MANY_SKDS = 9113,
+    /// The specified rollover period is invalid.
+    DNS_INVALID_ROLLOVER_PERIOD = 9114,
+    /// The specified initial rollover offset is invalid.
+    DNS_INVALID_INITIAL_ROLLOVER_OFFSET = 9115,
+    /// The specified signing key is already in process of rolling over keys.
+    DNS_ROLLOVER_IN_PROGRESS = 9116,
+    /// The specified signing key does not have a standby key to revoke.
+    DNS_STANDBY_KEY_NOT_PRESENT = 9117,
+    /// This operation is not allowed on a zone signing key (ZSK).
+    DNS_NOT_ALLOWED_ON_ZSK = 9118,
+    /// This operation is not allowed on an active signing key.
+    DNS_NOT_ALLOWED_ON_ACTIVE_SKD = 9119,
+    /// The specified signing key is already queued for rollover.
+    DNS_ROLLOVER_ALREADY_QUEUED = 9120,
+    /// This operation is not allowed on an unsigned zone.
+    DNS_NOT_ALLOWED_ON_UNSIGNED_ZONE = 9121,
+    /// This operation could not be completed because the DNS server listed as the current key master for this zone is down or misconfigured. Resolve the problem on the current key master for this zone or use another DNS server to seize the key master role.
+    DNS_BAD_KEYMASTER = 9122,
+    /// The specified signature validity period is invalid.
+    DNS_INVALID_SIGNATURE_VALIDITY_PERIOD = 9123,
+    /// The specified NSEC3 iteration count is higher than allowed by the minimum key length used in the zone.
+    DNS_INVALID_NSEC3_ITERATION_COUNT = 9124,
+    /// This operation could not be completed because the DNS server has been configured with DNSSEC features disabled. Enable DNSSEC on the DNS server.
+    DNS_DNSSEC_IS_DISABLED = 9125,
+    /// This operation could not be completed because the XML stream received is empty or syntactically invalid.
+    DNS_INVALID_XML = 9126,
+    /// This operation completed, but no trust anchors were added because all of the trust anchors received were either invalid, unsupported, expired, or would not become valid in less than 30 days.
+    DNS_NO_VALID_TRUST_ANCHORS = 9127,
+    /// The specified signing key is not waiting for parental DS update.
+    DNS_ROLLOVER_NOT_POKEABLE = 9128,
+    /// Hash collision detected during NSEC3 signing. Specify a different user-provided salt, or use a randomly generated salt, and attempt to sign the zone again.
+    DNS_NSEC3_NAME_COLLISION = 9129,
+    /// NSEC is not compatible with the NSEC3-RSA-SHA-1 algorithm. Choose a different algorithm or use NSEC3.
+    DNS_NSEC_INCOMPATIBLE_WITH_NSEC3_RSA_SHA1 = 9130,
+    /// No records found for given DNS query.
+    DNS_NO_RECORDS = 9501,
+    /// Bad DNS packet.
+    DNS_BAD_PACKET = 9502,
+    /// No DNS packet.
+    DNS_NO_PACKET = 9503,
+    /// DNS error, check rcode.
+    DNS_RCODE = 9504,
+    /// Unsecured DNS packet.
+    DNS_UNSECURE_PACKET = 9505,
+    /// DNS query request is pending.
+    DNS_REQUEST_PENDING = 9506,
+    /// Invalid DNS type.
+    DNS_INVALID_TYPE = 9551,
+    /// Invalid IP address.
+    DNS_INVALID_IP_ADDRESS = 9552,
+    /// Invalid property.
+    DNS_INVALID_PROPERTY = 9553,
+    /// Try DNS operation again later.
+    DNS_TRY_AGAIN_LATER = 9554,
+    /// Record for given name and type is not unique.
+    DNS_NOT_UNIQUE = 9555,
+    /// DNS name does not comply with RFC specifications.
+    DNS_NON_RFC_NAME = 9556,
+    /// DNS name is a fully-qualified DNS name.
+    DNS_FQDN = 9557,
+    /// DNS name is dotted (multi-label).
+    DNS_DOTTED_NAME = 9558,
+    /// DNS name is a single-part name.
+    DNS_SINGLE_PART_NAME = 9559,
+    /// DNS name contains an invalid character.
+    DNS_INVALID_NAME_CHAR = 9560,
+    /// DNS name is entirely numeric.
+    DNS_NUMERIC_NAME = 9561,
+    /// The operation requested is not permitted on a DNS root server.
+    DNS_NOT_ALLOWED_ON_ROOT_SERVER = 9562,
+    /// The record could not be created because this part of the DNS namespace has been delegated to another server.
+    DNS_NOT_ALLOWED_UNDER_DELEGATION = 9563,
+    /// The DNS server could not find a set of root hints.
+    DNS_CANNOT_FIND_ROOT_HINTS = 9564,
+    /// The DNS server found root hints but they were not consistent across all adapters.
+    DNS_INCONSISTENT_ROOT_HINTS = 9565,
+    /// The specified value is too small for this parameter.
+    DNS_DWORD_VALUE_TOO_SMALL = 9566,
+    /// The specified value is too large for this parameter.
+    DNS_DWORD_VALUE_TOO_LARGE = 9567,
+    /// This operation is not allowed while the DNS server is loading zones in the background. Please try again later.
+    DNS_BACKGROUND_LOADING = 9568,
+    /// The operation requested is not permitted on against a DNS server running on a read-only DC.
+    DNS_NOT_ALLOWED_ON_RODC = 9569,
+    /// No data is allowed to exist underneath a DNAME record.
+    DNS_NOT_ALLOWED_UNDER_DNAME = 9570,
+    /// This operation requires credentials delegation.
+    DNS_DELEGATION_REQUIRED = 9571,
+    /// Name resolution policy table has been corrupted. DNS resolution will fail until it is fixed. Contact your network administrator.
+    DNS_INVALID_POLICY_TABLE = 9572,
+    /// DNS zone does not exist.
+    DNS_ZONE_DOES_NOT_EXIST = 9601,
+    /// DNS zone information not available.
+    DNS_NO_ZONE_INFO = 9602,
+    /// Invalid operation for DNS zone.
+    DNS_INVALID_ZONE_OPERATION = 9603,
+    /// Invalid DNS zone configuration.
+    DNS_ZONE_CONFIGURATION_ERROR = 9604,
+    /// DNS zone has no start of authority (SOA) record.
+    DNS_ZONE_HAS_NO_SOA_RECORD = 9605,
+    /// DNS zone has no Name Server (NS) record.
+    DNS_ZONE_HAS_NO_NS_RECORDS = 9606,
+    /// DNS zone is locked.
+    DNS_ZONE_LOCKED = 9607,
+    /// DNS zone creation failed.
+    DNS_ZONE_CREATION_FAILED = 9608,
+    /// DNS zone already exists.
+    DNS_ZONE_ALREADY_EXISTS = 9609,
+    /// DNS automatic zone already exists.
+    DNS_AUTOZONE_ALREADY_EXISTS = 9610,
+    /// Invalid DNS zone type.
+    DNS_INVALID_ZONE_TYPE = 9611,
+    /// Secondary DNS zone requires master IP address.
+    DNS_SECONDARY_REQUIRES_MASTER_IP = 9612,
+    /// DNS zone not secondary.
+    DNS_ZONE_NOT_SECONDARY = 9613,
+    /// Need secondary IP address.
+    DNS_NEED_SECONDARY_ADDRESSES = 9614,
+    /// WINS initialization failed.
+    DNS_WINS_INIT_FAILED = 9615,
+    /// Need WINS servers.
+    DNS_NEED_WINS_SERVERS = 9616,
+    /// NBTSTAT initialization call failed.
+    DNS_NBSTAT_INIT_FAILED = 9617,
+    /// Invalid delete of start of authority (SOA).
+    DNS_SOA_DELETE_INVALID = 9618,
+    /// A conditional forwarding zone already exists for that name.
+    DNS_FORWARDER_ALREADY_EXISTS = 9619,
+    /// This zone must be configured with one or more master DNS server IP addresses.
+    DNS_ZONE_REQUIRES_MASTER_IP = 9620,
+    /// The operation cannot be performed because this zone is shut down.
+    DNS_ZONE_IS_SHUTDOWN = 9621,
+    /// This operation cannot be performed because the zone is currently being signed. Please try again later.
+    DNS_ZONE_LOCKED_FOR_SIGNING = 9622,
+    /// Primary DNS zone requires datafile.
+    DNS_PRIMARY_REQUIRES_DATAFILE = 9651,
+    /// Invalid datafile name for DNS zone.
+    DNS_INVALID_DATAFILE_NAME = 9652,
+    /// Failed to open datafile for DNS zone.
+    DNS_DATAFILE_OPEN_FAILURE = 9653,
+    /// Failed to write datafile for DNS zone.
+    DNS_FILE_WRITEBACK_FAILED = 9654,
+    /// Failure while reading datafile for DNS zone.
+    DNS_DATAFILE_PARSING = 9655,
+    /// DNS record does not exist.
+    DNS_RECORD_DOES_NOT_EXIST = 9701,
+    /// DNS record format error.
+    DNS_RECORD_FORMAT = 9702,
+    /// Node creation failure in DNS.
+    DNS_NODE_CREATION_FAILED = 9703,
+    /// Unknown DNS record type.
+    DNS_UNKNOWN_RECORD_TYPE = 9704,
+    /// DNS record timed out.
+    DNS_RECORD_TIMED_OUT = 9705,
+    /// Name not in DNS zone.
+    DNS_NAME_NOT_IN_ZONE = 9706,
+    /// CNAME loop detected.
+    DNS_CNAME_LOOP = 9707,
+    /// Node is a CNAME DNS record.
+    DNS_NODE_IS_CNAME = 9708,
+    /// A CNAME record already exists for given name.
+    DNS_CNAME_COLLISION = 9709,
+    /// Record only at DNS zone root.
+    DNS_RECORD_ONLY_AT_ZONE_ROOT = 9710,
+    /// DNS record already exists.
+    DNS_RECORD_ALREADY_EXISTS = 9711,
+    /// Secondary DNS zone data error.
+    DNS_SECONDARY_DATA = 9712,
+    /// Could not create DNS cache data.
+    DNS_NO_CREATE_CACHE_DATA = 9713,
+    /// DNS name does not exist.
+    DNS_NAME_DOES_NOT_EXIST = 9714,
+    /// Could not create pointer (PTR) record.
+    DNS_PTR_CREATE_FAILED = 9715,
+    /// DNS domain was undeleted.
+    DNS_DOMAIN_UNDELETED = 9716,
+    /// The directory service is unavailable.
+    DNS_DS_UNAVAILABLE = 9717,
+    /// DNS zone already exists in the directory service.
+    DNS_DS_ZONE_ALREADY_EXISTS = 9718,
+    /// DNS server not creating or reading the boot file for the directory service integrated DNS zone.
+    DNS_NO_BOOTFILE_IF_DS_ZONE = 9719,
+    /// Node is a DNAME DNS record.
+    DNS_NODE_IS_DNAME = 9720,
+    /// A DNAME record already exists for given name.
+    DNS_DNAME_COLLISION = 9721,
+    /// An alias loop has been detected with either CNAME or DNAME records.
+    DNS_ALIAS_LOOP = 9722,
+    /// DNS AXFR (zone transfer) complete.
+    DNS_AXFR_COMPLETE = 9751,
+    /// DNS zone transfer failed.
+    DNS_AXFR = 9752,
+    /// Added local WINS server.
+    DNS_ADDED_LOCAL_WINS = 9753,
+    /// Secure update call needs to continue update request.
+    DNS_CONTINUE_NEEDED = 9801,
+    /// TCP/IP network protocol not installed.
+    DNS_NO_TCPIP = 9851,
+    /// No DNS servers configured for local system.
+    DNS_NO_DNS_SERVERS = 9852,
+    /// The specified directory partition does not exist.
+    DNS_DP_DOES_NOT_EXIST = 9901,
+    /// The specified directory partition already exists.
+    DNS_DP_ALREADY_EXISTS = 9902,
+    /// This DNS server is not enlisted in the specified directory partition.
+    DNS_DP_NOT_ENLISTED = 9903,
+    /// This DNS server is already enlisted in the specified directory partition.
+    DNS_DP_ALREADY_ENLISTED = 9904,
+    /// The directory partition is not available at this time. Please wait a few minutes and try again.
+    DNS_DP_NOT_AVAILABLE = 9905,
+    /// The operation failed because the domain naming master FSMO role could not be reached. The domain controller holding the domain naming master FSMO role is down or unable to service the request or is not running Windows Server 2003 or later.
+    DNS_DP_FSMO_ERROR = 9906,
     _,
 };

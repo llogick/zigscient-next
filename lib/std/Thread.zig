@@ -560,9 +560,9 @@ const WindowsThreadImpl = struct {
             },
         };
 
-        // Windows appears to only support SYSTEM_INFO.dwAllocationGranularity minimum stack size.
-        // Going lower makes it default to that specified in the executable (~1mb).
-        // Its also fine if the limit here is incorrect as stack size is only a hint.
+        // Windows appears to only support SYSTEM.BASIC_INFORMATION.AllocationGranularity
+        // minimum stack size. Going lower makes it default to that specified in the executable
+        // (~1mb). Its also fine if the limit here is incorrect as stack size is only a hint.
         const stack_size = @max(64 * 1024, std.math.lossyCast(u32, config.stack_size));
 
         // Intended to be equivalent to a kernel32.CreateThread call with no flags set.
@@ -1741,6 +1741,6 @@ pub fn maybeAttachSignalStack() void {
     }, null) catch |err| switch (err) {
         error.SizeTooSmall => unreachable, // `std.options.signal_stack_size` must be sufficient for the target
         error.PermissionDenied => unreachable, // called `maybeAttachSignalStack` from a signal handler
-        error.Unexpected => @panic("unexpected error attaching signal stack"),
+        error.Unexpected => unreachable,
     };
 }

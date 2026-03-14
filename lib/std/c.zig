@@ -10807,9 +10807,6 @@ pub extern "c" fn recvfrom(
 ) if (native_os == .windows) c_int else isize;
 
 pub const recvmsg = switch (native_os) {
-    // Technically, a form of recvmsg() exists for Windows, but the user has to
-    // install some kind of callback for it.
-    // https://learn.microsoft.com/en-us/windows/win32/api/mswsock/nc-mswsock-lpfn_wsarecvmsg
     .windows => {},
     else => private.recvmsg,
 };
