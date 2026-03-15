@@ -15595,18 +15595,35 @@ fn zirAsm(
 
         const name = sema.code.nullTerminatedString(output.data.name);
 
-        if (is_type) {
-            // Indicate the output is the asm instruction return value.
-            arg.* = .none;
-            const out_ty = try sema.resolveType(block, ret_ty_src, output.data.operand);
-            expr_ty = Air.internedToRef(out_ty.toIntern());
-        } else {
-            const inst = sema.resolveInst(output.data.operand);
-            if (!sema.checkRuntimeValue(inst)) {
-                const output_name = try ip.getOrPutString(gpa, io, pt.tid, name, .no_embedded_nulls);
-                return sema.failWithContainsReferenceToComptimeVar(block, output_src, output_name, "assembly output", .fromInterned(inst.toInterned().?));
+        const out_ty: Type = out_ty: {
+            if (is_type) {
+                // Indicate the output is the asm instruction return value.
+                arg.* = .none;
+
+                const out_ty = try sema.resolveType(block, ret_ty_src, output.data.operand);
+                try sema.ensureLayoutResolved(out_ty, ret_ty_src, .asm_out_type);
+                expr_ty = .fromType(out_ty);
+                break :out_ty out_ty;
+            } else {
+                const inst = sema.resolveInst(output.data.operand);
+                arg.* = inst;
+
+                if (!sema.checkRuntimeValue(inst)) {
+                    const output_name = try ip.getOrPutString(gpa, io, pt.tid, name, .no_embedded_nulls);
+                    return sema.failWithContainsReferenceToComptimeVar(block, output_src, output_name, "assembly output", .fromInterned(inst.toInterned().?));
+                }
+                break :out_ty sema.typeOf(inst).childType(zcu);
             }
-            arg.* = inst;
+        };
+        if (!out_ty.hasWellDefinedLayout(zcu)) {
+            return sema.failWithOwnedErrorMsg(block, msg: {
+                const msg = try sema.errMsg(output_src, "invalid inline assembly output type; '{f}' does not have a guaranteed in-memory layout", .{
+                    out_ty.fmt(pt),
+                });
+                errdefer msg.destroy(gpa);
+                try sema.addDeclaredHereNote(msg, out_ty);
+                break :msg msg;
+            });
         }
 
         const constraint = sema.code.nullTerminatedString(output.data.constraint);

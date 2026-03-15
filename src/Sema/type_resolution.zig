@@ -34,6 +34,7 @@ pub const LayoutResolveReason = enum {
     bit_ptr_child,
     @"export",
     @"extern",
+    asm_out_type,
     builtin_type,
 
     /// Written after string: "while resolving type 'T' "
@@ -60,6 +61,7 @@ pub const LayoutResolveReason = enum {
             .bit_ptr_child => "for bit size check here",
             .@"export"     => "for export here",
             .@"extern"     => "for extern declaration here",
+            .asm_out_type  => "for inline assembly output type declared here",
             .builtin_type  => "from 'std.builtin'",
             // zig fmt: on
         };
