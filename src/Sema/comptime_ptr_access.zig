@@ -225,19 +225,17 @@ fn loadComptimePtrInner(
     };
 
     const base_val: MutableValue = switch (ptr.base_addr) {
-        .nav => |nav| val: {
-            try sema.ensureNavResolved(block, src, nav, .fully);
-            const val = ip.getNav(nav).status.fully_resolved.val;
-            switch (ip.indexToKey(val)) {
-                .variable => return .runtime_load,
-                // We let `.@"extern"` through here if it's a function.
-                // This allows you to alias `extern fn`s.
-                .@"extern" => |e| if (Type.fromInterned(e.ty).zigTypeTag(zcu) == .@"fn")
-                    break :val .{ .interned = val }
-                else
-                    return .runtime_load,
-                else => break :val .{ .interned = val },
+        .nav => |nav_id| val: {
+            try sema.ensureNavResolved(block, src, nav_id, .fully);
+            const nav = ip.getNav(nav_id);
+            if (!nav.resolved.?.@"const") return .runtime_load;
+            // We let `.@"extern"` through here if it's a fn. This allows aliasing `extern fn`s.
+            if (ip.indexToKey(nav.resolved.?.value) == .@"extern" and
+                Type.fromInterned(nav.resolved.?.type).zigTypeTag(zcu) != .@"fn")
+            {
+                return .runtime_load;
             }
+            break :val .{ .interned = nav.resolved.?.value };
         },
         .comptime_alloc => |alloc_index| sema.getComptimeAlloc(alloc_index).val,
         .uav => |uav| .{ .interned = uav.val },

@@ -575,7 +575,7 @@ fn emitWValue(cg: *CodeGen, value: WValue) InnerError!void {
         .nav_ref => |nav_ref| {
             const zcu = cg.pt.zcu;
             const ip = &zcu.intern_pool;
-            if (ip.getNav(nav_ref.nav_index).isFn(ip)) {
+            if (ip.zigTypeTag(ip.getNav(nav_ref.nav_index).resolved.?.type) == .@"fn") {
                 assert(nav_ref.offset == 0);
                 try cg.mir_indirect_function_set.put(cg.gpa, nav_ref.nav_index, {});
                 try cg.addInst(.{ .tag = .func_ref, .data = .{ .nav_index = nav_ref.nav_index } });
@@ -4401,7 +4401,6 @@ fn lowerConstant(cg: *CodeGen, val: Value) InnerError!WValue {
                 else => unreachable,
             } },
         },
-        .variable,
         .@"extern",
         .func,
         .enum_literal,

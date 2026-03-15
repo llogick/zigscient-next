@@ -1279,7 +1279,7 @@ pub const Object = struct {
             } }, &o.builder);
         }
 
-        if (nav.status.fully_resolved.@"linksection".toSlice(ip)) |section|
+        if (nav.resolved.?.@"linksection".toSlice(ip)) |section|
             function_index.setSection(try o.builder.string(section), &o.builder);
 
         var deinit_wip = true;
@@ -1487,7 +1487,7 @@ pub const Object = struct {
             const file = try o.getDebugFile(pt, file_scope);
 
             const line_number = zcu.navSrcLine(func.owner_nav) + 1;
-            const is_internal_linkage = ip.indexToKey(nav.status.fully_resolved.val) != .@"extern";
+            const is_internal_linkage = ip.indexToKey(nav.resolved.?.value) != .@"extern";
             const debug_decl_type = try o.getDebugType(pt, fn_ty);
 
             const subprogram = try o.builder.debugSubprogram(
@@ -1662,7 +1662,7 @@ pub const Object = struct {
                 .elf, .wasm => break :coff_export_flags,
                 .coff => |*coff| coff,
             };
-            if (!ip.isFunctionType(ip.getNav(nav_index).typeOf(ip))) break :coff_export_flags;
+            if (!ip.isFunctionType(ip.getNav(nav_index).resolved.?.type)) break :coff_export_flags;
             const flags = &coff.lld_export_flags;
             for (export_indices) |export_index| {
                 const name = export_index.ptr(zcu).opts.name;
@@ -2677,7 +2677,7 @@ pub const Object = struct {
         const gpa = o.gpa;
         const nav = ip.getNav(nav_index);
         const owner_mod = zcu.navFileScope(nav_index).mod.?;
-        const ty: Type = .fromInterned(nav.typeOf(ip));
+        const ty: Type = .fromInterned(nav.resolved.?.type);
         const gop = try o.nav_map.getOrPut(gpa, nav_index);
         if (gop.found_existing) return gop.value_ptr.ptr(&o.builder).kind.function;
 
@@ -2692,7 +2692,7 @@ pub const Object = struct {
         const function_index = try o.builder.addFunction(
             try o.lowerType(pt, ty),
             try o.builder.strtabString((if (is_extern) nav.name else nav.fqn).toSlice(ip)),
-            toLlvmAddressSpace(nav.getAddrspace(), target),
+            toLlvmAddressSpace(nav.resolved.?.@"addrspace", target),
         );
         gop.value_ptr.* = function_index.ptrConst(&o.builder).global;
 
@@ -2809,8 +2809,8 @@ pub const Object = struct {
             }
         }
 
-        if (nav.getAlignment() != .none)
-            function_index.setAlignment(nav.getAlignment().toLlvm(), &o.builder);
+        if (nav.resolved.?.@"align" != .none)
+            function_index.setAlignment(nav.resolved.?.@"align".toLlvm(), &o.builder);
 
         // Function attributes that are independent of analysis results of the function body.
         try o.addCommonFnAttributes(
@@ -2951,15 +2951,12 @@ pub const Object = struct {
         const zcu = pt.zcu;
         const ip = &zcu.intern_pool;
         const nav = ip.getNav(nav_index);
-        const linkage: std.builtin.GlobalLinkage, const visibility: Builder.Visibility, const is_threadlocal, const is_dll_import = switch (nav.status) {
-            .unresolved => unreachable,
-            .fully_resolved => |r| switch (ip.indexToKey(r.val)) {
-                .variable => |variable| .{ .internal, .default, variable.is_threadlocal, false },
-                .@"extern" => |@"extern"| .{ @"extern".linkage, .fromSymbolVisibility(@"extern".visibility), @"extern".is_threadlocal, @"extern".is_dll_import },
-                else => .{ .internal, .default, false, false },
+        const linkage: std.builtin.GlobalLinkage, const visibility: Builder.Visibility, const is_dll_import: bool = switch (nav.resolved.?.value) {
+            .none => .{ .internal, .default, false }, // this is a source declaration which is *not* marked `extern`
+            else => |val| switch (ip.indexToKey(val)) {
+                else => .{ .internal, .default, false },
+                .@"extern" => |e| .{ e.linkage, .fromSymbolVisibility(e.visibility), e.is_dll_import },
             },
-            // This means it's a source declaration which is not `extern`!
-            .type_resolved => |r| .{ .internal, .default, r.is_threadlocal, false },
         };
 
         const variable_index = try o.builder.addVariable(
@@ -2968,8 +2965,8 @@ pub const Object = struct {
                 .strong, .weak => nav.name,
                 .link_once => unreachable,
             }.toSlice(ip)),
-            try o.lowerType(pt, Type.fromInterned(nav.typeOf(ip))),
-            toLlvmGlobalAddressSpace(nav.getAddrspace(), zcu.getTarget()),
+            try o.lowerType(pt, .fromInterned(nav.resolved.?.type)),
+            toLlvmGlobalAddressSpace(nav.resolved.?.@"addrspace", zcu.getTarget()),
         );
         gop.value_ptr.* = variable_index.ptrConst(&o.builder).global;
 
@@ -2987,7 +2984,7 @@ pub const Object = struct {
                     .link_once => unreachable,
                 }, &o.builder);
                 variable_index.setUnnamedAddr(.default, &o.builder);
-                if (is_threadlocal and !zcu.navFileScope(nav_index).mod.?.single_threaded)
+                if (nav.resolved.?.@"threadlocal" and !zcu.navFileScope(nav_index).mod.?.single_threaded)
                     variable_index.setThreadLocal(.generaldynamic, &o.builder);
                 if (is_dll_import) variable_index.setDllStorageClass(.dllimport, &o.builder);
             },
@@ -3422,7 +3419,6 @@ pub const Object = struct {
                 // values, not types
                 .undef,
                 .simple_value,
-                .variable,
                 .@"extern",
                 .func,
                 .int,
@@ -3553,9 +3549,7 @@ pub const Object = struct {
                 .false => .false,
                 .true => .true,
             },
-            .variable,
-            .enum_literal,
-            => unreachable, // non-runtime values
+            .enum_literal => unreachable, // non-runtime value
             .@"extern" => |@"extern"| {
                 const function_index = try o.resolveLlvmFunction(pt, @"extern".owner_nav);
                 return function_index.ptrConst(&o.builder).global.toConst();
@@ -4131,7 +4125,7 @@ pub const Object = struct {
 
         const nav = ip.getNav(nav_index);
 
-        const nav_ty = Type.fromInterned(nav.typeOf(ip));
+        const nav_ty: Type = .fromInterned(nav.resolved.?.type);
         const ptr_ty = try pt.navPtrType(nav_index);
 
         if (nav.getExtern(ip) == null and !nav_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
@@ -4145,7 +4139,7 @@ pub const Object = struct {
 
         const llvm_val = try o.builder.convConst(
             llvm_global.toConst(),
-            try o.builder.ptrType(toLlvmAddressSpace(nav.getAddrspace(), zcu.getTarget())),
+            try o.builder.ptrType(toLlvmAddressSpace(nav.resolved.?.@"addrspace", zcu.getTarget())),
         );
 
         return o.builder.convConst(llvm_val, try o.lowerType(pt, ptr_ty));
@@ -4398,14 +4392,13 @@ pub const NavGen = struct {
         const ip = &zcu.intern_pool;
         const nav_index = ng.nav_index;
         const nav = ip.getNav(nav_index);
-        const resolved = nav.status.fully_resolved;
+        const resolved = nav.resolved.?;
 
-        const lib_name, const linkage, const visibility: Builder.Visibility, const is_threadlocal, const is_dll_import, const is_const, const init_val, const owner_nav = switch (ip.indexToKey(resolved.val)) {
-            .variable => |variable| .{ .none, .internal, .default, variable.is_threadlocal, false, false, variable.init, variable.owner_nav },
-            .@"extern" => |@"extern"| .{ @"extern".lib_name, @"extern".linkage, .fromSymbolVisibility(@"extern".visibility), @"extern".is_threadlocal, @"extern".is_dll_import, @"extern".is_const, .none, @"extern".owner_nav },
-            else => .{ .none, .internal, .default, false, false, true, resolved.val, nav_index },
+        const lib_name, const linkage, const visibility: Builder.Visibility, const is_dll_import, const init_val, const owner_nav = switch (ip.indexToKey(resolved.value)) {
+            else => .{ .none, .internal, .default, false, resolved.value, nav_index },
+            .@"extern" => |e| .{ e.lib_name, e.linkage, .fromSymbolVisibility(e.visibility), e.is_dll_import, .none, e.owner_nav },
         };
-        const ty = Type.fromInterned(nav.typeOf(ip));
+        const ty: Type = .fromInterned(nav.resolved.?.type);
 
         if (linkage != .internal and ip.isFunctionType(ty.toIntern())) {
             const function_index = try o.resolveLlvmFunction(pt, owner_nav);
@@ -4448,7 +4441,7 @@ pub const NavGen = struct {
             variable_index.setAlignment(zcu.navAlignment(nav_index).toLlvm(), &o.builder);
             if (resolved.@"linksection".toSlice(ip)) |section|
                 variable_index.setSection(try o.builder.string(section), &o.builder);
-            if (is_const) variable_index.setMutability(.constant, &o.builder);
+            if (resolved.@"const") variable_index.setMutability(.constant, &o.builder);
             try variable_index.setInitializer(switch (init_val) {
                 .none => .no_init,
                 else => try o.lowerValue(pt, init_val),
@@ -4457,7 +4450,7 @@ pub const NavGen = struct {
 
             const file_scope = zcu.navFileScopeIndex(nav_index);
             const mod = zcu.fileByIndex(file_scope).mod.?;
-            if (is_threadlocal and !mod.single_threaded)
+            if (resolved.@"threadlocal" and !mod.single_threaded)
                 variable_index.setThreadLocal(.generaldynamic, &o.builder);
 
             const line_number = zcu.navSrcLine(nav_index) + 1;
@@ -5475,7 +5468,7 @@ pub const FuncGen = struct {
             _ = try self.wip.retVoid();
             return;
         }
-        const fn_info = zcu.typeToFunc(Type.fromInterned(ip.getNav(self.ng.nav_index).typeOf(ip))).?;
+        const fn_info = zcu.typeToFunc(Type.fromInterned(ip.getNav(self.ng.nav_index).resolved.?.type)).?;
         if (!ret_ty.hasRuntimeBits(zcu)) {
             if (Type.fromInterned(fn_info.return_type).isError(zcu)) {
                 // Functions with an empty error set are emitted with an error code
@@ -5540,7 +5533,7 @@ pub const FuncGen = struct {
         const un_op = self.air.instructions.items(.data)[@intFromEnum(inst)].un_op;
         const ptr_ty = self.typeOf(un_op);
         const ret_ty = ptr_ty.childType(zcu);
-        const fn_info = zcu.typeToFunc(Type.fromInterned(ip.getNav(self.ng.nav_index).typeOf(ip))).?;
+        const fn_info = zcu.typeToFunc(.fromInterned(ip.getNav(self.ng.nav_index).resolved.?.type)).?;
         if (!ret_ty.hasRuntimeBits(zcu)) {
             if (Type.fromInterned(fn_info.return_type).isError(zcu)) {
                 // Functions with an empty error set are emitted with an error code

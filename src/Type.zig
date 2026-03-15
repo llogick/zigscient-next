@@ -239,7 +239,6 @@ pub fn classify(start_ty: Type, zcu: *const Zcu) Class {
         // values, not types
         .undef,
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -675,7 +674,6 @@ pub fn print(ty: Type, writer: *std.Io.Writer, pt: Zcu.PerThread, ctx: ?*Compari
 
         // values, not types
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -814,7 +812,6 @@ pub fn hasWellDefinedLayout(ty: Type, zcu: *const Zcu) bool {
         // values, not types
         .undef,
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -1046,7 +1043,6 @@ pub fn abiAlignment(ty: Type, zcu: *const Zcu) Alignment {
         // values, not types
         .undef,
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -1187,7 +1183,6 @@ pub fn abiSize(ty: Type, zcu: *const Zcu) u64 {
         // values, not types
         .undef,
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -1311,7 +1306,6 @@ pub fn bitSize(ty: Type, zcu: *const Zcu) u64 {
         // values, not types
         .undef,
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -1867,7 +1861,6 @@ pub fn intInfo(starting_ty: Type, zcu: *const Zcu) InternPool.Key.IntType {
             // values, not types
             .undef,
             .simple_value,
-            .variable,
             .@"extern",
             .func,
             .int,
@@ -2162,7 +2155,6 @@ pub fn onePossibleValue(ty: Type, pt: Zcu.PerThread) !?Value {
         // values, not types
         .undef,
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -3284,7 +3276,6 @@ pub fn assertHasLayout(ty: Type, zcu: *const Zcu) void {
 
         // values, not types
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,
@@ -3362,7 +3353,6 @@ fn collectSubtypes(ty: Type, pt: Zcu.PerThread, visited: *std.AutoArrayHashMapUn
 
         // values, not types
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,

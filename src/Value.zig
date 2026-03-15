@@ -176,13 +176,6 @@ pub fn getFunction(val: Value, zcu: *Zcu) ?InternPool.Key.Func {
     };
 }
 
-pub fn getVariable(val: Value, mod: *Zcu) ?InternPool.Key.Variable {
-    return switch (mod.intern_pool.indexToKey(val.toIntern())) {
-        .variable => |variable| variable,
-        else => null,
-    };
-}
-
 /// Asserts the value is a (defined) integer and it fits in a u64.
 pub fn toUnsignedInt(val: Value, zcu: *const Zcu) u64 {
     return getUnsignedInt(val, zcu).?;
@@ -808,7 +801,6 @@ pub fn canMutateComptimeVarState(val: Value, zcu: *Zcu) bool {
 pub fn pointerNav(val: Value, zcu: *const Zcu) ?InternPool.Nav.Index {
     return switch (zcu.intern_pool.indexToKey(val.toIntern())) {
         // TODO: these 3 cases are weird; these aren't pointer values!
-        .variable => |v| v.owner_nav,
         .@"extern" => |e| e.owner_nav,
         .func => |func| func.owner_nav,
         .ptr => |ptr| if (ptr.byte_offset == 0) switch (ptr.base_addr) {
@@ -2539,7 +2531,7 @@ pub fn intFitsInType(
         .zero_usize, .zero_u8 => return true,
         else => switch (zcu.intern_pool.indexToKey(val.toIntern())) {
             .undef => return true,
-            .variable, .@"extern", .func, .ptr => {
+            .@"extern", .func, .ptr => {
                 const target = zcu.getTarget();
                 const ptr_bits = target.ptrBitWidth();
                 return switch (info.signedness) {

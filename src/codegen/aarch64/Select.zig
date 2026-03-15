@@ -7207,7 +7207,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) error{ OutOfMemory,
                 const ptr_ra = try ptr_vi.value.defReg(isel) orelse break :unused;
 
                 const ty_nav = air.data(air.inst_index).ty_nav;
-                if (ZigType.fromInterned(ip.getNav(ty_nav.nav).typeOf(ip)).isRuntimeFnOrHasRuntimeBits(zcu)) switch (true) {
+                if (ZigType.fromInterned(ip.getNav(ty_nav.nav).resolved.?.type).isRuntimeFnOrHasRuntimeBits(zcu)) switch (true) {
                     false => {
                         try isel.nav_relocs.append(gpa, .{
                             .nav = ty_nav.nav,
@@ -10577,7 +10577,6 @@ pub const Value = struct {
                     => continue :type_key .{ .simple_type = .anyerror },
                     .undef,
                     .simple_value,
-                    .variable,
                     .@"extern",
                     .func,
                     .int,
@@ -10914,7 +10913,7 @@ pub const Value = struct {
                                 .ptr => |ptr| {
                                     assert(offset == 0 and size == 8);
                                     break :free switch (ptr.base_addr) {
-                                        .nav => |nav| if (ZigType.fromInterned(ip.getNav(nav).typeOf(ip)).isRuntimeFnOrHasRuntimeBits(zcu)) switch (true) {
+                                        .nav => |nav| if (ZigType.fromInterned(ip.getNav(nav).resolved.?.type).isRuntimeFnOrHasRuntimeBits(zcu)) switch (true) {
                                             false => {
                                                 try isel.nav_relocs.append(zcu.gpa, .{
                                                     .nav = nav,
@@ -12300,7 +12299,6 @@ pub const CallAbiIterator = struct {
             => continue :type_key .{ .simple_type = .anyerror },
             .undef,
             .simple_value,
-            .variable,
             .@"extern",
             .func,
             .int,

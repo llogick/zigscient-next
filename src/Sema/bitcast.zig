@@ -253,7 +253,6 @@ const UnpackValueBits = struct {
             .func_type,
             .error_set_type,
             .inferred_error_set_type,
-            .variable,
             .@"extern",
             .func,
             .err,

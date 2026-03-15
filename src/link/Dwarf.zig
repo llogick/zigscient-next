@@ -2681,7 +2681,7 @@ fn initWipNavInner(
                 } else try wip_nav.infoExprLoc(.{ .addr_reloc = sym_index });
             },
             .syntax => switch (ip.isFunctionType(@"extern".ty)) {
-                false => continue :nav_val .{ .variable = undefined },
+                false => continue :nav_val .{ .undef = @"extern".ty },
                 true => {
                     const func_type = ip.indexToKey(@"extern".ty).func_type;
                     const diw = &wip_nav.debug_info.writer;
@@ -2777,7 +2777,7 @@ fn initWipNavInner(
             wip_nav.func_high_pc = @intCast(diw.end);
             try diw.writeInt(u32, 0, dwarf.endian);
             const target = &mod.resolved_target.result;
-            try diw.writeUleb128(switch (nav.status.fully_resolved.alignment) {
+            try diw.writeUleb128(switch (nav.resolved.?.@"align") {
                 .none => target_info.defaultFunctionAlignment(target),
                 else => |a| a.maxStrict(target_info.minFunctionAlignment(target)),
             }.toByteUnits().?);
@@ -2845,7 +2845,7 @@ fn initWipNavInner(
                 .@"const" => {
                     const const_ty_reloc_index = try wip_nav.refForward();
                     try wip_nav.infoExprLoc(loc);
-                    try diw.writeUleb128(nav.status.fully_resolved.alignment.toByteUnits() orelse
+                    try diw.writeUleb128(nav.resolved.?.@"align".toByteUnits() orelse
                         ty.abiAlignment(zcu).toByteUnits().?);
                     try diw.writeByte(@intFromBool(decl.linkage != .normal));
                     wip_nav.finishForward(const_ty_reloc_index);
@@ -2855,7 +2855,7 @@ fn initWipNavInner(
                 .@"var" => {
                     try wip_nav.refType(ty);
                     try wip_nav.infoExprLoc(loc);
-                    try diw.writeUleb128(nav.status.fully_resolved.alignment.toByteUnits() orelse
+                    try diw.writeUleb128(nav.resolved.?.@"align".toByteUnits() orelse
                         ty.abiAlignment(zcu).toByteUnits().?);
                     try diw.writeByte(@intFromBool(decl.linkage != .normal));
                 },
@@ -3028,10 +3028,10 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     const nav_src_loc = zcu.navSrcLoc(nav_index);
-    const nav_val = zcu.navValue(nav_index);
 
     const nav = ip.getNav(nav_index);
     const inst_info = nav.srcInst(ip).resolveFull(ip).?;
+    const nav_val: Value = .fromInterned(nav.resolved.?.value);
     const file = zcu.fileByIndex(inst_info.file);
     const decl = file.zir.?.getDeclaration(inst_info.inst);
     log.debug("updateComptimeNav({s}:{d}:{d} %{d} = {f})", .{
@@ -3127,9 +3127,7 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
         .aggregate,
         .un,
         .bitpack,
-        => .@"const",
-
-        .variable => .@"var",
+        => if (nav.resolved.?.@"const") .@"const" else .@"var",
 
         .@"extern" => unreachable,
 
@@ -3210,7 +3208,7 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
             const nav_ty = nav_val.typeOf(zcu);
             try wip_nav.refType(nav_ty);
             try wip_nav.blockValue(nav_src_loc, nav_val);
-            try diw.writeUleb128(nav.status.fully_resolved.alignment.toByteUnits() orelse
+            try diw.writeUleb128(nav.resolved.?.@"align".toByteUnits() orelse
                 nav_ty.abiAlignment(zcu).toByteUnits().?);
             try diw.writeByte(@intFromBool(decl.linkage != .normal));
         },
@@ -3240,7 +3238,7 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
                 .@"extern", .@"export" => nav.name,
             }.toSlice(ip));
             const nav_ty_reloc_index = try wip_nav.refForward();
-            try diw.writeUleb128(nav.status.fully_resolved.alignment.toByteUnits() orelse
+            try diw.writeUleb128(nav.resolved.?.@"align".toByteUnits() orelse
                 nav_ty.abiAlignment(zcu).toByteUnits().?);
             try diw.writeByte(@intFromBool(decl.linkage != .normal));
             if (has_runtime_bits) try wip_nav.blockValue(nav_src_loc, nav_val);
@@ -4281,7 +4279,6 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
                 try wip_nav.refType(.null);
             },
         },
-        .variable => unreachable, // not a value
         .int => |int| {
             try wip_nav.bigIntConstValue(.{
                 .sdata = .sdata_comptime_value,

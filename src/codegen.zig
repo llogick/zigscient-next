@@ -352,7 +352,6 @@ pub fn generateSymbol(
                 else => unreachable,
             }),
         },
-        .variable,
         .@"extern",
         .func,
         .enum_literal,
@@ -787,7 +786,7 @@ fn lowerNavRef(
     const target = &zcu.navFileScope(nav_index).mod.?.resolved_target.result;
     const ptr_width_bytes = @divExact(target.ptrBitWidth(), 8);
     const is_obj = lf.comp.config.output_mode == .Obj;
-    const nav_ty = Type.fromInterned(ip.getNav(nav_index).typeOf(ip));
+    const nav_ty = Type.fromInterned(ip.getNav(nav_index).resolved.?.type);
 
     if (!nav_ty.isRuntimeFnOrHasRuntimeBits(zcu) and ip.getNav(nav_index).getExtern(ip) == null) {
         try w.splatByteAll(0xaa, ptr_width_bytes);
@@ -876,10 +875,11 @@ pub fn genNavRef(
     const nav = ip.getNav(nav_index);
     log.debug("genNavRef({f})", .{nav.fqn.fmt(ip)});
 
-    const lib_name, const linkage, const is_threadlocal = if (nav.getExtern(ip)) |e|
-        .{ e.lib_name, e.linkage, e.is_threadlocal and zcu.comp.config.any_non_single_threaded }
+    const is_threadlocal = nav.resolved.?.@"threadlocal" and zcu.comp.config.any_non_single_threaded;
+    const lib_name, const linkage = if (nav.getExtern(ip)) |e|
+        .{ e.lib_name, e.linkage }
     else
-        .{ .none, .internal, false };
+        .{ .none, .internal };
     if (lf.cast(.elf)) |elf_file| {
         const zo = elf_file.zigObjectPtr().?;
         switch (linkage) {
@@ -1038,7 +1038,7 @@ pub fn lowerValue(pt: Zcu.PerThread, val: Value, target: *const std.Target) Allo
 
                     .nav => |nav_index| {
                         const nav = ip.getNav(nav_index);
-                        const nav_ty: Type = .fromInterned(nav.typeOf(ip));
+                        const nav_ty: Type = .fromInterned(nav.resolved.?.type);
                         if (nav_ty.isRuntimeFnOrHasRuntimeBits(zcu) or nav.getExtern(ip) != null) {
                             return .{ .lea_nav = nav_index };
                         } else {

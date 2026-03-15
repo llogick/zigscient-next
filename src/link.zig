@@ -781,7 +781,7 @@ pub const File = struct {
     fn updateNav(base: *File, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) UpdateNavError!void {
         assert(base.comp.zcu.?.llvm_object == null);
         const nav = pt.zcu.intern_pool.getNav(nav_index);
-        assert(nav.status == .fully_resolved);
+        assert(nav.resolved.?.value != .none);
         switch (base.tag) {
             .lld => unreachable,
             .plan9 => unreachable,

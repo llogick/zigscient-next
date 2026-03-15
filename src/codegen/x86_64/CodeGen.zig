@@ -173046,7 +173046,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
             .runtime_nav_ptr => {
                 const ty_nav = air_datas[@intFromEnum(inst)].ty_nav;
                 const nav = ip.getNav(ty_nav.nav);
-                const is_threadlocal = zcu.comp.config.any_non_single_threaded and nav.isThreadlocal(ip);
+                const is_threadlocal = zcu.comp.config.any_non_single_threaded and nav.resolved.?.@"threadlocal";
 
                 if (is_threadlocal) switch (cg.target.ofmt) {
                     .elf => if (cg.mod.pic) {
@@ -179146,7 +179146,7 @@ fn genSetMem(
                     .off = disp,
                 }).compare(.gte, src_align),
                 .table, .rip_inst, .lazy_sym, .extern_func => unreachable,
-                .nav => |nav| ip.getNav(nav).getAlignment().compare(.gte, src_align),
+                .nav => |nav| ip.getNav(nav).resolved.?.@"align".compare(.gte, src_align),
                 .uav => |uav| Type.fromInterned(uav.orig_ty).ptrAlignment(zcu).compare(.gte, src_align),
             })).write(self, .{
                 .base = base,

@@ -729,11 +729,7 @@ pub const Exported = union(enum) {
 
     pub fn getAlign(exported: Exported, zcu: *Zcu) Alignment {
         return switch (exported) {
-            .nav => |nav| switch (zcu.intern_pool.getNav(nav).status) {
-                .unresolved => unreachable,
-                .type_resolved => |r| r.alignment,
-                .fully_resolved => |r| r.alignment,
-            },
+            .nav => |nav| zcu.intern_pool.getNav(nav).resolved.?.@"align",
             .uav => .none,
         };
     }
@@ -4307,8 +4303,8 @@ fn resolveReferencesInner(zcu: *Zcu) Allocator.Error!std.AutoArrayHashMapUnmanag
                         }
                     }
                     // Non-fatal AstGen errors could mean this test decl failed
-                    if (nav.status == .fully_resolved) {
-                        const gop = try units.getOrPut(gpa, .wrap(.{ .func = nav.status.fully_resolved.val }));
+                    if (nav.resolved != null and nav.resolved.?.value != .none) {
+                        const gop = try units.getOrPut(gpa, .wrap(.{ .func = nav.resolved.?.value }));
                         if (!gop.found_existing) gop.value_ptr.* = referencer;
                     }
                 }
@@ -4474,7 +4470,7 @@ pub fn navSrcLine(zcu: *Zcu, nav_index: InternPool.Nav.Index) u32 {
 }
 
 pub fn navValue(zcu: *const Zcu, nav_index: InternPool.Nav.Index) Value {
-    return Value.fromInterned(zcu.intern_pool.getNav(nav_index).status.fully_resolved.val);
+    return .fromInterned(zcu.intern_pool.getNav(nav_index).resolved.?.value);
 }
 
 pub fn navFileScopeIndex(zcu: *Zcu, nav: InternPool.Nav.Index) File.Index {
@@ -4486,14 +4482,12 @@ pub fn navFileScope(zcu: *Zcu, nav: InternPool.Nav.Index) *File {
     return zcu.fileByIndex(zcu.navFileScopeIndex(nav));
 }
 
-pub fn navAlignment(zcu: *Zcu, nav_index: InternPool.Nav.Index) InternPool.Alignment {
-    const ty: Type, const alignment = switch (zcu.intern_pool.getNav(nav_index).status) {
-        .unresolved => unreachable,
-        .type_resolved => |r| .{ .fromInterned(r.type), r.alignment },
-        .fully_resolved => |r| .{ Value.fromInterned(r.val).typeOf(zcu), r.alignment },
+pub fn navAlignment(zcu: *Zcu, nav_id: InternPool.Nav.Index) InternPool.Alignment {
+    const resolved = zcu.intern_pool.getNav(nav_id).resolved.?;
+    return switch (resolved.@"align") {
+        else => |a| a,
+        .none => Type.fromInterned(resolved.type).abiAlignment(zcu),
     };
-    if (alignment != .none) return alignment;
-    return ty.abiAlignment(zcu);
 }
 
 pub fn fmtAnalUnit(zcu: *Zcu, unit: AnalUnit) std.fmt.Alt(FormatAnalUnit, formatAnalUnit) {

@@ -215,22 +215,25 @@ fn handleCommand(zcu: *Zcu, w: *Io.Writer, cmd_str: []const u8, arg_str: []const
         try w.print(
             \\name: '{f}'
             \\fqn: '{f}'
-            \\status: {s}
             \\created on generation: {d}
             \\
         , .{
             nav.name.fmt(ip),
             nav.fqn.fmt(ip),
-            @tagName(nav.status),
             create_gen,
         });
-        switch (nav.status) {
-            .unresolved => {},
-            .type_resolved, .fully_resolved => {
-                try w.writeAll("type: ");
-                try printType(.fromInterned(nav.typeOf(ip)), zcu, w);
-                try w.writeByte('\n');
-            },
+        if (nav.resolved) |r| {
+            try w.writeAll("status: resolved\n  type: ");
+            try printType(.fromInterned(r.type), zcu, w);
+            try w.writeAll("\n  value: ");
+            if (r.value == .none) {
+                try w.writeAll("(unresolved)");
+            } else {
+                try printType(.fromInterned(r.type), zcu, w);
+            }
+            try w.writeByte('\n');
+        } else {
+            try w.writeAll("status: unresolved\n");
         }
     } else if (std.mem.eql(u8, cmd_str, "find_type")) {
         if (arg_str.len == 0) return w.writeAll("bad usage");

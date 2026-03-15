@@ -211,7 +211,7 @@ pub fn finish(f: *Flush, wasm: *Wasm) !void {
         }
 
         for (wasm.nav_exports.keys(), wasm.nav_exports.values()) |*nav_export, export_index| {
-            if (ip.isFunctionType(ip.getNav(nav_export.nav_index).typeOf(ip))) {
+            if (ip.isFunctionType(ip.getNav(nav_export.nav_index).resolved.?.type)) {
                 log.debug("flush export '{s}' nav={d}", .{ nav_export.name.slice(wasm), nav_export.nav_index });
                 const function_index = Wasm.FunctionIndex.fromIpNav(wasm, nav_export.nav_index).?;
                 const explicit = f.missing_exports.swapRemove(nav_export.name);

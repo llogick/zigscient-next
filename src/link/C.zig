@@ -534,11 +534,11 @@ pub fn updateNav(
     const ip = &zcu.intern_pool;
 
     const nav = ip.getNav(nav_index);
-    switch (ip.indexToKey(nav.status.fully_resolved.val)) {
+    switch (ip.indexToKey(nav.resolved.?.value)) {
         .func => return,
         .@"extern" => {},
         else => {
-            const nav_ty: Type = .fromInterned(nav.typeOf(ip));
+            const nav_ty: Type = .fromInterned(nav.resolved.?.type);
             if (!nav_ty.hasRuntimeBits(zcu)) {
                 if (c.navs.fetchSwapRemove(nav_index)) |kv| {
                     var old_rendered = kv.value;
@@ -762,7 +762,7 @@ pub fn flush(c: *C, arena: Allocator, tid: Zcu.PerThread.Id, prog_node: std.Prog
     {
         const unit_references = try zcu.resolveReferences();
         for (c.navs.keys()) |nav| {
-            const nav_val = ip.getNav(nav).status.fully_resolved.val;
+            const nav_val = ip.getNav(nav).resolved.?.value;
             const check_unit: ?InternPool.AnalUnit = switch (ip.indexToKey(nav_val)) {
                 else => .wrap(.{ .nav_val = nav }),
                 .func => .wrap(.{ .func = nav_val }),
@@ -1092,8 +1092,9 @@ pub fn flush(c: *C, arena: Allocator, tid: Zcu.PerThread.Id, prog_node: std.Prog
     // NAV forward declarations
     for (need_navs.keys()) |nav| {
         if (c.exported_navs.contains(nav)) continue; // the export was the declaration
-        if (ip.getNav(nav).getExtern(ip)) |e| {
-            if (export_names.contains(e.name)) continue;
+        switch (ip.indexToKey(ip.getNav(nav).resolved.?.value)) {
+            .@"extern" => |e| if (export_names.contains(e.name)) continue,
+            else => {},
         }
         const fwd_decl = c.navs.getPtr(nav).?.fwd_decl;
         f.appendBufAssumeCapacity(fwd_decl.get(c));
@@ -1200,7 +1201,7 @@ pub fn flush(c: *C, arena: Allocator, tid: Zcu.PerThread.Id, prog_node: std.Prog
         const code = c.navs.getPtr(nav).?.code;
         if (code.len == 0) continue;
         if (!c.exported_navs.contains(nav)) {
-            const is_extern = ip.getNav(nav).getExtern(ip) != null;
+            const is_extern = ip.indexToKey(ip.getNav(nav).resolved.?.value) == .@"extern";
             f.appendBufAssumeCapacity(if (is_extern) "zig_extern " else "static ");
         }
         f.appendBufAssumeCapacity(code.get(c));

@@ -115,7 +115,6 @@ fn ensureLayoutResolvedInner(sema: *Sema, ty: Type, orig_ty: Type, reason: *cons
         // values, not types
         .undef,
         .simple_value,
-        .variable,
         .@"extern",
         .func,
         .int,

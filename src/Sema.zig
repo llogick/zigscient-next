@@ -2276,28 +2276,26 @@ fn resolveValue(sema: *Sema, inst: Air.Inst.Ref) ?Value {
     assert(inst != .none);
 
     if (inst.toInterned()) |ip_index| {
-        const val: Value = .fromInterned(ip_index);
-        assert(val.getVariable(zcu) == null);
-        return val;
-    } else {
-        // Runtime-known value.
-        const air_tags = sema.air_instructions.items(.tag);
-        switch (air_tags[@intFromEnum(inst.toIndex().?)]) {
-            .inferred_alloc => unreachable, // assertion failure
-            .inferred_alloc_comptime => unreachable, // assertion failure
-            else => {},
-        }
-        // LLVM fails to eliminate this `classify` call in ReleaseFast, which hurts performance, so
-        // we must explicitly check for `std.debug.runtime_safety`.
-        if (std.debug.runtime_safety) switch (sema.typeOf(inst).classify(zcu)) {
-            .no_possible_value => unreachable, // values of this type do not exist
-            .one_possible_value => unreachable, // the value should be comptime-known
-            .partially_comptime => unreachable, // the value should be comptime-known
-            .fully_comptime => unreachable, // the value should be comptime-known
-            .runtime => {},
-        };
-        return null;
+        return .fromInterned(ip_index);
     }
+
+    // Runtime-known value. We'll be returning `null`, but first, some assertions.
+    const air_tags = sema.air_instructions.items(.tag);
+    switch (air_tags[@intFromEnum(inst.toIndex().?)]) {
+        .inferred_alloc => unreachable, // assertion failure
+        .inferred_alloc_comptime => unreachable, // assertion failure
+        else => {},
+    }
+    // LLVM fails to eliminate this `classify` call in ReleaseFast, which hurts performance, so
+    // we must explicitly check for `std.debug.runtime_safety`.
+    if (std.debug.runtime_safety) switch (sema.typeOf(inst).classify(zcu)) {
+        .no_possible_value => unreachable, // values of this type do not exist
+        .one_possible_value => unreachable, // the value should be comptime-known
+        .partially_comptime => unreachable, // the value should be comptime-known
+        .fully_comptime => unreachable, // the value should be comptime-known
+        .runtime => {},
+    };
+    return null;
 }
 
 /// Like `resolveValue`, but emits an error if the value is not comptime-known.
@@ -5740,8 +5738,7 @@ fn zirExport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
         .uav => |uav| .{ .uav = uav.val },
         .nav => |orig_nav| target: {
             try sema.ensureNavResolved(block, src, orig_nav, .fully);
-            const export_nav = switch (ip.indexToKey(ip.getNav(orig_nav).status.fully_resolved.val)) {
-                .variable => |v| v.owner_nav,
+            const export_nav = switch (ip.indexToKey(ip.getNav(orig_nav).resolved.?.value)) {
                 .@"extern" => |e| e.owner_nav,
                 .func => |f| f.owner_nav,
                 else => orig_nav,
@@ -5780,7 +5777,7 @@ pub fn analyzeExportSelfNav(
     const ip = &zcu.intern_pool;
 
     const orig_nav = sema.owner.unwrap().nav_val;
-    const export_val: Value = .fromInterned(ip.getNav(orig_nav).status.fully_resolved.val);
+    const export_val: Value = .fromInterned(ip.getNav(orig_nav).resolved.?.value);
     const export_ty = export_val.typeOf(zcu);
 
     if (!export_ty.validateExtern(.other, zcu)) {
@@ -5794,7 +5791,6 @@ pub fn analyzeExportSelfNav(
     }
 
     const export_nav = switch (ip.indexToKey(export_val.toIntern())) {
-        .variable => |v| v.owner_nav,
         .@"extern" => |e| e.owner_nav,
         .func => |f| export_nav: {
             assert(export_ty.fnHasRuntimeBits(zcu)); // otherwise `validateExtern` failed above
@@ -30007,7 +30003,7 @@ pub fn ensureNavResolved(sema: *Sema, block: *Block, src: LazySrcLoc, nav_index:
 
     const nav = ip.getNav(nav_index);
     if (nav.analysis == null) {
-        assert(nav.status == .fully_resolved);
+        assert(nav.resolved.?.value != .none);
         return;
     }
 
@@ -30068,11 +30064,20 @@ fn analyzeNavRefInner(sema: *Sema, block: *Block, src: LazySrcLoc, orig_nav_inde
     try sema.ensureNavResolved(block, src, orig_nav_index, if (is_ref) .type else .fully);
 
     const nav_index = nav: {
-        if (ip.getNav(orig_nav_index).isExternOrFn(ip)) {
-            // Getting a pointer to this `Nav` might mean we actually get a pointer to something else!
-            // We need to resolve the value to know for sure.
-            if (is_ref) try sema.ensureNavResolved(block, src, orig_nav_index, .fully);
-            switch (ip.indexToKey(ip.getNav(orig_nav_index).status.fully_resolved.val)) {
+        const orig_nav = ip.getNav(orig_nav_index);
+        if (orig_nav.resolved.?.is_extern_decl or ip.zigTypeTag(orig_nav.resolved.?.type) == .@"fn") {
+            // A pointer to this `Nav` might actually be encoded as a pointer to a different `Nav`
+            // because this is either an `extern` definition or an `extern` alias. (The latter case
+            // is unsolved language weirdness; see https://github.com/ziglang/zig/issues/21027.) To
+            // know for sure how to encode this pointer, we need to check the *value* of this `Nav`.
+            const orig_nav_value = switch (is_ref) {
+                false => orig_nav.resolved.?.value,
+                true => orig_val: {
+                    try sema.ensureNavResolved(block, src, orig_nav_index, .fully);
+                    break :orig_val ip.getNav(orig_nav_index).resolved.?.value;
+                },
+            };
+            switch (ip.indexToKey(orig_nav_value)) {
                 .func => |f| break :nav f.owner_nav,
                 .@"extern" => |e| break :nav e.owner_nav,
                 else => {},
@@ -30081,33 +30086,31 @@ fn analyzeNavRefInner(sema: *Sema, block: *Block, src: LazySrcLoc, orig_nav_inde
         break :nav orig_nav_index;
     };
 
-    const nav_status = ip.getNav(nav_index).status;
+    const nav_resolved = ip.getNav(nav_index).resolved.?;
 
-    const is_runtime = switch (nav_status) {
-        .unresolved => unreachable,
-        // dllimports go straight to `fully_resolved`; the only option is threadlocal
-        .type_resolved => |r| r.is_threadlocal,
-        .fully_resolved => |r| switch (ip.indexToKey(r.val)) {
-            .@"extern" => |e| e.is_threadlocal or e.is_dll_import or switch (e.relocation) {
-                .any => false,
-                .pcrel => true,
-            },
-            .variable => |v| v.is_threadlocal,
-            else => false,
-        },
+    const is_runtime: bool = runtime: {
+        if (nav_resolved.@"threadlocal") break :runtime true;
+        if (nav_resolved.value == .none) {
+            // This didn't come from `@extern`, so even if extern it couldn't be dllimport or pcrel.
+            break :runtime false;
+        }
+        const @"extern" = switch (ip.indexToKey(nav_resolved.value)) {
+            .@"extern" => |e| e,
+            else => break :runtime false,
+        };
+        if (@"extern".is_dll_import) break :runtime true;
+        break :runtime switch (@"extern".relocation) {
+            .any => false,
+            .pcrel => true,
+        };
     };
 
-    const ty, const alignment, const @"addrspace", const is_const = switch (nav_status) {
-        .unresolved => unreachable,
-        .type_resolved => |r| .{ r.type, r.alignment, r.@"addrspace", r.is_const },
-        .fully_resolved => |r| .{ ip.typeOf(r.val), r.alignment, r.@"addrspace", r.is_const },
-    };
     const ptr_ty = try pt.ptrType(.{
-        .child = ty,
+        .child = nav_resolved.type,
         .flags = .{
-            .alignment = alignment,
-            .is_const = is_const,
-            .address_space = @"addrspace",
+            .alignment = nav_resolved.@"align",
+            .is_const = nav_resolved.@"const",
+            .address_space = nav_resolved.@"addrspace",
         },
     });
 
@@ -30142,7 +30145,7 @@ fn maybeQueueFuncBodyAnalysis(sema: *Sema, block: *Block, src: LazySrcLoc, nav_i
     // If it is, we can resolve the *value*, and queue analysis as needed.
 
     try sema.ensureNavResolved(block, src, nav_index, .type);
-    const nav_ty: Type = .fromInterned(ip.getNav(nav_index).typeOf(ip));
+    const nav_ty: Type = .fromInterned(ip.getNav(nav_index).resolved.?.type);
     if (nav_ty.zigTypeTag(zcu) != .@"fn") return;
     if (!nav_ty.fnHasRuntimeBits(zcu)) return;
 
@@ -34008,7 +34011,7 @@ pub fn getBuiltin(sema: *Sema, src: LazySrcLoc, decl: Zcu.BuiltinDecl) SemaError
 }
 
 pub const NavPtrModifiers = struct {
-    alignment: Alignment,
+    @"align": Alignment,
     @"linksection": InternPool.OptionalNullTerminatedString,
     @"addrspace": std.builtin.AddressSpace,
 };
@@ -34031,7 +34034,7 @@ pub fn resolveNavPtrModifiers(
     const section_src = block.src(.{ .node_offset_var_decl_section = .zero });
     const addrspace_src = block.src(.{ .node_offset_var_decl_addrspace = .zero });
 
-    const alignment: InternPool.Alignment = a: {
+    const @"align": InternPool.Alignment = a: {
         const align_body = zir_decl.align_body orelse break :a .none;
         const align_ref = try sema.resolveInlineBody(block, align_body, decl_inst);
         break :a try sema.analyzeAsAlign(block, align_src, align_ref);
@@ -34069,7 +34072,7 @@ pub fn resolveNavPtrModifiers(
     };
 
     return .{
-        .alignment = alignment,
+        .@"align" = @"align",
         .@"linksection" = @"linksection",
         .@"addrspace" = @"addrspace",
     };

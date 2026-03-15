@@ -656,6 +656,7 @@ fn lookupNav(
     // offset_encoding: offsets.Encoding,
 ) Analyser.Error!?[]const u8 {
     if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
+    if (true) return null;
 
     const tree = &handle.tree;
     // this can't tell the diff between the fn decl and it's first param

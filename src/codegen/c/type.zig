@@ -990,7 +990,6 @@ pub const CType = union(enum) {
             // values, not types
             .undef,
             .simple_value,
-            .variable,
             .@"extern",
             .func,
             .int,

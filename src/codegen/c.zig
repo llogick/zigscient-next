@@ -669,11 +669,9 @@ pub const DeclGen = struct {
             return dg.renderUndefValue(w, ptr_ty, location);
         }
 
-        // Chase function values in order to be able to reference the original function.
         switch (ip.indexToKey(uav.val)) {
-            .variable => unreachable,
-            .func => |func| return dg.renderNav(w, func.owner_nav, location),
-            .@"extern" => |@"extern"| return dg.renderNav(w, @"extern".owner_nav, location),
+            .func => unreachable,
+            .@"extern" => unreachable,
             else => {},
         }
 
@@ -721,10 +719,9 @@ pub const DeclGen = struct {
         const ip = &zcu.intern_pool;
 
         // Chase function values in order to be able to reference the original function.
-        const owner_nav = switch (ip.getNav(nav_index).status) {
-            .unresolved => unreachable,
-            .type_resolved => nav_index, // this can't be an extern or a function
-            .fully_resolved => |r| switch (ip.indexToKey(r.val)) {
+        const owner_nav = switch (ip.getNav(nav_index).resolved.?.value) {
+            .none => nav_index, // this can't be an extern or a function
+            else => |value| switch (ip.indexToKey(value)) {
                 .func => |f| f.owner_nav,
                 .@"extern" => |e| e.owner_nav,
                 else => nav_index,
@@ -732,7 +729,7 @@ pub const DeclGen = struct {
         };
 
         // Render an undefined pointer if we have a pointer to a zero-bit or comptime type.
-        const nav_ty: Type = .fromInterned(ip.getNav(owner_nav).typeOf(ip));
+        const nav_ty: Type = .fromInterned(ip.getNav(owner_nav).resolved.?.type);
         const ptr_ty = try pt.navPtrType(owner_nav);
         if (!nav_ty.isRuntimeFnOrHasRuntimeBits(zcu)) {
             return dg.renderUndefValue(w, ptr_ty, location);
@@ -924,7 +921,6 @@ pub const DeclGen = struct {
                 .false => try w.writeAll("false"),
                 .true => try w.writeAll("true"),
             },
-            .variable,
             .@"extern",
             .func,
             .enum_literal,
@@ -1575,7 +1571,6 @@ pub const DeclGen = struct {
 
                 .undef,
                 .simple_value,
-                .variable,
                 .@"extern",
                 .func,
                 .int,
@@ -2276,13 +2271,13 @@ pub fn genFunc(f: *Function, fwd_decl_writer: *Writer, header_writer: *Writer) E
     try f.dg.renderFunctionSignature(
         fwd_decl_writer,
         nav_val,
-        nav.status.fully_resolved.alignment,
+        nav.resolved.?.@"align",
         .forward_decl,
         .{ .nav = nav_index },
     );
     try fwd_decl_writer.writeAll(";\n");
 
-    if (nav.status.fully_resolved.@"linksection".toSlice(ip)) |s|
+    if (nav.resolved.?.@"linksection".toSlice(ip)) |s|
         try header_writer.print("zig_linksection_fn({f}) ", .{fmtStringLiteral(s, null)});
     try f.dg.renderFunctionSignature(
         header_writer,
@@ -2360,28 +2355,26 @@ pub fn genDecl(dg: *DeclGen, w: *Writer) Error!void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     const nav = ip.getNav(dg.owner_nav.unwrap().?);
-    const nav_ty: Type = .fromInterned(nav.typeOf(ip));
+    const nav_ty: Type = .fromInterned(nav.resolved.?.type);
 
-    const is_const: bool, const is_threadlocal: bool, const init_val: Value = switch (ip.indexToKey(nav.status.fully_resolved.val)) {
-        else => .{ true, false, .fromInterned(nav.status.fully_resolved.val) },
-        .variable => |v| .{ false, v.is_threadlocal, .fromInterned(v.init) },
-        .@"extern" => return,
-    };
+    if (ip.indexToKey(nav.resolved.?.value) == .@"extern") return;
 
-    if (nav.status.fully_resolved.@"linksection".toSlice(ip)) |s| {
+    const init_val: Value = .fromInterned(nav.resolved.?.value);
+
+    if (nav.resolved.?.@"linksection".toSlice(ip)) |s| {
         try w.print("zig_linksection({f}) ", .{fmtStringLiteral(s, null)});
     }
 
     // We don't bother underaligning---it's unnecessary and hurts compatibility.
-    const a = nav.status.fully_resolved.alignment;
+    const a = nav.resolved.?.@"align";
     if (a != .none and a.compareStrict(.gt, nav_ty.abiAlignment(zcu))) {
         try w.print("zig_align({d}) ", .{a.toByteUnits().?});
     }
 
     try genDeclValue(dg, w, .{
         .name = .{ .nav = dg.owner_nav.unwrap().? },
-        .@"const" = is_const,
-        .@"threadlocal" = is_threadlocal,
+        .@"const" = nav.resolved.?.@"const",
+        .@"threadlocal" = nav.resolved.?.@"threadlocal",
         .init_val = init_val,
     });
 }
@@ -2393,19 +2386,18 @@ pub fn genDeclFwd(dg: *DeclGen, w: *Writer) Error!void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     const nav = ip.getNav(dg.owner_nav.unwrap().?);
-    const nav_ty: Type = .fromInterned(nav.typeOf(ip));
+    const nav_ty: Type = .fromInterned(nav.resolved.?.type);
 
-    const is_const: bool, const is_threadlocal: bool, const init_val: Value = switch (ip.indexToKey(nav.status.fully_resolved.val)) {
-        else => .{ true, false, .fromInterned(nav.status.fully_resolved.val) },
-        .variable => |v| .{ false, v.is_threadlocal, .fromInterned(v.init) },
+    const init_val: Value = switch (ip.indexToKey(nav.resolved.?.value)) {
+        else => .fromInterned(nav.resolved.?.value),
 
         .@"extern" => |@"extern"| switch (nav_ty.zigTypeTag(zcu)) {
             .@"fn" => {
                 try w.writeAll("zig_extern ");
                 try dg.renderFunctionSignature(
                     w,
-                    Value.fromInterned(nav.status.fully_resolved.val),
-                    nav.status.fully_resolved.alignment,
+                    .fromInterned(nav.resolved.?.value),
+                    nav.resolved.?.@"align",
                     .forward_decl,
                     .{ .@"export" = .{
                         .main_name = nav.name,
@@ -2422,15 +2414,15 @@ pub fn genDeclFwd(dg: *DeclGen, w: *Writer) Error!void {
                     .weak => try w.print("zig_extern zig_weak_linkage zig_visibility({t}) ", .{@"extern".visibility}),
                     .link_once => return dg.fail("TODO: CBE: implement linkonce linkage?", .{}),
                 }
-                if (@"extern".is_threadlocal and !dg.mod.single_threaded) {
+                if (nav.resolved.?.@"threadlocal" and !dg.mod.single_threaded) {
                     try w.writeAll("zig_threadlocal ");
                 }
                 try dg.renderTypeAndName(
                     w,
-                    .fromInterned(nav.typeOf(ip)),
+                    .fromInterned(nav.resolved.?.type),
                     .{ .nav = dg.owner_nav.unwrap().? },
-                    .{ .@"const" = @"extern".is_const },
-                    nav.getAlignment(),
+                    .{ .@"const" = nav.resolved.?.@"const" },
+                    nav.resolved.?.@"align",
                 );
                 try w.writeAll(";\n");
                 return;
@@ -2439,15 +2431,15 @@ pub fn genDeclFwd(dg: *DeclGen, w: *Writer) Error!void {
     };
 
     // We don't bother underaligning---it's unnecessary and hurts compatibility.
-    const a = nav.status.fully_resolved.alignment;
+    const a = nav.resolved.?.@"align";
     if (a != .none and a.compareStrict(.gt, nav_ty.abiAlignment(zcu))) {
         try w.print("zig_align({d}) ", .{a.toByteUnits().?});
     }
 
     try genDeclValueFwd(dg, w, .{
         .name = .{ .nav = dg.owner_nav.unwrap().? },
-        .@"const" = is_const,
-        .@"threadlocal" = is_threadlocal,
+        .@"const" = nav.resolved.?.@"const",
+        .@"threadlocal" = nav.resolved.?.@"threadlocal",
         .init_val = init_val,
     });
 }
@@ -2514,11 +2506,9 @@ pub fn genExports(dg: *DeclGen, w: *Writer, exported: Zcu.Exported, export_indic
         );
         try w.writeAll(";\n");
     };
-    const is_const = switch (ip.indexToKey(exported_val.toIntern())) {
-        .func => unreachable,
-        .@"extern" => |@"extern"| @"extern".is_const,
-        .variable => false,
-        else => true,
+    const is_const = switch (exported) {
+        .nav => |nav| ip.getNav(nav).resolved.?.@"const",
+        .uav => true,
     };
     for (export_indices) |export_index| {
         const @"export" = export_index.ptr(zcu);

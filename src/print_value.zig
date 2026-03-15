@@ -74,7 +74,6 @@ pub fn print(
             .@"unreachable",
             => try writer.writeAll(@tagName(simple_value)),
         },
-        .variable => |v| try print(Value.fromInterned(v.init), writer, 1, pt, null), // try writer.writeAll("(variable)"),
         .@"extern" => |e| try writer.print("(extern '{f}')", .{e.name.fmt(ip)}),
         .func => |func| try writer.print("(function '{f}')", .{ip.getNav(func.owner_nav).name.fmt(ip)}),
         .int => |int| switch (int.storage) {

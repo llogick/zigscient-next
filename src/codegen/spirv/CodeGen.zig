@@ -256,7 +256,7 @@ pub fn genNav(cg: *CodeGen, do_codegen: bool) Error!void {
         .global => {
             const key = ip.indexToKey(val.toIntern()).@"extern";
 
-            const storage_class = cg.module.storageClass(nav.getAddrspace());
+            const storage_class = cg.module.storageClass(nav.resolved.?.@"addrspace");
             assert(storage_class != .generic); // These should be instance globals
 
             const ty_id = try cg.resolveType(ty, .indirect);
@@ -314,64 +314,47 @@ pub fn genNav(cg: *CodeGen, do_codegen: bool) Error!void {
             try cg.module.debugName(result_id, nav.fqn.toSlice(ip));
         },
         .invocation_global => {
-            const maybe_init_val: ?Value = switch (ip.indexToKey(val.toIntern())) {
-                .func => unreachable,
-                .variable => |variable| .fromInterned(variable.init),
-                .@"extern" => null,
-                else => val,
-            };
-
             const ty_id = try cg.resolveType(ty, .indirect);
             const ptr_ty_id = try cg.module.ptrType(ty_id, .function);
 
-            if (maybe_init_val) |init_val| {
-                // TODO: Combine with resolveAnonDecl?
-                const void_ty_id = try cg.resolveType(.void, .direct);
-                const initializer_proto_ty_id = try cg.module.functionType(void_ty_id, &.{});
+            // TODO: Combine with resolveAnonDecl?
+            const void_ty_id = try cg.resolveType(.void, .direct);
+            const initializer_proto_ty_id = try cg.module.functionType(void_ty_id, &.{});
 
-                const initializer_id = cg.module.allocId();
-                try cg.prologue.emit(gpa, .OpFunction, .{
-                    .id_result_type = try cg.resolveType(.void, .direct),
-                    .id_result = initializer_id,
-                    .function_control = .{},
-                    .function_type = initializer_proto_ty_id,
-                });
+            const initializer_id = cg.module.allocId();
+            try cg.prologue.emit(gpa, .OpFunction, .{
+                .id_result_type = try cg.resolveType(.void, .direct),
+                .id_result = initializer_id,
+                .function_control = .{},
+                .function_type = initializer_proto_ty_id,
+            });
 
-                const root_block_id = cg.module.allocId();
-                try cg.prologue.emit(gpa, .OpLabel, .{
-                    .id_result = root_block_id,
-                });
-                cg.block_label = root_block_id;
+            const root_block_id = cg.module.allocId();
+            try cg.prologue.emit(gpa, .OpLabel, .{
+                .id_result = root_block_id,
+            });
+            cg.block_label = root_block_id;
 
-                const val_id = try cg.constant(ty, init_val, .indirect);
-                try cg.body.emit(gpa, .OpStore, .{
-                    .pointer = result_id,
-                    .object = val_id,
-                });
+            const val_id = try cg.constant(ty, val, .indirect);
+            try cg.body.emit(gpa, .OpStore, .{
+                .pointer = result_id,
+                .object = val_id,
+            });
 
-                try cg.body.emit(gpa, .OpReturn, {});
-                try cg.body.emit(gpa, .OpFunctionEnd, {});
-                try cg.module.sections.functions.append(gpa, cg.prologue);
-                try cg.module.sections.functions.append(gpa, cg.body);
+            try cg.body.emit(gpa, .OpReturn, {});
+            try cg.body.emit(gpa, .OpFunctionEnd, {});
+            try cg.module.sections.functions.append(gpa, cg.prologue);
+            try cg.module.sections.functions.append(gpa, cg.body);
 
-                try cg.module.debugNameFmt(initializer_id, "initializer of {f}", .{nav.fqn.fmt(ip)});
+            try cg.module.debugNameFmt(initializer_id, "initializer of {f}", .{nav.fqn.fmt(ip)});
 
-                try cg.module.sections.globals.emit(gpa, .OpExtInst, .{
-                    .id_result_type = ptr_ty_id,
-                    .id_result = result_id,
-                    .set = try cg.module.importInstructionSet(.zig),
-                    .instruction = .{ .inst = @intFromEnum(spec.Zig.InvocationGlobal) },
-                    .id_ref_4 = &.{initializer_id},
-                });
-            } else {
-                try cg.module.sections.globals.emit(gpa, .OpExtInst, .{
-                    .id_result_type = ptr_ty_id,
-                    .id_result = result_id,
-                    .set = try cg.module.importInstructionSet(.zig),
-                    .instruction = .{ .inst = @intFromEnum(spec.Zig.InvocationGlobal) },
-                    .id_ref_4 = &.{},
-                });
-            }
+            try cg.module.sections.globals.emit(gpa, .OpExtInst, .{
+                .id_result_type = ptr_ty_id,
+                .id_result = result_id,
+                .set = try cg.module.importInstructionSet(.zig),
+                .instruction = .{ .inst = @intFromEnum(spec.Zig.InvocationGlobal) },
+                .id_ref_4 = &.{initializer_id},
+            });
         },
     }
 
@@ -810,7 +793,6 @@ fn constant(cg: *CodeGen, ty: Type, val: Value, repr: Repr) Error!Id {
 
             .undef => unreachable, // handled above
 
-            .variable,
             .@"extern",
             .func,
             .enum_literal,
@@ -1170,12 +1152,11 @@ fn constantNavRef(cg: *CodeGen, ty: Type, nav_index: InternPool.Nav.Index) !Id {
     const ip = &zcu.intern_pool;
     const ty_id = try cg.resolveType(ty, .direct);
     const nav = ip.getNav(nav_index);
-    const nav_ty: Type = .fromInterned(nav.typeOf(ip));
+    const nav_ty: Type = .fromInterned(nav.resolved.?.type);
 
-    switch (nav.status) {
-        .unresolved => unreachable,
-        .type_resolved => {}, // this is not a function or extern
-        .fully_resolved => |r| switch (ip.indexToKey(r.val)) {
+    switch (nav.resolved.?.value) {
+        .none => {}, // this is not a function or extern
+        else => |value| switch (ip.indexToKey(value)) {
             .func => {
                 // TODO: Properly lower function pointers. For now we are going to hack around it and
                 // just generate an empty pointer. Function pointers are represented by a pointer to usize.
@@ -1196,7 +1177,7 @@ fn constantNavRef(cg: *CodeGen, ty: Type, nav_index: InternPool.Nav.Index) !Id {
     const spv_decl_result_id = spv_decl.result_id;
     assert(spv_decl.kind != .func);
 
-    const storage_class = cg.module.storageClass(nav.getAddrspace());
+    const storage_class = cg.module.storageClass(nav.resolved.?.@"addrspace");
     try cg.addFunctionDep(spv_decl_index, storage_class);
 
     const nav_ty_id = try cg.resolveType(nav_ty, .indirect);
