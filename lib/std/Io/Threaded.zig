@@ -16191,7 +16191,7 @@ fn windowsCreateProcessPathExt(
     // we iterate the matches and take note of any that are either the unappended version,
     // or a version with a supported PATHEXT appended. We then try calling CreateProcessW
     // with the found versions in the appropriate order.
-    var dir = dir: {
+    const dir = dir: {
         // needs to be null-terminated
         try dir_buf.append(arena, 0);
         defer dir_buf.shrinkRetainingCapacity(dir_path_len);

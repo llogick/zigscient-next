@@ -3477,7 +3477,7 @@ fn intSubOverflow(cg: *CodeGen, int_ty: IntType, lhs: WValue, rhs: WValue) Inner
 }
 
 fn intMulOverflow(cg: *CodeGen, int_ty: IntType, lhs: WValue, rhs: WValue) InnerError!OverflowResult {
-    var overflow_bit = try cg.allocLocal(Type.u32);
+    const overflow_bit = try cg.allocLocal(Type.u32);
     try cg.addImm32(0);
     try cg.addLocal(.local_set, overflow_bit.local.value);
 

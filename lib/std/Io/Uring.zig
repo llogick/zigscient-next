@@ -2427,7 +2427,7 @@ fn batchDrainReady(batch: *Io.Batch) Io.Timeout.Error!void {
                 break :cond true;
             },
         }) {
-            var operation_userdata: *Io.Operation.Storage.Pending.Userdata =
+            const operation_userdata: *Io.Operation.Storage.Pending.Userdata =
                 @ptrFromInt(next & ~@as(usize, 0b11));
             next = operation_userdata[0];
             const completion: Completion = .{

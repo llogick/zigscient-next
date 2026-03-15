@@ -308,6 +308,9 @@ const ResultInfo = struct {
         /// The expression must generate a pointer rather than a value, and the pointer will be coerced
         /// by other code to this type, which is guaranteed by earlier instructions to be a pointer type.
         ref_coerced_ty: Zir.Inst.Ref,
+        /// Like `ref`, but the pointer will never be stored to, so local variables should not be
+        /// marked as possibly being mutated.
+        ref_const,
         /// The expression must store its result into this typed pointer. The result instruction
         /// from the expression must be ignored.
         ptr: PtrResultLoc,
@@ -339,7 +342,7 @@ const ResultInfo = struct {
         /// If the location does not have a known result type, returns `null`.
         fn resultType(rl: Loc, gz: *GenZir, node: Ast.Node.Index) !?Zir.Inst.Ref {
             return switch (rl) {
-                .discard, .none, .ref, .inferred_ptr, .destructure => null,
+                .discard, .none, .ref, .ref_const, .inferred_ptr, .destructure => null,
                 .ty, .coerced_ty => |ty_ref| ty_ref,
                 .ref_coerced_ty => |ptr_ty| try gz.addUnNode(.elem_type, ptr_ty, node),
                 .ptr => |ptr| {
@@ -937,7 +940,11 @@ fn expr(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.Index) InnerE
             const lhs = try expr(gz, scope, .{ .rl = .none }, tree.nodeData(node).node);
             _ = try gz.addUnNode(.validate_deref, lhs, node);
             switch (ri.rl) {
-                .ref, .ref_coerced_ty => return lhs,
+                .ref,
+                .ref_coerced_ty,
+                .ref_const,
+                => return lhs,
+
                 else => {
                     const result = try gz.addUnNode(.load, lhs, node);
                     return rvalue(gz, ri, result, node);
@@ -973,6 +980,14 @@ fn expr(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.Index) InnerE
 
                 return gz.addUnNode(.optional_payload_safe_ptr, lhs, node);
             },
+            .ref_const => {
+                const lhs = try expr(gz, scope, .{ .rl = .ref_const }, tree.nodeData(node).node_and_token[0]);
+
+                const cursor = maybeAdvanceSourceCursorToMainToken(gz, node);
+                try emitDbgStmt(gz, cursor);
+
+                return gz.addUnNode(.optional_payload_safe_ptr, lhs, node);
+            },
             else => {
                 const lhs = try expr(gz, scope, .{ .rl = .none }, tree.nodeData(node).node_and_token[0]);
 
@@ -998,7 +1013,7 @@ fn expr(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.Index) InnerE
                 .field_name_start = str_index,
             });
             switch (ri.rl) {
-                .discard, .none, .ref, .inferred_ptr, .destructure => unreachable, // no result type
+                .discard, .none, .ref, .ref_const, .inferred_ptr, .destructure => unreachable, // no result type
                 .ty, .coerced_ty => return res, // `decl_literal` does the coercion for us
                 .ref_coerced_ty, .ptr => return rvalue(gz, ri, res, node),
             }
@@ -1030,7 +1045,7 @@ fn expr(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.Index) InnerE
                 return switchExpr(gz, scope, ri.br(), node, switch_full, .@"catch");
             }
             switch (ri.rl) {
-                .ref, .ref_coerced_ty => return orelseCatchExpr(
+                .ref, .ref_const, .ref_coerced_ty => return orelseCatchExpr(
                     gz,
                     scope,
                     ri,
@@ -1053,7 +1068,7 @@ fn expr(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.Index) InnerE
             }
         },
         .@"orelse" => switch (ri.rl) {
-            .ref, .ref_coerced_ty => return orelseCatchExpr(
+            .ref, .ref_const, .ref_coerced_ty => return orelseCatchExpr(
                 gz,
                 scope,
                 ri,
@@ -1511,7 +1526,7 @@ fn arrayInitExpr(
                 }
                 return .void_value;
             },
-            .ref => return arrayInitExprTyped(gz, scope, node, array_init.ast.elements, array_ty, elem_ty, true),
+            .ref, .ref_const => return arrayInitExprTyped(gz, scope, node, array_init.ast.elements, array_ty, elem_ty, true),
             else => {
                 const array_inst = try arrayInitExprTyped(gz, scope, node, array_init.ast.elements, array_ty, elem_ty, false);
                 return rvalue(gz, ri, array_inst, node);
@@ -1527,7 +1542,7 @@ fn arrayInitExpr(
             }
             return Zir.Inst.Ref.void_value;
         },
-        .ref => {
+        .ref, .ref_const => {
             const result = try arrayInitExprAnon(gz, scope, node, array_init.ast.elements);
             return gz.addUnTok(.ref, result, tree.firstToken(node));
         },
@@ -1701,7 +1716,7 @@ fn structInitExpr(
                     const val = try gz.addUnNode(.struct_init_empty_result, ty_inst, node);
                     return rvalue(gz, ri, val, node);
                 },
-                .none, .ref, .inferred_ptr => {
+                .none, .ref, .ref_const, .inferred_ptr => {
                     return rvalue(gz, ri, .empty_tuple, node);
                 },
                 .destructure => |destructure| {
@@ -1817,7 +1832,7 @@ fn structInitExpr(
         const ty_inst = try typeExpr(gz, scope, type_expr);
         _ = try gz.addUnNode(.validate_struct_init_ty, ty_inst, node);
         switch (ri.rl) {
-            .ref => return structInitExprTyped(gz, scope, node, struct_init, ty_inst, true),
+            .ref, .ref_const => return structInitExprTyped(gz, scope, node, struct_init, ty_inst, true),
             else => {
                 const struct_inst = try structInitExprTyped(gz, scope, node, struct_init, ty_inst, false);
                 return rvalue(gz, ri, struct_inst, node);
@@ -1834,7 +1849,7 @@ fn structInitExpr(
             }
             return .void_value;
         },
-        .ref => {
+        .ref, .ref_const => {
             const result = try structInitExprAnon(gz, scope, node, struct_init);
             return gz.addUnTok(.ref, result, tree.firstToken(node));
         },
@@ -5832,6 +5847,7 @@ fn tryExpr(
 
     const operand_rl: ResultInfo.Loc, const block_tag: Zir.Inst.Tag = switch (ri.rl) {
         .ref, .ref_coerced_ty => .{ .ref, .try_ptr },
+        .ref_const => .{ .ref_const, .try_ptr },
         else => .{ .none, .@"try" },
     };
     const operand_ri: ResultInfo = .{ .rl = operand_rl, .ctx = .error_handling_expr };
@@ -5856,7 +5872,7 @@ fn tryExpr(
     defer else_scope.unstack();
 
     const err_tag = switch (ri.rl) {
-        .ref, .ref_coerced_ty => Zir.Inst.Tag.err_union_code_ptr,
+        .ref, .ref_const, .ref_coerced_ty => Zir.Inst.Tag.err_union_code_ptr,
         else => Zir.Inst.Tag.err_union_code,
     };
     const err_code = try else_scope.addUnNode(err_tag, operand, node);
@@ -5867,7 +5883,7 @@ fn tryExpr(
     try else_scope.setTryBody(try_inst, operand);
     const result = try_inst.toRef();
     switch (ri.rl) {
-        .ref, .ref_coerced_ty => return result,
+        .ref, .ref_const, .ref_coerced_ty => return result,
         else => return rvalue(parent_gz, ri, result, node),
     }
 }
@@ -5909,6 +5925,7 @@ fn orelseCatchExpr(
 
     const operand_ri: ResultInfo = switch (block_scope.break_result_info.rl) {
         .ref, .ref_coerced_ty => .{ .rl = .ref, .ctx = if (do_err_trace) .error_handling_expr else .none },
+        .ref_const => .{ .rl = .ref_const, .ctx = if (do_err_trace) .error_handling_expr else .none },
         else => .{ .rl = .none, .ctx = if (do_err_trace) .error_handling_expr else .none },
     };
     // This could be a pointer or value depending on the `operand_ri` parameter.
@@ -5930,7 +5947,7 @@ fn orelseCatchExpr(
     // This could be a pointer or value depending on `unwrap_op`.
     const unwrapped_payload = try then_scope.addUnNode(unwrap_op, operand, node);
     const then_result = switch (ri.rl) {
-        .ref, .ref_coerced_ty => unwrapped_payload,
+        .ref, .ref_const, .ref_coerced_ty => unwrapped_payload,
         else => try rvalue(&then_scope, block_scope.break_result_info, unwrapped_payload, node),
     };
     _ = try then_scope.addBreakWithSrcNode(.@"break", block, then_result, node);
@@ -6026,8 +6043,9 @@ fn fieldAccess(
 ) InnerError!Zir.Inst.Ref {
     switch (ri.rl) {
         .ref, .ref_coerced_ty => return addFieldAccess(.field_ptr, gz, scope, .{ .rl = .ref }, node),
+        .ref_const => return addFieldAccess(.field_ptr, gz, scope, .{ .rl = .ref_const }, node),
         else => {
-            const access = try addFieldAccess(.field_ptr_load, gz, scope, .{ .rl = .ref }, node);
+            const access = try addFieldAccess(.field_ptr_load, gz, scope, .{ .rl = .ref_const }, node);
             return rvalue(gz, ri, access, node);
         },
     }
@@ -6075,9 +6093,20 @@ fn arrayAccess(
 
             return gz.addPlNode(.elem_ptr_node, node, Zir.Inst.Bin{ .lhs = lhs, .rhs = rhs });
         },
+        .ref_const => {
+            const lhs_node, const rhs_node = tree.nodeData(node).node_and_node;
+            const lhs = try expr(gz, scope, .{ .rl = .ref_const }, lhs_node);
+
+            const cursor = maybeAdvanceSourceCursorToMainToken(gz, node);
+
+            const rhs = try expr(gz, scope, .{ .rl = .{ .coerced_ty = .usize_type } }, rhs_node);
+            try emitDbgStmt(gz, cursor);
+
+            return gz.addPlNode(.elem_ptr_node, node, Zir.Inst.Bin{ .lhs = lhs, .rhs = rhs });
+        },
         else => {
             const lhs_node, const rhs_node = tree.nodeData(node).node_and_node;
-            const lhs = try expr(gz, scope, .{ .rl = .ref }, lhs_node);
+            const lhs = try expr(gz, scope, .{ .rl = .ref_const }, lhs_node);
 
             const cursor = maybeAdvanceSourceCursorToMainToken(gz, node);
 
@@ -7092,11 +7121,15 @@ fn switchExpr(
 
     const catch_or_if_node = if (needs_non_err_handling) node else undefined;
     const do_err_trace = needs_non_err_handling and astgen.fn_block != null;
-    const non_err_is_ref: bool = switch (non_err) {
+    const non_err_is_ref: enum { no, yes, yes_const } = switch (non_err) {
         .none, .peer_break_target => undefined,
-        .@"catch" => ri.rl == .ref or ri.rl == .ref_coerced_ty,
-        .@"if" => |if_full| if_full.payload_token != null and
-            tree.tokenTag(if_full.payload_token.?) == .asterisk,
+        .@"catch" => switch (ri.rl) {
+            .ref, .ref_coerced_ty => .yes,
+            .ref_const => .yes_const,
+            else => .no,
+        },
+        .@"if" => |if_full| if (if_full.payload_token != null and
+            tree.tokenTag(if_full.payload_token.?) == .asterisk) .yes else .no,
     };
 
     if (switch_full.label_token) |label_token| {
@@ -7285,8 +7318,12 @@ fn switchExpr(
     block_scope.instructions_top = GenZir.unstacked_top;
 
     const operand_ri: ResultInfo = .{
-        .rl = if (any_payload_is_ref or
-            (needs_non_err_handling and non_err_is_ref)) .ref else .none,
+        .rl = loc: {
+            if (any_payload_is_ref) break :loc .ref;
+            if (needs_non_err_handling and non_err_is_ref == .yes) break :loc .ref;
+            if (needs_non_err_handling and non_err_is_ref == .yes_const) break :loc .ref_const;
+            break :loc .none;
+        },
         .ctx = if (do_err_trace) .error_handling_expr else .none,
     };
 
@@ -7454,10 +7491,10 @@ fn switchExpr(
             .@"catch" => {
                 // We always effectively capture the error union payload; we use
                 // it to `break` from the entire `switch_block_err_union`.
-                non_err_capture = if (non_err_is_ref) .by_ref else .by_val;
+                non_err_capture = if (non_err_is_ref != .no) .by_ref else .by_val;
 
                 const then_result = switch (ri.rl) {
-                    .ref, .ref_coerced_ty => non_err_payload_inst.toRef(),
+                    .ref, .ref_const, .ref_coerced_ty => non_err_payload_inst.toRef(),
                     else => try rvalue(
                         &scratch_scope,
                         block_scope.break_result_info,
@@ -7478,13 +7515,13 @@ fn switchExpr(
                 const then_node = if_full.ast.then_expr;
                 const then_sub_scope: *Scope = scope: {
                     if (if_full.payload_token) |payload_token| {
-                        const ident_token = payload_token + @intFromBool(non_err_is_ref);
+                        const ident_token = payload_token + @intFromBool(non_err_is_ref != .no);
                         const ident_name = try astgen.identAsString(ident_token);
                         const ident_name_str = tree.tokenSlice(ident_token);
                         if (mem.eql(u8, "_", ident_name_str)) {
                             break :scope &scratch_scope.base;
                         }
-                        non_err_capture = if (non_err_is_ref) .by_ref else .by_val;
+                        non_err_capture = if (non_err_is_ref != .no) .by_ref else .by_val;
                         try astgen.detectLocalShadowing(&scratch_scope.base, ident_name, ident_token, ident_name_str, .capture);
                         payload_val_scope = .{
                             .parent = &scratch_scope.base,
@@ -7522,7 +7559,7 @@ fn switchExpr(
         non_err_info = .{
             .body_len = @intCast(body_len),
             .capture = non_err_capture,
-            .operand_is_ref = non_err_is_ref,
+            .operand_is_ref = non_err_is_ref != .no,
         };
     }
 
@@ -8245,7 +8282,7 @@ fn localVarRef(
                 }
 
                 switch (ri.rl) {
-                    .ref, .ref_coerced_ty => {
+                    .ref, .ref_const, .ref_coerced_ty => {
                         const ptr_inst = if (num_namespaces_out != 0) try tunnelThroughClosure(
                             gz,
                             ident,
@@ -8254,7 +8291,7 @@ fn localVarRef(
                             .{ .token = local_ptr.token_src },
                             name_str_index,
                         ) else local_ptr.ptr;
-                        local_ptr.used_as_lvalue = true;
+                        if (ri.rl != .ref_const) local_ptr.used_as_lvalue = true;
                         return ptr_inst;
                     },
                     else => {
@@ -8303,7 +8340,7 @@ fn localVarRef(
 
     if (found_namespaces_out > 0 and found_needs_tunnel) {
         switch (ri.rl) {
-            .ref, .ref_coerced_ty => return tunnelThroughClosure(
+            .ref, .ref_const, .ref_coerced_ty => return tunnelThroughClosure(
                 gz,
                 ident,
                 found_namespaces_out,
@@ -8326,7 +8363,7 @@ fn localVarRef(
     }
 
     switch (ri.rl) {
-        .ref, .ref_coerced_ty => return gz.addStrTok(.decl_ref, name_str_index, ident_token),
+        .ref, .ref_const, .ref_coerced_ty => return gz.addStrTok(.decl_ref, name_str_index, ident_token),
         else => {
             const result = try gz.addStrTok(.decl_val, name_str_index, ident_token);
             return rvalueNoCoercePreRef(gz, ri, result, ident);
@@ -9108,9 +9145,15 @@ fn builtinCall(
                         .field_name = try comptimeExpr(gz, scope, .{ .rl = .{ .coerced_ty = .slice_const_u8_type } }, params[1], .field_name),
                     });
                 },
+                .ref_const => {
+                    return gz.addPlNode(.field_ptr_named, node, Zir.Inst.FieldNamed{
+                        .lhs = try expr(gz, scope, .{ .rl = .ref_const }, params[0]),
+                        .field_name = try comptimeExpr(gz, scope, .{ .rl = .{ .coerced_ty = .slice_const_u8_type } }, params[1], .field_name),
+                    });
+                },
                 else => {
                     const result = try gz.addPlNode(.field_ptr_named_load, node, Zir.Inst.FieldNamed{
-                        .lhs = try expr(gz, scope, .{ .rl = .ref }, params[0]),
+                        .lhs = try expr(gz, scope, .{ .rl = .ref_const }, params[0]),
                         .field_name = try comptimeExpr(gz, scope, .{ .rl = .{ .coerced_ty = .slice_const_u8_type } }, params[1], .field_name),
                     });
                     return rvalue(gz, ri, result, node);
@@ -10530,7 +10573,7 @@ fn rvalueInner(
             _ = try gz.addUnNode(.ensure_result_non_error, result, src_node);
             return .void_value;
         },
-        .ref, .ref_coerced_ty => {
+        .ref, .ref_const, .ref_coerced_ty => {
             const coerced_result = if (allow_coerce_pre_ref and ri.rl == .ref_coerced_ty) res: {
                 const ptr_ty = ri.rl.ref_coerced_ty;
                 break :res try gz.addPlNode(.coerce_ptr_elem_ty, src_node, Zir.Inst.Bin{

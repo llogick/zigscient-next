@@ -4984,7 +4984,7 @@ fn runOrTestHotSwap(
         try argv.appendSlice(all_args[i..]);
     }
 
-    var child = try std.process.spawn(io, .{
+    const child = try std.process.spawn(io, .{
         .argv = argv.items,
         .stdin = .inherit,
         .stdout = .inherit,
