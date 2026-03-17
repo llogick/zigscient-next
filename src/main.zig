@@ -3033,6 +3033,9 @@ pub fn buildOutputType(
                     cs.entry = .{ .named = linker_args_it.nextOrFatal() };
                 } else if (mem.eql(u8, arg, "-u")) {
                     try cs.force_undefined_symbols.put(arena, linker_args_it.nextOrFatal(), {});
+                } else if (mem.eql(u8, arg, "-w")) {
+                    // This ignores the -w flag of ld64 and ld64.lld to suppress all linker warnings
+                    // since Zig doesn't emit linker warnings.
                 } else if (mem.eql(u8, arg, "-x") or mem.eql(u8, arg, "--discard-all")) {
                     cs.discard_local_symbols = true;
                 } else if (mem.eql(u8, arg, "--stack") or mem.eql(u8, arg, "-stack_size")) {
