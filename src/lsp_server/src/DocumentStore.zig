@@ -1216,7 +1216,7 @@ pub fn notifyProgressStart(
     if (!self.lsp_capabilities.supports_work_done_progress) return null;
 
     const transport = self.transport orelse return null;
-    var pn = self.progress_notifications[@intFromEnum(progress_notification_id)];
+    const pn = self.progress_notifications[@intFromEnum(progress_notification_id)];
 
     const global = struct {
         var work_done_progress_token_count: std.atomic.Value(i32) = .init(0);
