@@ -931,8 +931,7 @@ pub const ZcuFunc = union {
             const ip = &zcu.intern_pool;
             switch (ip.indexToKey(i.key(wasm).*)) {
                 .func => |func| {
-                    const fn_ty = zcu.navValue(func.owner_nav).typeOf(zcu);
-                    const fn_info = zcu.typeToFunc(fn_ty).?;
+                    const fn_info = zcu.typeToFunc(.fromInterned(func.ty)).?;
                     return wasm.getExistingFunctionType(fn_info.cc, fn_info.param_types.get(ip), .fromInterned(fn_info.return_type), target).?;
                 },
                 .enum_type => {

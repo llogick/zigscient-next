@@ -345,7 +345,10 @@ fn finishAir(cg: *CodeGen, inst: Air.Inst.Index, result: WValue, operands: []con
         if (!dies) continue;
         processDeath(cg, operand);
     }
+    try cg.finishAirResult(inst, result);
+}
 
+fn finishAirResult(cg: *CodeGen, inst: Air.Inst.Index, result: WValue) InnerError!void {
     // results of `none` can never be referenced.
     if (result != .none) {
         const trackable_result = if (result != .stack)
@@ -374,37 +377,10 @@ inline fn currentBranch(cg: *CodeGen) *Branch {
     return &cg.branches.items[cg.branches.items.len - 1];
 }
 
-const BigTomb = struct {
-    gen: *CodeGen,
-    inst: Air.Inst.Index,
-    lbt: Air.Liveness.BigTomb,
-
-    fn feed(bt: *BigTomb, op_ref: Air.Inst.Ref) void {
-        const dies = bt.lbt.feed();
-        if (!dies) return;
-        // This will be a nop for interned constants.
-        processDeath(bt.gen, op_ref);
+fn feed(cg: *CodeGen, bt: *Air.Liveness.BigTomb, operand: Air.Inst.Ref) void {
+    if (bt.feed()) {
+        cg.processDeath(operand);
     }
-
-    fn finishAir(bt: *BigTomb, result: WValue) void {
-        assert(result != .stack);
-        if (result != .none) {
-            bt.gen.currentBranch().values.putAssumeCapacityNoClobber(bt.inst.toRef(), result);
-        }
-
-        if (std.debug.runtime_safety) {
-            bt.gen.air_bookkeeping += 1;
-        }
-    }
-};
-
-fn iterateBigTomb(cg: *CodeGen, inst: Air.Inst.Index, operand_count: usize) !BigTomb {
-    try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, operand_count + 1);
-    return BigTomb{
-        .gen = cg,
-        .inst = inst,
-        .lbt = cg.liveness.iterateBigTomb(inst),
-    };
 }
 
 fn processDeath(cg: *CodeGen, ref: Air.Inst.Ref) void {
@@ -766,11 +742,15 @@ pub fn generate(
 
 fn generateInner(cg: *CodeGen, any_returns: bool) InnerError!Mir {
     const zcu = cg.pt.zcu;
+    // branch used for const values
     try cg.branches.append(cg.gpa, .{});
-    // clean up outer branch
+    // func scope branch
+    try cg.branches.append(cg.gpa, .{});
     defer {
-        var outer_branch = cg.branches.pop().?;
-        outer_branch.deinit(cg.gpa);
+        var func_branch = cg.branches.pop().?;
+        func_branch.deinit(cg.gpa);
+        var const_branch = cg.branches.pop().?;
+        const_branch.deinit(cg.gpa);
         assert(cg.branches.items.len == 0); // missing branch merge
     }
     // Generate MIR for function body
@@ -1920,7 +1900,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
             continue;
         }
         const old_bookkeeping_value = cg.air_bookkeeping;
-        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, Air.Liveness.bpi);
+        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, 1);
         try cg.genInst(inst);
 
         if (std.debug.runtime_safety and cg.air_bookkeeping < old_bookkeeping_value + 1) {
@@ -2102,10 +2082,10 @@ fn airCall(cg: *CodeGen, inst: Air.Inst.Index, modifier: std.builtin.CallModifie
         }
     };
 
-    var bt = try cg.iterateBigTomb(inst, 1 + args.len);
-    bt.feed(call.callee);
-    for (args) |arg| bt.feed(arg);
-    return bt.finishAir(result_value);
+    var bt = cg.liveness.iterateBigTomb(inst);
+    cg.feed(&bt, call.callee);
+    for (args) |arg| cg.feed(&bt, arg);
+    return cg.finishAirResult(inst, result_value);
 }
 
 fn airAlloc(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
@@ -4608,11 +4588,15 @@ fn lowerBlock(cg: *CodeGen, inst: Air.Inst.Index, block_ty: Type, body: []const 
         .value = block_result,
     });
 
-    try cg.genBody(body);
-    try cg.endBlock();
-
-    const liveness = cg.liveness.getBlock(inst);
-    try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, liveness.deaths.len);
+    {
+        try cg.branches.append(cg.gpa, .{});
+        defer {
+            var branch = cg.branches.pop().?;
+            branch.deinit(cg.gpa);
+        }
+        try cg.genBody(body);
+        try cg.endBlock();
+    }
 
     return cg.finishAir(inst, block_result, &.{});
 }
@@ -4653,7 +4637,6 @@ fn airCondBr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const condition = try cg.resolveInst(cond_br.condition);
     const then_body = cond_br.then_body;
     const else_body = cond_br.else_body;
-    const liveness_condbr = cg.liveness.getCondBr(inst);
 
     // result type is always noreturn, so use `block_empty` as type.
     try cg.startBlock(.block, .empty);
@@ -4668,7 +4651,6 @@ fn airCondBr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     try cg.branches.ensureUnusedCapacity(cg.gpa, 2);
     {
         cg.branches.appendAssumeCapacity(.{});
-        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, @as(u32, @intCast(liveness_condbr.else_deaths.len)));
         defer {
             var else_stack = cg.branches.pop().?;
             else_stack.deinit(cg.gpa);
@@ -4680,7 +4662,6 @@ fn airCondBr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     // Outer block that matches the condition
     {
         cg.branches.appendAssumeCapacity(.{});
-        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, @as(u32, @intCast(liveness_condbr.then_deaths.len)));
         defer {
             var then_stack = cg.branches.pop().?;
             then_stack.deinit(cg.gpa);
@@ -5172,9 +5153,6 @@ fn airSwitchBr(cg: *CodeGen, inst: Air.Inst.Index, is_dispatch_loop: bool) Inner
         break :target target;
     } else try cg.resolveInst(switch_br.operand);
 
-    const liveness = try cg.liveness.getSwitchBr(cg.gpa, inst, switch_br.cases_len + 1);
-    defer cg.gpa.free(liveness.deaths);
-
     const has_else_body = switch_br.else_body_len != 0;
     const branch_count = switch_br.cases_len + 1; // if else branch is missing, we trap when failing all conditions
     try cg.branches.ensureUnusedCapacity(cg.gpa, switch_br.cases_len + @intFromBool(has_else_body));
@@ -5186,8 +5164,6 @@ fn airSwitchBr(cg: *CodeGen, inst: Air.Inst.Index, is_dispatch_loop: bool) Inner
         const else_body = it.elseBody();
 
         cg.branches.appendAssumeCapacity(.{});
-        const else_deaths = liveness.deaths.len - 1;
-        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, liveness.deaths[else_deaths].len);
         defer {
             var else_branch = cg.branches.pop().?;
             else_branch.deinit(cg.gpa);
@@ -5321,7 +5297,6 @@ fn airSwitchBr(cg: *CodeGen, inst: Air.Inst.Index, is_dispatch_loop: bool) Inner
         try cg.endBlock();
 
         cg.branches.appendAssumeCapacity(.{});
-        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, liveness.deaths[case.idx].len);
         defer {
             var case_branch = cg.branches.pop().?;
             case_branch.deinit(cg.gpa);
@@ -5336,8 +5311,6 @@ fn airSwitchBr(cg: *CodeGen, inst: Air.Inst.Index, is_dispatch_loop: bool) Inner
         const else_body = cases_it.elseBody();
 
         cg.branches.appendAssumeCapacity(.{});
-        const else_deaths = liveness.deaths.len - 1;
-        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, liveness.deaths[else_deaths].len);
         defer {
             var else_branch = cg.branches.pop().?;
             else_branch.deinit(cg.gpa);
@@ -6329,14 +6302,9 @@ fn airAggregateInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         }
     };
 
-    if (elements.len <= Air.Liveness.bpi - 1) {
-        var buf = [1]Air.Inst.Ref{.none} ** (Air.Liveness.bpi - 1);
-        @memcpy(buf[0..elements.len], elements);
-        return cg.finishAir(inst, result, &buf);
-    }
-    var bt = try cg.iterateBigTomb(inst, elements.len);
-    for (elements) |arg| bt.feed(arg);
-    return bt.finishAir(result);
+    var bt = cg.liveness.iterateBigTomb(inst);
+    for (elements) |arg| cg.feed(&bt, arg);
+    return cg.finishAirResult(inst, result);
 }
 
 fn airUnionInit(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
@@ -6671,6 +6639,7 @@ fn lowerTry(
     err_union_ty: Type,
     operand_is_ptr: bool,
 ) InnerError!WValue {
+    _ = inst;
     const zcu = cg.pt.zcu;
 
     const pl_ty = err_union_ty.errorUnionPayload(zcu);
@@ -6692,9 +6661,7 @@ fn lowerTry(
         try cg.addTag(.i32_eqz);
         try cg.addLabel(.br_if, 0); // jump out of block when error is '0'
 
-        const liveness = cg.liveness.getCondBr(inst);
         try cg.branches.append(cg.gpa, .{});
-        try cg.currentBranch().values.ensureUnusedCapacity(cg.gpa, liveness.else_deaths.len + liveness.then_deaths.len);
         defer {
             var branch = cg.branches.pop().?;
             branch.deinit(cg.gpa);
