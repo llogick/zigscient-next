@@ -719,10 +719,9 @@ const Cancelable = struct {
     queue: c.dispatch.queue_t,
     cancel: c.dispatch.function_t,
 
-    const is_blocked: c.dispatch.function_t =
-        @ptrFromInt(@typeInfo(c.dispatch.function_t).pointer.alignment * 1);
-    const is_requested: c.dispatch.function_t =
-        @ptrFromInt(@typeInfo(c.dispatch.function_t).pointer.alignment * 2);
+    const fn_ptr_align = std.meta.alignment(c.dispatch.function_t);
+    const is_blocked: c.dispatch.function_t = @ptrFromInt(fn_ptr_align * 1);
+    const is_requested: c.dispatch.function_t = @ptrFromInt(fn_ptr_align * 2);
 
     const blocked: Cancelable = .{ .queue = undefined, .cancel = is_blocked };
 
