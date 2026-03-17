@@ -1775,10 +1775,7 @@ pub const F80 = struct {
 fn SignOf(T: type) type {
     return switch (@typeInfo(T)) {
         .comptime_int, .comptime_float => comptime_int,
-        .int => |int| switch (int.signedness) {
-            .signed => IntFittingRange(-1, 1),
-            .unsigned => IntFittingRange(0, 1),
-        },
+        .int => IntFittingRange(@max(minInt(T), -1), @min(maxInt(T), 1)),
         .float => IntFittingRange(-1, 1),
         .vector => |vec| @Vector(vec.len, SignOf(vec.child)),
         else => @compileError("Expected an int, float, or a vector of one, found " ++ @typeName(T)),
@@ -1792,14 +1789,10 @@ fn SignOf(T: type) type {
 /// Branchless.
 pub inline fn sign(n: anytype) SignOf(@TypeOf(n)) {
     const T = SignOf(@TypeOf(n));
-    return switch (@typeInfo(T)) {
-        .vector => |vec| blk: {
-            const zero: T = @splat(0);
-            const one: T = @splat(1);
-            break :blk @select(vec.child, n > zero, one, zero) - @select(vec.child, n < zero, one, zero);
-        },
-        else => @as(T, @intFromBool(n > 0)) - @as(T, @intFromBool(n < 0)),
-    };
+    const zero: T = if (@typeInfo(T) == .vector) @splat(0) else 0;
+    const pos: T = @intCast(@intFromBool(n > zero));
+    const neg: T = @intCast(@intFromBool(n < zero));
+    return pos - neg;
 }
 
 fn testSign() !void {
