@@ -25,13 +25,3 @@ pub extern "kernel32" fn CreateProcessW(
     lpStartupInfo: *STARTUPINFOW,
     lpProcessInformation: *PROCESS.INFORMATION,
 ) callconv(.winapi) BOOL;
-
-// TODO: CreateRemoteThread with hProcess=NtCurrentProcess().
-pub extern "kernel32" fn CreateThread(
-    lpThreadAttributes: ?*SECURITY_ATTRIBUTES,
-    dwStackSize: SIZE_T,
-    lpStartAddress: *const THREAD_START_ROUTINE,
-    lpParameter: ?LPVOID,
-    dwCreationFlags: DWORD,
-    lpThreadId: ?*DWORD,
-) callconv(.winapi) ?HANDLE;

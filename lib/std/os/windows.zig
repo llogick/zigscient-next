@@ -23,6 +23,75 @@ pub const nls = @import("windows/nls.zig");
 
 pub const current_process: HANDLE = @ptrFromInt(@as(usize, @bitCast(@as(isize, -1))));
 
+pub const PS = struct {
+    pub const ATTRIBUTE = extern struct {
+        Attribute: Type,
+        Size: SIZE_T,
+        u: extern union {
+            Value: ULONG_PTR,
+            ValuePtr: PVOID,
+        },
+        ReturnLength: ?*SIZE_T,
+
+        /// https://ntdoc.m417z.com/ps_attribute_num
+        /// Tag type is `u16` based on PS_ATTRIBUTE_NUMBER_MASK being 0xFFFF
+        pub const NUM = enum(u16) {
+            ParentProcess = 0,
+            DebugObject,
+            Token,
+            ClientId,
+            TebAddress,
+            ImageName,
+            ImageInfo,
+            MemoryReserve,
+            PriorityClass,
+            ErrorMode,
+            StdHandleInfo,
+            HandleList,
+            GroupAffinity,
+            PreferredNode,
+            IdealProcessor,
+            UmsThread,
+            MitigationOptions,
+            ProtectionLevel,
+            SecureProcess,
+            JobList,
+            ChildProcessPolicy,
+            AllApplicationPackagesPolicy,
+            Win32kFilter,
+            SafeOpenPromptOriginClaim,
+            BnoIsolation,
+            DesktopAppPolicy,
+            Chpe,
+            MitigationAuditOptions,
+            MachineType,
+            ComponentFilter,
+            EnableOptionalXStateFeatures,
+            SupportedMachines,
+            SveVectorLength,
+        };
+
+        /// https://ntdoc.m417z.com/psattributevalue
+        pub const Type = enum(ULONG_PTR) {
+            TEB_ADDRESS = construct(.TebAddress, true, false, false),
+            _,
+
+            pub fn construct(num: NUM, thread: bool, input: bool, additive: bool) ULONG_PTR {
+                var val: ULONG_PTR = @intFromEnum(num);
+                if (thread) val |= 0x10000;
+                if (input) val |= 0x20000;
+                if (additive) val |= 0x40000;
+                return val;
+            }
+        };
+
+        pub const LIST = extern struct {
+            TotalLength: SIZE_T,
+            Attributes: [1]ATTRIBUTE,
+        };
+    };
+};
+
 pub const OBJECT = struct {
     // ref: um/winternl.h
 
@@ -1250,6 +1319,24 @@ pub const THREAD = struct {
         AffinityMask: KAFFINITY,
         Priority: KPRIORITY,
         BasePriority: KPRIORITY,
+    };
+
+    pub const CREATE_FLAGS = packed struct(ULONG) {
+        CREATE_SUSPENDED: bool = false,
+        SKIP_THREAD_ATTACH: bool = false,
+        HIDE_FROM_DEBUGGER: bool = false,
+        LOADER_WORKER: bool = false,
+        SKIP_LOADER_INIT: bool = false,
+        BYPASS_PROCESS_FREEZE: bool = false,
+        Reserved6: u26 = 0,
+
+        pub const NONE: CREATE_FLAGS = .{};
+    };
+
+    pub const StackSize = enum(SIZE_T) {
+        /// The default size specified in the executable header
+        default = 0,
+        _,
     };
 };
 
@@ -3436,6 +3523,7 @@ pub const STARTF_USESIZE = 0x00000002;
 pub const STARTF_USESTDHANDLES = 0x00000100;
 
 pub const THREAD_START_ROUTINE = fn (LPVOID) callconv(.winapi) DWORD;
+pub const USER_THREAD_START_ROUTINE = fn (LPVOID) callconv(.winapi) NTSTATUS;
 
 pub const SYSTEM_INFO = extern struct {
     anon1: extern union {
