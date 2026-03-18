@@ -49,8 +49,6 @@ test "switch arbitrary int size" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest; // TODO
 
-    if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // TODO
-
     try expect(testSwitchArbInt(u64, 0) == 0);
     try expect(testSwitchArbInt(u64, 12) == 1);
     try expect(testSwitchArbInt(u64, maxInt(u64)) == 2);
@@ -1406,8 +1404,6 @@ test "switch on packed union" {
 }
 
 test "switch on nested packed containers" {
-    if (builtin.object_format == .c) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31467
-
     const P = packed struct {
         iu: u17,
         is: i31,
@@ -1458,4 +1454,36 @@ test "switch on nested packed containers" {
         .un = .{ .c = .{ .a = -3, .b = 9 } },
         .p = .{ .a = 2, .b = 17 },
     });
+}
+
+test "switch on large types" {
+    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
+
+    const S = struct {
+        fn doTheTest(a: u128, b: i500) !void {
+            switch (a) {
+                0x0,
+                0x3...0xFFFF_FFFF_FFFF_FFFF_FFFF_ABCD,
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_EF00,
+                => return error.TestFailed,
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_0000...0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFF0,
+                => |val| {
+                    try expect(val == 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_1234);
+                },
+                else => return error.TestFailed,
+            }
+            switch (b) {
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_0000...0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_1234,
+                => return error.TestFailed,
+                0xFFFF_1234,
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_0123...0xFFFF_FFFF_FFFF_FFFF_FFFF_4567,
+                => |val| {
+                    try expect(val == 0xFFFF_1234);
+                },
+                else => return error.TestFailed,
+            }
+        }
+    };
+    try S.doTheTest(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_1234, 0xFFFF_1234);
+    try comptime S.doTheTest(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_1234, 0xFFFF_1234);
 }

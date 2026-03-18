@@ -1981,6 +1981,20 @@ static inline zig_i128 zig_bit_reverse_i128(zig_i128 val, uint8_t bits) {
     return zig_bitCast_i128(zig_bit_reverse_u128(zig_bitCast_u128(val), bits));
 }
 
+#if zig_has_int128
+#define zig_switch_int128(operand) switch (operand)
+#define zig_switch_prong_begin_int128()
+#define zig_switch_case_int128(Type, operand, value) case value:
+#define zig_switch_prong_end_int128()
+#define zig_switch_default_int128() default:
+#else // zig_has_int128
+#define zig_switch_int128(operand)
+#define zig_switch_prong_begin_int128() if (0
+#define zig_switch_case_int128(Type, operand, value) || (zig_cmp_##Type(operand, value) == 0)
+#define zig_switch_prong_end_int128() )
+#define zig_switch_default_int128()
+#endif // zig_has_int128
+
 /* ========================== Big Integer Support =========================== */
 
 static inline uint16_t zig_int_bytes(uint16_t bits) {

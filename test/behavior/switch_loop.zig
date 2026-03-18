@@ -564,3 +564,35 @@ test "switch loop with packed unions with OPV" {
     try P.doTheTest(.{ .a = 0 });
     try comptime P.doTheTest(.{ .a = 0 });
 }
+
+test "switch loop on large types" {
+    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
+
+    const S = struct {
+        fn doTheTest(a: u128, b: i500) !void {
+            label: switch (a) {
+                0x0,
+                0x3...0xFFFF_FFFF_FFFF_FFFF_FFFF_ABCD,
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_EF00,
+                => return error.TestFailed,
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_0000...0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFF0,
+                => |val| {
+                    continue :label val + 1;
+                },
+                else => {},
+            }
+            label: switch (b) {
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_0000...0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_1234,
+                => return error.TestFailed,
+                0xFFFF_1234,
+                0xFFFF_FFFF_FFFF_FFFF_FFFF_0123...0xFFFF_FFFF_FFFF_FFFF_FFFF_4567,
+                => |val| {
+                    continue :label val + 1;
+                },
+                else => {},
+            }
+        }
+    };
+    try S.doTheTest(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FF00, 0xFFFF_FFFF_FFFF_FFFF_FFFF_4550);
+    try comptime S.doTheTest(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FF00, 0xFFFF_FFFF_FFFF_FFFF_FFFF_4550);
+}
