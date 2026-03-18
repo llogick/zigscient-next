@@ -599,10 +599,15 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
     var stdout_reader: Io.File.Reader = .initStreaming(child.stdout.?, io, &stdout_buffer);
     const stdout = &stdout_reader.interface;
 
-    try child.stdin.?.writeStreamingAll(io, @ptrCast(@as([]const std.zig.Client.Message.Header, &.{
-        .{ .tag = .update, .bytes_len = 0 },
-        .{ .tag = .exit, .bytes_len = 0 },
-    })));
+    {
+        var w = child.stdin.?.writer(io, &.{});
+        w.interface.writeStruct(std.zig.Client.Message.Header{ .tag = .update, .bytes_len = 0 }, .little) catch |err| switch (err) {
+            error.WriteFailed => return w.err.?,
+        };
+        w.interface.writeStruct(std.zig.Client.Message.Header{ .tag = .exit, .bytes_len = 0 }, .little) catch |err| switch (err) {
+            error.WriteFailed => return w.err.?,
+        };
+    }
 
     const Header = std.zig.Server.Message.Header;
 
