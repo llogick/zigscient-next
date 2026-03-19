@@ -1126,63 +1126,6 @@ pub const indexOfSentinel = findSentinel;
 /// Linear search through memory until the sentinel is found.
 pub fn findSentinel(comptime T: type, comptime sentinel: T, p: [*:sentinel]const T) usize {
     var i: usize = 0;
-
-    if (use_vectors_for_comparison and
-        !std.debug.inValgrind() and // https://github.com/ziglang/zig/issues/17717
-        !@inComptime() and
-        (@typeInfo(T) == .int or @typeInfo(T) == .float) and std.math.isPowerOfTwo(@bitSizeOf(T)))
-    {
-        switch (@import("builtin").cpu.arch) {
-            // The below branch assumes that reading past the end of the buffer is valid, as long
-            // as we don't read into a new page. This should be the case for most architectures
-            // which use paged memory, however should be confirmed before adding a new arch below.
-            .aarch64, .x86, .x86_64 => if (std.simd.suggestVectorLength(T)) |block_len| {
-                const page_size = std.heap.page_size_min;
-                const block_size = @sizeOf(T) * block_len;
-                const Block = @Vector(block_len, T);
-                const mask: Block = @splat(sentinel);
-
-                comptime assert(std.heap.page_size_min % @sizeOf(Block) == 0);
-                assert(page_size % @sizeOf(Block) == 0);
-
-                // First block may be unaligned
-                const start_addr = @intFromPtr(&p[i]);
-                const offset_in_page = start_addr & (page_size - 1);
-                if (offset_in_page <= page_size - @sizeOf(Block)) {
-                    // Will not read past the end of a page, full block.
-                    const block: Block = p[i..][0..block_len].*;
-                    const matches = block == mask;
-                    if (@reduce(.Or, matches)) {
-                        return i + std.simd.firstTrue(matches).?;
-                    }
-
-                    i += @divExact(std.mem.alignForward(usize, start_addr, block_size) - start_addr, @sizeOf(T));
-                } else {
-                    @branchHint(.unlikely);
-                    // Would read over a page boundary. Per-byte at a time until aligned or found.
-                    // 0.39% chance this branch is taken for 4K pages at 16b block length.
-                    //
-                    // An alternate strategy is to do read a full block (the last in the page) and
-                    // mask the entries before the pointer.
-                    while ((@intFromPtr(&p[i]) & (block_size - 1)) != 0) : (i += 1) {
-                        if (p[i] == sentinel) return i;
-                    }
-                }
-
-                std.debug.assertAligned(&p[i], .fromByteUnits(block_size));
-                while (true) {
-                    const block: Block = p[i..][0..block_len].*;
-                    const matches = block == mask;
-                    if (@reduce(.Or, matches)) {
-                        return i + std.simd.firstTrue(matches).?;
-                    }
-                    i += block_len;
-                }
-            },
-            else => {},
-        }
-    }
-
     while (p[i] != sentinel) {
         i += 1;
     }
