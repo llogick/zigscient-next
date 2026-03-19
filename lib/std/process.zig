@@ -800,7 +800,7 @@ pub fn abort() noreturn {
     // even when linking libc on Windows we use our own abort implementation.
     // See https://github.com/ziglang/zig/issues/2071 for more details.
     if (native_os == .windows) {
-        if (builtin.mode == .Debug and windows.peb().BeingDebugged != 0) {
+        if (builtin.mode == .Debug and windows.peb().BeingDebugged.toBool()) {
             @breakpoint();
         }
         windows.ntdll.RtlExitUserProcess(3);

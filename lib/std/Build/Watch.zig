@@ -345,7 +345,7 @@ const Os = switch (builtin.os.tag) {
                         .LAST_WRITE = true,
                         .CREATION = true,
                     },
-                    windows.FALSE,
+                    .FALSE,
                     .Notify,
                 )) {
                     .SUCCESS, .PENDING => dir.state = .listening,
@@ -632,7 +632,7 @@ const Os = switch (builtin.os.tag) {
                     .none => std.math.minInt(windows.LARGE_INTEGER),
                     .ms => |ms| -@as(windows.LARGE_INTEGER, ms) * (std.time.ns_per_ms / 100),
                 };
-                _ = windows.ntdll.NtDelayExecution(windows.TRUE, &delay_interval);
+                _ = windows.ntdll.NtDelayExecution(.TRUE, &delay_interval);
             } else unreachable;
         }
     },

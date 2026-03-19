@@ -84,7 +84,7 @@ fn _DllMainCRTStartup(
         return root.DllMain(hinstDLL, fdwReason, lpReserved);
     }
 
-    return std.os.windows.TRUE;
+    return .TRUE;
 }
 
 fn wasm_freestanding_start() callconv(.c) void {

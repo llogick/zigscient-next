@@ -1572,7 +1572,7 @@ const AlertableSyscall = struct {
 
 pub fn waitForApcOrAlert() void {
     const infinite_timeout: windows.LARGE_INTEGER = std.math.minInt(windows.LARGE_INTEGER);
-    _ = windows.ntdll.NtDelayExecution(windows.TRUE, &infinite_timeout);
+    _ = windows.ntdll.NtDelayExecution(.TRUE, &infinite_timeout);
 }
 
 pub const max_iovecs_len = 8;
@@ -2735,7 +2735,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
                 break :interval timeoutToWindowsInterval(.{ .deadline = d }).?;
             };
             const alertable_syscall = try AlertableSyscall.start();
-            const delay_rc = windows.ntdll.NtDelayExecution(windows.TRUE, &delay_interval);
+            const delay_rc = windows.ntdll.NtDelayExecution(.TRUE, &delay_interval);
             alertable_syscall.finish();
             switch (delay_rc) {
                 .SUCCESS, .TIMEOUT => {
@@ -4533,8 +4533,8 @@ fn dirCreateFileWindows(
         &windows_lock_range_off,
         &windows_lock_range_len,
         null,
-        @intFromBool(flags.lock_nonblocking),
-        @intFromBool(exclusive),
+        .fromBool(flags.lock_nonblocking),
+        .fromBool(exclusive),
     )) {
         .SUCCESS => {
             syscall.finish();
@@ -5129,8 +5129,8 @@ pub fn dirOpenFileWtf16(
         &windows_lock_range_off,
         &windows_lock_range_len,
         null,
-        @intFromBool(flags.lock_nonblocking),
-        @intFromBool(exclusive),
+        .fromBool(flags.lock_nonblocking),
+        .fromBool(exclusive),
     )) {
         .SUCCESS => break syscall.finish(),
         .INSUFFICIENT_RESOURCES => return syscall.fail(error.SystemResources),
@@ -5886,9 +5886,9 @@ fn dirReadWindows(userdata: ?*anyopaque, dr: *Dir.Reader, buffer: []Dir.Entry) D
                 unreserved_buffer.ptr,
                 std.math.lossyCast(w.ULONG, unreserved_buffer.len),
                 .BothDirectory,
-                w.FALSE,
+                .FALSE,
                 null,
-                @intFromBool(dr.state == .reset),
+                .fromBool(dr.state == .reset),
             )) {
                 .CANCELLED => {
                     try syscall.checkCancel();
@@ -7229,9 +7229,7 @@ fn dirDeleteWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, remov
 
         // Deletion with file pending semantics, which requires waiting or moving
         // files to get them removed (from here).
-        var file_dispo: w.FILE.DISPOSITION.INFORMATION = .{
-            .DeleteFile = w.TRUE,
-        };
+        var file_dispo: w.FILE.DISPOSITION.INFORMATION = .{ .DeleteFile = .TRUE };
 
         while (true) switch (w.ntdll.NtSetInformationFile(
             tmp_handle,
@@ -9188,8 +9186,8 @@ fn fileLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockError!v
             &windows_lock_range_off,
             &windows_lock_range_len,
             null,
-            windows.FALSE,
-            @intFromBool(exclusive),
+            .FALSE,
+            .fromBool(exclusive),
         )) {
             .SUCCESS => return syscall.finish(),
             .CANCELLED => {
@@ -9269,8 +9267,8 @@ fn fileTryLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockErro
             &windows_lock_range_off,
             &windows_lock_range_len,
             null,
-            windows.TRUE,
-            @intFromBool(exclusive),
+            .TRUE,
+            .fromBool(exclusive),
         )) {
             .SUCCESS => {
                 syscall.finish();
@@ -9382,8 +9380,8 @@ fn fileDowngradeLock(userdata: ?*anyopaque, file: File) File.DowngradeLockError!
             &windows_lock_range_off,
             &windows_lock_range_len,
             null,
-            windows.TRUE,
-            windows.FALSE,
+            .TRUE,
+            .FALSE,
         )) {
             .SUCCESS => break syscall.finish(),
             .CANCELLED => {
@@ -11469,7 +11467,7 @@ fn clockResolution(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.ResolutionEr
                 // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-kuser_shared_data
                 // https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/ntexapi_x/kuser_shared_data/index.htm
                 var qpf: windows.LARGE_INTEGER = undefined;
-                if (windows.ntdll.RtlQueryPerformanceFrequency(&qpf) != 0) {
+                if (windows.ntdll.RtlQueryPerformanceFrequency(&qpf).toBool()) {
                     recoverableOsBugDetected();
                     return .zero;
                 }
@@ -11523,14 +11521,14 @@ fn nowWindows(clock: Io.Clock) Io.Timestamp {
             // https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/ntexapi_x/kuser_shared_data/index.htm
             const qpf: u64 = qpf: {
                 var qpf: windows.LARGE_INTEGER = undefined;
-                assert(windows.ntdll.RtlQueryPerformanceFrequency(&qpf) != windows.FALSE);
+                assert(windows.ntdll.RtlQueryPerformanceFrequency(&qpf).toBool());
                 break :qpf @bitCast(qpf);
             };
 
             // QPC on windows doesn't fail on >= XP/2000 and includes time suspended.
             const qpc: u64 = qpc: {
                 var qpc: windows.LARGE_INTEGER = undefined;
-                assert(windows.ntdll.RtlQueryPerformanceCounter(&qpc) != windows.FALSE);
+                assert(windows.ntdll.RtlQueryPerformanceCounter(&qpc).toBool());
                 break :qpc @bitCast(qpc);
             };
 
@@ -11745,9 +11743,9 @@ fn netListenIpWindows(
         .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
         .code = windows.IOCTL.AFD.START_LISTEN,
         .in = @ptrCast(&windows.AFD.LISTEN_INFO{
-            .UseSAN = windows.FALSE,
+            .UseSAN = .FALSE,
             .MaximumConnectionQueue = options.kernel_backlog,
-            .UseDelayedAcceptance = windows.FALSE,
+            .UseDelayedAcceptance = .FALSE,
         }),
     })).u.Status) {
         .SUCCESS => {},
@@ -11830,9 +11828,9 @@ fn netListenUnixWindows(
         .file = .{ .handle = socket_handle, .flags = .{ .nonblocking = true } },
         .code = windows.IOCTL.AFD.START_LISTEN,
         .in = @ptrCast(&windows.AFD.LISTEN_INFO{
-            .UseSAN = windows.FALSE,
+            .UseSAN = .FALSE,
             .MaximumConnectionQueue = options.kernel_backlog,
-            .UseDelayedAcceptance = windows.FALSE,
+            .UseDelayedAcceptance = .FALSE,
         }),
     })).u.Status) {
         .SUCCESS => {},
@@ -12529,7 +12527,7 @@ fn netAcceptWindows(userdata: ?*anyopaque, listen_handle: net.Socket.Handle, opt
         .file = .{ .handle = listen_handle, .flags = .{ .nonblocking = true } },
         .code = windows.IOCTL.AFD.ACCEPT,
         .in = @ptrCast(&windows.AFD.ACCEPT_INFO{
-            .UseSAN = windows.FALSE,
+            .UseSAN = .FALSE,
             .Sequence = storage.Info.Sequence,
             .AcceptHandle = accept_handle,
         }),
@@ -12550,7 +12548,7 @@ fn deferAcceptAfd(t: *Threaded, listen_handle: net.Socket.Handle, info: windows.
         .code = windows.IOCTL.AFD.DEFER_ACCEPT,
         .in = @ptrCast(&windows.AFD.DEFER_ACCEPT_INFO{
             .Sequence = info.Sequence,
-            .Reject = windows.FALSE,
+            .Reject = .FALSE,
         }),
     }) catch |err| switch (err) {
         error.Canceled => unreachable, // blocked
@@ -15098,7 +15096,7 @@ fn childKillWindows(t: *Threaded, child: *process.Child, exit_code: windows.UINT
     switch (windows.ntdll.NtTerminateProcess(handle, @enumFromInt(exit_code))) {
         .SUCCESS, .PROCESS_IS_TERMINATING => {
             const infinite_timeout: windows.LARGE_INTEGER = std.math.minInt(windows.LARGE_INTEGER);
-            _ = windows.ntdll.NtWaitForSingleObject(handle, windows.FALSE, &infinite_timeout);
+            _ = windows.ntdll.NtWaitForSingleObject(handle, .FALSE, &infinite_timeout);
             childCleanupWindows(child);
         },
         .ACCESS_DENIED => {
@@ -15108,7 +15106,7 @@ fn childKillWindows(t: *Threaded, child: *process.Child, exit_code: windows.UINT
             // PROCESS_TERMINATE access right, so let's do another check to make
             // sure the process is really no longer running:
             const minimal_timeout: windows.LARGE_INTEGER = -1;
-            return switch (windows.ntdll.NtWaitForSingleObject(handle, windows.FALSE, &minimal_timeout)) {
+            return switch (windows.ntdll.NtWaitForSingleObject(handle, .FALSE, &minimal_timeout)) {
                 windows.NTSTATUS.WAIT_0 => error.AlreadyTerminated,
                 else => error.AccessDenied,
             };
@@ -15122,7 +15120,7 @@ fn childWaitWindows(child: *process.Child) process.Child.WaitError!process.Child
 
     const alertable_syscall: AlertableSyscall = try .start();
     const infinite_timeout: windows.LARGE_INTEGER = std.math.minInt(windows.LARGE_INTEGER);
-    while (true) switch (windows.ntdll.NtWaitForSingleObject(handle, windows.TRUE, &infinite_timeout)) {
+    while (true) switch (windows.ntdll.NtWaitForSingleObject(handle, .TRUE, &infinite_timeout)) {
         windows.NTSTATUS.WAIT_0 => break alertable_syscall.finish(),
         .USER_APC, .ALERTED, .TIMEOUT => {
             try alertable_syscall.checkCancel();
@@ -15458,7 +15456,7 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
                 .sa = &.{
                     .nLength = @sizeOf(windows.SECURITY_ATTRIBUTES),
                     .lpSecurityDescriptor = null,
-                    .bInheritHandle = windows.TRUE,
+                    .bInheritHandle = .TRUE,
                 },
                 .creation = .OPEN,
             }),
@@ -15477,7 +15475,7 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
                 .sa = &.{
                     .nLength = @sizeOf(windows.SECURITY_ATTRIBUTES),
                     .lpSecurityDescriptor = null,
-                    .bInheritHandle = windows.TRUE,
+                    .bInheritHandle = .TRUE,
                 },
                 .creation = .OPEN,
             }),
@@ -15496,7 +15494,7 @@ fn processSpawnWindows(userdata: ?*anyopaque, options: process.SpawnOptions) pro
                 .sa = &.{
                     .nLength = @sizeOf(windows.SECURITY_ATTRIBUTES),
                     .lpSecurityDescriptor = null,
-                    .bInheritHandle = windows.TRUE,
+                    .bInheritHandle = .TRUE,
                 },
                 .creation = .OPEN,
             }),
@@ -16021,9 +16019,9 @@ fn windowsCreateProcessPathExt(
             &file_information_buf,
             file_information_buf.len,
             .Directory,
-            windows.FALSE, // single result
+            .FALSE, // single result
             &.init(app_name_wildcard),
-            windows.FALSE, // restart iteration
+            .FALSE, // restart iteration
         )) {
             .SUCCESS => {},
             .NO_SUCH_FILE => return error.FileNotFound,
@@ -16184,13 +16182,13 @@ fn windowsCreateProcess(
             cmd_line,
             null,
             null,
-            windows.TRUE,
+            .TRUE,
             flags,
             if (env_block) |block| block.slice.ptr else null,
             cwd_ptr,
             lpStartupInfo,
             lpProcessInformation,
-        ) != 0) {
+        ).toBool()) {
             return syscall.finish();
         } else switch (windows.GetLastError()) {
             .INVALID_PARAMETER => unreachable,
@@ -18742,7 +18740,7 @@ fn OpenFile(sub_path_w: []const u16, options: OpenFileOptions) OpenError!windows
 
     const attr: windows.OBJECT.ATTRIBUTES = .{
         .RootDirectory = if (Dir.path.isAbsoluteWindowsWtf16(sub_path_w)) null else options.dir,
-        .Attributes = .{ .INHERIT = if (options.sa) |sa| sa.bInheritHandle != windows.FALSE else false },
+        .Attributes = .{ .INHERIT = if (options.sa) |sa| sa.bInheritHandle.toBool() else false },
         .ObjectName = @constCast(&windows.UNICODE_STRING.init(sub_path_w)),
         .SecurityDescriptor = if (options.sa) |ptr| ptr.lpSecurityDescriptor else null,
     };

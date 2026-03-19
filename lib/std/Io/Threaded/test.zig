@@ -285,8 +285,7 @@ test "memory mapping fallback" {
 ///       because it allocates.
 fn RtlDosPathNameToNtPathName_U(path: [:0]const u16) !Io.Threaded.WindowsPathSpace {
     var out: windows.UNICODE_STRING = undefined;
-    const rc = windows.ntdll.RtlDosPathNameToNtPathName_U(path, &out, null, null);
-    if (rc != windows.TRUE) return error.BadPathName;
+    if (!windows.ntdll.RtlDosPathNameToNtPathName_U(path, &out, null, null).toBool()) return error.BadPathName;
     defer windows.ntdll.RtlFreeUnicodeString(&out);
 
     var path_space: Io.Threaded.WindowsPathSpace = undefined;

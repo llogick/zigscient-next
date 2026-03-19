@@ -895,9 +895,9 @@ pub const CONSOLE = struct {
                 /// input
                 Mode: MODE,
 
-                pub const MODE = enum(BOOLEAN) {
-                    Input = FALSE,
-                    Output = TRUE,
+                pub const MODE = enum(BOOLEAN.Backing) {
+                    Input,
+                    Output,
                 };
             };
 
@@ -907,9 +907,9 @@ pub const CONSOLE = struct {
                 /// input
                 Mode: MODE,
 
-                pub const MODE = enum(BOOLEAN) {
-                    Character = FALSE,
-                    WideCharacter = TRUE,
+                pub const MODE = enum(BOOLEAN.Backing) {
+                    Character,
+                    WideCharacter,
                 };
             };
 
@@ -1930,7 +1930,7 @@ pub const DNS = struct {
 
             pub const @"3" = extern struct {
                 Base: REQUEST,
-                IsNetworkQueryRequired: BOOL = FALSE,
+                IsNetworkQueryRequired: BOOL = .FALSE,
                 RequiredNetworkIndex: DWORD = 0,
                 cCustomServers: DWORD = 0,
                 pCustomServers: ?*CUSTOM_SERVER = null,
@@ -4018,7 +4018,7 @@ pub fn eqlIgnoreCaseWtf16(a: []const u16, b: []const u16) bool {
     }
     // Use RtlEqualUnicodeString on Windows when not in comptime to avoid including a
     // redundant copy of the uppercase data.
-    return ntdll.RtlEqualUnicodeString(&.init(a), &.init(b), TRUE) == TRUE;
+    return ntdll.RtlEqualUnicodeString(&.init(a), &.init(b), .TRUE).toBool();
 }
 
 /// Compares two WTF-8 strings using the equivalent functionality of
@@ -4270,8 +4270,8 @@ pub const Win32Error = @import("windows/win32error.zig").Win32Error;
 pub const LANG = @import("windows/lang.zig");
 pub const SUBLANG = @import("windows/sublang.zig");
 
-pub const BOOL = c_int;
-pub const BOOLEAN = BYTE;
+pub const BOOL = Bool(c_int);
+pub const BOOLEAN = Bool(BYTE);
 pub const BYTE = u8;
 pub const CHAR = u8;
 pub const UCHAR = u8;
@@ -4376,8 +4376,27 @@ fn STRING(comptime C: type) type {
 pub const ANSI_STRING = STRING(CHAR);
 pub const UNICODE_STRING = STRING(WCHAR);
 
-pub const TRUE = 1;
-pub const FALSE = 0;
+fn Bool(comptime BackingInteger: type) type {
+    return enum(Backing) {
+        /// false
+        FALSE = 0,
+        /// true
+        _,
+
+        /// This is not the only truthy value, comparisons against this value are always a bug.
+        pub const TRUE: @This() = @enumFromInt(1);
+
+        pub const Backing = BackingInteger;
+
+        pub fn toBool(b: @This()) bool {
+            return b != .FALSE;
+        }
+
+        pub fn fromBool(b: bool) @This() {
+            return @enumFromInt(@intFromBool(b));
+        }
+    };
+}
 
 pub const INVALID_HANDLE_VALUE: HANDLE = @ptrFromInt(maxInt(usize));
 
@@ -6087,7 +6106,7 @@ pub const SharedUserData: *const KUSER_SHARED_DATA = @ptrFromInt(0x7FFE0000);
 
 pub fn IsProcessorFeaturePresent(feature: PF) bool {
     if (@intFromEnum(feature) >= PROCESSOR_FEATURE_MAX) return false;
-    return SharedUserData.ProcessorFeatures[@intFromEnum(feature)] == 1;
+    return SharedUserData.ProcessorFeatures[@intFromEnum(feature)].toBool();
 }
 
 // https://github.com/reactos/reactos/blob/master/sdk/include/ndk/pstypes.h#L977-L983
