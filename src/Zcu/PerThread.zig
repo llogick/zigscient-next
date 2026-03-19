@@ -69,19 +69,26 @@ pub const Id = if (InternPool.single_threaded) enum {
     /// will likely involve significant changes to the `InternPool` implementation.
     var available_tids: std.ArrayList(Id) = .empty;
     threadlocal var recursive_depth: usize = 0;
-    threadlocal var recursive_tid: Id = .main;
+    threadlocal var recursive_tid: Id = undefined;
 
     pub fn allocate(arena: Allocator, n: usize) Allocator.Error!void {
         available_tids = .empty;
         try available_tids.ensureTotalCapacityPrecise(arena, n - 1);
         for (1..n) |tid| available_tids.appendAssumeCapacity(@enumFromInt(tid));
+        switch (build_options.io_mode) {
+            .threaded => {
+                // Called from the main thread, so mark ourselves as such.
+                recursive_depth = 1;
+                recursive_tid = .main;
+            },
+            .evented => {},
+        }
     }
     pub fn acquire(io: std.Io) Id {
         switch (build_options.io_mode) {
             .threaded => {
                 recursive_depth += 1;
                 if (recursive_depth > 1) {
-                    assert(recursive_tid != .main);
                     return recursive_tid;
                 }
             },
@@ -106,7 +113,6 @@ pub const Id = if (InternPool.single_threaded) enum {
                 assert(recursive_tid == tid);
                 recursive_depth -= 1;
                 if (recursive_depth > 0) return;
-                recursive_tid = .main;
             },
             .evented => {},
         }
