@@ -13587,7 +13587,7 @@ fn netLookupFallible(
             //&cancel_token,
             null)) {
             // We must wait for the APC routine.
-            .SUCCESS, .REQUEST_PENDING => |status| if (current_thread) |_| {
+            .SUCCESS, .DNS_REQUEST_PENDING => |status| if (current_thread) |_| {
                 while (!@atomicLoad(bool, &lookup_dns.done, .acquire)) {
                     // Once we get here we must not return from the function until the
                     // operation completes, thereby releasing references to `host_name_w`,
@@ -13604,16 +13604,16 @@ fn netLookupFallible(
                 }
             } else switch (status) {
                 .SUCCESS => try lookup_dns.completedFallible(),
-                .REQUEST_PENDING => unreachable, // `pQueryCompletionCallback` was `null`
+                .DNS_REQUEST_PENDING => unreachable, // `pQueryCompletionCallback` was `null`
                 else => unreachable,
             },
             else => |status| lookup_dns.results.QueryStatus = status,
         }
         switch (lookup_dns.results.QueryStatus) {
             .SUCCESS => return,
-            .REQUEST_PENDING => unreachable, // already handled
-            .INVALID_NAME, .NO_RECORDS => return error.UnknownHostName,
-            else => |status| return windows.unexpectedError(@enumFromInt(@intFromEnum(status))),
+            .DNS_REQUEST_PENDING => unreachable, // already handled
+            .INVALID_NAME, .DNS_INFO_NO_RECORDS => return error.UnknownHostName,
+            else => |err| return windows.unexpectedError(err),
         }
     }
 
