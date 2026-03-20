@@ -449,4 +449,54 @@ pub fn addCases(cases: *@import("tests.zig").ErrorTracesContext) void {
             .{ .aarch64, .macos },
         },
     });
+
+    cases.addCase(.{
+        .name = "trace through inline call",
+        .source =
+        \\pub fn main() !void {
+        \\    try foo();
+        \\}
+        \\inline fn foo() !void {
+        \\    try bar();
+        \\}
+        \\fn bar() !void {
+        \\    return error.ThisIsSoSad;
+        \\}
+        ,
+        .expect_error = "ThisIsSoSad",
+        .expect_trace =
+        \\source.zig:8:5: [address] in bar
+        \\    return error.ThisIsSoSad;
+        \\    ^
+        \\source.zig:5:5: [address] in foo
+        \\    try bar();
+        \\    ^
+        \\source.zig:2:5: [address] in main
+        \\    try foo();
+        \\    ^
+        ,
+        .disable_trace_optimized = &.{
+            .{ .x86_64, .freebsd },
+            .{ .x86_64, .netbsd },
+            .{ .x86_64, .linux },
+            .{ .x86, .linux },
+            .{ .aarch64, .freebsd },
+            .{ .aarch64, .netbsd },
+            .{ .aarch64, .linux },
+            .{ .loongarch64, .linux },
+            .{ .powerpc64le, .linux },
+            .{ .riscv64, .linux },
+            .{ .s390x, .linux },
+            .{ .x86_64, .openbsd },
+            .{ .x86_64, .windows },
+            .{ .x86, .windows },
+            .{ .x86_64, .macos },
+            .{ .aarch64, .macos },
+        },
+        // TODO: the standard library has a bug in PDB parsing where given an address corresponding
+        // to an inline call, the frame we see will be for the *caller*, not the *callee*. As a
+        // result this test gives bogus results on Windows right now.
+        // This is a part of https://codeberg.org/ziglang/zig/issues/30847.
+        .disable_trace_pdb = true,
+    });
 }

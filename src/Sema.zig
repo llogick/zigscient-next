@@ -18036,28 +18036,24 @@ fn zirRetLoad(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!voi
         return sema.analyzeRet(block, operand, src, block.src(.{ .node_offset_return_operand = inst_data.src_node }));
     }
 
-    if (sema.wantErrorReturnTracing(sema.fn_ret_ty)) {
+    if (sema.wantErrorReturnTracing()) {
         const is_non_err = try sema.analyzePtrIsNonErr(block, src, ret_ptr);
-        return sema.retWithErrTracing(block, src, is_non_err, .ret_load, ret_ptr);
+        try sema.maybePushErrorTrace(block, src, is_non_err);
     }
 
     _ = try block.addUnOp(.ret_load, ret_ptr);
 }
 
-fn retWithErrTracing(
+fn maybePushErrorTrace(
     sema: *Sema,
-    block: *Block,
+    parent_block: *Block,
     src: LazySrcLoc,
     is_non_err: Air.Inst.Ref,
-    ret_tag: Air.Inst.Tag,
-    operand: Air.Inst.Ref,
 ) CompileError!void {
     const pt = sema.pt;
+
     const need_check = switch (is_non_err) {
-        .bool_true => {
-            _ = try block.addUnOp(ret_tag, operand);
-            return;
-        },
+        .bool_true => return,
         .bool_false => false,
         else => true,
     };
@@ -18070,27 +18066,44 @@ fn retWithErrTracing(
     const return_err_fn = Air.internedToRef(try sema.getBuiltin(src, .returnError));
 
     if (!need_check) {
-        try sema.callBuiltin(block, src, return_err_fn, .never_tail, &.{}, .@"error return");
-        _ = try block.addUnOp(ret_tag, operand);
+        try sema.callBuiltin(parent_block, src, return_err_fn, .never_tail, &.{}, .@"error return");
         return;
     }
 
-    var then_block = block.makeSubBlock();
-    defer then_block.instructions.deinit(gpa);
-    _ = try then_block.addUnOp(ret_tag, operand);
+    var err_block = parent_block.makeSubBlock();
+    defer err_block.instructions.deinit(gpa);
+    try sema.callBuiltin(&err_block, src, return_err_fn, .never_tail, &.{}, .@"error return");
 
-    var else_block = block.makeSubBlock();
-    defer else_block.instructions.deinit(gpa);
-    try sema.callBuiltin(&else_block, src, return_err_fn, .never_tail, &.{}, .@"error return");
-    _ = try else_block.addUnOp(ret_tag, operand);
+    try parent_block.instructions.ensureUnusedCapacity(gpa, 1);
 
-    try sema.air_extra.ensureUnusedCapacity(gpa, @typeInfo(Air.CondBr).@"struct".fields.len +
-        then_block.instructions.items.len + else_block.instructions.items.len +
-        @typeInfo(Air.Block).@"struct".fields.len + 1);
+    try sema.air_instructions.ensureUnusedCapacity(gpa, 4);
+    try sema.air_extra.ensureUnusedCapacity(
+        gpa,
+        @typeInfo(Air.Block).@"struct".fields.len +
+            1 + // the main block contains only the `cond_br`
+            @typeInfo(Air.CondBr).@"struct".fields.len +
+            1 + // the non-error branch contains only a `br`
+            err_block.instructions.items.len + 1, // the error branch contains the `returnError` call and a `br`
+    );
+
+    const block_inst: Air.Inst.Index = @enumFromInt(sema.air_instructions.len);
+    const cond_br_inst: Air.Inst.Index = @enumFromInt(sema.air_instructions.len + 1);
+    const then_br_inst: Air.Inst.Index = @enumFromInt(sema.air_instructions.len + 2);
+    const else_br_inst: Air.Inst.Index = @enumFromInt(sema.air_instructions.len + 3);
+
+    const block_payload = sema.addExtraAssumeCapacity(Air.Block{ .body_len = 1 });
+    sema.air_extra.appendAssumeCapacity(@intFromEnum(cond_br_inst));
+    sema.air_instructions.appendAssumeCapacity(.{
+        .tag = .block,
+        .data = .{ .ty_pl = .{
+            .ty = .void_type,
+            .payload = block_payload,
+        } },
+    });
 
     const cond_br_payload = sema.addExtraAssumeCapacity(Air.CondBr{
-        .then_body_len = @intCast(then_block.instructions.items.len),
-        .else_body_len = @intCast(else_block.instructions.items.len),
+        .then_body_len = 1,
+        .else_body_len = @intCast(err_block.instructions.items.len + 1),
         .branch_hints = .{
             // Weight against error branch.
             .true = .likely,
@@ -18100,19 +18113,33 @@ fn retWithErrTracing(
             .else_cov = .none,
         },
     });
-    sema.air_extra.appendSliceAssumeCapacity(@ptrCast(then_block.instructions.items));
-    sema.air_extra.appendSliceAssumeCapacity(@ptrCast(else_block.instructions.items));
+    sema.air_extra.appendAssumeCapacity(@intFromEnum(then_br_inst));
+    sema.air_extra.appendSliceAssumeCapacity(@ptrCast(err_block.instructions.items));
+    sema.air_extra.appendAssumeCapacity(@intFromEnum(else_br_inst));
+    sema.air_instructions.appendAssumeCapacity(.{
+        .tag = .cond_br,
+        .data = .{ .pl_op = .{
+            .operand = is_non_err,
+            .payload = cond_br_payload,
+        } },
+    });
 
-    _ = try block.addInst(.{ .tag = .cond_br, .data = .{ .pl_op = .{
-        .operand = is_non_err,
-        .payload = cond_br_payload,
-    } } });
+    const br_inst_data: Air.Inst = .{
+        .tag = .br,
+        .data = .{ .br = .{
+            .block_inst = block_inst,
+            .operand = .void_value,
+        } },
+    };
+    sema.air_instructions.appendAssumeCapacity(br_inst_data); // then_br_inst
+    sema.air_instructions.appendAssumeCapacity(br_inst_data); // else_br_inst
+
+    parent_block.instructions.appendAssumeCapacity(block_inst);
 }
 
-fn wantErrorReturnTracing(sema: *Sema, fn_ret_ty: Type) bool {
-    const pt = sema.pt;
-    const zcu = pt.zcu;
-    return fn_ret_ty.isError(zcu) and zcu.comp.config.any_error_tracing;
+fn wantErrorReturnTracing(sema: *Sema) bool {
+    const zcu = sema.pt.zcu;
+    return sema.fn_ret_ty.isError(zcu) and zcu.comp.config.any_error_tracing;
 }
 
 fn zirSaveErrRetIndex(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void {
@@ -18253,47 +18280,44 @@ fn analyzeRet(
         else => |e| return e,
     };
 
+    if (block.isComptime()) {
+        const inlining = block.inlining orelse {
+            return sema.fail(block, src, "function called at runtime cannot return value at comptime", .{});
+        };
+        assert(!inlining.is_generic_instantiation); // can't `return` in a generic param/ret ty expr
+        const ret_val = try sema.resolveConstValue(block, operand_src, operand, null);
+        inlining.comptime_result = operand;
+
+        if (sema.fn_ret_ty.isError(zcu) and ret_val.getErrorName(zcu) != .none) {
+            try sema.comptime_err_ret_trace.append(src);
+        }
+        return error.ComptimeReturn;
+    }
+
+    if (block.inlining == null and sema.func_is_naked) return sema.failWithOwnedErrorMsg(block, msg: {
+        const msg = try sema.errMsg(src, "cannot return from naked function", .{});
+        errdefer msg.destroy(sema.gpa);
+
+        try sema.errNote(src, msg, "can only return using assembly", .{});
+        break :msg msg;
+    });
+
+    if (sema.wantErrorReturnTracing()) {
+        const is_non_err = try sema.analyzeIsNonErr(block, operand_src, operand);
+        try sema.maybePushErrorTrace(block, src, is_non_err);
+    }
+
     if (block.inlining) |inlining| {
         assert(!inlining.is_generic_instantiation); // can't `return` in a generic param/ret ty expr
-        if (block.isComptime()) {
-            const ret_val = try sema.resolveConstValue(block, operand_src, operand, null);
-            inlining.comptime_result = operand;
-
-            if (sema.fn_ret_ty.isError(zcu) and ret_val.getErrorName(zcu) != .none) {
-                try sema.comptime_err_ret_trace.append(src);
-            }
-            return error.ComptimeReturn;
-        }
-        // We are inlining a function call; rewrite the `ret` as a `break`.
         const br_inst = try block.addBr(inlining.merges.block_inst, operand);
         try inlining.merges.results.append(sema.gpa, operand);
         try inlining.merges.br_list.append(sema.gpa, br_inst.toIndex().?);
         try inlining.merges.src_locs.append(sema.gpa, operand_src);
-        return;
-    } else if (block.isComptime()) {
-        return sema.fail(block, src, "function called at runtime cannot return value at comptime", .{});
-    } else if (sema.func_is_naked) {
-        const msg = msg: {
-            const msg = try sema.errMsg(src, "cannot return from naked function", .{});
-            errdefer msg.destroy(sema.gpa);
-
-            try sema.errNote(src, msg, "can only return using assembly", .{});
-            break :msg msg;
-        };
-        return sema.failWithOwnedErrorMsg(block, msg);
+    } else {
+        try sema.validateRuntimeValue(block, operand_src, operand);
+        const ret_tag: Air.Inst.Tag = if (block.wantSafety()) .ret_safe else .ret;
+        _ = try block.addUnOp(ret_tag, operand);
     }
-
-    try sema.validateRuntimeValue(block, operand_src, operand);
-
-    const air_tag: Air.Inst.Tag = if (block.wantSafety()) .ret_safe else .ret;
-    if (sema.wantErrorReturnTracing(sema.fn_ret_ty)) {
-        // Avoid adding a frame to the error return trace in case the value is comptime-known
-        // to be not an error.
-        const is_non_err = try sema.analyzeIsNonErr(block, operand_src, operand);
-        return sema.retWithErrTracing(block, src, is_non_err, air_tag, operand);
-    }
-
-    _ = try block.addUnOp(air_tag, operand);
 }
 
 fn floatOpAllowed(tag: Zir.Inst.Tag) bool {
