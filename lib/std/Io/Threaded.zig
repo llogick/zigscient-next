@@ -4704,7 +4704,7 @@ fn dirCreateFileAtomic(
                     try syscall.checkCancel();
                     continue;
                 },
-                .ISDIR, .NOENT => {
+                .ISDIR, .NOENT, .OPNOTSUPP => {
                     // Ambiguous error code. It might mean the file system
                     // does not support O_TMPFILE. Therefore, we must fall
                     // back to not using O_TMPFILE.
