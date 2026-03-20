@@ -13001,7 +13001,7 @@ fn netReceiveOneWindows(
         }),
     });
     switch (iosb.u.Status) {
-        .SUCCESS, .RECEIVE_PARTIAL => |status| message.* = .{
+        .SUCCESS, .RECEIVE_EXPEDITED => |status| message.* = .{
             .from = addressFromPosix(&storage),
             .data = data_buffer[0..iosb.Information],
             .control = &.{},
@@ -13017,12 +13017,12 @@ fn netReceiveOneWindows(
                 .errqueue = false,
             },
         },
-        .RECEIVE_EXPEDITED,
+        .RECEIVE_PARTIAL,
         .RECEIVE_PARTIAL_EXPEDITED,
-        .BUFFER_OVERFLOW,
         => |status| return windows.unexpectedStatus(status), // TdiFlags.PARTIAL = false
         .CANCELLED => unreachable,
         .INSUFFICIENT_RESOURCES => return error.SystemResources,
+        .BUFFER_OVERFLOW => return error.MessageOversize,
         else => |status| return windows.unexpectedStatus(status),
     }
 }
