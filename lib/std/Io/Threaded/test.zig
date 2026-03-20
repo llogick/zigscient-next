@@ -9,11 +9,6 @@ const assert = std.debug.assert;
 const windows = std.os.windows;
 
 test "concurrent vs main prevents deadlock via oversubscription" {
-    if (true) {
-        // https://codeberg.org/ziglang/zig/issues/30141
-        return error.SkipZigTest;
-    }
-
     var threaded: Io.Threaded = .init(std.testing.allocator, .{
         .argv0 = .empty,
         .environ = .empty,
@@ -37,19 +32,14 @@ test "concurrent vs main prevents deadlock via oversubscription" {
 }
 
 fn put(io: Io, queue: *Io.Queue(u8)) void {
-    queue.putOneUncancelable(io, 42);
+    queue.putOneUncancelable(io, 42) catch unreachable;
 }
 
 fn get(io: Io, queue: *Io.Queue(u8)) void {
-    assert(queue.getOneUncancelable(io) == 42);
+    assert(queue.getOneUncancelable(io) catch unreachable == 42);
 }
 
 test "concurrent vs concurrent prevents deadlock via oversubscription" {
-    if (true) {
-        // https://codeberg.org/ziglang/zig/issues/30141
-        return error.SkipZigTest;
-    }
-
     var threaded: Io.Threaded = .init(std.testing.allocator, .{
         .argv0 = .empty,
         .environ = .empty,

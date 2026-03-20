@@ -482,8 +482,7 @@ pub fn FieldEnum(comptime T: type) type {
 }
 
 fn expectEqualEnum(expected: anytype, actual: @TypeOf(expected)) !void {
-    // TODO: https://github.com/ziglang/zig/issues/7419
-    // testing.expectEqual(@typeInfo(expected).@"enum", @typeInfo(actual).@"enum");
+    try testing.expectEqual(@typeInfo(expected).@"enum", @typeInfo(actual).@"enum");
     try testing.expectEqual(
         @typeInfo(expected).@"enum".tag_type,
         @typeInfo(actual).@"enum".tag_type,

@@ -693,8 +693,7 @@ pub fn markImportsExports(self: *ZigObject, elf_file: *Elf) void {
         const ref = self.resolveSymbol(@intCast(i | global_symbol_bit), elf_file);
         const sym = elf_file.symbol(ref) orelse continue;
         const file = sym.file(elf_file).?;
-        // https://github.com/ziglang/zig/issues/21678
-        if (@as(u16, @bitCast(sym.version_index)) == @as(u16, @bitCast(elf.Versym.LOCAL))) continue;
+        if (sym.version_index == elf.Versym.LOCAL) continue;
         const vis: elf.STV = @enumFromInt(@as(u3, @truncate(sym.elfSym(elf_file).st_other)));
         if (vis == .HIDDEN) continue;
         if (file == .shared_object and !sym.isAbs(elf_file)) {
