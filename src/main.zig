@@ -6400,11 +6400,9 @@ fn initArgIteratorResponseFile(allocator: Allocator, io: Io, resp_file_path: []c
     return ArgIteratorResponseFile.initTakeOwnership(allocator, cmd_line);
 }
 
-const clang_args = @import("clang_options.zig").list;
-
 pub const ClangArgIterator = struct {
     has_next: bool,
-    zig_equivalent: ZigEquivalent,
+    zig_equivalent: std.zig.ClangCliParam.ZigEquivalent,
     only_arg: []const u8,
     second_arg: []const u8,
     other_args: []const []const u8,
@@ -6413,94 +6411,6 @@ pub const ClangArgIterator = struct {
     root_args: ?*Args,
     arg_iterator_response_file: ArgIteratorResponseFile,
     arena: Allocator,
-
-    pub const ZigEquivalent = enum {
-        target,
-        o,
-        c,
-        r,
-        m,
-        x,
-        other,
-        positional,
-        l,
-        ignore,
-        driver_punt,
-        pic,
-        no_pic,
-        pie,
-        no_pie,
-        lto,
-        no_lto,
-        unwind_tables,
-        no_unwind_tables,
-        asynchronous_unwind_tables,
-        no_asynchronous_unwind_tables,
-        nostdlib,
-        nostdlib_cpp,
-        shared,
-        rdynamic,
-        wl,
-        wp,
-        preprocess_only,
-        asm_only,
-        optimize,
-        debug,
-        gdwarf32,
-        gdwarf64,
-        sanitize,
-        no_sanitize,
-        sanitize_trap,
-        no_sanitize_trap,
-        linker_script,
-        dry_run,
-        verbose,
-        for_linker,
-        linker_input_z,
-        lib_dir,
-        mcpu,
-        dep_file,
-        dep_file_to_stdout,
-        framework_dir,
-        framework,
-        nostdlibinc,
-        red_zone,
-        no_red_zone,
-        omit_frame_pointer,
-        no_omit_frame_pointer,
-        function_sections,
-        no_function_sections,
-        data_sections,
-        no_data_sections,
-        builtin,
-        no_builtin,
-        color_diagnostics,
-        no_color_diagnostics,
-        stack_check,
-        no_stack_check,
-        stack_protector,
-        no_stack_protector,
-        strip,
-        exec_model,
-        emit_llvm,
-        sysroot,
-        entry,
-        force_undefined_symbol,
-        weak_library,
-        weak_framework,
-        headerpad_max_install_names,
-        compress_debug_sections,
-        install_name,
-        undefined,
-        force_load_objc,
-        mingw_unicode_entry_point,
-        san_cov_trace_pc_guard,
-        san_cov,
-        no_san_cov,
-        rtlib,
-        static,
-        dynamic,
-    };
 
     const Args = struct {
         next_index: usize,
@@ -6581,11 +6491,13 @@ pub const ClangArgIterator = struct {
             return;
         }
 
+        const clang_args: []const std.zig.ClangCliParam = @import("clang_options.zon");
+
         find_clang_arg: for (clang_args) |clang_arg| switch (clang_arg.syntax) {
             .flag => {
                 const prefix_len = clang_arg.matchEql(arg);
                 if (prefix_len > 0) {
-                    self.zig_equivalent = clang_arg.zig_equivalent;
+                    self.zig_equivalent = clang_arg.ze;
                     self.only_arg = arg[prefix_len..];
 
                     break :find_clang_arg;
@@ -6596,7 +6508,7 @@ pub const ClangArgIterator = struct {
                 // comma_joined example: -Wl,-soname,libsoundio.so.2
                 const prefix_len = clang_arg.matchStartsWith(arg);
                 if (prefix_len != 0) {
-                    self.zig_equivalent = clang_arg.zig_equivalent;
+                    self.zig_equivalent = clang_arg.ze;
                     self.only_arg = arg[prefix_len..]; // This will skip over the "--target=" part.
 
                     break :find_clang_arg;
@@ -6612,11 +6524,11 @@ pub const ClangArgIterator = struct {
                     self.only_arg = self.argv[self.next_index];
                     self.incrementArgIndex();
                     self.other_args.len += 1;
-                    self.zig_equivalent = clang_arg.zig_equivalent;
+                    self.zig_equivalent = clang_arg.ze;
 
                     break :find_clang_arg;
                 } else if (prefix_len != 0) {
-                    self.zig_equivalent = clang_arg.zig_equivalent;
+                    self.zig_equivalent = clang_arg.ze;
                     self.only_arg = arg[prefix_len..];
 
                     break :find_clang_arg;
@@ -6633,7 +6545,7 @@ pub const ClangArgIterator = struct {
                     self.second_arg = self.argv[self.next_index];
                     self.incrementArgIndex();
                     self.other_args.len += 1;
-                    self.zig_equivalent = clang_arg.zig_equivalent;
+                    self.zig_equivalent = clang_arg.ze;
                     break :find_clang_arg;
                 }
             },
@@ -6644,7 +6556,7 @@ pub const ClangArgIterator = struct {
                 self.only_arg = self.argv[self.next_index];
                 self.incrementArgIndex();
                 self.other_args.len += 1;
-                self.zig_equivalent = clang_arg.zig_equivalent;
+                self.zig_equivalent = clang_arg.ze;
                 break :find_clang_arg;
             },
             .remaining_args_joined => {
@@ -6660,7 +6572,7 @@ pub const ClangArgIterator = struct {
                     self.incrementArgIndex();
                     self.other_args.len += 1;
                 }
-                self.zig_equivalent = clang_arg.zig_equivalent;
+                self.zig_equivalent = clang_arg.ze;
                 break :find_clang_arg;
             },
         } else {

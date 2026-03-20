@@ -348,8 +348,6 @@ set(ZIG_STAGE2_SOURCES
     src/Value.zig
     src/Zcu.zig
     src/Zcu/PerThread.zig
-    src/clang_options.zig
-    src/clang_options_data.zig
     src/codegen.zig
     src/codegen/aarch64.zig
     src/codegen/aarch64/abi.zig

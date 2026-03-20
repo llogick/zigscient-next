@@ -3,11 +3,13 @@
 //! guarantees whatsoever.
 
 const std = @import("std.zig");
-const tokenizer = @import("zig/tokenizer.zig");
 const assert = std.debug.assert;
+const mem = std.mem;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Writer = std.Io.Writer;
+
+const tokenizer = @import("zig/tokenizer.zig");
 
 pub const ErrorBundle = @import("zig/ErrorBundle.zig");
 pub const Server = @import("zig/Server.zig");
@@ -94,7 +96,7 @@ pub const Loc = struct {
     source_line: []const u8,
 
     pub fn eql(a: Loc, b: Loc) bool {
-        return a.line == b.line and a.column == b.column and std.mem.eql(u8, a.source_line, b.source_line);
+        return a.line == b.line and a.column == b.column and mem.eql(u8, a.source_line, b.source_line);
     }
 };
 
@@ -258,7 +260,7 @@ pub const BuildId = union(enum) {
         if (a_tag != b_tag) return false;
         return switch (a) {
             .none, .fast, .uuid, .sha1, .md5 => true,
-            .hexstring => |a_hexstring| std.mem.eql(u8, a_hexstring.toSlice(), b.hexstring.toSlice()),
+            .hexstring => |a_hexstring| mem.eql(u8, a_hexstring.toSlice(), b.hexstring.toSlice()),
         };
     }
 
@@ -285,17 +287,17 @@ pub const BuildId = union(enum) {
 
     /// Converts UTF-8 text to a `BuildId`.
     pub fn parse(text: []const u8) !BuildId {
-        if (std.mem.eql(u8, text, "none")) {
+        if (mem.eql(u8, text, "none")) {
             return .none;
-        } else if (std.mem.eql(u8, text, "fast")) {
+        } else if (mem.eql(u8, text, "fast")) {
             return .fast;
-        } else if (std.mem.eql(u8, text, "uuid")) {
+        } else if (mem.eql(u8, text, "uuid")) {
             return .uuid;
-        } else if (std.mem.eql(u8, text, "sha1") or std.mem.eql(u8, text, "tree")) {
+        } else if (mem.eql(u8, text, "sha1") or mem.eql(u8, text, "tree")) {
             return .sha1;
-        } else if (std.mem.eql(u8, text, "md5")) {
+        } else if (mem.eql(u8, text, "md5")) {
             return .md5;
-        } else if (std.mem.startsWith(u8, text, "0x")) {
+        } else if (mem.startsWith(u8, text, "0x")) {
             var result: BuildId = .{ .hexstring = undefined };
             const slice = try std.fmt.hexToBytes(&result.hexstring.bytes, text[2..]);
             result.hexstring.len = @as(u8, @intCast(slice.len));
@@ -614,13 +616,13 @@ pub fn readSourceFileToEndAlloc(gpa: Allocator, file_reader: *Io.File.Reader) ![
         "\xfe\xff", // UTF-16 big endian
     };
     for (unsupported_boms) |bom| {
-        if (std.mem.startsWith(u8, buffer.items, bom)) {
+        if (mem.startsWith(u8, buffer.items, bom)) {
             return error.UnsupportedEncoding;
         }
     }
 
     // If the file starts with a UTF-16 little endian BOM, translate it to UTF-8
-    if (std.mem.startsWith(u8, buffer.items, "\xff\xfe")) {
+    if (mem.startsWith(u8, buffer.items, "\xff\xfe")) {
         if (buffer.items.len % 2 != 0) return error.InvalidEncoding;
         return std.unicode.utf16LeToUtf8AllocZ(gpa, @ptrCast(@alignCast(buffer.items))) catch |err| switch (err) {
             error.DanglingSurrogateHalf => error.UnsupportedEncoding,
@@ -999,6 +1001,164 @@ pub const EmitArtifact = enum {
             .h => ".h",
         };
         return std.fmt.allocPrint(gpa, "{s}{s}", .{ opts.root_name, suffix });
+    }
+};
+
+/// The defaults are chosen here to reduce the size of src/clang_options.zon
+pub const ClangCliParam = struct {
+    name: []const u8,
+    ze: ZigEquivalent = .other,
+    syntax: Syntax = .flag,
+    /// Prefixed by "-"
+    pd1: bool = true,
+    /// Prefixed by "--"
+    pd2: bool = false,
+    /// Prefixed by "/"
+    psl: bool = false,
+
+    pub const Syntax = union(enum) {
+        /// A flag with no values.
+        flag,
+        /// An option which prefixes its (single) value.
+        joined,
+        /// An option which is followed by its value.
+        separate,
+        /// An option which is either joined to its (non-empty) value, or followed by its value.
+        joined_or_separate,
+        /// An option which is both joined to its (first) value, and followed by its (second) value.
+        joined_and_separate,
+        /// An option followed by its values, which are separated by commas.
+        comma_joined,
+        /// An option which consumes an optional joined argument and any other remaining arguments.
+        remaining_args_joined,
+        /// An option which is which takes multiple (separate) arguments.
+        multi_arg: u8,
+    };
+
+    pub const ZigEquivalent = enum {
+        target,
+        o,
+        c,
+        r,
+        m,
+        x,
+        other,
+        positional,
+        l,
+        ignore,
+        driver_punt,
+        pic,
+        no_pic,
+        pie,
+        no_pie,
+        lto,
+        no_lto,
+        unwind_tables,
+        no_unwind_tables,
+        asynchronous_unwind_tables,
+        no_asynchronous_unwind_tables,
+        nostdlib,
+        nostdlib_cpp,
+        shared,
+        rdynamic,
+        wl,
+        wp,
+        preprocess_only,
+        asm_only,
+        optimize,
+        debug,
+        gdwarf32,
+        gdwarf64,
+        sanitize,
+        no_sanitize,
+        sanitize_trap,
+        no_sanitize_trap,
+        linker_script,
+        dry_run,
+        verbose,
+        for_linker,
+        linker_input_z,
+        lib_dir,
+        mcpu,
+        dep_file,
+        dep_file_to_stdout,
+        framework_dir,
+        framework,
+        nostdlibinc,
+        red_zone,
+        no_red_zone,
+        omit_frame_pointer,
+        no_omit_frame_pointer,
+        function_sections,
+        no_function_sections,
+        data_sections,
+        no_data_sections,
+        builtin,
+        no_builtin,
+        color_diagnostics,
+        no_color_diagnostics,
+        stack_check,
+        no_stack_check,
+        stack_protector,
+        no_stack_protector,
+        strip,
+        exec_model,
+        emit_llvm,
+        sysroot,
+        entry,
+        force_undefined_symbol,
+        weak_library,
+        weak_framework,
+        headerpad_max_install_names,
+        compress_debug_sections,
+        install_name,
+        undefined,
+        force_load_objc,
+        mingw_unicode_entry_point,
+        san_cov_trace_pc_guard,
+        san_cov,
+        no_san_cov,
+        rtlib,
+        static,
+        dynamic,
+    };
+
+    pub fn matchEql(self: @This(), arg: []const u8) u2 {
+        if (self.pd1 and arg.len >= self.name.len + 1 and
+            mem.startsWith(u8, arg, "-") and mem.eql(u8, arg[1..], self.name))
+        {
+            return 1;
+        }
+        if (self.pd2 and arg.len >= self.name.len + 2 and
+            mem.startsWith(u8, arg, "--") and mem.eql(u8, arg[2..], self.name))
+        {
+            return 2;
+        }
+        if (self.psl and arg.len >= self.name.len + 1 and
+            mem.startsWith(u8, arg, "/") and mem.eql(u8, arg[1..], self.name))
+        {
+            return 1;
+        }
+        return 0;
+    }
+
+    pub fn matchStartsWith(self: @This(), arg: []const u8) usize {
+        if (self.pd1 and arg.len >= self.name.len + 1 and
+            mem.startsWith(u8, arg, "-") and mem.startsWith(u8, arg[1..], self.name))
+        {
+            return self.name.len + 1;
+        }
+        if (self.pd2 and arg.len >= self.name.len + 2 and
+            mem.startsWith(u8, arg, "--") and mem.startsWith(u8, arg[2..], self.name))
+        {
+            return self.name.len + 2;
+        }
+        if (self.psl and arg.len >= self.name.len + 1 and
+            mem.startsWith(u8, arg, "/") and mem.startsWith(u8, arg[1..], self.name))
+        {
+            return self.name.len + 1;
+        }
+        return 0;
     }
 };
 
