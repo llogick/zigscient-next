@@ -625,11 +625,22 @@ else()
   else()
     set(ZIG2_LINK_FLAGS "-Wl,-z,stack-size=0x10000000")
   endif()
-  # Prevent GCC from miscompiling 'zig2.c'. See also 'workaround_gcc_sra_miscomp' in 'bootstrap.c'.
-  if (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND
-      CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "13.0" AND
-      CMAKE_C_COMPILER_VERSION VERSION_LESS_EQUAL "15.2")
-    set(ZIG2_COMPILE_FLAGS "${ZIG2_COMPILE_FLAGS} -fno-tree-sra")
+  if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    # Prevent GCC from miscompiling 'zig2.c'. See also 'GCC_BUG_119085_PRESENT' workaround details in 'bootstrap.c'.
+    if (
+      (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "10.0" AND
+       CMAKE_C_COMPILER_VERSION VERSION_LESS_EQUAL "13.4") OR
+      (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "14.0" AND
+       CMAKE_C_COMPILER_VERSION VERSION_LESS_EQUAL "14.3") OR
+      (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "15.0" AND
+       CMAKE_C_COMPILER_VERSION VERSION_LESS "15.2")
+    )
+      set(ZIG2_COMPILE_FLAGS "${ZIG2_COMPILE_FLAGS} -fno-tree-sra")
+    endif()
+
+    # Prevent GCC from spamming false positive `-Waddress-of-packed-member` warnings in 'zig2.c'.
+    # See also 'GCC_BUG_94081_PRESENT' workaround details in 'bootstrap.c'.
+    set(ZIG2_COMPILE_FLAGS "${ZIG2_COMPILE_FLAGS} -Wno-address-of-packed-member")
   endif()
 endif()
 
