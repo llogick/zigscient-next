@@ -450,7 +450,7 @@ pub const Node = struct {
             const ipc = @atomicLoad(Ipc, ipc_ptr, .monotonic);
             if (ipc.locked or ipc.valid) continue;
             const generation = ipc.generation +% 1;
-            if (@cmpxchgWeak(
+            if (@cmpxchgStrong(
                 Ipc,
                 ipc_ptr,
                 ipc,
@@ -1133,7 +1133,7 @@ fn serialize(io: Io, serialized_buffer: *Serialized.Buffer) !Serialized {
         const ipc_data = &serialized_buffer.ipc_data[ipc_index.slot];
         state: switch (ipc_data.state) {
             .unused => {
-                if (@cmpxchgWeak(
+                if (@cmpxchgStrong(
                     Ipc,
                     ipc,
                     .{ .locked = false, .valid = true, .generation = ipc_index.generation },

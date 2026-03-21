@@ -1337,25 +1337,6 @@ const Thread = struct {
             return @ptrFromInt(@as(usize, @bitCast(split)));
         }
     };
-
-    /// Same as `Io.Mutex.lock` but avoids the VTable.
-    fn mutexLock(m: *Io.Mutex) Io.Cancelable!void {
-        const initial_state = m.state.cmpxchgWeak(
-            .unlocked,
-            .locked_once,
-            .acquire,
-            .monotonic,
-        ) orelse {
-            @branchHint(.likely);
-            return;
-        };
-        if (initial_state == .contended) {
-            try Thread.futexWait(@ptrCast(&m.state.raw), @intFromEnum(Io.Mutex.State.contended), null);
-        }
-        while (m.state.swap(.contended, .acquire) != .unlocked) {
-            try Thread.futexWait(@ptrCast(&m.state.raw), @intFromEnum(Io.Mutex.State.contended), null);
-        }
-    }
 };
 
 const Syscall = struct {
@@ -18663,7 +18644,7 @@ fn condWait(cond: *Io.Condition, mutex: *Io.Mutex) void {
 
 /// Same as `Io.Mutex.lockUncancelable` but avoids the VTable.
 pub fn mutexLock(m: *Io.Mutex) void {
-    const initial_state = m.state.cmpxchgWeak(
+    const initial_state = m.state.cmpxchgStrong(
         .unlocked,
         .locked_once,
         .acquire,
