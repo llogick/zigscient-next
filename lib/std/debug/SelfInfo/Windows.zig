@@ -360,6 +360,7 @@ const Module = struct {
                 error.SystemFdQuotaExceeded,
                 error.FileLocksUnsupported,
                 error.FileBusy,
+                error.ReadOnlyFileSystem,
                 => return error.ReadFailed,
             };
             errdefer coff_file.close(io);

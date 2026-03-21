@@ -423,6 +423,7 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         error.ConnectionResetByPeer => return error.Unexpected,
         error.NotOpenForReading => return error.Unexpected,
         error.SocketUnconnected => return error.Unexpected,
+        error.ReadOnlyFileSystem => return error.Unexpected,
 
         error.AccessDenied,
         error.SymLinkLoop,
@@ -853,6 +854,7 @@ fn glibcVerFromRPath(io: Io, rpath: []const u8) !std.SemanticVersion {
         error.PathAlreadyExists => return error.Unexpected, // read-only
         error.DeviceBusy => return error.Unexpected, // read-only
         error.FileBusy => return error.Unexpected, // read-only
+        error.ReadOnlyFileSystem => return error.Unexpected, // read-only
         error.NoDevice => return error.Unexpected, // not asking for a special device
         error.FileTooBig => return error.Unexpected,
         error.WouldBlock => return error.Unexpected, // not opened in non-blocking

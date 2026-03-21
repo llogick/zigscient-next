@@ -5673,6 +5673,7 @@ fn openat(
             .AGAIN => return error.WouldBlock,
             .TXTBSY => return error.FileBusy,
             .NXIO => return error.NoDevice,
+            .ROFS => return error.ReadOnlyFileSystem,
             .ILSEQ => return error.BadPathName,
             else => |err| return unexpectedErrno(err),
         }
