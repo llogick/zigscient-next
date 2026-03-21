@@ -10312,6 +10312,12 @@ pub const FUTEX = switch (native_os) {
     else => void,
 };
 
+pub const MFD = switch (native_os) {
+    .linux => linux.MFD,
+    .freebsd => freebsd.MFD,
+    else => void,
+};
+
 // Unix-like systems
 pub const DIR = opaque {};
 pub extern "c" fn opendir(pathname: [*:0]const u8) ?*DIR;
@@ -11265,7 +11271,6 @@ pub const user_from_uid = openbsd.user_from_uid;
 
 pub const CAP_RIGHTS_VERSION = freebsd.CAP_RIGHTS_VERSION;
 pub const KINFO_FILE_SIZE = freebsd.KINFO_FILE_SIZE;
-pub const MFD = freebsd.MFD;
 pub const UMTX_ABSTIME = freebsd.UMTX_ABSTIME;
 pub const UMTX_OP = freebsd.UMTX_OP;
 pub const _umtx_op = freebsd._umtx_op;
