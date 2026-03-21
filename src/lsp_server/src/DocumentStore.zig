@@ -1413,6 +1413,10 @@ pub fn isBuildFile(uri: Uri) bool {
     return std.mem.endsWith(u8, uri, "/build.zig");
 }
 
+pub fn isBuildZonFile(uri: Uri) bool {
+    return std.mem.endsWith(u8, uri, "/build.zig.zon");
+}
+
 pub fn isBuiltinFile(uri: Uri) bool {
     return std.mem.endsWith(u8, uri, "/builtin.zig");
 }
