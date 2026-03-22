@@ -2056,7 +2056,11 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 },
                 .fully_qualified_name = "zigc",
                 .cc_argv = &.{},
-                .inherited = .{},
+                .inherited = .{
+                    .stack_check = false,
+                    .stack_protector = 0,
+                    .no_builtin = true,
+                },
                 .global = options.config,
                 .parent = options.root_mod,
             }) catch |err| switch (err) {
