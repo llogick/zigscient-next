@@ -594,6 +594,21 @@ const Fuzzer = struct {
                 b.smithed_len = 4;
                 return input;
             }
+
+            pub fn reset(b: *Builder) void {
+                const uid_slices = b.uid_slices.entries.slice();
+                for (uid_slices.items(.key), uid_slices.items(.value)) |uid, *uid_data| {
+                    switch (uid.kind) {
+                        .int => uid_data.ints.deinit(gpa),
+                        .bytes => uid_data.bytes.deinit(gpa),
+                    }
+                }
+                b.uid_slices.clearRetainingCapacity();
+                b.total_ints = 0;
+                b.total_bytes = 0;
+                b.weighted_len = 0;
+                b.smithed_len = 4;
+            }
         };
     };
 
@@ -876,7 +891,14 @@ const Fuzzer = struct {
         // * The test has changed and a previous corpus input is being used
         // * An input provided by the test results in it
         // * The test is non-deterministic
-        if (f.runBytes(bytes, .bytes_fresh)) return;
+        if (f.runBytes(bytes, .bytes_fresh) and
+            modify_fs_corpus // The input is not from the filesystem.
+            // This is required to ensure the filesystem and process corpus are the same.
+        ) {
+            f.input_builder.reset();
+            f.corpus_pos = @enumFromInt(0);
+            return;
+        }
         f.req_values = f.input_builder.total_ints + f.input_builder.total_bytes;
         f.req_bytes = @intCast(f.input_builder.bytes_table.items.len);
         var input = f.input_builder.build();
@@ -1859,7 +1881,6 @@ const MemoryMappedInput = struct {
     /// Invalidates item pointers if more space is required.
     pub fn appendLittleInt(l: *MemoryMappedInput, T: type, x: T) void {
         l.ensureUnusedCapacity(@sizeOf(T));
-        //std.log.debug("{} {} {}", .{ l.writeSlice().len, l.len, @sizeOf(T) });
         l.writeSlice()[4 + l.len ..][0..@sizeOf(T)].* = @bitCast(mem.nativeToLittle(T, x));
         l.len += @sizeOf(T);
         l.writeLen();
