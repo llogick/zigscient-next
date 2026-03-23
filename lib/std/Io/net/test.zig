@@ -129,7 +129,6 @@ test "resolve DNS" {
 
         net.HostName.lookup(try .init("localhost"), io, &results, .{
             .port = 80,
-            .request_canonical_name = true,
             .canonical_name_buffer = &canonical_name_buffer,
         }) catch |err| switch (err) {
             error.NetworkDown => return error.SkipZigTest,

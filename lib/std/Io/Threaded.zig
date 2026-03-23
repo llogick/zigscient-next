@@ -13481,10 +13481,14 @@ fn netLookupFallible(
     if (is_windows) {
         if (options.family == null) {
             if (IpAddress.parseIp4(name, options.port)) |addr| {
-                try resolved.putAll(t_io, &.{
-                    .{ .address = addr },
-                    .{ .canonical_name = copyCanon(options.canonical_name_buffer, name) },
-                });
+                if (copyCanon(options.canonical_name_buffer, name)) |canon| {
+                    try resolved.putAll(t_io, &.{
+                        .{ .address = addr },
+                        .{ .canonical_name = canon },
+                    });
+                } else {
+                    try resolved.putOne(t_io, .{ .address = addr });
+                }
                 return;
             } else |_| {}
         }
@@ -13608,20 +13612,28 @@ fn netLookupFallible(
     if (native_os == .linux) {
         if (options.family != .ip4) {
             if (IpAddress.parseIp6(name, options.port)) |addr| {
-                try resolved.putAll(t_io, &.{
-                    .{ .address = addr },
-                    .{ .canonical_name = copyCanon(options.canonical_name_buffer, name) },
-                });
+                if (copyCanon(options.canonical_name_buffer, name)) |canon| {
+                    try resolved.putAll(t_io, &.{
+                        .{ .address = addr },
+                        .{ .canonical_name = canon },
+                    });
+                } else {
+                    try resolved.putOne(t_io, .{ .address = addr });
+                }
                 return;
             } else |_| {}
         }
 
         if (options.family != .ip6) {
             if (IpAddress.parseIp4(name, options.port)) |addr| {
-                try resolved.putAll(t_io, &.{
-                    .{ .address = addr },
-                    .{ .canonical_name = copyCanon(options.canonical_name_buffer, name) },
-                });
+                if (copyCanon(options.canonical_name_buffer, name)) |canon| {
+                    try resolved.putAll(t_io, &.{
+                        .{ .address = addr },
+                        .{ .canonical_name = canon },
+                    });
+                } else {
+                    try resolved.putOne(t_io, .{ .address = addr });
+                }
                 return;
             } else |_| {}
         }
@@ -13652,11 +13664,13 @@ fn netLookupFallible(
                 results_buffer[results_index] = .{ .address = .{ .ip4 = .loopback(options.port) } };
                 results_index += 1;
             }
-            const canon_name = "localhost";
-            const canon_name_dest = options.canonical_name_buffer[0..canon_name.len];
-            canon_name_dest.* = canon_name.*;
-            results_buffer[results_index] = .{ .canonical_name = .{ .bytes = canon_name_dest } };
-            results_index += 1;
+            if (options.canonical_name_buffer) |buf| {
+                const canon_name = "localhost";
+                const canon_name_dest = buf[0..canon_name.len];
+                canon_name_dest.* = canon_name.*;
+                results_buffer[results_index] = .{ .canonical_name = .{ .bytes = canon_name_dest } };
+                results_index += 1;
+            }
             try resolved.putAll(t_io, results_buffer[0..results_index]);
             return;
         }
@@ -13688,7 +13702,7 @@ fn netLookupFallible(
         const port_c = std.fmt.bufPrintZ(&port_buffer, "{d}", .{options.port}) catch unreachable;
 
         const hints: posix.addrinfo = .{
-            .flags = .{ .CANONNAME = options.request_canonical_name, .NUMERICSERV = true },
+            .flags = .{ .CANONNAME = options.canonical_name_buffer != null, .NUMERICSERV = true },
             .family = posix.AF.UNSPEC,
             .socktype = posix.SOCK.STREAM,
             .protocol = posix.IPPROTO.TCP,
@@ -13745,9 +13759,9 @@ fn netLookupFallible(
             }
         }
         if (canon_name) |n| {
-            try resolved.putOne(t_io, .{
-                .canonical_name = copyCanon(options.canonical_name_buffer, std.mem.sliceTo(n, 0)),
-            });
+            if (copyCanon(options.canonical_name_buffer, std.mem.sliceTo(n, 0))) |canon| {
+                try resolved.putOne(t_io, .{ .canonical_name = canon });
+            }
         }
         return;
     }
@@ -14268,12 +14282,14 @@ fn lookupDnsSearch(
     // both provides the desired default canonical name (if the requested
     // name is not a CNAME record) and serves as a buffer for passing the
     // full requested name to `lookupDns`.
-    @memcpy(options.canonical_name_buffer[0..canon_name.len], canon_name);
-    options.canonical_name_buffer[canon_name.len] = '.';
+    var local_buf: [HostName.max_len]u8 = undefined;
+    const canon_buf = options.canonical_name_buffer orelse &local_buf;
+    @memcpy(canon_buf[0..canon_name.len], canon_name);
+    canon_buf[canon_name.len] = '.';
     var it = std.mem.tokenizeAny(u8, search, " \t");
     while (it.next()) |token| {
-        @memcpy(options.canonical_name_buffer[canon_name.len + 1 ..][0..token.len], token);
-        const lookup_canon_name = options.canonical_name_buffer[0 .. canon_name.len + 1 + token.len];
+        @memcpy(canon_buf[canon_name.len + 1 ..][0..token.len], token);
+        const lookup_canon_name = canon_buf[0 .. canon_name.len + 1 + token.len];
         if (t.lookupDns(lookup_canon_name, &rc, resolved, options)) |result| {
             return result;
         } else |err| switch (err) {
@@ -14282,7 +14298,7 @@ fn lookupDnsSearch(
         }
     }
 
-    const lookup_canon_name = options.canonical_name_buffer[0..canon_name.len];
+    const lookup_canon_name = canon_buf[0..canon_name.len];
     return t.lookupDns(lookup_canon_name, &rc, resolved, options);
 }
 
@@ -14464,14 +14480,23 @@ fn lookupDns(
                 addresses_len += 1;
             },
             .CNAME => {
-                _, canonical_name = HostName.expand(record.packet, record.data_off, options.canonical_name_buffer) catch
-                    return error.InvalidDnsCnameRecord;
+                if (options.canonical_name_buffer) |buf| {
+                    _, canonical_name = HostName.expand(
+                        record.packet,
+                        record.data_off,
+                        buf,
+                    ) catch return error.InvalidDnsCnameRecord;
+                }
             },
             _ => continue,
         };
     }
 
-    try resolved.putOne(t_io, .{ .canonical_name = canonical_name orelse .{ .bytes = lookup_canon_name } });
+    if (options.canonical_name_buffer != null) {
+        try resolved.putOne(t_io, .{
+            .canonical_name = canonical_name orelse .{ .bytes = lookup_canon_name },
+        });
+    }
     if (addresses_len == 0) return error.NoAddressReturned;
 }
 
@@ -14552,13 +14577,15 @@ fn lookupHostsReader(
         } else continue;
 
         if (canonical_name == null) {
-            if (HostName.init(first_name_text.?)) |name_text| {
-                if (name_text.bytes.len <= options.canonical_name_buffer.len) {
-                    const canonical_name_dest = options.canonical_name_buffer[0..name_text.bytes.len];
-                    @memcpy(canonical_name_dest, name_text.bytes);
-                    canonical_name = .{ .bytes = canonical_name_dest };
-                }
-            } else |_| {}
+            if (options.canonical_name_buffer) |buf| {
+                if (HostName.init(first_name_text.?)) |name_text| {
+                    if (name_text.bytes.len <= buf.len) {
+                        const canonical_name_dest = buf[0..name_text.bytes.len];
+                        @memcpy(canonical_name_dest, name_text.bytes);
+                        canonical_name = .{ .bytes = canonical_name_dest };
+                    }
+                } else |_| {}
+            }
         }
 
         if (options.family != .ip6) {
@@ -14652,17 +14679,23 @@ const LookupDnsWindows = struct {
                 });
             },
         };
-        if (lookup_dns.results.pQueryRecords) |record| try lookup_dns.resolved.putOne(t_io, .{
-            .canonical_name = .{ .bytes = lookup_dns.options.canonical_name_buffer[0..std.unicode.wtf16LeToWtf8(
-                lookup_dns.options.canonical_name_buffer,
-                std.mem.span(@as([*:0]const windows.WCHAR, @ptrCast(@alignCast(record.pName)))),
-            )] },
-        });
+        if (lookup_dns.results.pQueryRecords) |record| {
+            if (lookup_dns.options.canonical_name_buffer) |buf| {
+                const name_wtf16 = std.mem.span(
+                    @as([*:0]const windows.WCHAR, @ptrCast(@alignCast(record.pName))),
+                );
+                const len = std.unicode.wtf16LeToWtf8(buf, name_wtf16);
+                try lookup_dns.resolved.putOne(t_io, .{
+                    .canonical_name = .{ .bytes = buf[0..len] },
+                });
+            }
+        }
     }
 };
 
-fn copyCanon(canonical_name_buffer: *[HostName.max_len]u8, name: []const u8) HostName {
-    const dest = canonical_name_buffer[0..name.len];
+fn copyCanon(canonical_name_buffer: ?*[HostName.max_len]u8, name: []const u8) ?HostName {
+    const buf = canonical_name_buffer orelse return null;
+    const dest = buf[0..name.len];
     @memcpy(dest, name);
     return .{ .bytes = dest };
 }
