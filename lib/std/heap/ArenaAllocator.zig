@@ -319,6 +319,11 @@ fn pushFreeList(arena: *ArenaAllocator, first: *Node, last: *Node) void {
     }
 }
 
+fn sliceContainsSlice(container: []u8, slice: []u8) bool {
+    return @intFromPtr(slice.ptr) >= @intFromPtr(container.ptr) and
+        @intFromPtr(slice.ptr + slice.len) <= @intFromPtr(container.ptr + container.len);
+}
+
 fn alignedIndex(buf_ptr: [*]u8, end_index: usize, alignment: Alignment) usize {
     // Wrapping arithmetic to avoid overflows since `end_index` isn't bounded by
     // `size`. This is always ok since the max alignment in byte units is also
@@ -543,12 +548,17 @@ fn resize(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, r
     assert(new_len > 0);
 
     const node = arena.loadFirstNode().?;
-    const buf_ptr = @as([*]u8, @ptrCast(node)) + @sizeOf(Node);
+    const buf = node.loadBuf();
+
+    if (!sliceContainsSlice(buf, memory)) {
+        // Not within current node.
+        return new_len <= memory.len;
+    }
 
     const cur_end_index = @atomicLoad(usize, &node.end_index, .monotonic);
-    if (buf_ptr + cur_end_index != memory.ptr + memory.len) {
-        // It's not the most recent allocation, so it cannot be expanded,
-        // but it's fine if they want to make it smaller.
+
+    if (buf.ptr + cur_end_index != memory.ptr + memory.len) {
+        // It's not the most recent allocation, so it cannot be expanded.
         return new_len <= memory.len;
     }
 
@@ -556,15 +566,12 @@ fn resize(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, r
         if (memory.len >= new_len) {
             break :new_end_index cur_end_index - (memory.len - new_len);
         }
-        const cur_buf_len: usize = node.loadBuf().len;
-        // Saturating arithmetic because `end_index` and `size` are not
-        // guaranteed to be in sync.
-        if (cur_buf_len -| cur_end_index >= new_len - memory.len) {
+        if (buf.len - cur_end_index >= new_len - memory.len) {
             break :new_end_index cur_end_index + (new_len - memory.len);
         }
         return false;
     };
-    assert(buf_ptr + new_end_index == memory.ptr + new_len);
+    assert(buf.ptr + new_end_index == memory.ptr + new_len);
 
     return null == @cmpxchgStrong(
         usize,
@@ -589,16 +596,22 @@ fn free(ctx: *anyopaque, memory: []u8, alignment: Alignment, ret_addr: usize) vo
     assert(memory.len > 0);
 
     const node = arena.loadFirstNode().?;
-    const buf_ptr = @as([*]u8, @ptrCast(node)) + @sizeOf(Node);
+    const buf = node.loadBuf();
+
+    if (!sliceContainsSlice(buf, memory)) {
+        // Not within current node; we cannot free it.
+        return;
+    }
 
     const cur_end_index = @atomicLoad(usize, &node.end_index, .monotonic);
-    if (buf_ptr + cur_end_index != memory.ptr + memory.len) {
+
+    if (buf.ptr + cur_end_index != memory.ptr + memory.len) {
         // Not the most recent allocation; we cannot free it.
         return;
     }
 
     const new_end_index = cur_end_index - memory.len;
-    assert(buf_ptr + new_end_index == memory.ptr);
+    assert(buf.ptr + new_end_index == memory.ptr);
 
     _ = @cmpxchgStrong(
         usize,
