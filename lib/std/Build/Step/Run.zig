@@ -2126,7 +2126,7 @@ fn sendMessage(io: Io, file: Io.File, tag: std.zig.Client.Message.Tag) !void {
         .tag = tag,
         .bytes_len = 0,
     };
-    var w = file.writer(io, &.{});
+    var w = file.writerStreaming(io, &.{});
     w.interface.writeStruct(header, .little) catch |err| switch (err) {
         error.WriteFailed => return w.err.?,
     };
@@ -2137,7 +2137,7 @@ fn sendRunTestMessage(io: Io, file: Io.File, tag: std.zig.Client.Message.Tag, in
         .tag = tag,
         .bytes_len = 4,
     };
-    var w = file.writer(io, &.{});
+    var w = file.writerStreaming(io, &.{});
     w.interface.writeStruct(header, .little) catch |err| switch (err) {
         error.WriteFailed => return w.err.?,
     };
@@ -2157,7 +2157,7 @@ fn sendRunFuzzTestMessage(
         .tag = .start_fuzzing,
         .bytes_len = 4 + 1 + 8,
     };
-    var w = file.writer(io, &.{});
+    var w = file.writerStreaming(io, &.{});
     w.interface.writeStruct(header, .little) catch |err| switch (err) {
         error.WriteFailed => return w.err.?,
     };
@@ -2202,7 +2202,7 @@ fn evalGeneric(run: *Run, spawn_options: process.SpawnOptions) !EvalGenericResul
             var read_buffer: [1024]u8 = undefined;
             var file_reader = file.reader(io, &read_buffer);
             var write_buffer: [1024]u8 = undefined;
-            var stdin_writer = child.stdin.?.writer(io, &write_buffer);
+            var stdin_writer = child.stdin.?.writerStreaming(io, &write_buffer);
             _ = stdin_writer.interface.sendFileAll(&file_reader, .unlimited) catch |err| switch (err) {
                 error.ReadFailed => return run.step.fail("failed to read from {f}: {t}", .{
                     path, file_reader.err.?,
