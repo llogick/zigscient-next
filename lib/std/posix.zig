@@ -38,6 +38,22 @@ pub const system = if (use_libc)
 else switch (native_os) {
     .linux => linux,
     .plan9 => std.os.plan9,
+    .psp => struct {
+        pub const fd_t = i32;
+        pub const pid_t = void;
+        pub const pollfd = void;
+        pub const uid_t = void;
+        pub const gid_t = void;
+        pub const mode_t = u32;
+        pub const nlink_t = u32;
+        pub const blksize_t = u32;
+        pub const ino_t = u64;
+        pub const IFNAMESIZE = {};
+        pub const SIG = void;
+
+        // https://github.com/pspdev/newlib/blob/9e0a073634ad73e8e088f2e071c55a9fe5d39709/newlib/libc/sys/psp/sys/dirent.h#L19
+        pub const NAME_MAX = 255;
+    },
     else => struct {
         pub const pid_t = void;
         pub const pollfd = void;

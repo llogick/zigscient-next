@@ -247,6 +247,7 @@ pub fn targetTriple(allocator: Allocator, target: *const std.Target) ![]const u8
         .opengl,
         .other,
         .plan9,
+        .psp,
         .vita,
         => "unknown",
     };
@@ -9536,7 +9537,25 @@ pub const FuncGen = struct {
 
     fn airTrap(self: *FuncGen, inst: Air.Inst.Index) !void {
         _ = inst;
-        _ = try self.wip.callIntrinsic(.normal, .none, .trap, &.{}, &.{}, "");
+        const target = self.ng.object.target;
+        if ((target.cpu.arch == .mips or target.cpu.arch == .mipsel) and
+            target.cpu.has(.mips, .notraps))
+        {
+            // Emit a MIPS `break` instruction followed by an infinite loop (to fulfill the noreturn)
+            // since this CPU does not support trap instructions.
+            const o = self.ng.object;
+            _ = try self.wip.callAsm(
+                .none,
+                try o.builder.fnType(.void, &.{}, .normal),
+                .{ .sideeffect = true },
+                try o.builder.string("break\n0:\nj 0b\nnop"),
+                try o.builder.string("~{memory}"),
+                &.{},
+                "",
+            );
+        } else {
+            _ = try self.wip.callIntrinsic(.normal, .none, .trap, &.{}, &.{}, "");
+        }
         _ = try self.wip.@"unreachable"();
     }
 
