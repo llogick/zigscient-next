@@ -12196,6 +12196,7 @@ fn netBindIpPosix(
     var storage: PosixAddress = undefined;
     var addr_len = addressToPosix(address, &storage);
     try posixBind(socket_fd, &storage.any, addr_len);
+    if (options.allow_broadcast) try setSocketOptionPosix(socket_fd, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, 1);
     try posixGetSockName(socket_fd, &storage.any, &addr_len);
     return .{ .handle = socket_fd, .address = addressFromPosix(&storage) };
 }
@@ -12212,6 +12213,7 @@ fn netBindIpWindows(
     const socket_handle = try openSocketAfd(family, options);
     errdefer windows.CloseHandle(socket_handle);
     const bound_address = try bindSocketIpAfd(socket_handle, address, .Active);
+    if (options.allow_broadcast) try setSocketOptionAfd(socket_handle, ws2_32.SOL.SOCKET, ws2_32.SO.BROADCAST, true);
     return .{ .handle = socket_handle, .address = bound_address };
 }
 
