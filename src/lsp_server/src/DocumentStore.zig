@@ -249,7 +249,11 @@ pub const BuildFile = struct {
         const arena = self.compilation.arena_instance.allocator();
         var args_dups: std.ArrayList([]const u8) = .empty;
 
-        for (cfg.value.roots[root_id].args) |item| try args_dups.append(arena, try arena.dupe(u8, item));
+        for (cfg.value.roots[root_id].args) |arg| {
+            if (std.mem.startsWith(u8, arg, "<generated")) continue;
+            try args_dups.append(arena, try arena.dupe(u8, arg));
+        }
+
         self.compilation.args = try args_dups.toOwnedSlice(arena);
 
         log.info("Creating a compilation for: {s}\n{s}", .{ self.uri, try std.json.Stringify.valueAlloc(arena, self.compilation.args, .{}) });
