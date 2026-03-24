@@ -1118,8 +1118,8 @@
 
       {#header_close#}
       {#header_open|Floating Point Operations#}
-      <p>By default floating point operations use {#syntax#}Strict{#endsyntax#} mode,
-          but you can switch to {#syntax#}Optimized{#endsyntax#} mode on a per-block basis:</p>
+      <p>By default floating point operations use {#syntax#}.strict{#endsyntax#} mode,
+          but you can switch to {#syntax#}.optimized{#endsyntax#} mode on a per-block basis:</p>
       {#code|float_mode_obj.zig#}
 
       <p>For this test we have to separate code into two object files -
@@ -1374,7 +1374,7 @@ a /= b{#endsyntax#}</pre></td>
             <ul>
               <li>Can cause {#link|overflow|Default Operations#} for integers.</li>
               <li>Can cause {#link|Division by Zero#} for integers.</li>
-              <li>Can cause {#link|Division by Zero#} for floats in {#link|FloatMode.Optimized Mode|Floating Point Operations#}.</li>
+              <li>Can cause {#link|Division by Zero#} for floats in {#link|FloatMode.optimized Mode|Floating Point Operations#}.</li>
               <li>Signed integer operands must be comptime-known and positive. In other cases, use
                 {#link|@divTrunc#},
                 {#link|@divFloor#}, or
@@ -1400,7 +1400,7 @@ a %= b{#endsyntax#}</pre></td>
           <td>
             <ul>
               <li>Can cause {#link|Division by Zero#} for integers.</li>
-              <li>Can cause {#link|Division by Zero#} for floats in {#link|FloatMode.Optimized Mode|Floating Point Operations#}.</li>
+              <li>Can cause {#link|Division by Zero#} for floats in {#link|FloatMode.optimized Mode|Floating Point Operations#}.</li>
               <li>Signed or floating-point operands must be comptime-known and positive. In other cases, use
                 {#link|@rem#} or
                 {#link|@mod#} instead.
@@ -5423,10 +5423,10 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       <p>Changes the current scope's rules about how floating point operations are defined.</p>
       <ul>
         <li>
-            {#syntax#}Strict{#endsyntax#} (default) - Floating point operations follow strict IEEE compliance.
+            {#syntax#}.strict{#endsyntax#} (default) - Floating point operations follow strict IEEE compliance.
         </li>
         <li>
-            {#syntax#}Optimized{#endsyntax#} - Floating point operations may do all of the following:
+            {#syntax#}.optimized{#endsyntax#} - Floating point operations may do all of the following:
           <ul>
             <li>Assume the arguments and result are not NaN. Optimizations are required to retain legal behavior over NaNs, but the value of the result is undefined.</li>
             <li>Assume the arguments and result are not +/-Inf. Optimizations are required to retain legal behavior over +/-Inf, but the value of the result is undefined.</li>
@@ -5600,7 +5600,7 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       Note that {#syntax#}.Add{#endsyntax#} and {#syntax#}.Mul{#endsyntax#}
       reductions on integral types are wrapping; when applied on floating point
       types the operation associativity is preserved, unless the float mode is
-      set to {#syntax#}Optimized{#endsyntax#}.
+      set to {#syntax#}.optimized{#endsyntax#}.
       </p>
       {#code|test_reduce_builtin.zig#}
 
