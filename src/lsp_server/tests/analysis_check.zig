@@ -111,6 +111,7 @@ pub fn main(init: std.process.Init) Error!void {
             .wasi => try std.process.Preopens.init(arena),
             else => {},
         },
+        .disable_notifications = true,
     };
 
     if (builtin.target.os.tag == .wasi) {

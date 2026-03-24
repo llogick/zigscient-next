@@ -81,4 +81,7 @@ build_runner_path: ?[]const u8 = null,
 /// Path to a directory that will be used as zig's cache. Will default to `${KnownFolders.Cache}/zls`.
 global_cache_path: ?[]const u8 = null,
 
+/// Disable LSP Notifications
+disable_notifications: bool = false,
+
 // DO NOT EDIT

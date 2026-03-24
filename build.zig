@@ -1665,9 +1665,9 @@ fn cfgLspServer(
         } else {
             const update_source = b.addUpdateSourceFiles();
             gen_cmd.addArg("--generate-config");
-            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("Config.zig"), "src/Config.zig");
+            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("Config.zig"), "src/lsp_server/src/Config.zig");
             gen_cmd.addArg("--generate-schema");
-            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("schema.json"), "schema.json");
+            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("schema.json"), "src/lsp_server/schema.json");
             gen_step.dependOn(&update_source.step);
         }
     }

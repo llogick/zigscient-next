@@ -94,6 +94,7 @@ pub const Config = struct {
         .wasi => std.process.Preopens,
         else => void,
     },
+    disable_notifications: bool,
 };
 
 /// Represents a `build.zig`
@@ -920,7 +921,7 @@ pub const Handle = struct {
             }
         }
 
-        if (!send_noti) return;
+        if (!send_noti or ds.config.disable_notifications) return;
 
         roots_index_msg: {
             const config = build_file.tryLockConfig(ds.io) orelse break :roots_index_msg;
@@ -1218,6 +1219,7 @@ pub fn notifyProgressStart(
     message: []const u8,
 ) ?lsp.types.ProgressToken {
     if (!self.lsp_capabilities.supports_work_done_progress) return null;
+    if (self.config.disable_notifications) return null;
 
     const transport = self.transport orelse return null;
     const pn = self.progress_notifications[@intFromEnum(progress_notification_id)];
@@ -1274,6 +1276,8 @@ pub fn notifyProgressEnd(
     status: EndStatus,
 ) void {
     if (!self.lsp_capabilities.supports_work_done_progress) return;
+    if (self.config.disable_notifications) return;
+
     const transport = self.transport orelse return;
 
     const message = switch (status) {
