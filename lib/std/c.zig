@@ -94,13 +94,36 @@ pub const off_t = switch (native_os) {
     else => i64,
 };
 
+/// For use with `utimensat` and `futimens`.
+pub const UTIME = switch (native_os) {
+    .dragonfly, .freebsd, .illumos, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .wasi => struct {
+        pub const NOW: timespec = .{ .sec = 0, .nsec = -1 };
+        pub const OMIT: timespec = .{ .sec = 0, .nsec = -2 };
+    },
+    .emscripten => emscripten.UTIME,
+    .haiku => struct {
+        pub const NOW: timespec = .{ .sec = 0, .nsec = 1000000000 };
+        pub const OMIT: timespec = .{ .sec = 0, .nsec = 1000000001 };
+    },
+    .linux => linux.UTIME,
+    .netbsd => struct {
+        pub const NOW: timespec = .{ .sec = 0, .nsec = 0x3fffffff };
+        pub const OMIT: timespec = .{ .sec = 0, .nsec = 0x3ffffffe };
+    },
+    .openbsd, .serenity => struct {
+        pub const NOW: timespec = .{ .sec = 0, .nsec = -2 };
+        pub const OMIT: timespec = .{ .sec = 0, .nsec = -1 };
+    },
+    else => void,
+};
+
 pub const timespec = switch (native_os) {
     .linux => linux.timespec,
     .emscripten => emscripten.timespec,
     // lib/libc/include/wasm-wasi-musl/__struct_timespec.h
     .wasi => extern struct {
         sec: time_t,
-        nsec: isize,
+        nsec: c_long,
 
         pub fn fromTimestamp(tm: wasi.timestamp_t) timespec {
             const sec: wasi.timestamp_t = tm / 1_000_000_000;
@@ -115,73 +138,11 @@ pub const timespec = switch (native_os) {
             return @as(wasi.timestamp_t, @intCast(ts.sec * 1_000_000_000)) +
                 @as(wasi.timestamp_t, @intCast(ts.nsec));
         }
-
-        // lib/libc/include/wasm-wasi-musl/__header_sys_stat.h
-
-        /// For use with `utimensat` and `futimens`.
-        pub const NOW: timespec = .{
-            .sec = 0,
-            .nsec = -1,
-        };
-
-        /// For use with `utimensat` and `futimens`.
-        pub const OMIT: timespec = .{
-            .sec = 0,
-            .nsec = -2,
-        };
     },
     // https://github.com/SerenityOS/serenity/blob/0a78056453578c18e0a04a0b45ebfb1c96d59005/Kernel/API/POSIX/time.h#L17-L20
-    .windows, .serenity => extern struct {
+    .dragonfly, .freebsd, .netbsd, .openbsd, .illumos, .haiku, .serenity, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .windows => extern struct {
         sec: time_t,
         nsec: c_long,
-    },
-    .dragonfly, .freebsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => extern struct {
-        sec: isize,
-        nsec: isize,
-
-        /// For use with `utimensat` and `futimens`.
-        pub const NOW: timespec = .{
-            .sec = 0,
-            .nsec = -1,
-        };
-
-        /// For use with `utimensat` and `futimens`.
-        pub const OMIT: timespec = .{
-            .sec = 0,
-            .nsec = -2,
-        };
-    },
-    .netbsd, .illumos => extern struct {
-        sec: i64,
-        nsec: isize,
-
-        /// For use with `utimensat` and `futimens`.
-        pub const NOW: timespec = .{
-            .sec = 0,
-            .nsec = 0x3fffffff,
-        };
-
-        /// For use with `utimensat` and `futimens`.
-        pub const OMIT: timespec = .{
-            .sec = 0,
-            .nsec = 0x3ffffffe,
-        };
-    },
-    .openbsd, .haiku => extern struct {
-        sec: time_t,
-        nsec: isize,
-
-        /// For use with `utimensat` and `futimens`.
-        pub const NOW: timespec = .{
-            .sec = 0, // ignored
-            .nsec = -2,
-        };
-
-        /// For use with `utimensat` and `futimens`.
-        pub const OMIT: timespec = .{
-            .sec = 0, // ignored
-            .nsec = -1,
-        };
     },
     else => void,
 };
@@ -4128,7 +4089,7 @@ pub const in6_pktinfo = switch (native_os) {
 };
 pub const itimerspec = switch (native_os) {
     .linux => linux.itimerspec,
-    .haiku => extern struct {
+    .dragonfly, .freebsd, .netbsd, .openbsd, .haiku, .illumos, .windows, .wasi => extern struct {
         interval: timespec,
         value: timespec,
     },
@@ -7037,18 +6998,19 @@ pub const stack_t = switch (native_os) {
 };
 pub const time_t = switch (native_os) {
     .linux => linux.time_t,
+    .dragonfly, .illumos, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => c_long,
     .emscripten => emscripten.time_t,
-    .haiku, .dragonfly => isize,
-    // lib/libc/include/wasm-wasi-musl/__typedef_time_t.h
+    .freebsd, .haiku => if (native_arch == .x86) c_int else c_longlong,
     // https://github.com/SerenityOS/serenity/blob/b98f537f117b341788023ab82e0c11ca9ae29a57/Kernel/API/POSIX/sys/types.h#L47
-    else => i64,
+    // lib/libc/include/wasm-wasi-musl/__typedef_time_t.h
+    .netbsd, .openbsd, .serenity, .wasi => c_longlong,
+    else => void,
 };
 pub const suseconds_t = switch (native_os) {
+    .dragonfly, .freebsd, .openbsd, .illumos => c_long,
+    .netbsd, .haiku, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => c_int,
     // https://github.com/SerenityOS/serenity/blob/b98f537f117b341788023ab82e0c11ca9ae29a57/Kernel/API/POSIX/sys/types.h#L49
-    .illumos, .serenity => i64,
-    .freebsd, .dragonfly => c_long,
-    .netbsd => c_int,
-    .haiku => i32,
+    .serenity, .wasi => c_longlong,
     else => void,
 };
 
@@ -7059,32 +7021,20 @@ pub const timeval = switch (native_os) {
         sec: c_long,
         usec: c_long,
     },
-    .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => extern struct {
-        sec: c_long,
-        usec: i32,
-    },
     // https://github.com/SerenityOS/serenity/blob/6b6eca0631c893c5f8cfb8274cdfe18e2d0637c0/Kernel/API/POSIX/sys/time.h#L15-L18
-    .dragonfly, .netbsd, .freebsd, .illumos, .serenity => extern struct {
+    .dragonfly, .freebsd, .netbsd, .openbsd, .haiku, .illumos, .serenity, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .wasi => extern struct {
         /// seconds
         sec: time_t,
         /// microseconds
         usec: suseconds_t,
-    },
-    .openbsd => extern struct {
-        sec: time_t,
-        usec: c_long,
     },
     else => void,
 };
 pub const timezone = switch (native_os) {
     .linux => linux.timezone,
     .emscripten => emscripten.timezone,
-    .openbsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => extern struct {
-        minuteswest: i32,
-        dsttime: i32,
-    },
     // https://github.com/SerenityOS/serenity/blob/ba776390b5878ec0be1a9e595a3471a6cfe0a0cf/Userland/Libraries/LibC/sys/time.h#L19-L22
-    .serenity => extern struct {
+    .dragonfly, .freebsd, .netbsd, .openbsd, .haiku, .illumos, .serenity, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .windows, .wasi => extern struct {
         minuteswest: c_int,
         dsttime: c_int,
     },

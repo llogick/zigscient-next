@@ -14242,8 +14242,8 @@ fn timestampToPosix(nanoseconds: i96) posix.timespec {
 
 pub fn setTimestampToPosix(set_ts: File.SetTimestamp) posix.timespec {
     return switch (set_ts) {
-        .unchanged => .OMIT,
-        .now => .NOW,
+        .unchanged => posix.UTIME.OMIT,
+        .now => posix.UTIME.NOW,
         .new => |t| timestampToPosix(t.nanoseconds),
     };
 }

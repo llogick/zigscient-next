@@ -174,6 +174,7 @@ pub const timespec = system.timespec;
 pub const timestamp_t = system.timestamp_t;
 pub const timeval = system.timeval;
 pub const timezone = system.timezone;
+pub const UTIME = system.UTIME;
 pub const uid_t = system.uid_t;
 pub const user_desc = system.user_desc;
 pub const utsname = system.utsname;
