@@ -3238,15 +3238,15 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
             // cache manifest must not be written.
             if (anyErrors(comp)) return;
 
-            // Failure here only means an unnecessary cache miss.
-            man.writeManifest() catch |err| {
-                log.warn("failed to write cache manifest: {s}", .{@errorName(err)});
-            };
-
             if (comp.bin_file) |lf| {
                 lf.destroy();
                 comp.bin_file = null;
             }
+
+            // Failure here only means an unnecessary cache miss.
+            man.writeManifest() catch |err| {
+                log.warn("failed to write cache manifest: {s}", .{@errorName(err)});
+            };
 
             assert(whole.lock == null);
             whole.lock = man.toOwnedLock();
