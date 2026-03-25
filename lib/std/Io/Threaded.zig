@@ -11448,7 +11448,7 @@ fn clockResolution(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.ResolutionEr
                 // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/ns-ntddk-kuser_shared_data
                 // https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/ntexapi_x/kuser_shared_data/index.htm
                 var qpf: windows.LARGE_INTEGER = undefined;
-                if (windows.ntdll.RtlQueryPerformanceFrequency(&qpf).toBool()) {
+                if (!windows.ntdll.RtlQueryPerformanceFrequency(&qpf).toBool()) {
                     recoverableOsBugDetected();
                     return .zero;
                 }
@@ -17677,7 +17677,8 @@ fn timeoutToWindowsInterval(timeout: Io.Timeout) ?windows.LARGE_INTEGER {
                 .duration => |d| nowWindows(clock).addDuration(d.raw),
                 .deadline => |d| d.raw,
             };
-            return @intCast(@max(@divTrunc(deadline.nanoseconds, 100), 0));
+            const epoch_ns = std.time.epoch.windows * std.time.ns_per_s;
+            return @intCast(@max(@divTrunc(deadline.nanoseconds - epoch_ns, 100), 0));
         },
         .awake, .boot => {
             const duration = switch (timeout) {
