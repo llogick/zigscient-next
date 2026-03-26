@@ -1474,6 +1474,8 @@ pub const ClangPreprocessorMode = enum {
     stdout,
     /// precompiled C header
     pch,
+    /// `--version`
+    version,
 };
 
 pub const Framework = link.File.MachO.Framework;
@@ -2944,16 +2946,16 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
                     .none => unreachable,
                     .manifest_create, .manifest_read, .manifest_lock => |e| return comp.setMiscFailure(
                         .check_whole_cache,
-                        "failed to check cache: {s} {s}",
-                        .{ @tagName(man.diagnostic), @errorName(e) },
+                        "failed to check cache: {t} {t}",
+                        .{ man.diagnostic, e },
                     ),
                     .file_open, .file_stat, .file_read, .file_hash => |op| {
                         const pp = man.files.keys()[op.file_index].prefixed_path;
                         const prefix = man.cache.prefixes()[pp.prefix];
                         return comp.setMiscFailure(
                             .check_whole_cache,
-                            "failed to check cache: '{f}{s}' {s} {s}",
-                            .{ prefix, pp.sub_path, @tagName(man.diagnostic), @errorName(op.err) },
+                            "failed to check cache: '{f}{s}' {t} {t}",
+                            .{ prefix, pp.sub_path, man.diagnostic, op.err },
                         );
                     },
                 },
@@ -5750,6 +5752,7 @@ fn updateCObject(comp: *Compilation, c_object: *CObject, c_obj_prog_node: std.Pr
                 .yes => argv.appendSliceAssumeCapacity(&.{ "-E", "-o", out_obj_path }),
                 .pch => argv.appendSliceAssumeCapacity(&.{ "-Xclang", "-emit-pch", "-o", out_obj_path }),
                 .stdout => argv.appendAssumeCapacity("-E"),
+                .version => argv.appendAssumeCapacity("--version"),
             }
 
             if (comp.emit_asm != null) {
@@ -5793,6 +5796,7 @@ fn updateCObject(comp: *Compilation, c_object: *CObject, c_obj_prog_node: std.Pr
             .yes => argv.appendSliceAssumeCapacity(&.{ "-E", "-o", out_obj_path }),
             .pch => argv.appendSliceAssumeCapacity(&.{ "-Xclang", "-emit-pch", "-o", out_obj_path }),
             .stdout => argv.appendAssumeCapacity("-E"),
+            .version => argv.appendAssumeCapacity("--version"),
         }
         if (out_diag_path) |diag_file_path| {
             argv.appendSliceAssumeCapacity(&.{ "--serialize-diagnostics", diag_file_path });
@@ -5841,8 +5845,10 @@ fn updateCObject(comp: *Compilation, c_object: *CObject, c_obj_prog_node: std.Pr
                         if (code != 0) {
                             std.process.exit(code);
                         }
-                        if (comp.clang_preprocessor_mode == .stdout)
-                            std.process.exit(0);
+                        switch (comp.clang_preprocessor_mode) {
+                            .stdout, .version => std.process.exit(0),
+                            else => {},
+                        }
                     },
                     else => std.process.abort(),
                 }
@@ -5890,11 +5896,10 @@ fn updateCObject(comp: *Compilation, c_object: *CObject, c_obj_prog_node: std.Pr
                     return comp.failCObj(c_object, "clang exited with code {d}", .{exit_code});
                 }
             }
-            if (comp.clang_passthrough_mode and
-                comp.clang_preprocessor_mode == .stdout)
-            {
-                std.process.exit(0);
-            }
+            if (comp.clang_passthrough_mode) switch (comp.clang_preprocessor_mode) {
+                .stdout, .version => std.process.exit(0),
+                else => {},
+            };
         }
 
         if (out_dep_path) |dep_file_path| {

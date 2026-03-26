@@ -590,6 +590,10 @@ const known_options = [_]KnownOpt{
         .name = "dynamic",
         .ident = "dynamic",
     },
+    .{
+        .name = "version",
+        .ident = "version",
+    },
 };
 
 const blacklisted_options = [_][]const u8{};

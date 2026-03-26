@@ -1121,6 +1121,7 @@ pub const ClangCliParam = struct {
         rtlib,
         static,
         dynamic,
+        version,
     };
 
     pub fn matchEql(self: @This(), arg: []const u8) u2 {
