@@ -128,6 +128,9 @@ pub const Graph = struct {
     random_seed: u32 = 0,
     dependency_cache: InitializedDepMap = .empty,
     allow_so_scripts: ?bool = null,
+    /// Steps should use `io` to limit the number of jobs, however in the case of
+    /// a single step spawning a fixed number of processes this can be used.
+    max_jobs: ?u32 = null,
     time_report: bool,
     /// Similar to the `Io.Terminal.Mode` returned by `Io.lockStderr`, but also
     /// respects the '--color' flag.
