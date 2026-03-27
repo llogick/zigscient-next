@@ -36,6 +36,25 @@ const TestTarget = struct {
     // invocation. This could be because of a slow backend, requiring a newer LLVM version, being
     // too niche, etc.
     extra_target: bool = false,
+
+    pub fn supportsModule(
+        self: *const TestTarget,
+        target: *const std.Build.ResolvedTarget,
+        name: []const u8,
+    ) bool {
+        if (mem.eql(u8, name, "zigc")) {
+            if (target.result.isMuslLibC()) return self.linkage == .static or (self.linkage == null and !target.query.isNative());
+            if (target.result.isMinGW()) return true;
+            if (target.result.isWasiLibC()) return true;
+            return false;
+        }
+        if (mem.eql(u8, name, "std")) {
+            if (target.result.cpu.arch.isSpirV()) return false;
+            return true;
+        }
+
+        return true;
+    }
 };
 
 const test_targets = blk: {
@@ -1463,7 +1482,6 @@ const test_targets = blk: {
         //    }) catch unreachable,
         //    .use_llvm = false,
         //    .use_lld = false,
-        //    .skip_modules = &.{ "c-import", "zigc", "std" },
         //},
 
         // WASI Targets
@@ -2355,8 +2373,12 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
             },
         };
         const resolved_target = b.resolveTargetQuery(test_target.target);
-        const triple_txt = resolved_target.query.zigTriple(b.allocator) catch @panic("OOM");
-        addOneModuleTest(b, step, test_target, &resolved_target, triple_txt, options);
+
+        if (test_target.supportsModule(&resolved_target, options.name)) {
+            const triple_txt = resolved_target.query.zigTriple(b.allocator) catch @panic("OOM");
+            addOneModuleTest(b, step, test_target, &resolved_target, triple_txt, options);
+        }
+
         return step;
     }
 
@@ -2368,23 +2390,15 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
         }
 
         const resolved_target = b.resolveTargetQuery(test_target.target);
-        const target = &resolved_target.result;
 
-        if (test_target.link_libc == false and target.requiresLibC()) continue;
-        // If the target requires libc, there's no point building the cases that
-        // don't explicitly link libc as they'll just end up actually linking
-        // libc anyway, thus creating duplicate work and making -Dskip-libc not
-        // work as expected.
-        if (test_target.link_libc == null and target.requiresLibC()) continue;
-        // These targets don't strictly require libc, but we don't yet have a
-        // syscall layer for them, so the compiler links libc by default. They
-        // therefore get the same treatment here.
-        if (test_target.link_libc == null and (target.os.tag == .freebsd or target.os.tag == .netbsd)) continue;
+        if (!test_target.supportsModule(&resolved_target, options.name)) continue;
 
         if (!options.test_extra_targets and test_target.extra_target) continue;
 
         if (options.skip_non_native and !test_target.target.isNative())
             continue;
+
+        const target = &resolved_target.result;
 
         if (options.skip_spirv and target.cpu.arch.isSpirV()) continue;
         if (options.skip_wasm and target.cpu.arch.isWasm()) continue;
