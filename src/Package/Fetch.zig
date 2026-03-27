@@ -783,7 +783,7 @@ fn runResource(
         const hash_tok = f.hash_tok.unwrap().?;
         if (!computed_package_hash.eql(&declared_hash)) {
             return f.fail(hash_tok, try eb.printString(
-                "hash mismatch: manifest declares '{s}' but the fetched package has '{s}'",
+                "hash mismatch: manifest declares {s} but the fetched package has {s}",
                 .{ declared_hash.toSlice(), computed_package_hash.toSlice() },
             ));
         }
