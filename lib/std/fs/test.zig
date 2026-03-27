@@ -1665,6 +1665,8 @@ fn expectFileContents(io: Io, dir: Dir, file_path: []const u8, data: []const u8)
 }
 
 test "AtomicFile" {
+    if (native_os == .windows) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31389
+
     try testWithAllSupportedPathTypes(struct {
         fn impl(ctx: *TestContext) !void {
             const io = ctx.io;
