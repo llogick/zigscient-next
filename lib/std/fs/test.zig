@@ -2043,8 +2043,8 @@ test "walker without fully iterating" {
 }
 
 test "'.' and '..' in Dir functions" {
-    if (native_os == .windows and builtin.cpu.arch == .aarch64) {
-        // https://github.com/ziglang/zig/issues/17134
+    if (native_os == .windows) {
+        // https://codeberg.org/ziglang/zig/issues/31561
         return error.SkipZigTest;
     }
 
