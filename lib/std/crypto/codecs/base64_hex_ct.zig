@@ -304,7 +304,7 @@ pub const base64 = struct {
         return (lt(x, 26) & (x +% 'A')) |
             (ge(x, 26) & lt(x, 52) & (x +% 'a' -% 26)) |
             (ge(x, 52) & lt(x, 62) & (x +% '0' -% 52)) |
-            (eq(x, 62) & '+') | (eq(x, 63) & if (urlsafe) '_' else '/');
+            (eq(x, 62) & if (urlsafe) '-' else '+') | (eq(x, 63) & if (urlsafe) '_' else '/');
     }
 
     fn byteFromChar(c: u8, comptime urlsafe: bool) u8 {
@@ -312,7 +312,7 @@ pub const base64 = struct {
             (ge(c, 'A') & le(c, 'Z') & (c -% 'A')) |
             (ge(c, 'a') & le(c, 'z') & (c -% 'a' +% 26)) |
             (ge(c, '0') & le(c, '9') & (c -% '0' +% 52)) |
-            (eq(c, '+') & 62) | (eq(c, if (urlsafe) '_' else '/') & 63);
+            (eq(c, if (urlsafe) '-' else '+') & 62) | (eq(c, if (urlsafe) '_' else '/') & 63);
         return x | (eq(x, 0) & ~eq(c, 'A'));
     }
 
@@ -451,6 +451,16 @@ test "hex with ignored chars" {
     try testing.expectError(error.InvalidCharacter, hex.decode(&bin_buf, encoded));
     const bin = try (try hex.decoderWithIgnore("\r\n")).decode(&bin_buf, encoded);
     try testing.expectEqualSlices(u8, &expected, bin);
+}
+
+test "base64 urlsafe" {
+    const input = [_]u8{ 0xfb, 0xff };
+    var enc_buf: [4]u8 = undefined;
+    var dec_buf: [2]u8 = undefined;
+    const encoded = try base64.encode(&enc_buf, &input, .urlsafe);
+    try testing.expectEqualSlices(u8, "-_8=", encoded);
+    const decoded = try base64.decode(&dec_buf, encoded, .urlsafe);
+    try testing.expectEqualSlices(u8, &input, decoded);
 }
 
 test "base64 with ignored chars" {
