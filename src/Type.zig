@@ -1594,7 +1594,7 @@ pub fn unionTagFieldIndex(ty: Type, enum_tag: Value, zcu: *const Zcu) ?u32 {
     return zcu.unionTagFieldIndex(union_obj, enum_tag);
 }
 
-pub fn unionHasAllZeroBitFieldTypes(ty: Type, zcu: *Zcu) bool {
+pub fn unionHasAllZeroBitFieldTypes(ty: Type, zcu: *const Zcu) bool {
     assertHasLayout(ty, zcu);
     const ip = &zcu.intern_pool;
     const union_obj = zcu.typeToUnion(ty).?;

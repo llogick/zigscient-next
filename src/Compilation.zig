@@ -2493,7 +2493,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
 
         if (use_llvm) {
             if (opt_zcu) |zcu| {
-                zcu.llvm_object = try LlvmObject.create(arena, comp);
+                zcu.llvm_object = try LlvmObject.create(arena, zcu);
             }
         }
 

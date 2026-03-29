@@ -328,7 +328,9 @@ fn initSubsections(self: *Object, allocator: Allocator, nlists: anytype) !void {
         if (isPtrLiteral(sect)) continue;
 
         const nlist_start = for (nlists, 0..) |nlist, i| {
-            if (nlist.nlist.n_sect - 1 == n_sect) break i;
+            // We must ignore `alt_entry` (N_ALT_ENTRY) symbols here, because that flag indicates
+            // that a symbol should *not* split subsections.
+            if (nlist.nlist.n_sect - 1 == n_sect and !nlist.nlist.n_desc.alt_entry) break i;
         } else nlists.len;
         const nlist_end = for (nlists[nlist_start..], nlist_start..) |nlist, i| {
             if (nlist.nlist.n_sect - 1 != n_sect) break i;
@@ -359,9 +361,24 @@ fn initSubsections(self: *Object, allocator: Allocator, nlists: anytype) !void {
             const alias_start = idx;
             const nlist = nlists[alias_start];
 
-            while (idx < nlist_end and
-                nlists[idx].nlist.n_value == nlist.nlist.n_value) : (idx += 1)
-            {}
+            // Skip past any symbols which shouldn't terminate this subsection.
+            while (true) {
+                idx += 1;
+                if (idx == nlist_end) {
+                    // This subsection contains the full remainder of the section.
+                    break;
+                }
+                if (nlists[idx].nlist.n_value == nlist.nlist.n_value) {
+                    // Multiple symbols at the same address---don't create zero-length subsections.
+                    continue;
+                }
+                if (nlists[idx].nlist.n_desc.alt_entry) {
+                    // N_ALT_ENTRY indicates that this symbol does not split subsections, and is
+                    // instead an "alternate entry point" into an existing subsection.
+                    continue;
+                }
+                break;
+            }
 
             const size = if (idx < nlist_end)
                 nlists[idx].nlist.n_value - nlist.nlist.n_value
@@ -385,7 +402,9 @@ fn initSubsections(self: *Object, allocator: Allocator, nlists: anytype) !void {
             });
 
             for (alias_start..idx) |i| {
-                self.symtab.items(.size)[nlists[i].idx] = size;
+                if (!nlists[i].nlist.n_desc.alt_entry) {
+                    self.symtab.items(.size)[nlists[i].idx] = size;
+                }
             }
         }
 

@@ -3858,10 +3858,6 @@ pub fn buildOutputType(
         fatal("--debug-incremental requires -fincremental", .{});
     }
 
-    if (incremental and cs.create_module.resolved_options.use_llvm) {
-        warn("-fincremental is currently unsupported by the LLVM backend; crashes or miscompilations are likely", .{});
-    }
-
     cs.cache_mode = b: {
         // Once incremental compilation is the default, we'll want some smarter logic here,
         // considering things like the backend in use and whether there's a ZCU.

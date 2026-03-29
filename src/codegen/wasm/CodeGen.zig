@@ -303,7 +303,7 @@ fn resolveInst(cg: *CodeGen, ref: Air.Inst.Ref) InnerError!WValue {
 
     const pt = cg.pt;
     const zcu = pt.zcu;
-    const val = (try cg.air.value(ref, pt)).?;
+    const val: Value = .fromInterned(ref.toInterned().?);
     const ty = cg.typeOf(ref);
     if (!ty.hasRuntimeBits(zcu) and !ty.isInt(zcu) and !ty.isError(zcu)) {
         gop.value_ptr.* = .none;
@@ -1718,7 +1718,7 @@ fn genInst(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         .cmp_neq => cg.airCmp(inst, .neq),
 
         .cmp_vector => cg.airCmpVector(inst),
-        .cmp_lt_errors_len => cg.airCmpLtErrorsLen(inst),
+        .cmp_lte_errors_len => cg.airCmpLteErrorsLen(inst),
 
         .array_elem_val => cg.airArrayElemVal(inst),
         .array_to_slice => cg.airArrayToSlice(inst),
@@ -2006,7 +2006,7 @@ fn airCall(cg: *CodeGen, inst: Air.Inst.Index, modifier: std.builtin.CallModifie
     const first_param_sret = firstParamSRet(fn_info.cc, Type.fromInterned(fn_info.return_type), zcu, cg.target);
 
     const callee: ?InternPool.Nav.Index = blk: {
-        const func_val = (try cg.air.value(call.callee, pt)) orelse break :blk null;
+        const func_val: Value = .fromInterned(call.callee.toInterned() orelse break :blk null);
 
         switch (ip.indexToKey(func_val.toIntern())) {
             inline .func, .@"extern" => |x| break :blk x.owner_nav,
@@ -4464,7 +4464,7 @@ fn lowerConstant(cg: *CodeGen, val: Value) InnerError!WValue {
             .vector_type => {
                 assert(determineSimdStoreStrategy(ty, zcu, cg.target) == .direct);
                 var buf: [16]u8 = undefined;
-                val.writeToMemory(pt, &buf) catch unreachable;
+                val.writeToMemory(zcu, &buf) catch unreachable;
                 return cg.storeSimdImmd(buf);
             },
             .struct_type => unreachable, // packed structs use `bitpack`
@@ -4841,7 +4841,7 @@ fn airCmpVector(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     return cg.fail("TODO implement airCmpVector for wasm", .{});
 }
 
-fn airCmpLtErrorsLen(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
+fn airCmpLteErrorsLen(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const un_op = cg.air.instructions.items(.data)[@intFromEnum(inst)].un_op;
     const operand = try cg.resolveInst(un_op);
 

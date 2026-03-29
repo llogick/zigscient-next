@@ -2413,6 +2413,19 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
         const would_use_llvm = wouldUseLlvm(test_target.use_llvm, test_target.target, test_target.optimize_mode);
         if (options.skip_llvm and would_use_llvm) continue;
 
+        if (would_use_llvm and (mem.eql(u8, options.name, "compiler-rt") or mem.eql(u8, options.name, "zigc"))) {
+            switch (test_target.optimize_mode) {
+                .Debug, .ReleaseSafe => {
+                    // LLVM 21 is affected by multiple bugs in safe builds of compiler-rt:
+                    // * https://codeberg.org/ziglang/zig/issues/31701
+                    // * https://codeberg.org/ziglang/zig/issues/31702
+                    // ...so for now, skip these tests.
+                    continue;
+                },
+                .ReleaseSmall, .ReleaseFast => {},
+            }
+        }
+
         const triple_txt = resolved_target.query.zigTriple(b.allocator) catch @panic("OOM");
 
         if (options.test_target_filters.len > 0) {
@@ -2487,7 +2500,7 @@ fn addOneModuleTest(
         .zig_lib_dir = b.path("lib"),
     });
     these_tests.linkage = test_target.linkage;
-    if (options.no_builtin) these_tests.root_module.no_builtin = false;
+    if (options.no_builtin) these_tests.root_module.no_builtin = true;
     if (options.build_options) |build_options| {
         these_tests.root_module.addOptions("build_options", build_options);
     }
@@ -2634,12 +2647,19 @@ pub fn wouldUseLlvm(use_llvm: ?bool, query: std.Target.Query, optimize_mode: Opt
     }
     const cpu_arch = query.cpu_arch orelse builtin.cpu.arch;
     const os_tag = query.os_tag orelse builtin.os.tag;
+    const ofmt: std.Target.ObjectFormat = query.ofmt orelse .default(os_tag, cpu_arch);
     switch (cpu_arch) {
-        .x86_64 => if (os_tag.isBSD() or os_tag == .illumos or std.Target.ptrBitWidth_arch_abi(cpu_arch, query.abi orelse .none) != 64) return true,
+        .x86_64 => {
+            if (std.Target.ptrBitWidth_arch_abi(cpu_arch, query.abi orelse .none) != 64) return true;
+            if (os_tag.isBSD() or os_tag == .illumos) return true;
+            return switch (ofmt) {
+                .elf, .macho => return false,
+                else => return true,
+            };
+        },
         .spirv32, .spirv64 => return false,
         else => return true,
     }
-    return false;
 }
 
 const CAbiTestOptions = struct {

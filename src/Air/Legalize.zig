@@ -884,7 +884,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
             .field_parent_ptr,
             .wasm_memory_size,
             .wasm_memory_grow,
-            .cmp_lt_errors_len,
+            .cmp_lte_errors_len,
             .err_return_trace,
             .set_err_return_trace,
             .addrspace_cast,

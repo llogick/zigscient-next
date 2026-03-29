@@ -172921,7 +172921,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 try ops[0].finish(inst, &.{field_parent_ptr.field_ptr}, &ops, cg);
             },
             .wasm_memory_size, .wasm_memory_grow => unreachable,
-            .cmp_lt_errors_len => |air_tag| {
+            .cmp_lte_errors_len => |air_tag| {
                 const un_op = air_datas[@intFromEnum(inst)].un_op;
                 var ops = try cg.tempsFromOperands(inst, .{un_op});
                 var res: [1]Temp = undefined;
@@ -176185,8 +176185,8 @@ fn genCall(self: *CodeGen, info: union(enum) {
     // Due to incremental compilation, how function calls are generated depends
     // on linking.
     switch (info) {
-        .air => |callee| if (try self.air.value(callee, pt)) |func_value| {
-            const func_key = ip.indexToKey(func_value.ip_index);
+        .air => |callee| if (callee.toInterned()) |func_ip_index| {
+            const func_key = ip.indexToKey(func_ip_index);
             switch (switch (func_key) {
                 else => func_key,
                 .ptr => |ptr| if (ptr.byte_offset == 0) switch (ptr.base_addr) {
