@@ -109,6 +109,10 @@ pub fn create(owner: *std.Build, options: Options) *ConfigHeader {
     return config_header;
 }
 
+pub fn addIdent(config_header: *ConfigHeader, name: []const u8, value: []const u8) void {
+    config_header.values.put(name, .{ .ident = value }) catch @panic("OOM");
+}
+
 pub fn addValue(config_header: *ConfigHeader, name: []const u8, comptime T: type, value: T) void {
     return addValueInner(config_header, name, T, value) catch @panic("OOM");
 }
