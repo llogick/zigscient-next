@@ -611,14 +611,20 @@ fn airCall(self: *FuncGen, inst: Air.Inst.Index, modifier: std.builtin.CallModif
         .no_suspend, .always_inline, .compile_time => unreachable,
     }
 
-    const ret_ptr = if (!sret) null else blk: {
+    const ret_ptr = if (sret) ret_ptr: {
         const llvm_ret_ty = try o.lowerType(return_type);
         try attributes.addParamAttr(0, .{ .sret = llvm_ret_ty }, &o.builder);
 
         const alignment = return_type.abiAlignment(zcu).toLlvm();
         const ret_ptr = try self.buildAlloca(llvm_ret_ty, alignment);
         try llvm_args.append(ret_ptr);
-        break :blk ret_ptr;
+        break :ret_ptr ret_ptr;
+    } else ret_ptr: {
+        if (ccAbiPromoteInt(fn_info.cc, zcu, Type.fromInterned(fn_info.return_type))) |s| switch (s) {
+            .signed => try attributes.addRetAttr(.signext, &o.builder),
+            .unsigned => try attributes.addRetAttr(.zeroext, &o.builder),
+        };
+        break :ret_ptr null;
     };
 
     const err_return_tracing = fn_info.cc == .auto and zcu.comp.config.any_error_tracing;

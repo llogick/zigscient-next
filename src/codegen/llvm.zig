@@ -1259,11 +1259,6 @@ pub const Object = struct {
         defer if (deinit_wip) wip.deinit();
         wip.cursor = .{ .block = try wip.block(0, "Entry") };
 
-        if (ccAbiPromoteInt(fn_info.cc, zcu, Type.fromInterned(fn_info.return_type))) |s| switch (s) {
-            .signed => try attributes.addRetAttr(.signext, &o.builder),
-            .unsigned => try attributes.addRetAttr(.zeroext, &o.builder),
-        };
-
         // This is the list of args we will use that correspond directly to the AIR arg
         // instructions. Depending on the calling convention, this list is not necessarily
         // a bijection with the actual LLVM parameters of the function.
@@ -2812,7 +2807,11 @@ pub const Object = struct {
             const raw_llvm_ret_ty = try o.lowerType(.fromInterned(fn_info.return_type));
             try attributes.addParamAttr(it.llvm_index, .{ .sret = raw_llvm_ret_ty }, &o.builder);
             it.llvm_index += 1;
-        }
+        } else if (ccAbiPromoteInt(fn_info.cc, zcu, Type.fromInterned(fn_info.return_type))) |s| switch (s) {
+            .signed => try attributes.addRetAttr(.signext, &o.builder),
+            .unsigned => try attributes.addRetAttr(.zeroext, &o.builder),
+        };
+
         const err_return_tracing = fn_info.cc == .auto and zcu.comp.config.any_error_tracing;
         if (err_return_tracing) {
             try attributes.addParamAttr(it.llvm_index, .nonnull, &o.builder);
