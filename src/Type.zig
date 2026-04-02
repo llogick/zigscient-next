@@ -3186,6 +3186,7 @@ pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool 
             };
         },
         .@"struct" => {
+            if (ty.isTuple(zcu)) return false;
             const struct_obj = zcu.intern_pool.loadStructType(ty.toIntern());
             return switch (struct_obj.layout) {
                 .auto => false,

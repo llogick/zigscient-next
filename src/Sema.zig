@@ -25264,6 +25264,10 @@ pub fn explainWhyTypeIsNotExtern(
             }
         },
         .@"struct" => {
+            if (ty.isTuple(zcu)) {
+                return sema.errNote(src_loc, msg, "tuples have no guaranteed in-memory representation", .{});
+            }
+
             const struct_obj = zcu.intern_pool.loadStructType(ty.toIntern());
             switch (struct_obj.layout) {
                 .auto => try sema.errNote(src_loc, msg, "struct with automatic layout has no guaranteed in-memory representation", .{}),
