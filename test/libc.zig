@@ -22,7 +22,7 @@ pub fn addCases(cases: *tests.LibcContext) void {
     cases.addLibcTestCase("functional/memstream.c", true, .{});
     // "functional/mntent.c": https://www.openwall.com/lists/musl/2024/10/22/1
     cases.addLibcTestCase("functional/popen.c", false, .{});
-    cases.addLibcTestCase("functional/pthread_cancel-points.c", false, .{});
+    // cases.addLibcTestCase("functional/pthread_cancel-points.c", false, .{}); - racey if multiple instances of the test run concurrently.
     cases.addLibcTestCase("functional/pthread_cancel.c", false, .{});
     cases.addLibcTestCase("functional/pthread_cond.c", false, .{});
     cases.addLibcTestCase("functional/pthread_mutex.c", false, .{});
