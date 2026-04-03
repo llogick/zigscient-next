@@ -35,32 +35,32 @@ comptime {
     }
 
     if (builtin.target.isMinGW() or builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
-        symbol(&coshf, "coshf");
         symbol(&frexpf, "frexpf");
         symbol(&frexpl, "frexpl");
         symbol(&hypotf, "hypotf");
         symbol(&hypotl, "hypotl");
-        symbol(&modff, "modff");
         symbol(&modfl, "modfl");
-        symbol(&nan, "nan");
-        symbol(&nanf, "nanf");
-        symbol(&nanl, "nanl");
-        symbol(&tanhf, "tanhf");
     }
 
-    if (builtin.target.isMinGW() or builtin.target.isMuslLibC()) {
-        symbol(&rint, "rint");
-        symbol(&rintf, "rintf");
+    if ((builtin.target.isMinGW() and @sizeOf(f64) != @sizeOf(c_longdouble)) or builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
+        symbol(&atanl, "atanl");
+        symbol(&copysignl, "copysignl");
+        symbol(&nanl, "nanl");
+    }
+
+    if ((builtin.target.isMinGW() and builtin.cpu.arch == .x86) or builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
+        symbol(&acosf, "acosf");
+        symbol(&atanf, "atanf");
+        symbol(&coshf, "coshf");
+        symbol(&modff, "modff");
+        symbol(&tanhf, "tanhf");
     }
 
     if (builtin.target.isMuslLibC() or builtin.target.isWasiLibC()) {
         symbol(&acos, "acos");
-        symbol(&acosf, "acosf");
         symbol(&acoshf, "acoshf");
         symbol(&asin, "asin");
         symbol(&atan, "atan");
-        symbol(&atanf, "atanf");
-        symbol(&atanl, "atanl");
         symbol(&cbrt, "cbrt");
         symbol(&cbrtf, "cbrtf");
         symbol(&cosh, "cosh");
@@ -74,6 +74,8 @@ comptime {
         symbol(&lrint, "lrint");
         symbol(&lrintf, "lrintf");
         symbol(&modf, "modf");
+        symbol(&nan, "nan");
+        symbol(&nanf, "nanf");
         symbol(&pow, "pow");
         symbol(&pow10, "pow10");
         symbol(&pow10f, "pow10f");
@@ -83,9 +85,9 @@ comptime {
     if (builtin.target.isMuslLibC()) {
         symbol(&copysign, "copysign");
         symbol(&copysignf, "copysignf");
+        symbol(&rint, "rint");
+        symbol(&rintf, "rintf");
     }
-
-    symbol(&copysignl, "copysignl");
 }
 
 fn acos(x: f64) callconv(.c) f64 {

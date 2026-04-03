@@ -31,7 +31,7 @@ pub fn addCases(cases: *tests.LibcContext) void {
     cases.addLibcTestCase("functional/pthread_tsd.c", false, .{});
     cases.addLibcTestCase("functional/qsort.c", true, .{});
     cases.addLibcTestCase("functional/random.c", true, .{});
-    cases.addLibcTestCase("functional/search_hsearch.c", false, .{}); // The test suite of wasi-libc runs this test case
+    cases.addLibcTestCase("functional/search_hsearch.c", true, .{});
     cases.addLibcTestCase("functional/search_insque.c", true, .{});
     cases.addLibcTestCase("functional/search_lsearch.c", true, .{});
     cases.addLibcTestCase("functional/search_tsearch.c", true, .{});
