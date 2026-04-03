@@ -613,8 +613,6 @@ const mingw32_generic_src = [_][]const u8{
     "math" ++ path.sep_str ++ "fpclassify.c",
     "math" ++ path.sep_str ++ "fpclassifyf.c",
     "math" ++ path.sep_str ++ "fpclassifyl.c",
-    "math" ++ path.sep_str ++ "frexpf.c",
-    "math" ++ path.sep_str ++ "frexpl.c",
     "math" ++ path.sep_str ++ "ldexpf.c",
     "math" ++ path.sep_str ++ "lgamma.c",
     "math" ++ path.sep_str ++ "lgammaf.c",
@@ -942,8 +940,6 @@ const mingw32_x86_src = [_][]const u8{
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "atan2l.c",
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "atanhl.c",
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "atanl.c",
-    "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "cosl.c",
-    "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "cosl_internal.S",
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "cossinl.c",
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "exp2l.S",
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "expl.c",
@@ -965,9 +961,6 @@ const mingw32_x86_src = [_][]const u8{
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "scalbn.S",
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "scalbnf.S",
     "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "scalbnl.S",
-    "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "sinl.c",
-    "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "sinl_internal.S",
-    "math" ++ path.sep_str ++ "x86" ++ path.sep_str ++ "tanl.S",
     // ucrtbase
     "math" ++ path.sep_str ++ "nextafterl.c",
     "math" ++ path.sep_str ++ "nexttoward.c",
@@ -987,22 +980,15 @@ const mingw32_x86_32_src = [_][]const u8{
 const mingw32_arm_src = [_][]const u8{
     // mingwex
     "math" ++ path.sep_str ++ "arm-common" ++ path.sep_str ++ "ldexpl.c",
-    "math" ++ path.sep_str ++ "arm-common" ++ path.sep_str ++ "sincosl.c",
 };
 
 const mingw32_arm32_src = [_][]const u8{
     // mingwex
     "math" ++ path.sep_str ++ "arm" ++ path.sep_str ++ "s_rint.c",
     "math" ++ path.sep_str ++ "arm" ++ path.sep_str ++ "s_rintf.c",
-    "math" ++ path.sep_str ++ "arm" ++ path.sep_str ++ "sincos.S",
 };
 
-const mingw32_arm64_src = [_][]const u8{
-    // mingwex
-    "math" ++ path.sep_str ++ "arm64" ++ path.sep_str ++ "rint.c",
-    "math" ++ path.sep_str ++ "arm64" ++ path.sep_str ++ "rintf.c",
-    "math" ++ path.sep_str ++ "arm64" ++ path.sep_str ++ "sincos.S",
-};
+const mingw32_arm64_src = [_][]const u8{};
 
 const mingw32_winpthreads_src = [_][]const u8{
     // winpthreads
