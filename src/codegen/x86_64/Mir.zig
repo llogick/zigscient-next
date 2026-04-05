@@ -1780,7 +1780,7 @@ pub const RegisterList = struct {
     const BitSet = std.bit_set.IntegerBitSet(32);
     const Self = @This();
 
-    pub const empty: RegisterList = .{ .bitset = .initEmpty() };
+    pub const empty: RegisterList = .{ .bitset = .empty };
 
     fn getIndexForReg(registers: []const Register, reg: Register) BitSet.MaskInt {
         for (registers, 0..) |cpreg, i| {

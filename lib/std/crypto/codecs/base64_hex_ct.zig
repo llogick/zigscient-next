@@ -93,7 +93,7 @@ pub const hex = struct {
     /// The decoder will skip any characters that are in the ignore list.
     /// The ignore list must not contain any valid hexadecimal characters.
     pub fn decoderWithIgnore(ignore_chars: []const u8) error{InvalidCharacter}!DecoderWithIgnore {
-        var ignored_chars = StaticBitSet(256).initEmpty();
+        var ignored_chars = StaticBitSet(256).empty;
         for (ignore_chars) |c| {
             switch (c) {
                 '0'...'9', 'a'...'f', 'A'...'F' => return error.InvalidCharacter,
@@ -269,7 +269,7 @@ pub const base64 = struct {
 
     /// Creates a new decoder that ignores certain characters.
     pub fn decoderWithIgnore(ignore_chars: []const u8) error{InvalidCharacter}!DecoderWithIgnore {
-        var ignored_chars = StaticBitSet(256).initEmpty();
+        var ignored_chars = StaticBitSet(256).empty;
         for (ignore_chars) |c| {
             switch (c) {
                 'A'...'Z', 'a'...'z', '0'...'9' => return error.InvalidCharacter,

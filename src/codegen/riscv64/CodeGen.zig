@@ -1386,7 +1386,7 @@ fn genBody(func: *Func, body: []const Air.Inst.Index) InnerError!void {
         const old_air_bookkeeping = func.air_bookkeeping;
         try func.ensureProcessDeathCapacity(Air.Liveness.bpi);
 
-        func.reused_operands = @TypeOf(func.reused_operands).initEmpty();
+        func.reused_operands = @TypeOf(func.reused_operands).empty;
         try func.inst_tracking.ensureUnusedCapacity(func.gpa, 1);
         const tag = air_tags[@intFromEnum(inst)];
         switch (tag) {

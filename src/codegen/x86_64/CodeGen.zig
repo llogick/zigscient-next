@@ -2298,7 +2298,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
         wip_mir_log.debug("{f}", .{cg.fmtAir(inst)});
         verbose_tracking_log.debug("{f}", .{cg.fmtTracking()});
 
-        cg.reused_operands = .initEmpty();
+        cg.reused_operands = .empty;
         try cg.inst_tracking.ensureUnusedCapacity(cg.gpa, 1);
         switch (air_tags[@intFromEnum(inst)]) {
             .select => try cg.airSelect(inst),
@@ -177417,7 +177417,7 @@ fn airAsm(self: *CodeGen, inst: Air.Inst.Index) !void {
             used: bool,
             fn init(size: ?Memory.Size) @This() {
                 return .{
-                    .op_has_size = if (size) |_| .initFull() else .initEmpty(),
+                    .op_has_size = if (size) |_| .full else .empty,
                     .size = size orelse .none,
                     .used = false,
                 };
@@ -178351,9 +178351,9 @@ fn genCopy(self: *CodeGen, ty: Type, dst_mcv: MCValue, src_mcv: MCValue, opts: C
                     else => unreachable,
                 },
                 dst_tag => |src_regs| {
-                    var remaining: std.StaticBitSet(dst_regs.len) = .initFull();
+                    var remaining: std.StaticBitSet(dst_regs.len) = .full;
                     var hazard_regs = src_regs;
-                    while (!remaining.eql(.initEmpty())) {
+                    while (!remaining.eql(.empty)) {
                         var remaining_it = remaining.iterator(.{});
                         next: while (remaining_it.next()) |index| {
                             const dst_reg = dst_regs[index];

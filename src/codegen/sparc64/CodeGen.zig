@@ -476,7 +476,7 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
         const old_air_bookkeeping = self.air_bookkeeping;
         try self.ensureProcessDeathCapacity(Air.Liveness.bpi);
 
-        self.reused_operands = @TypeOf(self.reused_operands).initEmpty();
+        self.reused_operands = @TypeOf(self.reused_operands).empty;
         switch (air_tags[@intFromEnum(inst)]) {
             // zig fmt: off
 
