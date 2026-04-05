@@ -692,14 +692,15 @@ test "read from a file using Batch.awaitAsync API" {
     var storage: [2]Io.Operation.Storage = undefined;
     var batch: Io.Batch = .init(&storage);
 
-    batch.addAt(0, .{ .file_read_streaming = .{
+    // Tests add API because this provides coverage for both add and addAt.
+    try testing.expectEqual(0, batch.add(.{ .file_read_streaming = .{
         .file = eyes_file,
         .data = &.{&eyes_buf},
-    } });
-    batch.addAt(1, .{ .file_read_streaming = .{
+    } }));
+    try testing.expectEqual(1, batch.add(.{ .file_read_streaming = .{
         .file = saviour_file,
         .data = &.{&saviour_buf},
-    } });
+    } }));
 
     // This API is supposed to *always* work even if the target has no
     // concurrency primitives available.

@@ -500,8 +500,8 @@ pub const Batch = struct {
     /// Returns the index that will be returned by `next` after the operation completes.
     /// Asserts that no more than `storage.len` operations are active at a time.
     pub fn add(batch: *Batch, operation: Operation) u32 {
-        const index = batch.unused.next;
-        batch.addAt(index.toIndex(), operation);
+        const index = batch.unused.head.toIndex();
+        batch.addAt(index, operation);
         return index;
     }
 
