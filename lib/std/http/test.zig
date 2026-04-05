@@ -1256,3 +1256,63 @@ test "redirect to different connection" {
         try expectEqualStrings("good job, you pass", body);
     }
 }
+
+test "boot failed connections from the pool" {
+    if (builtin.cpu.arch.isPowerPC64() and builtin.mode != .Debug) return error.SkipZigTest; // https://github.com/llvm/llvm-project/issues/171879
+    if (builtin.os.tag == .openbsd) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/30806
+
+    const io = std.testing.io;
+    const gpa = std.testing.allocator;
+
+    const test_server_orig = try createTestServer(io, struct {
+        fn run(test_server: *TestServer) anyerror!void {
+            const net_server = &test_server.net_server;
+            var recv_buffer: [500]u8 = undefined;
+            var send_buffer: [500]u8 = undefined;
+
+            accept: while (!test_server.shutting_down) {
+                var stream = try net_server.accept(io);
+                defer stream.close(io);
+
+                for (0..2) |i| {
+                    var connection_br = stream.reader(io, &recv_buffer);
+                    var connection_bw = stream.writer(io, &send_buffer);
+                    var server = http.Server.init(&connection_br.interface, &connection_bw.interface);
+                    var request = server.receiveHead() catch |err| switch (err) {
+                        error.HttpConnectionClosing => continue :accept,
+                        else => |e| return e,
+                    };
+                    if (i == 0) try request.respond("hello", .{});
+                }
+            }
+        }
+    });
+    defer test_server_orig.destroy();
+
+    var client: http.Client = .{
+        .allocator = gpa,
+        .io = io,
+    };
+    defer client.deinit();
+
+    var loc_buf: [100]u8 = undefined;
+    const location = try std.fmt.bufPrint(&loc_buf, "http://127.0.0.1:{d}/", .{
+        test_server_orig.port(),
+    });
+    const uri = try std.Uri.parse(location);
+
+    {
+        const response = try client.fetch(.{ .location = .{ .uri = uri } });
+        try expectEqual(.ok, response.status);
+    }
+    {
+        try expectError(error.HttpConnectionClosing, client.fetch(.{ .location = .{ .uri = uri } }));
+    }
+    {
+        const response = try client.fetch(.{ .location = .{ .uri = uri } });
+        try expectEqual(.ok, response.status);
+    }
+    {
+        try expectError(error.HttpConnectionClosing, client.fetch(.{ .location = .{ .uri = uri } }));
+    }
+}
