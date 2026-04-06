@@ -21691,10 +21691,17 @@ fn ptrCastFull(
                 .equal_runtime_src_slice => unreachable,
                 .change_runtime_src_slice => unreachable,
             };
-            return Air.internedToRef(try pt.intern(.{ .slice = .{
-                .ty = dest_ty.toIntern(),
-                .ptr = (try pt.getCoerced(ptr_val, dest_ty.slicePtrFieldType(zcu))).toIntern(),
+            const dest_is_optional = dest_ty.zigTypeTag(zcu) == .optional;
+            const slice_ty = if (dest_is_optional) dest_ty.optionalChild(zcu) else dest_ty;
+            const slice_val = try pt.intern(.{ .slice = .{
+                .ty = slice_ty.toIntern(),
+                .ptr = (try pt.getCoerced(ptr_val, slice_ty.slicePtrFieldType(zcu))).toIntern(),
                 .len = len.toIntern(),
+            } });
+            if (!dest_is_optional) return Air.internedToRef(slice_val);
+            return Air.internedToRef(try pt.intern(.{ .opt = .{
+                .ty = dest_ty.toIntern(),
+                .val = slice_val,
             } }));
         } else {
             // Any to non-slice

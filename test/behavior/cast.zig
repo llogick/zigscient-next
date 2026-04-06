@@ -1544,6 +1544,20 @@ test "*const [N]null u8 to ?[]const u8" {
     try comptime S.doTheTest();
 }
 
+test "comptime @ptrCast to optional slice" {
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
+    const result: ?[]const u8 = comptime blk: {
+        const slice: []const u8 = "123";
+        break :blk @ptrCast(slice);
+    };
+
+    comptime assert(mem.eql(u8, result.?, "123"));
+    try expectEqualSlices(u8, "123", result.?);
+}
+
 test "cast between [*c]T and ?[*:0]T on fn parameter" {
     const S = struct {
         const Handler = ?fn ([*c]const u8) callconv(.c) void;
