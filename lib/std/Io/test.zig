@@ -85,6 +85,28 @@ test "File.Writer.seekTo" {
     try expect(fw.logicalPos() == 1234);
 }
 
+test "file discard" {
+    var tmp = tmpDir(.{});
+    defer tmp.cleanup();
+
+    const io = testing.io;
+
+    const tmp_file_name = "temp_test_file.txt";
+    var file = try tmp.dir.createFile(io, tmp_file_name, .{ .read = true });
+    defer file.close(io);
+
+    var fw = file.writerStreaming(io, &.{});
+
+    try fw.interface.writeAll("test");
+
+    var fr = file.reader(io, &.{});
+    const r = &fr.interface;
+
+    try std.testing.expectEqual(error.EndOfStream, r.discardAll(1024));
+    try fr.seekTo(0);
+    try std.testing.expectEqual(4, fr.interface.discardRemaining());
+}
+
 test "File.setLength" {
     const io = testing.io;
 
