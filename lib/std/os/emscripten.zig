@@ -11,22 +11,6 @@ const c = std.c;
 
 pub const FILE = c.FILE;
 
-var __stack_chk_guard: usize = 0;
-fn __stack_chk_fail() callconv(.c) void {
-    std.debug.print("stack smashing detected: terminated\n", .{});
-    emscripten_force_exit(127);
-}
-
-comptime {
-    if (builtin.os.tag == .emscripten) {
-        if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe) {
-            // Emscripten does not provide these symbols, so we must export our own
-            @export(&__stack_chk_guard, .{ .name = "__stack_chk_guard", .linkage = .strong });
-            @export(&__stack_chk_fail, .{ .name = "__stack_chk_fail", .linkage = .strong });
-        }
-    }
-}
-
 pub const PF = linux.PF;
 pub const AF = linux.AF;
 pub const CLOCK = linux.CLOCK;
