@@ -1292,8 +1292,8 @@ fn parseUnwindRecords(self: *Object, allocator: Allocator, cpu_arch: std.Target.
 
     const Superposition = struct { atom: Atom.Index, size: u64, cu: ?UnwindInfo.Record.Index = null, fde: ?Fde.Index = null };
 
-    var superposition = std.AutoArrayHashMap(u64, Superposition).init(allocator);
-    defer superposition.deinit();
+    var superposition: std.array_hash_map.Auto(u64, Superposition) = .empty;
+    defer superposition.deinit(allocator);
 
     const slice = self.symtab.slice();
     for (slice.items(.nlist), slice.items(.atom), slice.items(.size)) |nlist, atom, size| {
@@ -1301,7 +1301,7 @@ fn parseUnwindRecords(self: *Object, allocator: Allocator, cpu_arch: std.Target.
         if (nlist.n_type.bits.type != .sect) continue;
         const sect = self.sections.items(.header)[nlist.n_sect - 1];
         if (sect.isCode() and sect.size > 0) {
-            try superposition.ensureUnusedCapacity(1);
+            try superposition.ensureUnusedCapacity(allocator, 1);
             const gop = superposition.getOrPutAssumeCapacity(nlist.n_value);
             if (gop.found_existing) {
                 assert(gop.value_ptr.atom == atom and gop.value_ptr.size == size);
@@ -1315,7 +1315,7 @@ fn parseUnwindRecords(self: *Object, allocator: Allocator, cpu_arch: std.Target.
         const atom = rec.getAtom(macho_file);
         const addr = atom.getInputAddress(macho_file) + rec.atom_offset;
 
-        try superposition.ensureUnusedCapacity(1);
+        try superposition.ensureUnusedCapacity(allocator, 1);
         const gop = superposition.getOrPutAssumeCapacity(addr);
         if (!gop.found_existing) {
             gop.value_ptr.* = .{ .atom = rec.atom, .size = rec.length };
@@ -1331,7 +1331,7 @@ fn parseUnwindRecords(self: *Object, allocator: Allocator, cpu_arch: std.Target.
         const atom = fde.getAtom(macho_file);
         const addr = atom.getInputAddress(macho_file) + fde.atom_offset;
 
-        try superposition.ensureUnusedCapacity(1);
+        try superposition.ensureUnusedCapacity(allocator, 1);
         const gop = superposition.getOrPutAssumeCapacity(addr);
         if (!gop.found_existing) {
             gop.value_ptr.* = .{ .atom = fde.atom, .size = fde.pc_range };

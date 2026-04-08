@@ -90,10 +90,10 @@ pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Pro
             // Even a .s file can substitute for a .c file.
             const target = comp.getTarget();
             const arch_name = std.zig.target.muslArchName(target.cpu.arch, target.abi);
-            var source_table = std.StringArrayHashMap(Ext).init(comp.gpa);
-            defer source_table.deinit();
+            var source_table: std.array_hash_map.String(Ext) = .empty;
+            defer source_table.deinit(gpa);
 
-            try source_table.ensureTotalCapacity(compat_time32_files.len + src_files.len);
+            try source_table.ensureTotalCapacity(gpa, compat_time32_files.len + src_files.len);
 
             for (src_files) |src_file| {
                 try addSrcFile(arena, &source_table, src_file);
@@ -107,10 +107,10 @@ pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Pro
                 }
             }
 
-            var c_source_files = std.array_list.Managed(Compilation.CSourceFile).init(comp.gpa);
+            var c_source_files = std.array_list.Managed(Compilation.CSourceFile).init(gpa);
             defer c_source_files.deinit();
 
-            var override_path = std.array_list.Managed(u8).init(comp.gpa);
+            var override_path = std.array_list.Managed(u8).init(gpa);
             defer override_path.deinit();
 
             const s = path.sep_str;
@@ -349,7 +349,7 @@ const Ext = enum {
     o3,
 };
 
-fn addSrcFile(arena: Allocator, source_table: *std.StringArrayHashMap(Ext), file_path: []const u8) !void {
+fn addSrcFile(arena: Allocator, source_table: *std.array_hash_map.String(Ext), file_path: []const u8) !void {
     const ext: Ext = ext: {
         if (mem.endsWith(u8, file_path, ".c")) {
             if (mem.startsWith(u8, file_path, "musl/src/string/") or

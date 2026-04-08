@@ -1,7 +1,3 @@
-pub const ArrayHashMap = array_hash_map.ArrayHashMap;
-pub const ArrayHashMapUnmanaged = array_hash_map.ArrayHashMapUnmanaged;
-pub const AutoArrayHashMap = array_hash_map.AutoArrayHashMap;
-pub const AutoArrayHashMapUnmanaged = array_hash_map.AutoArrayHashMapUnmanaged;
 pub const AutoHashMap = hash_map.AutoHashMap;
 pub const AutoHashMapUnmanaged = hash_map.AutoHashMapUnmanaged;
 pub const BitStack = @import("BitStack.zig");
@@ -31,13 +27,18 @@ pub const SinglyLinkedList = @import("SinglyLinkedList.zig");
 pub const StaticBitSet = bit_set.StaticBitSet;
 pub const StringHashMap = hash_map.StringHashMap;
 pub const StringHashMapUnmanaged = hash_map.StringHashMapUnmanaged;
-pub const StringArrayHashMap = array_hash_map.StringArrayHashMap;
-pub const StringArrayHashMapUnmanaged = array_hash_map.StringArrayHashMapUnmanaged;
 pub const Target = @import("Target.zig");
 pub const Thread = @import("Thread.zig");
 pub const Treap = @import("treap.zig").Treap;
 pub const Tz = tz.Tz;
 pub const Uri = @import("Uri.zig");
+
+/// Deprecated; use `array_hash_map.Custom`.
+pub const ArrayHashMapUnmanaged = array_hash_map.Custom;
+/// Deprecated; use `array_hash_map.Auto`.
+pub const AutoArrayHashMapUnmanaged = array_hash_map.Auto;
+/// Deprecated; use `array_hash_map.String`.
+pub const StringArrayHashMapUnmanaged = array_hash_map.String;
 
 /// A contiguous, growable list of items in memory. This is a wrapper around a
 /// slice of `T` values.
