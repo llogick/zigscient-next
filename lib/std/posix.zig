@@ -513,6 +513,9 @@ pub const GetSockNameError = error{
     SocketNotBound,
 
     FileDescriptorNotASocket,
+
+    /// The socket is not connected (connection-oriented sockets only).
+    SocketUnconnected,
 } || UnexpectedError;
 
 pub fn getpeername(sock: socket_t, addr: *sockaddr, addrlen: *socklen_t) GetSockNameError!void {
@@ -529,6 +532,7 @@ pub fn getpeername(sock: socket_t, addr: *sockaddr, addrlen: *socklen_t) GetSock
             .INVAL => unreachable, // invalid parameters
             .NOTSOCK => return error.FileDescriptorNotASocket,
             .NOBUFS => return error.SystemResources,
+            .NOTCONN => return error.SocketUnconnected,
         }
     }
 }
