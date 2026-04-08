@@ -6090,12 +6090,19 @@ fn dirRealPathFileWindows(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8,
         }
     };
     defer windows.CloseHandle(h_file);
-    return realPathWindows(h_file, out_buffer);
+
+    // We can re-use the path buffer for the WTF-16 representation since
+    // we don't need the prefixed path anymore
+    return realPathWindowsBuf(h_file, out_buffer, &path_name_w.data);
 }
 
 fn realPathWindows(h_file: windows.HANDLE, out_buffer: []u8) File.RealPathError!usize {
     var wide_buf: [windows.PATH_MAX_WIDE]u16 = undefined;
-    const wide_slice = try GetFinalPathNameByHandle(h_file, .{}, &wide_buf);
+    return realPathWindowsBuf(h_file, out_buffer, &wide_buf);
+}
+
+fn realPathWindowsBuf(h_file: windows.HANDLE, out_buffer: []u8, wtf16_buffer: []u16) File.RealPathError!usize {
+    const wide_slice = try GetFinalPathNameByHandle(h_file, .{}, wtf16_buffer);
 
     const len = std.unicode.calcWtf8Len(wide_slice);
     if (len > out_buffer.len)
