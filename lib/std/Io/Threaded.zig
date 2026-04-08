@@ -13017,6 +13017,7 @@ fn netReceiveOneWindows(
         .CANCELLED => unreachable,
         .INSUFFICIENT_RESOURCES => return error.SystemResources,
         .BUFFER_OVERFLOW => return error.MessageOversize,
+        .PORT_UNREACHABLE => return error.PortUnreachable,
         else => |status| return windows.unexpectedStatus(status),
     }
 }

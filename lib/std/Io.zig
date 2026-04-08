@@ -374,6 +374,13 @@ pub const Operation = union(enum) {
             ConnectionResetByPeer,
             /// The local network interface used to reach the destination is offline.
             NetworkDown,
+            /// A connectionless packet was previously sent successfully,
+            /// however, it was not received because no service is operating at
+            /// the destination port of the transport on the remote system.
+            /// This caused an ICMP port unreachable packet to be returned to
+            /// the OS where it was queued up to be reported at the next call
+            /// to send or receive on the bound socket.
+            PortUnreachable,
         } || Io.UnexpectedError;
 
         pub const Result = struct { ?net.Socket.ReceiveError, usize };
