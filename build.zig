@@ -1678,7 +1678,7 @@ fn cfgLspServer(
         .build_options = ls_build_options,
         .version_data = version_data_module,
     });
-    b.modules.put("zls", lsp_server_module) catch @panic("OOM");
+    b.modules.put(b.graph.arena, "zls", lsp_server_module) catch @panic("OOM");
 
     const known_folders_module = b.dependency("known_folders", .{
         .target = target,
