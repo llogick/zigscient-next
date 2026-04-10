@@ -5127,7 +5127,7 @@ fn airMemset(self: *FuncGen, inst: Air.Inst.Index, safety: bool) Allocator.Error
     const value = try self.resolveInst(bin_op.rhs);
     const elem_abi_size = elem_ty.abiSize(zcu);
 
-    if (elem_abi_size == 1) {
+    if (elem_abi_size == 1 and elem_ty.bitSize(zcu) == 8) {
         // In this case we can take advantage of LLVM's intrinsic.
         const fill_byte = try self.bitCast(value, elem_ty, Type.u8);
         const len = try self.sliceOrArrayLenInBytes(dest_slice, ptr_ty);
