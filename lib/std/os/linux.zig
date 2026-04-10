@@ -3883,8 +3883,8 @@ pub const W = struct {
     pub fn TERMSIG(s: u32) SIG {
         return @enumFromInt(s & 0x7f);
     }
-    pub fn STOPSIG(s: u32) u32 {
-        return EXITSTATUS(s);
+    pub fn STOPSIG(s: u32) SIG {
+        return @enumFromInt(EXITSTATUS(s));
     }
     pub fn IFEXITED(s: u32) bool {
         return (s & 0x7f) == 0;

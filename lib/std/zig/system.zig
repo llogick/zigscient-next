@@ -1185,11 +1185,25 @@ fn detectAndroidApiLevel(io: Io) !u32 {
         return error.ApiLevelQueryFailed;
     };
 
-    const term = try child.wait(io);
-    if (term != .exited or term.exited != 0) {
-        std.log.err("getprop terminated abnormally: {}", .{term});
-        return error.ApiLevelQueryFailed;
+    switch (try child.wait(io)) {
+        .exited => |code| if (code != 0) {
+            std.log.err("getprop terminated abnormally with exit code: {d}", .{code});
+            return error.ApiLevelQueryFailed;
+        },
+        .signal => |sig| {
+            std.log.err("getprop terminated abnormally with signal: {t}", .{sig});
+            return error.ApiLevelQueryFailed;
+        },
+        .stopped => |sig| {
+            std.log.err("getprop stopped abnormally with signal: {t}", .{sig});
+            return error.ApiLevelQueryFailed;
+        },
+        .unknown => {
+            std.log.err("getprop terminated abnormally", .{});
+            return error.ApiLevelQueryFailed;
+        },
     }
+
     return api_level;
 }
 

@@ -1899,11 +1899,11 @@ pub fn runAllowFail(
             }
             return stdout;
         },
-        .signal => |sig| {
+        .signal, .stopped => |sig| {
             out_code.* = @as(u8, @truncate(@intFromEnum(sig)));
             return error.ProcessTerminated;
         },
-        .stopped, .unknown => |code| {
+        .unknown => |code| {
             out_code.* = @as(u8, @truncate(code));
             return error.ProcessTerminated;
         },

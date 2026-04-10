@@ -725,19 +725,12 @@ pub inline fn handleChildProcUnsupported(s: *Step) error{ OutOfMemory, MakeFaile
 /// Asserts that the caller has already populated `s.result_failed_command`.
 pub fn handleChildProcessTerm(s: *Step, term: std.process.Child.Term) error{ MakeFailed, OutOfMemory }!void {
     assert(s.result_failed_command != null);
-    switch (term) {
-        .exited => |code| {
-            if (code != 0) {
-                return s.fail("process exited with error code {d}", .{code});
-            }
-        },
-        .signal => |sig| {
-            return s.fail("process terminated with signal {t}", .{sig});
-        },
-        .stopped, .unknown => {
-            return s.fail("process terminated unexpectedly", .{});
-        },
-    }
+    return switch (term) {
+        .exited => |code| if (code != 0) s.fail("process exited with error code {d}", .{code}),
+        .signal => |sig| s.fail("process terminated with signal {t}", .{sig}),
+        .stopped => |sig| s.fail("process stopped with signal {t}", .{sig}),
+        .unknown => s.fail("process terminated unexpectedly", .{}),
+    };
 }
 
 pub fn allocPrintCmd(

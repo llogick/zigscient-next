@@ -681,7 +681,14 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
             );
             return error.WasmCompilationFailed;
         },
-        .stopped, .unknown => {
+        .stopped => |sig| {
+            log.err(
+                "the following command stopped unexpectedly with signal {t}:\n{s}",
+                .{ sig, try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
+            );
+            return error.WasmCompilationFailed;
+        },
+        .unknown => {
             log.err(
                 "the following command terminated unexpectedly:\n{s}",
                 .{try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items)},

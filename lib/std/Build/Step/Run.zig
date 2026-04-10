@@ -1173,7 +1173,7 @@ fn formatTerm(term: ?process.Child.Term, w: *std.Io.Writer) std.Io.Writer.Error!
     if (term) |t| switch (t) {
         .exited => |code| try w.print("exited with code {d}", .{code}),
         .signal => |sig| try w.print("terminated with signal {t}", .{sig}),
-        .stopped => |sig| try w.print("stopped with signal {d}", .{sig}),
+        .stopped => |sig| try w.print("stopped with signal {t}", .{sig}),
         .unknown => |code| try w.print("terminated for unknown reason with code {d}", .{code}),
     } else {
         try w.writeAll("exited with any code");
@@ -2804,8 +2804,8 @@ fn hashStdIo(hh: *std.Build.Cache.HashHelper, stdio: StdIo) void {
                 .expect_term => |term| {
                     hh.add(@as(std.meta.Tag(process.Child.Term), term));
                     switch (term) {
-                        inline .exited, .signal => |x| hh.add(x),
-                        .stopped, .unknown => |x| hh.add(x),
+                        inline .exited, .signal, .stopped => |x| hh.add(x),
+                        .unknown => |x| hh.add(x),
                     }
                 },
             }

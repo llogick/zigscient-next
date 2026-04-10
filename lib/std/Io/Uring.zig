@@ -4729,7 +4729,7 @@ fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitErr
                 return switch (code) {
                     .EXITED => .{ .exited = @truncate(status) },
                     .KILLED, .DUMPED => .{ .signal = @enumFromInt(status) },
-                    .TRAPPED, .STOPPED => .{ .stopped = status },
+                    .TRAPPED, .STOPPED => .{ .stopped = @enumFromInt(status) },
                     _, .CONTINUED => .{ .unknown = status },
                 };
             },

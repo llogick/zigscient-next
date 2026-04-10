@@ -15281,7 +15281,7 @@ fn childWaitPosix(child: *process.Child) process.Child.WaitError!process.Child.T
                 return switch (code) {
                     .EXITED => .{ .exited = @truncate(status) },
                     .KILLED, .DUMPED => .{ .signal = @enumFromInt(status) },
-                    .TRAPPED, .STOPPED => .{ .stopped = status },
+                    .TRAPPED, .STOPPED => .{ .stopped = @enumFromInt(status) },
                     _, .CONTINUED => .{ .unknown = status },
                 };
             },
