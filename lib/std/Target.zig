@@ -912,6 +912,7 @@ pub const Abi = enum {
             .windows => .gnu,
             .uefi => .msvc,
             .@"3ds" => .eabihf,
+            .psp => .eabihf,
             .vita => .eabihf,
             .wasi, .emscripten => .musl,
 
@@ -930,7 +931,6 @@ pub const Abi = enum {
             .tvos,
             .visionos,
             .watchos,
-            .psp,
             .ps3,
             .ps4,
             .ps5,
