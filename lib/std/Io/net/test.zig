@@ -181,6 +181,8 @@ test "resolve DNS" {
 }
 
 test "listen on a port, send bytes, receive bytes" {
+    if (true) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31388
+
     const io = testing.io;
 
     // Try only the IPv4 variant as some CI builders have no IPv6 localhost
