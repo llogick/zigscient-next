@@ -1851,8 +1851,7 @@ fn asmRegisterMemoryImmediate(
     imm: Immediate,
 ) !void {
     if (switch (imm) {
-        .signed => |s| if (std.math.cast(i16, s)) |x| @as(u16, @bitCast(x)) else null,
-        .unsigned => |u| std.math.cast(u16, u),
+        inline .signed, .unsigned => |x| std.math.cast(i16, x),
         .nav, .uav, .lazy_sym, .extern_func => unreachable,
     }) |small_imm| {
         _ = try self.addInst(.{
@@ -1974,7 +1973,7 @@ fn asmMemoryRegisterImmediate(
         .data = .{ .rix = .{
             .fixes = tag[0],
             .r1 = reg,
-            .i = @intCast(imm.unsigned),
+            .i = @as(u8, @intCast(imm.unsigned)),
             .payload = try self.addExtra(Mir.Memory.encode(m)),
         } },
     });
@@ -180126,7 +180125,7 @@ fn airMemset(self: *CodeGen, inst: Air.Inst.Index, safety: bool) !void {
                     .{ .i_, .mul },
                     len_reg,
                     len_reg,
-                    .s(elem_abi_size),
+                    .u(elem_abi_size),
                 );
                 try self.genInlineMemcpy(second_elem_ptr_mcv, dst_ptr, len_mcv, .{ .no_alias = false });
 

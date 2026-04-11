@@ -1073,6 +1073,25 @@ test "@mulWithOverflow bitsize > 32" {
     try testMulWithOverflow(i63, minInt(i63), minInt(i63), 0, 1);
 }
 
+fn testMutiplyUnwrap(comptime T: type, wrapped_a: anyerror!T, comptime b: T, expected: T) !void {
+    const a = try wrapped_a;
+
+    const c = a * b;
+    try expect(expected == c);
+}
+
+test "Multiply unwrap error * immediate" {
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
+
+    try testMutiplyUnwrap(i8, 3, -1, -3);
+    try testMutiplyUnwrap(i16, 3, -1, -3);
+    try testMutiplyUnwrap(i32, 3, -1, -3);
+    try testMutiplyUnwrap(i64, 3, -1, -3);
+}
+
 test "@mulWithOverflow bitsize 128 bits" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
