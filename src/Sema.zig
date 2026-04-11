@@ -1405,6 +1405,8 @@ fn analyzeBodyInner(
                     .@"asm"             => try sema.zirAsm(               block, extended, false),
                     .asm_expr           => try sema.zirAsm(               block, extended, true),
                     .typeof_peer        => try sema.zirTypeofPeer(        block, extended, inst),
+                    .round_op           => try sema.zirRoundCast(         block, extended),
+                    .round_op_ty        => try sema.zirRoundOpType(       block, extended),
                     .compile_log        => try sema.zirCompileLog(        block, extended),
                     .min_multi          => try sema.zirMinMaxMulti(       block, extended, .min),
                     .max_multi          => try sema.zirMinMaxMulti(       block, extended, .max),
@@ -19687,21 +19689,16 @@ fn maybeConstantUnaryMath(
     return null;
 }
 
-fn zirUnaryMath(
+fn unaryMath(
     sema: *Sema,
     block: *Block,
-    inst: Zir.Inst.Index,
+    operand_src: LazySrcLoc,
+    operand: Air.Inst.Ref,
     air_tag: Air.Inst.Tag,
     comptime eval: fn (Value, Type, Allocator, Zcu.PerThread) Allocator.Error!Value,
 ) CompileError!Air.Inst.Ref {
-    const tracy = trace(@src());
-    defer tracy.end();
-
     const pt = sema.pt;
     const zcu = pt.zcu;
-    const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
-    const operand = sema.resolveInst(inst_data.operand);
-    const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const operand_ty = sema.typeOf(operand);
     const scalar_ty = operand_ty.scalarType(zcu);
 
@@ -19719,6 +19716,23 @@ fn zirUnaryMath(
         try sema.requireRuntimeBlock(block, operand_src, null);
         return block.addUnOp(air_tag, operand);
     };
+}
+
+fn zirUnaryMath(
+    sema: *Sema,
+    block: *Block,
+    inst: Zir.Inst.Index,
+    air_tag: Air.Inst.Tag,
+    comptime eval: fn (Value, Type, Allocator, Zcu.PerThread) Allocator.Error!Value,
+) CompileError!Air.Inst.Ref {
+    const tracy = trace(@src());
+    defer tracy.end();
+
+    const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
+    const operand = sema.resolveInst(inst_data.operand);
+    const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
+
+    return sema.unaryMath(block, operand_src, operand, air_tag, eval);
 }
 
 fn zirTagName(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Inst.Ref {
@@ -20900,6 +20914,130 @@ fn zirIntFromFloat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileErro
         .optimized => .int_from_float_optimized,
         .strict => .int_from_float,
     }, dest_ty, operand);
+}
+
+fn zirRoundCast(
+    sema: *Sema,
+    block: *Block,
+    extended: Zir.Inst.Extended.InstData,
+) CompileError!Air.Inst.Ref {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const extra = sema.code.extraData(Zir.Inst.BinNode, extended.operand).data;
+    const src = block.nodeOffset(extra.node);
+    const operand_src = block.builtinCallArgSrc(extra.node, 0);
+
+    const operand = sema.resolveInst(extra.rhs);
+
+    const round_op: Zir.Inst.RoundOp = @enumFromInt(extended.small);
+    const mode: IntFromFloatMode = switch (round_op) {
+        .round => .round,
+        .floor => .floor,
+        .ceil => .ceil,
+        .trunc => .truncate,
+    };
+
+    const dest_ty = (try sema.resolveTypeOrPoison(block, src, extra.lhs) orelse switch (mode) {
+        // zig fmt: off
+        .round    => return sema.unaryMath(block, operand_src, operand, .round,       Value.round),
+        .floor    => return sema.unaryMath(block, operand_src, operand, .floor,       Value.floor),
+        .ceil     => return sema.unaryMath(block, operand_src, operand, .ceil,        Value.ceil),
+        .truncate => return sema.unaryMath(block, operand_src, operand, .trunc_float, Value.trunc),
+        // zig fmt: on
+        .exact => unreachable,
+    }).optEuBaseType(zcu);
+
+    const operand_ty = sema.typeOf(operand);
+
+    try sema.checkVectorizableBinaryOperands(block, operand_src, dest_ty, operand_ty, src, operand_src);
+
+    const dest_scalar_ty = dest_ty.scalarType(zcu);
+    const operand_scalar_ty = operand_ty.scalarType(zcu);
+
+    switch (operand_scalar_ty.zigTypeTag(zcu)) {
+        .comptime_float, .float => {},
+        else => return sema.fail(
+            block,
+            operand_src,
+            "expected float or vector type, found '{f}'",
+            .{operand_ty.fmt(pt)},
+        ),
+    }
+
+    switch (dest_scalar_ty.zigTypeTag(zcu)) {
+        .float, .comptime_float => {
+            const coerced_operand = try sema.coerce(block, dest_ty, operand, operand_src);
+
+            const result_ref = switch (mode) {
+                .round => try sema.maybeConstantUnaryMath(coerced_operand, dest_ty, Value.round),
+                .floor => try sema.maybeConstantUnaryMath(coerced_operand, dest_ty, Value.floor),
+                .ceil => try sema.maybeConstantUnaryMath(coerced_operand, dest_ty, Value.ceil),
+                .truncate => try sema.maybeConstantUnaryMath(coerced_operand, dest_ty, Value.trunc),
+                .exact => unreachable,
+            };
+
+            if (result_ref) |ref| return ref;
+
+            const air_tag: Air.Inst.Tag = switch (mode) {
+                .round => .round,
+                .floor => .floor,
+                .ceil => .ceil,
+                .truncate => .trunc_float,
+                .exact => unreachable,
+            };
+
+            try sema.requireRuntimeBlock(block, operand_src, null);
+            return block.addUnOp(air_tag, coerced_operand);
+        },
+        .int, .comptime_int => {},
+        else => return sema.fail(
+            block,
+            src,
+            "expected integer, float, or vector of either integers or floats, found '{f}'",
+            .{dest_ty.fmt(pt)},
+        ),
+    }
+
+    if (sema.resolveValue(operand)) |operand_val| {
+        const result_val = try sema.intFromFloat(block, operand_src, operand_val, operand_ty, dest_ty, mode);
+        return .fromValue(result_val);
+    } else if (dest_scalar_ty.zigTypeTag(zcu) == .comptime_int) {
+        return sema.failWithNeededComptime(block, operand_src, .{ .simple = .casted_to_comptime_int });
+    }
+
+    try sema.requireRuntimeBlock(block, src, operand_src);
+
+    if (dest_scalar_ty.intInfo(zcu).bits == 0) {
+        if (block.wantSafety()) {
+            const abs_ref = try block.addTyOp(.abs, operand_ty, operand);
+            const is_vector = dest_ty.zigTypeTag(zcu) == .vector;
+            const max_abs_ref = if (is_vector) try block.addReduce(abs_ref, .Max) else abs_ref;
+            const one_ref = Air.internedToRef((try pt.floatValue(operand_scalar_ty, 1.0)).toIntern());
+            const ok_ref = try block.addBinOp(.cmp_lt, max_abs_ref, one_ref);
+            try sema.addSafetyCheck(block, src, ok_ref, .integer_part_out_of_bounds);
+        }
+        const scalar_val = try pt.intValue(dest_scalar_ty, 0);
+        return Air.internedToRef((try sema.splat(dest_ty, scalar_val)).toIntern());
+    }
+
+    const safe = block.wantSafety();
+
+    if (safe) {
+        try sema.preparePanicId(src, .integer_part_out_of_bounds);
+    }
+
+    const uncasted_result: Air.Inst.Ref = switch (mode) {
+        .truncate => operand,
+        .round => try block.addUnOp(.round, operand),
+        .floor => try block.addUnOp(.floor, operand),
+        .ceil => try block.addUnOp(.ceil, operand),
+        .exact => unreachable,
+    };
+    const air_cast_tag: Air.Inst.Tag = switch (block.float_mode) {
+        .optimized => if (safe) .int_from_float_optimized_safe else .int_from_float_optimized,
+        .strict => if (safe) .int_from_float_safe else .int_from_float,
+    };
+    return block.addTyOp(air_cast_tag, dest_ty, uncasted_result);
 }
 
 fn zirFloatFromInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Inst.Ref {
@@ -25078,6 +25216,23 @@ fn zirFloatOpResultType(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.
     }
 
     return .fromType(float_ty);
+}
+
+fn zirRoundOpType(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const extra = sema.code.extraData(Zir.Inst.UnNode, extended.operand).data;
+    const operand_src = block.builtinCallArgSrc(extra.node, 0);
+
+    const dest_ty = try sema.resolveTypeOrPoison(block, operand_src, extra.operand) orelse {
+        return .generic_poison_type;
+    };
+
+    const float_ty = dest_ty.optEuBaseType(zcu);
+    switch (float_ty.scalarType(zcu).zigTypeTag(zcu)) {
+        .float, .comptime_float => return .fromType(float_ty),
+        else => return .comptime_float_type,
+    }
 }
 
 fn requireRuntimeBlock(sema: *Sema, block: *Block, src: LazySrcLoc, runtime_src: ?LazySrcLoc) !void {
@@ -33469,7 +33624,7 @@ fn structFieldIndex(
         return sema.failWithBadStructFieldAccess(block, struct_ty, struct_type, field_src, field_name);
 }
 
-const IntFromFloatMode = enum { exact, truncate };
+const IntFromFloatMode = enum { exact, truncate, round, floor, ceil };
 
 fn intFromFloat(
     sema: *Sema,
@@ -33507,7 +33662,14 @@ fn intFromFloatScalar(
 
     if (val.isUndef(zcu)) return sema.failWithUseOfUndef(block, src, vec_idx);
 
-    const float = val.toFloat(f128, zcu);
+    var float = val.toFloat(f128, zcu);
+    switch (mode) {
+        .round => float = @round(float),
+        .floor => float = @floor(float),
+        .ceil => float = @ceil(float),
+        .truncate, .exact => {},
+    }
+
     if (std.math.isNan(float)) {
         return sema.fail(block, src, "float value NaN cannot be stored in integer type '{f}'", .{
             int_ty.fmt(pt),
@@ -33532,7 +33694,7 @@ fn intFromFloatScalar(
                 "fractional component prevents float value '{f}' from coercion to type '{f}'",
                 .{ val.fmtValueSema(pt, sema), int_ty.fmt(pt) },
             ),
-            .truncate => {},
+            .truncate, .round, .floor, .ceil => {},
         },
         .exact => {},
     }
