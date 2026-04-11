@@ -2049,7 +2049,16 @@ fn gen(
 
                 self.performReloc(skip_sse_reloc);
             },
-            .x86_64_win => return self.fail("TODO implement gen var arg function for Win64", .{}),
+            .x86_64_win => {
+                for (abi.Win64.c_abi_int_param_regs[0..], 0..) |reg, reg_i|
+                    try self.genSetMem(
+                        .{ .frame = .args_frame },
+                        @intCast(reg_i * 8),
+                        .usize,
+                        .{ .register = reg },
+                        .{},
+                    );
+            },
             else => |cc| return self.fail("{s} does not support var args", .{@tagName(cc)}),
         };
 
@@ -176020,12 +176029,22 @@ fn genCall(self: *CodeGen, info: union(enum) {
         .indirect => |reg_off| try self.register_manager.getReg(reg_off.reg, null),
         else => unreachable,
     }
-    for (call_info.args, arg_types, args, frame_indices) |dst_arg, arg_ty, src_arg, *frame_index|
+    for (call_info.args, arg_types, args, frame_indices, 0..) |dst_arg, arg_ty, src_arg, *frame_index, arg_i|
         switch (dst_arg) {
             .none => {},
             .register => |reg| {
                 try self.register_manager.getReg(reg, null);
                 try reg_locks.append(self.register_manager.lockReg(reg));
+
+                if (fn_info.is_var_args and
+                    fn_info.cc == .x86_64_win and
+                    reg.class() == .sse and
+                    arg_i < abi.Win64.c_abi_int_param_regs.len)
+                {
+                    // Floating point arguments must be duplicated into the equivalent integer registers on this ABI
+                    const int_reg = abi.Win64.c_abi_int_param_regs[arg_i];
+                    try reg_locks.append(self.register_manager.lockReg(int_reg));
+                }
             },
             .register_pair => |regs| {
                 for (regs) |reg| try self.register_manager.getReg(reg, null);
@@ -176129,7 +176148,7 @@ fn genCall(self: *CodeGen, info: union(enum) {
         else => unreachable,
     }
 
-    for (call_info.args, arg_types, args, frame_indices) |dst_arg, arg_ty, src_arg, frame_index|
+    for (call_info.args, arg_types, args, frame_indices, 0..) |dst_arg, arg_ty, src_arg, frame_index, arg_i|
         switch (dst_arg) {
             .none, .load_frame => {},
             .register => |dst_reg| switch (fn_info.cc) {
@@ -176144,6 +176163,16 @@ fn genCall(self: *CodeGen, info: union(enum) {
                     try self.genSetReg(dst_alias, promoted_ty, src_arg, opts);
                     if (promoted_ty.toIntern() != arg_ty.toIntern())
                         try self.truncateRegister(arg_ty, dst_alias);
+
+                    if (fn_info.is_var_args and
+                        fn_info.cc == .x86_64_win and
+                        dst_reg.class() == .sse and
+                        arg_i < abi.Win64.c_abi_int_param_regs.len)
+                    {
+                        const int_dst_reg = abi.Win64.c_abi_int_param_regs[arg_i];
+                        const int_dst_alias = registerAlias(int_dst_reg, promoted_abi_size);
+                        try self.genSetReg(int_dst_alias, promoted_ty, .{ .register = dst_alias }, opts);
+                    }
                 },
             },
             .register_pair => try self.genCopy(arg_ty, dst_arg, src_arg, opts),
@@ -176180,7 +176209,8 @@ fn genCall(self: *CodeGen, info: union(enum) {
             else => unreachable,
         };
 
-    if (fn_info.is_var_args) try self.asmRegisterImmediate(.{ ._, .mov }, .al, .u(call_info.fp_count));
+    if (fn_info.is_var_args and fn_info.cc == .x86_64_sysv)
+        try self.asmRegisterImmediate(.{ ._, .mov }, .al, .u(call_info.fp_count));
 
     // Due to incremental compilation, how function calls are generated depends
     // on linking.
@@ -180792,7 +180822,18 @@ fn airVaStart(self: *CodeGen, inst: Air.Inst.Index) !void {
             field_off += @intCast(ptr_anyopaque_ty.abiSize(zcu));
             break :result .{ .load_frame = .{ .index = dst_fi } };
         },
-        .x86_64_win => return self.fail("TODO implement c_va_start for Win64", .{}),
+        .x86_64_win => result: {
+            const dst_fi = try self.allocFrameIndex(.initSpill(va_list_ty, zcu));
+            const fn_info = zcu.typeToFunc(self.fn_type).?;
+            try self.genSetMem(
+                .{ .frame = dst_fi },
+                0,
+                ptr_anyopaque_ty,
+                .{ .lea_frame = .{ .index = .args_frame, .off = @intCast(fn_info.param_types.len * 8) } },
+                .{},
+            );
+            break :result .{ .load_frame = .{ .index = dst_fi } };
+        },
         else => |cc| return self.fail("{s} does not support var args", .{@tagName(cc)}),
     };
     return self.finishAir(inst, result, .{ .none, .none, .none });
@@ -180931,46 +180972,101 @@ fn airVaArg(self: *CodeGen, inst: Air.Inst.Index) !void {
                 break :result dst_mcv;
             }
 
-            assert(ty.toIntern() == .f32_type and promote_ty.toIntern() == .f64_type);
-            const dst_mcv = if (promote_mcv.isRegister())
-                promote_mcv
-            else
-                try self.copyToRegisterWithInstTracking(inst, ty, promote_mcv);
-            const dst_reg = dst_mcv.getReg().?.to128();
-            const dst_lock = self.register_manager.lockReg(dst_reg);
-            defer if (dst_lock) |lock| self.register_manager.unlockReg(lock);
-
-            if (self.hasFeature(.avx)) if (promote_mcv.isBase()) try self.asmRegisterRegisterMemory(
-                .{ .v_ss, .cvtsd2 },
-                dst_reg,
-                dst_reg,
-                try promote_mcv.mem(self, .{ .size = .qword }),
-            ) else try self.asmRegisterRegisterRegister(
-                .{ .v_ss, .cvtsd2 },
-                dst_reg,
-                dst_reg,
-                (if (promote_mcv.isRegister())
-                    promote_mcv.getReg().?
-                else
-                    try self.copyToTmpRegister(promote_ty, promote_mcv)).to128(),
-            ) else if (promote_mcv.isBase()) try self.asmRegisterMemory(
-                .{ ._ss, .cvtsd2 },
-                dst_reg,
-                try promote_mcv.mem(self, .{ .size = .qword }),
-            ) else try self.asmRegisterRegister(
-                .{ ._ss, .cvtsd2 },
-                dst_reg,
-                (if (promote_mcv.isRegister())
-                    promote_mcv.getReg().?
-                else
-                    try self.copyToTmpRegister(promote_ty, promote_mcv)).to128(),
-            );
+            try self.convertFloatVarArg(inst, ty, promote_ty, promote_mcv);
             break :result promote_mcv;
         },
-        .x86_64_win => return self.fail("TODO implement c_va_arg for Win64", .{}),
+        .x86_64_win => result: {
+            try self.spillEflagsIfOccupied();
+
+            const promote_mcv = try self.allocTempRegOrMem(promote_ty, true);
+            const promote_lock = switch (promote_mcv) {
+                .register => |reg| self.register_manager.lockRegAssumeUnused(reg),
+                else => null,
+            };
+            defer if (promote_lock) |lock| self.register_manager.unlockReg(lock);
+
+            const ptr_arg_list_reg =
+                try self.copyToTmpRegister(self.typeOf(ty_op.operand), .{ .air_ref = ty_op.operand });
+            const ptr_arg_list_lock = self.register_manager.lockRegAssumeUnused(ptr_arg_list_reg);
+            defer self.register_manager.unlockReg(ptr_arg_list_lock);
+
+            const next_arg_ptr: MCValue = .{ .indirect = .{ .reg = ptr_arg_list_reg } };
+
+            const class = abi.classifyWindows(promote_ty, zcu, self.target, .arg);
+            switch (class) {
+                .integer, .sse => {
+                    const next_arg_ptr_reg = try self.copyToTmpRegister(.usize, next_arg_ptr);
+                    if (!unused) try self.genCopy(promote_ty, promote_mcv, .{
+                        .indirect = .{ .reg = next_arg_ptr_reg },
+                    }, .{});
+                    try self.asmRegisterMemory(.{ ._, .lea }, next_arg_ptr_reg, .{
+                        .base = .{ .reg = next_arg_ptr_reg.to64() },
+                        .mod = .{ .rm = .{ .disp = 8 } },
+                    });
+                    try self.genCopy(.usize, next_arg_ptr, .{ .register = next_arg_ptr_reg }, .{});
+                },
+                .memory => unreachable,
+                else => return self.fail("TODO implement c_va_arg for {f} on Win64", .{promote_ty.fmt(pt)}),
+            }
+
+            if (unused) break :result .unreach;
+            if (ty.toIntern() == promote_ty.toIntern()) break :result promote_mcv;
+
+            if (!promote_ty.isRuntimeFloat()) {
+                const dst_mcv = try self.allocRegOrMem(inst, true);
+                try self.genCopy(ty, dst_mcv, promote_mcv, .{});
+                break :result dst_mcv;
+            }
+
+            try self.convertFloatVarArg(inst, ty, promote_ty, promote_mcv);
+            break :result promote_mcv;
+        },
         else => |cc| return self.fail("{s} does not support var args", .{@tagName(cc)}),
     };
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
+}
+
+fn convertFloatVarArg(
+    self: *CodeGen,
+    inst: Air.Inst.Index,
+    ty: Type,
+    promote_ty: Type,
+    promote_mcv: MCValue,
+) !void {
+    assert(ty.toIntern() == .f32_type and promote_ty.toIntern() == .f64_type);
+    const dst_mcv = if (promote_mcv.isRegister())
+        promote_mcv
+    else
+        try self.copyToRegisterWithInstTracking(inst, ty, promote_mcv);
+    const dst_reg = dst_mcv.getReg().?.to128();
+    const dst_lock = self.register_manager.lockReg(dst_reg);
+    defer if (dst_lock) |lock| self.register_manager.unlockReg(lock);
+
+    if (self.hasFeature(.avx)) if (promote_mcv.isBase()) try self.asmRegisterRegisterMemory(
+        .{ .v_ss, .cvtsd2 },
+        dst_reg,
+        dst_reg,
+        try promote_mcv.mem(self, .{ .size = .qword }),
+    ) else try self.asmRegisterRegisterRegister(
+        .{ .v_ss, .cvtsd2 },
+        dst_reg,
+        dst_reg,
+        (if (promote_mcv.isRegister())
+            promote_mcv.getReg().?
+        else
+            try self.copyToTmpRegister(promote_ty, promote_mcv)).to128(),
+    ) else if (promote_mcv.isBase()) try self.asmRegisterMemory(
+        .{ ._ss, .cvtsd2 },
+        dst_reg,
+        try promote_mcv.mem(self, .{ .size = .qword }),
+    ) else try self.asmRegisterRegister(
+        .{ ._ss, .cvtsd2 },
+        dst_reg,
+        (if (promote_mcv.isRegister())
+            promote_mcv.getReg().?
+        else
+            try self.copyToTmpRegister(promote_ty, promote_mcv)).to128(),
+    );
 }
 
 fn airVaCopy(self: *CodeGen, inst: Air.Inst.Index) !void {
