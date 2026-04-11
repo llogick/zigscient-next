@@ -234,6 +234,7 @@ const targets = [_]std.Target.Query{
 
     .{ .cpu_arch = .s390x, .os_tag = .freestanding, .abi = .none },
     .{ .cpu_arch = .s390x, .os_tag = .linux, .abi = .gnu },
+    .{ .cpu_arch = .s390x, .os_tag = .linux, .abi = .musl },
     .{ .cpu_arch = .s390x, .os_tag = .linux, .abi = .none },
 
     .{ .cpu_arch = .sparc, .os_tag = .freestanding, .abi = .none },
