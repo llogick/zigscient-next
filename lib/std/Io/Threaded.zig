@@ -1671,20 +1671,23 @@ pub fn init(
 /// When initialized this way:
 /// * cancel requests have no effect.
 /// * `deinit` is safe, but unnecessary to call.
-pub const init_single_threaded: Threaded = .{
-    .allocator = .failing,
-    .stack_size = std.Thread.SpawnConfig.default_stack_size,
-    .async_limit = .nothing,
-    .cpu_count_error = null,
-    .concurrent_limit = .nothing,
-    .old_sig_io = undefined,
-    .old_sig_pipe = undefined,
-    .have_signal_handler = false,
-    .argv0 = .empty,
-    .environ_initialized = true,
-    .environ = .empty,
-    .worker_threads = .init(null),
-    .disable_memory_mapping = false,
+pub const init_single_threaded: Threaded = init: {
+    const env_block: process.Environ.Block = if (is_windows) .global else .empty;
+    break :init .{
+        .allocator = .failing,
+        .stack_size = std.Thread.SpawnConfig.default_stack_size,
+        .async_limit = .nothing,
+        .cpu_count_error = null,
+        .concurrent_limit = .nothing,
+        .old_sig_io = undefined,
+        .old_sig_pipe = undefined,
+        .have_signal_handler = false,
+        .argv0 = .empty,
+        .environ_initialized = env_block.isEmpty(),
+        .environ = .{ .process_environ = .{ .block = env_block } },
+        .worker_threads = .init(null),
+        .disable_memory_mapping = false,
+    };
 };
 
 var global_single_threaded_instance: Threaded = .init_single_threaded;

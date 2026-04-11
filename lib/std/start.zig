@@ -631,6 +631,7 @@ inline fn callMainWithArgs(argc: usize, argv: [*][*:0]u8, envp: [:null]?[*:0]u8)
     if (std.Options.debug_threaded_io) |t| {
         if (@sizeOf(std.Io.Threaded.Argv0) != 0) t.argv0.value = argv[0];
         t.environ = .{ .process_environ = .{ .block = env_block } };
+        t.environ_initialized = env_block.isEmpty();
     }
     std.Thread.maybeAttachSignalStack();
     std.debug.maybeEnableSegfaultHandler();
