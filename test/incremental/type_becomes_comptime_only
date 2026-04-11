@@ -3,7 +3,7 @@
 #target=x86_64-linux-cbe
 #target=x86_64-windows-cbe
 #target=x86_64-linux-llvm
-#target=wasm32-wasi-selfhosted
+//#target=wasm32-wasi-selfhosted
 #update=initial version
 #file=main.zig
 const SomeType = u32;
