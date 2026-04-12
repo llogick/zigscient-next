@@ -102,13 +102,14 @@ const normal_usage =
     \\  reduce           Minimize a bug report
     \\  translate-c      Convert C code to Zig code
     \\
-    \\  ar               Use Zig as a drop-in archiver
+    \\  ar               Combine object files into static archive
     \\  cc               Use Zig as a drop-in C compiler
     \\  c++              Use Zig as a drop-in C++ compiler
     \\  dlltool          Use Zig as a drop-in dlltool.exe
     \\  lib              Use Zig as a drop-in lib.exe
+    \\  objcopy          Manipulate executables and relocatables
+    \\  objdump          Print information about executables and relocatables
     \\  ranlib           Use Zig as a drop-in ranlib
-    \\  objcopy          Use Zig as a drop-in objcopy
     \\  rc               Use Zig as a drop-in rc.exe
     \\
     \\  env              Print lib path, std path, cache directory, and version
@@ -371,6 +372,11 @@ fn mainArgs(
         return jitCmd(gpa, arena, io, cmd_args, environ_map, .{
             .cmd_name = "objcopy",
             .root_src_path = "objcopy.zig",
+        });
+    } else if (mem.eql(u8, cmd, "objdump")) {
+        return jitCmd(gpa, arena, io, cmd_args, environ_map, .{
+            .cmd_name = "objdump",
+            .root_src_path = "objdump.zig",
         });
     } else if (mem.eql(u8, cmd, "fetch")) {
         return cmdFetch(gpa, arena, io, cmd_args, environ_map);
