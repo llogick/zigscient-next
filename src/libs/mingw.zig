@@ -279,7 +279,13 @@ pub fn buildImportLib(comp: *Compilation, lib_name: []const u8) !void {
         .output = .{ .to_list = .{ .arena = .init(gpa) } },
     };
     defer diagnostics.deinit();
-    var aro_comp = aro.Compilation.init(gpa, arena, io, &diagnostics, Io.Dir.cwd());
+    var aro_comp = try aro.Compilation.init(.{
+        .gpa = gpa,
+        .arena = arena,
+        .io = io,
+        .diagnostics = &diagnostics,
+        .environ_map = null,
+    });
     defer aro_comp.deinit();
 
     aro_comp.target = .fromZigTarget(target.*);
@@ -304,7 +310,7 @@ pub fn buildImportLib(comp: *Compilation, lib_name: []const u8) !void {
     const builtin_macros = try aro_comp.generateBuiltinMacros(.include_system_defines);
     const def_file_source = try aro_comp.addSourceFromPath(def_file_path);
 
-    var pp = aro.Preprocessor.init(&aro_comp, .{ .provided = 0 });
+    var pp = try aro.Preprocessor.init(&aro_comp, .{ .base_file = .unused });
     defer pp.deinit();
     pp.linemarkers = .none;
     pp.preserve_whitespace = true;
