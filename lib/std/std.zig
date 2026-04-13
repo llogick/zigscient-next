@@ -165,6 +165,8 @@ pub const Options = struct {
     /// * `debug.dumpCurrentStackTrace`
     /// * `debug.writeStackTrace`
     /// * `debug.dumpStackTrace`
+    /// * `debug.writeErrorReturnTrace`
+    /// * `debug.dumpErrorReturnTrace`
     ///
     /// Stack traces can generally be collected and printed when debug info is stripped, but are
     /// often less useful since they usually cannot be mapped to source locations and/or have bad

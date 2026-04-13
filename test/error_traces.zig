@@ -1,4 +1,6 @@
-pub fn addCases(cases: *@import("tests.zig").ErrorTracesContext) void {
+const std = @import("std");
+
+pub fn addCases(cases: *@import("tests.zig").ErrorTracesContext, os: std.Target.Os.Tag) void {
     cases.addCase(.{
         .name = "return",
         .source =
@@ -464,17 +466,33 @@ pub fn addCases(cases: *@import("tests.zig").ErrorTracesContext) void {
         \\}
         ,
         .expect_error = "ThisIsSoSad",
-        .expect_trace =
-        \\source.zig:8:5: [address] in bar
-        \\    return error.ThisIsSoSad;
-        \\    ^
-        \\source.zig:5:5: [address] in foo
-        \\    try bar();
-        \\    ^
-        \\source.zig:2:5: [address] in main
-        \\    try foo();
-        \\    ^
-        ,
+        .expect_trace = switch (os) {
+            // LLVM doesn't emit column info in the binary annotations for inlinee callees in PDBs,
+            // so our expected result is slightly different for Windows than on other operating
+            // systems.
+            .windows =>
+            \\source.zig:8:5: [address] in bar
+            \\    return error.ThisIsSoSad;
+            \\    ^
+            \\source.zig:5: [address] in foo
+            \\    try bar();
+            \\
+            \\source.zig:2:5: [address] in main
+            \\    try foo();
+            \\    ^
+            ,
+            else =>
+            \\source.zig:8:5: [address] in bar
+            \\    return error.ThisIsSoSad;
+            \\    ^
+            \\source.zig:5:5: [address] in foo
+            \\    try bar();
+            \\    ^
+            \\source.zig:2:5: [address] in main
+            \\    try foo();
+            \\    ^
+            ,
+        },
         .disable_trace_optimized = &.{
             .{ .x86_64, .freebsd },
             .{ .x86_64, .netbsd },
@@ -493,10 +511,5 @@ pub fn addCases(cases: *@import("tests.zig").ErrorTracesContext) void {
             .{ .x86_64, .macos },
             .{ .aarch64, .macos },
         },
-        // TODO: the standard library has a bug in PDB parsing where given an address corresponding
-        // to an inline call, the frame we see will be for the *caller*, not the *callee*. As a
-        // result this test gives bogus results on Windows right now.
-        // This is a part of https://codeberg.org/ziglang/zig/issues/30847.
-        .disable_trace_pdb = true,
     });
 }

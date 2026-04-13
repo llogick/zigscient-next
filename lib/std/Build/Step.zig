@@ -67,7 +67,7 @@ test_results: TestResults,
 
 /// The return address associated with creation of this step that can be useful
 /// to print along with debugging messages.
-debug_stack_trace: std.builtin.StackTrace,
+debug_stack_trace: std.debug.StackTrace,
 
 pub const TestResults = struct {
     /// The total number of tests in the step. Every test has a "status" from the following:
@@ -328,7 +328,7 @@ pub fn cast(step: *Step, comptime T: type) ?*T {
 /// For debugging purposes, prints identifying information about this Step.
 pub fn dump(step: *Step, t: Io.Terminal) void {
     const w = t.writer;
-    if (step.debug_stack_trace.instruction_addresses.len > 0) {
+    if (step.debug_stack_trace.return_addresses.len > 0) {
         w.print("name: '{s}'. creation stack trace:\n", .{step.name}) catch {};
         std.debug.writeStackTrace(&step.debug_stack_trace, t) catch {};
     } else {

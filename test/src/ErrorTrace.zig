@@ -17,8 +17,6 @@ pub const Case = struct {
     /// LLVM ReleaseSmall builds always have the trace disabled regardless of this field, because it
     /// seems that LLVM is particularly good at optimizing traces away in those.
     disable_trace_optimized: []const DisableConfig = &.{},
-    /// If `true` then we will not test the error trace on Windows due to bugs in PDB handling.
-    disable_trace_pdb: bool = false,
 
     pub const DisableConfig = struct { std.Target.Cpu.Arch, std.Target.Os.Tag };
     pub const Backend = enum { llvm, selfhosted };
@@ -62,7 +60,6 @@ fn addCaseConfig(
     const b = self.b;
 
     const error_tracing: bool = tracing: {
-        if (target.result.os.tag == .windows and case.disable_trace_pdb) break :tracing false;
         if (optimize == .Debug) break :tracing true;
         if (backend != .llvm) break :tracing true;
         if (optimize == .ReleaseSmall) break :tracing false;

@@ -3263,7 +3263,7 @@ fn createFoo(param: i32) !Foo {
       <ul>
         <li>Return an error from main</li>
         <li>An error makes its way to {#syntax#}catch unreachable{#endsyntax#} and you have not overridden the default panic handler</li>
-        <li>Use {#link|errorReturnTrace#} to access the current return trace. You can use {#syntax#}std.debug.dumpStackTrace{#endsyntax#} to print it. This function returns comptime-known {#link|null#} when building without error return tracing support.</li>
+        <li>Use {#link|errorReturnTrace#} to access the current return trace. You can use {#syntax#}std.debug.dumpErrorReturnTrace{#endsyntax#} to print it. This function returns comptime-known {#link|null#} when building without error return tracing support.</li>
       </ul>
       {#header_open|Implementation Details#}
       <p>

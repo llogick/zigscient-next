@@ -761,7 +761,7 @@ inline fn wrapMain(result: anytype) u8 {
         std.log.err("{t}", .{err});
         switch (native_os) {
             .freestanding, .other => {},
-            else => if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace),
+            else => if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace),
         }
         return 1;
     };

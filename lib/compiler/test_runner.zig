@@ -144,7 +144,7 @@ fn mainServer(init: std.process.Init.Minimal) !void {
                     error.SkipZigTest => .skip,
                     else => s: {
                         if (@errorReturnTrace()) |trace| {
-                            std.debug.dumpStackTrace(trace);
+                            std.debug.dumpErrorReturnTrace(trace);
                         }
                         break :s .fail;
                     },
@@ -312,7 +312,7 @@ fn mainTerminal(init: std.process.Init.Minimal) void {
                     std.debug.print("FAIL ({t})\n", .{err});
                 }
                 if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace);
+                    std.debug.dumpErrorReturnTrace(trace);
                 }
                 test_node.end();
             },
@@ -438,7 +438,7 @@ var fuzz_runner: if (builtin.fuzz) struct {
             error.SkipZigTest => return,
             else => {
                 if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace);
+                    std.debug.dumpErrorReturnTrace(trace);
                 }
                 std.debug.print("failed with error.{t}\n", .{err});
                 std.process.exit(1);
