@@ -180,6 +180,16 @@ pub const Options = struct {
     /// Allows disabling networking in std.Io implementations.
     networking: bool = true,
 
+    /// Whether or not `error.Unexpected` will print its value and a stack trace.
+    ///
+    /// If this happens the fix is to add the error code to the corresponding
+    /// switch expression, possibly introduce a new error in the error set, and
+    /// send a patch to Zig.
+    unexpected_error_tracing: bool = @import("builtin").mode == .Debug and switch (@import("builtin").zig_backend) {
+        .stage2_llvm, .stage2_x86_64 => true,
+        else => false,
+    },
+
     /// TODO This is a separate decl instead of a field as a workaround around
     /// compilation errors due to zig not being lazy enough.
     pub const logTerminalMode: fn () Io.Terminal.Mode = log.defaultTerminalMode;
