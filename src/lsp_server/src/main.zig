@@ -598,7 +598,7 @@ pub fn stage2(
 
     log.info(
         \\Hello/
-        \\                                      Zigscient {s} {s}
+        \\                                      ZigscientN {s} {s}
         \\                                      {s}
     , .{
         zls.build_options.version_string,
