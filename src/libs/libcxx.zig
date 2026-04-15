@@ -206,6 +206,7 @@ pub fn buildLibCxx(comp: *Compilation, prog_node: std.Progress.Node) BuildError!
 
         try addCxxArgs(comp, arena, &cflags);
 
+        try cflags.append("-w"); // Disable all warnings.
         try cflags.append("-DNDEBUG");
         try cflags.append("-DLIBC_NAMESPACE=__llvm_libc_common_utils");
         try cflags.append("-D_LIBCPP_BUILDING_LIBRARY");
@@ -223,9 +224,6 @@ pub fn buildLibCxx(comp: *Compilation, prog_node: std.Progress.Node) BuildError!
 
         try cflags.append("-nostdinc++");
         try cflags.append("-std=c++23");
-        try cflags.append("-Wno-user-defined-literals");
-        try cflags.append("-Wno-covered-switch-default");
-        try cflags.append("-Wno-suggest-override");
 
         // These depend on only the zig lib directory file path, which is
         // purposefully either in the cache or not in the cache. The decision
@@ -401,6 +399,7 @@ pub fn buildLibCxxAbi(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
 
         try addCxxArgs(comp, arena, &cflags);
 
+        try cflags.append("-w"); // Disable all warnings.
         try cflags.append("-DNDEBUG");
         try cflags.append("-D_LIBCPP_BUILDING_LIBRARY");
         try cflags.append("-D_LIBCXXABI_BUILDING_LIBRARY");
@@ -422,9 +421,6 @@ pub fn buildLibCxxAbi(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         try cflags.append("-nostdinc++");
         try cflags.append("-fstrict-aliasing");
         try cflags.append("-std=c++23");
-        try cflags.append("-Wno-user-defined-literals");
-        try cflags.append("-Wno-covered-switch-default");
-        try cflags.append("-Wno-suggest-override");
 
         // These depend on only the zig lib directory file path, which is
         // purposefully either in the cache or not in the cache. The decision
