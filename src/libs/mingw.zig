@@ -850,7 +850,6 @@ const mingw32_x86_src = [_][]const u8{
     "complex" ++ path.sep_str ++ "ctanl.c",
     "math" ++ path.sep_str ++ "cbrtl.c",
     "math" ++ path.sep_str ++ "erfl.c",
-    "math" ++ path.sep_str ++ "fdiml.c",
     "math" ++ path.sep_str ++ "fmal.c",
     "math" ++ path.sep_str ++ "llrintl.c",
     "math" ++ path.sep_str ++ "llroundl.c",
