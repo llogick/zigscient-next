@@ -17,6 +17,7 @@ const Compilation = @import("../../Compilation.zig");
 const link = @import("../../link.zig");
 const Air = @import("../../Air.zig");
 const Mir = @import("Mir.zig");
+const assembly = @import("assembly.zig");
 const abi = @import("../../codegen/wasm/abi.zig");
 const Alignment = InternPool.Alignment;
 const errUnionPayloadOffset = codegen.errUnionPayloadOffset;
@@ -277,7 +278,7 @@ pub fn deinit(cg: *CodeGen) void {
     cg.* = undefined;
 }
 
-fn fail(cg: *CodeGen, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, CodegenFail } {
+pub fn fail(cg: *CodeGen, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, CodegenFail } {
     const zcu = cg.pt.zcu;
     const func = zcu.funcInfo(cg.func_index);
     return zcu.codegenFail(func.owner_nav, fmt, args);
@@ -401,45 +402,45 @@ fn processDeath(cg: *CodeGen, ref: Air.Inst.Ref) void {
     }
 }
 
-fn addInst(cg: *CodeGen, inst: Mir.Inst) error{OutOfMemory}!void {
+pub fn addInst(cg: *CodeGen, inst: Mir.Inst) error{OutOfMemory}!void {
     try cg.mir_instructions.append(cg.gpa, inst);
 }
 
-fn addTag(cg: *CodeGen, tag: Mir.Inst.Tag) error{OutOfMemory}!void {
+pub fn addTag(cg: *CodeGen, tag: Mir.Inst.Tag) error{OutOfMemory}!void {
     try cg.addInst(.{ .tag = tag, .data = .{ .tag = {} } });
 }
 
-fn addExtended(cg: *CodeGen, opcode: std.wasm.MiscOpcode) error{OutOfMemory}!void {
+pub fn addExtended(cg: *CodeGen, opcode: std.wasm.MiscOpcode) error{OutOfMemory}!void {
     const extra_index: u32 = @intCast(cg.mir_extra.items.len);
     try cg.mir_extra.append(cg.gpa, @intFromEnum(opcode));
     try cg.addInst(.{ .tag = .misc_prefix, .data = .{ .payload = extra_index } });
 }
 
-fn addLabel(cg: *CodeGen, tag: Mir.Inst.Tag, label: u32) error{OutOfMemory}!void {
+pub fn addLabel(cg: *CodeGen, tag: Mir.Inst.Tag, label: u32) error{OutOfMemory}!void {
     try cg.addInst(.{ .tag = tag, .data = .{ .label = label } });
 }
 
-fn addLocal(cg: *CodeGen, tag: Mir.Inst.Tag, local: u32) error{OutOfMemory}!void {
+pub fn addLocal(cg: *CodeGen, tag: Mir.Inst.Tag, local: u32) error{OutOfMemory}!void {
     try cg.addInst(.{ .tag = tag, .data = .{ .local = local } });
 }
 
 /// Accepts an unsigned 32bit integer rather than a signed integer to
 /// prevent us from having to bitcast multiple times as most values
 /// within codegen are represented as unsigned rather than signed.
-fn addImm32(cg: *CodeGen, imm: u32) error{OutOfMemory}!void {
+pub fn addImm32(cg: *CodeGen, imm: u32) error{OutOfMemory}!void {
     try cg.addInst(.{ .tag = .i32_const, .data = .{ .imm32 = @bitCast(imm) } });
 }
 
 /// Accepts an unsigned 64bit integer rather than a signed integer to
 /// prevent us from having to bitcast multiple times as most values
 /// within codegen are represented as unsigned rather than signed.
-fn addImm64(cg: *CodeGen, imm: u64) error{OutOfMemory}!void {
+pub fn addImm64(cg: *CodeGen, imm: u64) error{OutOfMemory}!void {
     const extra_index = try cg.addExtra(Mir.Imm64.init(imm));
     try cg.addInst(.{ .tag = .i64_const, .data = .{ .payload = extra_index } });
 }
 
 /// Accepts the index into the list of 128bit-immediates
-fn addImm128(cg: *CodeGen, index: u32) error{OutOfMemory}!void {
+pub fn addImm128(cg: *CodeGen, index: u32) error{OutOfMemory}!void {
     const simd_values = cg.simd_immediates.items[index];
     const extra_index: u32 = @intCast(cg.mir_extra.items.len);
     // tag + 128bit value
@@ -449,27 +450,31 @@ fn addImm128(cg: *CodeGen, index: u32) error{OutOfMemory}!void {
     try cg.addInst(.{ .tag = .simd_prefix, .data = .{ .payload = extra_index } });
 }
 
-fn addFloat64(cg: *CodeGen, float: f64) error{OutOfMemory}!void {
+pub fn addFloat32(cg: *CodeGen, float: f32) error{OutOfMemory}!void {
+    try cg.addInst(.{ .tag = .f32_const, .data = .{ .float32 = float } });
+}
+
+pub fn addFloat64(cg: *CodeGen, float: f64) error{OutOfMemory}!void {
     const extra_index = try cg.addExtra(Mir.Float64.init(float));
     try cg.addInst(.{ .tag = .f64_const, .data = .{ .payload = extra_index } });
 }
 
 /// Inserts an instruction to load/store from/to wasm's linear memory dependent on the given `tag`.
-fn addMemArg(cg: *CodeGen, tag: Mir.Inst.Tag, mem_arg: Mir.MemArg) error{OutOfMemory}!void {
+pub fn addMemArg(cg: *CodeGen, tag: Mir.Inst.Tag, mem_arg: Mir.MemArg) error{OutOfMemory}!void {
     const extra_index = try cg.addExtra(mem_arg);
     try cg.addInst(.{ .tag = tag, .data = .{ .payload = extra_index } });
 }
 
 /// Inserts an instruction from the 'atomics' feature which accesses wasm's linear memory dependent on the
 /// given `tag`.
-fn addAtomicMemArg(cg: *CodeGen, tag: std.wasm.AtomicsOpcode, mem_arg: Mir.MemArg) error{OutOfMemory}!void {
+pub fn addAtomicMemArg(cg: *CodeGen, tag: std.wasm.AtomicsOpcode, mem_arg: Mir.MemArg) error{OutOfMemory}!void {
     const extra_index = try cg.addExtra(@as(struct { val: u32 }, .{ .val = @intFromEnum(tag) }));
     _ = try cg.addExtra(mem_arg);
     try cg.addInst(.{ .tag = .atomics_prefix, .data = .{ .payload = extra_index } });
 }
 
 /// Helper function to emit atomic mir opcodes.
-fn addAtomicTag(cg: *CodeGen, tag: std.wasm.AtomicsOpcode) error{OutOfMemory}!void {
+pub fn addAtomicTag(cg: *CodeGen, tag: std.wasm.AtomicsOpcode) error{OutOfMemory}!void {
     const extra_index = try cg.addExtra(@as(struct { val: u32 }, .{ .val = @intFromEnum(tag) }));
     try cg.addInst(.{ .tag = .atomics_prefix, .data = .{ .payload = extra_index } });
 }
@@ -550,7 +555,7 @@ fn emitWValue(cg: *CodeGen, value: WValue) InnerError!void {
         .imm32 => |val| try cg.addImm32(val),
         .imm64 => |val| try cg.addImm64(val),
         .imm128 => |val| try cg.addImm128(val),
-        .float32 => |val| try cg.addInst(.{ .tag = .f32_const, .data = .{ .float32 = val } }),
+        .float32 => |val| try cg.addFloat32(val),
         .float64 => |val| try cg.addFloat64(val),
         .nav_ref => |nav_ref| {
             const zcu = cg.pt.zcu;
@@ -1832,7 +1837,8 @@ fn genInst(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
 
         .runtime_nav_ptr => cg.airRuntimeNavPtr(inst),
 
-        .assembly,
+        .assembly => cg.airAsm(inst),
+
         .err_return_trace,
         .set_err_return_trace,
         .save_err_return_trace_index,
@@ -7151,6 +7157,69 @@ fn airRuntimeNavPtr(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
         return cg.finishAir(inst, result, &.{});
     }
     return cg.fail("TODO: thread-local variables", .{});
+}
+
+fn airAsm(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
+    const unwrapped_asm = cg.air.unwrapAsm(inst);
+    const outputs = unwrapped_asm.outputs;
+    const inputs = unwrapped_asm.inputs;
+
+    const zcu = cg.pt.zcu;
+    const output_ty = cg.typeOfIndex(inst);
+
+    const result: WValue = if (output_ty.hasRuntimeBits(zcu))
+        try cg.allocLocal(output_ty)
+    else
+        .none;
+
+    var local_map: assembly.LocalMap = .empty;
+    defer local_map.deinit(cg.gpa);
+
+    {
+        var it = unwrapped_asm.iterateOutputs();
+        if (it.next()) |output| {
+            const constraint = output.constraint;
+            assert(output.operand == .none);
+            const name = output.name;
+
+            if (!mem.eql(u8, constraint, "=r")) {
+                return cg.fail("Self-hosted wasm backend requires output constraint to be equal \"=r\"", .{});
+            }
+
+            const gop = try local_map.getOrPutValue(cg.gpa, name, result.local.value);
+            assert(!gop.found_existing); // first value
+
+            assert(it.next() == null);
+        }
+    }
+
+    {
+        var it = unwrapped_asm.iterateInputs();
+        while (it.next()) |input| {
+            const constraint = input.constraint;
+            const operand = try cg.resolveInst(input.operand);
+            const name = input.name;
+
+            if (!mem.eql(u8, constraint, "r")) {
+                return cg.fail("Self-hosted wasm backend requires input constraint to be equal \"r\"", .{});
+            }
+
+            try cg.lowerToStack(operand);
+            const op_local = try WValue.toLocal(.stack, cg, cg.typeOf(input.operand));
+
+            const gop = try local_map.getOrPutValue(cg.gpa, name, op_local.local.value);
+            if (gop.found_existing) {
+                return cg.fail("Duplicate asm variable name \"{s}\"", .{name});
+            }
+        }
+    }
+
+    try assembly.assemble(cg, unwrapped_asm.source, &local_map);
+
+    var bt = cg.liveness.iterateBigTomb(inst);
+    for (outputs) |output| if (output != .none) cg.feed(&bt, output);
+    for (inputs) |input| cg.feed(&bt, input);
+    return cg.finishAirResult(inst, result);
 }
 
 fn typeOf(cg: *CodeGen, inst: Air.Inst.Ref) Type {
