@@ -3260,8 +3260,8 @@ pub const Sigaction = switch (native_os) {
 
         /// signal handler
         handler: extern union {
-            handler: handler_fn,
-            sigaction: sigaction_fn,
+            handler: ?handler_fn,
+            sigaction: ?sigaction_fn,
         },
 
         /// signal mask to apply
@@ -11150,6 +11150,8 @@ pub const _kern_open_dir = haiku._kern_open_dir;
 pub const _kern_read_dir = haiku._kern_read_dir;
 pub const _kern_read_stat = haiku._kern_read_stat;
 pub const _kern_rewind_dir = haiku._kern_rewind_dir;
+pub const readv_pos = haiku.readv_pos;
+pub const writev_pos = haiku.writev_pos;
 pub const area_id = haiku.area_id;
 pub const area_info = haiku.area_info;
 pub const directory_which = haiku.directory_which;
