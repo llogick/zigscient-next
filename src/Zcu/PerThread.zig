@@ -1093,8 +1093,6 @@ pub fn ensureMemoizedStateUpToDate(
 
     const unit: AnalUnit = .wrap(.{ .memoized_state = stage });
 
-    log.debug("ensureMemoizedStateUpToDate", .{});
-
     assert(!zcu.analysis_in_progress.contains(unit));
 
     const was_outdated = zcu.clearOutdatedState(unit);
@@ -1162,6 +1160,8 @@ fn analyzeMemoizedState(
     const comp = zcu.comp;
     const gpa = comp.gpa;
 
+    log.debug("analyzeMemoizedState({t})", .{stage});
+
     const unit: AnalUnit = .wrap(.{ .memoized_state = stage });
 
     try zcu.analysis_in_progress.putNoClobber(gpa, unit, reason);
@@ -1201,8 +1201,6 @@ pub fn ensureComptimeUnitUpToDate(pt: Zcu.PerThread, cu_id: InternPool.ComptimeU
     const gpa = zcu.gpa;
 
     const anal_unit: AnalUnit = .wrap(.{ .@"comptime" = cu_id });
-
-    log.debug("ensureComptimeUnitUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
 
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
@@ -1365,8 +1363,6 @@ pub fn ensureTypeLayoutUpToDate(
 
     const anal_unit: AnalUnit = .wrap(.{ .type_layout = ty.toIntern() });
 
-    log.debug("ensureTypeLayoutUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
-
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
     const was_outdated: bool = outdated: {
@@ -1433,6 +1429,8 @@ pub fn ensureTypeLayoutUpToDate(
     };
     defer sema.deinit();
 
+    log.debug("ensureTypeLayoutUpToDate {f} (out of date, resolving)", .{zcu.fmtAnalUnit(anal_unit)});
+
     const result = switch (ty.zigTypeTag(zcu)) {
         .@"enum" => Sema.type_resolution.resolveEnumLayout(&sema, ty),
         .@"struct" => Sema.type_resolution.resolveStructLayout(&sema, ty),
@@ -1498,8 +1496,6 @@ pub fn ensureStructDefaultsUpToDate(
 
     const anal_unit: AnalUnit = .wrap(.{ .struct_defaults = ty.toIntern() });
 
-    log.debug("ensureStructDefaultsUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
-
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
     const was_outdated: bool = outdated: {
@@ -1556,6 +1552,8 @@ pub fn ensureStructDefaultsUpToDate(
     };
     defer sema.deinit();
 
+    log.debug("ensureStructDefaultsUpToDate {f} (out of date, resolving)", .{zcu.fmtAnalUnit(anal_unit)});
+
     const new_failed: bool = if (Sema.type_resolution.resolveStructDefaults(&sema, ty)) failed: {
         break :failed false;
     } else |err| switch (err) {
@@ -1603,8 +1601,6 @@ pub fn ensureNavValUpToDate(
 
     const anal_unit: AnalUnit = .wrap(.{ .nav_val = nav_id });
     const nav = ip.getNav(nav_id);
-
-    log.debug("ensureNavValUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
 
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
@@ -1966,8 +1962,6 @@ pub fn ensureNavTypeUpToDate(
     const anal_unit: AnalUnit = .wrap(.{ .nav_ty = nav_id });
     const nav = ip.getNav(nav_id);
 
-    log.debug("ensureNavTypeUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
-
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
     try zcu.ensureNavValAnalysisQueued(nav_id);
@@ -2211,8 +2205,6 @@ pub fn ensureFuncBodyUpToDate(
 
     const anal_unit: AnalUnit = .wrap(.{ .func = func_index });
 
-    log.debug("ensureFuncBodyUpToDate {f}", .{zcu.fmtAnalUnit(anal_unit)});
-
     assert(!zcu.analysis_in_progress.contains(anal_unit));
 
     const func = zcu.funcInfo(func_index);
@@ -2302,7 +2294,7 @@ fn analyzeFuncBody(
     else
         .none;
 
-    log.debug("analyze and generate fn body {f}", .{zcu.fmtAnalUnit(anal_unit)});
+    log.debug("analyzeFuncBody {f}", .{zcu.fmtAnalUnit(anal_unit)});
 
     var air = try pt.analyzeFuncBodyInner(func_index, reason);
     var air_owned = true;
