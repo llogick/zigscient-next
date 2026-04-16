@@ -3082,8 +3082,6 @@ pub fn cTypeByteSize(t: *const Target, c_type: CType) u16 {
         => @divExact(cTypeBitSize(t, c_type), 8),
 
         .longdouble => switch (cTypeBitSize(t, c_type)) {
-            16 => 2,
-            32 => 4,
             64 => 8,
             80 => @intCast(std.mem.alignForward(usize, 10, cTypeAlignment(t, .longdouble))),
             128 => 16,
