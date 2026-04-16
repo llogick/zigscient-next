@@ -1016,9 +1016,6 @@ pub const Inst = struct {
         /// Implements the `@max` builtin for 2 args.
         /// Uses the `pl_node` union field with payload `Bin`
         max,
-        /// Implements the `@cImport` builtin.
-        /// Uses the `pl_node` union field with payload `Block`.
-        c_import,
 
         /// Allocates stack local memory.
         /// Uses the `un_node` union field. The operand is the type of the allocated object.
@@ -1297,7 +1294,6 @@ pub const Inst = struct {
                 .memset,
                 .memmove,
                 .min,
-                .c_import,
                 .@"resume",
                 .ret_err_value_code,
                 .extended,
@@ -1577,7 +1573,6 @@ pub const Inst = struct {
                 .builtin_call,
                 .max,
                 .min,
-                .c_import,
                 .@"resume",
                 .ret_err_value_code,
                 .@"break",
@@ -1857,7 +1852,6 @@ pub const Inst = struct {
                 .memset = .pl_node,
                 .memmove = .pl_node,
                 .min = .pl_node,
-                .c_import = .pl_node,
 
                 .alloc = .un_node,
                 .alloc_mut = .un_node,
@@ -2017,12 +2011,6 @@ pub const Inst = struct {
         /// `operand` is `UnNode`.
         /// `small` is unused.
         round_op_ty,
-        /// `operand` is payload index to `UnNode`.
-        c_undef,
-        /// `operand` is payload index to `UnNode`.
-        c_include,
-        /// `operand` is payload index to `BinNode`.
-        c_define,
         /// `operand` is payload index to `UnNode`.
         wasm_memory_size,
         /// `operand` is payload index to `BinNode`.
@@ -4360,9 +4348,6 @@ fn findTrackableInner(
                 .mul_with_overflow,
                 .shl_with_overflow,
                 .round_op,
-                .c_undef,
-                .c_include,
-                .c_define,
                 .wasm_memory_size,
                 .wasm_memory_grow,
                 .prefetch,
@@ -4532,7 +4517,6 @@ fn findTrackableInner(
 
         .block,
         .block_inline,
-        .c_import,
         .typeof_builtin,
         .loop,
         => {

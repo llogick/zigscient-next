@@ -882,7 +882,6 @@ pub const CompilationState = struct {
     verbose_llvm_ir: ?[]const u8 = null,
     verbose_llvm_bc: ?[]const u8 = null,
     link_depfile: ?[]const u8 = null,
-    verbose_cimport: bool = false,
     verbose_llvm_cpu_features: bool = false,
     time_report: bool = false,
     stack_report: bool = false,
@@ -1106,7 +1105,6 @@ pub fn buildOutputType(
     cs.verbose_llvm_ir = null;
     cs.verbose_llvm_bc = null;
     cs.link_depfile = null;
-    cs.verbose_cimport = false;
     cs.verbose_llvm_cpu_features = false;
     cs.time_report = false;
     cs.stack_report = false;
@@ -1989,8 +1987,6 @@ pub fn buildOutputType(
                         cs.verbose_llvm_ir = rest;
                     } else if (mem.cutPrefix(u8, arg, "--verbose-llvm-bc=")) |rest| {
                         cs.verbose_llvm_bc = rest;
-                    } else if (mem.eql(u8, arg, "--verbose-cimport")) {
-                        cs.verbose_cimport = true;
                     } else if (mem.eql(u8, arg, "--verbose-llvm-cpu-features")) {
                         cs.verbose_llvm_cpu_features = true;
                     } else if (mem.cutPrefix(u8, arg, "-T")) |rest| {
@@ -3977,7 +3973,6 @@ pub fn buildOutputType(
         .verbose_llvm_ir = cs.verbose_llvm_ir,
         .verbose_llvm_bc = cs.verbose_llvm_bc,
         .link_depfile = cs.link_depfile,
-        .verbose_cimport = cs.verbose_cimport,
         .verbose_llvm_cpu_features = cs.verbose_llvm_cpu_features,
         .time_report = cs.time_report,
         .stack_report = cs.stack_report,
@@ -4625,7 +4620,7 @@ fn serve(
                     var arena_instance = std.heap.ArenaAllocator.init(gpa);
                     defer arena_instance.deinit();
                     const arena = arena_instance.allocator();
-                    var output: Compilation.CImportResult = undefined;
+                    var output: Compilation.TranslateCResult = undefined;
                     try cmdTranslateC(comp, arena, &output, file_system_inputs, main_progress_node, environ_map);
                     defer output.deinit(gpa);
 
@@ -5049,7 +5044,7 @@ fn updateModule(comp: *Compilation, color: Color, prog_node: std.Progress.Node) 
 fn cmdTranslateC(
     comp: *Compilation,
     arena: Allocator,
-    fancy_output: ?*Compilation.CImportResult,
+    fancy_output: ?*Compilation.TranslateCResult,
     file_system_inputs: ?*std.ArrayList(u8),
     prog_node: std.Progress.Node,
     environ_map: *process.Environ.Map,
@@ -5071,7 +5066,7 @@ fn cmdTranslateC(
     Compilation.cache_helpers.hashCSource(&man, c_source_file) catch |err|
         fatal("unable to process '{s}': {t}", .{ c_source_file.src_path, err });
 
-    const result: Compilation.CImportResult = if (try man.hit()) .{
+    const result: Compilation.TranslateCResult = if (try man.hit()) .{
         .digest = man.finalBin(),
         .cache_hit = true,
         .errors = std.zig.ErrorBundle.empty,
@@ -5080,7 +5075,7 @@ fn cmdTranslateC(
             arena,
             &man,
             Compilation.classifyFileExt(c_source_file.src_path),
-            .{ .path = c_source_file.src_path },
+            c_source_file.src_path,
             translated_basename,
             comp.root_mod,
             prog_node,
@@ -5313,7 +5308,6 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
     var verbose_generic_instances = false;
     var verbose_llvm_ir: ?[]const u8 = null;
     var verbose_llvm_bc: ?[]const u8 = null;
-    var verbose_cimport = false;
     var verbose_llvm_cpu_features = false;
     var fetch_only = false;
     var fetch_mode: Package.Fetch.JobQueue.Mode = .needed;
@@ -5478,8 +5472,6 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                     verbose_llvm_ir = rest;
                 } else if (mem.cutPrefix(u8, arg, "--verbose-llvm-bc=")) |rest| {
                     verbose_llvm_bc = rest;
-                } else if (mem.eql(u8, arg, "--verbose-cimport")) {
-                    verbose_cimport = true;
                 } else if (mem.eql(u8, arg, "--verbose-llvm-cpu-features")) {
                     verbose_llvm_cpu_features = true;
                 } else if (mem.eql(u8, arg, "--color")) {
@@ -5879,7 +5871,6 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                 .verbose_generic_instances = verbose_generic_instances,
                 .verbose_llvm_ir = verbose_llvm_ir,
                 .verbose_llvm_bc = verbose_llvm_bc,
-                .verbose_cimport = verbose_cimport,
                 .verbose_llvm_cpu_features = verbose_llvm_cpu_features,
                 .cache_mode = .whole,
                 .reference_trace = reference_trace,
@@ -5887,7 +5878,7 @@ fn cmdBuild(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8, 
                 .environ_map = environ_map,
             }) catch |err| switch (err) {
                 error.CreateFail => fatal("failed to create compilation: {f}", .{create_diag}),
-                else => fatal("failed to create compilation: {s}", .{@errorName(err)}),
+                else => fatal("failed to create compilation: {t}", .{err}),
             };
             defer comp.destroy();
 
