@@ -1644,9 +1644,6 @@ fn resolveCallsiteReferences(analyser: *Analyser, decl_handle: DeclWithHandle) E
     };
 
     const tree = decl_handle.handle.tree;
-    const is_cimport = std.mem.eql(u8, std.fs.path.basename(decl_handle.handle.uri), "cimport.zig");
-
-    if (is_cimport or !analyser.collect_callsite_references) return null;
 
     // protection against recursive callsite resolution
     const gop_resolved = try analyser.resolved_callsites.getOrPut(analyser.gpa, pay);
@@ -2282,17 +2279,6 @@ fn resolveTypeOfNodeUncached(analyser: *Analyser, options: ResolveOptions) Error
                     )) orelse return null;
 
                     const new_handle = try analyser.store.getOrLoadHandle(import_uri) orelse return null;
-
-                    return .{
-                        .data = .{ .container = .root(new_handle) },
-                        .is_type_val = true,
-                    };
-                },
-                .c_import => {
-                    if (!DocumentStore.supports_build_system) return null;
-                    const cimport_uri = (try analyser.store.resolveCImport(handle, node)) orelse return null;
-
-                    const new_handle = try analyser.store.getOrLoadHandle(cimport_uri) orelse return null;
 
                     return .{
                         .data = .{ .container = .root(new_handle) },
@@ -4605,36 +4591,6 @@ pub fn collectImports(allocator: std.mem.Allocator, tree: *const Ast) error{OutO
     return imports;
 }
 
-/// Collects all `@cImport` nodes
-/// Caller owns returned memory.
-pub fn collectCImportNodes(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemory}![]Ast.Node.Index {
-    const tracy_zone = tracy.trace(@src());
-    defer tracy_zone.end();
-
-    var import_nodes: std.ArrayList(Ast.Node.Index) = .empty;
-    errdefer import_nodes.deinit(allocator);
-
-    const node_tags = tree.nodes.items(.tag);
-    for (node_tags, 0..) |tag, i| {
-        const node: Ast.Node.Index = @enumFromInt(i);
-
-        switch (tag) {
-            .builtin_call,
-            .builtin_call_comma,
-            .builtin_call_two,
-            .builtin_call_two_comma,
-            => {},
-            else => continue,
-        }
-
-        if (!std.mem.eql(u8, Ast.tokenSlice(tree.*, tree.nodeMainToken(node)), "@cImport")) continue;
-
-        try import_nodes.append(allocator, node);
-    }
-
-    return import_nodes.toOwnedSlice(allocator);
-}
-
 pub const NodeWithUri = struct {
     node: Ast.Node.Index,
     uri: []const u8,
@@ -4894,7 +4850,6 @@ pub fn getFieldAccessType(
 pub const PositionContext = union(enum) {
     builtin: offsets.Loc,
     import_string_literal: offsets.Loc,
-    cinclude_string_literal: offsets.Loc,
     embedfile_string_literal: offsets.Loc,
     string_literal: offsets.Loc,
     field_access: offsets.Loc,
@@ -4923,7 +4878,6 @@ pub const PositionContext = union(enum) {
         return switch (self) {
             .builtin,
             .import_string_literal,
-            .cinclude_string_literal,
             .embedfile_string_literal,
             .string_literal,
             .field_access,
@@ -4948,13 +4902,11 @@ pub const PositionContext = union(enum) {
 
     /// Asserts that `self` is one of the following:
     ///  - `.import_string_literal`
-    ///  - `.cinclude_string_literal`
     ///  - `.embedfile_string_literal`
     ///  - `.string_literal`
     pub fn stringLiteralContentLoc(self: PositionContext, source: []const u8) offsets.Loc {
         var location = switch (self) {
             .import_string_literal,
-            .cinclude_string_literal,
             .embedfile_string_literal,
             .string_literal,
             => |l| l,
@@ -5178,8 +5130,6 @@ pub fn getPositionContext(
                             const builtin_name = tree.source[loc.start..loc.end];
                             if (std.mem.eql(u8, builtin_name, "@import")) {
                                 new_state = .{ .import_string_literal = tok.loc };
-                            } else if (std.mem.eql(u8, builtin_name, "@cInclude")) {
-                                new_state = .{ .cinclude_string_literal = tok.loc };
                             } else if (std.mem.eql(u8, builtin_name, "@embedFile")) {
                                 new_state = .{ .embedfile_string_literal = tok.loc };
                             }

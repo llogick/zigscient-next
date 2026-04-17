@@ -22,7 +22,4 @@ comptime {
     _ = @import("lsp_features/selection_range.zig");
     _ = @import("lsp_features/semantic_tokens.zig");
     _ = @import("lsp_features/signature_help.zig");
-
-    // Language features
-    _ = @import("language_features/cimport.zig");
 }

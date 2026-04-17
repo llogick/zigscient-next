@@ -12,7 +12,6 @@ const extd_zccs = @import("extended-zccs");
 const BuildAssociatedConfig = @import("BuildAssociatedConfig.zig");
 const BuildConfig = @import("build_runner/shared.zig").BuildConfig;
 const tracy = @import("tracy");
-const translate_c = @import("translate_c.zig");
 const DocumentScope = @import("DocumentScope.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
@@ -44,7 +43,6 @@ mutex: std.Io.Mutex = .init,
 wait_group: if (supports_build_system) std.Io.Group else void = if (supports_build_system) .init else {},
 handles: std.StringArrayHashMapUnmanaged(*Handle) = .empty,
 build_files: if (supports_build_system) std.StringArrayHashMapUnmanaged(*BuildFile) else void = if (supports_build_system) .empty else {},
-cimports: if (supports_build_system) std.AutoArrayHashMapUnmanaged(Hash, translate_c.Result) else void = if (supports_build_system) .empty else {},
 diagnostics_collection: *DiagnosticsCollection,
 transport: ?*lsp.Transport = null,
 lsp_capabilities: struct {
@@ -312,8 +310,6 @@ pub const Handle = struct {
     /// std.zig.Ast compatible mapping of the custom AST ('ast`)
     /// Never .deinit directly
     tree: Ast,
-    /// Contains one entry for every cimport in the document
-    cimports: std.MultiArrayList(CImportHandle),
 
     // Set by the main thread / read by server.generateDiagnostics and AstCheck
     change_pending: std.atomic.Value(bool) = .init(false),
@@ -414,14 +410,10 @@ pub const Handle = struct {
 
         const std_ast = custom_ast.toStdAst();
 
-        var cimports = try collectCIncludes(allocator, &std_ast);
-        errdefer cimports.deinit(allocator);
-
         return .{
             .uri = uri,
             .ast = custom_ast,
             .tree = std_ast,
-            .cimports = cimports,
             .impl = .{
                 .status = .init(@bitCast(Status{
                     .lsp_synced = lsp_synced,
@@ -447,9 +439,6 @@ pub const Handle = struct {
             allocator.free(import_uris);
             self.impl.import_uris = null;
         }
-
-        for (self.cimports.items(.source)) |source| allocator.free(source);
-        self.cimports.deinit(allocator);
     }
 
     /// Caller must free `Handle.uri` if needed.
@@ -831,7 +820,6 @@ pub const Handle = struct {
 
         self.impl.status = .init(@bitCast(Status{ .lsp_synced = self.isLspSynced() }));
         self.tree = self.ast.toStdAst();
-        self.cimports = try collectCIncludes(self.ast.gpa, &self.tree);
 
         var arena_state = std.heap.ArenaAllocator.init(self.ast.gpa);
         defer arena_state.deinit();
@@ -985,11 +973,6 @@ pub fn deinit(self: *DocumentStore) void {
             self.allocator.destroy(build_file);
         }
         self.build_files.deinit(self.allocator);
-
-        for (self.cimports.values()) |*result| {
-            result.deinit(self.allocator);
-        }
-        self.cimports.deinit(self.allocator);
     }
 
     self.* = undefined;
@@ -1887,40 +1870,6 @@ pub const CImportHandle = struct {
     source: []const u8,
 };
 
-/// Collects all `@cImport` nodes and converts them into c source code if possible
-/// Caller owns returned memory.
-fn collectCIncludes(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemory}!std.MultiArrayList(CImportHandle) {
-    const tracy_zone = tracy.trace(@src());
-    defer tracy_zone.end();
-
-    const cimport_nodes = try analysis.collectCImportNodes(allocator, tree);
-    defer allocator.free(cimport_nodes);
-
-    var sources: std.MultiArrayList(CImportHandle) = .empty;
-    try sources.ensureTotalCapacity(allocator, cimport_nodes.len);
-    errdefer {
-        for (sources.items(.source)) |source| {
-            allocator.free(source);
-        }
-        sources.deinit(allocator);
-    }
-
-    for (cimport_nodes) |node| {
-        const c_source = translate_c.convertCInclude(allocator, tree, node) catch |err| switch (err) {
-            error.Unsupported => continue,
-            error.OutOfMemory => return error.OutOfMemory,
-        };
-
-        sources.appendAssumeCapacity(.{
-            .node = node,
-            .hash = computeHash(c_source),
-            .source = c_source,
-        });
-    }
-
-    return sources;
-}
-
 /// collects every file uri the given handle depends on
 /// includes imports, cimports & packages
 /// **Thread safe** takes a shared lock
@@ -1935,21 +1884,9 @@ pub fn collectDependencies(
 
     const import_uris = try handle.getImportUris();
 
-    try dependencies.ensureUnusedCapacity(allocator, import_uris.len + handle.cimports.len);
+    try dependencies.ensureUnusedCapacity(allocator, import_uris.len);
     for (import_uris) |uri| {
         dependencies.appendAssumeCapacity(try allocator.dupe(u8, uri));
-    }
-
-    if (supports_build_system) {
-        try store.mutex.lock(store.io);
-        defer store.mutex.unlock(store.io);
-        for (handle.cimports.items(.hash)) |hash| {
-            const result = store.cimports.get(hash) orelse continue;
-            switch (result) {
-                .success => |uri| dependencies.appendAssumeCapacity(try allocator.dupe(u8, uri)),
-                .failure => continue,
-            }
-        }
     }
 
     if (supports_build_system) no_build_file: {
@@ -2028,120 +1965,6 @@ pub fn collectCMacros(
     };
 
     return collected_all;
-}
-
-/// returns the document behind `@cImport()` where `node` is the `cImport` node
-/// if a cImport can't be translated e.g. requires computing a
-/// comptime value `resolveCImport` will return null
-/// returned memory is owned by DocumentStore
-/// **Thread safe** takes an exclusive lock
-pub fn resolveCImport(self: *DocumentStore, handle: *Handle, node: Ast.Node.Index) error{ Canceled, OutOfMemory }!?Uri {
-    comptime std.debug.assert(supports_build_system);
-
-    const tracy_zone = tracy.trace(@src());
-    defer tracy_zone.end();
-
-    if (self.config.zig_exe_path == null) return null;
-    if (self.config.zig_lib_dir == null) return null;
-    if (self.config.global_cache_dir == null) return null;
-
-    // TODO regenerate cimports if the header files gets modified
-
-    const index = std.mem.findScalar(Ast.Node.Index, handle.cimports.items(.node), node) orelse return null;
-    const hash: Hash = handle.cimports.items(.hash)[index];
-    const source = handle.cimports.items(.source)[index];
-
-    {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        if (self.cimports.get(hash)) |result| {
-            switch (result) {
-                .success => |uri| return uri,
-                .failure => return null,
-            }
-        }
-    }
-
-    var include_dirs: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (include_dirs.items) |path| {
-            self.allocator.free(path);
-        }
-        include_dirs.deinit(self.allocator);
-    }
-
-    const collected_all_include_dirs = self.collectIncludeDirs(self.allocator, handle, &include_dirs) catch |err| switch (err) {
-        error.Canceled => return error.Canceled,
-        else => {
-            log.err("failed to resolve include paths: {}", .{err});
-            return null;
-        },
-    };
-
-    var c_macros: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (c_macros.items) |c_macro| {
-            self.allocator.free(c_macro);
-        }
-        c_macros.deinit(self.allocator);
-    }
-
-    const collected_all_c_macros = self.collectCMacros(self.allocator, handle, &c_macros) catch |err| switch (err) {
-        error.Canceled => return error.Canceled,
-        else => {
-            log.err("failed to resolve include paths: {}", .{err});
-            return null;
-        },
-    };
-
-    const maybe_result = translate_c.translate(
-        self.io,
-        self.allocator,
-        self.config,
-        include_dirs.items,
-        c_macros.items,
-        source,
-    ) catch |err| switch (err) {
-        error.Canceled, error.OutOfMemory => |e| return e,
-        else => |e| {
-            log.err("failed to translate cimport: {}", .{e});
-            return null;
-        },
-    };
-    var result = maybe_result orelse return null;
-
-    if (result == .failure and (!collected_all_include_dirs or !collected_all_c_macros)) {
-        result.deinit(self.allocator);
-        return null;
-    }
-
-    {
-        try self.mutex.lock(self.io);
-        defer self.mutex.unlock(self.io);
-        const gop = self.cimports.getOrPutValue(self.allocator, hash, result) catch |err| {
-            result.deinit(self.allocator);
-            return err;
-        };
-        if (gop.found_existing) {
-            result.deinit(self.allocator);
-            result = gop.value_ptr.*;
-        }
-    }
-
-    self.publishCimportDiagnostics(handle) catch |err| switch (err) {
-        error.Canceled => return error.Canceled,
-        else => {
-            log.err("failed to publish cImport diagnostics: {}", .{err});
-        },
-    };
-
-    switch (result) {
-        .success => |uri| {
-            log.debug("Translated cImport into {s}", .{uri});
-            return uri;
-        },
-        .failure => return null,
-    }
 }
 
 fn publishCimportDiagnostics(self: *DocumentStore, handle: *Handle) (std.mem.Allocator.Error || std.Io.File.Writer.Error)!void {
