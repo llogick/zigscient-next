@@ -251,8 +251,6 @@ pub fn main(init: process.Init.Minimal) !void {
                 builder.verbose_llvm_ir = arg["--verbose-llvm-ir=".len..];
             } else if (mem.eql(u8, arg, "--verbose-llvm-bc=")) {
                 builder.verbose_llvm_bc = arg["--verbose-llvm-bc=".len..];
-            } else if (mem.eql(u8, arg, "--verbose-cimport")) {
-                builder.verbose_cimport = true;
             } else if (mem.eql(u8, arg, "--verbose-cc")) {
                 builder.verbose_cc = true;
             } else if (mem.eql(u8, arg, "--verbose-llvm-cpu-features")) {
@@ -2208,7 +2206,6 @@ const copied_from_zig = struct {
             try zig_args.append("--debug-incremental");
         }
 
-        if (b.verbose_cimport) try zig_args.append("--verbose-cimport");
         if (b.verbose_air) try zig_args.append("--verbose-air");
         if (b.verbose_llvm_ir) |path| try zig_args.append(b.fmt("--verbose-llvm-ir={s}", .{path}));
         if (b.verbose_llvm_bc) |path| try zig_args.append(b.fmt("--verbose-llvm-bc={s}", .{path}));
