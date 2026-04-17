@@ -1681,20 +1681,29 @@ pub const Condition = struct {
         .epoch = .init(0),
     };
 
-    pub fn wait(cond: *Condition, io: Io, mutex: *Mutex) Cancelable!void {
-        try waitInner(cond, io, mutex, false);
-    }
-
-    /// Same as `wait`, except does not introduce a cancelation point.
+    /// Blocks until the condition is signaled or canceled.
     ///
-    /// For a description of cancelation and cancelation points, see `Future.cancel`.
-    pub fn waitUncancelable(cond: *Condition, io: Io, mutex: *Mutex) void {
-        waitInner(cond, io, mutex, true) catch |err| switch (err) {
-            error.Canceled => unreachable,
+    /// See also:
+    /// * `waitUncancelable`
+    /// * `waitTimeout`
+    pub fn wait(cond: *Condition, io: Io, mutex: *Mutex) Cancelable!void {
+        waitTimeout(cond, io, mutex, .none) catch |err| switch (err) {
+            error.Timeout => unreachable,
+            error.Canceled => |e| return e,
         };
     }
 
-    fn waitInner(cond: *Condition, io: Io, mutex: *Mutex, uncancelable: bool) Cancelable!void {
+    pub const WaitTimeoutError = Cancelable || Timeout.Error;
+
+    /// Blocks until the condition is signaled, canceled, or the provided
+    /// timeout expires.
+    ///
+    /// See also:
+    /// * `wait`
+    /// * `waitUncancelable`
+    pub fn waitTimeout(cond: *Condition, io: Io, mutex: *Mutex, timeout: Timeout) WaitTimeoutError!void {
+        const deadline = timeout.toDeadline(io);
+
         var epoch = cond.epoch.load(.acquire); // `.acquire` to ensure ordered before state load
 
         {
@@ -1706,10 +1715,7 @@ pub const Condition = struct {
         defer mutex.lockUncancelable(io);
 
         while (true) {
-            const result = if (uncancelable)
-                io.futexWaitUncancelable(u32, &cond.epoch.raw, epoch)
-            else
-                io.futexWait(u32, &cond.epoch.raw, epoch);
+            const result = io.futexWaitTimeout(u32, &cond.epoch.raw, epoch, deadline);
 
             epoch = cond.epoch.load(.acquire); // `.acquire` to ensure ordered before `state` laod
 
@@ -1729,13 +1735,62 @@ pub const Condition = struct {
             }
 
             // There are no more signals available; this was a spurious wakeup or an error. If it
-            // was an error, we will remove ourselves as a waiter and return that error. Otherwise,
-            // we'll loop back to the futex wait.
+            // was an error, we will remove ourselves as a waiter and return that error. If a
+            // timeout was specified and the deadline has passed, we remove ourselves as a waiter
+            // and return `error.Timeout`. Otherwise, we'll loop back to the futex wait.
             result catch |err| {
                 const prev_state = cond.state.fetchSub(.{ .waiters = 1, .signals = 0 }, .monotonic);
                 assert(prev_state.waiters > 0); // underflow caused by illegal state
                 return err;
             };
+            switch (deadline) {
+                .none => {},
+                .deadline => |d| if (d.untilNow(io).raw.nanoseconds >= 0) {
+                    const prev_state = cond.state.fetchSub(.{ .waiters = 1, .signals = 0 }, .monotonic);
+                    assert(prev_state.waiters > 0); // underflow caused by illegal state
+                    return error.Timeout;
+                },
+                .duration => unreachable,
+            }
+        }
+    }
+
+    /// Same as `wait`, except does not introduce a cancelation point.
+    ///
+    /// See `Future.cancel` for a description of cancelation points.
+    pub fn waitUncancelable(cond: *Condition, io: Io, mutex: *Mutex) void {
+        var epoch = cond.epoch.load(.acquire); // `.acquire` to ensure ordered before state load
+
+        {
+            const prev_state = cond.state.fetchAdd(.{ .waiters = 1, .signals = 0 }, .monotonic);
+            assert(prev_state.waiters < math.maxInt(u16)); // overflow caused by too many waiters
+        }
+
+        mutex.unlock(io);
+        defer mutex.lockUncancelable(io);
+
+        while (true) {
+            io.futexWaitUncancelable(u32, &cond.epoch.raw, epoch);
+
+            epoch = cond.epoch.load(.acquire); // `.acquire` to ensure ordered before `state` laod
+
+            // Even on error, try to consume a pending signal first. Otherwise a race might
+            // cause a signal to get stuck in the state with no corresponding waiter.
+            {
+                var prev_state = cond.state.load(.monotonic);
+                while (prev_state.signals > 0) {
+                    prev_state = cond.state.cmpxchgWeak(prev_state, .{
+                        .waiters = prev_state.waiters - 1,
+                        .signals = prev_state.signals - 1,
+                    }, .acquire, .monotonic) orelse {
+                        // We successfully consumed a signal.
+                        return;
+                    };
+                }
+            }
+
+            // There are no more signals available; this was a spurious wakeup,
+            // so we'll loop back to the futex wait.
         }
     }
 
