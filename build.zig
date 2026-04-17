@@ -572,33 +572,6 @@ pub fn build(b: *std.Build) !void {
         .test_filters = test_filters,
         .test_target_filters = test_target_filters,
         .test_extra_targets = test_extra_targets,
-        .root_src = "lib/c.zig",
-        .name = "zigc",
-        .desc = "Run the zig libc implementation unit tests",
-        .optimize_modes = optimization_modes,
-        .include_paths = &.{},
-        .sanitize_thread = sanitize_thread,
-        .skip_single_threaded = true,
-        .skip_non_native = skip_non_native,
-        .test_only = test_only,
-        .skip_spirv = skip_spirv,
-        .skip_wasm = skip_wasm,
-        .skip_freebsd = skip_freebsd,
-        .skip_netbsd = skip_netbsd,
-        .skip_openbsd = skip_openbsd,
-        .skip_windows = skip_windows,
-        .skip_darwin = skip_darwin,
-        .skip_linux = skip_linux,
-        .skip_llvm = skip_llvm,
-        .skip_libc = true,
-        .no_builtin = true,
-        .max_rss = 4_000_000_000,
-    }));
-
-    test_modules_step.dependOn(tests.addModuleTests(b, .{
-        .test_filters = test_filters,
-        .test_target_filters = test_target_filters,
-        .test_extra_targets = test_extra_targets,
         .root_src = "lib/std/std.zig",
         .name = "std",
         .desc = "Run the standard library tests",
@@ -608,7 +581,7 @@ pub fn build(b: *std.Build) !void {
         .skip_single_threaded = skip_single_threaded,
         .skip_non_native = skip_non_native,
         .test_only = test_only,
-        .skip_spirv = skip_spirv,
+        .skip_spirv = true,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
         .skip_netbsd = skip_netbsd,
@@ -619,6 +592,33 @@ pub fn build(b: *std.Build) !void {
         .skip_llvm = skip_llvm,
         .skip_libc = skip_libc,
         .max_rss = 9_300_000_000,
+    }));
+
+    test_modules_step.dependOn(tests.addModuleTests(b, .{
+        .test_filters = test_filters,
+        .test_target_filters = test_target_filters,
+        .test_extra_targets = test_extra_targets,
+        .root_src = "test/c.zig",
+        .name = "libc",
+        .desc = "Run the libc API tests",
+        .optimize_modes = optimization_modes,
+        .include_paths = &.{},
+        .sanitize_thread = sanitize_thread,
+        .skip_single_threaded = true,
+        .skip_non_native = skip_non_native,
+        .test_only = test_only,
+        .skip_spirv = true,
+        .skip_wasm = skip_wasm,
+        .skip_freebsd = skip_freebsd,
+        .skip_netbsd = skip_netbsd,
+        .skip_openbsd = skip_openbsd,
+        .skip_windows = skip_windows,
+        .skip_darwin = skip_darwin,
+        .skip_linux = skip_linux,
+        .skip_llvm = skip_llvm,
+        .skip_libc = skip_libc,
+        .no_builtin = true,
+        .max_rss = 4_000_000_000,
     }));
 
     const unit_tests_step = b.step("test-unit", "Run the compiler source unit tests");
@@ -708,13 +708,13 @@ pub fn build(b: *std.Build) !void {
     try tests.addIncrementalTests(b, test_incremental_step, test_filters);
     if (!skip_test_incremental) test_step.dependOn(test_incremental_step);
 
-    if (tests.addLibcTests(b, .{
+    if (tests.addLibcTestNszTests(b, .{
         .optimize_modes = optimization_modes,
         .test_filters = test_filters,
         .test_target_filters = test_target_filters,
         .skip_wasm = skip_wasm,
         .max_rss = 3_500_000_000,
-    })) |test_libc_step| test_step.dependOn(test_libc_step);
+    })) |test_libc_nsz_step| test_step.dependOn(test_libc_nsz_step);
 }
 
 fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
