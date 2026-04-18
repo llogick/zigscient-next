@@ -57,9 +57,10 @@ fn fixLastLimb(out_ptr: [*]u64, is_signed: bool, bits: u16) void {
     if (limb_cnt == true_limb_cnt) return;
     const true_out = out_ptr[0..true_limb_cnt];
 
-    const sign: u64 = if (!is_signed or @as(i64, @bitCast(true_out[limb_cnt - 1])) >= 0) 0 else ~@as(u64, 0);
+    const ms = limbGet(true_out, limb_cnt - 1);
+    const sign: u64 = if (!is_signed or @as(i64, @bitCast(ms)) >= 0) 0 else ~@as(u64, 0);
     for (limb_cnt..true_limb_cnt) |i| {
-        true_out[i] = sign;
+        limbSet(true_out, i, sign);
     }
 }
 
@@ -152,10 +153,6 @@ fn test__addo_limb64(comptime T: type, a: T, b: T, expected: struct { T, bool })
 }
 
 test __addo_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__addo_limb64(u64, 1, 2, .{ 3, false });
     try test__addo_limb64(u64, maxInt(u64), 2, .{ 1, true });
     try test__addo_limb64(u65, maxInt(u65), 2, .{ 1, true });
@@ -232,10 +229,6 @@ fn test__subo_limb64(comptime T: type, a: T, b: T, expected: struct { T, bool })
 }
 
 test __subo_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__subo_limb64(u64, 3, 2, .{ 1, false });
     try test__subo_limb64(u64, 0, 1, .{ maxInt(u64), true });
     try test__subo_limb64(u65, 0, 1, .{ maxInt(u65), true });
@@ -485,10 +478,6 @@ fn test__not_limb64(comptime T: type, a: T, expected: T) !void {
 }
 
 test __not_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__not_limb64(u64, 1, maxInt(u64) - 1);
     try test__not_limb64(u64, 3, maxInt(u64) - 3);
     try test__not_limb64(u65, maxInt(u65), 0);
@@ -567,10 +556,6 @@ fn test__shlo_limb64(comptime T: type, a: T, shift: u16, expected: struct { T, b
 }
 
 test __shlo_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__shlo_limb64(u64, 0x1234_5678_9ABC_DEF0, 4, .{ 0x2345_6789_ABCD_EF00, true });
     try test__shlo_limb64(u64, 0x8000_0000_0000_0001, 63, .{ 0x8000_0000_0000_0000, true });
     try test__shlo_limb64(u65, 1, 64, .{ 0x1_0000_0000_0000_0000, false });
@@ -647,10 +632,6 @@ fn test__shr_limb64(comptime T: type, a: T, shift: u16, expected: T) !void {
 }
 
 test __shr_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__shr_limb64(u64, 0x1234_5678_9ABC_DEF0, 4, 0x0123_4567_89AB_CDEF);
     try test__shr_limb64(u64, 0x8000_0000_0000_0001, 63, 1);
     try test__shr_limb64(u65, 0x1_0000_0000_0000_0000, 64, 1);
@@ -878,10 +859,6 @@ fn test__bitreverse_limb64(comptime T: type, a: T, expected: T) !void {
 }
 
 test __bitreverse_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__bitreverse_limb64(u64, 1 << 7, 1 << 56);
     try test__bitreverse_limb64(u65, 1 << 64, 1);
     try test__bitreverse_limb64(u65, 1 << 9, 1 << 55);
@@ -934,10 +911,6 @@ fn test__byteswap_limb64(comptime T: type, a: T, expected: T) !void {
 }
 
 test __byteswap_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__byteswap_limb64(u64, 0x0123_4567_89AB_CDEF, 0xEFCD_AB89_6745_2301);
     try test__byteswap_limb64(u72, 0x01_23_45_67_89_AB_CD_EF_11, 0x11_EF_CD_AB_89_67_45_23_01);
     try test__byteswap_limb64(u128, 1 << 72, 1 << 48);
@@ -1064,10 +1037,6 @@ fn test__mulo_limb64(comptime T: type, a: T, b: T, expected: struct { T, bool })
 }
 
 test __mulo_limb64 {
-    if (builtin.cpu.arch == .aarch64_be) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .mips64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-    if (builtin.cpu.arch == .powerpc64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/31905
-
     try test__mulo_limb64(u64, 3, 5, .{ 15, false });
     try test__mulo_limb64(u64, maxInt(u64), 2, .{ maxInt(u64) - 1, true });
     try test__mulo_limb64(u65, 1 << 32, 1 << 32, .{ 1 << 64, false });
