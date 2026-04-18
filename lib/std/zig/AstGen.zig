@@ -1776,11 +1776,12 @@ fn structInitExpr(
     }
 
     {
-        var sfba = std.heap.stackFallback(256, astgen.arena);
-        const sfba_allocator = sfba.get();
+        var bfa_buf: [256]u8 = undefined;
+        var bfa_state: std.heap.BufferFirstAllocator = .init(&bfa_buf, astgen.arena);
+        const bfa = bfa_state.allocator();
 
         var duplicate_names: std.array_hash_map.Auto(Zir.NullTerminatedString, ArrayList(Ast.TokenIndex)) = .empty;
-        try duplicate_names.ensureTotalCapacity(sfba_allocator, @intCast(struct_init.ast.fields.len));
+        try duplicate_names.ensureTotalCapacity(bfa, @intCast(struct_init.ast.fields.len));
 
         // When there aren't errors, use this to avoid a second iteration.
         var any_duplicate = false;
@@ -1789,14 +1790,14 @@ fn structInitExpr(
             const name_token = tree.firstToken(field) - 2;
             const name_index = try astgen.identAsString(name_token);
 
-            const gop = try duplicate_names.getOrPut(sfba_allocator, name_index);
+            const gop = try duplicate_names.getOrPut(bfa, name_index);
 
             if (gop.found_existing) {
-                try gop.value_ptr.append(sfba_allocator, name_token);
+                try gop.value_ptr.append(bfa, name_token);
                 any_duplicate = true;
             } else {
                 gop.value_ptr.* = .empty;
-                try gop.value_ptr.append(sfba_allocator, name_token);
+                try gop.value_ptr.append(bfa, name_token);
             }
         }
 
@@ -8404,9 +8405,10 @@ fn tunnelThroughClosure(
 
     // Otherwise we need a tunnel. First, figure out the path of namespaces we
     // are tunneling through. This is usually only going to be one or two, so
-    // use an SFBA to optimize for the common case.
-    var sfba = std.heap.stackFallback(@sizeOf(usize) * 2, astgen.arena);
-    var intermediate_tunnels = try sfba.get().alloc(*Scope.Namespace, num_tunnels - 1);
+    // use an BFA to optimize for the common case.
+    var bfa_buf: [2]usize = undefined;
+    var bfa: std.heap.BufferFirstAllocator = .init(@ptrCast(&bfa_buf), astgen.arena);
+    var intermediate_tunnels = try bfa.allocator().alloc(*Scope.Namespace, num_tunnels - 1);
 
     const root_ns = ns: {
         var i: usize = num_tunnels - 1;
@@ -12926,17 +12928,18 @@ fn scanContainer(
         next: ?*@This(),
     };
 
-    // The maps below are allocated into this SFBA to avoid using the GPA for small namespaces.
-    var sfba_state = std.heap.stackFallback(512, astgen.gpa);
-    const sfba = sfba_state.get();
+    // The maps below are allocated into this BFA to avoid using the GPA for small namespaces.
+    var bfa_buf: [512]u8 = undefined;
+    var bfa_state: std.heap.BufferFirstAllocator = .init(&bfa_buf, astgen.gpa);
+    const bfa = bfa_state.allocator();
 
     var names: std.AutoArrayHashMapUnmanaged(Zir.NullTerminatedString, NameEntry) = .empty;
     var test_names: std.AutoArrayHashMapUnmanaged(Zir.NullTerminatedString, NameEntry) = .empty;
     var decltest_names: std.AutoArrayHashMapUnmanaged(Zir.NullTerminatedString, NameEntry) = .empty;
     defer {
-        names.deinit(sfba);
-        test_names.deinit(sfba);
-        decltest_names.deinit(sfba);
+        names.deinit(bfa);
+        test_names.deinit(bfa);
+        decltest_names.deinit(bfa);
     }
 
     var any_duplicates = false;
@@ -13008,7 +13011,7 @@ fn scanContainer(
                     else => {}, // unnamed test
                     .string_literal => {
                         const name = try astgen.strLitAsString(test_name_token);
-                        const gop = try test_names.getOrPut(sfba, name.index);
+                        const gop = try test_names.getOrPut(bfa, name.index);
                         if (gop.found_existing) {
                             var e = gop.value_ptr;
                             while (e.next) |n| e = n;
@@ -13021,7 +13024,7 @@ fn scanContainer(
                     },
                     .identifier => {
                         const name = try astgen.identAsString(test_name_token);
-                        const gop = try decltest_names.getOrPut(sfba, name);
+                        const gop = try decltest_names.getOrPut(bfa, name);
                         if (gop.found_existing) {
                             var e = gop.value_ptr;
                             while (e.next) |n| e = n;
@@ -13048,7 +13051,7 @@ fn scanContainer(
         }
 
         {
-            const gop = try names.getOrPut(sfba, name_str_index);
+            const gop = try names.getOrPut(bfa, name_str_index);
             const new_ent: NameEntry = .{
                 .tok = name_token,
                 .next = null,

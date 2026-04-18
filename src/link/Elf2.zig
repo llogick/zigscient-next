@@ -2690,8 +2690,9 @@ pub fn ensureUnusedRelocCapacity(elf: *Elf, loc_si: Symbol.Index, len: usize) !v
             const shndx = loc_si.shndx(elf);
             const sh = shndx.get(elf);
             if (sh.rela_si == .null) {
-                var stack = std.heap.stackFallback(32, gpa);
-                const allocator = stack.get();
+                var bfa_buf: [32]u8 = undefined;
+                var bfa: std.heap.BufferFirstAllocator = .init(&bfa_buf, gpa);
+                const allocator = bfa.allocator();
 
                 const rela_name =
                     try std.fmt.allocPrint(allocator, ".rela{s}", .{elf.sectionName(sh.si)});

@@ -1122,14 +1122,15 @@ fn scalarizeShuffleOneBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Erro
     //
     // So we must first compute `out_idxs` and `in_idxs`.
 
-    var sfba_state = std.heap.stackFallback(512, gpa);
-    const sfba = sfba_state.get();
+    var bfa_buf: [512]u8 = undefined;
+    var bfa_state: std.heap.BufferFirstAllocator = .init(&bfa_buf, gpa);
+    const bfa = bfa_state.allocator();
 
-    const out_idxs_buf = try sfba.alloc(InternPool.Index, shuffle.mask.len);
-    defer sfba.free(out_idxs_buf);
+    const out_idxs_buf = try bfa.alloc(InternPool.Index, shuffle.mask.len);
+    defer bfa.free(out_idxs_buf);
 
-    const in_idxs_buf = try sfba.alloc(InternPool.Index, shuffle.mask.len);
-    defer sfba.free(in_idxs_buf);
+    const in_idxs_buf = try bfa.alloc(InternPool.Index, shuffle.mask.len);
+    defer bfa.free(in_idxs_buf);
 
     var n: usize = 0;
     for (shuffle.mask, 0..) |mask, out_idx| switch (mask.unwrap()) {
@@ -1143,8 +1144,8 @@ fn scalarizeShuffleOneBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Erro
 
     const init_val: Value = init: {
         const undef_val = try pt.undefValue(shuffle.result_ty.childType(zcu));
-        const elems = try sfba.alloc(InternPool.Index, shuffle.mask.len);
-        defer sfba.free(elems);
+        const elems = try bfa.alloc(InternPool.Index, shuffle.mask.len);
+        defer bfa.free(elems);
         for (shuffle.mask, elems) |mask, *elem| elem.* = switch (mask.unwrap()) {
             .value => |ip_index| ip_index,
             .elem => undef_val.toIntern(),
@@ -1212,14 +1213,15 @@ fn scalarizeShuffleTwoBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Erro
     //     %8 = br(%1, %7)
     //   })
 
-    var sfba_state = std.heap.stackFallback(512, gpa);
-    const sfba = sfba_state.get();
+    var bfa_buf: [512]u8 = undefined;
+    var bfa_state: std.heap.BufferFirstAllocator = .init(&bfa_buf, gpa);
+    const bfa = bfa_state.allocator();
 
-    const out_idxs_buf = try sfba.alloc(InternPool.Index, shuffle.mask.len);
-    defer sfba.free(out_idxs_buf);
+    const out_idxs_buf = try bfa.alloc(InternPool.Index, shuffle.mask.len);
+    defer bfa.free(out_idxs_buf);
 
-    const in_idxs_buf = try sfba.alloc(InternPool.Index, shuffle.mask.len);
-    defer sfba.free(in_idxs_buf);
+    const in_idxs_buf = try bfa.alloc(InternPool.Index, shuffle.mask.len);
+    defer bfa.free(in_idxs_buf);
 
     // Iterate `shuffle.mask` before doing anything, because modifying AIR invalidates it.
     const out_idxs_a, const in_idxs_a, const out_idxs_b, const in_idxs_b = idxs: {
@@ -2394,9 +2396,9 @@ fn packedStoreBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Error!Air.In
                                 }).toRef(),
                                 .rhs = Air.internedToRef((keep_mask: {
                                     const ExpectedContents = [std.math.big.int.calcTwosCompLimbCount(256)]std.math.big.Limb;
-                                    var stack align(@max(@alignOf(ExpectedContents), @alignOf(std.heap.StackFallbackAllocator(0)))) =
-                                        std.heap.stackFallback(@sizeOf(ExpectedContents), zcu.gpa);
-                                    const gpa = stack.get();
+                                    var bfa_buf: ExpectedContents = undefined;
+                                    var bfa: std.heap.BufferFirstAllocator = .init(@ptrCast(&bfa_buf), zcu.gpa);
+                                    const gpa = bfa.allocator();
 
                                     var mask_big_int: std.math.big.int.Mutable = .{
                                         .limbs = try gpa.alloc(
@@ -2489,11 +2491,12 @@ fn packedAggregateInitBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Erro
     const agg_ty = orig_ty_pl.ty.toType();
     const agg_field_count = agg_ty.structFieldCount(zcu);
 
-    var sfba_state = std.heap.stackFallback(@sizeOf([4 * 32 + 2]Air.Inst.Index), gpa);
-    const sfba = sfba_state.get();
+    var bfa_buf: [4 * 32 + 2]Air.Inst.Index = undefined;
+    var bfa_state: std.heap.BufferFirstAllocator = .init(@ptrCast(&bfa_buf), gpa);
+    const bfa = bfa_state.allocator();
 
-    const inst_buf = try sfba.alloc(Air.Inst.Index, 4 * agg_field_count + 2);
-    defer sfba.free(inst_buf);
+    const inst_buf = try bfa.alloc(Air.Inst.Index, 4 * agg_field_count + 2);
+    defer bfa.free(inst_buf);
 
     var main_block: Block = .init(inst_buf);
     try l.air_instructions.ensureUnusedCapacity(gpa, inst_buf.len);
