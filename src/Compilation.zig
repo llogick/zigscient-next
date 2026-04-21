@@ -2190,7 +2190,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 .global = options.config,
                 .parent = options.root_mod,
             }) catch |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
+                error.OutOfMemory => |e| return e,
                 // None of these are possible because the configuration matches the root module
                 // which already passed these checks.
                 error.ValgrindUnsupportedOnTarget => unreachable,
@@ -2956,8 +2956,7 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
                         );
                     },
                 },
-                error.OutOfMemory => return error.OutOfMemory,
-                error.Canceled => return error.Canceled,
+                error.OutOfMemory, error.Canceled => |e| return e,
                 error.InvalidFormat => return comp.setMiscFailure(
                     .check_whole_cache,
                     "failed to check cache: invalid manifest file format",
@@ -3376,7 +3375,7 @@ fn flush(comp: *Compilation, arena: Allocator, tid: Zcu.PerThread.Id) (Io.Cancel
                 .lto = comp.config.lto,
             }) catch |err| switch (err) {
                 error.LinkFailure => {}, // Already reported.
-                error.OutOfMemory => return error.OutOfMemory,
+                error.OutOfMemory => |e| return e,
             };
         }
     }
@@ -7247,7 +7246,7 @@ pub fn dumpArgv(io: Io, argv: []const []const u8) Io.Cancelable!void {
     const w = &stderr.file_writer.interface;
     return dumpArgvWriter(w, argv) catch |err| switch (err) {
         error.WriteFailed => switch (stderr.file_writer.err.?) {
-            error.Canceled => return error.Canceled,
+            error.Canceled => |e| return e,
             else => return,
         },
     };
