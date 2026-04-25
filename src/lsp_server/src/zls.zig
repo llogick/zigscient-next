@@ -1,4 +1,4 @@
-pub const build_options = @import("ls_build_options");
+pub const build_options = @import("build_options");
 pub const lsp = @import("lsp");
 
 pub const analyser = @import("analyser/analyser.zig");

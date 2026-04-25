@@ -1,9 +1,7 @@
 const std = @import("std");
 const builtin = std.builtin;
-const BufMap = std.BufMap;
 const mem = std.mem;
 const fs = std.fs;
-const InstallDirectoryOptions = std.Build.InstallDirectoryOptions;
 const assert = std.debug.assert;
 const Io = std.Io;
 
@@ -31,7 +29,7 @@ pub fn build(b: *std.Build) !void {
     const single_threaded = b.option(bool, "single-threaded", "Build artifacts that run in single threaded mode");
     const use_zig_libcxx = b.option(bool, "use-zig-libcxx", "If libc++ is needed, use zig's bundled version, don't try to integrate with the system") orelse false;
 
-    const test_step = b.step("test-zig", "Run all the tests");
+    const test_step = b.step("test-compiler", "Run all compiler tests");
     const skip_install_lib_files = b.option(bool, "no-lib", "skip copying of lib/ files and langref to installation prefix. Useful for development") orelse only_c or dev_env != .full;
     const skip_install_langref = b.option(bool, "no-langref", "skip copying of langref to the installation prefix") orelse skip_install_lib_files;
     const std_docs = b.option(bool, "std-docs", "include standard library autodocs") orelse false;
@@ -199,7 +197,7 @@ pub fn build(b: *std.Build) !void {
     const mem_leak_frames: u32 = b.option(u32, "mem-leak-frames", "How many stack frames to print when a memory leak occurs. Tests get 2x this amount.") orelse blk: {
         if (strip == true) break :blk @as(u32, 0);
         if (optimize != .Debug) break :blk 0;
-        break :blk 4;
+        break :blk 12;
     };
 
     const exe = addCompilerStep(b, .{
@@ -218,7 +216,7 @@ pub fn build(b: *std.Build) !void {
     exe.use_llvm = use_llvm;
     exe.use_lld = use_llvm;
 
-    const check = b.step("check", "Check if it compiles");
+    const check = b.step("check", "Check if the project compiles");
     check.dependOn(&exe.step);
 
     if (no_bin) {
@@ -233,7 +231,8 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&exe.step);
 
     const exe_options = b.addOptions();
-    exe.root_module.addOptions("build_options", exe_options);
+    const exe_options_module = exe_options.createModule();
+    exe.root_module.addImport("build_options", exe_options_module);
 
     exe_options.addOption(u32, "mem_leak_frames", mem_leak_frames);
     exe_options.addOption(bool, "skip_non_native", skip_non_native);
@@ -345,6 +344,11 @@ pub fn build(b: *std.Build) !void {
     const version = try b.allocator.dupeZ(u8, version_slice);
     exe_options.addOption([:0]const u8, "version", version);
 
+    const resolved_proj_version = getVersion(b, opt_version_string);
+    exe_options.addOption(std.SemanticVersion, "semantic_version", resolved_proj_version);
+    exe_options.addOption([]const u8, "version_string", b.fmt("{f}", .{resolved_proj_version}));
+    exe_options.addOption([]const u8, "minimum_runtime_zig_version_string", minimum_runtime_zig_version);
+
     if (enable_llvm) {
         const cmake_cfg = if (static_llvm) null else blk: {
             const io = b.graph.io;
@@ -439,7 +443,7 @@ pub fn build(b: *std.Build) !void {
         optimize,
         test_filters,
         single_threaded,
-        opt_version_string,
+        exe_options_module,
         use_llvm,
         pie,
     );
@@ -1604,23 +1608,10 @@ fn cfgLspServer(
     optimize: std.builtin.OptimizeMode,
     test_filters: []const []const u8,
     single_threaded: ?bool,
-    opt_version_string: ?[]const u8,
+    exe_options_module: *std.Build.Module,
     use_llvm: ?bool,
     pie: ?bool,
 ) void {
-    const resolved_proj_version = getVersion(b, opt_version_string);
-
-    const ls_build_options = blk: {
-        const ls_build_options = b.addOptions();
-        ls_build_options.step.name = "ls_build_options";
-
-        ls_build_options.addOption(std.SemanticVersion, "version", resolved_proj_version);
-        ls_build_options.addOption([]const u8, "version_string", b.fmt("{f}", .{resolved_proj_version}));
-        ls_build_options.addOption([]const u8, "minimum_runtime_zig_version_string", minimum_runtime_zig_version);
-
-        break :blk ls_build_options.createModule();
-    };
-
     const ls_test_options = blk: {
         const ls_test_options = b.addOptions();
         ls_test_options.step.name = "test options";
@@ -1675,7 +1666,7 @@ fn cfgLspServer(
     const lsp_server_module = createLspServerModule(b, .{
         .target = target,
         .optimize = optimize,
-        .build_options = ls_build_options,
+        .build_options = exe_options_module,
         .version_data = version_data_module,
     });
     b.modules.put(b.graph.arena, "zls", lsp_server_module) catch @panic("OOM");
@@ -1920,7 +1911,7 @@ fn createLspServerModule(
             .{ .name = "lsp", .module = lsp_module },
             .{ .name = "tracy", .module = tracy_module },
             .{ .name = "extended-zccs", .module = extended_zccs },
-            .{ .name = "ls_build_options", .module = options.build_options },
+            .{ .name = "build_options", .module = options.build_options },
             .{ .name = "version_data", .module = options.version_data },
         },
     });

@@ -7,7 +7,7 @@ const Server = @This();
 
 const std = @import("std");
 const zig_builtin = @import("builtin");
-const build_options = @import("ls_build_options");
+const build_options = @import("build_options");
 const Config = @import("Config.zig");
 const configuration = @import("configuration.zig");
 const DocumentStore = @import("DocumentStore.zig");
@@ -1132,7 +1132,7 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
         }
 
         const zig_version = server.config_manager.zig_exe.?.version;
-        const zls_version = build_options.version;
+        const zls_version = build_options.semantic_version;
 
         const zig_version_is_tagged = zig_version.pre == null;
         const zls_version_is_tagged = zls_version.pre == null;
