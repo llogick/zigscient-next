@@ -853,7 +853,6 @@ fn completeError(builder: *Builder, token_index: std.zig.Ast.TokenIndex) Analyse
 fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.PositionContext) Analyser.Error!void {
     const io = builder.server.io;
 
-    var completions: CompletionSet = .empty;
     const store = &builder.server.document_store;
     const source = builder.orig_handle.tree.source;
 
@@ -911,26 +910,26 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
 
             try builder.completions.ensureUnusedCapacity(builder.arena, build_config.deps_build_roots.len);
             for (build_config.deps_build_roots) |dbr| {
-                completions.putAssumeCapacity(.{
+                builder.completions.appendAssumeCapacity(.{
                     .label = dbr.name,
                     .kind = .Module,
                     .detail = dbr.path,
                     .sortText = "4",
-                }, {});
+                });
             }
         } else if (try builder.orig_handle.getAssociatedBuildFileUri(store)) |uri| blk: {
             const build_file = store.getBuildFile(uri).?;
             const build_config = build_file.tryLockConfig(store.io) orelse break :blk;
             defer build_file.unlockConfig(store.io);
 
-            try completions.ensureUnusedCapacity(builder.arena, build_config.packages.len);
+            try builder.completions.ensureUnusedCapacity(builder.arena, build_config.packages.len);
             for (build_config.packages) |pkg| {
-                completions.putAssumeCapacity(.{
+                builder.completions.appendAssumeCapacity(.{
                     .label = pkg.name,
                     .kind = .Module,
                     .detail = pkg.path,
                     .sortText = "4",
-                }, {});
+                });
             }
         }
 
@@ -992,7 +991,7 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
             else
                 label;
 
-            _ = try completions.getOrPut(builder.arena, .{
+            try builder.completions.append(builder.arena, .{
                 .label = label,
                 .kind = if (entry.kind == .file) .File else .Folder,
                 .textEdit = createTextEdit(builder, .{ .newText = insert_text, .insert = insert_range, .replace = replace_range }),
