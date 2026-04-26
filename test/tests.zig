@@ -412,6 +412,14 @@ const module_test_targets = blk: {
 
         .{
             .target = .{
+                .cpu_arch = .loongarch32,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+        },
+
+        .{
+            .target = .{
                 .cpu_arch = .loongarch64,
                 .os_tag = .linux,
                 .abi = .none,
@@ -439,9 +447,37 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .loongarch64,
                 .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .loongarch64,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .loongarch64,
+                .os_tag = .linux,
                 .abi = .gnu,
             },
             .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .loongarch64,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+            .extra_target = true,
         },
 
         .{
@@ -1713,20 +1749,26 @@ const c_abi_targets = blk: {
             },
         },
 
-        // https://gitlab.com/qemu-project/qemu/-/issues/3291
-        // .{
-        //     .target = .{
-        //         .cpu_arch = .hexagon,
-        //         .os_tag = .linux,
-        //         .abi = .musl,
-        //     },
-        // },
+        .{
+            .target = .{
+                .cpu_arch = .hexagon,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+        },
 
         .{
             .target = .{
                 .cpu_arch = .loongarch64,
                 .os_tag = .linux,
                 .abi = .musl,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .loongarch64,
+                .os_tag = .linux,
+                .abi = .muslsf,
             },
         },
 

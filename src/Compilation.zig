@@ -3021,6 +3021,13 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
         try comp.appendFileSystemInput(try .fromUnresolved(arena, comp.dirs, &.{c_object.src.src_path}));
     }
 
+    for (comp.link_inputs) |input| if (input.path()) |path| {
+        try comp.appendFileSystemInput(try .fromUnresolved(arena, comp.dirs, &.{
+            path.root_dir.path orelse ".",
+            path.sub_path,
+        }));
+    };
+
     // For compiling Win32 resources, we rely on the cache hash system to avoid duplicating work.
     // Add a Job for each Win32 resource file.
     try comp.win32_resource_work_queue.ensureUnusedCapacity(gpa, comp.win32_resource_table.count());
@@ -4773,12 +4780,12 @@ fn writeDepFile(
 
     try w.print("{f}:", .{bin_file});
 
-    {
+    if (fsi.len > 0) {
         var it = std.mem.splitScalar(u8, fsi, 0);
         while (it.next()) |input| try w.print(" \\\n {f}{s}", .{ prefixes[input[0] - 1], input[1..] });
     }
 
-    {
+    if (fsi.len > 0) {
         var it = std.mem.splitScalar(u8, fsi, 0);
         while (it.next()) |input| try w.print("\n\n{f}{s}:", .{ prefixes[input[0] - 1], input[1..] });
     }
@@ -6366,6 +6373,13 @@ fn addCommonCCArgs(
                     try argv.append(
                         try std.fmt.allocPrint(arena, "-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
                     );
+
+                    // MinGW-w64's inline functions in headers (e.g. `fabs`), which are emitted with `linkonce_odr`
+                    // linkage, sometimes cause duplicate symbol errors due to us providing the same symbols with
+                    // `weak` linkage in compiler-rt or libzigc. So just disable them. Besides, they undermine the
+                    // goal of moving more libc code to Zig, and they're also just kind of unnecessary since LLVM is
+                    // perfectly capable of recognizing and optimizing libcalls.
+                    try argv.append("-D__CRT__NO_INLINE");
                 } else if (target.isFreeBSDLibC()) {
                     // https://docs.freebsd.org/en/books/porters-handbook/versions
                     const min_ver = target.os.version_range.semver.min;
@@ -6805,6 +6819,8 @@ pub fn addCCArgs(
                     // We communicate these to Clang through the dedicated options.
                     if (std.mem.startsWith(u8, llvm_name, "soft-float") or
                         std.mem.startsWith(u8, llvm_name, "hard-float") or
+                        (target.cpu.arch.isPowerPC() and std.mem.startsWith(u8, llvm_name, "64bit")) or
+                        (target.cpu.arch.isX86() and std.mem.startsWith(u8, llvm_name, "x32")) or
                         (target.cpu.arch == .s390x and std.mem.eql(u8, llvm_name, "backchain")))
                         continue;
 

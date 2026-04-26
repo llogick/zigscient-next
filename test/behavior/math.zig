@@ -110,8 +110,6 @@ test "@clz vectors" {
 }
 
 fn testClzVectors() !void {
-    if (comptime builtin.cpu.has(.loongarch, .lsx)) return error.SkipZigTest; // https://github.com/llvm/llvm-project/issues/159529
-
     const Vu4 = @Vector(64, u4);
     const Vu8 = @Vector(64, u8);
     const Vu128 = @Vector(64, u128);
@@ -193,8 +191,6 @@ test "@ctz vectors" {
 }
 
 fn testCtzVectors() !void {
-    if (comptime builtin.cpu.has(.loongarch, .lsx)) return error.SkipZigTest; // https://github.com/llvm/llvm-project/issues/159529
-
     const Vu4 = @Vector(64, u4);
     const Vu8 = @Vector(64, u8);
     @setEvalBranchQuota(10_000);
@@ -2429,7 +2425,6 @@ test "runtime comparison to NaN is comptime-known" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.cpu.arch.isArm() and builtin.target.abi.float() == .soft) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/21234
 
     const S = struct {
         fn doTheTest(comptime F: type, x: F) void {
@@ -2458,7 +2453,6 @@ test "runtime int comparison to inf is comptime-known" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.cpu.arch.isArm() and builtin.target.abi.float() == .soft) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/21234
 
     const S = struct {
         fn doTheTest(comptime F: type, x: u32) void {

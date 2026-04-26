@@ -1215,6 +1215,11 @@ pub fn buildOutputType(
     cs.cc_argv = .empty;
     cs.deps = .empty;
 
+    // We need to raise the FD limit *before* CLI parsing, because we open link inputs during CLI
+    // parsing (in `createModule`), so a large number of link inputs could push us past the limit on
+    // targets with a low soft limit (e.g. macOS has a default limit of 256).
+    process.raiseFileDescriptorLimit();
+
     // Contains every module specified via -M. The dependencies are added
     // after argument parsing is completed. We use a StringArrayHashMap to make
     // error output consistent. "root" is special.
@@ -3856,8 +3861,6 @@ pub fn buildOutputType(
         if (incremental) break :b .incremental;
         break :b .whole;
     };
-
-    process.raiseFileDescriptorLimit();
 
     // Deduplicate rpath entries
     var rpath_dedup = std.StringArrayHashMapUnmanaged(void){};
