@@ -29,7 +29,7 @@ const build_options = @import("build_options");
 const introspect = @import("introspect.zig");
 const wasi_libc = @import("libs/wasi_libc.zig");
 const target_util = @import("target.zig");
-const crash_report = @import("crash_report.zig");
+pub const crash_report = @import("crash_report.zig");
 const Zcu = @import("Zcu.zig");
 const mingw = @import("libs/mingw.zig");
 const dev = @import("dev.zig");
@@ -39,24 +39,18 @@ test {
     _ = @import("codegen.zig");
 }
 
-const thread_stack_size = 60 << 20;
-
-// pub const std_options: std.Options = .{
-//     .logFn = log,
-
-//     .log_level = switch (builtin.mode) {
-//         .Debug => .debug,
-//         .ReleaseSafe, .ReleaseFast => .info,
-//         .ReleaseSmall => .err,
-//     },
-// };
+pub const thread_stack_size = 60 << 20;
 
 pub const std_options: std.Options = .{
-    // Always set this to debug to make std.log call into our handler, then control the runtime
-    // value in logFn itself
-    .log_level = .debug,
-    .logFn = @import("lsp_server/src/main.zig").std_options.logFn,
+    .logFn = log,
+
+    .log_level = switch (builtin.mode) {
+        .Debug => .debug,
+        .ReleaseSafe, .ReleaseFast => .info,
+        .ReleaseSmall => .err,
+    },
 };
+
 pub const std_options_cwd = if (native_os == .wasi) wasi_cwd else null;
 
 pub const panic = crash_report.panic;
@@ -137,7 +131,7 @@ const debug_usage = normal_usage ++
     \\
 ;
 
-const usage = if (build_options.enable_debug_extensions) debug_usage else normal_usage;
+pub const usage = if (build_options.enable_debug_extensions) debug_usage else normal_usage;
 
 var log_scopes: std.ArrayList([]const u8) = .empty;
 
@@ -227,7 +221,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
     if (args.len <= 1 or (args.len > 1 and !mem.eql(u8, args[1], "zig") and !mem.eql(u8, args[1], "aro"))) {
-        _ = try @import("lsp_server/src/main.zig").stage2(gpa, io, init, &environ_map);
+        // _ = try @import("lsp_server/src/main.zig").stage2(gpa, io, init, &environ_map);
         return;
     }
 
@@ -252,7 +246,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     return mainArgs(gpa, arena, io, args, &environ_map);
 }
 
-fn mainArgs(
+pub fn mainArgs(
     gpa: Allocator,
     arena: Allocator,
     io: Io,
@@ -8146,11 +8140,11 @@ fn addLibDirectoryWarn2(
     });
 }
 
-const IoImpl = switch (build_options.io_mode) {
+pub const IoImpl = switch (build_options.io_mode) {
     .threaded => Io.Threaded,
     .evented => Io.Evented,
 };
-var io_impl_ptr: *IoImpl = undefined;
+pub var io_impl_ptr: *IoImpl = undefined;
 fn setThreadLimit(arena: std.mem.Allocator, n: usize) Allocator.Error!void {
     switch (build_options.io_mode) {
         .threaded => {

@@ -200,6 +200,9 @@ pub fn build(b: *std.Build) !void {
         break :blk 12;
     };
 
+    const exe_options = b.addOptions();
+    const exe_options_mod = exe_options.createModule();
+
     const exe = addCompilerStep(b, .{
         .optimize = optimize,
         .target = target,
@@ -207,6 +210,7 @@ pub fn build(b: *std.Build) !void {
         .valgrind = valgrind,
         .sanitize_thread = sanitize_thread,
         .single_threaded = single_threaded,
+        .exe_options_mod = exe_options_mod,
     });
     exe.pie = pie;
     exe.entitlements = entitlements;
@@ -229,10 +233,6 @@ pub fn build(b: *std.Build) !void {
     }
 
     test_step.dependOn(&exe.step);
-
-    const exe_options = b.addOptions();
-    const exe_options_module = exe_options.createModule();
-    exe.root_module.addImport("build_options", exe_options_module);
 
     exe_options.addOption(u32, "mem_leak_frames", mem_leak_frames);
     exe_options.addOption(bool, "skip_non_native", skip_non_native);
@@ -443,7 +443,7 @@ pub fn build(b: *std.Build) !void {
         optimize,
         test_filters,
         single_threaded,
-        exe_options_module,
+        exe_options_mod,
         use_llvm,
         pie,
     );
@@ -634,6 +634,7 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .sanitize_thread = sanitize_thread,
             .single_threaded = single_threaded,
+            .exe_options_mod = exe_options_mod,
         }),
         .filters = test_filters,
         .use_llvm = use_llvm,
@@ -724,6 +725,9 @@ pub fn build(b: *std.Build) !void {
 fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
     const semver = try std.SemanticVersion.parse(version);
 
+    const exe_options = b.addOptions();
+    const exe_options_mod = exe_options.createModule();
+
     const exe = addCompilerStep(b, .{
         .optimize = .ReleaseSmall,
         .target = b.resolveTargetQuery(std.Target.Query.parse(.{
@@ -732,10 +736,8 @@ fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
             // * `nontrapping_bulk_memory_len0` is supported by `wasm2c`.
             .cpu_features = "baseline-extended_const+nontrapping_bulk_memory_len0",
         }) catch unreachable),
+        .exe_options_mod = exe_options_mod,
     });
-
-    const exe_options = b.addOptions();
-    exe.root_module.addOptions("build_options", exe_options);
 
     exe_options.addOption(u32, "mem_leak_frames", 0);
     exe_options.addOption(bool, "have_llvm", false);
@@ -797,9 +799,21 @@ const AddCompilerModOptions = struct {
     valgrind: ?bool = null,
     sanitize_thread: ?bool = null,
     single_threaded: ?bool = null,
+    exe_options_mod: *std.Build.Module,
 };
 
 fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Module {
+    const lsp_server_mod = b.createModule(.{
+        .root_source_file = b.path("src/lsp_server_main.zig"),
+        .target = options.target,
+        .optimize = options.optimize,
+        .strip = options.strip,
+        .sanitize_thread = options.sanitize_thread,
+        .single_threaded = options.single_threaded,
+        .valgrind = options.valgrind,
+    });
+    lsp_server_mod.addImport("build_options", options.exe_options_mod);
+
     const compiler_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = options.target,
@@ -809,6 +823,9 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
         .single_threaded = options.single_threaded,
         .valgrind = options.valgrind,
     });
+    compiler_mod.addImport("build_options", options.exe_options_mod);
+
+    lsp_server_mod.addImport("compiler", compiler_mod);
 
     const aro_mod = b.createModule(.{
         .root_source_file = b.path("lib/compiler/aro/aro.zig"),
@@ -827,7 +844,7 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
     translate_c_mod.addImport("aro-compiler-util", aro_compiler_util_mod);
     compiler_mod.addImport("translate-c", translate_c_mod);
 
-    return compiler_mod;
+    return lsp_server_mod;
 }
 
 fn addCompilerStep(b: *std.Build, options: AddCompilerModOptions) *std.Build.Step.Compile {
@@ -1679,6 +1696,10 @@ fn cfgLspServer(
     exe.root_module.addImport("known-folders", known_folders_module);
     exe.root_module.addImport("zls", lsp_server_module);
     exe.root_module.addImport("tracy", lsp_server_module.import_table.get("tracy").?);
+
+    const compiler_mod = exe.root_module.import_table.get("compiler").?;
+    lsp_server_module.addImport("compiler", compiler_mod);
+    compiler_mod.addImport("zls", lsp_server_module);
 
     const ls_tests = b.addTest(.{
         .root_module = b.createModule(.{

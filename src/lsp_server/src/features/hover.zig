@@ -522,8 +522,6 @@ fn hoverKeyword(
     markup_kind: types.MarkupKind,
     offset_encoding: offsets.Encoding,
 ) error{OutOfMemory}!?types.Hover {
-    if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
-
     const tree = &handle.tree;
 
     switch (tree.tokenTag(token_index)) {
@@ -627,7 +625,6 @@ fn lookupNav(
     markup_kind: types.MarkupKind,
     // offset_encoding: offsets.Encoding,
 ) Analyser.Error!?[]const u8 {
-    if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
     if (true) return null;
 
     const tree = &handle.tree;
@@ -719,8 +716,6 @@ fn getAirSlice(
     arena: std.mem.Allocator,
     decl: Analyser.DeclWithHandle,
 ) Analyser.Error!?[]const u8 {
-    if (!@hasDecl(DocumentStore.compiler_main, "Compilation")) return null;
-
     decl.handle.computed_data.lock.lockSharedUncancelable(ds.io);
     defer decl.handle.computed_data.lock.unlockShared(ds.io);
 

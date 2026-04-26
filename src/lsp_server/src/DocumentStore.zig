@@ -17,13 +17,10 @@ const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
 
 /// Compiler and Compilation declarations
-pub const compiler_main = if (!builtin.is_test) @import("root") else struct {};
-pub const Compilation =
-    if (@hasDecl(compiler_main, "Compilation")) compiler_main.Compilation else void;
-const CompilationState =
-    if (@hasDecl(compiler_main, "CompilationState")) compiler_main.CompilationState else void;
-const buildOutputType =
-    if (@hasDecl(compiler_main, "CompilationState")) compiler_main.buildOutputType else void;
+pub const compiler = @import("compiler");
+pub const Compilation = compiler.Compilation;
+const CompilationState = compiler.CompilationState;
+const buildOutputType = compiler.buildOutputType;
 
 /// window/workDoneProgress Notification Data
 const ProgressNotification = struct {
@@ -218,8 +215,6 @@ pub const BuildFile = struct {
     }
 
     fn redoCompilation(self: *BuildFile, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
-        if (!@hasDecl(compiler_main, "Compilation")) return;
-
         try self.compilation.mutex.lock(ds.io);
         defer self.compilation.mutex.unlock(ds.io);
 
@@ -261,7 +256,7 @@ pub const BuildFile = struct {
         self.compilation.state.* = .{};
 
         const cmd = self.compilation.args[1];
-        const arg_mode: compiler_main.ArgMode =
+        const arg_mode: compiler.ArgMode =
             if (std.mem.eql(u8, cmd, "build-exe")) .{ .build = .Exe } //
             else if (std.mem.eql(u8, cmd, "build-lib")) .{ .build = .Lib } //
             else if (std.mem.eql(u8, cmd, "build-obj")) .{ .build = .Obj } //
@@ -291,10 +286,10 @@ pub const BuildFile = struct {
         if (self.builtin_uri) |builtin_uri| allocator.free(builtin_uri);
         if (self.build_associated_config) |cfg| cfg.deinit();
 
-        if (@hasDecl(compiler_main, "Compilation")) if (self.compilation.instance) |comp| {
+        if (self.compilation.instance) |comp| {
             self.compilation.state.deinit(allocator);
             comp.destroy();
-        };
+        }
         self.compilation.arena_instance.deinit();
     }
 };
@@ -319,7 +314,7 @@ pub const Handle = struct {
 
     mtime: std.Io.Timestamp = .{ .nanoseconds = 0 },
 
-    computed_data: if (@hasDecl(compiler_main, "Compilation")) struct {
+    computed_data: struct {
         lock: std.Io.RwLock = .init,
         compilation: ?*BuildFile.CompilationBuild = null,
         type_decls: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
@@ -330,7 +325,7 @@ pub const Handle = struct {
             air: Compilation.Zcu.Air,
             tid: Compilation.Zcu.PerThread.Id,
         }) = .empty,
-    } else struct {} = .{},
+    } = .{},
 
     /// private field
     impl: struct {
@@ -458,12 +453,10 @@ pub const Handle = struct {
 
         if (self.closest_build_file_uri) |cbfuri| allocator.free(cbfuri);
 
-        if (@hasDecl(compiler_main, "Compilation")) {
-            self.computed_data.type_decls.deinit(allocator);
-            var val_it = self.computed_data.air.valueIterator();
-            while (val_it.next()) |val| val.air.deinit(allocator);
-            self.computed_data.air.deinit(allocator);
-        }
+        self.computed_data.type_decls.deinit(allocator);
+        var val_it = self.computed_data.air.valueIterator();
+        while (val_it.next()) |val| val.air.deinit(allocator);
+        self.computed_data.air.deinit(allocator);
 
         self.* = undefined;
     }
