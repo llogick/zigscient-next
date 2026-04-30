@@ -295,14 +295,7 @@ fn writeNodeTokens(builder: *Builder, node: Ast.Node.Index) Analyser.Error!void 
         => try writeContainerField(builder, node, .root),
         .@"errdefer" => {
             try writeToken(builder, main_token, .keyword);
-
-            const opt_payload, const rhs = tree.nodeData(node).opt_token_and_node;
-
-            if (opt_payload.unwrap()) |payload| {
-                try writeTokenMod(builder, payload, .variable, .{ .declaration = true });
-            }
-
-            try writeNodeTokens(builder, rhs);
+            try writeNodeTokens(builder, tree.nodeData(node).node);
         },
         .block,
         .block_semicolon,
@@ -798,7 +791,6 @@ fn writeNodeTokens(builder: *Builder, node: Ast.Node.Index) Analyser.Error!void 
         .add_wrap,
         .add_sat,
         .array_cat,
-        .array_mult,
         .assign,
         .assign_bit_and,
         .assign_bit_or,

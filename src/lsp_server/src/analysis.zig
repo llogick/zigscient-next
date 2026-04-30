@@ -2818,20 +2818,6 @@ fn resolveTypeOfNodeUncached(analyser: *Analyser, options: ResolveOptions) Error
             return lhs_ty;
         },
 
-        .array_mult => {
-            const elem_idx, const mult_idx = tree.nodeData(node).node_and_node;
-
-            var elem_ty = try analyser.resolveTypeOfNodeInternal(.of(elem_idx, handle)) orelse return null;
-            const arr_data = extractArrayData(&elem_ty.data) orelse return null;
-
-            const mult_lit = try analyser.resolveIntegerLiteral(u64, .of(mult_idx, handle));
-
-            if (arr_data.array.elem_count) |count| {
-                arr_data.array.elem_count = if (mult_lit) |mult| count * mult else null;
-            }
-
-            return elem_ty;
-        },
         .array_cat => {
             const l_elem_idx, const r_elem_idx = tree.nodeData(node).node_and_node;
 
