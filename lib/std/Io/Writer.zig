@@ -781,7 +781,7 @@ test splatByteAll {
     defer aw.deinit();
 
     try aw.writer.splatByteAll('7', 45);
-    try testing.expectEqualStrings("7" ** 45, aw.writer.buffered());
+    try testing.expectEqualStrings(&@as([45]u8, @splat('7')), aw.writer.buffered());
 }
 
 pub fn splatBytePreserve(w: *Writer, preserve: usize, byte: u8, n: usize) Error!void {
@@ -1924,7 +1924,6 @@ test "serialize signed LEB128" {
     try testLeb128Encoding(i128, std.math.minInt(i128), "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x7E");
 
     // Specific cases
-    try testLeb128Encoding(i0, 0, "\x00");
     try testLeb128Encoding(i8, 0, "\x00");
 
     try testLeb128Encoding(i2, -1, "\x7F");

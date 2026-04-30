@@ -141,11 +141,7 @@ fn expr(astrl: *AstRlAnnotate, node: Ast.Node.Index, block: ?*Block, ri: ResultI
         .asm_input,
         => unreachable,
 
-        .@"errdefer" => {
-            _ = try astrl.expr(tree.nodeData(node).opt_token_and_node[1], block, ResultInfo.none);
-            return false;
-        },
-        .@"defer" => {
+        .@"defer", .@"errdefer" => {
             _ = try astrl.expr(tree.nodeData(node).node, block, ResultInfo.none);
             return false;
         },
@@ -273,12 +269,6 @@ fn expr(astrl: *AstRlAnnotate, node: Ast.Node.Index, block: ?*Block, ri: ResultI
             return false;
         },
 
-        .array_mult => {
-            const lhs, const rhs = tree.nodeData(node).node_and_node;
-            _ = try astrl.expr(lhs, block, ResultInfo.none);
-            _ = try astrl.expr(rhs, block, ResultInfo.type_only);
-            return false;
-        },
         .error_union, .merge_error_sets => {
             const lhs, const rhs = tree.nodeData(node).node_and_node;
             _ = try astrl.expr(lhs, block, ResultInfo.none);

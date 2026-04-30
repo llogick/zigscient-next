@@ -3036,7 +3036,7 @@ test "bitcast vector" {
     const u8x32 = @Vector(32, u8);
     const u32x8 = @Vector(8, u32);
 
-    const zerox32: u8x32 = [_]u8{0} ** 32;
+    const zerox32: u8x32 = @splat(0);
     const bigsum: u32x8 = @bitCast(zerox32);
     try std.testing.expectEqual(0, @reduce(.Add, bigsum));
 }
@@ -3079,8 +3079,6 @@ test "@intFromFloat boundary cases" {
 
             try case(u0, 1.0, .down, 0);
             try case(u0, -1.0, .up, 0);
-            try case(i0, 1.0, .down, 0);
-            try case(i0, -1.0, .up, 0);
 
             try case(u10, 1024.0, .down, 1023);
             try case(u10, -1.0, .up, 0);
@@ -3111,7 +3109,6 @@ test "@intFromFloat vector boundary cases" {
             try case(i8, .{ -129.0, 128.0 }, .{ -128, 127 });
 
             try case(u0, .{ -1.0, 1.0 }, .{ 0, 0 });
-            try case(i0, .{ -1.0, 1.0 }, .{ 0, 0 });
 
             try case(u10, .{ -1.0, 1024.0 }, .{ 0, 1023 });
             try case(i10, .{ -513.0, 512.0 }, .{ -512, 511 });

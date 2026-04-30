@@ -647,7 +647,11 @@ pub const Object = struct {
                     debug_enums_fwd_ref.toOptional(),
                     debug_globals_fwd_ref.toOptional(),
                 };
-            } else .{Builder.Metadata.Optional.none} ** 3;
+            } else .{
+                Builder.Metadata.Optional.none,
+                Builder.Metadata.Optional.none,
+                Builder.Metadata.Optional.none,
+            };
 
         const obj = try arena.create(Object);
         obj.* = .{
@@ -1439,7 +1443,7 @@ pub const Object = struct {
             );
             llvm_function.setSubprogram(subprogram, &o.builder);
             break :debug_info .{ file, subprogram };
-        } else .{undefined} ** 2;
+        } else .{ undefined, undefined };
 
         const fuzz: ?FuncGen.Fuzz = f: {
             if (!owner_mod.fuzz) break :f null;
@@ -2948,7 +2952,7 @@ pub const Object = struct {
         const target = zcu.getTarget();
         const ip = &zcu.intern_pool;
         return switch (t.toIntern()) {
-            .u0_type, .i0_type => unreachable, // no runtime bits
+            .u0_type => unreachable, // no runtime bits
             inline .u1_type,
             .u8_type,
             .i8_type,

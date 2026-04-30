@@ -3981,7 +3981,7 @@ fn buildFloatOp(
     const scalar_llvm_ty = try o.lowerType(scalar_ty);
     const libc_fn = try o.getLibcFunction(
         fn_name,
-        ([1]Builder.Type{scalar_llvm_ty} ** 3)[0..params.len],
+        @as([3]Builder.Type, @splat(scalar_llvm_ty))[0..params.len],
         scalar_llvm_ty,
     );
     if (ty.zigTypeTag(zcu) == .vector) {
@@ -7410,7 +7410,7 @@ fn toLlvmAtomicRmwBinOp(
 
 fn minIntConst(b: *Builder, min_ty: Type, as_ty: Builder.Type, zcu: *const Zcu) Allocator.Error!Builder.Constant {
     const info = min_ty.intInfo(zcu);
-    if (info.signedness == .unsigned or info.bits == 0) {
+    if (info.signedness == .unsigned) {
         return b.intConst(as_ty, 0);
     }
     if (std.math.cast(u6, info.bits - 1)) |shift| {
