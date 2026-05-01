@@ -46,7 +46,7 @@ var coverage = Coverage.init;
 /// Index of type `SourceLocationIndex`.
 var coverage_source_locations: std.ArrayList(Coverage.SourceLocation) = .empty;
 /// Contains the most recent coverage update message, unmodified.
-var recent_coverage_update: std.ArrayListAlignedUnmanaged(u8, .of(u64)) = .empty;
+var recent_coverage_update: std.array_list.Aligned(u8, .of(u64)) = .empty;
 
 fn updateCoverageSources(
     directories: []const Coverage.String,

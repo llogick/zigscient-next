@@ -759,7 +759,7 @@ test "DiagnosticsCollection - compile_log_text" {
 
     const arena = arena_allocator.allocator();
 
-    var diagnostics: std.ArrayListUnmanaged(lsp.types.Diagnostic) = .empty;
+    var diagnostics: std.ArrayList(lsp.types.Diagnostic) = .empty;
     try collection.collectLspDiagnosticsForDocument(uri, .@"utf-8", arena, &diagnostics);
 
     try std.testing.expectEqual(1, diagnostics.items.len);

@@ -12,7 +12,7 @@ const mem = std.mem;
 const phc_format = pwhash.phc_format;
 const pwhash = crypto.pwhash;
 const Blake2b512 = blake2.Blake2b512;
-const Blocks = std.array_list.AlignedManaged([block_length]u64, .@"16");
+const Blocks = std.array_list.Aligned([block_length]u64, .@"16");
 const H0 = [Blake2b512.digest_length + 8]u8;
 
 const EncodingError = crypto.errors.EncodingError;
@@ -504,7 +504,7 @@ pub fn kdf(
     const memory = blockCount(params);
 
     var blocks = try Blocks.initCapacity(allocator, memory);
-    defer blocks.deinit();
+    defer blocks.deinit(allocator);
 
     const items = blocks.addManyAsSliceAssumeCapacity(memory);
 

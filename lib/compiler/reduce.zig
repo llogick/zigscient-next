@@ -153,9 +153,9 @@ pub fn main(init: std.process.Init) !void {
     // result, restart the whole process, reparsing the AST and re-generating the list
     // of all possible transformations and shuffling it again.
 
-    var transformations = std.array_list.Managed(Walk.Transformation).init(gpa);
-    defer transformations.deinit();
-    try Walk.findTransformations(arena, &tree, &transformations);
+    var transformations: std.ArrayList(Walk.Transformation) = .empty;
+    defer transformations.deinit(gpa);
+    try Walk.findTransformations(arena, gpa, &tree, &transformations);
     sortTransformations(transformations.items, rng.random());
 
     fresh: while (transformations.items.len > 0) {
@@ -238,7 +238,7 @@ pub fn main(init: std.process.Init) !void {
                     tree.deinit(gpa);
                     tree = new_tree;
 
-                    try Walk.findTransformations(arena, &tree, &transformations);
+                    try Walk.findTransformations(arena, gpa, &tree, &transformations);
                     sortTransformations(transformations.items, rng.random());
 
                     continue :fresh;

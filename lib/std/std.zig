@@ -54,13 +54,6 @@ pub fn ArrayList(comptime T: type) type {
 }
 pub const array_list = @import("array_list.zig");
 
-/// Deprecated; use `array_list.Aligned`.
-pub const ArrayListAligned = array_list.Aligned;
-/// Deprecated; use `array_list.Aligned`.
-pub const ArrayListAlignedUnmanaged = array_list.Aligned;
-/// Deprecated; use `ArrayList`.
-pub const ArrayListUnmanaged = ArrayList;
-
 pub const array_hash_map = @import("array_hash_map.zig");
 pub const atomic = @import("atomic.zig");
 pub const base64 = @import("base64.zig");

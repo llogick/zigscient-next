@@ -5,7 +5,7 @@ const assert = std.debug.assert;
 const BuiltinFn = std.zig.BuiltinFn;
 
 ast: *const Ast,
-transformations: *std.array_list.Managed(Transformation),
+transformations: *std.ArrayList(Transformation),
 unreferenced_globals: std.array_hash_map.String(Ast.Node.Index),
 in_scope_names: std.array_hash_map.String(u32),
 replace_names: std.array_hash_map.String(u32),
@@ -53,15 +53,16 @@ pub const Error = error{OutOfMemory};
 /// The result will be priority shuffled.
 pub fn findTransformations(
     arena: std.mem.Allocator,
+    gpa: std.mem.Allocator,
     ast: *const Ast,
-    transformations: *std.array_list.Managed(Transformation),
+    transformations: *std.ArrayList(Transformation),
 ) !void {
     transformations.clearRetainingCapacity();
 
     var walk: Walk = .{
         .ast = ast,
         .transformations = transformations,
-        .gpa = transformations.allocator,
+        .gpa = gpa,
         .arena = arena,
         .unreferenced_globals = .empty,
         .in_scope_names = .empty,
@@ -76,7 +77,7 @@ pub fn findTransformations(
     try walkMembers(&walk, walk.ast.rootDecls());
 
     const unreferenced_globals = walk.unreferenced_globals.values();
-    try transformations.ensureUnusedCapacity(unreferenced_globals.len);
+    try transformations.ensureUnusedCapacity(gpa, unreferenced_globals.len);
     for (unreferenced_globals) |node| {
         transformations.appendAssumeCapacity(.{ .delete_node = node });
     }
@@ -148,7 +149,7 @@ fn walkMember(w: *Walk, decl: Ast.Node.Index) Error!void {
             try walkExpression(w, fn_proto);
             if (!isFnBodyGutted(ast, body_node)) {
                 w.replace_names.clearRetainingCapacity();
-                try w.transformations.append(.{ .gut_function = decl });
+                try w.transformations.append(w.gpa, .{ .gut_function = decl });
                 try walkExpression(w, body_node);
             }
         },
@@ -167,7 +168,7 @@ fn walkMember(w: *Walk, decl: Ast.Node.Index) Error!void {
         => try walkGlobalVarDecl(w, decl, ast.fullVarDecl(decl).?),
 
         .test_decl => {
-            try w.transformations.append(.{ .delete_node = decl });
+            try w.transformations.append(w.gpa, .{ .delete_node = decl });
             try walkExpression(w, ast.nodeData(decl).opt_token_and_node[1]);
         },
 
@@ -175,12 +176,12 @@ fn walkMember(w: *Walk, decl: Ast.Node.Index) Error!void {
         .container_field_align,
         .container_field,
         => {
-            try w.transformations.append(.{ .delete_node = decl });
+            try w.transformations.append(w.gpa, .{ .delete_node = decl });
             try walkContainerField(w, ast.fullContainerField(decl).?);
         },
 
         .@"comptime" => {
-            try w.transformations.append(.{ .delete_node = decl });
+            try w.transformations.append(w.gpa, .{ .delete_node = decl });
             try walkExpression(w, decl);
         },
 
@@ -536,7 +537,7 @@ fn walkGlobalVarDecl(w: *Walk, decl_node: Ast.Node.Index, var_decl: Ast.full.Var
 
     if (var_decl.ast.init_node.unwrap()) |init_node| {
         if (!isUndefinedIdent(w.ast, init_node)) {
-            try w.transformations.append(.{ .replace_with_undef = init_node });
+            try w.transformations.append(w.gpa, .{ .replace_with_undef = init_node });
         }
         try walkExpression(w, init_node);
     }
@@ -563,7 +564,7 @@ fn walkLocalVarDecl(w: *Walk, var_decl: Ast.full.VarDecl) Error!void {
 
     if (var_decl.ast.init_node.unwrap()) |init_node| {
         if (!isUndefinedIdent(w.ast, init_node)) {
-            try w.transformations.append(.{ .replace_with_undef = init_node });
+            try w.transformations.append(w.gpa, .{ .replace_with_undef = init_node });
         }
         try walkExpression(w, init_node);
     }
@@ -600,7 +601,7 @@ fn walkBlock(
                 if (var_decl.ast.init_node != .none and
                     isUndefinedIdent(w.ast, var_decl.ast.init_node.unwrap().?))
                 {
-                    try w.transformations.append(.{ .delete_var_decl = .{
+                    try w.transformations.append(w.gpa, .{ .delete_var_decl = .{
                         .var_decl_node = stmt,
                         .references = .empty,
                     } });
@@ -618,7 +619,7 @@ fn walkBlock(
                     .discard_identifier => {},
                     // definitely try to remove `_ = undefined;` though.
                     .discard_undefined, .trap_call, .other => {
-                        try w.transformations.append(.{ .delete_node = stmt });
+                        try w.transformations.append(w.gpa, .{ .delete_node = stmt });
                     },
                 }
                 try walkExpression(w, stmt);
@@ -720,7 +721,7 @@ fn walkBuiltinCall(
             if (std.mem.endsWith(u8, token_bytes, ".zig\"")) {
                 const imported_string = std.zig.string_literal.parseAlloc(w.arena, token_bytes) catch
                     unreachable;
-                try w.transformations.append(.{ .inline_imported_file = .{
+                try w.transformations.append(w.gpa, .{ .inline_imported_file = .{
                     .builtin_call_node = call_node,
                     .imported_string = imported_string,
                     .in_scope_names = try std.array_hash_map.String(void).init(
@@ -792,19 +793,19 @@ fn walkWhile(w: *Walk, node_index: Ast.Node.Index, while_node: Ast.full.While) E
     if (!isTrueIdent(w.ast, while_node.ast.cond_expr) and
         (while_node.ast.else_expr == .none or isEmptyBlock(w.ast, while_node.ast.else_expr.unwrap().?)))
     {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_with_true = while_node.ast.cond_expr });
     } else if (!isFalseIdent(w.ast, while_node.ast.cond_expr) and isEmptyBlock(w.ast, while_node.ast.then_expr)) {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_with_false = while_node.ast.cond_expr });
     } else if (isTrueIdent(w.ast, while_node.ast.cond_expr)) {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_node = .{
             .to_replace = node_index,
             .replacement = while_node.ast.then_expr,
         } });
     } else if (isFalseIdent(w.ast, while_node.ast.cond_expr)) {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_node = .{
             .to_replace = node_index,
             .replacement = while_node.ast.else_expr.unwrap().?,
@@ -841,19 +842,19 @@ fn walkIf(w: *Walk, node_index: Ast.Node.Index, if_node: Ast.full.If) Error!void
     if (!isTrueIdent(w.ast, if_node.ast.cond_expr) and
         (if_node.ast.else_expr == .none or isEmptyBlock(w.ast, if_node.ast.else_expr.unwrap().?)))
     {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_with_true = if_node.ast.cond_expr });
     } else if (!isFalseIdent(w.ast, if_node.ast.cond_expr) and isEmptyBlock(w.ast, if_node.ast.then_expr)) {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_with_false = if_node.ast.cond_expr });
     } else if (isTrueIdent(w.ast, if_node.ast.cond_expr)) {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_node = .{
             .to_replace = node_index,
             .replacement = if_node.ast.then_expr,
         } });
     } else if (isFalseIdent(w.ast, if_node.ast.cond_expr)) {
-        try w.transformations.ensureUnusedCapacity(1);
+        try w.transformations.ensureUnusedCapacity(w.gpa, 1);
         w.transformations.appendAssumeCapacity(.{ .replace_node = .{
             .to_replace = node_index,
             .replacement = if_node.ast.else_expr.unwrap().?,
