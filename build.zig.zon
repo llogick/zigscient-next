@@ -10,12 +10,12 @@
     .minimum_runtime_zig_version = "0.17.0-dev.242+5d55999d2",
     .dependencies = .{
         .known_folders = .{
-            .url = "https://github.com/LamplightWorks/known-folders/archive/71f0a3d660401ee461cc42ae1f2360f4b83084d3.tar.gz",
-            .hash = "known_folders-0.0.0-Fy-PJjrKAAAY9ALC7ALIxFsmKFP314HJw6v3NLSS3NDB",
+            .url = "https://github.com/LamplightWorks/known-folders/archive/207c34a16e4365edc20d92c7892f962b3bed46e8.tar.gz",
+            .hash = "known_folders-0.0.0-Fy-PJsbKAACbDh9bBxR0MMThxZSS6A9RH4apWphNHY70",
         },
         .diffz = .{
-            .url = "https://github.com/LamplightWorks/diffz/archive/aa11caef328a3f20f2493f8fd676a1dfa7819246.tar.gz",
-            .hash = "diffz-0.0.1-G2tlIYrNAQAQx3cuIp7EVs0xvxbv9DCPf4YuHmvubsrZ",
+            .url = "https://github.com/LamplightWorks/diffz/archive/d080c1eb782fff15068cabb3b82da85ce6054b74.tar.gz",
+            .hash = "diffz-0.0.1-G2tlIfLNAQCc06RFk0tFGj2M-X-id4WHFkMVw2JoMILR",
         },
         .lsp_kit = .{
             .url = "https://github.com/LamplightWorks/lsp-kit/archive/98d6bed6e42a0866e1e2ba0867673d9f57ca6687.tar.gz",

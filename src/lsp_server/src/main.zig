@@ -127,7 +127,7 @@ fn defaultLogFilePath(
     environ_map: *const std.process.Environ.Map,
 ) error{ Canceled, OutOfMemory }!?[]const u8 {
     if (zig_builtin.target.os.tag == .wasi) return null;
-    const cache_path = try known_folders.getPath(io, allocator, environ_map.*, .cache) orelse return null;
+    const cache_path = try known_folders.getPath(io, allocator, environ_map, .cache) orelse return null;
     defer allocator.free(cache_path);
     return try std.fs.path.join(allocator, &.{ cache_path, "zigscient", "zigscient.log" });
 }
@@ -193,7 +193,7 @@ fn cmdEnv(
     allocator: std.mem.Allocator,
     environ_map: *const std.process.Environ.Map,
 ) (std.mem.Allocator.Error || std.Io.File.Writer.Error)!noreturn {
-    const global_cache_dir = known_folders.getPath(io, allocator, environ_map.*, .cache) catch |err| switch (err) {
+    const global_cache_dir = known_folders.getPath(io, allocator, environ_map, .cache) catch |err| switch (err) {
         error.Canceled, error.OutOfMemory => |e| return e,
     };
     defer if (global_cache_dir) |path| allocator.free(path);
@@ -201,17 +201,17 @@ fn cmdEnv(
     const zls_global_cache_dir = if (global_cache_dir) |cache_dir| try std.fs.path.join(allocator, &.{ cache_dir, "zls" }) else null;
     defer if (zls_global_cache_dir) |path| allocator.free(path);
 
-    const global_config_dir = known_folders.getPath(io, allocator, environ_map.*, .global_configuration) catch |err| switch (err) {
+    const global_config_dir = known_folders.getPath(io, allocator, environ_map, .global_configuration) catch |err| switch (err) {
         error.Canceled, error.OutOfMemory => |e| return e,
     };
     defer if (global_config_dir) |path| allocator.free(path);
 
-    const local_config_dir = known_folders.getPath(io, allocator, environ_map.*, .local_configuration) catch |err| switch (err) {
+    const local_config_dir = known_folders.getPath(io, allocator, environ_map, .local_configuration) catch |err| switch (err) {
         error.Canceled, error.OutOfMemory => |e| return e,
     };
     defer if (local_config_dir) |path| allocator.free(path);
 
-    var config_result = try loadConfigFromSystem(io, allocator, environ_map.*);
+    var config_result = try loadConfigFromSystem(io, allocator, environ_map);
     defer config_result.deinit(allocator);
 
     const config_file_path: ?[]const u8 = switch (config_result) {
@@ -346,7 +346,7 @@ fn loadConfigFromFile(io: std.Io, allocator: std.mem.Allocator, file_path: []con
     } };
 }
 
-fn loadConfigFromSystem(io: std.Io, allocator: std.mem.Allocator, environ_map: std.process.Environ.Map) error{ Canceled, OutOfMemory }!LoadConfigResult {
+fn loadConfigFromSystem(io: std.Io, allocator: std.mem.Allocator, environ_map: *const std.process.Environ.Map) error{ Canceled, OutOfMemory }!LoadConfigResult {
     if (zig_builtin.target.os.tag == .wasi) return .not_found;
 
     for (
@@ -376,7 +376,7 @@ fn loadConfigFromSystem(io: std.Io, allocator: std.mem.Allocator, environ_map: s
 fn loadConfiguration(
     io: std.Io,
     allocator: std.mem.Allocator,
-    environ_map: std.process.Environ.Map,
+    environ_map: *const std.process.Environ.Map,
     server: *zls.Server,
     maybe_config_path: ?[]const u8,
 ) error{ Canceled, OutOfMemory }!void {
@@ -617,7 +617,7 @@ pub fn stage2(
     });
     defer server.destroy();
 
-    try loadConfiguration(io, allocator, environ_map.*, server, result.config_path);
+    try loadConfiguration(io, allocator, environ_map, server, result.config_path);
 
     try server.loop();
 
