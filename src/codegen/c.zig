@@ -1997,7 +1997,7 @@ pub const DeclGen = struct {
             .bits => {},
         }
 
-        const int_info: std.builtin.Type.Int = if (ty.isAbiInt(zcu)) ty.intInfo(zcu) else .{
+        const int_info: std.lang.Type.Int = if (ty.isAbiInt(zcu)) ty.intInfo(zcu) else .{
             .signedness = .unsigned,
             .bits = @intCast(ty.bitSize(zcu)),
         };
@@ -3878,7 +3878,7 @@ fn airSlice(f: *Function, inst: Air.Inst.Index) !CValue {
 fn airCall(
     f: *Function,
     inst: Air.Inst.Index,
-    modifier: std.builtin.CallModifier,
+    modifier: std.lang.CallModifier,
 ) !CValue {
     const pt = f.dg.pt;
     const zcu = pt.zcu;
@@ -6911,7 +6911,7 @@ fn airCVaCopy(f: *Function, inst: Air.Inst.Index) !CValue {
     return local;
 }
 
-fn toMemoryOrder(order: std.builtin.AtomicOrder) [:0]const u8 {
+fn toMemoryOrder(order: std.lang.AtomicOrder) [:0]const u8 {
     return switch (order) {
         // Note: unordered is actually even less atomic than relaxed
         .unordered, .monotonic => "zig_memory_order_relaxed",
@@ -6922,11 +6922,11 @@ fn toMemoryOrder(order: std.builtin.AtomicOrder) [:0]const u8 {
     };
 }
 
-fn writeMemoryOrder(w: *Writer, order: std.builtin.AtomicOrder) !void {
+fn writeMemoryOrder(w: *Writer, order: std.lang.AtomicOrder) !void {
     return w.writeAll(toMemoryOrder(order));
 }
 
-fn toCallingConvention(cc: std.builtin.CallingConvention, zcu: *Zcu) ?[]const u8 {
+fn toCallingConvention(cc: std.lang.CallingConvention, zcu: *Zcu) ?[]const u8 {
     if (zcu.getTarget().cCallingConvention()) |ccc| {
         if (cc.eql(ccc)) {
             return null;
@@ -7021,7 +7021,7 @@ fn toCallingConvention(cc: std.builtin.CallingConvention, zcu: *Zcu) ?[]const u8
     };
 }
 
-fn toAtomicRmwSuffix(order: std.builtin.AtomicRmwOp) []const u8 {
+fn toAtomicRmwSuffix(order: std.lang.AtomicRmwOp) []const u8 {
     return switch (order) {
         .Xchg => "xchg",
         .Add => "add",
@@ -7044,7 +7044,7 @@ fn toCIntBits(zig_bits: u32) ?u32 {
     return null;
 }
 
-fn signAbbrev(signedness: std.builtin.Signedness) u8 {
+fn signAbbrev(signedness: std.lang.Signedness) u8 {
     return switch (signedness) {
         .signed => 'i',
         .unsigned => 'u',

@@ -1420,7 +1420,7 @@ pub fn resolvePrimitive(analyser: *Analyser, identifier_name: []const u8) error{
     if (primitives.get(identifier_name)) |primitive| return primitive;
 
     if (identifier_name.len < 2) return null;
-    const signedness: std.builtin.Signedness = switch (identifier_name[0]) {
+    const signedness: std.lang.Signedness = switch (identifier_name[0]) {
         'i' => .signed,
         'u' => .unsigned,
         else => return null,
@@ -3038,7 +3038,7 @@ pub const Type = struct {
         /// - `[]const T`
         /// - `[*c]T`
         pointer: struct {
-            size: std.builtin.Type.Pointer.Size,
+            size: std.lang.Type.Pointer.Size,
             /// `.none` means no sentinel
             sentinel: InternPool.Index,
             is_const: bool,
@@ -4527,14 +4527,14 @@ fn resolveLangrefType(analyser: *Analyser, type_str: []const u8) Error!?Type {
         };
     }
 
-    return analyser.instanceStdBuiltinType(type_str);
+    return analyser.instanceStdLangType(type_str);
 }
 
 /// Look up `type_name` in 'zig_lib_dir/std/builtin.zig' and return it as an instance
 /// Useful for functionality related to builtin fns
-pub fn instanceStdBuiltinType(analyser: *Analyser, type_name: []const u8) Error!?Type {
+pub fn instanceStdLangType(analyser: *Analyser, type_name: []const u8) Error!?Type {
     const zig_lib_dir = analyser.store.config.zig_lib_dir orelse return null;
-    const builtin_path = try zig_lib_dir.join(analyser.arena, &.{ "std", "builtin.zig" });
+    const builtin_path = try zig_lib_dir.join(analyser.arena, &.{ "std", "lang.zig" });
     const builtin_uri = try URI.fromPath(analyser.arena, builtin_path);
 
     const builtin_handle = try analyser.store.getOrLoadHandle(builtin_uri) orelse return null;
@@ -4785,7 +4785,7 @@ pub fn getFieldAccessType(
                 }
 
                 if (std.mem.eql(u8, binfn_name, "@typeInfo")) {
-                    current_type = try analyser.instanceStdBuiltinType("Type") orelse return null;
+                    current_type = try analyser.instanceStdLangType("Type") orelse return null;
                     // Skip to the right paren
                     var paren_count: usize = 0;
                     var next = tokenizer.next();
@@ -6139,7 +6139,7 @@ pub fn resolveExpressionTypeFromAncestors(
                 return try analyser.resolveTypeOfNode(.of(ancestors[0], handle));
             }
             if (node.toOptional() == var_decl.ast.addrspace_node) {
-                return analyser.instanceStdBuiltinType("AddressSpace");
+                return analyser.instanceStdLangType("AddressSpace");
             }
             if (node.toOptional() == var_decl.ast.section_node) {
                 return .{
@@ -6268,7 +6268,7 @@ pub fn resolveExpressionTypeFromAncestors(
                 return analyser.resolveInstanceOfNode(.of(ptr.ast.child_type, handle));
             }
             if (node.toOptional() == ptr.ast.addrspace_node) {
-                return analyser.instanceStdBuiltinType("AddressSpace");
+                return analyser.instanceStdLangType("AddressSpace");
             }
         },
         .array_type_sentinel => {
@@ -6440,10 +6440,10 @@ pub fn resolveExpressionTypeFromAncestors(
             var buf: [1]Ast.Node.Index = undefined;
             const proto = tree.fullFnProto(&buf, ancestors[0]).?;
             if (node.toOptional() == proto.ast.addrspace_expr) {
-                return analyser.instanceStdBuiltinType("AddressSpace");
+                return analyser.instanceStdLangType("AddressSpace");
             }
             if (node.toOptional() == proto.ast.callconv_expr) {
-                return analyser.instanceStdBuiltinType("CallingConvention");
+                return analyser.instanceStdLangType("CallingConvention");
             }
             if (node.toOptional() == proto.ast.section_expr) {
                 return .{
@@ -6464,7 +6464,7 @@ pub fn resolveExpressionTypeFromAncestors(
         => {
             const full = tree.fullAsm(ancestors[0]).?;
             if (node.toOptional() == full.ast.clobbers) {
-                return analyser.instanceStdBuiltinType("assembly.Clobbers");
+                return analyser.instanceStdLangType("assembly.Clobbers");
             }
         },
 

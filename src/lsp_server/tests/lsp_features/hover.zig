@@ -226,11 +226,11 @@ test "builtin with multi line parameters" {
         \\@Un<cursor>ion()
     ,
         \\@Union(
-        \\  comptime layout: Type.ContainerLayout,
+        \\  comptime layout: std.lang.Type.ContainerLayout,
         \\  comptime ArgType: ?type,
         \\  comptime field_names: []const []const u8,
         \\  comptime field_types: *const [field_names.len]type,
-        \\  comptime field_attrs: *const [field_names.len]Type.UnionField.Attributes,
+        \\  comptime field_attrs: *const [field_names.len]std.lang.Type.UnionField.Attributes,
         \\) type
         \\Returns a [union](https://ziglang.org/documentation/master/#union) type with the properties specified by the arguments.
     , .{ .markup_kind = .plaintext });

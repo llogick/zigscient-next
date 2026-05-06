@@ -1791,7 +1791,7 @@ fn resolveBuiltinFnArg(
     const param = builtin.parameters[arg_index];
     const colon_index = std.mem.findScalar(u8, param.signature, ':') orelse return null;
     const builtin_name = param.signature[colon_index + 2 ..];
-    return analyser.instanceStdBuiltinType(builtin_name);
+    return analyser.instanceStdLangType(builtin_name);
 }
 
 fn collectBuiltinContainerNodes(
@@ -1952,6 +1952,6 @@ fn collectKeywordFnContainerNodes(
             else => return,
         }
     };
-    const ty = try builder.analyser.instanceStdBuiltinType(builtin_type_name) orelse return;
+    const ty = try builder.analyser.instanceStdLangType(builtin_type_name) orelse return;
     _ = try ty.getAllTypesWithHandlesArraySet(builder.analyser, types_with_handles);
 }

@@ -500,7 +500,7 @@ const CodeModel = enum {
     large,
 };
 
-fn codeModel(model: std.builtin.CodeModel, target: *const std.Target) CodeModel {
+fn codeModel(model: std.lang.CodeModel, target: *const std.Target) CodeModel {
     // Roughly match Clang's mapping of GCC code models to LLVM code models.
     return switch (model) {
         .default => .default,
@@ -556,7 +556,7 @@ pub const Object = struct {
     /// Same as `nav_map` but for UAVs (which are always global constants).
     uav_map: std.AutoHashMapUnmanaged(struct {
         val: InternPool.Index,
-        @"addrspace": std.builtin.AddressSpace,
+        @"addrspace": std.lang.AddressSpace,
     }, Builder.Variable.Index),
     /// Maps enum types to their corresponding LLVM functions for implementing the `tag_name` instruction.
     enum_tag_name_map: std.AutoHashMapUnmanaged(InternPool.Index, Builder.Function.Index),
@@ -1755,7 +1755,7 @@ pub const Object = struct {
         }
 
         // If the first export specifies a linksection, set the exported variable's section to that
-        // one. This is kind of a hack because `std.builtin.ExportOptions.section` doesn't actually
+        // one. This is kind of a hack because `std.lang.ExportOptions.section` doesn't actually
         // make much sense: the linksection should be associated with the declaration itself rather
         // than some particular symbol it is exported as!
         if (export_indices[0].ptr(zcu).opts.section.toSlice(ip)) |section_slice| {
@@ -3378,7 +3378,7 @@ pub const Object = struct {
         }
 
         if (fn_info.cc == .auto and zcu.comp.config.any_error_tracing) {
-            // First parameter is a pointer to `std.builtin.StackTrace`.
+            // First parameter is a pointer to `std.lang.StackTrace`.
             const llvm_ptr_ty = try o.builder.ptrType(toLlvmAddressSpace(.generic, target));
             try llvm_params.append(o.gpa, llvm_ptr_ty);
         }
@@ -3986,7 +3986,7 @@ pub const Object = struct {
         o: *Object,
         /// Must not be `.none`.
         @"align": InternPool.Alignment,
-        @"addrspace": std.builtin.AddressSpace,
+        @"addrspace": std.lang.AddressSpace,
     ) Allocator.Error!Builder.Constant {
         const addr: u64 = @"align".toByteUnits().?;
         const llvm_usize = try o.lowerType(.usize);
@@ -4000,7 +4000,7 @@ pub const Object = struct {
         uav_val: InternPool.Index,
         /// Must not be `.none`.
         @"align": InternPool.Alignment,
-        @"addrspace": std.builtin.AddressSpace,
+        @"addrspace": std.lang.AddressSpace,
     ) Allocator.Error!Builder.Constant {
         assert(@"align" != .none);
 
@@ -4383,20 +4383,20 @@ const CallingConventionInfo = struct {
     inreg_param_count: u2 = 0,
 };
 
-pub fn toLlvmCallConv(cc: std.builtin.CallingConvention, target: *const std.Target) ?CallingConventionInfo {
+pub fn toLlvmCallConv(cc: std.lang.CallingConvention, target: *const std.Target) ?CallingConventionInfo {
     const llvm_cc = toLlvmCallConvTag(cc, target) orelse return null;
     const incoming_stack_alignment: ?u64, const register_params: u2 = switch (cc) {
         inline else => |pl| switch (@TypeOf(pl)) {
             void => .{ null, 0 },
-            std.builtin.CallingConvention.ArcInterruptOptions,
-            std.builtin.CallingConvention.ArmInterruptOptions,
-            std.builtin.CallingConvention.RiscvInterruptOptions,
-            std.builtin.CallingConvention.ShInterruptOptions,
-            std.builtin.CallingConvention.MicroblazeInterruptOptions,
-            std.builtin.CallingConvention.MipsInterruptOptions,
-            std.builtin.CallingConvention.CommonOptions,
+            std.lang.CallingConvention.ArcInterruptOptions,
+            std.lang.CallingConvention.ArmInterruptOptions,
+            std.lang.CallingConvention.RiscvInterruptOptions,
+            std.lang.CallingConvention.ShInterruptOptions,
+            std.lang.CallingConvention.MicroblazeInterruptOptions,
+            std.lang.CallingConvention.MipsInterruptOptions,
+            std.lang.CallingConvention.CommonOptions,
             => .{ pl.incoming_stack_alignment, 0 },
-            std.builtin.CallingConvention.X86RegparmOptions => .{ pl.incoming_stack_alignment, pl.register_params },
+            std.lang.CallingConvention.X86RegparmOptions => .{ pl.incoming_stack_alignment, pl.register_params },
             else => @compileError("TODO: toLlvmCallConv" ++ @tagName(pl)),
         },
     };
@@ -4410,7 +4410,7 @@ pub fn toLlvmCallConv(cc: std.builtin.CallingConvention, target: *const std.Targ
         .inreg_param_count = register_params,
     };
 }
-pub fn toLlvmCallConvTag(cc_tag: std.builtin.CallingConvention.Tag, target: *const std.Target) ?Builder.CallConv {
+pub fn toLlvmCallConvTag(cc_tag: std.lang.CallingConvention.Tag, target: *const std.Target) ?Builder.CallConv {
     if (target.cCallingConvention()) |default_c| {
         if (cc_tag == default_c) {
             return .ccc;
@@ -4543,13 +4543,13 @@ pub fn toLlvmCallConvTag(cc_tag: std.builtin.CallingConvention.Tag, target: *con
 }
 
 /// Convert a zig-address space to an llvm address space.
-pub fn toLlvmAddressSpace(address_space: std.builtin.AddressSpace, target: *const std.Target) Builder.AddrSpace {
+pub fn toLlvmAddressSpace(address_space: std.lang.AddressSpace, target: *const std.Target) Builder.AddrSpace {
     for (llvmAddrSpaceInfo(target)) |info| if (info.zig == address_space) return info.llvm;
     unreachable;
 }
 
 const AddrSpaceInfo = struct {
-    zig: ?std.builtin.AddressSpace,
+    zig: ?std.lang.AddressSpace,
     llvm: Builder.AddrSpace,
     non_integral: bool = false,
     size: ?u16 = null,
@@ -4643,7 +4643,7 @@ fn llvmDefaultGlobalAddressSpace(target: *const std.Target) Builder.AddrSpace {
 
 /// Return the actual address space that a value should be stored in if its a global address space.
 /// When a value is placed in the resulting address space, it needs to be cast back into wanted_address_space.
-fn toLlvmGlobalAddressSpace(wanted_address_space: std.builtin.AddressSpace, target: *const std.Target) Builder.AddrSpace {
+fn toLlvmGlobalAddressSpace(wanted_address_space: std.lang.AddressSpace, target: *const std.Target) Builder.AddrSpace {
     return switch (wanted_address_space) {
         .generic => llvmDefaultGlobalAddressSpace(target),
         else => |as| toLlvmAddressSpace(as, target),

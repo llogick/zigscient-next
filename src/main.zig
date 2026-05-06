@@ -790,7 +790,7 @@ const Emit = union(enum) {
 };
 
 pub const ArgMode = union(enum) {
-    build: std.builtin.OutputMode,
+    build: std.lang.OutputMode,
     cc,
     cpp,
     translate_c,
@@ -953,13 +953,13 @@ pub const CompilationState = struct {
     minor_subsystem_version: ?u16 = null,
     mingw_unicode_entry_point: bool = false,
     enable_link_snapshots: bool = false,
-    debug_compiler_runtime_libs: ?std.builtin.OptimizeMode = null,
+    debug_compiler_runtime_libs: ?std.lang.OptimizeMode = null,
     install_name: ?[]const u8 = null,
     hash_style: link.File.Lld.Elf.HashStyle = .both,
     entitlements: ?[]const u8 = null,
     pagezero_size: ?u64 = null,
     lib_search_strategy: link.UnresolvedInput.SearchStrategy = .paths_first,
-    lib_preferred_mode: std.builtin.LinkMode = .dynamic,
+    lib_preferred_mode: std.lang.LinkMode = .dynamic,
     headerpad_size: ?u32 = null,
     headerpad_max_install_names: bool = false,
     dead_strip_dylibs: bool = false,
@@ -6083,7 +6083,7 @@ fn jitCmdInner(
     const self_exe_path = process.executablePathAlloc(io, arena) catch |err|
         fatal("unable to find self exe path: {t}", .{err});
 
-    const optimize_mode: std.builtin.OptimizeMode = if (EnvVar.ZIG_DEBUG_CMD.isSet(environ_map))
+    const optimize_mode: std.lang.OptimizeMode = if (EnvVar.ZIG_DEBUG_CMD.isSet(environ_map))
         .Debug
     else
         .ReleaseFast;
@@ -6614,8 +6614,8 @@ pub const ClangArgIterator = struct {
     }
 };
 
-fn parseCodeModel(arg: []const u8) std.builtin.CodeModel {
-    return std.meta.stringToEnum(std.builtin.CodeModel, arg) orelse
+fn parseCodeModel(arg: []const u8) std.lang.CodeModel {
+    return std.meta.stringToEnum(std.lang.CodeModel, arg) orelse
         fatal("unsupported machine code model: '{s}'", .{arg});
 }
 
@@ -8018,13 +8018,13 @@ fn findTemplates(gpa: Allocator, arena: Allocator, io: Io) Templates {
     };
 }
 
-fn parseOptimizeMode(s: []const u8) std.builtin.OptimizeMode {
-    return std.meta.stringToEnum(std.builtin.OptimizeMode, s) orelse
+fn parseOptimizeMode(s: []const u8) std.lang.OptimizeMode {
+    return std.meta.stringToEnum(std.lang.OptimizeMode, s) orelse
         fatal("unrecognized optimization mode: '{s}'", .{s});
 }
 
-fn parseWasiExecModel(s: []const u8) std.builtin.WasiExecModel {
-    return std.meta.stringToEnum(std.builtin.WasiExecModel, s) orelse
+fn parseWasiExecModel(s: []const u8) std.lang.WasiExecModel {
+    return std.meta.stringToEnum(std.lang.WasiExecModel, s) orelse
         fatal("expected [command|reactor] for -mexec-mode=[value], found '{s}'", .{s});
 }
 

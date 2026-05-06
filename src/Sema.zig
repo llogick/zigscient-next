@@ -135,7 +135,7 @@ allow_memoize: bool = true,
 
 /// The `BranchHint` for the current branch of runtime control flow.
 /// This state is on `Sema` so that `cold` hints can be propagated up through blocks with less special handling.
-branch_hint: ?std.builtin.BranchHint = null,
+branch_hint: ?std.lang.BranchHint = null,
 
 const RuntimeIndex = enum(u32) {
     zero = 0,
@@ -383,7 +383,7 @@ pub const Block = struct {
     want_safety: ?bool = null,
 
     /// What mode to generate float operations in, set by @setFloatMode
-    float_mode: std.builtin.FloatMode = .strict,
+    float_mode: std.lang.FloatMode = .strict,
 
     /// If not `null`, this boolean is set when a `dbg_var_ptr`, `dbg_var_val`, or `dbg_arg_inline`.
     /// instruction is emitted. It signals that the innermost lexically
@@ -759,7 +759,7 @@ pub const Block = struct {
         });
     }
 
-    fn addReduce(block: *Block, operand: Air.Inst.Ref, operation: std.builtin.ReduceOp) !Air.Inst.Ref {
+    fn addReduce(block: *Block, operand: Air.Inst.Ref, operation: std.lang.ReduceOp) !Air.Inst.Ref {
         const sema = block.sema;
         const zcu = sema.pt.zcu;
         const allow_optimized = switch (sema.typeOf(operand).childType(zcu).zigTypeTag(zcu)) {
@@ -1023,7 +1023,7 @@ pub fn deinit(sema: *Sema) void {
 /// control flow happens here, Sema will convert it to runtime control flow by introducing post-hoc
 /// blocks where necessary.
 /// Returns the branch hint for this branch.
-fn analyzeBodyRuntimeBreak(sema: *Sema, block: *Block, body: []const Zir.Inst.Index) !std.builtin.BranchHint {
+fn analyzeBodyRuntimeBreak(sema: *Sema, block: *Block, body: []const Zir.Inst.Index) !std.lang.BranchHint {
     const parent_hint = sema.branch_hint;
     defer sema.branch_hint = parent_hint;
     sema.branch_hint = null;
@@ -1473,7 +1473,7 @@ fn analyzeBodyInner(
                     },
                     .value_placeholder => unreachable, // never appears in a body
                     .field_parent_ptr => try sema.zirFieldParentPtr(block, extended),
-                    .builtin_value => try sema.zirBuiltinValue(block, extended),
+                    .std_lang_value => try sema.zirStdLangValue(block, extended),
                     .inplace_arith_result_ty => try sema.zirInplaceArithResultTy(extended),
                     .dbg_empty_stmt => {
                         try sema.zirDbgEmptyStmt(block, inst);
@@ -2225,7 +2225,7 @@ pub fn setupErrorReturnTrace(sema: *Sema, block: *Block, last_arg_index: usize) 
     const addrs_ptr = try err_trace_block.addTy(.alloc, try pt.singleMutPtrType(addr_arr_ty));
 
     // var st: StackTrace = undefined;
-    const stack_trace_ty = try sema.getBuiltinType(block.nodeOffset(.zero), .StackTrace);
+    const stack_trace_ty = try sema.getStdLangType(block.nodeOffset(.zero), .StackTrace);
     const st_ptr = try err_trace_block.addTy(.alloc, try pt.singleMutPtrType(stack_trace_ty));
 
     // st.instruction_addresses = &addrs;
@@ -2804,11 +2804,11 @@ fn analyzeValueAsCallconv(
     block: *Block,
     src: LazySrcLoc,
     val: Value,
-) !std.builtin.CallingConvention {
-    return interpretBuiltinType(sema, block, src, val, std.builtin.CallingConvention);
+) !std.lang.CallingConvention {
+    return interpretStdLangType(sema, block, src, val, std.lang.CallingConvention);
 }
 
-fn interpretBuiltinType(
+fn interpretStdLangType(
     sema: *Sema,
     block: *Block,
     src: LazySrcLoc,
@@ -2818,7 +2818,7 @@ fn interpretBuiltinType(
     return val.interpret(T, sema.pt) catch |err| switch (err) {
         error.OutOfMemory => |e| return e,
         error.UndefinedValue => return sema.failWithUseOfUndef(block, src, null),
-        error.TypeMismatch => @panic("std.builtin is corrupt"),
+        error.TypeMismatch => @panic("std.lang is corrupt"),
     };
 }
 
@@ -5074,7 +5074,7 @@ fn zirPanic(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void 
     }
 
     try sema.ensureMemoizedStateResolved(src, .panic);
-    const panic_fn_index = zcu.builtin_decl_values.get(.@"panic.call");
+    const panic_fn_index = zcu.std_lang_decl_values.get(.@"panic.call");
     const opt_usize_ty = try pt.optionalType(.usize_type);
     const null_ret_addr = Air.internedToRef((try pt.intern(.{ .opt = .{
         .ty = opt_usize_ty.toIntern(),
@@ -5692,7 +5692,7 @@ fn zirDisableIntrinsics(sema: *Sema) CompileError!void {
 fn zirSetFloatMode(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!void {
     const extra = sema.code.extraData(Zir.Inst.UnNode, extended.operand).data;
     const src = block.builtinCallArgSrc(extra.node, 0);
-    block.float_mode = try sema.resolveBuiltinEnum(block, src, extra.operand, .FloatMode, .{ .simple = .operand_setFloatMode });
+    block.float_mode = try sema.resolveStdLangEnum(block, src, extra.operand, .FloatMode, .{ .simple = .operand_setFloatMode });
 }
 
 fn zirSetRuntimeSafety(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void {
@@ -6008,10 +6008,10 @@ pub fn analyzeSaveErrRetIndex(sema: *Sema, block: *Block) SemaError!Air.Inst.Ref
 
     if (!block.ownerModule().error_tracing) return .none;
 
-    const stack_trace_ty = try sema.getBuiltinType(block.nodeOffset(.zero), .StackTrace);
+    const stack_trace_ty = try sema.getStdLangType(block.nodeOffset(.zero), .StackTrace);
     const field_name = try zcu.intern_pool.getOrPutString(gpa, io, pt.tid, "index", .no_embedded_nulls);
     const field_index = sema.structFieldIndex(block, stack_trace_ty, field_name, LazySrcLoc.unneeded) catch |err| switch (err) {
-        error.AnalysisFail => @panic("std.builtin.StackTrace is corrupt"),
+        error.AnalysisFail => @panic("std.lang.StackTrace is corrupt"),
         error.ComptimeReturn, error.ComptimeBreak => unreachable,
         error.OutOfMemory, error.Canceled => |e| return e,
     };
@@ -6051,7 +6051,7 @@ fn popErrorReturnTrace(
         // AstGen determined this result does not go to an error-handling expr (try/catch/return etc.), or
         // the result is comptime-known to be a non-error. Either way, pop unconditionally.
 
-        const stack_trace_ty = try sema.getBuiltinType(src, .StackTrace);
+        const stack_trace_ty = try sema.getStdLangType(src, .StackTrace);
         const ptr_stack_trace_ty = try pt.singleMutPtrType(stack_trace_ty);
         const err_return_trace = try block.addTy(.err_return_trace, ptr_stack_trace_ty);
         const field_name = try zcu.intern_pool.getOrPutString(gpa, io, pt.tid, "index", .no_embedded_nulls);
@@ -6076,7 +6076,7 @@ fn popErrorReturnTrace(
         defer then_block.instructions.deinit(gpa);
 
         // If non-error, then pop the error return trace by restoring the index.
-        const stack_trace_ty = try sema.getBuiltinType(src, .StackTrace);
+        const stack_trace_ty = try sema.getStdLangType(src, .StackTrace);
         const ptr_stack_trace_ty = try pt.singleMutPtrType(stack_trace_ty);
         const err_return_trace = try then_block.addTy(.err_return_trace, ptr_stack_trace_ty);
         const field_name = try zcu.intern_pool.getOrPutString(gpa, io, pt.tid, "index", .no_embedded_nulls);
@@ -6147,7 +6147,7 @@ fn zirCall(
     const extra = sema.code.extraData(ExtraType, inst_data.payload_index);
     const args_len = extra.data.flags.args_len;
 
-    const modifier: std.builtin.CallModifier = @enumFromInt(extra.data.flags.packed_modifier);
+    const modifier: std.lang.CallModifier = @enumFromInt(extra.data.flags.packed_modifier);
     const ensure_result_used = extra.data.flags.ensure_result_used;
     const pop_error_return_trace = extra.data.flags.pop_error_return_trace;
 
@@ -6215,7 +6215,7 @@ fn zirCall(
         // If any input is an error-type, we might need to pop any trace it generated. Otherwise, we only
         // need to clean-up our own trace if we were passed to a non-error-handling expression.
         if (input_is_error or (pop_error_return_trace and return_ty.isError(zcu))) {
-            const stack_trace_ty = try sema.getBuiltinType(call_src, .StackTrace);
+            const stack_trace_ty = try sema.getStdLangType(call_src, .StackTrace);
             const field_name = try zcu.intern_pool.getOrPutString(gpa, io, pt.tid, "index", .no_embedded_nulls);
             const field_index = try sema.structFieldIndex(block, stack_trace_ty, field_name, call_src);
 
@@ -6322,7 +6322,7 @@ fn callBuiltin(
     block: *Block,
     call_src: LazySrcLoc,
     builtin_fn: Air.Inst.Ref,
-    modifier: std.builtin.CallModifier,
+    modifier: std.lang.CallModifier,
     args: []const Air.Inst.Ref,
     operation: CallOperation,
 ) !void {
@@ -6543,7 +6543,7 @@ fn analyzeCall(
     func_ty: Type,
     func_src: LazySrcLoc,
     call_src: LazySrcLoc,
-    modifier: std.builtin.CallModifier,
+    modifier: std.lang.CallModifier,
     ensure_result_used: bool,
     args_info: CallArgsInfo,
     call_dbg_node: ?Zir.Inst.Index,
@@ -8367,7 +8367,7 @@ fn zirFunc(
     // If this instruction has a body, then it's a function declaration, and we decide
     // the callconv based on whether it is exported. Otherwise, the callconv defaults
     // to `.auto`.
-    const cc: std.builtin.CallingConvention = if (has_body) cc: {
+    const cc: std.lang.CallingConvention = if (has_body) cc: {
         const func_decl_nav = sema.owner.unwrap().nav_val;
         const fn_is_exported = exported: {
             const decl_inst = ip.getNav(func_decl_nav).analysis.?.zir_index.resolve(ip) orelse return error.AnalysisFail;
@@ -8377,10 +8377,10 @@ fn zirFunc(
         if (fn_is_exported) {
             break :cc target.cCallingConvention() orelse {
                 // This target has no default C calling convention. We sometimes trigger a similar
-                // error by trying to evaluate `std.builtin.CallingConvention.c`, so for consistency,
+                // error by trying to evaluate `std.lang.CallingConvention.c`, so for consistency,
                 // let's eval that now and just get the transitive error. (It's guaranteed to error
                 // because it does the exact `cCallingConvention` call we just did.)
-                const cc_type = try sema.getBuiltinType(src, .CallingConvention);
+                const cc_type = try sema.getStdLangType(src, .CallingConvention);
                 _ = try sema.namespaceLookupVal(
                     block,
                     LazySrcLoc.unneeded,
@@ -8388,7 +8388,7 @@ fn zirFunc(
                     try ip.getOrPutString(gpa, io, pt.tid, "c", .no_embedded_nulls),
                 );
                 // The above should have errored.
-                @panic("std.builtin is corrupt");
+                @panic("std.lang is corrupt");
             };
         } else {
             break :cc .auto;
@@ -8509,7 +8509,7 @@ pub fn handleExternLibName(
 /// These are calling conventions that are confirmed to work with variadic functions.
 /// Any calling conventions not included here are either not yet verified to work with variadic
 /// functions or there are no more other calling conventions that support variadic functions.
-const calling_conventions_supporting_var_args = [_]std.builtin.CallingConvention.Tag{
+const calling_conventions_supporting_var_args = [_]std.lang.CallingConvention.Tag{
     .x86_16_cdecl,
     .x86_64_sysv,
     .x86_64_x32,
@@ -8570,12 +8570,12 @@ const calling_conventions_supporting_var_args = [_]std.builtin.CallingConvention
     .xtensa_call0,
     .xtensa_windowed,
 };
-fn callConvSupportsVarArgs(cc: std.builtin.CallingConvention.Tag) bool {
+fn callConvSupportsVarArgs(cc: std.lang.CallingConvention.Tag) bool {
     return for (calling_conventions_supporting_var_args) |supported_cc| {
         if (cc == supported_cc) return true;
     } else false;
 }
-fn checkCallConvSupportsVarArgs(sema: *Sema, block: *Block, src: LazySrcLoc, cc: std.builtin.CallingConvention.Tag) CompileError!void {
+fn checkCallConvSupportsVarArgs(sema: *Sema, block: *Block, src: LazySrcLoc, cc: std.lang.CallingConvention.Tag) CompileError!void {
     const CallingConventionsSupportingVarArgsList = struct {
         arch: std.Target.Cpu.Arch,
         pub fn format(ctx: @This(), w: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -8612,7 +8612,7 @@ fn checkParamType(
     param_is_comptime: bool,
     param_is_noalias: bool,
     param_src: LazySrcLoc,
-    cc: std.builtin.CallingConvention,
+    cc: std.lang.CallingConvention,
 ) CompileError!void {
     const pt = sema.pt;
     const zcu = pt.zcu;
@@ -8668,7 +8668,7 @@ fn checkReturnTypeAndCallConv(
     block: *Block,
     bare_ret_ty: Type,
     ret_ty_src: LazySrcLoc,
-    @"callconv": std.builtin.CallingConvention,
+    @"callconv": std.lang.CallingConvention,
     callconv_src: LazySrcLoc,
     /// non-`null` only if the function is varargs.
     opt_varargs_src: ?LazySrcLoc,
@@ -8772,7 +8772,7 @@ fn checkReturnTypeAndCallConv(
 fn validateResolvedFuncType(
     sema: *Sema,
     block: *Block,
-    @"callconv": std.builtin.CallingConvention,
+    @"callconv": std.lang.CallingConvention,
     param_types: []const InternPool.Index,
     ret_ty: Type,
     src: LazySrcLoc,
@@ -8823,7 +8823,7 @@ fn validateResolvedFuncType(
     }
 }
 
-fn callConvIsCallable(cc: std.builtin.CallingConvention.Tag) bool {
+fn callConvIsCallable(cc: std.lang.CallingConvention.Tag) bool {
     return switch (cc) {
         .naked,
 
@@ -8898,7 +8898,7 @@ fn funcCommon(
     block: *Block,
     src_node_offset: std.zig.Ast.Node.Offset,
     func_inst: Zir.Inst.Index,
-    cc: std.builtin.CallingConvention,
+    cc: std.lang.CallingConvention,
     /// this might be Type.generic_poison
     bare_return_type: Type,
     var_args: bool,
@@ -9896,7 +9896,7 @@ fn zirSwitchBlockErrUnion(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
         else
             try sema.analyzeIsNonErr(block, operand_src, eu_maybe_ptr);
 
-        const non_err_hint: std.builtin.BranchHint = hint: {
+        const non_err_hint: std.lang.BranchHint = hint: {
             // don't analyze the non-error body if it's unreachable
             if (non_err_cond == .bool_false) {
                 break :hint undefined;
@@ -10488,14 +10488,14 @@ fn finishSwitchBr(
             const bags_required = std.math.divCeil(u32, hints.count + additional_count, hints_per_bag) catch unreachable;
             return hints.bags.ensureUnusedCapacity(gpa_inner, bags_required);
         }
-        fn appendAssumeCapacity(hints: *@This(), hint: std.builtin.BranchHint) void {
+        fn appendAssumeCapacity(hints: *@This(), hint: std.lang.BranchHint) void {
             const idx_in_bag = hints.count % hints_per_bag;
             var bag: u32 = if (idx_in_bag > 0) hints.bags.pop().? else 0;
-            bag |= @as(u32, @intFromEnum(hint)) << @intCast(@bitSizeOf(std.builtin.BranchHint) * idx_in_bag);
+            bag |= @as(u32, @intFromEnum(hint)) << @intCast(@bitSizeOf(std.lang.BranchHint) * idx_in_bag);
             hints.count += 1;
             return hints.bags.appendAssumeCapacity(bag);
         }
-        fn append(hints: *@This(), gpa_inner: Allocator, hint: std.builtin.BranchHint) Allocator.Error!void {
+        fn append(hints: *@This(), gpa_inner: Allocator, hint: std.lang.BranchHint) Allocator.Error!void {
             try hints.ensureUnusedCapacity(gpa_inner, 1);
             return hints.appendAssumeCapacity(hint);
         }
@@ -10574,7 +10574,7 @@ fn finishSwitchBr(
                 }
                 emit_bb = true;
 
-                const prong_hint: std.builtin.BranchHint = hint: {
+                const prong_hint: std.lang.BranchHint = hint: {
                     if (analyze_body) break :hint try sema.analyzeSwitchProng(
                         &case_block,
                         operand,
@@ -10717,7 +10717,7 @@ fn finishSwitchBr(
         case_block.instructions.clearRetainingCapacity();
         case_block.error_return_trace_index = child_block.error_return_trace_index;
 
-        const prong_hint: std.builtin.BranchHint = hint: {
+        const prong_hint: std.lang.BranchHint = hint: {
             if (any_analyze_body) break :hint try sema.analyzeSwitchProng(
                 &case_block,
                 operand,
@@ -10804,7 +10804,7 @@ fn finishSwitchBr(
                 if (emit_bb) try sema.emitBackwardBranch(block, else_prong_src);
                 emit_bb = true;
 
-                const prong_hint: std.builtin.BranchHint = hint: {
+                const prong_hint: std.lang.BranchHint = hint: {
                     if (analyze_body) break :hint try sema.analyzeSwitchProng(
                         &case_block,
                         operand,
@@ -10864,7 +10864,7 @@ fn finishSwitchBr(
 
             cases_len += 1;
 
-            const prong_hint: std.builtin.BranchHint = hint: {
+            const prong_hint: std.lang.BranchHint = hint: {
                 if (!else_case.is_inline) break :hint try sema.analyzeSwitchProng(
                     &case_block,
                     operand,
@@ -11937,7 +11937,7 @@ fn analyzeSwitchProng(
     else_err_ty: ?Type,
     switch_inst: Zir.Inst.Index,
     zir_switch: *const Zir.UnwrappedSwitchBlock,
-) CompileError!std.builtin.BranchHint {
+) CompileError!std.lang.BranchHint {
     const pt = sema.pt;
     const zcu = pt.zcu;
 
@@ -12328,7 +12328,7 @@ fn analyzeSwitchPayloadCapture(
 
         {
             // All branch hints are `.none`, so just add zero elems.
-            comptime assert(@intFromEnum(std.builtin.BranchHint.none) == 0);
+            comptime assert(@intFromEnum(std.lang.BranchHint.none) == 0);
             const need_elems = std.math.divCeil(usize, prong_count + 1, 10) catch unreachable;
             try cases_extra.appendNTimes(0, need_elems);
         }
@@ -12711,7 +12711,7 @@ fn maybeErrorUnwrap(
                 const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
                 const msg_inst = sema.resolveInst(inst_data.operand);
 
-                const panic_fn = try getBuiltin(sema, operand_src, .@"panic.call");
+                const panic_fn = try getStdLangValue(sema, operand_src, .@"panic.call");
                 const args: [2]Air.Inst.Ref = .{ msg_inst, .null_value };
                 try sema.callBuiltin(block, operand_src, Air.internedToRef(panic_fn), .auto, &args, .@"safety check");
                 return true;
@@ -15319,7 +15319,7 @@ fn zirAsm(
     }
 
     const clobbers_src = block.src(.{ .asm_clobbers = src.offset.node_offset.x });
-    const clobbers_ty = try sema.getBuiltinType(src, .@"assembly.Clobbers");
+    const clobbers_ty = try sema.getStdLangType(src, .@"assembly.Clobbers");
     const clobbers = if (extra.data.clobbers == .none) empty: {
         break :empty try sema.structInitEmpty(block, clobbers_ty, src, src);
     } else clobbers: {
@@ -15930,7 +15930,7 @@ fn zirBuiltinSrc(
         } });
     };
 
-    const src_loc_ty = try sema.getBuiltinType(block.nodeOffset(.zero), .SourceLocation);
+    const src_loc_ty = try sema.getStdLangType(block.nodeOffset(.zero), .SourceLocation);
     const fields = .{
         // module: [:0]const u8,
         module_name_val,
@@ -15957,7 +15957,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     const inst_data = sema.code.instructions.items(.data)[@intFromEnum(inst)].un_node;
     const src = block.nodeOffset(inst_data.src_node);
     const ty = try sema.resolveType(block, src, inst_data.operand);
-    const type_info_ty = try sema.getBuiltinType(src, .Type);
+    const type_info_ty = try sema.getStdLangType(src, .Type);
     const type_info_tag_ty = type_info_ty.unionTagType(zcu).?;
 
     try sema.ensureLayoutResolved(ty, src, .type_info);
@@ -15979,15 +15979,15 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
         => |type_info_tag| return .fromValue(try pt.unionValue(
             type_info_ty,
             Value.uninterpret(type_info_tag, type_info_tag_ty, pt) catch |err| switch (err) {
-                error.TypeMismatch => @panic("std.builtin is corrupt"),
+                error.TypeMismatch => @panic("std.lang is corrupt"),
                 error.OutOfMemory => |e| return e,
             },
             .void,
         )),
 
         .@"fn" => {
-            const fn_info_ty = try sema.getBuiltinType(src, .@"Type.Fn");
-            const param_info_ty = try sema.getBuiltinType(src, .@"Type.Fn.Param");
+            const fn_info_ty = try sema.getStdLangType(src, .@"Type.Fn");
+            const param_info_ty = try sema.getStdLangType(src, .@"Type.Fn.Param");
 
             const func_ty_info = zcu.typeToFunc(ty).?;
             const param_vals = try sema.arena.alloc(InternPool.Index, func_ty_info.param_types.len);
@@ -16068,9 +16068,9 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 .val = if (ret_ty_is_generic) .none else func_ty_info.return_type,
             } });
 
-            const callconv_ty = try sema.getBuiltinType(src, .CallingConvention);
+            const callconv_ty = try sema.getStdLangType(src, .CallingConvention);
             const callconv_val = Value.uninterpret(func_ty_info.cc, callconv_ty, pt) catch |err| switch (err) {
-                error.TypeMismatch => @panic("std.builtin is corrupt"),
+                error.TypeMismatch => @panic("std.lang is corrupt"),
                 error.OutOfMemory => |e| return e,
             };
 
@@ -16088,13 +16088,13 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.@"fn"))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.@"fn"))).toIntern(),
                 .val = (try pt.aggregateValue(fn_info_ty, &field_values)).toIntern(),
             })));
         },
         .int => {
-            const int_info_ty = try sema.getBuiltinType(src, .@"Type.Int");
-            const signedness_ty = try sema.getBuiltinType(src, .Signedness);
+            const int_info_ty = try sema.getStdLangType(src, .@"Type.Int");
+            const signedness_ty = try sema.getStdLangType(src, .Signedness);
             const info = ty.intInfo(zcu);
             const field_values = .{
                 // signedness: Signedness,
@@ -16104,12 +16104,12 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.int))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.int))).toIntern(),
                 .val = (try pt.aggregateValue(int_info_ty, &field_values)).toIntern(),
             })));
         },
         .float => {
-            const float_info_ty = try sema.getBuiltinType(src, .@"Type.Float");
+            const float_info_ty = try sema.getStdLangType(src, .@"Type.Float");
 
             const field_vals = .{
                 // bits: u16,
@@ -16117,7 +16117,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.float))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.float))).toIntern(),
                 .val = (try pt.aggregateValue(float_info_ty, &field_vals)).toIntern(),
             })));
         },
@@ -16135,9 +16135,9 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 } }));
             };
 
-            const addrspace_ty = try sema.getBuiltinType(src, .AddressSpace);
-            const pointer_ty = try sema.getBuiltinType(src, .@"Type.Pointer");
-            const ptr_size_ty = try sema.getBuiltinType(src, .@"Type.Pointer.Size");
+            const addrspace_ty = try sema.getStdLangType(src, .AddressSpace);
+            const pointer_ty = try sema.getStdLangType(src, .@"Type.Pointer");
+            const ptr_size_ty = try sema.getStdLangType(src, .@"Type.Pointer.Size");
 
             const field_values = .{
                 // size: Size,
@@ -16162,12 +16162,12 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.pointer))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.pointer))).toIntern(),
                 .val = (try pt.aggregateValue(pointer_ty, &field_values)).toIntern(),
             })));
         },
         .array => {
-            const array_field_ty = try sema.getBuiltinType(src, .@"Type.Array");
+            const array_field_ty = try sema.getStdLangType(src, .@"Type.Array");
 
             const info = ty.arrayInfo(zcu);
             const field_values = .{
@@ -16180,12 +16180,12 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.array))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.array))).toIntern(),
                 .val = (try pt.aggregateValue(array_field_ty, &field_values)).toIntern(),
             })));
         },
         .vector => {
-            const vector_field_ty = try sema.getBuiltinType(src, .@"Type.Vector");
+            const vector_field_ty = try sema.getStdLangType(src, .@"Type.Vector");
 
             const info = ty.arrayInfo(zcu);
             const field_values = .{
@@ -16196,12 +16196,12 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.vector))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.vector))).toIntern(),
                 .val = (try pt.aggregateValue(vector_field_ty, &field_values)).toIntern(),
             })));
         },
         .optional => {
-            const optional_field_ty = try sema.getBuiltinType(src, .@"Type.Optional");
+            const optional_field_ty = try sema.getStdLangType(src, .@"Type.Optional");
 
             const field_values = .{
                 // child: type,
@@ -16209,13 +16209,13 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.optional))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.optional))).toIntern(),
                 .val = (try pt.aggregateValue(optional_field_ty, &field_values)).toIntern(),
             })));
         },
         .error_set => {
             // Get the Error type
-            const error_field_ty = try sema.getBuiltinType(src, .@"Type.Error");
+            const error_field_ty = try sema.getStdLangType(src, .@"Type.Error");
 
             // Build our list of Error values
             // Optional value is only null if anyerror
@@ -16300,12 +16300,12 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             // Construct Type{ .error_set = errors_val }
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.error_set))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.error_set))).toIntern(),
                 .val = errors_val,
             })));
         },
         .error_union => {
-            const error_union_field_ty = try sema.getBuiltinType(src, .@"Type.ErrorUnion");
+            const error_union_field_ty = try sema.getStdLangType(src, .@"Type.ErrorUnion");
 
             const field_values = .{
                 // error_set: type,
@@ -16315,7 +16315,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.error_union))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.error_union))).toIntern(),
                 .val = (try pt.aggregateValue(error_union_field_ty, &field_values)).toIntern(),
             })));
         },
@@ -16323,7 +16323,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             const enum_obj = ip.loadEnumType(ty.toIntern());
             const is_exhaustive: Value = .makeBool(!enum_obj.nonexhaustive);
 
-            const enum_field_ty = try sema.getBuiltinType(src, .@"Type.EnumField");
+            const enum_field_ty = try sema.getStdLangType(src, .@"Type.EnumField");
 
             const enum_field_vals = try sema.arena.alloc(InternPool.Index, enum_obj.field_names.len);
             for (enum_field_vals, 0..) |*field_val, tag_index| {
@@ -16404,7 +16404,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
 
             const decls_val = try sema.typeInfoDecls(src, ip.loadEnumType(ty.toIntern()).namespace.toOptional());
 
-            const type_enum_ty = try sema.getBuiltinType(src, .@"Type.Enum");
+            const type_enum_ty = try sema.getStdLangType(src, .@"Type.Enum");
 
             const field_values = .{
                 // tag_type: type,
@@ -16418,13 +16418,13 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.@"enum"))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.@"enum"))).toIntern(),
                 .val = (try pt.aggregateValue(type_enum_ty, &field_values)).toIntern(),
             })));
         },
         .@"union" => {
-            const type_union_ty = try sema.getBuiltinType(src, .@"Type.Union");
-            const union_field_ty = try sema.getBuiltinType(src, .@"Type.UnionField");
+            const type_union_ty = try sema.getStdLangType(src, .@"Type.Union");
+            const union_field_ty = try sema.getStdLangType(src, .@"Type.UnionField");
 
             const union_obj = ip.loadUnionType(ty.toIntern());
             const enum_obj = ip.loadEnumType(union_obj.enum_tag_type);
@@ -16524,7 +16524,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 .val = if (ty.unionTagType(zcu)) |tag_ty| tag_ty.toIntern() else .none,
             } });
 
-            const container_layout_ty = try sema.getBuiltinType(src, .@"Type.ContainerLayout");
+            const container_layout_ty = try sema.getStdLangType(src, .@"Type.ContainerLayout");
 
             const field_values = .{
                 // layout: ContainerLayout,
@@ -16539,13 +16539,13 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.@"union"))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.@"union"))).toIntern(),
                 .val = (try pt.aggregateValue(type_union_ty, &field_values)).toIntern(),
             })));
         },
         .@"struct" => {
-            const type_struct_ty = try sema.getBuiltinType(src, .@"Type.Struct");
-            const struct_field_ty = try sema.getBuiltinType(src, .@"Type.StructField");
+            const type_struct_ty = try sema.getStdLangType(src, .@"Type.Struct");
+            const struct_field_ty = try sema.getStdLangType(src, .@"Type.StructField");
 
             var struct_field_vals: []InternPool.Index = &.{};
             defer gpa.free(struct_field_vals);
@@ -16713,7 +16713,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 } else .none,
             } });
 
-            const container_layout_ty = try sema.getBuiltinType(src, .@"Type.ContainerLayout");
+            const container_layout_ty = try sema.getStdLangType(src, .@"Type.ContainerLayout");
 
             const layout = ty.containerLayout(zcu);
 
@@ -16731,12 +16731,12 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.@"struct"))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.@"struct"))).toIntern(),
                 .val = (try pt.aggregateValue(type_struct_ty, &field_values)).toIntern(),
             })));
         },
         .@"opaque" => {
-            const type_opaque_ty = try sema.getBuiltinType(src, .@"Type.Opaque");
+            const type_opaque_ty = try sema.getStdLangType(src, .@"Type.Opaque");
 
             const decls_val = try sema.typeInfoDecls(src, ty.getNamespace(zcu));
 
@@ -16746,7 +16746,7 @@ fn zirTypeInfo(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             };
             return Air.internedToRef((try pt.internUnion(.{
                 .ty = type_info_ty.toIntern(),
-                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.builtin.TypeId.@"opaque"))).toIntern(),
+                .tag = (try pt.enumValueFieldIndex(type_info_tag_ty, @intFromEnum(std.lang.TypeId.@"opaque"))).toIntern(),
                 .val = (try pt.aggregateValue(type_opaque_ty, &field_values)).toIntern(),
             })));
         },
@@ -16764,7 +16764,7 @@ fn typeInfoDecls(
     const zcu = pt.zcu;
     const gpa = sema.gpa;
 
-    const declaration_ty = try sema.getBuiltinType(src, .@"Type.Declaration");
+    const declaration_ty = try sema.getStdLangType(src, .@"Type.Declaration");
 
     var decl_vals = std.array_list.Managed(InternPool.Index).init(gpa);
     defer decl_vals.deinit();
@@ -17323,7 +17323,7 @@ fn zirCondbr(
     // Reset, this may have been updated by the then block analysis
     sub_block.error_return_trace_index = parent_block.error_return_trace_index;
 
-    const false_hint: std.builtin.BranchHint = if (err_cond != null and
+    const false_hint: std.lang.BranchHint = if (err_cond != null and
         try sema.maybeErrorUnwrap(&sub_block, else_body, err_cond.?, cond_src, false))
     h: {
         // nothing to do here. weight against error branch
@@ -17714,7 +17714,7 @@ fn maybePushErrorTrace(
     assert(pt.zcu.intern_pool.funcAnalysisUnordered(sema.owner.unwrap().func).has_error_trace);
 
     const gpa = sema.gpa;
-    const return_err_fn = Air.internedToRef(try sema.getBuiltin(src, .returnError));
+    const return_err_fn = Air.internedToRef(try sema.getStdLangValue(src, .returnError));
 
     if (!need_check) {
         try sema.callBuiltin(parent_block, src, return_err_fn, .never_tail, &.{}, .@"error return");
@@ -18040,7 +18040,7 @@ fn zirPtrType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
         break :blk try sema.validateAlign(block, align_src, align_bytes);
     } else .none;
 
-    const address_space: std.builtin.AddressSpace = if (inst_data.flags.has_addrspace) blk: {
+    const address_space: std.lang.AddressSpace = if (inst_data.flags.has_addrspace) blk: {
         const ref: Zir.Inst.Ref = @enumFromInt(sema.code.extra[extra_i]);
         extra_i += 1;
         break :blk try sema.resolveAddressSpace(block, addrspace_src, ref, .pointer);
@@ -19179,7 +19179,7 @@ fn getErrorReturnTrace(sema: *Sema, block: *Block) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
-    const stack_trace_ty = try sema.getBuiltinType(block.nodeOffset(.zero), .StackTrace);
+    const stack_trace_ty = try sema.getStdLangType(block.nodeOffset(.zero), .StackTrace);
     const ptr_stack_trace_ty = try pt.singleMutPtrType(stack_trace_ty);
     const opt_ptr_stack_trace_ty = try pt.optionalType(ptr_stack_trace_ty.toIntern());
 
@@ -19446,7 +19446,7 @@ fn zirReifyInt(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     const signedness_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const bits_src = block.builtinCallArgSrc(inst_data.src_node, 1);
     const extra = sema.code.extraData(Zir.Inst.Bin, inst_data.payload_index).data;
-    const signedness = try sema.resolveBuiltinEnum(block, signedness_src, extra.lhs, .Signedness, .{ .simple = .int_signedness });
+    const signedness = try sema.resolveStdLangEnum(block, signedness_src, extra.lhs, .Signedness, .{ .simple = .int_signedness });
     const bits: u16 = @intCast(try sema.resolveInt(block, bits_src, extra.rhs, .u16, .{ .simple = .int_bit_width }));
     if (bits == 0 and signedness == .signed) {
         return sema.fail(block, bits_src, "signed integer cannot have bit width 0", .{});
@@ -19469,11 +19469,11 @@ fn zirReifySliceArgTy(
 
     const comptime_reason: std.zig.SimpleComptimeReason, const in_scalar_ty: Type, const out_scalar_ty: Type = switch (info) {
         // zig fmt: off
-        .type_to_fn_param_attrs       => .{ .fn_param_attrs,     .type,           try sema.getBuiltinType(src, .@"Type.Fn.Param.Attributes") },
+        .type_to_fn_param_attrs       => .{ .fn_param_attrs,     .type,           try sema.getStdLangType(src, .@"Type.Fn.Param.Attributes") },
         .string_to_struct_field_type  => .{ .struct_field_types, .slice_const_u8, .type },
         .string_to_union_field_type   => .{ .union_field_types,  .slice_const_u8, .type },
-        .string_to_struct_field_attrs => .{ .struct_field_attrs, .slice_const_u8, try sema.getBuiltinType(src, .@"Type.StructField.Attributes") },
-        .string_to_union_field_attrs  => .{ .union_field_attrs,  .slice_const_u8, try sema.getBuiltinType(src, .@"Type.UnionField.Attributes") },
+        .string_to_struct_field_attrs => .{ .struct_field_attrs, .slice_const_u8, try sema.getStdLangType(src, .@"Type.StructField.Attributes") },
+        .string_to_union_field_attrs  => .{ .union_field_attrs,  .slice_const_u8, try sema.getStdLangType(src, .@"Type.UnionField.Attributes") },
         // zig fmt: on
     };
 
@@ -19599,18 +19599,18 @@ fn zirReifyPointer(
     const elem_ty_src = block.builtinCallArgSrc(extra.node, 2);
     const sentinel_src = block.builtinCallArgSrc(extra.node, 3);
 
-    const size_ty = try sema.getBuiltinType(size_src, .@"Type.Pointer.Size");
-    const attrs_ty = try sema.getBuiltinType(attrs_src, .@"Type.Pointer.Attributes");
+    const size_ty = try sema.getStdLangType(size_src, .@"Type.Pointer.Size");
+    const attrs_ty = try sema.getStdLangType(attrs_src, .@"Type.Pointer.Attributes");
 
     const size_uncoerced = sema.resolveInst(extra.size);
     const size_coerced = try sema.coerce(block, size_ty, size_uncoerced, size_src);
     const size_val = try sema.resolveConstDefinedValue(block, size_src, size_coerced, .{ .simple = .pointer_size });
-    const size = try sema.interpretBuiltinType(block, size_src, size_val, std.builtin.Type.Pointer.Size);
+    const size = try sema.interpretStdLangType(block, size_src, size_val, std.lang.Type.Pointer.Size);
 
     const attrs_uncoerced = sema.resolveInst(extra.attrs);
     const attrs_coerced = try sema.coerce(block, attrs_ty, attrs_uncoerced, attrs_src);
     const attrs_val = try sema.resolveConstDefinedValue(block, attrs_src, attrs_coerced, .{ .simple = .pointer_attrs });
-    const attrs = try sema.interpretBuiltinType(block, attrs_src, attrs_val, std.builtin.Type.Pointer.Attributes);
+    const attrs = try sema.interpretStdLangType(block, attrs_src, attrs_val, std.lang.Type.Pointer.Attributes);
 
     const @"align": Alignment = if (attrs.@"align") |bytes| a: {
         break :a try sema.validateAlign(block, attrs_src, bytes);
@@ -19687,8 +19687,8 @@ fn zirReifyFn(
     const ret_ty_src = block.builtinCallArgSrc(extra.node, 2);
     const fn_attrs_src = block.builtinCallArgSrc(extra.node, 3);
 
-    const single_param_attrs_ty = try sema.getBuiltinType(param_attrs_src, .@"Type.Fn.Param.Attributes");
-    const fn_attrs_ty = try sema.getBuiltinType(fn_attrs_src, .@"Type.Fn.Attributes");
+    const single_param_attrs_ty = try sema.getStdLangType(param_attrs_src, .@"Type.Fn.Param.Attributes");
+    const fn_attrs_ty = try sema.getStdLangType(fn_attrs_src, .@"Type.Fn.Attributes");
 
     const param_types_uncoerced = sema.resolveInst(extra.param_types);
     const param_types_coerced = try sema.coerce(block, .slice_const_type, param_types_uncoerced, param_types_src);
@@ -19711,17 +19711,17 @@ fn zirReifyFn(
     const fn_attrs_uncoerced = sema.resolveInst(extra.fn_attrs);
     const fn_attrs_coerced = try sema.coerce(block, fn_attrs_ty, fn_attrs_uncoerced, fn_attrs_src);
     const fn_attrs_val = try sema.resolveConstDefinedValue(block, fn_attrs_src, fn_attrs_coerced, .{ .simple = .fn_attrs });
-    const fn_attrs = try sema.interpretBuiltinType(block, fn_attrs_src, fn_attrs_val, std.builtin.Type.Fn.Attributes);
+    const fn_attrs = try sema.interpretStdLangType(block, fn_attrs_src, fn_attrs_val, std.lang.Type.Fn.Attributes);
 
     var noalias_bits: u32 = 0;
     const param_types_ip = try sema.arena.alloc(InternPool.Index, @intCast(params_len));
     for (param_types_ip, 0..@intCast(params_len)) |*param_ty_ip, param_idx| {
         const param_ty: Type = (try param_types_arr.elemValue(pt, param_idx)).toType();
-        const param_attrs = try sema.interpretBuiltinType(
+        const param_attrs = try sema.interpretStdLangType(
             block,
             param_attrs_src,
             try param_attrs_arr.elemValue(pt, param_idx),
-            std.builtin.Type.Fn.Param.Attributes,
+            std.lang.Type.Fn.Param.Attributes,
         );
         try sema.checkParamType(
             block,
@@ -19825,13 +19825,13 @@ fn zirReifyStruct(
         } },
     };
 
-    const container_layout_ty = try sema.getBuiltinType(layout_src, .@"Type.ContainerLayout");
-    const single_field_attrs_ty = try sema.getBuiltinType(field_attrs_src, .@"Type.StructField.Attributes");
+    const container_layout_ty = try sema.getStdLangType(layout_src, .@"Type.ContainerLayout");
+    const single_field_attrs_ty = try sema.getStdLangType(field_attrs_src, .@"Type.StructField.Attributes");
 
     const layout_uncoerced = sema.resolveInst(extra.layout);
     const layout_coerced = try sema.coerce(block, container_layout_ty, layout_uncoerced, layout_src);
     const layout_val = try sema.resolveConstDefinedValue(block, layout_src, layout_coerced, .{ .simple = .struct_layout });
-    const layout = try sema.interpretBuiltinType(block, layout_src, layout_val, std.builtin.Type.ContainerLayout);
+    const layout = try sema.interpretStdLangType(block, layout_src, layout_val, std.lang.Type.ContainerLayout);
 
     const backing_int_ty_uncoerced = sema.resolveInst(extra.backing_ty);
     const backing_int_ty_coerced = try sema.coerce(block, .optional_type, backing_int_ty_uncoerced, backing_ty_src);
@@ -19912,15 +19912,15 @@ fn zirReifyStruct(
         const field_name = try sema.sliceToIpString(block, field_names_src, field_name_val, .{ .simple = .struct_field_names });
 
         const field_attr_comptime = try field_attrs_val.fieldValue(pt, std.meta.fieldIndex(
-            std.builtin.Type.StructField.Attributes,
+            std.lang.Type.StructField.Attributes,
             "comptime",
         ).?);
         const field_attr_align = try field_attrs_val.fieldValue(pt, std.meta.fieldIndex(
-            std.builtin.Type.StructField.Attributes,
+            std.lang.Type.StructField.Attributes,
             "align",
         ).?);
         const field_attr_default_value_ptr = try field_attrs_val.fieldValue(pt, std.meta.fieldIndex(
-            std.builtin.Type.StructField.Attributes,
+            std.lang.Type.StructField.Attributes,
             "default_value_ptr",
         ).?);
 
@@ -19997,15 +19997,15 @@ fn zirReifyStruct(
                 wip.field_types.get(ip)[field_idx] = field_ty.toIntern();
 
                 const field_attr_comptime = try field_attrs_val.fieldValue(pt, std.meta.fieldIndex(
-                    std.builtin.Type.StructField.Attributes,
+                    std.lang.Type.StructField.Attributes,
                     "comptime",
                 ).?);
                 const field_attr_align = try field_attrs_val.fieldValue(pt, std.meta.fieldIndex(
-                    std.builtin.Type.StructField.Attributes,
+                    std.lang.Type.StructField.Attributes,
                     "align",
                 ).?);
                 const field_attr_default_value_ptr = try field_attrs_val.fieldValue(pt, std.meta.fieldIndex(
-                    std.builtin.Type.StructField.Attributes,
+                    std.lang.Type.StructField.Attributes,
                     "default_value_ptr",
                 ).?);
 
@@ -20105,13 +20105,13 @@ fn zirReifyUnion(
         } },
     };
 
-    const container_layout_ty = try sema.getBuiltinType(layout_src, .@"Type.ContainerLayout");
-    const single_field_attrs_ty = try sema.getBuiltinType(field_attrs_src, .@"Type.UnionField.Attributes");
+    const container_layout_ty = try sema.getStdLangType(layout_src, .@"Type.ContainerLayout");
+    const single_field_attrs_ty = try sema.getStdLangType(field_attrs_src, .@"Type.UnionField.Attributes");
 
     const layout_uncoerced = sema.resolveInst(extra.layout);
     const layout_coerced = try sema.coerce(block, container_layout_ty, layout_uncoerced, layout_src);
     const layout_val = try sema.resolveConstDefinedValue(block, layout_src, layout_coerced, .{ .simple = .union_layout });
-    const layout = try sema.interpretBuiltinType(block, layout_src, layout_val, std.builtin.Type.ContainerLayout);
+    const layout = try sema.interpretStdLangType(block, layout_src, layout_val, std.lang.Type.ContainerLayout);
 
     const arg_ty_uncoerced = sema.resolveInst(extra.arg_ty);
     const arg_ty_coerced = try sema.coerce(block, .optional_type, arg_ty_uncoerced, arg_ty_src);
@@ -20191,11 +20191,11 @@ fn zirReifyUnion(
         const field_name = try sema.sliceToIpString(block, field_names_src, field_name_val, .{ .simple = .union_field_names });
         std.hash.autoHash(&hasher, field_name);
 
-        const field_attrs = try sema.interpretBuiltinType(
+        const field_attrs = try sema.interpretStdLangType(
             block,
             field_attrs_src,
             try field_attrs_arr.elemValue(pt, field_idx),
-            std.builtin.Type.UnionField.Attributes,
+            std.lang.Type.UnionField.Attributes,
         );
         if (field_attrs.@"align") |bytes| {
             if (layout == .@"packed") {
@@ -20240,11 +20240,11 @@ fn zirReifyUnion(
                 wip.field_types.get(ip)[field_idx] = field_ty.toIntern();
 
                 // No source location; first loop checked this is valid.
-                const field_attrs = try sema.interpretBuiltinType(
+                const field_attrs = try sema.interpretStdLangType(
                     block,
                     .unneeded,
                     try field_attrs_arr.elemValue(pt, field_idx),
-                    std.builtin.Type.UnionField.Attributes,
+                    std.lang.Type.UnionField.Attributes,
                 );
                 if (field_attrs.@"align") |bytes| {
                     // No source location; first loop checked this is valid.
@@ -20319,7 +20319,7 @@ fn zirReifyEnum(
         } },
     };
 
-    const enum_mode_ty = try sema.getBuiltinType(mode_src, .@"Type.Enum.Mode");
+    const enum_mode_ty = try sema.getStdLangType(mode_src, .@"Type.Enum.Mode");
 
     const tag_ty_uncoerced = sema.resolveInst(extra.tag_ty);
     const tag_ty_coerced = try sema.coerce(block, .type, tag_ty_uncoerced, tag_ty_src);
@@ -20329,7 +20329,7 @@ fn zirReifyEnum(
     const mode_uncoerced = sema.resolveInst(extra.mode);
     const mode_coerced = try sema.coerce(block, enum_mode_ty, mode_uncoerced, mode_src);
     const mode_val = try sema.resolveConstDefinedValue(block, mode_src, mode_coerced, .{ .simple = .type });
-    const nonexhaustive = switch (try sema.interpretBuiltinType(block, mode_src, mode_val, std.builtin.Type.Enum.Mode)) {
+    const nonexhaustive = switch (try sema.interpretStdLangType(block, mode_src, mode_val, std.lang.Type.Enum.Mode)) {
         .exhaustive => false,
         .nonexhaustive => true,
     };
@@ -20423,7 +20423,7 @@ fn zirReifyEnum(
 
 fn resolveVaListRef(sema: *Sema, block: *Block, src: LazySrcLoc, zir_ref: Zir.Inst.Ref) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
-    const va_list_ty = try sema.getBuiltinType(src, .VaList);
+    const va_list_ty = try sema.getStdLangType(src, .VaList);
     const va_list_ptr = try pt.singleMutPtrType(va_list_ty);
 
     const inst = sema.resolveInst(zir_ref);
@@ -20462,7 +20462,7 @@ fn zirCVaCopy(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) 
     const va_list_src = block.builtinCallArgSrc(extra.node, 0);
 
     const va_list_ref = try sema.resolveVaListRef(block, va_list_src, extra.operand);
-    const va_list_ty = try sema.getBuiltinType(src, .VaList);
+    const va_list_ty = try sema.getStdLangType(src, .VaList);
 
     try sema.requireRuntimeBlock(block, src, null);
     return block.addTyOp(.c_va_copy, va_list_ty, va_list_ref);
@@ -20484,7 +20484,7 @@ fn zirCVaStart(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData)
     const src_node: std.zig.Ast.Node.Offset = @enumFromInt(@as(i32, @bitCast(extended.operand)));
     const src = block.nodeOffset(src_node);
 
-    const va_list_ty = try sema.getBuiltinType(src, .VaList);
+    const va_list_ty = try sema.getStdLangType(src, .VaList);
     try sema.requireRuntimeBlock(block, src, null);
     return block.addInst(.{
         .tag = .c_va_start,
@@ -21962,9 +21962,9 @@ fn checkArithmeticOp(
     sema: *Sema,
     block: *Block,
     src: LazySrcLoc,
-    scalar_tag: std.builtin.TypeId,
-    lhs_zig_ty_tag: std.builtin.TypeId,
-    rhs_zig_ty_tag: std.builtin.TypeId,
+    scalar_tag: std.lang.TypeId,
+    lhs_zig_ty_tag: std.lang.TypeId,
+    rhs_zig_ty_tag: std.lang.TypeId,
     zir_tag: Zir.Inst.Tag,
 ) CompileError!void {
     const is_int = scalar_tag == .int or scalar_tag == .comptime_int;
@@ -22373,7 +22373,7 @@ fn resolveExportOptions(
     const io = comp.io;
     const ip = &zcu.intern_pool;
 
-    const export_options_ty = try sema.getBuiltinType(src, .ExportOptions);
+    const export_options_ty = try sema.getStdLangType(src, .ExportOptions);
     const air_ref = sema.resolveInst(zir_ref);
     const options = try sema.coerce(block, export_options_ty, air_ref, src);
 
@@ -22387,7 +22387,7 @@ fn resolveExportOptions(
 
     const linkage_operand = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "linkage", .no_embedded_nulls), linkage_src);
     const linkage_val = try sema.resolveConstDefinedValue(block, linkage_src, linkage_operand, .{ .simple = .export_options });
-    const linkage = try sema.interpretBuiltinType(block, linkage_src, linkage_val, std.builtin.GlobalLinkage);
+    const linkage = try sema.interpretStdLangType(block, linkage_src, linkage_val, std.lang.GlobalLinkage);
 
     const section_operand = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "section", .no_embedded_nulls), section_src);
     const section_opt_val = try sema.resolveConstDefinedValue(block, section_src, section_operand, .{ .simple = .export_options });
@@ -22398,7 +22398,7 @@ fn resolveExportOptions(
 
     const visibility_operand = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "visibility", .no_embedded_nulls), visibility_src);
     const visibility_val = try sema.resolveConstDefinedValue(block, visibility_src, visibility_operand, .{ .simple = .export_options });
-    const visibility = try sema.interpretBuiltinType(block, visibility_src, visibility_val, std.builtin.SymbolVisibility);
+    const visibility = try sema.interpretStdLangType(block, visibility_src, visibility_val, std.lang.SymbolVisibility);
 
     if (name.len < 1) {
         return sema.fail(block, name_src, "exported symbol name cannot be empty", .{});
@@ -22418,19 +22418,19 @@ fn resolveExportOptions(
     };
 }
 
-fn resolveBuiltinEnum(
+fn resolveStdLangEnum(
     sema: *Sema,
     block: *Block,
     src: LazySrcLoc,
     zir_ref: Zir.Inst.Ref,
-    comptime name: Zcu.BuiltinDecl,
+    comptime name: Zcu.StdLangDecl,
     reason: ComptimeReason,
-) CompileError!@field(std.builtin, @tagName(name)) {
-    const ty = try sema.getBuiltinType(src, name);
+) CompileError!@field(std.lang, @tagName(name)) {
+    const ty = try sema.getStdLangType(src, name);
     const air_ref = sema.resolveInst(zir_ref);
     const coerced = try sema.coerce(block, ty, air_ref, src);
     const val = try sema.resolveConstDefinedValue(block, src, coerced, reason);
-    return sema.interpretBuiltinType(block, src, val, @field(std.builtin, @tagName(name)));
+    return sema.interpretStdLangType(block, src, val, @field(std.lang, @tagName(name)));
 }
 
 fn resolveAtomicOrder(
@@ -22439,8 +22439,8 @@ fn resolveAtomicOrder(
     src: LazySrcLoc,
     zir_ref: Zir.Inst.Ref,
     reason: ComptimeReason,
-) CompileError!std.builtin.AtomicOrder {
-    return sema.resolveBuiltinEnum(block, src, zir_ref, .AtomicOrder, reason);
+) CompileError!std.lang.AtomicOrder {
+    return sema.resolveStdLangEnum(block, src, zir_ref, .AtomicOrder, reason);
 }
 
 fn resolveAtomicRmwOp(
@@ -22448,8 +22448,8 @@ fn resolveAtomicRmwOp(
     block: *Block,
     src: LazySrcLoc,
     zir_ref: Zir.Inst.Ref,
-) CompileError!std.builtin.AtomicRmwOp {
-    return sema.resolveBuiltinEnum(block, src, zir_ref, .AtomicRmwOp, .{ .simple = .operand_atomicRmw_operation });
+) CompileError!std.lang.AtomicRmwOp {
+    return sema.resolveStdLangEnum(block, src, zir_ref, .AtomicRmwOp, .{ .simple = .operand_atomicRmw_operation });
 }
 
 fn zirCmpxchg(
@@ -22490,10 +22490,10 @@ fn zirCmpxchg(
     const success_order = try sema.resolveAtomicOrder(block, success_order_src, extra.success_order, .{ .simple = .atomic_order });
     const failure_order = try sema.resolveAtomicOrder(block, failure_order_src, extra.failure_order, .{ .simple = .atomic_order });
 
-    if (@intFromEnum(success_order) < @intFromEnum(std.builtin.AtomicOrder.monotonic)) {
+    if (@intFromEnum(success_order) < @intFromEnum(std.lang.AtomicOrder.monotonic)) {
         return sema.fail(block, success_order_src, "success atomic ordering must be monotonic or stricter", .{});
     }
-    if (@intFromEnum(failure_order) < @intFromEnum(std.builtin.AtomicOrder.monotonic)) {
+    if (@intFromEnum(failure_order) < @intFromEnum(std.lang.AtomicOrder.monotonic)) {
         return sema.fail(block, failure_order_src, "failure atomic ordering must be monotonic or stricter", .{});
     }
     if (@intFromEnum(failure_order) > @intFromEnum(success_order)) {
@@ -22609,7 +22609,7 @@ fn zirReduce(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
     const extra = sema.code.extraData(Zir.Inst.Bin, inst_data.payload_index).data;
     const op_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const operand_src = block.builtinCallArgSrc(inst_data.src_node, 1);
-    const operation = try sema.resolveBuiltinEnum(block, op_src, extra.lhs, .ReduceOp, .{ .simple = .operand_reduce_operation });
+    const operation = try sema.resolveStdLangEnum(block, op_src, extra.lhs, .ReduceOp, .{ .simple = .operand_reduce_operation });
     const operand = sema.resolveInst(extra.rhs);
     const operand_ty = sema.typeOf(operand);
     const pt = sema.pt;
@@ -23196,11 +23196,11 @@ fn zirBuiltinCall(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError
     const extra = sema.code.extraData(Zir.Inst.BuiltinCall, inst_data.payload_index).data;
     const func = sema.resolveInst(extra.callee);
 
-    const modifier_ty = try sema.getBuiltinType(call_src, .CallModifier);
+    const modifier_ty = try sema.getStdLangType(call_src, .CallModifier);
     const air_ref = sema.resolveInst(extra.modifier);
     const modifier_ref = try sema.coerce(block, modifier_ty, air_ref, modifier_src);
     const modifier_val = try sema.resolveConstDefinedValue(block, modifier_src, modifier_ref, .{ .simple = .call_modifier });
-    var modifier = try sema.interpretBuiltinType(block, modifier_src, modifier_val, std.builtin.CallModifier);
+    var modifier = try sema.interpretStdLangType(block, modifier_src, modifier_val, std.lang.CallModifier);
     switch (modifier) {
         // These can be upgraded to comptime or nosuspend calls.
         .auto, .never_tail, .no_suspend => {
@@ -24250,19 +24250,19 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
 
     var extra_index: usize = extra.end;
 
-    const cc: std.builtin.CallingConvention = if (extra.data.bits.has_cc_body) blk: {
+    const cc: std.lang.CallingConvention = if (extra.data.bits.has_cc_body) blk: {
         const body_len = sema.code.extra[extra_index];
         extra_index += 1;
         const body = sema.code.bodySlice(extra_index, body_len);
         extra_index += body.len;
 
-        const cc_ty = try sema.getBuiltinType(cc_src, .CallingConvention);
+        const cc_ty = try sema.getStdLangType(cc_src, .CallingConvention);
         const val = try sema.resolveGenericBody(block, cc_src, body, inst, cc_ty, .{ .simple = .@"callconv" });
         break :blk try sema.analyzeValueAsCallconv(block, cc_src, val);
     } else if (extra.data.bits.has_cc_ref) blk: {
         const cc_ref: Zir.Inst.Ref = @enumFromInt(sema.code.extra[extra_index]);
         extra_index += 1;
-        const cc_ty = try sema.getBuiltinType(cc_src, .CallingConvention);
+        const cc_ty = try sema.getStdLangType(cc_src, .CallingConvention);
         const uncoerced_cc = sema.resolveInst(cc_ref);
         const coerced_cc = try sema.coerce(block, cc_ty, uncoerced_cc, cc_src);
         const cc_val = try sema.resolveConstDefinedValue(block, cc_src, coerced_cc, .{ .simple = .@"callconv" });
@@ -24275,10 +24275,10 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
             if (zir_decl.linkage == .@"export") {
                 break :cc target.cCallingConvention() orelse {
                     // This target has no default C calling convention. We sometimes trigger a similar
-                    // error by trying to evaluate `std.builtin.CallingConvention.c`, so for consistency,
+                    // error by trying to evaluate `std.lang.CallingConvention.c`, so for consistency,
                     // let's eval that now and just get the transitive error. (It's guaranteed to error
                     // because it does the exact `cCallingConvention` call we just did.)
-                    const cc_type = try sema.getBuiltinType(cc_src, .CallingConvention);
+                    const cc_type = try sema.getStdLangType(cc_src, .CallingConvention);
                     _ = try sema.namespaceLookupVal(
                         block,
                         LazySrcLoc.unneeded,
@@ -24286,7 +24286,7 @@ fn zirFuncFancy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!A
                         try ip.getOrPutString(gpa, io, pt.tid, "c", .no_embedded_nulls),
                     );
                     // The above should have errored.
-                    @panic("std.builtin is corrupt");
+                    @panic("std.lang is corrupt");
                 };
             }
         }
@@ -24398,7 +24398,7 @@ fn resolvePrefetchOptions(
     block: *Block,
     src: LazySrcLoc,
     zir_ref: Zir.Inst.Ref,
-) CompileError!std.builtin.PrefetchOptions {
+) CompileError!std.lang.PrefetchOptions {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const comp = zcu.comp;
@@ -24406,7 +24406,7 @@ fn resolvePrefetchOptions(
     const io = comp.io;
     const ip = &zcu.intern_pool;
 
-    const options_ty = try sema.getBuiltinType(src, .PrefetchOptions);
+    const options_ty = try sema.getStdLangType(src, .PrefetchOptions);
     const options = try sema.coerce(block, options_ty, sema.resolveInst(zir_ref), src);
 
     const rw_src = block.src(.{ .init_field_rw = src.offset.node_offset_builtin_call_arg.builtin_call_node });
@@ -24422,10 +24422,10 @@ fn resolvePrefetchOptions(
     const cache = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "cache", .no_embedded_nulls), cache_src);
     const cache_val = try sema.resolveConstDefinedValue(block, cache_src, cache, .{ .simple = .prefetch_options });
 
-    return std.builtin.PrefetchOptions{
-        .rw = try sema.interpretBuiltinType(block, rw_src, rw_val, std.builtin.PrefetchOptions.Rw),
+    return std.lang.PrefetchOptions{
+        .rw = try sema.interpretStdLangType(block, rw_src, rw_val, std.lang.PrefetchOptions.Rw),
         .locality = @intCast(locality_val.toUnsignedInt(zcu)),
-        .cache = try sema.interpretBuiltinType(block, cache_src, cache_val, std.builtin.PrefetchOptions.Cache),
+        .cache = try sema.interpretStdLangType(block, cache_src, cache_val, std.lang.PrefetchOptions.Cache),
     };
 }
 
@@ -24465,12 +24465,12 @@ fn resolveExternOptions(
 ) CompileError!struct {
     name: InternPool.NullTerminatedString,
     library_name: InternPool.OptionalNullTerminatedString,
-    linkage: std.builtin.GlobalLinkage,
-    visibility: std.builtin.SymbolVisibility,
+    linkage: std.lang.GlobalLinkage,
+    visibility: std.lang.SymbolVisibility,
     is_thread_local: bool,
     is_dll_import: bool,
-    relocation: std.builtin.ExternOptions.Relocation,
-    decoration: ?std.builtin.ExternOptions.Decoration,
+    relocation: std.lang.ExternOptions.Relocation,
+    decoration: ?std.lang.ExternOptions.Decoration,
 } {
     const pt = sema.pt;
     const zcu = pt.zcu;
@@ -24480,7 +24480,7 @@ fn resolveExternOptions(
     const ip = &zcu.intern_pool;
 
     const options_inst = sema.resolveInst(zir_ref);
-    const extern_options_ty = try sema.getBuiltinType(src, .ExternOptions);
+    const extern_options_ty = try sema.getStdLangType(src, .ExternOptions);
     const options = try sema.coerce(block, extern_options_ty, options_inst, src);
 
     const name_src = block.src(.{ .init_field_name = src.offset.node_offset_builtin_call_arg.builtin_call_node });
@@ -24500,11 +24500,11 @@ fn resolveExternOptions(
 
     const linkage_ref = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "linkage", .no_embedded_nulls), linkage_src);
     const linkage_val = try sema.resolveConstDefinedValue(block, linkage_src, linkage_ref, .{ .simple = .extern_options });
-    const linkage = try sema.interpretBuiltinType(block, linkage_src, linkage_val, std.builtin.GlobalLinkage);
+    const linkage = try sema.interpretStdLangType(block, linkage_src, linkage_val, std.lang.GlobalLinkage);
 
     const visibility_ref = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "visibility", .no_embedded_nulls), visibility_src);
     const visibility_val = try sema.resolveConstDefinedValue(block, visibility_src, visibility_ref, .{ .simple = .extern_options });
-    const visibility = try sema.interpretBuiltinType(block, visibility_src, visibility_val, std.builtin.SymbolVisibility);
+    const visibility = try sema.interpretStdLangType(block, visibility_src, visibility_val, std.lang.SymbolVisibility);
 
     const is_thread_local = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "is_thread_local", .no_embedded_nulls), thread_local_src);
     const is_thread_local_val = try sema.resolveConstDefinedValue(block, thread_local_src, is_thread_local, .{ .simple = .extern_options });
@@ -24523,11 +24523,11 @@ fn resolveExternOptions(
 
     const relocation_ref = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "relocation", .no_embedded_nulls), relocation_src);
     const relocation_val = try sema.resolveConstDefinedValue(block, relocation_src, relocation_ref, .{ .simple = .extern_options });
-    const relocation = try sema.interpretBuiltinType(block, relocation_src, relocation_val, std.builtin.ExternOptions.Relocation);
+    const relocation = try sema.interpretStdLangType(block, relocation_src, relocation_val, std.lang.ExternOptions.Relocation);
 
     const decoration_ref = try sema.fieldVal(block, src, options, try ip.getOrPutString(gpa, io, pt.tid, "decoration", .no_embedded_nulls), decoration_src);
     const decoration_val = try sema.resolveConstDefinedValue(block, decoration_src, decoration_ref, .{ .simple = .extern_options });
-    const decoration = try sema.interpretBuiltinType(block, decoration_src, decoration_val, ?std.builtin.ExternOptions.Decoration);
+    const decoration = try sema.interpretStdLangType(block, decoration_src, decoration_val, ?std.lang.ExternOptions.Decoration);
 
     if (name.len == 0) {
         return sema.fail(block, name_src, "extern symbol name cannot be empty", .{});
@@ -24696,7 +24696,7 @@ fn zirInComptime(
     return if (block.isComptime()) .bool_true else .bool_false;
 }
 
-fn zirBuiltinValue(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
+fn zirStdLangValue(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
     const comp = zcu.comp;
@@ -24706,9 +24706,9 @@ fn zirBuiltinValue(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstD
 
     const src_node: std.zig.Ast.Node.Offset = @enumFromInt(@as(i32, @bitCast(extended.operand)));
     const src = block.nodeOffset(src_node);
-    const value: Zir.Inst.BuiltinValue = @enumFromInt(extended.small);
+    const value: Zir.Inst.StdLangValue = @enumFromInt(extended.small);
 
-    const builtin_type: Zcu.BuiltinDecl = switch (value) {
+    const std_lang_type: Zcu.StdLangDecl = switch (value) {
         // zig fmt: off
         .atomic_order       => .AtomicOrder,
         .atomic_rmw_op      => .AtomicRmwOp,
@@ -24732,28 +24732,28 @@ fn zirBuiltinValue(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstD
 
         // Values are handled here.
         .calling_convention_c => {
-            const callconv_ty = try sema.getBuiltinType(src, .CallingConvention);
+            const callconv_ty = try sema.getStdLangType(src, .CallingConvention);
             // Cannot use `Value.uninterpret` because `c` is a *declaration* whose value depends on the target.
             return try sema.namespaceLookupVal(
                 block,
                 src,
                 callconv_ty.getNamespaceIndex(zcu),
                 try ip.getOrPutString(gpa, io, pt.tid, "c", .no_embedded_nulls),
-            ) orelse @panic("std.builtin is corrupt");
+            ) orelse @panic("std.lang is corrupt");
         },
         .calling_convention_inline => {
-            const callconv_ty = try sema.getBuiltinType(src, .CallingConvention);
+            const callconv_ty = try sema.getStdLangType(src, .CallingConvention);
             return .fromValue(Value.uninterpret(
-                @as(std.builtin.CallingConvention, .@"inline"),
+                @as(std.lang.CallingConvention, .@"inline"),
                 callconv_ty,
                 pt,
             ) catch |err| switch (err) {
-                error.TypeMismatch => @panic("std.builtin is corrupt"),
+                error.TypeMismatch => @panic("std.lang is corrupt"),
                 error.OutOfMemory => |e| return e,
             });
         },
     };
-    return .fromType(try sema.getBuiltinType(src, builtin_type));
+    return .fromType(try sema.getStdLangType(src, std_lang_type));
 }
 
 fn zirInplaceArithResultTy(sema: *Sema, extended: Zir.Inst.Extended.InstData) CompileError!Air.Inst.Ref {
@@ -24788,14 +24788,14 @@ fn zirBranchHint(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstDat
     const uncoerced_hint = sema.resolveInst(extra.operand);
     const operand_src = block.builtinCallArgSrc(extra.node, 0);
 
-    const hint_ty = try sema.getBuiltinType(operand_src, .BranchHint);
+    const hint_ty = try sema.getStdLangType(operand_src, .BranchHint);
     const coerced_hint = try sema.coerce(block, hint_ty, uncoerced_hint, operand_src);
     const hint_val = try sema.resolveConstDefinedValue(block, operand_src, coerced_hint, .{ .simple = .operand_branchHint });
 
     // We only apply the first hint in a branch.
     // This allows user-provided hints to override implicit cold hints.
     if (sema.branch_hint == null) {
-        sema.branch_hint = try sema.interpretBuiltinType(block, operand_src, hint_val, std.builtin.BranchHint);
+        sema.branch_hint = try sema.interpretStdLangType(block, operand_src, hint_val, std.lang.BranchHint);
     }
 }
 
@@ -25148,7 +25148,7 @@ fn getPanicIdFunc(sema: *Sema, src: LazySrcLoc, panic_id: Zcu.SimplePanicId) !In
     const zcu = sema.pt.zcu;
     const io = zcu.comp.io;
     try sema.ensureMemoizedStateResolved(src, .panic);
-    const panic_fn_index = zcu.builtin_decl_values.get(panic_id.toBuiltin());
+    const panic_fn_index = zcu.std_lang_decl_values.get(panic_id.toStdLangDecl());
     switch (sema.owner.unwrap()) {
         .@"comptime",
         .nav_ty,
@@ -25292,7 +25292,7 @@ fn safetyPanicUnwrapError(sema: *Sema, block: *Block, src: LazySrcLoc, err: Air.
     if (!zcu.backendSupportsFeature(.panic_fn)) {
         _ = try block.addNoOp(.trap);
     } else {
-        const panic_fn = try getBuiltin(sema, src, .@"panic.unwrapError");
+        const panic_fn = try getStdLangValue(sema, src, .@"panic.unwrapError");
         try sema.callBuiltin(block, src, Air.internedToRef(panic_fn), .auto, &.{err}, .@"safety check");
     }
 }
@@ -25382,7 +25382,7 @@ fn addSafetyCheckCall(
     parent_block: *Block,
     src: LazySrcLoc,
     ok: Air.Inst.Ref,
-    comptime func_decl: Zcu.BuiltinDecl,
+    comptime func_decl: Zcu.StdLangDecl,
     args: []const Air.Inst.Ref,
 ) !void {
     assert(!parent_block.isComptime());
@@ -25406,7 +25406,7 @@ fn addSafetyCheckCall(
     if (!zcu.backendSupportsFeature(.panic_fn)) {
         _ = try fail_block.addNoOp(.trap);
     } else {
-        const panic_fn = try getBuiltin(sema, src, func_decl);
+        const panic_fn = try getStdLangValue(sema, src, func_decl);
         try sema.callBuiltin(&fail_block, src, Air.internedToRef(panic_fn), .auto, args, .@"safety check");
     }
 
@@ -27911,8 +27911,8 @@ const InMemoryCoercionResult = union(enum) {
     };
 
     const Int = struct {
-        actual_signedness: std.builtin.Signedness,
-        wanted_signedness: std.builtin.Signedness,
+        actual_signedness: std.lang.Signedness,
+        wanted_signedness: std.lang.Signedness,
         actual_bits: u16,
         wanted_bits: u16,
     };
@@ -27928,18 +27928,18 @@ const InMemoryCoercionResult = union(enum) {
     };
 
     const Size = struct {
-        actual: std.builtin.Type.Pointer.Size,
-        wanted: std.builtin.Type.Pointer.Size,
+        actual: std.lang.Type.Pointer.Size,
+        wanted: std.lang.Type.Pointer.Size,
     };
 
     const AddressSpace = struct {
-        actual: std.builtin.AddressSpace,
-        wanted: std.builtin.AddressSpace,
+        actual: std.lang.AddressSpace,
+        wanted: std.lang.AddressSpace,
     };
 
     const CC = struct {
-        actual: std.builtin.CallingConvention,
-        wanted: std.builtin.CallingConvention,
+        actual: std.lang.CallingConvention,
+        wanted: std.lang.CallingConvention,
     };
 
     const BitRange = struct {
@@ -28209,7 +28209,7 @@ const InMemoryCoercionResult = union(enum) {
     }
 };
 
-fn pointerSizeString(size: std.builtin.Type.Pointer.Size) []const u8 {
+fn pointerSizeString(size: std.lang.Type.Pointer.Size) []const u8 {
     return switch (size) {
         .one => "single pointer",
         .many => "many pointer",
@@ -28635,10 +28635,10 @@ fn coerceInMemoryAllowedFns(
 
 fn callconvCoerceAllowed(
     target: *const std.Target,
-    src_cc: std.builtin.CallingConvention,
-    dest_cc: std.builtin.CallingConvention,
+    src_cc: std.lang.CallingConvention,
+    dest_cc: std.lang.CallingConvention,
 ) bool {
-    const Tag = std.builtin.CallingConvention.Tag;
+    const Tag = std.lang.CallingConvention.Tag;
     if (@as(Tag, src_cc) != @as(Tag, dest_cc)) return false;
 
     switch (src_cc) {
@@ -28651,26 +28651,26 @@ fn callconvCoerceAllowed(
                 if (dest_stack_align < src_stack_align) return false;
             }
             switch (@TypeOf(src_data)) {
-                void, std.builtin.CallingConvention.CommonOptions => {},
-                std.builtin.CallingConvention.X86RegparmOptions => {
+                void, std.lang.CallingConvention.CommonOptions => {},
+                std.lang.CallingConvention.X86RegparmOptions => {
                     if (src_data.register_params != dest_data.register_params) return false;
                 },
-                std.builtin.CallingConvention.ArcInterruptOptions => {
+                std.lang.CallingConvention.ArcInterruptOptions => {
                     if (src_data.type != dest_data.type) return false;
                 },
-                std.builtin.CallingConvention.ArmInterruptOptions => {
+                std.lang.CallingConvention.ArmInterruptOptions => {
                     if (src_data.type != dest_data.type) return false;
                 },
-                std.builtin.CallingConvention.MicroblazeInterruptOptions => {
+                std.lang.CallingConvention.MicroblazeInterruptOptions => {
                     if (src_data.type != dest_data.type) return false;
                 },
-                std.builtin.CallingConvention.MipsInterruptOptions => {
+                std.lang.CallingConvention.MipsInterruptOptions => {
                     if (src_data.mode != dest_data.mode) return false;
                 },
-                std.builtin.CallingConvention.RiscvInterruptOptions => {
+                std.lang.CallingConvention.RiscvInterruptOptions => {
                     if (src_data.mode != dest_data.mode) return false;
                 },
-                std.builtin.CallingConvention.ShInterruptOptions => {
+                std.lang.CallingConvention.ShInterruptOptions => {
                     if (src_data.save != dest_data.save) return false;
                 },
                 else => comptime unreachable,
@@ -31115,7 +31115,7 @@ fn cmpNumeric(
     const dest_ty = if (dest_float_type) |ft| ft else blk: {
         const max_bits = @max(lhs_bits, rhs_bits);
         const casted_bits = std.math.cast(u16, max_bits) orelse return sema.fail(block, src, "{d} exceeds maximum integer bit count", .{max_bits});
-        const signedness: std.builtin.Signedness = if (dest_int_is_signed) .signed else .unsigned;
+        const signedness: std.lang.Signedness = if (dest_int_is_signed) .signed else .unsigned;
         break :blk try pt.intType(signedness, casted_bits);
     };
     const casted_lhs = try sema.coerce(block, dest_ty, lhs, lhs_src);
@@ -33101,7 +33101,7 @@ fn resolveAddressSpace(
     src: LazySrcLoc,
     zir_ref: Zir.Inst.Ref,
     ctx: std.Target.AddressSpaceContext,
-) !std.builtin.AddressSpace {
+) !std.lang.AddressSpace {
     const air_ref = sema.resolveInst(zir_ref);
     return sema.analyzeAsAddressSpace(block, src, air_ref, ctx);
 }
@@ -33112,12 +33112,12 @@ pub fn analyzeAsAddressSpace(
     src: LazySrcLoc,
     air_ref: Air.Inst.Ref,
     ctx: std.Target.AddressSpaceContext,
-) !std.builtin.AddressSpace {
+) !std.lang.AddressSpace {
     const pt = sema.pt;
-    const addrspace_ty = try sema.getBuiltinType(src, .AddressSpace);
+    const addrspace_ty = try sema.getStdLangType(src, .AddressSpace);
     const coerced = try sema.coerce(block, addrspace_ty, air_ref, src);
     const addrspace_val = try sema.resolveConstDefinedValue(block, src, coerced, .{ .simple = .@"addrspace" });
-    const address_space = try sema.interpretBuiltinType(block, src, addrspace_val, std.builtin.AddressSpace);
+    const address_space = try sema.interpretStdLangType(block, src, addrspace_val, std.lang.AddressSpace);
     const target = pt.zcu.getTarget();
 
     if (!target.supportsAddressSpace(address_space, ctx)) {
@@ -33819,21 +33819,21 @@ pub const type_resolution = @import("Sema/type_resolution.zig");
 pub const ensureLayoutResolved = type_resolution.ensureLayoutResolved;
 pub const ensureStructDefaultsResolved = type_resolution.ensureStructDefaultsResolved;
 
-pub fn getBuiltinType(sema: *Sema, src: LazySrcLoc, decl: Zcu.BuiltinDecl) SemaError!Type {
+pub fn getStdLangType(sema: *Sema, src: LazySrcLoc, decl: Zcu.StdLangDecl) SemaError!Type {
     assert(decl.kind() == .type);
     try sema.ensureMemoizedStateResolved(src, decl.stage());
-    return .fromInterned(sema.pt.zcu.builtin_decl_values.get(decl));
+    return .fromInterned(sema.pt.zcu.std_lang_decl_values.get(decl));
 }
-pub fn getBuiltin(sema: *Sema, src: LazySrcLoc, decl: Zcu.BuiltinDecl) SemaError!InternPool.Index {
+pub fn getStdLangValue(sema: *Sema, src: LazySrcLoc, decl: Zcu.StdLangDecl) SemaError!InternPool.Index {
     assert(decl.kind() != .type);
     try sema.ensureMemoizedStateResolved(src, decl.stage());
-    return sema.pt.zcu.builtin_decl_values.get(decl);
+    return sema.pt.zcu.std_lang_decl_values.get(decl);
 }
 
 pub const NavPtrModifiers = struct {
     @"align": Alignment,
     @"linksection": InternPool.OptionalNullTerminatedString,
-    @"addrspace": std.builtin.AddressSpace,
+    @"addrspace": std.lang.AddressSpace,
 };
 
 pub fn resolveNavPtrModifiers(
@@ -33872,7 +33872,7 @@ pub fn resolveNavPtrModifiers(
         break :ls try ip.getOrPutStringOpt(gpa, io, pt.tid, bytes, .no_embedded_nulls);
     };
 
-    const @"addrspace": std.builtin.AddressSpace = as: {
+    const @"addrspace": std.lang.AddressSpace = as: {
         const addrspace_ctx: std.Target.AddressSpaceContext = switch (zir_decl.kind) {
             .@"var" => .variable,
             else => switch (nav_ty.zigTypeTag(zcu)) {
@@ -33928,30 +33928,30 @@ pub fn analyzeMemoizedState(sema: *Sema, stage: InternPool.MemoizedStateStage) C
     };
     defer block.instructions.deinit(gpa);
 
-    const std_builtin_ty: Type = ty: {
+    const std_lang_ty: Type = ty: {
         const std_src = block.nodeOffset(.zero);
-        const decl_name = try ip.getOrPutString(gpa, io, pt.tid, "builtin", .no_embedded_nulls);
+        const decl_name = try ip.getOrPutString(gpa, io, pt.tid, "lang", .no_embedded_nulls);
         const nav = try sema.namespaceLookup(&block, std_src, block.namespace, decl_name) orelse {
-            return sema.fail(&block, std_src, "'std' missing 'builtin'", .{});
+            return sema.fail(&block, std_src, "'std' missing 'lang'", .{});
         };
         const uncoerced_val = try sema.analyzeNavVal(&block, std_src, nav);
         const decl_src: LazySrcLoc = .{
             .base_node_inst = ip.getNav(nav).srcInst(ip),
             .offset = .nodeOffset(.zero),
         };
-        break :ty try sema.analyzeAsType(&block, decl_src, .std_builtin_decl, uncoerced_val);
+        break :ty try sema.analyzeAsType(&block, decl_src, .std_lang_decl, uncoerced_val);
     };
 
     var any_changed = false;
 
-    inline for (comptime std.enums.values(Zcu.BuiltinDecl)) |builtin_decl| {
-        if (stage == comptime builtin_decl.stage()) {
-            const parent_ns_ty: Type, const parent_name: []const u8, const name: []const u8 = switch (comptime builtin_decl.access()) {
-                .direct => |name| .{ std_builtin_ty, "std.builtin", name },
+    inline for (comptime std.enums.values(Zcu.StdLangDecl)) |std_lang_decl| {
+        if (stage == comptime std_lang_decl.stage()) {
+            const parent_ns_ty: Type, const parent_name: []const u8, const name: []const u8 = switch (comptime std_lang_decl.access()) {
+                .direct => |name| .{ std_lang_ty, "std.lang", name },
                 .nested => |nested| access: {
                     const parent_decl, const name = nested;
-                    const parent_ty: Type = .fromInterned(zcu.builtin_decl_values.get(parent_decl));
-                    break :access .{ parent_ty, "std.builtin." ++ @tagName(parent_decl), name };
+                    const parent_ty: Type = .fromInterned(zcu.std_lang_decl_values.get(parent_decl));
+                    break :access .{ parent_ty, "std.lang." ++ @tagName(parent_decl), name };
                 },
             };
 
@@ -33970,25 +33970,25 @@ pub fn analyzeMemoizedState(sema: *Sema, stage: InternPool.MemoizedStateStage) C
                 .offset = .nodeOffset(.zero),
             };
 
-            const val: Value = switch (builtin_decl.kind()) {
+            const val: Value = switch (std_lang_decl.kind()) {
                 .type => val: {
-                    const ty = try sema.analyzeAsType(&block, decl_src, .std_builtin_decl, uncoerced_val);
-                    try sema.ensureLayoutResolved(ty, decl_src, .builtin_type);
+                    const ty = try sema.analyzeAsType(&block, decl_src, .std_lang_decl, uncoerced_val);
+                    try sema.ensureLayoutResolved(ty, decl_src, .std_lang_type);
                     break :val ty.toValue();
                 },
                 .func => val: {
-                    const func_ty = try sema.getExpectedBuiltinFnType(builtin_decl);
+                    const func_ty = try sema.getExpectedBuiltinFnType(std_lang_decl);
                     const coerced = try sema.coerce(&block, func_ty, uncoerced_val, decl_src);
-                    break :val try sema.resolveConstDefinedValue(&block, decl_src, coerced, .{ .simple = .std_builtin_decl });
+                    break :val try sema.resolveConstDefinedValue(&block, decl_src, coerced, .{ .simple = .std_lang_decl });
                 },
                 .string => val: {
                     const coerced = try sema.coerce(&block, .slice_const_u8, uncoerced_val, decl_src);
-                    break :val try sema.resolveConstDefinedValue(&block, decl_src, coerced, .{ .simple = .std_builtin_decl });
+                    break :val try sema.resolveConstDefinedValue(&block, decl_src, coerced, .{ .simple = .std_lang_decl });
                 },
             };
 
-            if (zcu.builtin_decl_values.get(builtin_decl) != val.toIntern()) {
-                zcu.builtin_decl_values.set(builtin_decl, val.toIntern());
+            if (zcu.std_lang_decl_values.get(std_lang_decl) != val.toIntern()) {
+                zcu.std_lang_decl_values.set(std_lang_decl, val.toIntern());
                 any_changed = true;
             }
         }
@@ -33998,7 +33998,7 @@ pub fn analyzeMemoizedState(sema: *Sema, stage: InternPool.MemoizedStateStage) C
 }
 
 /// Given that `decl.kind() == .func`, get the type expected of the function.
-fn getExpectedBuiltinFnType(sema: *Sema, decl: Zcu.BuiltinDecl) CompileError!Type {
+fn getExpectedBuiltinFnType(sema: *Sema, decl: Zcu.StdLangDecl) CompileError!Type {
     const pt = sema.pt;
     return switch (decl) {
         // `noinline fn () void`
