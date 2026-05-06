@@ -2662,7 +2662,7 @@ pub const Key = union(enum) {
                 switch (float.storage) {
                     inline else => |val| std.hash.autoHash(
                         &hasher,
-                        @as(std.meta.Int(.unsigned, @bitSizeOf(@TypeOf(val))), @bitCast(val)),
+                        @as(@Int(.unsigned, @bitSizeOf(@TypeOf(val))), @bitCast(val)),
                     ),
                 }
                 return hasher.final();
@@ -3014,7 +3014,7 @@ pub const Key = union(enum) {
 
                 switch (a_info.storage) {
                     inline else => |val, tag| {
-                        const Bits = std.meta.Int(.unsigned, @bitSizeOf(@TypeOf(val)));
+                        const Bits = @Int(.unsigned, @bitSizeOf(@TypeOf(val)));
                         const a_bits: Bits = @bitCast(val);
                         const b_bits: Bits = @bitCast(@field(b_info.storage, @tagName(tag)));
                         return a_bits == b_bits;

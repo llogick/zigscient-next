@@ -7186,7 +7186,7 @@ pub const RTLD = switch (native_os) {
         NOW: bool = false,
         GLOBAL: bool = false,
         LOCAL: bool = false,
-        _: std.meta.Int(.unsigned, @bitSizeOf(c_int) - 6) = 0,
+        _: @Int(.unsigned, @bitSizeOf(c_int) - 6) = 0,
     },
     else => void,
 };
@@ -7366,7 +7366,7 @@ pub const AI = if (builtin.abi.isAndroid()) packed struct(u32) {
         V4MAPPED: bool = false,
         ALL: bool = false,
         ADDRCONFIG: bool = false,
-        _: std.meta.Int(.unsigned, @bitSizeOf(c_int) - 7) = 0,
+        _: @Int(.unsigned, @bitSizeOf(c_int) - 7) = 0,
     },
     else => void,
 };
@@ -7399,7 +7399,7 @@ pub const NI = switch (native_os) {
         NAMEREQD: bool = false,
         NOFQDN: bool = false,
         DGRAM: bool = false,
-        _: std.meta.Int(.unsigned, @bitSizeOf(c_int) - 5) = 0,
+        _: @Int(.unsigned, @bitSizeOf(c_int) - 5) = 0,
     },
     .freebsd, .haiku => packed struct(u32) {
         NOFQDN: bool = false,
@@ -8635,7 +8635,7 @@ pub const O = switch (native_os) {
         CLOEXEC: bool = false,
         DIRECT: bool = false,
         SYNC: bool = false,
-        _: std.meta.Int(.unsigned, @bitSizeOf(c_int) - 14) = 0,
+        _: @Int(.unsigned, @bitSizeOf(c_int) - 14) = 0,
     },
     else => void,
 };
@@ -8789,7 +8789,7 @@ pub const MAP = switch (native_os) {
         RANDOMIZED: bool = false,
         PURGEABLE: bool = false,
         FIXED_NOREPLACE: bool = false,
-        _: std.meta.Int(.unsigned, @bitSizeOf(c_int) - 11) = 0,
+        _: @Int(.unsigned, @bitSizeOf(c_int) - 11) = 0,
     },
     else => void,
 };
