@@ -4618,7 +4618,7 @@ pub fn getFieldAccessType(
     source_index: usize,
     loc: offsets.Loc,
 ) Error!?Type {
-    const held_range = try analyser.arena.dupeZ(u8, offsets.locToSlice(handle.tree.source, loc));
+    const held_range = try analyser.arena.dupeSentinel(u8, offsets.locToSlice(handle.tree.source, loc), 0);
     var tokenizer: std.zig.Tokenizer = .init(held_range);
     var current_type: ?Type = null;
 

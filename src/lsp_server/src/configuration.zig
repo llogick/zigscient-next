@@ -641,7 +641,7 @@ pub fn getZigEnv(
             },
         };
     } else {
-        const source = try allocator.dupeZ(u8, zig_env_result.stdout);
+        const source = try allocator.dupeSentinel(u8, zig_env_result.stdout, 0);
         defer allocator.free(source);
 
         return std.zon.parse.fromSliceAlloc(

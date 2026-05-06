@@ -1091,7 +1091,7 @@ pub fn openLspSyncedDocument(self: *DocumentStore, uri: Uri, text: []const u8) e
         }
     }
 
-    const duped_text = try self.allocator.dupeZ(u8, text);
+    const duped_text = try self.allocator.dupeSentinel(u8, text, 0);
     _ = try self.createAndStoreDocument(uri, duped_text, true);
 }
 
