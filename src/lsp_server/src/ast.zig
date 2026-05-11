@@ -1089,6 +1089,7 @@ pub const Iterator = union(enum) {
             .@"resume",
             .@"comptime",
             .@"nosuspend",
+            .@"errdefer",
             .@"defer",
             => return .initArray(.{tree.nodeData(node).node}),
             .@"return" => return .initArray(.{tree.nodeData(node).opt_node}),
@@ -1186,7 +1187,7 @@ pub const Iterator = union(enum) {
             .grouped_expression,
             .asm_simple,
             => .initArray(.{tree.nodeData(node).node_and_token[0]}),
-            .test_decl, .@"errdefer" => .initArray(.{tree.nodeData(node).opt_token_and_node[1]}),
+            .test_decl => .initArray(.{tree.nodeData(node).opt_token_and_node[1]}),
             .anyframe_type => .initArray(.{tree.nodeData(node).token_and_node[1]}),
             .@"break", .@"continue" => .initArray(.{tree.nodeData(node).opt_token_and_opt_node[1]}),
 
