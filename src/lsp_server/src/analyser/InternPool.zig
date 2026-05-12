@@ -35,7 +35,7 @@ pub const Key = union(enum) {
     simple_type: SimpleType,
     simple_value: SimpleValue,
 
-    int_type: std.builtin.Type.Int,
+    int_type: std.lang.Type.Int,
     pointer_type: Pointer,
     array_type: Array,
     struct_type: Struct.Index,
@@ -76,11 +76,11 @@ pub const Key = union(enum) {
         packed_offset: PackedOffset = .{ .bit_offset = 0, .host_size = 0 },
 
         pub const Flags = packed struct(u32) {
-            size: std.builtin.Type.Pointer.Size,
+            size: std.lang.Type.Pointer.Size,
             is_const: bool = false,
             is_volatile: bool = false,
             is_allowzero: bool = false,
-            address_space: std.builtin.AddressSpace = .generic,
+            address_space: std.lang.AddressSpace = .generic,
             _: u6 = 0,
             alignment: u16 = 0,
         };
@@ -125,7 +125,7 @@ pub const Key = union(enum) {
         flags: Flags = .{},
 
         pub const Flags = packed struct(u32) {
-            calling_convention: std.builtin.CallingConvention.Tag = .auto,
+            calling_convention: std.lang.CallingConvention.Tag = .auto,
             is_generic: bool = false,
             is_var_args: bool = false,
             _: u6 = 0,
@@ -953,7 +953,7 @@ pub const Decl = struct {
     /// this stores both the type and the value
     index: InternPool.Index,
     alignment: u16,
-    address_space: std.builtin.AddressSpace,
+    address_space: std.lang.AddressSpace,
     src_namespace: InternPool.NamespaceIndex,
     is_pub: bool,
     is_exported: bool,
@@ -994,7 +994,7 @@ pub const Struct = struct {
     fields: std.AutoArrayHashMapUnmanaged(String, Field),
     owner_decl: Decl.OptionalIndex,
     namespace: NamespaceIndex,
-    layout: std.builtin.Type.ContainerLayout = .auto,
+    layout: std.lang.Type.ContainerLayout = .auto,
     backing_int_ty: InternPool.Index,
     status: FieldStatus,
 
@@ -1022,7 +1022,7 @@ pub const Union = struct {
     tag_type: InternPool.Index,
     fields: std.AutoArrayHashMapUnmanaged(String, Field),
     namespace: NamespaceIndex,
-    layout: std.builtin.Type.ContainerLayout = .auto,
+    layout: std.lang.Type.ContainerLayout = .auto,
     status: FieldStatus,
 
     pub const Field = struct {
@@ -1112,7 +1112,7 @@ pub fn init(io: std.Io, gpa: Allocator) Allocator.Error!InternPool {
         .{ .index = .fn_noreturn_no_args_type, .key = .{ .function_type = .{ .args = Index.Slice.empty, .return_type = .noreturn_type } } },
         .{ .index = .fn_void_no_args_type, .key = .{ .function_type = .{ .args = Index.Slice.empty, .return_type = .void_type } } },
         .{ .index = .fn_naked_noreturn_no_args_type, .key = .{ .function_type = .{ .args = Index.Slice.empty, .return_type = .void_type, .flags = .{ .calling_convention = .naked } } } },
-        .{ .index = .fn_ccc_void_no_args_type, .key = .{ .function_type = .{ .args = Index.Slice.empty, .return_type = .void_type, .flags = .{ .calling_convention = std.builtin.CallingConvention.c } } } },
+        .{ .index = .fn_ccc_void_no_args_type, .key = .{ .function_type = .{ .args = Index.Slice.empty, .return_type = .void_type, .flags = .{ .calling_convention = std.lang.CallingConvention.c } } } },
         .{ .index = .single_const_pointer_to_comptime_int_type, .key = .{ .pointer_type = .{ .elem_type = .comptime_int_type, .flags = .{ .size = .one, .is_const = true } } } },
         .{ .index = .slice_const_u8_type, .key = .{ .pointer_type = .{ .elem_type = .u8_type, .flags = .{ .size = .slice, .is_const = true } } } },
         .{ .index = .slice_const_u8_sentinel_0_type, .key = .{ .pointer_type = .{ .elem_type = .u8_type, .sentinel = .zero_u8, .flags = .{ .size = .slice, .is_const = true } } } },
@@ -1555,7 +1555,7 @@ fn addExtra(ip: *InternPool, comptime T: type, extra: T) Allocator.Error!u32 {
             Decl.OptionalIndex,
             StringPool.String,
             StringPool.OptionalString,
-            std.builtin.Type.Pointer.Size,
+            std.lang.Type.Pointer.Size,
             => ip.extra.appendAssumeCapacity(@intFromEnum(item)),
 
             u32,
@@ -1593,9 +1593,9 @@ fn extraData(ip: *const InternPool, comptime T: type, index: u32) T {
             StringPool.OptionalString,
             Decl.Index,
             Decl.OptionalIndex,
-            std.builtin.Type.Pointer.Size,
-            // std.builtin.AddressSpace,
-            // std.builtin.CallingConvention,
+            std.lang.Type.Pointer.Size,
+            // std.lang.AddressSpace,
+            // std.lang.CallingConvention,
             => @enumFromInt(item),
 
             u32,
@@ -2434,8 +2434,8 @@ const InMemoryCoercionResult = union(enum) {
     };
 
     const IntMismatch = struct {
-        actual_signedness: std.builtin.Signedness,
-        wanted_signedness: std.builtin.Signedness,
+        actual_signedness: std.lang.Signedness,
+        wanted_signedness: std.lang.Signedness,
         actual_bits: u16,
         wanted_bits: u16,
     };
@@ -2446,8 +2446,8 @@ const InMemoryCoercionResult = union(enum) {
     };
 
     const Size = struct {
-        actual: std.builtin.Type.Pointer.Size,
-        wanted: std.builtin.Type.Pointer.Size,
+        actual: std.lang.Type.Pointer.Size,
+        wanted: std.lang.Type.Pointer.Size,
     };
 
     const Qualifiers = struct {
@@ -2458,13 +2458,13 @@ const InMemoryCoercionResult = union(enum) {
     };
 
     const AddressSpace = struct {
-        actual: std.builtin.AddressSpace,
-        wanted: std.builtin.AddressSpace,
+        actual: std.lang.AddressSpace,
+        wanted: std.lang.AddressSpace,
     };
 
     const CC = struct {
-        actual: std.builtin.CallingConvention.Tag,
-        wanted: std.builtin.CallingConvention.Tag,
+        actual: std.lang.CallingConvention.Tag,
+        wanted: std.lang.CallingConvention.Tag,
     };
 
     const BitRange = struct {
@@ -2939,7 +2939,7 @@ fn panicOrElse(comptime T: type, message: []const u8, value: T) T {
 //               HELPER FUNCTIONS
 // ---------------------------------------------
 
-pub fn zigTypeTag(ip: *InternPool, index: Index) ?std.builtin.TypeId {
+pub fn zigTypeTag(ip: *InternPool, index: Index) ?std.lang.TypeId {
     ip.lock.lockSharedUncancelable(ip.io);
     defer ip.lock.unlockShared(ip.io);
     return switch (ip.items.items(.tag)[@intFromEnum(index)]) {
@@ -3275,7 +3275,7 @@ pub fn isUnsignedInt(ip: *InternPool, ty: Index, target: std.Target) bool {
 }
 
 /// Asserts the type is an integer, enum, error set, packed struct, or vector of one of them.
-pub fn intInfo(ip: *InternPool, ty: Index, target: std.Target) std.builtin.Type.Int {
+pub fn intInfo(ip: *InternPool, ty: Index, target: std.Target) std.lang.Type.Int {
     var index = ty;
     while (true) switch (index) {
         .u1_type => return .{ .signedness = .unsigned, .bits = 1 },
@@ -3911,17 +3911,17 @@ fn printInternal(ip: *InternPool, ty: Index, writer: *std.Io.Writer, options: Fo
             .empty_struct_type => try writer.writeAll("@TypeOf(.{})"),
             .enum_literal_type => try writer.writeAll("@EnumLiteral()"),
 
-            .atomic_order => try writer.writeAll("std.builtin.AtomicOrder"),
-            .atomic_rmw_op => try writer.writeAll("std.builtin.AtomicRmwOp"),
-            .calling_convention => try writer.writeAll("std.builtin.CallingConvention"),
-            .address_space => try writer.writeAll("std.builtin.AddressSpace"),
-            .float_mode => try writer.writeAll("std.builtin.FloatMode"),
-            .reduce_op => try writer.writeAll("std.builtin.ReduceOp"),
-            .modifier => try writer.writeAll("std.builtin.CallModifier"),
-            .prefetch_options => try writer.writeAll("std.builtin.PrefetchOptions"),
-            .export_options => try writer.writeAll("std.builtin.ExportOptions"),
-            .extern_options => try writer.writeAll("std.builtin.ExternOptions"),
-            .type_info => try writer.writeAll("std.builtin.Type"),
+            .atomic_order => try writer.writeAll("std.lang.AtomicOrder"),
+            .atomic_rmw_op => try writer.writeAll("std.lang.AtomicRmwOp"),
+            .calling_convention => try writer.writeAll("std.lang.CallingConvention"),
+            .address_space => try writer.writeAll("std.lang.AddressSpace"),
+            .float_mode => try writer.writeAll("std.lang.FloatMode"),
+            .reduce_op => try writer.writeAll("std.lang.ReduceOp"),
+            .modifier => try writer.writeAll("std.lang.CallModifier"),
+            .prefetch_options => try writer.writeAll("std.lang.PrefetchOptions"),
+            .export_options => try writer.writeAll("std.lang.ExportOptions"),
+            .extern_options => try writer.writeAll("std.lang.ExternOptions"),
+            .type_info => try writer.writeAll("std.lang.Type"),
             .unknown => try writer.writeAll("(unknown type)"),
             .generic_poison => try writer.writeAll("(generic poison)"),
         },
@@ -4679,7 +4679,7 @@ test "function type" {
         .args = .empty,
         .return_type = .type_type,
         .flags = .{
-            .calling_convention = std.builtin.CallingConvention.c,
+            .calling_convention = std.lang.CallingConvention.c,
             .alignment = 4,
         },
     } });
