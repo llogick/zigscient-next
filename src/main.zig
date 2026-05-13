@@ -1065,7 +1065,7 @@ pub const CompilationState = struct {
     }
 };
 
-const lsp_server = @import("zls");
+const lsp_server = @import("lsp-server");
 
 pub fn buildOutputType(
     gpa: Allocator,
@@ -1076,7 +1076,7 @@ pub fn buildOutputType(
     environ_map: *process.Environ.Map,
     cs: *CompilationState,
     ds: ?*lsp_server.DocumentStore,
-    lsp_compilation_build: ?*lsp_server.DocumentStore.BuildFile.CompilationBuild,
+    lsp_compilation_build: ?*lsp_server.BldDoc.Build,
 ) !void {
     cs.io = io;
     cs.provided_name = null;
@@ -4040,8 +4040,8 @@ pub fn buildOutputType(
     };
 
     if (lsp_compilation_build) |lsp_comp_build| {
-        lsp_comp_build.instance = comp;
-        comp.lsp_compilation_build = lsp_comp_build;
+        lsp_comp_build.compilation = comp;
+        comp.lsp_comp_build = lsp_comp_build;
         return;
     }
 

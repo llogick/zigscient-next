@@ -508,7 +508,7 @@ pub fn updateFile(
         file.owned_by_comp = false;
         doc.computed_data.lock.lockUncancelable(zcu.lsp_document_store.?.io);
         defer doc.computed_data.lock.unlock(zcu.lsp_document_store.?.io);
-        doc.computed_data.compilation = zcu.comp.lsp_compilation_build;
+        doc.computed_data.build = zcu.comp.lsp_comp_build;
     }
 
     var stat = try source_file.stat(io);

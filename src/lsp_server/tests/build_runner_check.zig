@@ -3,7 +3,7 @@
 //! See the `./build_runner_cases` subdirectory.
 
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
@@ -60,7 +60,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (std.mem.eql(u8, expected[0..nlidx1], actual[0..nlidx2])) return 0;
 
     std.log.err("'expected' input file: {s}", .{args[1]});
-    zls.testing.renderLineDiff(gpa, expected[0..nlidx1], actual[0..nlidx2]);
+    lsp_server.testing.renderLineDiff(gpa, expected[0..nlidx1], actual[0..nlidx2]);
 
     return 1;
 }

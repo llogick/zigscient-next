@@ -801,7 +801,7 @@ const AddCompilerModOptions = struct {
 };
 
 fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Module {
-    const lsp_server_mod = b.createModule(.{
+    const main_lsp_server_mod = b.createModule(.{
         .root_source_file = b.path("src/lsp_server_main.zig"),
         .target = options.target,
         .optimize = options.optimize,
@@ -810,7 +810,7 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
         .single_threaded = options.single_threaded,
         .valgrind = options.valgrind,
     });
-    lsp_server_mod.addImport("build_options", options.exe_options_mod);
+    main_lsp_server_mod.addImport("build_options", options.exe_options_mod);
 
     const compiler_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -823,7 +823,7 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
     });
     compiler_mod.addImport("build_options", options.exe_options_mod);
 
-    lsp_server_mod.addImport("compiler", compiler_mod);
+    main_lsp_server_mod.addImport("compiler", compiler_mod);
 
     const aro_mod = b.createModule(.{
         .root_source_file = b.path("lib/compiler/aro/aro.zig"),
@@ -842,7 +842,7 @@ fn addCompilerMod(b: *std.Build, options: AddCompilerModOptions) *std.Build.Modu
     translate_c_mod.addImport("aro-compiler-util", aro_compiler_util_mod);
     compiler_mod.addImport("translate-c", translate_c_mod);
 
-    return lsp_server_mod;
+    return main_lsp_server_mod;
 }
 
 fn addCompilerStep(b: *std.Build, options: AddCompilerModOptions) *std.Build.Step.Compile {
@@ -1640,7 +1640,7 @@ fn cfgLspServer(
     b: *std.Build,
     exe: *std.Build.Step.Compile,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.OptimizeMode,
     test_filters: []const []const u8,
     single_threaded: ?bool,
     exe_options_module: *std.Build.Module,
@@ -1704,7 +1704,7 @@ fn cfgLspServer(
         .build_options = exe_options_module,
         .version_data = version_data_module,
     });
-    b.modules.put(b.graph.arena, "zls", lsp_server_module) catch @panic("OOM");
+    b.modules.put(b.graph.arena, "lsp-server", lsp_server_module) catch @panic("OOM");
 
     const known_folders_module = b.dependency("known_folders", .{
         .target = target,
@@ -1712,12 +1712,12 @@ fn cfgLspServer(
     }).module("known-folders");
 
     exe.root_module.addImport("known-folders", known_folders_module);
-    exe.root_module.addImport("zls", lsp_server_module);
+    exe.root_module.addImport("lsp-server", lsp_server_module);
     exe.root_module.addImport("tracy", lsp_server_module.import_table.get("tracy").?);
 
     const compiler_mod = exe.root_module.import_table.get("compiler").?;
     lsp_server_module.addImport("compiler", compiler_mod);
-    compiler_mod.addImport("zls", lsp_server_module);
+    compiler_mod.addImport("lsp-server", lsp_server_module);
 
     const ls_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -1727,7 +1727,7 @@ fn cfgLspServer(
             .single_threaded = single_threaded,
             .pic = pie,
             .imports = &.{
-                .{ .name = "zls", .module = lsp_server_module },
+                .{ .name = "lsp-server", .module = lsp_server_module },
                 .{ .name = "test_options", .module = ls_test_options },
             },
         }),
@@ -1750,7 +1750,7 @@ fn cfgLspServer(
             "wasmtime",
             "--dir=.",
             b.fmt("--dir={f}::/lib", .{b.graph.zig_lib_directory}),
-            b.fmt("--dir={s}::/cache", .{b.cache_root.join(b.allocator, &.{"zls"}) catch @panic("OOM")}),
+            b.fmt("--dir={s}::/cache", .{b.cache_root.join(b.allocator, &.{"zigscient"}) catch @panic("OOM")}),
             "--",
             null,
         };
@@ -1915,7 +1915,7 @@ fn createLspServerModule(
     b: *std.Build,
     options: struct {
         target: std.Build.ResolvedTarget,
-        optimize: std.builtin.OptimizeMode,
+        optimize: std.lang.OptimizeMode,
         // tracy_enable: bool,
         // tracy_options: *std.Build.Module,
         build_options: *std.Build.Module,
@@ -1942,7 +1942,7 @@ fn createLspServerModule(
     }).module("extended-zccs");
 
     const lsp_server_module = b.createModule(.{
-        .root_source_file = b.path("src/lsp_server/src/zls.zig"),
+        .root_source_file = b.path("src/lsp_server/src/lsp_server_mod.zig"),
         .target = options.target,
         .optimize = options.optimize,
         .imports = &.{
@@ -1966,7 +1966,7 @@ fn createTracyModule(
     b: *std.Build,
     options: struct {
         target: std.Build.ResolvedTarget,
-        optimize: std.builtin.OptimizeMode,
+        optimize: std.lang.OptimizeMode,
         enable: bool,
         // tracy_options: *std.Build.Module,
     },

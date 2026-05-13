@@ -1,15 +1,13 @@
 const std = @import("std");
 const zig_builtin = @import("builtin");
-const zls = @import("zls");
-const exe_options = @import("build_options");
-const root = @import("root");
+const lsp_server = @import("lsp-server");
 const tracy = @import("tracy");
 const known_folders = @import("known-folders");
 
 const log = std.log.scoped(.lspc_main);
 
 const usage =
-    \\Zigscient - A non-official language server for Zig
+    \\Zigscient - A Zig Language Server
     \\
     \\Commands:
     \\  help, --help,             Print this help and exit
@@ -40,7 +38,7 @@ pub const std_options: std.Options = .{
 };
 
 /// Log messages with the LSP 'window/logMessage' message.
-var log_transport: ?*zls.lsp.Transport = null;
+var log_transport: ?*lsp_server.lsp.Transport = null;
 /// Log messages to stderr.
 var log_stderr: bool = true;
 /// Log messages to the given file.
@@ -54,7 +52,7 @@ fn logFn(
     args: anytype,
 ) void {
     var buffer: [4096]u8 = undefined;
-    comptime std.debug.assert(buffer.len >= zls.lsp.minimum_logging_buffer_size);
+    comptime std.debug.assert(buffer.len >= lsp_server.lsp.minimum_logging_buffer_size);
 
     const scope_txt: []const u8 = comptime @tagName(scope);
     if (!std.mem.startsWith(u8, scope_txt, "lspc_") and level != .err) return;
@@ -64,13 +62,13 @@ fn logFn(
     defer _ = io.swapCancelProtection(prev);
 
     if (log_transport) |transport| {
-        const lsp_message_type: zls.lsp.types.window.MessageType = switch (level) {
+        const lsp_message_type: lsp_server.lsp.types.window.MessageType = switch (level) {
             .err => .Error,
             .warn => .Warning,
             .info => .Info,
             .debug => .Debug,
         };
-        const json_message = zls.lsp.bufPrintLogMessage(&buffer, lsp_message_type, format, args);
+        const json_message = lsp_server.lsp.bufPrintLogMessage(&buffer, lsp_message_type, format, args);
         transport.writeJsonMessage(io, json_message) catch |err| switch (err) {
             error.Canceled => unreachable,
             else => {},
@@ -163,18 +161,18 @@ fn createLogFile(
     return .{ file, log_file_path };
 }
 
-/// Output format of `zls env`
+/// Output format of the `env` subcmd
 const Env = struct {
-    /// The ZLS version. Guaranteed to be a [semantic version](https://semver.org/).
+    /// Project version. Guaranteed to be a [semantic version](https://semver.org/).
     ///
     /// The semantic version can have one of the following formats:
-    /// - `MAJOR.MINOR.PATCH` is a tagged release of ZLS
-    /// - `MAJOR.MINOR.PATCH-dev.COMMIT_HEIGHT+SHORT_COMMIT_HASH` is a development build of ZLS
-    /// - `MAJOR.MINOR.PATCH-dev` is a development build of ZLS where the exact version could not be resolved.
+    /// - `MAJOR.MINOR.PATCH` is a tagged release
+    /// - `MAJOR.MINOR.PATCH-dev.COMMIT_HEIGHT+SHORT_COMMIT_HASH` is a development build
+    /// - `MAJOR.MINOR.PATCH-dev` is a development build where the exact version could not be resolved.
     ///
     version: []const u8,
     global_cache_dir: ?[]const u8,
-    /// Path to a global configuration directory relative to which ZLS configuration files will be searched.
+    /// Path to a global configuration directory relative to which configuration files will be searched.
     /// Not `null` unless [known-folders](https://github.com/ziglibs/known-folders) was unable to find a global configuration directory.
     global_config_dir: ?[]const u8,
     /// Path to a user specific configuration directory relative to which configuration files will be searched.
@@ -183,7 +181,7 @@ const Env = struct {
     /// Path to a `zls.json` config file. Will be resolved by looking in the local configuration directory and then falling back to the global directory.
     /// Can be null if no `zls.json` was found in the global/local config directory.
     config_file: ?[]const u8,
-    /// Path to a `zls.log` file where ZLS will append logging output. The file may be truncated or cleared by ZLS.
+    /// Path to log file
     /// Not `null` unless [known-folders](https://github.com/ziglibs/known-folders) was unable to find a cache directory.
     log_file: ?[]const u8,
 };
@@ -197,9 +195,6 @@ fn cmdEnv(
         error.Canceled, error.OutOfMemory => |e| return e,
     };
     defer if (global_cache_dir) |path| allocator.free(path);
-
-    const zls_global_cache_dir = if (global_cache_dir) |cache_dir| try std.fs.path.join(allocator, &.{ cache_dir, "zls" }) else null;
-    defer if (zls_global_cache_dir) |path| allocator.free(path);
 
     const global_config_dir = known_folders.getPath(io, allocator, environ_map, .global_configuration) catch |err| switch (err) {
         error.Canceled, error.OutOfMemory => |e| return e,
@@ -234,8 +229,8 @@ fn cmdEnv(
     const writer = &file_writer.interface;
 
     const env: Env = .{
-        .version = zls.build_options.version_string,
-        .global_cache_dir = zls_global_cache_dir,
+        .version = lsp_server.build_options.version_string,
+        .global_cache_dir = global_cache_dir,
         .global_config_dir = global_config_dir,
         .local_config_dir = local_config_dir,
         .config_file = config_file_path,
@@ -250,7 +245,7 @@ fn cmdEnv(
 
 const LoadConfigResult = union(enum) {
     success: struct {
-        config: zls.Config,
+        config: lsp_server.Config,
         config_arena: std.heap.ArenaAllocator.State,
         /// file path of the config.json
         path: []const u8,
@@ -311,7 +306,7 @@ fn loadConfigFromFile(io: std.Io, allocator: std.mem.Allocator, file_path: []con
 
     @setEvalBranchQuota(10000);
     const config = std.json.parseFromTokenSourceLeaky(
-        zls.Config,
+        lsp_server.Config,
         arena_allocator.allocator(),
         &scanner,
         parse_options,
@@ -377,7 +372,7 @@ fn loadConfiguration(
     io: std.Io,
     allocator: std.mem.Allocator,
     environ_map: *const std.process.Environ.Map,
-    server: *zls.Server,
+    server: *lsp_server.Server,
     maybe_config_path: ?[]const u8,
 ) error{ Canceled, OutOfMemory }!void {
     const tracy_zone = tracy.trace(@src());
@@ -385,7 +380,7 @@ fn loadConfiguration(
 
     var config_arena: std.heap.ArenaAllocator = .init(allocator);
     defer config_arena.deinit();
-    var config: zls.Config = .{};
+    var config: lsp_server.Config = .{};
 
     blk: {
         var config_result = if (maybe_config_path) |config_path|
@@ -432,14 +427,14 @@ const ParseArgsResult = struct {
     config_path: ?[]const u8 = null,
     log_level: ?std.log.Level = null,
     log_file_path: ?[]const u8 = null,
-    zls_exe_path: []const u8 = "",
+    self_exe_path: []const u8 = "",
     enable_stderr_logs: bool = false,
     disable_lsp_logs: bool = false,
 
     fn deinit(self: ParseArgsResult, allocator: std.mem.Allocator) void {
         defer if (self.config_path) |path| allocator.free(path);
         defer if (self.log_file_path) |path| allocator.free(path);
-        defer allocator.free(self.zls_exe_path);
+        defer allocator.free(self.self_exe_path);
     }
 };
 
@@ -457,8 +452,8 @@ fn parseArgs(
     var args_it = try args.iterateAllocator(allocator);
     defer args_it.deinit();
 
-    const zls_exe_path = args_it.next() orelse "";
-    result.zls_exe_path = try allocator.dupe(u8, zls_exe_path);
+    const self_exe_path = args_it.next() orelse "";
+    result.self_exe_path = try allocator.dupe(u8, self_exe_path);
 
     var arg_index: u32 = 0;
     while (args_it.next()) |arg| : (arg_index += 1) {
@@ -470,7 +465,7 @@ fn parseArgs(
                 try std.Io.File.stderr().writeStreamingAll(io, usage);
                 std.process.exit(0);
             } else if ((std.mem.eql(u8, arg, "version")) or std.mem.eql(u8, arg, "--version")) {
-                try std.Io.File.stdout().writeStreamingAll(io, zls.build_options.version_string ++ "\n");
+                try std.Io.File.stdout().writeStreamingAll(io, lsp_server.build_options.version_string ++ "\n");
                 std.process.exit(0);
             } else if (std.mem.eql(u8, arg, "env")) {
                 try cmdEnv(io, allocator, environ_map);
@@ -521,45 +516,6 @@ fn parseArgs(
     return result;
 }
 
-var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-
-pub fn main(init: std.process.Init.Minimal) !u8 {
-    const is_debug = exe_options.debug_gpa or switch (zig_builtin.mode) {
-        .Debug => true,
-        .ReleaseSafe, .ReleaseFast, .ReleaseSmall => zig_builtin.single_threaded,
-    };
-    const base_allocator = if (is_debug)
-        debug_allocator.allocator()
-    else if (zig_builtin.link_libc)
-        std.heap.c_allocator
-    else if (zig_builtin.target.os.tag == .wasi)
-        std.heap.wasm_allocator
-    else
-        std.heap.smp_allocator;
-    defer if (is_debug) {
-        _ = debug_allocator.deinit();
-    };
-
-    // var tracy_state = if (tracy.enable_allocation) tracy.tracyAllocator(base_allocator) else {};
-    // const inner_allocator: std.mem.Allocator = if (tracy.enable_allocation) tracy_state.allocator() else base_allocator;
-
-    // var failing_allocator_state = if (exe_options.enable_failing_allocator) zls.testing.FailingAllocator.init(inner_allocator, exe_options.enable_failing_allocator_likelihood) else {};
-    // const allocator: std.mem.Allocator = if (exe_options.enable_failing_allocator) failing_allocator_state.allocator() else inner_allocator;
-    const allocator = base_allocator;
-
-    var threaded: std.Io.Threaded = .init(allocator, .{
-        .environ = init.environ,
-        .argv0 = .init(init.args),
-    });
-    threaded.deinit();
-    const io = threaded.ioBasic();
-
-    var environ_map = try init.environ.createMap(allocator);
-    defer environ_map.deinit();
-
-    return stage2(allocator, io, init, &environ_map);
-}
-
 pub fn stage2(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -579,14 +535,14 @@ pub fn stage2(
     };
 
     var read_buffer: [256]u8 = undefined;
-    var stdio_transport: zls.lsp.Transport.Stdio = .init(&read_buffer, .stdin(), .stdout());
+    var stdio_transport: lsp_server.lsp.Transport.Stdio = .init(&read_buffer, .stdin(), .stdout());
 
-    var thread_safe_transport: zls.lsp.ThreadSafeTransport(.{
+    var thread_safe_transport: lsp_server.lsp.ThreadSafeTransport(.{
         .thread_safe_read = false,
         .thread_safe_write = true,
     }) = .init(&stdio_transport.transport);
 
-    const transport: *zls.lsp.Transport = &thread_safe_transport.transport;
+    const transport: *lsp_server.lsp.Transport = &thread_safe_transport.transport;
 
     log_transport = if (result.disable_lsp_logs) null else transport;
     log_stderr = result.enable_stderr_logs;
@@ -601,15 +557,15 @@ pub fn stage2(
         \\                                      ZigscientN {s} {s}
         \\                                      {s}
     , .{
-        zls.build_options.version_string,
+        lsp_server.build_options.version_string,
         @tagName(zig_builtin.mode),
-        result.zls_exe_path,
+        result.self_exe_path,
     });
 
-    var config_manager: zls.configuration.Manager = try .init(io, allocator, environ_map);
+    var config_manager: lsp_server.configuration.Manager = try .init(io, allocator, environ_map);
     defer config_manager.deinit();
 
-    const server: *zls.Server = try .create(.{
+    const server: *lsp_server.Server = try .create(.{
         .io = io,
         .allocator = allocator,
         .transport = transport,

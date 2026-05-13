@@ -5,13 +5,15 @@ pub const analyser = @import("analyser/analyser.zig");
 
 pub const Analyser = @import("analysis.zig");
 pub const ast = @import("ast.zig");
-pub const BuildAssociatedConfig = @import("BuildAssociatedConfig.zig");
+pub const BuildOptions = @import("BuildOptions.zig");
 pub const Config = @import("Config.zig");
 pub const configuration = @import("configuration.zig");
 pub const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 pub const diff = @import("diff.zig");
 pub const DocumentScope = @import("DocumentScope.zig");
 pub const DocumentStore = @import("DocumentStore.zig");
+pub const ZigDoc = @import("ZigDoc.zig");
+pub const BldDoc = @import("BldDoc.zig");
 pub const offsets = @import("offsets.zig");
 pub const print_ast = @import("print_ast.zig");
 pub const Server = @import("Server.zig");

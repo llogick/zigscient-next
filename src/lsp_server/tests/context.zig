@@ -1,14 +1,14 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 const builtin = @import("builtin");
 const test_options = @import("test_options");
 
-const types = zls.lsp.types;
+const types = lsp_server.lsp.types;
 
 const io = std.testing.io;
 const allocator = std.testing.allocator;
 
-const default_config: zls.configuration.UnresolvedConfig = .{
+const default_config: lsp_server.configuration.UnresolvedConfig = .{
     .semantic_tokens = .full,
     .prefer_ast_check_as_child_process = false,
     .inlay_hints_exclude_single_argument = false,
@@ -16,12 +16,12 @@ const default_config: zls.configuration.UnresolvedConfig = .{
 };
 
 pub const Context = struct {
-    server: *zls.Server,
+    server: *lsp_server.Server,
     arena: std.heap.ArenaAllocator,
     file_id: u32 = 0,
 
     var cached_config_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    var cached_config_manager: ?zls.configuration.Manager = null;
+    var cached_config_manager: ?lsp_server.configuration.Manager = null;
 
     pub fn init() !Context {
         if (cached_config_manager == null) {
@@ -41,13 +41,13 @@ pub const Context = struct {
 
             const environ_map = try cached_config_arena.allocator().create(std.process.Environ.Map);
             environ_map.* = .init(std.testing.failing_allocator);
-            var config_manager: zls.configuration.Manager = try .init(io, cached_config_arena.allocator(), environ_map);
+            var config_manager: lsp_server.configuration.Manager = try .init(io, cached_config_arena.allocator(), environ_map);
             try config_manager.setConfiguration(.frontend, &config);
             _ = try config_manager.resolveConfiguration(cached_config_arena.allocator());
             cached_config_manager = config_manager;
         }
 
-        const server: *zls.Server = try .create(.{
+        const server: *lsp_server.Server = try .create(.{
             .io = io,
             .allocator = allocator,
             .transport = null,
@@ -97,7 +97,7 @@ pub const Context = struct {
                 fmt,
                 .{ self.file_id, options.mode },
             );
-            break :uri try zls.URI.fromPath(self.arena.allocator(), path);
+            break :uri try lsp_server.URI.fromPath(self.arena.allocator(), path);
         };
 
         const params: types.TextDocument.DidOpenParams = .{

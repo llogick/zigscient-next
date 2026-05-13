@@ -1,3 +1,6 @@
+//! Stage1/Main file of the LSP Server
+//! Setup std_options, Allocator and IO
+
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
 
@@ -6,7 +9,6 @@ const mem = std.mem;
 const process = std.process;
 const fatal = process.fatal;
 const Allocator = mem.Allocator;
-const Io = std.Io;
 
 const build_options = @import("build_options");
 const compiler = @import("compiler");
@@ -78,13 +80,9 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
 
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
-    if (args.len <= 1 or (args.len > 1 and !mem.eql(u8, args[1], "zig") and !mem.eql(u8, args[1], "aro"))) {
+    if (args.len <= 1 or (args.len > 1 and !mem.eql(u8, args[1], "zig"))) {
         _ = try @import("lsp_server/src/main.zig").stage2(gpa, io, init, &environ_map);
         return;
-    }
-
-    if (mem.eql(u8, args[1], "aro")) {
-        // process.exit(@import("translate-c").translateC(gpa, arena, io, args[1..], &environ_map));
     }
 
     if (args.len <= 2) {

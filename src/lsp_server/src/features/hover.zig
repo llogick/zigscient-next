@@ -3,6 +3,9 @@
 const std = @import("std");
 const Ast = std.zig.Ast;
 
+pub const compiler = @import("compiler");
+pub const Compilation = compiler.Compilation;
+
 const ast = @import("../ast.zig");
 const types = @import("lsp").types;
 const offsets = @import("../offsets.zig");
@@ -539,16 +542,16 @@ fn hoverKeyword(
     defer handle.computed_data.lock.unlockShared(ds.io);
 
     const args = handle.computed_data.type_decls.get(nodes[0]) orelse return null;
-    const compilation = handle.computed_data.compilation orelse return null;
+    const build = handle.computed_data.build orelse return null;
 
-    if (!compilation.mutex.tryLock()) return null;
-    defer compilation.mutex.unlock(ds.io);
+    if (!build.mutex.tryLock()) return null;
+    defer build.mutex.unlock(ds.io);
 
-    if (!compilation.has_completed_once) return null;
+    if (!build.has_completed_once) return null;
 
-    const zcu = compilation.instance.?.zcu orelse return null;
+    const zcu = build.compilation.?.zcu orelse return null;
 
-    const pt: DocumentStore.Compilation.Zcu.PerThread = .activate(zcu, args.tid);
+    const pt: Compilation.Zcu.PerThread = .activate(zcu, args.tid);
     defer pt.deactivate();
 
     switch (pt.zcu.intern_pool.indexToKey(args.ty)) {
@@ -562,7 +565,7 @@ fn hoverKeyword(
                 try output.print(arena, "```zig\n", .{});
             }
 
-            const ty = DocumentStore.Compilation.Type.fromInterned(args.ty);
+            const ty = Compilation.Type.fromInterned(args.ty);
 
             try output.print(arena,
                 \\size: {}
@@ -719,12 +722,12 @@ fn getAirSlice(
     decl.handle.computed_data.lock.lockSharedUncancelable(ds.io);
     defer decl.handle.computed_data.lock.unlockShared(ds.io);
 
-    const compilation = decl.handle.computed_data.compilation orelse return null;
+    const build = decl.handle.computed_data.build orelse return null;
 
-    if (!compilation.mutex.tryLock()) return null;
-    defer compilation.mutex.unlock(ds.io);
+    if (!build.mutex.tryLock()) return null;
+    defer build.mutex.unlock(ds.io);
 
-    if (!compilation.has_completed_once) return null;
+    if (!build.has_completed_once) return null;
 
     const tree = &decl.handle.tree;
     var buf: [1]Ast.Node.Index = undefined;
@@ -742,9 +745,9 @@ fn getAirSlice(
     };
 
     const args = decl.handle.computed_data.air.get(node) orelse return null;
-    const zcu = compilation.instance.?.zcu orelse return null;
+    const zcu = build.compilation.?.zcu orelse return null;
 
-    const pt: DocumentStore.Compilation.Zcu.PerThread = .activate(zcu, args.tid);
+    const pt: Compilation.Zcu.PerThread = .activate(zcu, args.tid);
     defer pt.deactivate();
 
     var aw: std.Io.Writer.Allocating = .init(arena);

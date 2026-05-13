@@ -1,11 +1,11 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
 const Context = @import("../context.zig").Context;
 const ErrorBuilder = @import("../ErrorBuilder.zig");
 
-const types = zls.lsp.types;
-const offsets = zls.offsets;
+const types = lsp_server.lsp.types;
+const offsets = lsp_server.offsets;
 
 const allocator: std.mem.Allocator = std.testing.allocator;
 
@@ -2105,8 +2105,8 @@ test "generic function with @This() as self param" {
 
 const TokenData = struct {
     []const u8,
-    zls.semantic_tokens.TokenType,
-    zls.semantic_tokens.TokenModifiers,
+    lsp_server.semantic_tokens.TokenType,
+    lsp_server.semantic_tokens.TokenModifiers,
 };
 
 const TokenIterator = struct {
@@ -2116,8 +2116,8 @@ const TokenIterator = struct {
 
     pub const Token = struct {
         loc: offsets.Loc,
-        type: zls.semantic_tokens.TokenType,
-        modifiers: zls.semantic_tokens.TokenModifiers,
+        type: lsp_server.semantic_tokens.TokenType,
+        modifiers: lsp_server.semantic_tokens.TokenModifiers,
     };
 
     pub fn init(source: []const u8, data: []const u32) TokenIterator {
@@ -2135,8 +2135,8 @@ const TokenIterator = struct {
         const delta_line = token_data[0];
         const delta_start = token_data[1];
         const length = token_data[2];
-        const token_type: zls.semantic_tokens.TokenType = @enumFromInt(token_data[3]);
-        const token_modifiers: zls.semantic_tokens.TokenModifiers = @bitCast(@as(u16, @intCast(token_data[4])));
+        const token_type: lsp_server.semantic_tokens.TokenType = @enumFromInt(token_data[3]);
+        const token_modifiers: lsp_server.semantic_tokens.TokenModifiers = @bitCast(@as(u16, @intCast(token_data[4])));
 
         self.position.line += delta_line;
         self.position.character = delta_start + if (delta_line == 0) self.position.character else 0;

@@ -1,5 +1,5 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
 fn gen(alloc: std.mem.Allocator, rand: std.Random) ![]const u8 {
     const buffer = try alloc.alloc(u8, rand.intRangeAtMost(usize, 0, 256));
@@ -14,7 +14,7 @@ test "diff - random" {
     try testDiff(rand.random(), .@"utf-32");
 }
 
-fn testDiff(rand: std.Random, encoding: zls.offsets.Encoding) !void {
+fn testDiff(rand: std.Random, encoding: lsp_server.offsets.Encoding) !void {
     const io = std.testing.io;
     const allocator = std.testing.allocator;
 
@@ -26,13 +26,13 @@ fn testDiff(rand: std.Random, encoding: zls.offsets.Encoding) !void {
     const before = buffer[0..split_index];
     const after = buffer[split_index..];
 
-    var edits = try zls.diff.edits(io, allocator, before, after, encoding);
+    var edits = try lsp_server.diff.edits(io, allocator, before, after, encoding);
     defer {
         for (edits.items) |edit| allocator.free(edit.newText);
         edits.deinit(allocator);
     }
 
-    const applied = try zls.diff.applyTextEdits(allocator, before, edits.items, encoding);
+    const applied = try lsp_server.diff.applyTextEdits(allocator, before, edits.items, encoding);
     defer allocator.free(applied);
 
     try std.testing.expectEqualStrings(after, applied);

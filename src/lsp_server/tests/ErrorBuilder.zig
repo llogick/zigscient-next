@@ -1,9 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
-const offsets = zls.offsets;
+const offsets = lsp_server.offsets;
 
 const ErrorBuilder = @This();
 

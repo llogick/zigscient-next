@@ -1,9 +1,9 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
 const Context = @import("../context.zig").Context;
 
-const types = zls.lsp.types;
+const types = lsp_server.lsp.types;
 
 const allocator: std.mem.Allocator = std.testing.allocator;
 

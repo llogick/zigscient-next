@@ -44,7 +44,7 @@ const LlvmObject = @import("codegen/llvm.zig").Object;
 const dev = @import("dev.zig");
 const Zoir = std.zig.Zoir;
 const ZonGen = std.zig.ZonGen;
-const LspDocumentStore = @import("zls").DocumentStore;
+const LspDocumentStore = @import("lsp-server").DocumentStore;
 
 comptime {
     @setEvalBranchQuota(4000);
@@ -1242,7 +1242,7 @@ pub const File = struct {
     pub fn pathToUriSlice(file: *File, zcu: *const Zcu) Allocator.Error!?[]const u8 {
         const gpa = zcu.gpa;
         const comp = zcu.comp;
-        const pathToUriFn = @import("zls").DiagnosticsCollection.pathToUri;
+        const pathToUriFn = @import("lsp-server").DiagnosticsCollection.pathToUri;
 
         const file_path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
         defer gpa.free(file_path);

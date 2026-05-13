@@ -1,10 +1,10 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
 const Context = @import("../context.zig").Context;
 
-const types = zls.lsp.types;
-const offsets = zls.offsets;
+const types = lsp_server.lsp.types;
+const offsets = lsp_server.offsets;
 
 const allocator: std.mem.Allocator = std.testing.allocator;
 
@@ -226,11 +226,11 @@ test "builtin with multi line parameters" {
         \\@Un<cursor>ion()
     ,
         \\@Union(
-        \\  comptime layout: std.lang.Type.ContainerLayout,
+        \\  comptime layout: Type.ContainerLayout,
         \\  comptime ArgType: ?type,
         \\  comptime field_names: []const []const u8,
         \\  comptime field_types: *const [field_names.len]type,
-        \\  comptime field_attrs: *const [field_names.len]std.lang.Type.UnionField.Attributes,
+        \\  comptime field_attrs: *const [field_names.len]Type.UnionField.Attributes,
         \\) type
         \\Returns a [union](https://ziglang.org/documentation/master/#union) type with the properties specified by the arguments.
     , .{ .markup_kind = .plaintext });
@@ -1446,7 +1446,7 @@ fn testHoverWithOptions(
 
     analyser.max_conditional_combos = options.max_conditional_combos;
 
-    const response = try zls.hover.hover(
+    const response = try lsp_server.hover.hover(
         &ctx.server.document_store,
         &analyser,
         arena,
@@ -1463,7 +1463,7 @@ fn testHoverWithOptions(
     const markup_context = response.contents.markup_content;
 
     try std.testing.expectEqual(options.markup_kind, markup_context.kind);
-    try zls.testing.expectEqualStrings(expected, markup_context.value);
+    try lsp_server.testing.expectEqualStrings(expected, markup_context.value);
     if (options.highlight) |expected_higlight| {
         const actual_highlight = offsets.rangeToSlice(text, response.range.?, ctx.server.offset_encoding);
         try std.testing.expectEqualStrings(expected_higlight, actual_highlight);

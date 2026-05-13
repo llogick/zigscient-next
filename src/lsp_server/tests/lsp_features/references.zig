@@ -1,12 +1,12 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
 const helper = @import("../helper.zig");
 const Context = @import("../context.zig").Context;
 const ErrorBuilder = @import("../ErrorBuilder.zig");
 
-const types = zls.lsp.types;
-const offsets = zls.offsets;
+const types = lsp_server.lsp.types;
+const offsets = lsp_server.offsets;
 
 const allocator: std.mem.Allocator = std.testing.allocator;
 

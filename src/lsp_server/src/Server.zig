@@ -334,20 +334,20 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
             }
 
             if (!DocumentStore.isBuildFile(param_handle.uri)) proj_diags: {
-                const compilation = compilation: {
-                    if (param_handle.computed_data.compilation) |comp| break :compilation comp;
+                const build = build: {
+                    if (param_handle.computed_data.build) |build| break :build build;
                     if (param_handle.closest_build_file_uri) |build_file_uri| {
                         const build_file = param_server.document_store.getBuildFile(build_file_uri) orelse break :proj_diags;
-                        break :compilation &build_file.compilation;
+                        break :build &build_file.build;
                     }
                     break :proj_diags;
                 };
 
-                try compilation.mutex.lock(param_server.io);
-                defer compilation.mutex.unlock(param_server.io);
+                try build.mutex.lock(param_server.io);
+                defer build.mutex.unlock(param_server.io);
 
-                const comp = compilation.instance orelse break :proj_diags;
-                const project_root_path = compilation.state.project_root_path orelse {
+                const comp = build.compilation orelse break :proj_diags;
+                const project_root_path = build.state.project_root_path orelse {
                     log.err("compilation_state.project_root_path is null", .{});
                     break :proj_diags;
                 };
@@ -362,7 +362,7 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                     else => break :proj_diags,
                 };
 
-                compilation.has_completed_once = true;
+                build.has_completed_once = true;
 
                 var error_bundle = comp.getAllErrorsAlloc() catch @panic("OOM");
                 defer error_bundle.deinit(param_server.document_store.allocator);
@@ -1249,7 +1249,7 @@ fn saveDocumentHandler(server: *Server, arena: std.mem.Allocator, notification: 
         if (DocumentStore.isBuildFile(uri)) {
             server.document_store.invalidateBuildFile(uri);
         } else if (DocumentStore.isBuildZonFile(uri)) {
-            if (server.document_store.getBuildFile(uri[0 .. uri.len - 4])) |bf| server.document_store.invalidateBuildFile(bf.uri);
+            if (server.document_store.getBuildFile(uri[0 .. uri.len - 4])) |bf| server.document_store.invalidateBuildFile(bf.flat_uri);
         }
     }
 

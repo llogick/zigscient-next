@@ -291,7 +291,7 @@ emit_llvm_bc: ?[]const u8,
 /// Cwd-relative if `cache_use == .none`. Otherwise, relative to our subdirectory in the cache.
 emit_docs: ?[]const u8,
 
-lsp_compilation_build: ?*@import("zls").DocumentStore.BuildFile.CompilationBuild = null,
+lsp_comp_build: ?*@import("lsp-server").BldDoc.Build = null,
 
 const QueuedJobs = struct {
     /// hack for stage2_x86_64 + coff
@@ -1736,7 +1736,7 @@ pub const CreateOptions = struct {
     environ_map: *const std.process.Environ.Map,
 
     project_root_path: ?[]const u8 = null,
-    lsp_document_store: ?*@import("zls").DocumentStore = null,
+    lsp_document_store: ?*@import("lsp-server").DocumentStore = null,
 
     pub const Entry = link.File.OpenOptions.Entry;
 

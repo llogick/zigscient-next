@@ -3,17 +3,17 @@
 //! See the `./analysis` subdirectory.
 
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 const builtin = @import("builtin");
 
 const helper = @import("helper.zig");
 const ErrorBuilder = @import("ErrorBuilder.zig");
 
-const InternPool = zls.analyser.InternPool;
+const InternPool = lsp_server.analyser.InternPool;
 const Index = InternPool.Index;
 const Key = InternPool.Key;
-const Analyser = zls.Analyser;
-const offsets = zls.offsets;
+const Analyser = lsp_server.Analyser;
+const offsets = lsp_server.offsets;
 
 pub const std_options: std.Options = .{
     .log_level = .warn,
@@ -92,7 +92,7 @@ pub fn main(init: std.process.Init) Error!void {
     var ip: InternPool = try .init(io, gpa);
     defer ip.deinit(gpa);
 
-    var diagnostics_collection: zls.DiagnosticsCollection = .{
+    var diagnostics_collection: lsp_server.DiagnosticsCollection = .{
         .io = io,
         .allocator = gpa,
     };
@@ -100,7 +100,7 @@ pub fn main(init: std.process.Init) Error!void {
 
     var environ_map: std.process.Environ.Map = .init(std.testing.failing_allocator);
 
-    var config: zls.DocumentStore.Config = .{
+    var config: lsp_server.DocumentStore.Config = .{
         .environ_map = &environ_map,
         .zig_exe_path = zig_exe_path,
         .zig_lib_dir = zig_lib_dir,
@@ -122,8 +122,8 @@ pub fn main(init: std.process.Init) Error!void {
         config.zig_lib_dir = .{ .handle = zig_lib_dir_fd.dir, .path = "/lib" };
     }
 
-    var workspaces: std.ArrayList(zls.Server.Workspace) = .empty;
-    var document_store: zls.DocumentStore = .{
+    var workspaces: std.ArrayList(lsp_server.Server.Workspace) = .empty;
+    var document_store: lsp_server.DocumentStore = .{
         .io = io,
         .allocator = gpa,
         .config = config,
@@ -141,9 +141,9 @@ pub fn main(init: std.process.Init) Error!void {
         std.debug.panic("failed to read from {s}: {}", .{ file_path, err });
     defer gpa.free(source);
 
-    const handle_uri = try zls.URI.fromPath(arena, file_path);
+    const handle_uri = try lsp_server.URI.fromPath(arena, file_path);
     try document_store.openLspSyncedDocument(handle_uri, source);
-    const handle: *zls.DocumentStore.Handle = document_store.handles.get(handle_uri).?;
+    const handle: *lsp_server.DocumentStore.Handle = document_store.handles.get(handle_uri).?;
 
     var error_builder: ErrorBuilder = .init(gpa);
     defer error_builder.deinit();
@@ -158,7 +158,7 @@ pub fn main(init: std.process.Init) Error!void {
     };
     defer gpa.free(annotations);
 
-    var analyser = zls.Analyser.init(gpa, arena, &document_store, &ip, handle);
+    var analyser = lsp_server.Analyser.init(gpa, arena, &document_store, &ip, handle);
     defer analyser.deinit();
 
     for (annotations) |annotation| {

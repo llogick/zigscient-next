@@ -1,12 +1,12 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
 const helper = @import("../helper.zig");
 const Context = @import("../context.zig").Context;
 const ErrorBuilder = @import("../ErrorBuilder.zig");
 
-const types = zls.lsp.types;
-const offsets = zls.offsets;
+const types = lsp_server.lsp.types;
+const offsets = lsp_server.offsets;
 
 const allocator: std.mem.Allocator = std.testing.allocator;
 
@@ -177,7 +177,7 @@ fn testDiagnostics(
     context.server.config_manager.config.highlight_global_var_declarations = options.highlight_global_var_declarations;
     context.server.client_capabilities.supports_code_action_fixall = options.autofix;
     context.server.client_capabilities.supports_publish_diagnostics = true;
-    try zls.diagnostics.generateDiagnostics(context.server, context.server.document_store.getHandle(uri).?);
+    try lsp_server.diagnostics.generateDiagnostics(context.server, context.server.document_store.getHandle(uri).?);
 
     var actual_diagnostics: std.ArrayList(types.Diagnostic) = .empty;
 
@@ -188,5 +188,5 @@ fn testDiagnostics(
         &actual_diagnostics,
     );
 
-    try zls.testing.expectEqual(expected_diagnostics, actual_diagnostics.items);
+    try lsp_server.testing.expectEqual(expected_diagnostics, actual_diagnostics.items);
 }

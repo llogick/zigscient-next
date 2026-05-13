@@ -17,7 +17,7 @@ pub fn addCases(
             .root_source_file = b.path("src/lsp_server/tests/build_runner_check.zig"),
             .target = b.graph.host,
             .imports = &.{
-                .{ .name = "zls", .module = b.modules.get("zls").? },
+                .{ .name = "lsp-server", .module = b.modules.get("lsp-server").? },
             },
         }),
     });

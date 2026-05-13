@@ -20,7 +20,7 @@ pub fn addCases(
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "zls", .module = b.modules.get("zls").? },
+                .{ .name = "lsp-server", .module = b.modules.get("lsp-server").? },
             },
         }),
     });

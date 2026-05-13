@@ -1,7 +1,7 @@
 const std = @import("std");
-const zls = @import("zls");
+const lsp_server = @import("lsp-server");
 
-const offsets = zls.offsets;
+const offsets = lsp_server.offsets;
 
 /// returns an array of all placeholder locations
 pub fn collectPlaceholderLocs(allocator: std.mem.Allocator, source: []const u8) ![]offsets.Loc {

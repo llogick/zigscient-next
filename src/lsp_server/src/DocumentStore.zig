@@ -9,19 +9,14 @@ const log = std.log.scoped(.lspc_store);
 const lsp = @import("lsp");
 const Ast = std.zig.Ast;
 const extd_zccs = @import("extended-zccs");
-const BuildAssociatedConfig = @import("BuildAssociatedConfig.zig");
+const BuildAssociatedConfig = @import("BuildOptions.zig");
 const BuildConfig = @import("build_runner/shared.zig").BuildConfig;
 const tracy = @import("tracy");
 const DocumentScope = @import("DocumentScope.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const Server = @import("Server.zig");
-
-/// Compiler and Compilation declarations
-pub const compiler = @import("compiler");
-pub const Compilation = compiler.Compilation;
-const CompilationState = compiler.CompilationState;
-const buildOutputType = compiler.buildOutputType;
-
+pub const Handle = @import("ZigDoc.zig");
+pub const BldDoc = @import("BldDoc.zig");
 /// window/workDoneProgress Notification Data
 const ProgressNotification = struct {
     /// Prefix with "s2c-wdp-" (see Server.handleResponse). A suffix of "-{count}" will be added to it
@@ -39,7 +34,7 @@ config: Config,
 mutex: std.Io.Mutex = .init,
 wait_group: if (supports_build_system) std.Io.Group else void = if (supports_build_system) .init else {},
 handles: std.StringArrayHashMapUnmanaged(*Handle) = .empty,
-build_files: if (supports_build_system) std.StringArrayHashMapUnmanaged(*BuildFile) else void = if (supports_build_system) .empty else {},
+build_files: if (supports_build_system) std.StringArrayHashMapUnmanaged(*BldDoc) else void = if (supports_build_system) .empty else {},
 diagnostics_collection: *DiagnosticsCollection,
 transport: ?*lsp.Transport = null,
 lsp_capabilities: struct {
@@ -91,862 +86,6 @@ pub const Config = struct {
     },
     disable_notifications: bool,
 };
-
-/// Represents a `build.zig`
-pub const BuildFile = struct {
-    uri: Uri,
-    /// this build file may have an explicitly specified path to builtin.zig
-    builtin_uri: ?Uri = null,
-    /// config options extracted from zls.build.json
-    build_associated_config: ?std.json.Parsed(BuildAssociatedConfig) = null,
-    roots_index: u32 = 0,
-    compilation: CompilationBuild = .{},
-    impl: struct {
-        mutex: std.Io.Mutex = .init,
-        build_runner_state: BuildRunnerState = .idle,
-        version: u32 = 0,
-        /// contains information extracted from running build.zig with a custom build runner
-        /// e.g. include paths & packages
-        /// TODO this field should not be nullable, callsites should await the build config to be resolved
-        /// and then continue instead of dealing with missing information.
-        config: ?std.json.Parsed(BuildConfig) = null,
-    } = .{},
-
-    pub const CompilationBuild = struct {
-        mutex: std.Io.Mutex = .init,
-        arena_instance: std.heap.ArenaAllocator = undefined,
-        state: *CompilationState = undefined,
-        instance: ?*Compilation = null,
-        args: []const []const u8 = undefined,
-        has_completed_once: bool = false,
-    };
-
-    const BuildRunnerState = enum {
-        idle,
-        running,
-        running_but_already_invalidated,
-    };
-
-    pub fn tryLockConfig(self: *BuildFile, io: std.Io) ?BuildConfig {
-        self.impl.mutex.lockUncancelable(io);
-        return if (self.impl.config) |cfg| cfg.value else {
-            self.impl.mutex.unlock(io);
-            return null;
-        };
-    }
-
-    pub fn unlockConfig(self: *BuildFile, io: std.Io) void {
-        self.impl.mutex.unlock(io);
-    }
-
-    /// Usage example:
-    /// ```zig
-    /// const package_uris: std.ArrayList([]const u8) = .empty;
-    /// defer {
-    ///     for (package_uris) |uri| allocator.free(uri);
-    ///     package_uris.deinit(allocator);
-    /// }
-    /// const success = try build_file.collectBuildConfigPackageUris(allocator, &package_uris);
-    /// ```
-    pub fn collectBuildConfigPackageUris(
-        self: *BuildFile,
-        io: std.Io,
-        allocator: std.mem.Allocator,
-        package_uris: *std.ArrayList(Uri),
-    ) error{OutOfMemory}!bool {
-        const tracy_zone = tracy.trace(@src());
-        defer tracy_zone.end();
-
-        const build_config = self.tryLockConfig(io) orelse return false;
-        defer self.unlockConfig(io);
-
-        try package_uris.ensureUnusedCapacity(allocator, build_config.packages.len);
-        for (build_config.packages) |package| {
-            package_uris.appendAssumeCapacity(try URI.fromPath(allocator, package.path));
-        }
-        return true;
-    }
-
-    /// Usage example:
-    /// ```zig
-    /// const include_paths: std.ArrayList([]u8) = .empty;
-    /// defer {
-    ///     for (include_paths) |path| allocator.free(path);
-    ///     include_paths.deinit(allocator);
-    /// }
-    /// const success = try build_file.collectBuildConfigIncludePaths(allocator, &include_paths);
-    /// ```
-    pub fn collectBuildConfigIncludePaths(
-        self: *BuildFile,
-        io: std.Io,
-        allocator: std.mem.Allocator,
-        include_paths: *std.ArrayList([]const u8),
-    ) error{OutOfMemory}!bool {
-        const tracy_zone = tracy.trace(@src());
-        defer tracy_zone.end();
-
-        const build_config = self.tryLockConfig(io) orelse return false;
-        defer self.unlockConfig(io);
-
-        try include_paths.ensureUnusedCapacity(allocator, build_config.include_dirs.len);
-        for (build_config.include_dirs) |include_path| {
-            const absolute_path = if (std.fs.path.isAbsolute(include_path))
-                try allocator.dupe(u8, include_path)
-            else blk: {
-                const build_file_dir = std.fs.path.dirname(self.uri).?;
-                const build_file_path = URI.toFsPath(allocator, build_file_dir) catch |err| switch (err) {
-                    error.OutOfMemory => return error.OutOfMemory,
-                    else => continue,
-                };
-                defer allocator.free(build_file_path);
-                break :blk try std.fs.path.join(allocator, &.{ build_file_path, include_path });
-            };
-
-            include_paths.appendAssumeCapacity(absolute_path);
-        }
-        return true;
-    }
-
-    fn triggerRedoCompilation(self: *BuildFile, ds: *DocumentStore) std.Io.Cancelable!void {
-        self.redoCompilation(ds) catch |err| switch (err) {
-            error.Canceled => return error.Canceled,
-            error.OutOfMemory => @panic("OOM"),
-        };
-    }
-
-    fn redoCompilation(self: *BuildFile, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
-        try self.compilation.mutex.lock(ds.io);
-        defer self.compilation.mutex.unlock(ds.io);
-
-        if (self.compilation.instance) |comp| {
-            comp.destroy();
-            self.compilation.state.deinit(ds.allocator);
-            self.compilation.instance = null;
-            self.compilation.state = undefined;
-            _ = self.compilation.arena_instance.reset(.retain_capacity);
-            self.compilation.has_completed_once = false;
-        }
-        const cfg = self.impl.config orelse return;
-        if (cfg.value.roots.len == 0) return;
-
-        var cleanup: bool = false;
-        defer if (cleanup) {
-            self.compilation.state.deinit(ds.allocator);
-            self.compilation.instance = null;
-            self.compilation.state = undefined;
-            _ = self.compilation.arena_instance.reset(.retain_capacity);
-            log.err("Failed to create a compilation for: {s}", .{self.uri});
-            self.compilation.has_completed_once = false;
-        };
-
-        const root_id = if (!(self.roots_index < cfg.value.roots.len)) 0 else self.roots_index;
-        const arena = self.compilation.arena_instance.allocator();
-        var args_dups: std.ArrayList([]const u8) = .empty;
-
-        for (cfg.value.roots[root_id].args) |arg| {
-            if (std.mem.startsWith(u8, arg, "<generated")) continue;
-            try args_dups.append(arena, try arena.dupe(u8, arg));
-        }
-
-        self.compilation.args = try args_dups.toOwnedSlice(arena);
-
-        log.info("Creating a compilation for: {s}\n{s}", .{ self.uri, try std.json.Stringify.valueAlloc(arena, self.compilation.args, .{}) });
-
-        self.compilation.state = try arena.create(CompilationState);
-        self.compilation.state.* = .{};
-
-        const cmd = self.compilation.args[1];
-        const arg_mode: compiler.ArgMode =
-            if (std.mem.eql(u8, cmd, "build-exe")) .{ .build = .Exe } //
-            else if (std.mem.eql(u8, cmd, "build-lib")) .{ .build = .Lib } //
-            else if (std.mem.eql(u8, cmd, "build-obj")) .{ .build = .Obj } //
-            else {
-                log.err("redoCompilation: unknown cmd: {s}", .{cmd});
-                return;
-            };
-        buildOutputType(
-            ds.allocator,
-            arena,
-            ds.io,
-            self.compilation.args,
-            arg_mode,
-            ds.config.environ_map,
-            self.compilation.state,
-            ds,
-            &self.compilation,
-        ) catch |err| switch (err) {
-            error.Canceled, error.OutOfMemory => |e| return e,
-            else => cleanup = true,
-        };
-    }
-
-    fn deinit(self: *BuildFile, allocator: std.mem.Allocator) void {
-        allocator.free(self.uri);
-        if (self.impl.config) |cfg| cfg.deinit();
-        if (self.builtin_uri) |builtin_uri| allocator.free(builtin_uri);
-        if (self.build_associated_config) |cfg| cfg.deinit();
-
-        if (self.compilation.instance) |comp| {
-            self.compilation.state.deinit(allocator);
-            comp.destroy();
-        }
-        self.compilation.arena_instance.deinit();
-    }
-};
-
-/// Represents a Zig source file.
-pub const Handle = struct {
-    /// The document's uri.
-    uri: Uri,
-    /// The version number of this document.
-    version: i32 = 0,
-    /// Custom AST with extra data. Must be freed with .deinit
-    ast: extd_zccs.Ast,
-    /// std.zig.Ast compatible mapping of the custom AST ('ast`)
-    /// Never .deinit directly
-    tree: Ast,
-
-    // Set by the main thread / read by server.generateDiagnostics and AstCheck
-    change_pending: std.atomic.Value(bool) = .init(false),
-
-    /// First build.zig up the dir tree
-    closest_build_file_uri: ?[]const u8 = null,
-
-    mtime: std.Io.Timestamp = .{ .nanoseconds = 0 },
-
-    computed_data: struct {
-        lock: std.Io.RwLock = .init,
-        compilation: ?*BuildFile.CompilationBuild = null,
-        type_decls: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
-            ty: Compilation.InternPool.Index,
-            tid: Compilation.Zcu.PerThread.Id,
-        }) = .empty,
-        air: std.AutoHashMapUnmanaged(Ast.Node.Index, struct {
-            air: Compilation.Zcu.Air,
-            tid: Compilation.Zcu.PerThread.Id,
-        }) = .empty,
-    } = .{},
-
-    /// private field
-    impl: struct {
-        /// @bitCast from/to `Status`
-        status: std.atomic.Value(u32),
-        store: *DocumentStore,
-
-        lock: std.Io.Mutex = .init,
-        /// See `getLazy`
-        lazy_condition: std.Io.Condition = .init,
-
-        import_uris: ?[]Uri = null,
-        document_scope: DocumentScope = undefined,
-        zzoiir: ZirOrZoir = undefined,
-
-        associated_build_file: union(enum) {
-            /// The initial state. The associated build file (build.zig) is resolved lazily.
-            init,
-            /// The associated build file (build.zig) has been requested but has not yet been resolved.
-            unresolved: struct {
-                /// The build files are ordered in decreasing priority.
-                potential_build_files: []const *BuildFile,
-                /// to avoid checking build files multiple times, a bitset stores whether or
-                /// not the build file should be skipped because it has previously been
-                /// found to be "unassociated" with the handle.
-                has_been_checked: std.DynamicBitSetUnmanaged,
-
-                fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-                    allocator.free(self.potential_build_files);
-                    self.has_been_checked.deinit(allocator);
-                    self.* = undefined;
-                }
-            },
-            /// The Handle has no associated build file (build.zig).
-            none,
-            /// The associated build file (build.zig) has been successfully resolved.
-            resolved: *BuildFile,
-        } = .init,
-    },
-
-    const ZirOrZoir = union(Ast.Mode) {
-        zig: std.zig.Zir,
-        zon: std.zig.Zoir,
-    };
-
-    const Status = packed struct(u32) {
-        /// `true` if the document has been directly opened by the client i.e. with `textDocument/didOpen`
-        /// `false` indicates the document only exists because it is a dependency of another document
-        /// or has been closed with `textDocument/didClose`.
-        lsp_synced: bool = false,
-        /// true if a thread has acquired the permission to compute the `DocumentScope`
-        /// all other threads will wait until the given thread has computed the `DocumentScope` before reading it.
-        has_document_scope_lock: bool = false,
-        /// true if `handle.impl.document_scope` has been set
-        has_document_scope: bool = false,
-        /// true if a thread has acquired the permission to compute the `std.zig.Zir` or `std.zig.Zoir`
-        has_zzoiir_lock: bool = false,
-        /// all other threads will wait until the given thread has computed the `std.zig.Zir` or `std.zig.Zoir` before reading it.
-        /// true if `handle.impl.zir` has been set
-        has_zzoiir: bool = false,
-        _: u27 = 0,
-    };
-
-    /// Takes ownership of `text` on success.
-    pub fn init(
-        store: *DocumentStore,
-        uri: Uri,
-        text: [:0]const u8,
-        lsp_synced: bool,
-    ) error{OutOfMemory}!Handle {
-        const kind: extd_zccs.Ast.Kind = if (std.mem.eql(u8, std.fs.path.extension(uri), ".zon")) .zon else .zig;
-
-        const allocator = store.allocator;
-
-        var custom_ast = try createAst(allocator, text, kind, lsp_synced);
-        errdefer custom_ast.destroy();
-
-        const std_ast = custom_ast.toStdAst();
-
-        return .{
-            .uri = uri,
-            .ast = custom_ast,
-            .tree = std_ast,
-            .impl = .{
-                .status = .init(@bitCast(Status{
-                    .lsp_synced = lsp_synced,
-                })),
-                .store = store,
-            },
-        };
-    }
-
-    fn deinitAstDeps(self: *Handle) void {
-        const status = self.getStatus();
-
-        const allocator = self.impl.store.allocator;
-
-        if (status.has_zzoiir) switch (self.tree.mode) {
-            .zig => self.impl.zzoiir.zig.deinit(allocator),
-            .zon => self.impl.zzoiir.zon.deinit(allocator),
-        };
-        if (status.has_document_scope) self.impl.document_scope.deinit(allocator);
-
-        if (self.impl.import_uris) |import_uris| {
-            for (import_uris) |uri| allocator.free(uri);
-            allocator.free(import_uris);
-            self.impl.import_uris = null;
-        }
-    }
-
-    /// Caller must free `Handle.uri` if needed.
-    fn deinit(self: *Handle) void {
-        const tracy_zone = tracy.trace(@src());
-        defer tracy_zone.end();
-
-        const allocator = self.ast.gpa;
-
-        self.deinitAstDeps();
-        self.ast.destroy();
-
-        switch (self.impl.associated_build_file) {
-            .init, .none, .resolved => {},
-            .unresolved => |*payload| payload.deinit(allocator),
-        }
-
-        if (self.closest_build_file_uri) |cbfuri| allocator.free(cbfuri);
-
-        self.computed_data.type_decls.deinit(allocator);
-        var val_it = self.computed_data.air.valueIterator();
-        while (val_it.next()) |val| val.air.deinit(allocator);
-        self.computed_data.air.deinit(allocator);
-
-        self.* = undefined;
-    }
-
-    pub fn getImportUris(self: *Handle) error{OutOfMemory}![]const Uri {
-        const store = self.impl.store;
-        const allocator = store.allocator;
-        const io = store.io;
-
-        self.impl.lock.lockUncancelable(io);
-        defer self.impl.lock.unlock(io);
-
-        if (self.impl.import_uris) |import_uris| return import_uris;
-
-        var imports = try analysis.collectImports(allocator, &self.tree);
-
-        var i: usize = 0;
-        errdefer {
-            // only free the uris
-            for (imports.items[0..i]) |uri| allocator.free(uri);
-            imports.deinit(allocator);
-        }
-
-        // Convert to URIs
-        while (i < imports.items.len) {
-            const import_str = imports.items[i];
-            if (!std.mem.endsWith(u8, import_str, ".zig")) {
-                _ = imports.swapRemove(i);
-                continue;
-            }
-            // The raw import strings are owned by the document and do not need to be freed here.
-            imports.items[i] = try uriFromFileImportStr(allocator, self, import_str) orelse {
-                _ = imports.swapRemove(i);
-                continue;
-            };
-            i += 1;
-        }
-
-        self.impl.import_uris = try imports.toOwnedSlice(allocator);
-        return self.impl.import_uris.?;
-    }
-
-    pub fn getDocumentScope(self: *Handle) error{OutOfMemory}!DocumentScope {
-        if (self.getStatus().has_document_scope) return self.impl.document_scope;
-        return try self.getLazy(DocumentScope, "document_scope", struct {
-            fn create(handle: *Handle, allocator: std.mem.Allocator) error{OutOfMemory}!DocumentScope {
-                var document_scope: DocumentScope = try .init(allocator, &handle.tree);
-                errdefer document_scope.deinit(allocator);
-
-                // remove unused capacity
-                document_scope.extra.shrinkAndFree(allocator, document_scope.extra.items.len);
-                try document_scope.declarations.setCapacity(allocator, document_scope.declarations.len);
-                try document_scope.scopes.setCapacity(allocator, document_scope.scopes.len);
-
-                return document_scope;
-            }
-        });
-    }
-
-    /// Asserts that `getDocumentScope` has been previously called on `handle`.
-    pub fn getDocumentScopeCached(self: *Handle) DocumentScope {
-        if (builtin.mode == .Debug) {
-            std.debug.assert(self.getStatus().has_document_scope);
-        }
-        return self.impl.document_scope;
-    }
-
-    pub fn getZir(self: *Handle) error{OutOfMemory}!std.zig.Zir {
-        std.debug.assert(self.tree.mode == .zig);
-        const zir_or_zoir = try self.getZirOrZoir();
-        return zir_or_zoir.zig;
-    }
-
-    pub fn getZoir(self: *Handle) error{OutOfMemory}!std.zig.Zoir {
-        std.debug.assert(self.tree.mode == .zon);
-        const zir_or_zoir = try self.getZirOrZoir();
-        return zir_or_zoir.zon;
-    }
-
-    fn getZirOrZoir(self: *Handle) error{OutOfMemory}!ZirOrZoir {
-        if (self.getStatus().has_zzoiir) return self.impl.zzoiir;
-        return try self.getLazy(ZirOrZoir, "zzoiir", struct {
-            fn create(handle: *Handle, allocator: std.mem.Allocator) error{OutOfMemory}!ZirOrZoir {
-                switch (handle.tree.mode) {
-                    .zig => {
-                        const tracy_zone = tracy.traceNamed(@src(), "AstGen.generate");
-                        defer tracy_zone.end();
-
-                        var zir = try extd_zccs.AstCheck.generate(allocator, handle.tree, &handle.change_pending);
-                        errdefer zir.deinit(allocator);
-
-                        return .{ .zig = zir };
-                    },
-                    .zon => {
-                        const tracy_zone = tracy.traceNamed(@src(), "ZonGen.generate");
-                        defer tracy_zone.end();
-
-                        const zoir = try std.zig.ZonGen.generate(allocator, handle.tree, .{});
-
-                        return .{ .zon = zoir };
-                    },
-                }
-            }
-        });
-    }
-
-    /// Returns the associated build file (build.zig) of the handle.
-    ///
-    /// `DocumentStore.build_files` is guaranteed to contain this Uri.
-    /// Uri memory managed by its build_file
-    pub fn getAssociatedBuildFileUri(self: *Handle, document_store: *DocumentStore) error{ Canceled, OutOfMemory }!?Uri {
-        comptime std.debug.assert(supports_build_system);
-        switch (try self.getAssociatedBuildFileUri2(document_store)) {
-            .none,
-            .unresolved,
-            => return null,
-            .resolved => |build_file| return build_file.uri,
-        }
-    }
-
-    /// Returns the associated build file (build.zig) of the handle.
-    ///
-    /// `DocumentStore.build_files` is guaranteed to contain this Uri.
-    /// Uri memory managed by its build_file
-    pub fn getAssociatedBuildFileUri2(self: *Handle, document_store: *DocumentStore) error{ Canceled, OutOfMemory }!union(enum) {
-        /// The Handle has no associated build file (build.zig).
-        none,
-        /// The associated build file (build.zig) has not been resolved yet.
-        unresolved,
-        /// The associated build file (build.zig) has been successfully resolved.
-        resolved: *BuildFile,
-    } {
-        comptime std.debug.assert(supports_build_system);
-
-        try self.impl.lock.lock(document_store.io);
-        defer self.impl.lock.unlock(document_store.io);
-
-        const unresolved = switch (self.impl.associated_build_file) {
-            .init => blk: {
-                const potential_build_files = try document_store.collectPotentialBuildFiles(self.uri);
-                errdefer document_store.allocator.free(potential_build_files);
-
-                if (potential_build_files.len == 0) {
-                    self.impl.associated_build_file = .none;
-                    return .none;
-                }
-
-                var has_been_checked: std.DynamicBitSetUnmanaged = try .initEmpty(document_store.allocator, potential_build_files.len);
-                errdefer has_been_checked.deinit(document_store.allocator);
-
-                self.impl.associated_build_file = .{ .unresolved = .{
-                    .has_been_checked = has_been_checked,
-                    .potential_build_files = potential_build_files,
-                } };
-
-                break :blk &self.impl.associated_build_file.unresolved;
-            },
-            .unresolved => |*unresolved| unresolved,
-            .none => return .none,
-            .resolved => |build_file| return .{ .resolved = build_file },
-        };
-
-        // special case when there is only one potential build file
-        if (unresolved.potential_build_files.len == 1) {
-            const build_file = unresolved.potential_build_files[0];
-            log.debug("Resolved build file of '{s}' as '{s}'", .{ self.uri, build_file.uri });
-            unresolved.deinit(document_store.allocator);
-            self.impl.associated_build_file = .{ .resolved = build_file };
-            return .{ .resolved = build_file };
-        }
-
-        var has_missing_build_config = false;
-
-        var it = unresolved.has_been_checked.iterator(.{
-            .kind = .unset,
-            .direction = .reverse,
-        });
-        while (it.next()) |i| {
-            const build_file = unresolved.potential_build_files[i];
-            const is_associated = try document_store.uriAssociatedWithBuild(build_file, self.uri) orelse {
-                has_missing_build_config = true;
-                continue;
-            };
-
-            if (!is_associated) {
-                // the build file should be skipped in future calls.
-                unresolved.has_been_checked.set(i);
-                continue;
-            }
-
-            log.debug("Resolved build file of '{s}' as '{s}'", .{ self.uri, build_file.uri });
-            unresolved.deinit(document_store.allocator);
-            self.impl.associated_build_file = .{ .resolved = build_file };
-            return .{ .resolved = build_file };
-        }
-
-        if (has_missing_build_config) {
-            // when build configs are missing we keep the state at .unresolved so that
-            // future calls will retry until all build config are resolved.
-            // Then will have a conclusive result on whether or not there is a associated build file.
-            return .unresolved;
-        }
-
-        unresolved.deinit(document_store.allocator);
-        self.impl.associated_build_file = .none;
-        return .none;
-    }
-
-    fn getLazy(
-        self: *Handle,
-        comptime T: type,
-        comptime name: []const u8,
-        comptime Context: type,
-    ) error{OutOfMemory}!T {
-        @branchHint(.cold);
-        const tracy_zone = tracy.traceNamed(@src(), "getLazy(" ++ name ++ ")");
-        defer tracy_zone.end();
-
-        const has_data_field_name = "has_" ++ name;
-        const has_lock_field_name = "has_" ++ name ++ "_lock";
-
-        const io = self.impl.store.io;
-
-        self.impl.lock.lockUncancelable(io);
-        defer self.impl.lock.unlock(io);
-
-        while (true) {
-            const status = self.getStatus();
-            if (@field(status, has_data_field_name)) break;
-            if (@field(status, has_lock_field_name) or
-                self.impl.status.bitSet(@bitOffsetOf(Status, has_lock_field_name), .release) != 0)
-            {
-                // another thread is currently computing the data
-                self.impl.lazy_condition.waitUncancelable(io, &self.impl.lock);
-                continue;
-            }
-            defer self.impl.lazy_condition.broadcast(io);
-
-            @field(self.impl, name) = try Context.create(self, self.impl.store.allocator);
-            errdefer comptime unreachable;
-
-            const old_has_data = self.impl.status.bitSet(@bitOffsetOf(Status, has_data_field_name), .release);
-            std.debug.assert(old_has_data == 0); // race condition
-        }
-        return @field(self.impl, name);
-    }
-
-    fn getStatus(self: *const Handle) Status {
-        return @bitCast(self.impl.status.load(.acquire));
-    }
-
-    pub fn isLspSynced(self: *const Handle) bool {
-        return self.getStatus().lsp_synced;
-    }
-
-    /// returns the previous value
-    pub fn setLspSynced(self: *Handle, lsp_synced: bool) bool {
-        if (lsp_synced) {
-            return self.impl.status.bitSet(@offsetOf(Handle.Status, "lsp_synced"), .release) == 1;
-        } else {
-            return self.impl.status.bitReset(@offsetOf(Handle.Status, "lsp_synced"), .release) == 1;
-        }
-    }
-
-    pub fn setChangePending(self: *Handle, value: bool) void {
-        self.change_pending.store(value, .release);
-    }
-
-    pub fn getChangePending(self: *const Handle) bool {
-        return self.change_pending.load(.acquire);
-    }
-
-    fn createAst(allocator: std.mem.Allocator, new_text: [:0]const u8, kind: extd_zccs.Ast.Kind, is_lsp_synced: bool) error{OutOfMemory}!extd_zccs.Ast {
-        const tracy_zone_inner = tracy.traceNamed(@src(), "createAst");
-        defer tracy_zone_inner.end();
-
-        var custom_ast = try extd_zccs.Ast.createFromBytesSlice(
-            allocator,
-            new_text,
-            kind,
-            if (is_lsp_synced) .extended else .standard,
-        );
-        errdefer custom_ast.deinit(allocator);
-
-        return custom_ast;
-    }
-
-    pub fn applyContentChanges(
-        self: *Handle,
-        content_changes: []const lsp.types.TextDocument.ContentChangeEvent,
-        encoding: offsets.Encoding,
-        diagnostics_collection: *DiagnosticsCollection,
-    ) error{ OutOfMemory, InternalError }!void {
-        const tracy_zone = tracy.trace(@src());
-        defer tracy_zone.end();
-
-        const prev_bytes_len = self.ast.bytes.items.len;
-
-        // lowest and highest indexes affected by the change(s)
-        var idx_lo: u32, //
-        var idx_hi: u32, //
-        const last_full_text_index //
-        = blk: {
-            var i: u32 = @intCast(content_changes.len);
-            while (i != 0) {
-                i -= 1;
-                switch (content_changes[i]) {
-                    .text_document_content_change_partial => |pcc| {
-                        if (pcc.rangeLength) |rl| if (rl != self.ast.bytes.items.len - 1) continue;
-                        // sometimes partial masks a whole
-                        const loc = offsets.rangeToLoc(self.ast.bytes.items, pcc.range, encoding);
-                        if (loc.start != 0 and loc.end != self.ast.bytes.items.len - 1) continue;
-                        try self.ast.bytes.replaceRange(self.ast.gpa, 0, self.ast.bytes.items.len - 1, pcc.text);
-                        break :blk .{ 0, @intCast(@max(self.ast.bytes.items.len - 1, prev_bytes_len - 1)), i };
-                    },
-                    .text_document_content_change_whole_document => |content_change| {
-                        try self.ast.bytes.replaceRange(self.ast.gpa, 0, self.ast.bytes.items.len - 1, content_change.text);
-                        break :blk .{ 0, @intCast(@max(self.ast.bytes.items.len - 1, prev_bytes_len - 1)), i };
-                    },
-                }
-            }
-            break :blk .{ @intCast(self.ast.bytes.items.len - 1), 0, null };
-        };
-
-        // don't even bother applying changes before a full text change
-        const changes = content_changes[if (last_full_text_index) |index| index + 1 else 0..];
-
-        for (changes) |item| {
-            const content_change = item.text_document_content_change_partial;
-
-            const loc = offsets.rangeToLoc(self.ast.bytes.items, content_change.range, encoding);
-
-            if (loc.start < idx_lo) idx_lo = @intCast(loc.start);
-            const upper_index: u32 = @intCast(loc.end);
-            if (idx_hi < upper_index) idx_hi = upper_index;
-
-            try self.ast.bytes.replaceRange(self.ast.gpa, loc.start, loc.end - loc.start, content_change.text);
-        }
-
-        std.debug.assert(self.ast.bytes.items[self.ast.bytes.items.len - 1] == 0);
-
-        if (self.ast.bytes.items.len > std.zig.max_src_size) {
-            log.err("change document '{s}' failed: text size ({d}) is above maximum length ({d})", .{
-                self.uri,
-                self.ast.bytes.items.len,
-                std.zig.max_src_size,
-            });
-            return error.InternalError;
-        }
-
-        try self.ast.update(@intCast(prev_bytes_len), idx_lo, idx_hi);
-
-        self.deinitAstDeps();
-
-        self.impl.status = .init(@bitCast(Status{ .lsp_synced = self.isLspSynced() }));
-        self.tree = self.ast.toStdAst();
-
-        var arena_state = std.heap.ArenaAllocator.init(self.ast.gpa);
-        defer arena_state.deinit();
-        const arena = arena_state.allocator();
-
-        for (diagnostics_collection.tag_set.values()) |entry| {
-            if (entry.error_bundle.errorMessageCount() == 0) continue;
-            const eb = entry.error_bundle;
-            for (eb.getMessages()) |message_index| {
-                const message = eb.getErrorMessage(message_index);
-                if (message.src_loc == .none) continue;
-
-                const loc = eb.getSourceLocation(message.src_loc);
-                const path = eb.nullTerminatedString(loc.src_path);
-                const uri = try DiagnosticsCollection.pathToUri(
-                    arena,
-                    entry.error_bundle_src_base_path,
-                    path,
-                ) orelse continue;
-                if (!std.mem.eql(u8, self.uri, uri)) continue;
-                if (last_full_text_index) |_| {
-                    // clear the error by setting it's src_loc to .none/0
-                    @constCast(entry.error_bundle.extra)[@intFromEnum(message.src_loc)] = 0;
-                    continue;
-                }
-                for (changes) |change| {
-                    const ptdc = change.text_document_content_change_partial;
-                    if (ptdc.range.start.line > loc.line) continue;
-                    if (ptdc.range.end.line < loc.line) {
-                        const num_affected_lines: u32 = @intCast(ptdc.range.end.line - ptdc.range.start.line);
-                        const num_new_lines: u32 = @intCast(std.mem.count(u8, ptdc.text, "\n"));
-                        if (num_new_lines == num_affected_lines) continue;
-                        var new_loc = loc;
-                        if (num_new_lines == 0) new_loc.line -= num_affected_lines else new_loc.line += if (num_new_lines > num_affected_lines)
-                            (num_new_lines - num_affected_lines)
-                        else
-                            (num_affected_lines - num_new_lines);
-                        setExtra(&entry.error_bundle, @intFromEnum(message.src_loc), new_loc);
-                    }
-                }
-            }
-        }
-    }
-
-    // IF this handle is also a BuildFile scan for `$ls root_id N` and apply
-    pub fn handleRootIdComment(handle: *Handle, ds: *DocumentStore, send_notification: bool) error{ Canceled, OutOfMemory }!void {
-        if (handle.tree.errors.len != 0) return;
-        const build_file = ds.getBuildFile(handle.uri) orelse return;
-
-        var send_noti: bool = send_notification;
-
-        switch_roots_index: {
-            const ttags = handle.tree.tokens.items(.tag);
-            var tok_i: u32 = 0;
-            while (tok_i < ttags.len) : (tok_i += 1) {
-                if (ttags[tok_i] != .keyword_fn) continue;
-                if (tok_i + 10 > ttags.len) break :switch_roots_index;
-                tok_i += 1;
-                if (ttags[tok_i] != .identifier) continue;
-                if (!std.mem.eql(u8, "build", handle.tree.tokenSlice(tok_i))) continue;
-                while (tok_i < ttags.len - 1 and ttags[tok_i] != .r_brace) tok_i += 1;
-                const src_i = handle.tree.tokens.items(.start)[tok_i];
-                const source = handle.tree.source;
-                if (src_i + 20 > source.len) break :switch_roots_index;
-                _ = std.mem.indexOf(u8, source[0 .. src_i + 20], "//") orelse break :switch_roots_index;
-                const lsm_i = std.mem.indexOf(u8, source[0 .. src_i + 20], "$ls") orelse break :switch_roots_index;
-                var tokenizer: std.zig.Tokenizer = .{ .buffer = source, .index = lsm_i + 3 };
-                var tok = tokenizer.next();
-                if (tok.tag != .identifier and !std.mem.eql(u8, "root_id", source[tok.loc.start..tok.loc.end])) break :switch_roots_index;
-                tok = tokenizer.next();
-                if (tok.tag != .number_literal) break :switch_roots_index;
-                var roots_index = std.fmt.parseInt(u32, source[tok.loc.start..tok.loc.end], 10) catch break :switch_roots_index;
-                const config = build_file.tryLockConfig(ds.io) orelse break :switch_roots_index;
-                defer build_file.unlockConfig(ds.io);
-                if (!(roots_index < config.roots.len)) {
-                    log.err("{s}: roots_index > roots.len; using id 0", .{handle.uri});
-                    roots_index = 0;
-                }
-                if (build_file.roots_index == roots_index) return;
-                build_file.roots_index = roots_index;
-                send_noti = true;
-                for (ds.workspaces.items) |wrkspc_item| {
-                    if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
-                        ds.wait_group.async(ds.io, BuildFile.triggerRedoCompilation, .{ build_file, ds });
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!send_noti or ds.config.disable_notifications) return;
-
-        roots_index_msg: {
-            const config = build_file.tryLockConfig(ds.io) orelse break :roots_index_msg;
-            defer build_file.unlockConfig(ds.io);
-            if (config.roots.len == 0) return;
-
-            const message = std.fmt.allocPrint(
-                ds.allocator,
-                "Using CompileStep \"{s}\" (`roots_index {}`) to resolve module imports for documents with build file {s} .",
-                .{
-                    config.roots[build_file.roots_index].name,
-                    build_file.roots_index,
-                    handle.uri,
-                },
-            ) catch break :roots_index_msg;
-            defer ds.allocator.free(message);
-
-            sendMessageToClient(
-                ds.io,
-                ds.allocator,
-                ds.transport.?,
-                lsp.TypedJsonRPCNotification(lsp.types.window.ShowMessageParams){
-                    .method = "window/showMessage",
-                    .params = lsp.types.window.ShowMessageParams{ .type = .Info, .message = message },
-                },
-            ) catch {};
-        }
-    }
-};
-
-fn setExtra(wip: *const std.zig.ErrorBundle, index: usize, extra: anytype) void {
-    const fields = @typeInfo(@TypeOf(extra)).@"struct".fields;
-    var i = index;
-    inline for (fields) |field| {
-        @constCast(wip.extra)[i] = switch (field.type) {
-            u32 => @field(extra, field.name),
-            std.zig.ErrorBundle.MessageIndex => @intFromEnum(@field(extra, field.name)),
-            std.zig.ErrorBundle.SourceLocationIndex => @intFromEnum(@field(extra, field.name)),
-            else => @compileError("bad field type"),
-        };
-        i += 1;
-    }
-}
 
 pub fn deinit(self: *DocumentStore) void {
     if (supports_build_system) {
@@ -1040,8 +179,8 @@ pub fn getOrLoadHandle(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMem
 }
 
 /// **Thread safe** takes a shared lock
-/// This function does not protect against data races from modifying the BuildFile
-pub fn getBuildFile(self: *DocumentStore, uri: Uri) ?*BuildFile {
+/// This function does not protect against data races from modifying the BldDoc
+pub fn getBuildFile(self: *DocumentStore, uri: Uri) ?*BldDoc {
     comptime std.debug.assert(supports_build_system);
     self.mutex.lockUncancelable(self.io);
     defer self.mutex.unlock(self.io);
@@ -1050,13 +189,13 @@ pub fn getBuildFile(self: *DocumentStore, uri: Uri) ?*BuildFile {
 
 /// invalidates any pointers into `DocumentStore.build_files`
 /// **Thread safe** takes an exclusive lock
-/// This function does not protect against data races from modifying the BuildFile
-fn getOrLoadBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory }!*BuildFile {
+/// This function does not protect against data races from modifying the BldDoc
+fn getOrLoadBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory }!*BldDoc {
     comptime std.debug.assert(supports_build_system);
 
     if (self.getBuildFile(uri)) |build_file| return build_file;
 
-    const new_build_file: *BuildFile = blk: {
+    const new_build_file: *BldDoc = blk: {
         try self.mutex.lock(self.io);
         defer self.mutex.unlock(self.io);
 
@@ -1064,17 +203,17 @@ fn getOrLoadBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemo
         if (gop.found_existing) return gop.value_ptr.*;
         errdefer self.build_files.swapRemoveAt(gop.index);
 
-        gop.value_ptr.* = try self.allocator.create(BuildFile);
+        gop.value_ptr.* = try self.allocator.create(BldDoc);
         errdefer self.allocator.destroy(gop.value_ptr.*);
 
         gop.value_ptr.*.* = try self.createBuildFile(uri);
-        gop.key_ptr.* = gop.value_ptr.*.uri;
+        gop.key_ptr.* = gop.value_ptr.*.flat_uri;
         break :blk gop.value_ptr.*;
     };
 
     // this code path is only reached when the build file is new
 
-    self.invalidateBuildFile(new_build_file.uri);
+    self.invalidateBuildFile(new_build_file.flat_uri);
 
     return new_build_file;
 }
@@ -1174,7 +313,7 @@ pub fn invalidateBuildFile(self: *DocumentStore, build_file_uri: Uri) void {
     self.wait_group.async(self.io, invalidateBuildFileWorker, .{ self, build_file });
 }
 
-fn sendMessageToClient(
+pub fn sendMessageToClient(
     io: std.Io,
     allocator: std.mem.Allocator,
     transport: *lsp.Transport,
@@ -1281,7 +420,7 @@ pub fn notifyProgressEnd(
     };
 }
 
-fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.Io.Cancelable!void {
+fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BldDoc) std.Io.Cancelable!void {
     {
         try build_file.impl.mutex.lock(self.io);
         defer build_file.impl.mutex.unlock(self.io);
@@ -1296,17 +435,17 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
         }
     }
 
-    const token = self.notifyProgressStart(.build_progress, build_file.uri);
+    const token = self.notifyProgressStart(.build_progress, build_file.flat_uri);
 
     while (true) {
         build_file.impl.version += 1;
         const new_version = build_file.impl.version;
 
-        const build_config = loadBuildConfiguration(self, build_file.uri, new_version) catch |err| switch (err) {
+        const build_config = loadBuildConfiguration(self, build_file.flat_uri, new_version) catch |err| switch (err) {
             error.Canceled => return error.Canceled,
             else => |e| {
                 if (e != error.RunFailed) { // already logged
-                    log.err("Failed to load build configuration for {s} (error: {})", .{ build_file.uri, e });
+                    log.err("Failed to load build configuration for {s} (error: {})", .{ build_file.flat_uri, e });
                 }
                 if (token) |t| self.notifyProgressEnd(t, .failure);
                 build_file.impl.mutex.lockUncancelable(self.io);
@@ -1343,8 +482,8 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
     defer _ = self.io.swapCancelProtection(old_cancel_protect);
 
     blk: {
-        const bf_handle = (self.getOrLoadHandle(build_file.uri) catch break :blk) orelse {
-            log.err("Failed to getHandle for: '{s}'", .{build_file.uri});
+        const bf_handle = (self.getOrLoadHandle(build_file.flat_uri) catch break :blk) orelse {
+            log.err("Failed to getHandle for: '{s}'", .{build_file.flat_uri});
             break :blk;
         };
         bf_handle.handleRootIdComment(self, true) catch |err| switch (err) {
@@ -1354,8 +493,8 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BuildFile) std.I
     }
 
     for (self.workspaces.items) |wrkspc_item| {
-        if (std.mem.eql(u8, build_file.uri, wrkspc_item.build_file_uri orelse continue)) {
-            self.wait_group.async(self.io, BuildFile.triggerRedoCompilation, .{ build_file, self });
+        if (std.mem.eql(u8, build_file.flat_uri, wrkspc_item.build_file_uri orelse continue)) {
+            self.wait_group.async(self.io, BldDoc.triggerRedoCompilation, .{ build_file, self });
             break;
         }
     }
@@ -1413,11 +552,11 @@ pub fn isInStd(uri: Uri) bool {
 
 /// looks for a `zls.build.json` file in the build file directory
 /// has to be freed with `json_compat.parseFree`
-fn loadBuildAssociatedConfiguration(io: std.Io, allocator: std.mem.Allocator, build_file: BuildFile) !std.json.Parsed(BuildAssociatedConfig) {
+fn loadBuildAssociatedConfiguration(io: std.Io, allocator: std.mem.Allocator, build_file: BldDoc) !std.json.Parsed(BuildAssociatedConfig) {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const build_file_path = try URI.toFsPath(allocator, build_file.uri);
+    const build_file_path = try URI.toFsPath(allocator, build_file.flat_uri);
     defer allocator.free(build_file_path);
     const config_file_path = try std.fs.path.resolve(allocator, &.{ build_file_path, "..", "zls.build.json" });
     defer allocator.free(config_file_path);
@@ -1462,7 +601,7 @@ fn prepareBuildRunnerArgs(self: *DocumentStore, build_file_uri: []const u8) erro
     }
 
     if (self.getBuildFile(build_file_uri)) |build_file| blk: {
-        const build_config = build_file.build_associated_config orelse break :blk;
+        const build_config = build_file.options orelse break :blk;
         const build_options = build_config.value.build_options orelse break :blk;
 
         try args.ensureUnusedCapacity(self.allocator, build_options.len);
@@ -1634,10 +773,10 @@ pub fn findBuildZig(io: std.Io, allocator: std.mem.Allocator, uri: []const u8) !
 /// `build.zig` files higher in the filesystem have precedence.
 /// See `Handle.getAssociatedBuildFileUri`.
 /// Caller owns returned memory.
-fn collectPotentialBuildFiles(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory }![]*BuildFile {
+pub fn collectPotentialBuildFiles(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory }![]*BldDoc {
     if (isInStd(uri)) return &.{};
 
-    var potential_build_files: std.ArrayList(*BuildFile) = .empty;
+    var potential_build_files: std.ArrayList(*BldDoc) = .empty;
     errdefer potential_build_files.deinit(self.allocator);
 
     const path = URI.toFsPath(self.allocator, uri) catch |err| switch (err) {
@@ -1666,29 +805,29 @@ fn collectPotentialBuildFiles(self: *DocumentStore, uri: Uri) error{ Canceled, O
     // `build.zig` files that are higher up in the filesystem are more likely
     // to be the `build.zig` of the entire project/package instead of just a
     // sub-project/package.
-    std.mem.reverse(*BuildFile, potential_build_files.items);
+    std.mem.reverse(*BldDoc, potential_build_files.items);
 
     return try potential_build_files.toOwnedSlice(self.allocator);
 }
 
-fn createBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory }!BuildFile {
+fn createBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory }!BldDoc {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    var build_file: BuildFile = .{
-        .uri = try self.allocator.dupe(u8, uri),
-        .compilation = .{ .arena_instance = .init(self.allocator) },
+    var build_file: BldDoc = .{
+        .flat_uri = try self.allocator.dupe(u8, uri),
+        .build = .{ .arena_instance = .init(self.allocator) },
         .impl = .{},
     };
 
     errdefer build_file.deinit(self.allocator);
 
     if (loadBuildAssociatedConfiguration(self.io, self.allocator, build_file)) |cfg| {
-        build_file.build_associated_config = cfg;
+        build_file.options = cfg;
 
         if (cfg.value.roots_index) |roots_index| build_file.roots_index = roots_index;
         if (cfg.value.relative_builtin_path) |relative_builtin_path| blk: {
-            const build_file_path = URI.toFsPath(self.allocator, build_file.uri) catch break :blk;
+            const build_file_path = URI.toFsPath(self.allocator, build_file.flat_uri) catch break :blk;
             const absolute_builtin_path = try std.fs.path.resolve(self.allocator, &.{ build_file_path, "..", relative_builtin_path });
             defer self.allocator.free(absolute_builtin_path);
             build_file.builtin_uri = try URI.fromPath(self.allocator, absolute_builtin_path);
@@ -1697,24 +836,24 @@ fn createBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory 
         error.Canceled => return error.Canceled,
         error.FileNotFound => {},
         else => {
-            log.debug("Failed to load config associated with build file {s} (error: {})", .{ build_file.uri, err });
+            log.debug("Failed to load config associated with build file {s} (error: {})", .{ build_file.flat_uri, err });
         },
     }
 
-    log.info("Loaded build file '{s}'", .{build_file.uri});
+    log.info("Loaded build file '{s}'", .{build_file.flat_uri});
 
     return build_file;
 }
 
-/// Returns whether the `Uri` is a dependency of the given `BuildFile`.
+/// Returns whether the `Uri` is a dependency of the given `BldDoc`.
 /// May return `null` to indicate an inconclusive result because
 /// the required build config has not been resolved yet.
 ///
 /// invalidates any pointers into `build_files`
 /// **Thread safe** takes an exclusive lock
-fn uriAssociatedWithBuild(
+pub fn uriAssociatedWithBuild(
     self: *DocumentStore,
-    build_file: *BuildFile,
+    build_file: *BldDoc,
     uri: Uri,
 ) error{ Canceled, OutOfMemory }!?bool {
     const tracy_zone = tracy.trace(@src());
@@ -1732,7 +871,7 @@ fn uriAssociatedWithBuild(
     if (!success) return null;
 
     for (package_uris.items) |package_uri| {
-        if (try self.uriInImports(&checked_uris, build_file.uri, package_uri, uri))
+        if (try self.uriInImports(&checked_uris, build_file.flat_uri, package_uri, uri))
             return true;
     }
 
@@ -2133,7 +1272,7 @@ pub fn uriFromImportStr(self: *DocumentStore, allocator: std.mem.Allocator, hand
     }
 }
 
-fn uriFromFileImportStr(allocator: std.mem.Allocator, handle: *Handle, import_str: []const u8) error{OutOfMemory}!?Uri {
+pub fn uriFromFileImportStr(allocator: std.mem.Allocator, handle: *Handle, import_str: []const u8) error{OutOfMemory}!?Uri {
     const base_path = URI.toFsPath(allocator, handle.uri) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return null,
