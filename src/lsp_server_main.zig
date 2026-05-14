@@ -13,6 +13,8 @@ const Allocator = mem.Allocator;
 const build_options = @import("build_options");
 const compiler = @import("compiler");
 
+const log = std.log.scoped(.lspc_main);
+
 pub const std_options: std.Options = .{
     // Always set this to debug to make std.log call into our handler, then control the runtime
     // value in logFn itself
@@ -44,11 +46,14 @@ const RootAllocator = if (use_debug_allocator) std.heap.DebugAllocator(.{
     }
 };
 
-pub fn main(init: std.process.Init.Minimal) anyerror!void {
+pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
     var root_allocator: RootAllocator = .init;
     defer _ = root_allocator.deinit();
+
     const root_gpa = root_allocator.allocator();
+
     var io_impl: compiler.IoImpl = undefined;
+
     switch (build_options.io_mode) {
         .threaded => io_impl = .init(root_gpa, .{
             .stack_size = compiler.thread_stack_size,
@@ -63,13 +68,16 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
             .backing_allocator_needs_mutex = use_debug_allocator,
         }),
     }
+
     defer io_impl.deinit();
     compiler.io_impl_ptr = &io_impl;
     const io = io_impl.io();
+
     const gpa = switch (build_options.io_mode) {
         .threaded => root_gpa,
         .evented => io_impl.allocator(),
     };
+
     var arena_instance = std.heap.ArenaAllocator.init(gpa);
     defer arena_instance.deinit();
     const arena = arena_instance.allocator();
@@ -81,23 +89,32 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
     if (args.len <= 1 or (args.len > 1 and !mem.eql(u8, args[1], "zig"))) {
-        _ = try @import("lsp_server/src/main.zig").stage2(gpa, io, init, &environ_map);
-        return;
+        return @import("lsp_server/src/main.zig").stage2(gpa, io, init, &environ_map);
     }
 
     if (args.len <= 2) {
-        std.log.info("{s}", .{compiler.usage});
+        if (build_options.dev != .full) {
+            log.info(
+                \\
+                \\This is a limited build, '{t}', of the Zig compiler,
+                \\only `zig build-* -fno-emit-bin` commands available.
+            , .{build_options.dev});
+        } else {
+            log.info("{s}", .{compiler.usage});
+        }
         fatal("expected command argument", .{});
     }
 
     if (compiler.tracy.enable_allocation) {
         var gpa_tracy = compiler.tracy.tracyAllocator(gpa);
-        return compiler.mainArgs(gpa_tracy.allocator(), arena, io, args, &environ_map);
+        try compiler.mainArgs(gpa_tracy.allocator(), arena, io, args, &environ_map);
+        return 0;
     }
 
     if (native_os == .wasi) {
         compiler.preopens = try .init(arena);
     }
 
-    return compiler.mainArgs(gpa, arena, io, args, &environ_map);
+    try compiler.mainArgs(gpa, arena, io, args, &environ_map);
+    return 0;
 }

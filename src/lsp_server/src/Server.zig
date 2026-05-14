@@ -347,7 +347,7 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
                 defer build.mutex.unlock(param_server.io);
 
                 const comp = build.compilation orelse break :proj_diags;
-                const project_root_path = build.state.project_root_path orelse {
+                const project_root_path = build.state.?.project_root_path orelse {
                     log.err("compilation_state.project_root_path is null", .{});
                     break :proj_diags;
                 };
@@ -1584,7 +1584,7 @@ fn selectionRangeHandler(server: *Server, arena: std.mem.Allocator, request: typ
     return try selection_range.generateSelectionRanges(arena, handle, request.positions, server.offset_encoding);
 }
 
-const HandledRequestParams = union(enum) {
+const SupportedRequests = union(enum) {
     initialize: types.InitializeParams,
     shutdown,
     @"textDocument/willSaveWaitUntil": types.TextDocument.WillSaveParams,
@@ -1610,7 +1610,7 @@ const HandledRequestParams = union(enum) {
     other: lsp.MethodWithParams,
 };
 
-const HandledNotificationParams = union(enum) {
+const SupportedNotifications = union(enum) {
     initialized: types.InitializedParams,
     exit,
     @"textDocument/didOpen": types.TextDocument.DidOpenParams,
@@ -1623,7 +1623,7 @@ const HandledNotificationParams = union(enum) {
     other: lsp.MethodWithParams,
 };
 
-const Message = lsp.Message(HandledRequestParams, HandledNotificationParams, .{});
+const Message = lsp.Message(SupportedRequests, SupportedNotifications, .{});
 
 fn isBlockingMessage(msg: Message) bool {
     switch (msg) {
@@ -1787,23 +1787,13 @@ pub fn loop(server: *Server) LoopError!void {
     }
 }
 
-pub fn sendJsonMessageSync(server: *Server, json_message: []const u8) Error!?[]u8 {
-    const parsed_message = Message.parseFromSlice(
-        server.allocator,
-        json_message,
-        .{ .ignore_unknown_fields = true, .max_value_len = null, .allocate = .alloc_always },
-    ) catch return error.ParseError;
-    defer parsed_message.deinit();
-    return try server.processMessage(parsed_message.arena.allocator(), parsed_message.value);
-}
-
 pub fn sendRequestSync(server: *Server, arena: std.mem.Allocator, comptime method: []const u8, params: lsp.ParamsType(method)) Error!lsp.ResultType(method) {
     comptime std.debug.assert(lsp.isRequestMethod(method));
     const tracy_zone = tracy.traceNamed(@src(), "sendRequestSync(" ++ method ++ ")");
     defer tracy_zone.end();
     tracy_zone.setName(method);
 
-    const Params = std.meta.Tag(HandledRequestParams);
+    const Params = std.meta.Tag(SupportedRequests);
     if (!@hasField(Params, method)) return null;
 
     return switch (@field(Params, method)) {
@@ -1839,7 +1829,7 @@ pub fn sendNotificationSync(server: *Server, arena: std.mem.Allocator, comptime 
     defer tracy_zone.end();
     tracy_zone.setName(method);
 
-    const Params = std.meta.Tag(HandledNotificationParams);
+    const Params = std.meta.Tag(SupportedNotifications);
     if (!@hasField(Params, method)) return null;
 
     return switch (@field(Params, method)) {
@@ -1854,16 +1844,6 @@ pub fn sendNotificationSync(server: *Server, arena: std.mem.Allocator, comptime 
         .@"workspace/didChangeConfiguration" => try server.didChangeConfigurationHandler(arena, params),
         .other => {},
     };
-}
-
-pub fn sendMessageSync(server: *Server, arena: std.mem.Allocator, comptime method: []const u8, params: lsp.ParamsType(method)) Error!lsp.ResultType(method) {
-    comptime std.debug.assert(lsp.isRequestMethod(method) or lsp.isNotificationMethod(method));
-
-    if (comptime lsp.isRequestMethod(method)) {
-        return try server.sendRequestSync(arena, method, params);
-    } else if (comptime lsp.isNotificationMethod(method)) {
-        return try server.sendNotificationSync(arena, method, params);
-    } else unreachable;
 }
 
 fn processMessage(server: *Server, arena: std.mem.Allocator, message: Message) Error!?[]u8 {

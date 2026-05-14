@@ -22,7 +22,7 @@ impl: struct {
 pub const Build = struct {
     mutex: std.Io.Mutex = .init,
     arena_instance: std.heap.ArenaAllocator = undefined,
-    state: *CompilationState = undefined,
+    state: ?*CompilationState = null,
     compilation: ?*Compilation = null,
     args: []const []const u8 = undefined,
     has_completed_once: bool = false,
@@ -123,9 +123,11 @@ pub fn triggerRedoCompilation(self: *BldDoc, ds: *DocumentStore) std.Io.Cancelab
 
 fn destroyCompilation(self: *BldDoc, ds: *DocumentStore) void {
     if (self.build.compilation) |comp| comp.destroy();
-    self.build.state.deinit(ds.allocator);
+    if (self.build.state) |state| {
+        state.deinit(ds.allocator);
+        self.build.state = null;
+    }
     self.build.compilation = null;
-    self.build.state = undefined;
     _ = self.build.arena_instance.reset(.retain_capacity);
     self.build.has_completed_once = false;
 }
@@ -162,7 +164,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
     log.info("Creating a compilation for: {s}\n{s}", .{ self.flat_uri, try std.json.Stringify.valueAlloc(arena, self.build.args, .{}) });
 
     self.build.state = try arena.create(CompilationState);
-    self.build.state.* = .{};
+    self.build.state.?.* = .{};
 
     const cmd = self.build.args[1];
     const arg_mode: compiler.ArgMode =
@@ -180,7 +182,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
         self.build.args,
         arg_mode,
         ds.config.environ_map,
-        self.build.state,
+        self.build.state.?,
         ds,
         &self.build,
     ) catch |err| switch (err) {
@@ -196,8 +198,11 @@ pub fn deinit(self: *BldDoc, allocator: std.mem.Allocator) void {
     if (self.options) |opts| opts.deinit();
 
     if (self.build.compilation) |comp| {
-        self.build.state.deinit(allocator);
         comp.destroy();
+        if (self.build.state) |state| {
+            state.deinit(allocator);
+            self.build.state = null;
+        }
     }
     self.build.arena_instance.deinit();
 }
