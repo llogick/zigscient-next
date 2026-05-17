@@ -1156,6 +1156,7 @@ pub const File = struct {
     /// loaded.
     pub fn getTree(file: *File, zcu: *const Zcu) GetSourceError!*const Ast {
         if (try file.getLspDocHandle(zcu)) |lsp_doc| {
+            file.source = lsp_doc.tree.source;
             file.tree = lsp_doc.tree;
             file.owned_by_comp = false;
             return &file.tree.?;
