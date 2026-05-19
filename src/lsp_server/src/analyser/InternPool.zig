@@ -116,11 +116,11 @@ pub const Key = union(enum) {
     pub const Function = struct {
         args: Index.Slice,
         /// zig only lets the first 32 arguments be `comptime`
-        args_is_comptime: std.StaticBitSet(32) = .initEmpty(),
+        args_is_comptime: std.StaticBitSet(32) = .empty,
         /// zig only lets the first 32 arguments be generic
-        args_is_generic: std.StaticBitSet(32) = .initEmpty(),
+        args_is_generic: std.StaticBitSet(32) = .empty,
         /// zig only lets the first 32 arguments be `noalias`
-        args_is_noalias: std.StaticBitSet(32) = .initEmpty(),
+        args_is_noalias: std.StaticBitSet(32) = .empty,
         return_type: Index,
         flags: Flags = .{},
 
@@ -4655,9 +4655,9 @@ test "function type" {
         .return_type = .bool_type,
     } });
 
-    var args_is_comptime: std.StaticBitSet(32) = .initEmpty();
+    var args_is_comptime: std.StaticBitSet(32) = .empty;
     args_is_comptime.set(0);
-    var args_is_noalias: std.StaticBitSet(32) = .initEmpty();
+    var args_is_noalias: std.StaticBitSet(32) = .empty;
     args_is_noalias.set(1);
 
     const @"fn(comptime type, noalias i32) type" = try ip.get(.{ .function_type = .{
