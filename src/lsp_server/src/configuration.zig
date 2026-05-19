@@ -3,7 +3,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const zig_info = @import("zig_info.zig");
 const Config = @import("Config.zig");
+
+const known_folders = @import("known-folders");
+const tracy = @import("tracy");
 
 const log = std.log.scoped(.config);
 
@@ -16,7 +20,7 @@ pub const Manager = struct {
         /// Same as `Manager.config.zig_exe_path.?`
         path: []const u8,
         version: std.SemanticVersion,
-        env: Env,
+        env: zig_info.ZigEnv,
     },
     zig_lib_dir: ?std.Build.Cache.Directory,
     global_cache_dir: ?std.Build.Cache.Directory,
@@ -167,7 +171,7 @@ pub const Manager = struct {
 
         if (config.zig_exe_path == null) blk: {
             if (!std.process.can_spawn) break :blk;
-            const zig_exe_path = try findZig(io, manager.allocator, manager.environ_map) orelse break :blk;
+            const zig_exe_path = try zig_info.findZig(io, manager.allocator, manager.environ_map) orelse break :blk;
             defer manager.allocator.free(zig_exe_path);
             config.zig_exe_path = try arena.dupe(u8, zig_exe_path);
         }
@@ -175,7 +179,7 @@ pub const Manager = struct {
         if (config.zig_exe_path) |exe_path| unresolved_zig: {
             if (!std.process.can_spawn) break :unresolved_zig;
 
-            const zig_env = try getZigEnv(io, manager.allocator, arena, exe_path) orelse break :unresolved_zig;
+            const zig_env = try zig_info.getZigEnv(io, manager.allocator, arena, exe_path) orelse break :unresolved_zig;
 
             const zig_version = std.SemanticVersion.parse(zig_env.version) catch |err| {
                 log.err("zig env returned a zig version that is an invalid semantic version: {}", .{err});
@@ -576,90 +580,6 @@ pub const option = struct {
     }
 };
 
-pub const Env = struct {
-    zig_exe: []const u8,
-    lib_dir: ?[]const u8,
-    std_dir: []const u8,
-    global_cache_dir: []const u8,
-    version: []const u8,
-    target: ?[]const u8 = null,
-};
-
-pub fn getZigEnv(
-    io: std.Io,
-    allocator: std.mem.Allocator,
-    result_arena: std.mem.Allocator,
-    zig_exe_path: []const u8,
-) error{ Canceled, OutOfMemory }!?Env {
-    const zig_env_result = std.process.run(
-        allocator,
-        io,
-        .{ .argv = &.{ zig_exe_path, "env" } },
-    ) catch |err| switch (err) {
-        error.Canceled => return error.Canceled,
-        else => {
-            log.err("Failed to run 'zig env': {}", .{err});
-            return null;
-        },
-    };
-
-    defer {
-        allocator.free(zig_env_result.stdout);
-        allocator.free(zig_env_result.stderr);
-    }
-
-    switch (zig_env_result.term) {
-        .exited => |code| {
-            if (code != 0) {
-                log.err("zig env command exited with error code {d}.", .{code});
-                if (zig_env_result.stderr.len != 0) {
-                    log.err("stderr: {s}", .{zig_env_result.stderr});
-                }
-                return null;
-            }
-        },
-        .signal, .stopped, .unknown => {
-            log.err("zig env command terminated unexpectedly.", .{});
-            if (zig_env_result.stderr.len != 0) {
-                log.err("stderr: {s}", .{zig_env_result.stderr});
-            }
-            return null;
-        },
-    }
-
-    if (std.mem.startsWith(u8, zig_env_result.stdout, "{")) {
-        return std.json.parseFromSliceLeaky(
-            Env,
-            result_arena,
-            zig_env_result.stdout,
-            .{ .ignore_unknown_fields = true, .allocate = .alloc_always },
-        ) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => {
-                log.err("Failed to parse 'zig env' output as JSON: {}", .{err});
-                return null;
-            },
-        };
-    } else {
-        const source = try allocator.dupeSentinel(u8, zig_env_result.stdout, 0);
-        defer allocator.free(source);
-
-        return std.zon.parse.fromSliceAlloc(
-            Env,
-            result_arena,
-            source,
-            null,
-            .{ .ignore_unknown_fields = true },
-        ) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => {
-                log.err("Failed to parse 'zig env' output as Zon: {}", .{err});
-                return null;
-            },
-        };
-    }
-}
-
 pub const FileConfigInfo = struct {
     name: []const u8,
     kind: enum { file, directory },
@@ -714,62 +634,184 @@ pub const DidConfigChange = @Struct(
     &@splat(.{ .default_value_ptr = &false }),
 );
 
-pub fn findZig(
+// TODO
+
+const LoadConfigResult = union(enum) {
+    success: struct {
+        config: Config,
+        config_arena: std.heap.ArenaAllocator.State,
+        /// file path of the config.json
+        path: []const u8,
+    },
+    failure: struct {
+        /// `null` indicates that the error has already been logged
+        error_bundle: ?std.zig.ErrorBundle,
+
+        pub fn toMessage(self: @This(), allocator: std.mem.Allocator) error{OutOfMemory}!?[]u8 {
+            const error_bundle = self.error_bundle orelse return null;
+            var aw: std.Io.Writer.Allocating = .init(allocator);
+            defer aw.deinit();
+            error_bundle.renderToWriter(.{}, &aw.writer) catch |err| switch (err) {
+                error.WriteFailed => return error.OutOfMemory,
+            };
+            return try aw.toOwnedSlice();
+        }
+    },
+    not_found,
+
+    pub fn deinit(self: *LoadConfigResult, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .success => |*config_with_path| {
+                config_with_path.config_arena.promote(allocator).deinit();
+                allocator.free(config_with_path.path);
+            },
+            .failure => |*payload| {
+                if (payload.error_bundle) |*error_bundle| error_bundle.deinit(allocator);
+            },
+            .not_found => {},
+        }
+    }
+};
+
+fn loadConfigFromFile(io: std.Io, allocator: std.mem.Allocator, file_path: []const u8) error{ Canceled, OutOfMemory }!LoadConfigResult {
+    const file_buf = std.Io.Dir.cwd().readFileAlloc(io, file_path, allocator, .limited(16 * 1024 * 1024)) catch |err| switch (err) {
+        error.FileNotFound => return .not_found,
+        error.Canceled, error.OutOfMemory => |e| return e,
+        else => {
+            log.warn("Error while reading configuration file: {}", .{err});
+            return .{ .failure = .{ .error_bundle = null } };
+        },
+    };
+    defer allocator.free(file_buf);
+
+    const parse_options: std.json.ParseOptions = .{
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    };
+    var parse_diagnostics: std.json.Diagnostics = .{};
+
+    var scanner: std.json.Scanner = .initCompleteInput(allocator, file_buf);
+    defer scanner.deinit();
+    scanner.enableDiagnostics(&parse_diagnostics);
+
+    var arena_allocator: std.heap.ArenaAllocator = .init(allocator);
+    errdefer arena_allocator.deinit();
+
+    @setEvalBranchQuota(10000);
+    const config = std.json.parseFromTokenSourceLeaky(
+        Config,
+        arena_allocator.allocator(),
+        &scanner,
+        parse_options,
+    ) catch |err| {
+        var eb: std.zig.ErrorBundle.Wip = undefined;
+        try eb.init(allocator);
+        errdefer eb.deinit();
+
+        const src_path = try eb.addString(file_path);
+        const msg = try eb.addString(@errorName(err));
+
+        const src_loc = try eb.addSourceLocation(.{
+            .src_path = src_path,
+            .line = @intCast(parse_diagnostics.getLine()),
+            .column = @intCast(parse_diagnostics.getColumn()),
+            .span_start = @intCast(parse_diagnostics.getByteOffset()),
+            .span_main = @intCast(parse_diagnostics.getByteOffset()),
+            .span_end = @intCast(parse_diagnostics.getByteOffset()),
+        });
+        try eb.addRootErrorMessage(.{
+            .msg = msg,
+            .src_loc = src_loc,
+        });
+
+        return .{ .failure = .{ .error_bundle = try eb.toOwnedBundle("") } };
+    };
+
+    return .{ .success = .{
+        .config = config,
+        .config_arena = arena_allocator.state,
+        .path = try allocator.dupe(u8, file_path),
+    } };
+}
+
+pub fn loadConfigFromSystem(io: std.Io, allocator: std.mem.Allocator, environ_map: *const std.process.Environ.Map) error{ Canceled, OutOfMemory }!LoadConfigResult {
+    if (builtin.target.os.tag == .wasi) return .not_found;
+
+    for (
+        [_]known_folders.KnownFolder{ .local_configuration, .global_configuration },
+    ) |folder| {
+        const folder_path = try known_folders.getPath(io, allocator, environ_map, folder) orelse continue;
+        defer allocator.free(folder_path);
+
+        for ([_][]const u8{
+            "zls",
+            "",
+        }) |sub| {
+            const config_path = try std.fs.path.join(allocator, &.{ folder_path, sub, "zls.json" });
+            defer allocator.free(config_path);
+
+            const result = try loadConfigFromFile(io, allocator, config_path);
+            switch (result) {
+                .success, .failure => return result,
+                .not_found => continue,
+            }
+        }
+    }
+
+    return .not_found;
+}
+
+pub fn loadConfiguration(
     io: std.Io,
     allocator: std.mem.Allocator,
     environ_map: *const std.process.Environ.Map,
-) error{ Canceled, OutOfMemory }!?[]const u8 {
-    const is_windows = builtin.target.os.tag == .windows;
+    server: *@import("Server.zig"),
+    maybe_config_path: ?[]const u8,
+) error{ Canceled, OutOfMemory }!void {
+    const tracy_zone = tracy.trace(@src());
+    defer tracy_zone.end();
 
-    const env_path = environ_map.get("PATH") orelse return null;
-    const env_path_ext = if (is_windows) environ_map.get("PATHEXT") orelse return null;
+    var config_arena: std.heap.ArenaAllocator = .init(allocator);
+    defer config_arena.deinit();
+    var config: Config = .{};
 
-    var filename_buffer: std.ArrayList(u8) = .empty;
-    defer filename_buffer.deinit(allocator);
+    blk: {
+        var config_result = if (maybe_config_path) |config_path|
+            try loadConfigFromFile(io, allocator, config_path)
+        else
+            try loadConfigFromSystem(io, allocator, environ_map);
+        defer config_result.deinit(allocator);
 
-    var path_it = std.mem.tokenizeScalar(u8, env_path, std.fs.path.delimiter);
-    var ext_it = if (is_windows) std.mem.tokenizeScalar(u8, env_path_ext, std.fs.path.delimiter);
-
-    while (path_it.next()) |path| : (if (is_windows) ext_it.reset()) {
-        var dir = std.Io.Dir.cwd().openDir(io, path, .{}) catch |err| switch (err) {
-            error.Canceled => return error.Canceled,
-            error.FileNotFound => continue,
-            else => |e| {
-                log.warn("failed to open entry in PATH '{s}': {}", .{ path, e });
-                continue;
+        switch (config_result) {
+            .success => |*config_with_path| {
+                log.info("$ Processed: {s}", .{config_with_path.path});
+                config = config_with_path.config;
+                config_arena.state = config_with_path.config_arena;
+                config_with_path.config_arena = .{};
             },
-        };
-        defer dir.close(io);
-
-        var cont = true;
-        while (cont) : (cont = is_windows) {
-            const filename = if (!is_windows) "zig" else filename: {
-                const ext = ext_it.next() orelse break;
-
-                filename_buffer.clearRetainingCapacity();
-                try filename_buffer.ensureTotalCapacity(allocator, "zig".len + ext.len);
-                filename_buffer.appendSliceAssumeCapacity("zig");
-                filename_buffer.appendSliceAssumeCapacity(ext);
-
-                break :filename filename_buffer.items;
-            };
-
-            const stat = dir.statFile(io, filename, .{}) catch |err| switch (err) {
-                error.Canceled => return error.Canceled,
-                error.FileNotFound => continue,
-                else => |e| {
-                    log.warn("failed to access entry in PATH '{f}': {}", .{ std.fs.path.fmtJoin(&.{ path, filename }), e });
-                    continue;
-                },
-            };
-
-            if (stat.kind == .directory) {
-                log.warn("ignoring entry in PATH '{f}' because it is a directory", .{std.fs.path.fmtJoin(&.{ path, filename })});
-                continue;
-            }
-
-            return try std.fs.path.join(allocator, &.{ path, filename });
+            .failure => |payload| {
+                const message = try payload.toMessage(allocator) orelse break :blk;
+                defer allocator.free(message);
+                server.showMessage(.Error, "Failed to load configuration options:\n{s}", .{message});
+            },
+            .not_found => {},
         }
     }
-    return null;
+
+    if (config.global_cache_path == null) blk: {
+        if (builtin.target.os.tag == .wasi) {
+            // will default to `/cache`
+            break :blk;
+        }
+
+        const cache_dir_path = try known_folders.getPath(io, allocator, environ_map, .cache) orelse {
+            server.showMessage(.Error, "Failed to resolve global cache directory", .{});
+            break :blk;
+        };
+        defer allocator.free(cache_dir_path);
+
+        config.global_cache_path = try std.fs.path.join(config_arena.allocator(), &.{ cache_dir_path, "zigscient" });
+    }
+
+    try server.config_manager.setConfiguration2(.frontend, &config);
 }

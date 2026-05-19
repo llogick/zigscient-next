@@ -1922,6 +1922,11 @@ fn createLspServerModule(
         version_data: *std.Build.Module,
     },
 ) *std.Build.Module {
+    const known_folders_module = b.dependency("known_folders", .{
+        .target = options.target,
+        .optimize = options.optimize,
+    }).module("known-folders");
+
     const diffz_module = b.dependency("diffz", .{
         .target = options.target,
         .optimize = options.optimize,
@@ -1950,6 +1955,7 @@ fn createLspServerModule(
             .{ .name = "lsp", .module = lsp_module },
             .{ .name = "tracy", .module = tracy_module },
             .{ .name = "extended-zccs", .module = extended_zccs },
+            .{ .name = "known-folders", .module = known_folders_module },
             .{ .name = "build_options", .module = options.build_options },
             .{ .name = "version_data", .module = options.version_data },
         },
