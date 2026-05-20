@@ -962,7 +962,7 @@ fn removeWorkspace(server: *Server, uri: types.URI) void {
 }
 
 fn didChangeWatchedFilesHandler(server: *Server, arena: std.mem.Allocator, notification: types.workspace.did_change_watched_files.Params) Error!void {
-    var updated_files: usize = 0;
+    var num_files_updated: usize = 0;
     for (notification.changes) |change| {
         const file_path = Uri.toFsPath(arena, change.uri) catch |err| switch (err) {
             error.UnsupportedScheme => continue,
@@ -976,14 +976,16 @@ fn didChangeWatchedFilesHandler(server: *Server, arena: std.mem.Allocator, notif
 
         switch (change.type) {
             .Created, .Changed, .Deleted => |kind| {
-                const did_update_file = try server.document_store.refreshDocumentFromFileSystem(change.uri, kind == .Deleted);
-                updated_files += @intFromBool(did_update_file);
+                if (try server.document_store.refreshDocumentFromFileSystem(change.uri, kind == .Deleted)) {
+                    num_files_updated += 1;
+                    log.debug("FileWatch: {t} : '{s}' .", .{ kind, change.uri });
+                }
             },
             else => {},
         }
     }
-    if (updated_files != 0) {
-        log.debug("updated {d} watched file(s)", .{updated_files});
+    if (num_files_updated != 0) {
+        log.debug("FileWatch: Updated {d} document(s).", .{num_files_updated});
     }
 }
 
