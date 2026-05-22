@@ -50,7 +50,7 @@ pub fn addCases(
         build_cmd.addArg("--build-file");
         build_cmd.addFileArg(build_file);
         build_cmd.addArg("--build-runner");
-        build_cmd.addFileArg(b.path("src/lsp_server/src/build_runner/build_runner.zig"));
+        build_cmd.addFileArg(b.path("src/lsp_server/build_runner/build_runner.zig"));
         build_cmd.addArg("--cache-dir");
         build_cmd.addDirectoryArg(.{ .cwd_relative = b.fmt("{f}", .{b.cache_root}) });
         build_cmd.addArg("--global-cache-dir");

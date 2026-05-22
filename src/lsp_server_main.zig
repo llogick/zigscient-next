@@ -15,8 +15,8 @@ const compiler = @import("compiler");
 const lsp_server = @import("lsp-server");
 const lsp = lsp_server.lsp;
 
-const Logger = @import("lsp_server/src/Logger.zig");
-const cli = @import("lsp_server/src/cli.zig");
+const Logger = @import("lsp_server/Logger.zig");
+const cli = @import("lsp_server/cli.zig");
 
 var logger: Logger = .{};
 fn logFn(
@@ -164,7 +164,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
         cli_opts.argv0,
     });
 
-    var config_manager: lsp_server.configuration.Manager = try .init(io, gpa, &environ_map);
+    var config_manager: lsp_server.settings_handler.Manager = try .init(io, gpa, &environ_map);
     defer config_manager.deinit();
 
     const server: *lsp_server.Server = try .create(.{
@@ -175,7 +175,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
     });
     defer server.destroy();
 
-    try lsp_server.configuration.loadConfiguration(io, gpa, &environ_map, server, cli_opts.config_path);
+    try lsp_server.settings_handler.loadConfiguration(io, gpa, &environ_map, server, cli_opts.config_path);
 
     try server.loop();
 

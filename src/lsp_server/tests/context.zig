@@ -8,7 +8,7 @@ const types = lsp_server.lsp.types;
 const io = std.testing.io;
 const allocator = std.testing.allocator;
 
-const default_config: lsp_server.configuration.UnresolvedConfig = .{
+const default_config: lsp_server.settings_handler.UnresolvedConfig = .{
     .semantic_tokens = .full,
     .prefer_ast_check_as_child_process = false,
     .inlay_hints_exclude_single_argument = false,
@@ -21,7 +21,7 @@ pub const Context = struct {
     file_id: u32 = 0,
 
     var cached_config_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    var cached_config_manager: ?lsp_server.configuration.Manager = null;
+    var cached_config_manager: ?lsp_server.settings_handler.Manager = null;
 
     pub fn init() !Context {
         if (cached_config_manager == null) {
@@ -41,7 +41,7 @@ pub const Context = struct {
 
             const environ_map = try cached_config_arena.allocator().create(std.process.Environ.Map);
             environ_map.* = .init(std.testing.failing_allocator);
-            var config_manager: lsp_server.configuration.Manager = try .init(io, cached_config_arena.allocator(), environ_map);
+            var config_manager: lsp_server.settings_handler.Manager = try .init(io, cached_config_arena.allocator(), environ_map);
             try config_manager.setConfiguration(.frontend, &config);
             _ = try config_manager.resolveConfiguration(cached_config_arena.allocator());
             cached_config_manager = config_manager;

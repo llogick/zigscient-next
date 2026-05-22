@@ -10,7 +10,7 @@ const types = @import("lsp").types;
 const offsets = @import("../offsets.zig");
 const tracy = @import("tracy");
 const ast = @import("../ast.zig");
-const Config = @import("../Config.zig");
+const Settings = @import("../Settings.zig");
 
 const data = @import("version_data");
 
@@ -152,7 +152,7 @@ pub const InlayHint = struct {
 const Builder = struct {
     arena: std.mem.Allocator,
     analyser: *Analyser,
-    config: *const Config,
+    config: *const Settings,
     handle: *DocumentStore.Handle,
     hints: std.ArrayList(InlayHint) = .empty,
     hover_kind: types.MarkupKind,
@@ -542,7 +542,7 @@ fn writeNodeInlayHint(
 /// only hints in the given loc are created
 pub fn writeRangeInlayHint(
     arena: std.mem.Allocator,
-    config: *const Config,
+    config: *const Settings,
     analyser: *Analyser,
     handle: *DocumentStore.Handle,
     loc: offsets.Loc,

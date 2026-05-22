@@ -155,7 +155,7 @@ fn cmdEnv(
     };
     defer if (local_config_dir) |path| allocator.free(path);
 
-    var config_result = try lsp_server.configuration.loadConfigFromSystem(io, allocator, environ_map);
+    var config_result = try lsp_server.settings_handler.loadConfigFromSystem(io, allocator, environ_map);
     defer config_result.deinit(allocator);
 
     const config_file_path: ?[]const u8 = switch (config_result) {

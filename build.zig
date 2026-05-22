@@ -1658,17 +1658,17 @@ fn cfgLspServer(
         break :blk ls_test_options.createModule();
     };
 
-    const lsp_server_config_gen_exe = b.addExecutable(.{
-        .name = "lsp_server_config_gen",
+    const lsp_server_settings_util_exe = b.addExecutable(.{
+        .name = "lsp_server_settings_util",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/lsp_server/src/tools/config_gen.zig"),
+            .root_source_file = b.path("src/lsp_server/Settings_util.zig"),
             .target = b.graph.host,
             .single_threaded = true,
         }),
     });
 
     const version_data_module = blk: {
-        const gen_version_data_cmd = b.addRunArtifact(lsp_server_config_gen_exe);
+        const gen_version_data_cmd = b.addRunArtifact(lsp_server_settings_util_exe);
         const version = if (proj_version.pre == null) b.fmt("{f}", .{proj_version}) else "master";
         gen_version_data_cmd.addArgs(&.{ "--langref-version", version });
 
@@ -1682,18 +1682,18 @@ fn cfgLspServer(
     };
 
     { // zig build gen
-        const gen_step = b.step("gen", "Regenerate config files");
+        const gen_step = b.step("gen", "Regenerate settings files");
 
-        const gen_cmd = b.addRunArtifact(lsp_server_config_gen_exe);
+        const gen_cmd = b.addRunArtifact(lsp_server_settings_util_exe);
         if (b.args) |args| {
             gen_cmd.addArgs(args);
             gen_step.dependOn(&gen_cmd.step);
         } else {
             const update_source = b.addUpdateSourceFiles();
             gen_cmd.addArg("--generate-config");
-            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("Config.zig"), "src/lsp_server/src/Config.zig");
+            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("Settings.zig"), "src/lsp_server/Settings.zig");
             gen_cmd.addArg("--generate-schema");
-            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("schema.json"), "src/lsp_server/schema.json");
+            update_source.addCopyFileToSource(gen_cmd.addOutputFileArg("settings.schema.json"), "src/lsp_server/settings.schema.json");
             gen_step.dependOn(&update_source.step);
         }
     }
@@ -1759,7 +1759,7 @@ fn cfgLspServer(
     }
 
     blk: { // zig build test, zig build test-build-runner, zig build test-analysis
-        const test_step = b.step("test", "Run all the tests");
+        const test_step = b.step("test", "Run all the lsp-server tests");
         const test_build_runner_step = b.step("test-build-runner", "Run all the build runner tests");
         const test_analysis_step = b.step("test-analysis", "Run all the analysis tests");
 
@@ -1947,7 +1947,7 @@ fn createLspServerModule(
     }).module("extended-zccs");
 
     const lsp_server_module = b.createModule(.{
-        .root_source_file = b.path("src/lsp_server/src/lsp_server_mod.zig"),
+        .root_source_file = b.path("src/lsp_server/components.zig"),
         .target = options.target,
         .optimize = options.optimize,
         .imports = &.{
@@ -1979,7 +1979,7 @@ fn createTracyModule(
 ) *std.Build.Module {
     const enable = false;
     const tracy_module = b.createModule(.{
-        .root_source_file = b.path("src/lsp_server/src/tracy.zig"),
+        .root_source_file = b.path("src/lsp_server/tracy.zig"),
         .target = options.target,
         .optimize = options.optimize,
         .imports = &.{

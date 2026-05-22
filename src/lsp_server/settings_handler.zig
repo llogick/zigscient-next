@@ -4,7 +4,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const zig_info = @import("zig_info.zig");
-const Config = @import("Config.zig");
+const Settings = @import("Settings.zig");
 
 const known_folders = @import("known-folders");
 const tracy = @import("tracy");
@@ -15,7 +15,7 @@ pub const Manager = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
     environ_map: *std.process.Environ.Map,
-    config: Config,
+    config: Settings,
     zig_exe: ?struct {
         /// Same as `Manager.config.zig_exe_path.?`
         path: []const u8,
@@ -112,10 +112,10 @@ pub const Manager = struct {
     pub fn setConfiguration2(
         manager: *Manager,
         tag: Tag,
-        config: *const Config,
+        config: *const Settings,
     ) error{OutOfMemory}!void {
         var cfg: UnresolvedConfig = .{};
-        inline for (std.meta.fields(Config)) |field| {
+        inline for (std.meta.fields(Settings)) |field| {
             @field(cfg, field.name) = @field(config, field.name);
         }
         try manager.setConfiguration(tag, &cfg);
@@ -149,7 +149,7 @@ pub const Manager = struct {
 
         const io = manager.io;
 
-        var config: Config = .{
+        var config: Settings = .{
             .zig_lib_path = if (builtin.os.tag == .wasi) "/lib" else null,
             .global_cache_path = if (builtin.os.tag == .wasi) "/cache" else null,
         };
@@ -366,7 +366,7 @@ pub const Manager = struct {
 
         var did_change: DidConfigChange = .{};
 
-        inline for (std.meta.fields(Config)) |field| {
+        inline for (std.meta.fields(Settings)) |field| {
             const old_value = &@field(manager.config, field.name);
             const new_value = @field(config, field.name);
 
@@ -388,7 +388,7 @@ pub const Manager = struct {
     fn validateConfiguration(
         io: std.Io,
         allocator: std.mem.Allocator,
-        config: *Config,
+        config: *Settings,
         messages: *std.ArrayList([]const u8),
     ) error{ Canceled, OutOfMemory }!void {
         if (builtin.os.tag == .wasi) return;
@@ -596,7 +596,7 @@ pub const file_system_config_options: []const FileConfigInfo = &.{
 };
 
 comptime {
-    skip: for (std.meta.fieldNames(Config)) |field_name| {
+    skip: for (std.meta.fieldNames(Settings)) |field_name| {
         @setEvalBranchQuota(2_000);
         if (std.mem.find(u8, field_name, "path") == null) continue;
 
@@ -613,23 +613,23 @@ comptime {
     }
 }
 
-/// The same struct as `Config` but every field is optional.
+/// The same struct as `Settings` but every field is optional.
 pub const UnresolvedConfig = blk: {
-    const struct_info: std.lang.Type.Struct = @typeInfo(Config).@"struct";
+    const struct_info: std.lang.Type.Struct = @typeInfo(Settings).@"struct";
     var field_types: [struct_info.fields.len]type = undefined;
     var field_attrs: [struct_info.fields.len]std.lang.Type.StructField.Attributes = undefined;
     for (&field_types, &field_attrs, struct_info.fields) |*ty, *attr, field| {
         ty.* = if (@typeInfo(field.type) != .optional) ?field.type else field.type;
         attr.* = .{ .default_value_ptr = &@as(ty.*, null) };
     }
-    break :blk @Struct(.auto, null, std.meta.fieldNames(Config), &field_types, &field_attrs);
+    break :blk @Struct(.auto, null, std.meta.fieldNames(Settings), &field_types, &field_attrs);
 };
 
-/// A packed struct where every field name is copied from `Config` but the field type is `bool`.
+/// A packed struct where every field name is copied from `Settings` but the field type is `bool`.
 pub const DidConfigChange = @Struct(
     .@"packed",
     null,
-    std.meta.fieldNames(Config),
+    std.meta.fieldNames(Settings),
     &@splat(bool),
     &@splat(.{ .default_value_ptr = &false }),
 );
@@ -638,7 +638,7 @@ pub const DidConfigChange = @Struct(
 
 const LoadConfigResult = union(enum) {
     success: struct {
-        config: Config,
+        config: Settings,
         config_arena: std.heap.ArenaAllocator.State,
         /// file path of the config.json
         path: []const u8,
@@ -699,7 +699,7 @@ fn loadConfigFromFile(io: std.Io, allocator: std.mem.Allocator, file_path: []con
 
     @setEvalBranchQuota(10000);
     const config = std.json.parseFromTokenSourceLeaky(
-        Config,
+        Settings,
         arena_allocator.allocator(),
         &scanner,
         parse_options,
@@ -773,7 +773,7 @@ pub fn loadConfiguration(
 
     var config_arena: std.heap.ArenaAllocator = .init(allocator);
     defer config_arena.deinit();
-    var config: Config = .{};
+    var config: Settings = .{};
 
     blk: {
         var config_result = if (maybe_config_path) |config_path|

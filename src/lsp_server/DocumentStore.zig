@@ -30,7 +30,7 @@ io: std.Io,
 allocator: std.mem.Allocator,
 workspaces: *std.ArrayList(Server.Workspace),
 /// the DocumentStore assumes that `config` is not modified while calling one of its functions.
-config: Config,
+config: Settings,
 mutex: std.Io.Mutex = .init,
 wait_group: if (supports_build_system) std.Io.Group else void = if (supports_build_system) .init else {},
 handles: std.StringArrayHashMapUnmanaged(*Handle) = .empty,
@@ -73,7 +73,7 @@ pub fn computeHash(bytes: []const u8) Hash {
     return hash;
 }
 
-pub const Config = struct {
+pub const Settings = struct {
     environ_map: *std.process.Environ.Map,
     zig_exe_path: ?[]const u8,
     zig_lib_dir: ?std.Build.Cache.Directory,

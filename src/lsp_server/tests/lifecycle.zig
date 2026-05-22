@@ -8,7 +8,7 @@ const allocator = std.testing.allocator;
 
 test "LSP Server lifecycle" {
     var environ_map: std.process.Environ.Map = .init(std.testing.failing_allocator);
-    var config_manager: lsp_server.configuration.Manager = try .init(io, allocator, &environ_map);
+    var config_manager: lsp_server.settings_handler.Manager = try .init(io, allocator, &environ_map);
     defer config_manager.deinit();
 
     var arena_allocator: std.heap.ArenaAllocator = .init(allocator);

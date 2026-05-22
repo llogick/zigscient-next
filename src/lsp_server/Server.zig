@@ -8,8 +8,8 @@ const Server = @This();
 const std = @import("std");
 const zig_builtin = @import("builtin");
 const build_options = @import("build_options");
-const Config = @import("Config.zig");
-const configuration = @import("configuration.zig");
+const Settings = @import("Settings.zig");
+const settings_handler = @import("settings_handler.zig");
 const DocumentStore = @import("DocumentStore.zig");
 const lsp = @import("lsp");
 const types = lsp.types;
@@ -43,7 +43,7 @@ const log = std.log.scoped(.lspc_server);
 // public fields
 io: std.Io,
 allocator: std.mem.Allocator,
-config_manager: *configuration.Manager,
+config_manager: *settings_handler.Manager,
 document_store: DocumentStore,
 transport: ?*lsp.Transport = null,
 offset_encoding: offsets.Encoding = .@"utf-16",
@@ -565,7 +565,7 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
     }
 
     if (request.initializationOptions) |initialization_options| {
-        if (std.json.parseFromValueLeaky(configuration.UnresolvedConfig, arena, initialization_options, .{
+        if (std.json.parseFromValueLeaky(settings_handler.UnresolvedConfig, arena, initialization_options, .{
             .ignore_unknown_fields = true,
         })) |*new_cfg| {
             try server.config_manager.setConfiguration(.lsp_initialization, new_cfg);
@@ -772,7 +772,7 @@ fn handleConfiguration(server: *Server, json: std.json.Value) error{ Canceled, O
     const arena = arena_allocator.allocator();
 
     var new_config = std.json.parseFromValueLeaky(
-        configuration.UnresolvedConfig,
+        settings_handler.UnresolvedConfig,
         arena,
         result,
         .{ .ignore_unknown_fields = true },
@@ -792,7 +792,7 @@ fn handleConfiguration(server: *Server, json: std.json.Value) error{ Canceled, O
         };
     };
 
-    inline for (configuration.file_system_config_options) |file_config| {
+    inline for (settings_handler.file_system_config_options) |file_config| {
         const field: *?[]const u8 = &@field(new_config, file_config.name);
         if (field.*) |maybe_relative| resolve: {
             if (maybe_relative.len == 0) break :resolve;
@@ -1030,7 +1030,7 @@ fn didChangeConfigurationHandler(server: *Server, arena: std.mem.Allocator, noti
     };
 
     const new_config = std.json.parseFromValueLeaky(
-        configuration.UnresolvedConfig,
+        settings_handler.UnresolvedConfig,
         arena,
         settings,
         .{ .ignore_unknown_fields = true },
@@ -1051,7 +1051,7 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
         server.showMessage(.Error, "{s}", .{msg});
     }
 
-    inline for (std.meta.fields(Config)) |field| {
+    inline for (std.meta.fields(Settings)) |field| {
         if (@field(result.did_change, field.name)) {
             const new_value = @field(server.config_manager.config, field.name);
             log.info("$ {s} -> [{f}]", .{ field.name, std.json.fmt(new_value, .{}) });
@@ -1191,7 +1191,7 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
     }
 }
 
-fn createDocumentStoreConfig(config_manager: *const configuration.Manager) DocumentStore.Config {
+fn createDocumentStoreConfig(config_manager: *const settings_handler.Manager) DocumentStore.Settings {
     return .{
         .environ_map = config_manager.environ_map,
         .zig_exe_path = config_manager.config.zig_exe_path,
@@ -1681,7 +1681,7 @@ pub const CreateOptions = struct {
     allocator: std.mem.Allocator,
     /// Must be set when running `loop`. Controls how the server will send and receive messages.
     transport: ?*lsp.Transport,
-    config_manager: *configuration.Manager,
+    config_manager: *settings_handler.Manager,
 };
 
 pub fn create(options: CreateOptions) std.mem.Allocator.Error!*Server {

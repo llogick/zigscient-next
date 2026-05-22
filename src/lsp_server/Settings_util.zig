@@ -1061,7 +1061,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         }
     }
 
-    const config_json = try std.json.parseFromSlice(Config, gpa, @embedFile("config.json"), .{});
+    const config_json = try std.json.parseFromSlice(Config, gpa, @embedFile("settings.json"), .{});
     defer config_json.deinit();
     const config = config_json.value;
 
