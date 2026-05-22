@@ -2046,6 +2046,7 @@ pub const Cpu = struct {
                 },
                 .armeb, .thumbeb => &arm.cpu.baseline,
                 .aarch64 => switch (os.tag) {
+                    .haiku => &aarch64.cpu.cortex_a55,
                     .driverkit, .maccatalyst, .macos => &aarch64.cpu.apple_m1,
                     .ios, .tvos => &aarch64.cpu.apple_a7,
                     .visionos => &aarch64.cpu.apple_m2,
@@ -2061,21 +2062,36 @@ pub const Cpu = struct {
                 .lanai => &lanai.cpu.v11, // clang does not have a generic lanai model.
                 .loongarch32 => &loongarch.cpu.la32v1_0,
                 .loongarch64 => &loongarch.cpu.la64v1_0,
-                .m68k => &m68k.cpu.M68000,
+                .m68k => &m68k.cpu.M68030,
                 .mips => &mips.cpu.mips32r2,
                 .mipsel => switch (os.tag) {
                     .psp => &mips.cpu.allegrex,
                     else => &mips.cpu.mips32r2,
                 },
-                .mips64, .mips64el => &mips.cpu.mips64r2,
+                .mips64 => switch (os.tag) {
+                    .openbsd => &mips.cpu.octeon,
+                    else => &mips.cpu.mips64r2,
+                },
+                .mips64el => &mips.cpu.mips64r2,
                 .msp430 => &msp430.cpu.msp430,
                 .nvptx, .nvptx64 => &nvptx.cpu.sm_52,
+                .powerpc => switch (os.tag) {
+                    .openbsd => &powerpc.cpu.@"750",
+                    else => generic(arch),
+                },
+                .powerpc64 => switch (os.tag) {
+                    .openbsd => &powerpc.cpu.pwr9,
+                    else => generic(arch),
+                },
                 .powerpc64le => &powerpc.cpu.ppc64le,
                 .riscv32, .riscv32be => &riscv.cpu.baseline_rv32,
                 .riscv64, .riscv64be => &riscv.cpu.baseline_rv64,
-                // gcc/clang do not have a generic s390x model.
-                .s390x => &s390x.cpu.arch8,
-                .sparc => &sparc.cpu.v9, // glibc does not work with 'plain' v8.
+                .s390x => &s390x.cpu.arch11,
+                .sparc => switch (os.tag) {
+                    .linux => &sparc.cpu.v9, // glibc does not work with 'plain' v8.
+                    else => generic(arch),
+                },
+                .sparc64 => &sparc.cpu.ultrasparc,
                 .x86 => &x86.cpu.pentium4,
                 .x86_64 => switch (os.tag) {
                     .driverkit, .maccatalyst => &x86.cpu.nehalem,
@@ -2085,6 +2101,7 @@ pub const Cpu = struct {
                     else => generic(arch),
                 },
                 .xcore => &xcore.cpu.xs1b_generic,
+                .xtensa => &xtensa.cpu.esp32,
                 .wasm32, .wasm64 => &wasm.cpu.lime1,
 
                 else => generic(arch),
