@@ -245,6 +245,7 @@ pub fn hasLlvmSupport(target: *const std.Target, ofmt: std.Target.ObjectFormat) 
         .hppa64,
         .kalimba,
         .kvx,
+        .m88k,
         .microblaze,
         .microblazeel,
         .or1k,
@@ -695,7 +696,8 @@ pub fn llvmMachineAbi(target: *const std.Target) ?[:0]const u8 {
             .gnuabin32, .muslabin32 => "n32",
             else => "n64",
         },
-        .powerpc64, .powerpc64le => if (target.os.tag == .ps3) "elfv1" else "elfv2",
+        .powerpc64 => if (target.os.tag == .ps3) "elfv1" else "elfv2",
+        .powerpc64le => "elfv2",
         .riscv64, .riscv64be => if (target.cpu.has(.riscv, .e))
             "lp64e"
         else if (target.cpu.has(.riscv, .d))
