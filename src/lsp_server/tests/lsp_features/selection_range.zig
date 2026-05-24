@@ -29,6 +29,15 @@ test "function parameter" {
     , &.{ "struct {}", "y: struct {}", "fn f(x: i32, y: struct {}, z: f32) void" });
 }
 
+test "variadic function" {
+    try testSelectionRange(
+        \\fn foo(...<>) void {}
+    , &.{
+        "...",
+        "fn foo(...) void",
+    });
+}
+
 fn testSelectionRange(source: []const u8, want: []const []const u8) !void {
     var phr = try helper.collectClearPlaceholders(allocator, source);
     defer phr.deinit(allocator);
