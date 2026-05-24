@@ -949,12 +949,6 @@ fn createAndStoreDocument(
         break :stat stat.mtime;
     };
 
-    if (supports_build_system and isBuildFile(uri) and !isInStd(uri)) {
-        self.wait_group.concurrent(self.io, triggerGetOrLoadBuildFile, .{ self, uri }) catch {
-            _ = try self.getOrLoadBuildFile(uri);
-        };
-    }
-
     try self.mutex.lock(self.io);
     defer self.mutex.unlock(self.io);
 
@@ -988,6 +982,12 @@ fn createAndStoreDocument(
 
         new_handle.uri = gop.key_ptr.*;
         gop.value_ptr.*.* = new_handle;
+    }
+
+    if (supports_build_system and isBuildFile(uri) and !isInStd(uri)) {
+        self.wait_group.concurrent(self.io, triggerGetOrLoadBuildFile, .{ self, gop.key_ptr.* }) catch {
+            _ = try self.getOrLoadBuildFile(gop.key_ptr.*);
+        };
     }
 
     return gop.value_ptr.*;
