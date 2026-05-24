@@ -141,7 +141,7 @@ pub fn main(init: std.process.Init) Error!void {
         std.debug.panic("failed to read from {s}: {}", .{ file_path, err });
     defer gpa.free(source);
 
-    const handle_uri = try lsp_server.URI.fromPath(arena, file_path);
+    const handle_uri = try lsp_server.uri_util.fromPath(arena, file_path);
     try document_store.openLspSyncedDocument(handle_uri, source);
     const handle: *lsp_server.DocumentStore.Handle = document_store.handles.get(handle_uri).?;
 

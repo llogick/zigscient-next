@@ -8,32 +8,35 @@ const Server = @This();
 const std = @import("std");
 const zig_builtin = @import("builtin");
 const build_options = @import("build_options");
-const Settings = @import("Settings.zig");
-const settings_handler = @import("settings_handler.zig");
-const DocumentStore = @import("DocumentStore.zig");
-const lsp = @import("lsp");
+
+const lsp_server = @import("lsp-server");
+
+const lsp = lsp_server.lsp;
 const types = lsp.types;
+const Settings = lsp_server.Settings;
+const settings_handler = lsp_server.settings_handler;
+const DocumentStore = lsp_server.DocumentStore;
 const Analyser = @import("analysis.zig");
-const offsets = @import("offsets.zig");
+const offsets = lsp_server.offsets;
 const tracy = @import("tracy");
-const diff = @import("diff.zig");
-const Uri = @import("uri.zig");
-const InternPool = @import("analyser/analyser.zig").InternPool;
-const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
+const diff = lsp_server.diff;
+const uri_util = lsp_server.uri_util;
+const InternPool = lsp_server.analyser.InternPool;
+const DiagnosticsCollection = lsp_server.DiagnosticsCollection;
 const build_runner_shared = @import("build_runner/shared.zig");
 
-const signature_help = @import("features/signature_help.zig");
-const references = @import("features/references.zig");
-const semantic_tokens = @import("features/semantic_tokens.zig");
-const inlay_hints = @import("features/inlay_hints.zig");
-const code_actions = @import("features/code_actions.zig");
-const folding_range = @import("features/folding_range.zig");
-const document_symbol = @import("features/document_symbol.zig");
-const completions = @import("features/completions.zig");
-const goto = @import("features/goto.zig");
-const hover_handler = @import("features/hover.zig");
-const selection_range = @import("features/selection_range.zig");
-const diagnostics_gen = @import("features/diagnostics.zig");
+const signature_help = lsp_server.signature_help;
+const references = lsp_server.references;
+const semantic_tokens = lsp_server.semantic_tokens;
+const inlay_hints = lsp_server.inlay_hints;
+const code_actions = lsp_server.code_actions;
+const folding_range = lsp_server.folding_range;
+const document_symbol = lsp_server.document_symbol;
+const completions = lsp_server.completions;
+const goto = lsp_server.goto;
+const hover_handler = lsp_server.hover;
+const selection_range = lsp_server.selection_range;
+const diagnostics_gen = lsp_server.diagnostics;
 
 const BuildOnSave = diagnostics_gen.BuildOnSave;
 const BuildOnSaveSupport = build_runner_shared.BuildOnSaveSupport;
@@ -784,7 +787,7 @@ fn handleConfiguration(server: *Server, json: std.json.Value) error{ Canceled, O
 
     const maybe_root_dir: ?[]const u8 = dir: {
         if (server.workspaces.items.len != 1) break :dir null;
-        break :dir Uri.toFsPath(arena, server.workspaces.items[0].uri) catch |err| {
+        break :dir uri_util.toFsPath(arena, server.workspaces.items[0].uri) catch |err| {
             log.err("failed to parse root uri for workspace {s}: {}", .{
                 server.workspaces.items[0].uri, err,
             });
@@ -886,7 +889,7 @@ pub const Workspace = struct {
         const zig_lib_path = config.zig_lib_path orelse return;
         const build_runner_path = config.build_runner_path orelse return;
 
-        const workspace_path = Uri.toFsPath(args.server.allocator, workspace.uri) catch |err| {
+        const workspace_path = uri_util.toFsPath(args.server.allocator, workspace.uri) catch |err| {
             log.err("failed to parse URI '{s}': {}", .{ workspace.uri, err });
             return;
         };
@@ -924,10 +927,10 @@ fn addWorkspace(server: *Server, uri: types.URI) error{ Canceled, OutOfMemory }!
         var arena_state = std.heap.ArenaAllocator.init(server.allocator);
         defer arena_state.deinit();
         const arena = arena_state.allocator();
-        const dir_path = Uri.toFsPath(arena, uri) catch break :blk;
+        const dir_path = uri_util.toFsPath(arena, uri) catch break :blk;
         if (try DocumentStore.buildDotZigExists(server.io, dir_path)) {
             const bf_path = try std.fs.path.join(arena, &.{ dir_path, "build.zig" });
-            const bf_uri = try Uri.fromPath(server.allocator, bf_path);
+            const bf_uri = try uri_util.fromPath(server.allocator, bf_path);
             server.workspaces.items[server.workspaces.items.len - 1].build_file_uri = bf_uri;
             _ = try server.document_store.getOrLoadHandle(bf_uri);
         }
@@ -964,7 +967,7 @@ fn removeWorkspace(server: *Server, uri: types.URI) void {
 fn didChangeWatchedFilesHandler(server: *Server, arena: std.mem.Allocator, notification: types.workspace.did_change_watched_files.Params) Error!void {
     var num_files_updated: usize = 0;
     for (notification.changes) |change| {
-        const file_path = Uri.toFsPath(arena, change.uri) catch |err| switch (err) {
+        const file_path = uri_util.toFsPath(arena, change.uri) catch |err| switch (err) {
             error.UnsupportedScheme => continue,
             else => {
                 log.err("failed to parse URI '{s}': {}", .{ change.uri, err });

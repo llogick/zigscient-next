@@ -97,7 +97,7 @@ pub const Context = struct {
                 fmt,
                 .{ self.file_id, options.mode },
             );
-            break :uri try lsp_server.URI.fromPath(self.arena.allocator(), path);
+            break :uri try lsp_server.uri_util.fromPath(self.arena.allocator(), path);
         };
 
         const params: types.TextDocument.DidOpenParams = .{

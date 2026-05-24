@@ -1,8 +1,12 @@
-//! Stage1/Main file of the LSP Server
+//! LSP Server Main
 //! Setup std_options, logging, Allocator and IO
 
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
+
+const build_options = @import("build_options");
+const lsp_server = @import("lsp-server");
+const compiler = @import("compiler");
 
 const std = @import("std");
 const mem = std.mem;
@@ -10,13 +14,9 @@ const process = std.process;
 const fatal = process.fatal;
 const Allocator = mem.Allocator;
 
-const build_options = @import("build_options");
-const compiler = @import("compiler");
-const lsp_server = @import("lsp-server");
+const Logger = lsp_server.Logger;
+const cli = lsp_server.cli;
 const lsp = lsp_server.lsp;
-
-const Logger = @import("lsp_server/Logger.zig");
-const cli = @import("lsp_server/cli.zig");
 
 var logger: Logger = .{};
 fn logFn(
@@ -159,7 +159,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
         \\                                      ZigscientN {s} {s}
         \\                                      {s}
     , .{
-        lsp_server.build_options.version_string,
+        build_options.version_string,
         @tagName(builtin.mode),
         cli_opts.argv0,
     });

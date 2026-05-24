@@ -1704,14 +1704,7 @@ fn cfgLspServer(
         .build_options = exe_options_module,
         .version_data = version_data_module,
     });
-    b.modules.put(b.graph.arena, "lsp-server", lsp_server_module) catch @panic("OOM");
 
-    const known_folders_module = b.dependency("known_folders", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("known-folders");
-
-    exe.root_module.addImport("known-folders", known_folders_module);
     exe.root_module.addImport("lsp-server", lsp_server_module);
     exe.root_module.addImport("tracy", lsp_server_module.import_table.get("tracy").?);
 
@@ -1931,16 +1924,19 @@ fn createLspServerModule(
         .target = options.target,
         .optimize = options.optimize,
     }).module("diffz");
+
     const lsp_module = b.dependency("lsp_kit", .{
         .target = options.target,
         .optimize = options.optimize,
     }).module("lsp");
+
     const tracy_module = createTracyModule(b, .{
         .target = options.target,
         .optimize = options.optimize,
         .enable = false,
         // .tracy_options = options.tracy_options,
     });
+
     const extended_zccs = b.dependency("extended_zccs", .{
         .target = options.target,
         .optimize = options.optimize,
@@ -1960,10 +1956,13 @@ fn createLspServerModule(
             .{ .name = "version_data", .module = options.version_data },
         },
     });
+    lsp_server_module.addImport("lsp-server", lsp_server_module);
 
     if (options.target.result.os.tag == .windows) {
         lsp_server_module.linkSystemLibrary("advapi32", .{});
     }
+
+    b.modules.put(b.graph.arena, "lsp-server", lsp_server_module) catch @panic("OOM");
 
     return lsp_server_module;
 }
