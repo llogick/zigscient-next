@@ -93,7 +93,7 @@ pub const AtomicRmwOp = enum {
 ///
 /// This data structure is used by the Zig language code generation and
 /// therefore must be kept in sync with the compiler implementation.
-pub const CodeModel = enum {
+pub const CodeModel = enum(u4) {
     default,
     extreme,
     kernel,
@@ -873,7 +873,7 @@ pub const OutputMode = enum {
 
 /// This data structure is used by the Zig language code generation and
 /// therefore must be kept in sync with the compiler implementation.
-pub const LinkMode = enum {
+pub const LinkMode = enum(u1) {
     static,
     dynamic,
 };

@@ -1,9 +1,27 @@
-gpa: Allocator,
-graph: *const Build.Graph,
-all_steps: []const *Build.Step,
+const WebServer = @This();
+
+const builtin = @import("builtin");
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Cache = std.Build.Cache;
+const Configuration = std.Build.Configuration;
+const Io = std.Io;
+const abi = std.Build.abi;
+const assert = std.debug.assert;
+const http = std.http;
+const log = std.log.scoped(.web_server);
+const mem = std.mem;
+const net = std.Io.net;
+
+const Maker = @import("../Maker.zig");
+const Fuzz = @import("Fuzz.zig");
+const Graph = @import("Graph.zig");
+const Step = @import("Step.zig");
+
+maker: *Maker,
 listen_address: net.IpAddress,
 root_prog_node: std.Progress.Node,
-watch: bool,
 
 tcp_server: ?net.Server,
 serve_task: ?Io.Future(Io.Cancelable!void),
@@ -45,16 +63,14 @@ pub const base_clock: Io.Clock = .awake;
 
 /// Thread-safe. Triggers updates to be sent to connected WebSocket clients; see `update_id`.
 pub fn notifyUpdate(ws: *WebServer) void {
+    const io = ws.maker.graph.io;
     _ = ws.update_id.rmw(.Add, 1, .release);
-    ws.graph.io.futexWake(u32, &ws.update_id.raw, 16);
+    io.futexWake(u32, &ws.update_id.raw, 16);
 }
 
 pub const Options = struct {
-    gpa: Allocator,
-    graph: *const std.Build.Graph,
-    all_steps: []const *Build.Step,
+    maker: *Maker,
     root_prog_node: std.Progress.Node,
-    watch: bool,
     listen_address: net.IpAddress,
     base_timestamp: Io.Clock.Timestamp,
 };
@@ -64,43 +80,45 @@ pub fn init(opts: Options) WebServer {
     comptime assert(!builtin.single_threaded);
     assert(opts.base_timestamp.clock == base_clock);
 
-    const all_steps = opts.all_steps;
+    const maker = opts.maker;
+    const all_steps = maker.step_stack.keys();
+    const c = &maker.scanned_config.configuration;
+    const gpa = maker.gpa;
+    const graph = maker.graph;
 
-    const step_names_trailing = opts.gpa.alloc(u8, len: {
+    const step_names_trailing = gpa.alloc(u8, len: {
         var name_bytes: usize = 0;
-        for (all_steps) |step| name_bytes += step.name.len;
+        for (all_steps) |step_index| name_bytes += step_index.ptr(c).name.slice(c).len;
         break :len name_bytes + all_steps.len * 4;
     }) catch @panic("out of memory");
     {
         const step_name_lens: []align(1) u32 = @ptrCast(step_names_trailing[0 .. all_steps.len * 4]);
         var idx: usize = all_steps.len * 4;
-        for (all_steps, step_name_lens) |step, *name_len| {
-            name_len.* = @intCast(step.name.len);
-            @memcpy(step_names_trailing[idx..][0..step.name.len], step.name);
-            idx += step.name.len;
+        for (all_steps, step_name_lens) |step_index, *name_len| {
+            const step_name = step_index.ptr(c).name.slice(c);
+            name_len.* = @intCast(step_name.len);
+            @memcpy(step_names_trailing[idx..][0..step_name.len], step_name);
+            idx += step_name.len;
         }
         assert(idx == step_names_trailing.len);
     }
 
-    const step_status_bits = opts.gpa.alloc(
+    const step_status_bits = gpa.alloc(
         u8,
         std.math.divCeil(usize, all_steps.len, 4) catch unreachable,
     ) catch @panic("out of memory");
     @memset(step_status_bits, 0);
 
-    const time_reports_len: usize = if (opts.graph.time_report) all_steps.len else 0;
-    const time_report_msgs = opts.gpa.alloc([]u8, time_reports_len) catch @panic("out of memory");
-    const time_report_update_times = opts.gpa.alloc(i64, time_reports_len) catch @panic("out of memory");
+    const time_reports_len: usize = if (graph.time_report) all_steps.len else 0;
+    const time_report_msgs = gpa.alloc([]u8, time_reports_len) catch @panic("out of memory");
+    const time_report_update_times = gpa.alloc(i64, time_reports_len) catch @panic("out of memory");
     @memset(time_report_msgs, &.{});
     @memset(time_report_update_times, std.math.minInt(i64));
 
     return .{
-        .gpa = opts.gpa,
-        .graph = opts.graph,
-        .all_steps = all_steps,
+        .maker = maker,
         .listen_address = opts.listen_address,
         .root_prog_node = opts.root_prog_node,
-        .watch = opts.watch,
 
         .tcp_server = null,
         .serve_task = null,
@@ -125,8 +143,9 @@ pub fn init(opts: Options) WebServer {
     };
 }
 pub fn deinit(ws: *WebServer) void {
-    const gpa = ws.gpa;
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const gpa = maker.gpa;
+    const io = maker.graph.io;
 
     gpa.free(ws.step_names_trailing);
     gpa.free(ws.step_status_bits);
@@ -147,7 +166,8 @@ pub fn deinit(ws: *WebServer) void {
 pub fn start(ws: *WebServer) error{AlreadyReported}!void {
     assert(ws.tcp_server == null);
     assert(ws.serve_task == null);
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const io = maker.graph.io;
 
     ws.tcp_server = ws.listen_address.listen(io, .{ .reuse_address = true }) catch |err| {
         log.err("failed to listen to port {d}: {t}", .{ ws.listen_address.getPort(), err });
@@ -166,9 +186,12 @@ pub fn start(ws: *WebServer) error{AlreadyReported}!void {
     }
 }
 fn serve(ws: *WebServer) Io.Cancelable!void {
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const io = maker.graph.io;
+
     var group: Io.Group = .init;
     defer group.cancel(io);
+
     while (true) {
         var stream = ws.tcp_server.?.accept(io) catch |err| switch (err) {
             error.Canceled => |e| return e,
@@ -195,9 +218,15 @@ pub fn startBuild(ws: *WebServer) void {
     ws.notifyUpdate();
 }
 
-pub fn updateStepStatus(ws: *WebServer, step: *Build.Step, new_status: abi.StepUpdate.Status) void {
-    const step_idx: u32 = for (ws.all_steps, 0..) |s, i| {
-        if (s == step) break @intCast(i);
+pub fn updateStepStatus(
+    ws: *WebServer,
+    step_index: Configuration.Step.Index,
+    new_status: abi.StepUpdate.Status,
+) void {
+    const maker = ws.maker;
+    const all_steps = maker.step_stack.keys();
+    const step_idx: u32 = for (all_steps, 0..) |s, i| {
+        if (s == step_index) break @intCast(i);
     } else unreachable;
     const ptr = &ws.step_status_bits[step_idx / 4];
     const bit_offset: u3 = @intCast((step_idx % 4) * 2);
@@ -210,13 +239,16 @@ pub fn updateStepStatus(ws: *WebServer, step: *Build.Step, new_status: abi.StepU
 pub fn finishBuild(ws: *WebServer, opts: struct {
     fuzz: bool,
 }) void {
+    const maker = ws.maker;
+    const all_steps = maker.step_stack.keys();
+
     if (opts.fuzz) {
         switch (builtin.os.tag) {
             // Current implementation depends on two things that need to be ported to Windows:
             // * Memory-mapping to share data between the fuzzer and build runner.
             // * COFF/PE support added to `std.debug.Info` (it needs a batching API for resolving
             //   many addresses to source locations).
-            .windows => std.process.fatal("--fuzz not yet implemented for {s}", .{@tagName(builtin.os.tag)}),
+            .windows => std.process.fatal("--fuzz not yet implemented for {t}", .{builtin.os.tag}),
             else => {},
         }
         if (@bitSizeOf(usize) != 64) {
@@ -232,28 +264,26 @@ pub fn finishBuild(ws: *WebServer, opts: struct {
         ws.build_status.store(.fuzz_init, .monotonic);
         ws.notifyUpdate();
 
-        ws.fuzz = Fuzz.init(
-            ws.gpa,
-            ws.graph.io,
-            ws.all_steps,
-            ws.root_prog_node,
-            .{ .forever = .{ .ws = ws } },
-        ) catch |err| std.process.fatal("failed to start fuzzer: {s}", .{@errorName(err)});
+        ws.fuzz = Fuzz.init(maker, all_steps, ws.root_prog_node, .{ .forever = .{ .ws = ws } }) catch |err|
+            std.process.fatal("failed to start fuzzer: {t}", .{err});
         ws.fuzz.?.start();
     }
 
-    ws.build_status.store(if (ws.watch) .watching else .idle, .monotonic);
+    ws.build_status.store(if (maker.watch) .watching else .idle, .monotonic);
     ws.notifyUpdate();
 }
 
-pub fn now(s: *const WebServer) i64 {
-    const io = s.graph.io;
+pub fn now(ws: *const WebServer) i64 {
+    const maker = ws.maker;
+    const io = maker.graph.io;
     const ts = base_clock.now(io);
-    return @intCast(s.base_timestamp.durationTo(ts).toNanoseconds());
+    return @intCast(ws.base_timestamp.durationTo(ts).toNanoseconds());
 }
 
 fn accept(ws: *WebServer, stream: net.Stream) void {
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const io = maker.graph.io;
+
     defer {
         // `net.Stream.close` wants to helpfully overwrite `stream` with
         // `undefined`, but it cannot do so since it is an immutable parameter.
@@ -298,12 +328,16 @@ fn accept(ws: *WebServer, stream: net.Stream) void {
 }
 
 fn serveWebSocket(ws: *WebServer, sock: *http.Server.WebSocket) !noreturn {
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const gpa = maker.gpa;
+    const graph = maker.graph;
+    const io = graph.io;
+    const all_steps = maker.step_stack.keys();
 
     var prev_build_status = ws.build_status.load(.monotonic);
 
-    const prev_step_status_bits = try ws.gpa.alloc(u8, ws.step_status_bits.len);
-    defer ws.gpa.free(prev_step_status_bits);
+    const prev_step_status_bits = try gpa.alloc(u8, ws.step_status_bits.len);
+    defer gpa.free(prev_step_status_bits);
     for (prev_step_status_bits, ws.step_status_bits) |*copy, *shared| {
         copy.* = @atomicLoad(u8, shared, .monotonic);
     }
@@ -315,10 +349,10 @@ fn serveWebSocket(ws: *WebServer, sock: *http.Server.WebSocket) !noreturn {
         const hello_header: abi.Hello = .{
             .status = prev_build_status,
             .flags = .{
-                .time_report = ws.graph.time_report,
+                .time_report = graph.time_report,
             },
             .timestamp = ws.now(),
-            .steps_len = @intCast(ws.all_steps.len),
+            .steps_len = @intCast(all_steps.len),
         };
         var bufs: [3][]const u8 = .{ @ptrCast(&hello_header), ws.step_names_trailing, prev_step_status_bits };
         try sock.writeMessageVec(&bufs, .binary);
@@ -341,8 +375,8 @@ fn serveWebSocket(ws: *WebServer, sock: *http.Server.WebSocket) !noreturn {
                 if (update_time <= prev_time) continue;
                 // We want to send `msg`, but shouldn't block `ws.time_report_mutex` while we do, so
                 // that we don't hold up the build system on the client accepting this packet.
-                const owned_msg = try ws.gpa.dupe(u8, msg);
-                defer ws.gpa.free(owned_msg);
+                const owned_msg = try gpa.dupe(u8, msg);
+                defer gpa.free(owned_msg);
                 // Temporarily unlock, then re-lock after the message is sent.
                 ws.time_report_mutex.unlock(io);
                 defer ws.time_report_mutex.lockUncancelable(io);
@@ -399,7 +433,8 @@ fn serveWebSocket(ws: *WebServer, sock: *http.Server.WebSocket) !noreturn {
     }
 }
 fn recvWebSocketMessages(ws: *WebServer, sock: *http.Server.WebSocket) void {
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const io = maker.graph.io;
 
     while (true) {
         const msg = sock.readSmallMessage() catch return;
@@ -457,8 +492,11 @@ fn serveLibFile(
     sub_path: []const u8,
     content_type: []const u8,
 ) !void {
+    const maker = ws.maker;
+    const graph = maker.graph;
+
     return serveFile(ws, request, .{
-        .root_dir = ws.graph.zig_lib_directory,
+        .root_dir = graph.zig_lib_directory,
         .sub_path = sub_path,
     }, content_type);
 }
@@ -467,7 +505,9 @@ fn serveClientWasm(
     req: *http.Server.Request,
     optimize_mode: std.builtin.OptimizeMode,
 ) !void {
-    var arena_state: std.heap.ArenaAllocator = .init(ws.gpa);
+    const gpa = ws.maker.gpa;
+
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
@@ -482,8 +522,10 @@ pub fn serveFile(
     path: Cache.Path,
     content_type: []const u8,
 ) !void {
-    const gpa = ws.gpa;
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const gpa = ws.maker.gpa;
+    const io = maker.graph.io;
+
     // The desired API is actually sendfile, which will require enhancing http.Server.
     // We load the file with every request so that the user can make changes to the file
     // and refresh the HTML page without restarting this server.
@@ -500,7 +542,8 @@ pub fn serveFile(
     });
 }
 pub fn serveTarFile(ws: *WebServer, request: *http.Server.Request, paths: []const Cache.Path) !void {
-    const graph = ws.graph;
+    const maker = ws.maker;
+    const graph = maker.graph;
     const io = graph.io;
 
     var send_buffer: [0x4000]u8 = undefined;
@@ -525,16 +568,6 @@ pub fn serveTarFile(ws: *WebServer, request: *http.Server.Request, paths: []cons
         var read_buffer: [1024]u8 = undefined;
         var file_reader: Io.File.Reader = .initSize(file, io, &read_buffer, stat.size);
 
-        // TODO: this logic is completely bogus -- obviously so, because `path.root_dir.path` can
-        // be cwd-relative. This is also related to why linkification doesn't work in the fuzzer UI:
-        // it turns out the WASM treats the first path component as the module name, typically
-        // resulting in modules named "" and "src". The compiler needs to tell the build system
-        // about the module graph so that the build system can correctly encode this information in
-        // the tar file.
-        //
-        // Additionally, this needs to ensure that all path separators for both prefix and
-        // sub_path are using the POSIX-style `/` on platforms that don't use it as their native
-        // path separator.
         archiver.prefix = path.root_dir.path orelse graph.cache.cwd;
         try archiver.writeFile(path.sub_path, &file_reader, @intCast(stat.mtime.toSeconds()));
     }
@@ -548,8 +581,9 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
     const arch_os_abi = "wasm32-freestanding";
     const cpu_features = "baseline+atomics+bulk_memory+multivalue+mutable_globals+nontrapping_fptoint+reference_types+sign_ext";
 
-    const gpa = ws.gpa;
-    const graph = ws.graph;
+    const maker = ws.maker;
+    const gpa = maker.gpa;
+    const graph = maker.graph;
     const io = graph.io;
 
     const main_src_path: Cache.Path = .{
@@ -669,7 +703,7 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
             if (code != 0) {
                 log.err(
                     "the following command exited with error code {d}:\n{s}",
-                    .{ code, try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
+                    .{ code, try std.zig.allocPrintCmd(arena, argv.items, .{}) },
                 );
                 return error.WasmCompilationFailed;
             }
@@ -677,21 +711,21 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
         .signal => |sig| {
             log.err(
                 "the following command terminated with signal {t}:\n{s}",
-                .{ sig, try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
+                .{ sig, try std.zig.allocPrintCmd(arena, argv.items, .{}) },
             );
             return error.WasmCompilationFailed;
         },
         .stopped => |sig| {
             log.err(
                 "the following command stopped unexpectedly with signal {t}:\n{s}",
-                .{ sig, try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items) },
+                .{ sig, try std.zig.allocPrintCmd(arena, argv.items, .{}) },
             );
             return error.WasmCompilationFailed;
         },
         .unknown => {
             log.err(
                 "the following command terminated unexpectedly:\n{s}",
-                .{try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items)},
+                .{try std.zig.allocPrintCmd(arena, argv.items, .{})},
             );
             return error.WasmCompilationFailed;
         },
@@ -701,23 +735,27 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
         try result_error_bundle.renderToStderr(io, .{}, .auto);
         log.err("the following command failed with {d} compilation errors:\n{s}", .{
             result_error_bundle.errorMessageCount(),
-            try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
+            try std.zig.allocPrintCmd(arena, argv.items, .{}),
         });
         return error.WasmCompilationFailed;
     }
 
     const base_path = result orelse {
         log.err("child process failed to report result\n{s}", .{
-            try Build.Step.allocPrintCmd(arena, .inherit, null, argv.items),
+            try std.zig.allocPrintCmd(arena, argv.items, .{}),
         });
         return error.WasmCompilationFailed;
     };
+    const target = std.zig.system.resolveTargetQuery(io, std.Build.parseTargetQuery(.{
+        .arch_os_abi = arch_os_abi,
+        .cpu_features = cpu_features,
+    }) catch unreachable) catch unreachable;
     const bin_name = try std.zig.binNameAlloc(arena, .{
         .root_name = root_name,
-        .target = &(std.zig.system.resolveTargetQuery(io, std.Build.parseTargetQuery(.{
-            .arch_os_abi = arch_os_abi,
-            .cpu_features = cpu_features,
-        }) catch unreachable) catch unreachable),
+        .cpu_arch = target.cpu.arch,
+        .os_tag = target.os.tag,
+        .ofmt = target.ofmt,
+        .abi = target.abi,
         .output_mode = .Exe,
     });
     return base_path.join(arena, bin_name);
@@ -732,7 +770,7 @@ fn readStreamAlloc(gpa: Allocator, io: Io, file: Io.File, limit: Io.Limit) ![]u8
 }
 
 pub fn updateTimeReportCompile(ws: *WebServer, opts: struct {
-    compile: *Build.Step.Compile,
+    compile_step: Configuration.Step.Index,
 
     use_llvm: bool,
     stats: abi.time_report.CompileResult.Stats,
@@ -745,11 +783,13 @@ pub fn updateTimeReportCompile(ws: *WebServer, opts: struct {
     /// The trailing data of `abi.time_report.CompileResult`, except the step name.
     trailing: []const u8,
 }) void {
-    const gpa = ws.gpa;
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const gpa = maker.gpa;
+    const io = maker.graph.io;
+    const all_steps = maker.step_stack.keys();
 
-    const step_idx: u32 = for (ws.all_steps, 0..) |s, i| {
-        if (s == &opts.compile.step) break @intCast(i);
+    const step_idx: u32 = for (all_steps, 0..) |s, i| {
+        if (s == opts.compile_step) break @intCast(i);
     } else unreachable;
 
     const old_buf = old: {
@@ -785,12 +825,14 @@ pub fn updateTimeReportCompile(ws: *WebServer, opts: struct {
     ws.notifyUpdate();
 }
 
-pub fn updateTimeReportGeneric(ws: *WebServer, step: *Build.Step, duration: Io.Duration) void {
-    const gpa = ws.gpa;
-    const io = ws.graph.io;
+pub fn updateTimeReportGeneric(ws: *WebServer, step_index: Configuration.Step.Index, duration: Io.Duration) void {
+    const maker = ws.maker;
+    const gpa = maker.gpa;
+    const io = maker.graph.io;
+    const all_steps = maker.step_stack.keys();
 
-    const step_idx: u32 = for (ws.all_steps, 0..) |s, i| {
-        if (s == step) break @intCast(i);
+    const step_idx: u32 = for (all_steps, 0..) |s, i| {
+        if (s == step_index) break @intCast(i);
     } else unreachable;
 
     const old_buf = old: {
@@ -818,15 +860,17 @@ pub fn updateTimeReportGeneric(ws: *WebServer, step: *Build.Step, duration: Io.D
 
 pub fn updateTimeReportRunTest(
     ws: *WebServer,
-    run: *Build.Step.Run,
-    tests: *const Build.Step.Run.CachedTestMetadata,
+    run_step_index: Configuration.Step.Index,
+    tests: *const Step.Run.CachedTestMetadata,
     ns_per_test: []const u64,
 ) void {
-    const gpa = ws.gpa;
-    const io = ws.graph.io;
+    const maker = ws.maker;
+    const gpa = maker.gpa;
+    const io = maker.graph.io;
+    const all_steps = maker.step_stack.keys();
 
-    const step_idx: u32 = for (ws.all_steps, 0..) |s, i| {
-        if (s == &run.step) break @intCast(i);
+    const step_idx: u32 = for (all_steps, 0..) |s, i| {
+        if (s == run_step_index) break @intCast(i);
     } else unreachable;
 
     assert(tests.names.len == ns_per_test.len);
@@ -879,7 +923,7 @@ const RunnerRequest = union(enum) {
     rebuild,
 };
 pub fn getRunnerRequest(ws: *WebServer) ?RunnerRequest {
-    const io = ws.graph.io;
+    const io = ws.maker.graph.io;
     ws.runner_request_mutex.lock(io) catch return;
     defer ws.runner_request_mutex.unlock(io);
     if (ws.runner_request) |req| {
@@ -890,7 +934,7 @@ pub fn getRunnerRequest(ws: *WebServer) ?RunnerRequest {
     return null;
 }
 pub fn wait(ws: *WebServer) Io.Cancelable!RunnerRequest {
-    const io = ws.graph.io;
+    const io = ws.maker.graph.io;
     try ws.runner_request_mutex.lock(io);
     defer ws.runner_request_mutex.unlock(io);
     while (true) {
@@ -907,20 +951,3 @@ const cache_control_header: http.Header = .{
     .name = "Cache-Control",
     .value = "max-age=0, must-revalidate",
 };
-
-const builtin = @import("builtin");
-
-const std = @import("std");
-const Io = std.Io;
-const net = std.Io.net;
-const assert = std.debug.assert;
-const mem = std.mem;
-const log = std.log.scoped(.web_server);
-const Allocator = std.mem.Allocator;
-const Build = std.Build;
-const Cache = Build.Cache;
-const Fuzz = Build.Fuzz;
-const abi = Build.abi;
-const http = std.http;
-
-const WebServer = @This();

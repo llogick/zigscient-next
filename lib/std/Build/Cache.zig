@@ -189,10 +189,13 @@ pub const File = struct {
 pub const HashHelper = struct {
     hasher: Hasher = hasher_init,
 
-    /// Record a slice of bytes as a dependency of the process being cached.
     pub fn addBytes(hh: *HashHelper, bytes: []const u8) void {
         hh.hasher.update(mem.asBytes(&bytes.len));
         hh.hasher.update(bytes);
+    }
+
+    pub fn addBytesZ(hh: *HashHelper, bytes: [:0]const u8) void {
+        hh.hasher.update(mem.absorbSentinel(bytes));
     }
 
     pub fn addOptionalBytes(hh: *HashHelper, optional_bytes: ?[]const u8) void {
@@ -1022,6 +1025,12 @@ pub const Manifest = struct {
         defer self.files.unlockPointers();
 
         try self.populateFileHash(gop.key_ptr);
+    }
+
+    pub fn addPathPost(man: *Manifest, path: Path) !void {
+        _ = man;
+        _ = path;
+        @panic("TODO");
     }
 
     /// Like `addFilePost` but when the file contents have already been loaded from disk.
