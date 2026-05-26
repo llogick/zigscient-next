@@ -188,7 +188,6 @@ const targets = [_]std.Target.Query{
     .{ .cpu_arch = .powerpc, .os_tag = .linux, .abi = .eabihf },
     .{ .cpu_arch = .powerpc, .os_tag = .linux, .abi = .musleabi },
     .{ .cpu_arch = .powerpc, .os_tag = .linux, .abi = .musleabihf },
-    .{ .cpu_arch = .powerpc, .os_tag = .netbsd, .abi = .eabi },
     .{ .cpu_arch = .powerpc, .os_tag = .netbsd, .abi = .eabihf },
     .{ .cpu_arch = .powerpc, .os_tag = .openbsd, .abi = .eabihf },
     .{ .cpu_arch = .powerpc, .os_tag = .rtems, .abi = .eabi },
@@ -215,6 +214,7 @@ const targets = [_]std.Target.Query{
     .{ .cpu_arch = .riscv32, .os_tag = .linux, .abi = .gnu },
     .{ .cpu_arch = .riscv32, .os_tag = .linux, .abi = .musl },
     .{ .cpu_arch = .riscv32, .os_tag = .linux, .abi = .none },
+    .{ .cpu_arch = .riscv32, .os_tag = .netbsd, .abi = .none },
     .{ .cpu_arch = .riscv32, .os_tag = .rtems, .abi = .none },
     // .{ .cpu_arch = .riscv32, .os_tag = .uefi, .abi = .none },
 
@@ -229,6 +229,7 @@ const targets = [_]std.Target.Query{
     .{ .cpu_arch = .riscv64, .os_tag = .linux, .abi = .gnu },
     .{ .cpu_arch = .riscv64, .os_tag = .linux, .abi = .musl },
     .{ .cpu_arch = .riscv64, .os_tag = .linux, .abi = .none },
+    .{ .cpu_arch = .riscv64, .os_tag = .netbsd, .abi = .none },
     .{ .cpu_arch = .riscv64, .os_tag = .openbsd, .abi = .none },
     .{ .cpu_arch = .riscv64, .os_tag = .rtems, .abi = .none },
     .{ .cpu_arch = .riscv64, .os_tag = .serenity, .abi = .none },

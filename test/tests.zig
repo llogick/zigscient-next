@@ -1357,16 +1357,25 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .netbsd,
-                .abi = .eabi,
+                .abi = .eabihf,
             },
             .link_libc = true,
-            .extra_target = true,
         },
+
         .{
             .target = .{
-                .cpu_arch = .powerpc,
+                .cpu_arch = .riscv32,
                 .os_tag = .netbsd,
-                .abi = .eabihf,
+                .abi = .none,
+            },
+            .link_libc = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .netbsd,
+                .abi = .none,
             },
             .link_libc = true,
         },
