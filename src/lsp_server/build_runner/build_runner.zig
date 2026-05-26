@@ -41,9 +41,9 @@ var dont_create_roots_txt_file: bool = false;
 ///! This is a modified build runner to extract information out of build.zig
 ///! Modified version of lib/build_runner.zig
 pub fn main(init: process.Init.Minimal) !void {
-    var debug_gpa_state: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = debug_gpa_state.deinit();
-    const dgpa = debug_gpa_state.allocator();
+    var safe_gpa_state: std.heap.SafeAllocator = .init(std.heap.page_allocator, .{});
+    defer _ = safe_gpa_state.deinit();
+    const dgpa = safe_gpa_state.allocator();
 
     var threaded: std.Io.Threaded = .init(dgpa, .{
         .environ = init.environ,
