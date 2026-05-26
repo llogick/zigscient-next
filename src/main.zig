@@ -5459,6 +5459,7 @@ fn cmdBuild(
                     } else {
                         warn("Zig was compiled without debug extensions. --debug-target has no effect.", .{});
                     }
+                    continue;
                 } else if (mem.eql(u8, arg, "--debug-libc")) {
                     if (i + 1 >= args.len) fatal("expected argument after '{s}'", .{arg});
                     i += 1;
@@ -5467,6 +5468,7 @@ fn cmdBuild(
                     } else {
                         warn("Zig was compiled without debug extensions. --debug-libc has no effect.", .{});
                     }
+                    continue;
                 } else if (mem.eql(u8, arg, "--verbose-link")) {
                     verbose_link = true;
                 } else if (mem.eql(u8, arg, "--verbose-cc")) {
