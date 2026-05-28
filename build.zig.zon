@@ -14,18 +14,18 @@
             .hash = "known_folders-0.0.0-Fy-PJsbKAACbDh9bBxR0MMThxZSS6A9RH4apWphNHY70",
         },
         .diffz = .{
-            // .url = "https://github.com/LamplightWorks/diffz/archive/d080c1eb782fff15068cabb3b82da85ce6054b74.tar.gz",
-            // .hash = "diffz-0.0.1-G2tlIfLNAQCc06RFk0tFGj2M-X-id4WHFkMVw2JoMILR",
-            .path = "../../../diffz",
+            .url = "https://github.com/LamplightWorks/diffz/archive/313629a399b10ffdbcb29afc4fccdc547252717e.tar.gz",
+            .hash = "diffz-0.0.1-G2tlIfrNAQDGLWaQcYgBSnnbxlwRgeYoTU6T1igV_poB",
+            // .path = "../../../diffz",
         },
         .lsp_kit = .{
-            // .url = "https://github.com/LamplightWorks/lsp-kit/archive/98d6bed6e42a0866e1e2ba0867673d9f57ca6687.tar.gz",
-            // .hash = "lsp_kit-0.1.0-bi_PLwozDAApVpvVJHz80NPklig5biWlZCkyxjFbOtiD",
-            .path = "../../../lws-lsp-kit",
+            .url = "https://github.com/LamplightWorks/lsp-kit/archive/390922354b57ec605a030a7cb2ff68b76fa9f0cb.tar.gz",
+            .hash = "lsp_kit-0.1.0-bi_PL5YzDADVJpdiOX6wD5xaCJu1uzMkOGilGp9p0gpq",
+            // .path = "../../../lws-lsp-kit",
         },
         .extended_zccs = .{
-            .url = "https://github.com/llogick/extended-zccs/archive/f5643d110dbd5cc1903ff369b4a674a576ede1f3.tar.gz",
-            .hash = "extended_zccs-0.17.0-dev-zEaUNnJfDgBSzBhp6CE-SUkqeIqd-CTn7rHhhohpZVIx",
+            .url = "https://github.com/llogick/extended-zccs/archive/daec59dfe92078cc1fcb223ddf7271f9831a7b4c.tar.gz",
+            .hash = "extended_zccs-0.17.0-dev-zEaUNu1hDgDWNae1Q56wDkdi-sZcTKHytg8cbBNryBGH",
             // .path = "../../../extended-zccs",
         },
         .tracy = .{

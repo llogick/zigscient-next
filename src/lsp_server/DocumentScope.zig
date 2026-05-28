@@ -128,8 +128,8 @@ pub const Declaration = union(enum) {
     error_token: Ast.TokenIndex,
 
     comptime {
-        for (std.meta.fields(Declaration)) |field| {
-            std.debug.assert(@sizeOf(field.type) <= 8); // a Declaration without the union tag must be less than 8 bytes
+        for (std.meta.fieldTypes(Declaration)) |field_type| {
+            std.debug.assert(@sizeOf(field_type) <= 8); // a Declaration without the union tag must be less than 8 bytes
         }
     }
 

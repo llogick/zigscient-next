@@ -837,11 +837,12 @@ const ErrorBundle = std.zig.ErrorBundle;
 fn errbExtraData(eb: ErrorBundle, comptime T: type, index: usize) struct { data: T, end: usize } {
     const MessageIndex = ErrorBundle.MessageIndex;
     const SourceLocationIndex = ErrorBundle.SourceLocationIndex;
-    const fields = @typeInfo(T).@"struct".fields;
+    const field_names = @typeInfo(T).@"struct".field_names;
+    const field_types = @typeInfo(T).@"struct".field_types;
     var i: usize = index;
     var result: T = undefined;
-    inline for (fields) |field| {
-        @field(result, field.name) = switch (field.type) {
+    inline for (field_names, field_types) |field_name, field_type| {
+        @field(result, field_name) = switch (field_type) {
             u32 => eb.extra[i],
             MessageIndex => @as(MessageIndex, @enumFromInt(eb.extra[i])),
             SourceLocationIndex => @as(SourceLocationIndex, @enumFromInt(eb.extra[i])),

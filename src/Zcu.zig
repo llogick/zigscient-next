@@ -49,12 +49,12 @@ const LspDocumentStore = @import("lsp-server").DocumentStore;
 comptime {
     @setEvalBranchQuota(4000);
     for (
-        @typeInfo(Zir.Inst.Ref).@"enum".fields,
-        @typeInfo(Air.Inst.Ref).@"enum".fields,
-        @typeInfo(InternPool.Index).@"enum".fields,
-    ) |zir_field, air_field, ip_field| {
-        assert(mem.eql(u8, zir_field.name, ip_field.name));
-        assert(mem.eql(u8, air_field.name, ip_field.name));
+        @typeInfo(Zir.Inst.Ref).@"enum".field_names,
+        @typeInfo(Air.Inst.Ref).@"enum".field_names,
+        @typeInfo(InternPool.Index).@"enum".field_names,
+    ) |zir_field_name, air_field_name, ip_field_name| {
+        assert(mem.eql(u8, zir_field_name, ip_field_name));
+        assert(mem.eql(u8, air_field_name, ip_field_name));
     }
 }
 
@@ -454,8 +454,7 @@ pub const StdLangDecl = enum {
 
     Type,
     @"Type.Fn",
-    @"Type.Fn.Param",
-    @"Type.Fn.Param.Attributes",
+    @"Type.Fn.ParamAttributes",
     @"Type.Fn.Attributes",
     @"Type.Int",
     @"Type.Float",
@@ -465,20 +464,16 @@ pub const StdLangDecl = enum {
     @"Type.Array",
     @"Type.Vector",
     @"Type.Optional",
-    @"Type.Error",
     @"Type.ErrorUnion",
-    @"Type.EnumField",
+    @"Type.ErrorSet",
     @"Type.Enum",
     @"Type.Enum.Mode",
     @"Type.Union",
-    @"Type.UnionField",
-    @"Type.UnionField.Attributes",
+    @"Type.Union.FieldAttributes",
     @"Type.Struct",
-    @"Type.StructField",
-    @"Type.StructField.Attributes",
+    @"Type.Struct.FieldAttributes",
     @"Type.ContainerLayout",
     @"Type.Opaque",
-    @"Type.Declaration",
 
     panic,
     @"panic.call",
@@ -539,8 +534,7 @@ pub const StdLangDecl = enum {
 
             .Type,
             .@"Type.Fn",
-            .@"Type.Fn.Param",
-            .@"Type.Fn.Param.Attributes",
+            .@"Type.Fn.ParamAttributes",
             .@"Type.Fn.Attributes",
             .@"Type.Int",
             .@"Type.Float",
@@ -550,20 +544,16 @@ pub const StdLangDecl = enum {
             .@"Type.Array",
             .@"Type.Vector",
             .@"Type.Optional",
-            .@"Type.Error",
             .@"Type.ErrorUnion",
-            .@"Type.EnumField",
+            .@"Type.ErrorSet",
             .@"Type.Enum",
             .@"Type.Enum.Mode",
             .@"Type.Union",
-            .@"Type.UnionField",
-            .@"Type.UnionField.Attributes",
+            .@"Type.Union.FieldAttributes",
             .@"Type.Struct",
-            .@"Type.StructField",
-            .@"Type.StructField.Attributes",
+            .@"Type.Struct.FieldAttributes",
             .@"Type.ContainerLayout",
             .@"Type.Opaque",
-            .@"Type.Declaration",
             => .type,
 
             .panic => .type,
@@ -617,7 +607,7 @@ pub const StdLangDecl = enum {
             .VaList => .va_list,
             .assembly, .@"assembly.Clobbers" => .assembly,
             else => {
-                if (@intFromEnum(decl) <= @intFromEnum(StdLangDecl.@"Type.Declaration")) {
+                if (@intFromEnum(decl) <= @intFromEnum(StdLangDecl.@"Type.Opaque")) {
                     return .main;
                 } else {
                     return .panic;

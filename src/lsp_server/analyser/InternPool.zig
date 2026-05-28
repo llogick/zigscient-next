@@ -1547,9 +1547,9 @@ fn addExtra(ip: *InternPool, comptime T: type, extra: T) Allocator.Error!u32 {
     const size = @divExact(@sizeOf(T), 4);
 
     try ip.extra.ensureUnusedCapacity(ip.gpa, size);
-    inline for (std.meta.fields(T)) |field| {
-        const item = @field(extra, field.name);
-        switch (field.type) {
+    inline for (comptime std.meta.fieldNames(T), comptime std.meta.fieldTypes(T)) |field_name, field_type| {
+        const item = @field(extra, field_name);
+        switch (field_type) {
             Index,
             Decl.Index,
             Decl.OptionalIndex,
@@ -1575,7 +1575,7 @@ fn addExtra(ip: *InternPool, comptime T: type, extra: T) Allocator.Error!u32 {
             LimbSlice,
             => ip.extra.appendSliceAssumeCapacity(&.{ item.start, item.len }),
 
-            else => @compileError("unexpected: " ++ @typeName(field.type)),
+            else => @compileError("unexpected: " ++ @typeName(field_type)),
         }
     }
     return result;
@@ -1584,10 +1584,10 @@ fn addExtra(ip: *InternPool, comptime T: type, extra: T) Allocator.Error!u32 {
 fn extraData(ip: *const InternPool, comptime T: type, index: u32) T {
     var result: T = undefined;
     var i: u32 = 0;
-    inline for (std.meta.fields(T)) |field| {
+    inline for (comptime std.meta.fieldNames(T), comptime std.meta.fieldTypes(T)) |field_name, field_type| {
         const item = ip.extra.items[index + i];
         i += 1;
-        @field(result, field.name) = switch (field.type) {
+        @field(result, field_name) = switch (field_type) {
             Index,
             StringPool.String,
             StringPool.OptionalString,
@@ -1621,7 +1621,7 @@ fn extraData(ip: *const InternPool, comptime T: type, index: u32) T {
                 break :blk .{ .start = item, .len = ip.extra.items[index + i] };
             },
 
-            else => @compileError("unexpected: " ++ @typeName(field.type)),
+            else => @compileError("unexpected: " ++ @typeName(field_type)),
         };
     }
     return result;

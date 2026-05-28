@@ -1137,10 +1137,13 @@ const DiagnosticKind = union(enum) {
     }
 
     fn parseEnum(comptime T: type, message: []const u8) ?T {
-        inline for (std.meta.fields(T)) |field| {
-            if (std.mem.startsWith(u8, message, field.name)) {
+        const ti = @typeInfo(T).@"enum";
+        const field_names = ti.field_names;
+        const field_values = ti.field_values;
+        inline for (field_names, field_values) |field_name, field_value| {
+            if (std.mem.startsWith(u8, message, field_name)) {
                 // is there a better way to achieve this?
-                return @as(T, @enumFromInt(field.value));
+                return @as(T, @enumFromInt(field_value));
             }
         }
 

@@ -42,7 +42,7 @@ lsp_capabilities: struct {
     supports_semantic_tokens_refresh: bool = false,
     supports_inlay_hints_refresh: bool = false,
 } = .{},
-progress_notifications: [@typeInfo(ProgressNotificationIndex).@"enum".fields.len]ProgressNotification = .{
+progress_notifications: [@typeInfo(ProgressNotificationIndex).@"enum".field_names.len]ProgressNotification = .{
     .{
         .id = "s2c-wdp-builds",
         .title = "Loading build configuration",

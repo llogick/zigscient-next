@@ -638,13 +638,15 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
 }
 
 fn setExtra(wip: *const std.zig.ErrorBundle, index: usize, extra: anytype) void {
-    const fields = @typeInfo(@TypeOf(extra)).@"struct".fields;
+    const extra_info = @typeInfo(@TypeOf(extra)).@"struct";
+    const field_names = extra_info.field_names;
+    const field_types = extra_info.field_types;
     var i = index;
-    inline for (fields) |field| {
-        @constCast(wip.extra)[i] = switch (field.type) {
-            u32 => @field(extra, field.name),
-            std.zig.ErrorBundle.MessageIndex => @intFromEnum(@field(extra, field.name)),
-            std.zig.ErrorBundle.SourceLocationIndex => @intFromEnum(@field(extra, field.name)),
+    inline for (field_names, field_types) |field_name, field_type| {
+        @constCast(wip.extra)[i] = switch (field_type) {
+            u32 => @field(extra, field_name),
+            std.zig.ErrorBundle.MessageIndex => @intFromEnum(@field(extra, field_name)),
+            std.zig.ErrorBundle.SourceLocationIndex => @intFromEnum(@field(extra, field_name)),
             else => @compileError("bad field type"),
         };
         i += 1;

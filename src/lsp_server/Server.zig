@@ -1054,10 +1054,10 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
         server.showMessage(.Error, "{s}", .{msg});
     }
 
-    inline for (std.meta.fields(Settings)) |field| {
-        if (@field(result.did_change, field.name)) {
-            const new_value = @field(server.config_manager.config, field.name);
-            log.info("$ {s} -> [{f}]", .{ field.name, std.json.fmt(new_value, .{}) });
+    inline for (comptime std.meta.fieldNames(Settings)) |field_name| {
+        if (@field(result.did_change, field_name)) {
+            const new_value = @field(server.config_manager.config, field_name);
+            log.info("$ {s} -> [{f}]", .{ field_name, std.json.fmt(new_value, .{}) });
         }
     }
 

@@ -1072,17 +1072,15 @@ const Local = struct {
 
                 fn PtrArrayElem(comptime len: usize) type {
                     const elem_info = @typeInfo(Elem).@"struct";
-                    const elem_fields = elem_info.fields;
-                    var new_names: [elem_fields.len][]const u8 = undefined;
-                    var new_types: [elem_fields.len]type = undefined;
-                    for (elem_fields, &new_names, &new_types) |elem_field, *new_name, *NewType| {
-                        new_name.* = elem_field.name;
-                        NewType.* = *[len]elem_field.type;
+
+                    var new_types: [elem_info.field_types.len]type = undefined;
+                    for (&new_types, elem_info.field_types) |*NewType, elem_field_type| {
+                        NewType.* = *[len]elem_field_type;
                     }
                     if (elem_info.is_tuple) {
                         return @Tuple(&new_types);
                     } else {
-                        return @Struct(.auto, null, &new_names, &new_types, &@splat(.{}));
+                        return @Struct(.auto, null, elem_info.field_names, &new_types, &@splat(.{}));
                     }
                 }
                 fn PtrElem(comptime opts: struct {
@@ -1090,17 +1088,14 @@ const Local = struct {
                     is_const: bool = false,
                 }) type {
                     const elem_info = @typeInfo(Elem).@"struct";
-                    const elem_fields = elem_info.fields;
-                    var new_names: [elem_fields.len][]const u8 = undefined;
-                    var new_types: [elem_fields.len]type = undefined;
-                    for (elem_fields, &new_names, &new_types) |elem_field, *new_name, *NewType| {
-                        new_name.* = elem_field.name;
-                        NewType.* = @Pointer(opts.size, .{ .@"const" = opts.is_const }, elem_field.type, null);
+                    var new_types: [elem_info.field_types.len]type = undefined;
+                    for (&new_types, elem_info.field_types) |*NewType, elem_field_type| {
+                        NewType.* = @Pointer(opts.size, .{ .@"const" = opts.is_const }, elem_field_type, null);
                     }
                     if (elem_info.is_tuple) {
                         return @Tuple(&new_types);
                     } else {
-                        return @Struct(.auto, null, &new_names, &new_types, &@splat(.{}));
+                        return @Struct(.auto, null, elem_info.field_names, &new_types, &@splat(.{}));
                     }
                 }
 
@@ -4297,48 +4292,51 @@ pub const Index = enum(u32) {
         },
     }) void {
         _ = self;
-        const map_fields = @typeInfo(@typeInfo(@TypeOf(tag_to_encoding_map)).pointer.child).@"struct".fields;
+        const map_info = @typeInfo(@typeInfo(@TypeOf(tag_to_encoding_map)).pointer.child).@"struct";
         @setEvalBranchQuota(3_000);
-        inline for (@typeInfo(Tag).@"enum".fields, 0..) |tag, start| {
-            inline for (0..map_fields.len) |offset| {
-                if (comptime std.mem.eql(u8, tag.name, map_fields[(start + offset) % map_fields.len].name)) break;
+        inline for (@typeInfo(Tag).@"enum".field_names, 0..) |tag_name, start| {
+            inline for (0..map_info.field_names.len) |offset| {
+                if (comptime std.mem.eql(u8, tag_name, map_info.field_names[(start + offset) % map_info.field_names.len])) break;
             } else {
-                @compileError(@typeName(Tag) ++ "." ++ tag.name ++ " missing dbHelper tag_to_encoding_map entry");
+                @compileError(@typeName(Tag) ++ "." ++ tag_name ++ " missing dbHelper tag_to_encoding_map entry");
             }
         }
     }
     comptime {
         if (!builtin.strip_debug_info) switch (builtin.zig_backend) {
             .stage2_llvm => _ = &dbHelper,
-            .stage2_x86_64 => for (@typeInfo(Tag).@"enum".fields) |tag| {
-                if (!@hasField(@TypeOf(Tag.encodings), tag.name)) @compileLog("missing: " ++ @typeName(Tag) ++ ".encodings." ++ tag.name);
-                const encoding = @field(Tag.encodings, tag.name);
-                if (@hasField(@TypeOf(encoding), "trailing")) for (@typeInfo(encoding.trailing).@"struct".fields) |field| {
-                    struct {
-                        fn checkConfig(name: []const u8) void {
-                            if (!@hasField(@TypeOf(encoding.config), name)) @compileError("missing field: " ++ @typeName(Tag) ++ ".encodings." ++ tag.name ++ ".config.@\"" ++ name ++ "\"");
-                            const FieldType = @TypeOf(@field(encoding.config, name));
-                            if (@typeInfo(FieldType) != .enum_literal) @compileError("expected enum literal: " ++ @typeName(Tag) ++ ".encodings." ++ tag.name ++ ".config.@\"" ++ name ++ "\": " ++ @typeName(FieldType));
-                        }
-                        fn checkField(name: []const u8, Type: type) void {
-                            switch (@typeInfo(Type)) {
-                                .int => {},
-                                .@"enum" => {},
-                                .@"struct" => |info| assert(info.layout == .@"packed"),
-                                .optional => |info| {
-                                    checkConfig(name ++ ".?");
-                                    checkField(name ++ ".?", info.child);
-                                },
-                                .pointer => |info| {
-                                    assert(info.size == .slice);
-                                    checkConfig(name ++ ".len");
-                                    checkField(name ++ "[0]", info.child);
-                                },
-                                else => @compileError("unsupported type: " ++ @typeName(Tag) ++ ".encodings." ++ tag.name ++ "." ++ name ++ ": " ++ @typeName(Type)),
+            .stage2_x86_64 => for (@typeInfo(Tag).@"enum".field_names) |tag_name| {
+                if (!@hasField(@TypeOf(Tag.encodings), tag_name)) @compileLog("missing: " ++ @typeName(Tag) ++ ".encodings." ++ tag_name);
+                const encoding = @field(Tag.encodings, tag_name);
+                if (@hasField(@TypeOf(encoding), "trailing")) {
+                    const trailing_info = @typeInfo(encoding.trailing).@"struct";
+                    for (trailing_info.field_names, trailing_info.field_types) |field_name, field_type| {
+                        struct {
+                            fn checkConfig(name: []const u8) void {
+                                if (!@hasField(@TypeOf(encoding.config), name)) @compileError("missing field: " ++ @typeName(Tag) ++ ".encodings." ++ tag_name ++ ".config.@\"" ++ name ++ "\"");
+                                const FieldType = @TypeOf(@field(encoding.config, name));
+                                if (@typeInfo(FieldType) != .enum_literal) @compileError("expected enum literal: " ++ @typeName(Tag) ++ ".encodings." ++ tag_name ++ ".config.@\"" ++ name ++ "\": " ++ @typeName(FieldType));
                             }
-                        }
-                    }.checkField("trailing." ++ field.name, field.type);
-                };
+                            fn checkField(name: []const u8, Type: type) void {
+                                switch (@typeInfo(Type)) {
+                                    .int => {},
+                                    .@"enum" => {},
+                                    .@"struct" => |info| assert(info.layout == .@"packed"),
+                                    .optional => |info| {
+                                        checkConfig(name ++ ".?");
+                                        checkField(name ++ ".?", info.child);
+                                    },
+                                    .pointer => |info| {
+                                        assert(info.size == .slice);
+                                        checkConfig(name ++ ".len");
+                                        checkField(name ++ "[0]", info.child);
+                                    },
+                                    else => @compileError("unsupported type: " ++ @typeName(Tag) ++ ".encodings." ++ tag_name ++ "." ++ name ++ ": " ++ @typeName(Type)),
+                                }
+                            }
+                        }.checkField("trailing." ++ field_name, field_type);
+                    }
+                }
             },
             else => {},
         };
@@ -6967,7 +6965,7 @@ fn extraFuncInstance(ip: *const InternPool, tid: Zcu.PerThread.Id, extra: Local.
     const ty: Index = @enumFromInt(extra_items[extra_index + std.meta.fieldIndex(Tag.FuncInstance, "ty").?]);
     const generic_owner: Index = @enumFromInt(extra_items[extra_index + std.meta.fieldIndex(Tag.FuncInstance, "generic_owner").?]);
     const func_decl = ip.funcDeclInfo(generic_owner);
-    const end_extra_index = extra_index + @as(u32, @typeInfo(Tag.FuncInstance).@"struct".fields.len);
+    const end_extra_index = extra_index + @as(u32, @typeInfo(Tag.FuncInstance).@"struct".field_names.len);
     return .{
         .tid = tid,
         .ty = ty,
@@ -7307,7 +7305,7 @@ pub fn get(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerThread.Id, key: 
             const names_map = try ip.addMap(gpa, io, tid, names.len);
             ip.addStringsToMap(names_map, names);
             const names_len = error_set_type.names.len;
-            try extra.ensureUnusedCapacity(@typeInfo(Tag.ErrorSet).@"struct".fields.len + names_len);
+            try extra.ensureUnusedCapacity(@typeInfo(Tag.ErrorSet).@"struct".field_names.len + names_len);
             items.appendAssumeCapacity(.{
                 .tag = .type_error_set,
                 .data = addExtraAssumeCapacity(extra, Tag.ErrorSet{
@@ -7863,7 +7861,7 @@ pub fn get(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerThread.Id, key: 
                     .repeated_elem => |elem| elem,
                 };
 
-                try extra.ensureUnusedCapacity(@typeInfo(Repeated).@"struct".fields.len);
+                try extra.ensureUnusedCapacity(@typeInfo(Repeated).@"struct".field_names.len);
                 items.appendAssumeCapacity(.{
                     .tag = .repeated,
                     .data = addExtraAssumeCapacity(extra, Repeated{
@@ -7878,7 +7876,7 @@ pub fn get(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerThread.Id, key: 
                 const string_bytes = ip.getLocal(tid).getMutableStringBytes(gpa, io);
                 const start = string_bytes.mutate.len;
                 try string_bytes.ensureUnusedCapacity(@intCast(len_including_sentinel + 1));
-                try extra.ensureUnusedCapacity(@typeInfo(Bytes).@"struct".fields.len);
+                try extra.ensureUnusedCapacity(@typeInfo(Bytes).@"struct".field_names.len);
                 switch (aggregate.storage) {
                     .bytes => |bytes| string_bytes.appendSliceAssumeCapacity(.{bytes.toSlice(len, ip)}),
                     .elems => |elems| for (elems[0..@intCast(len)]) |elem| switch (ip.indexToKey(elem)) {
@@ -7919,7 +7917,7 @@ pub fn get(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerThread.Id, key: 
             }
 
             try extra.ensureUnusedCapacity(
-                @typeInfo(Tag.Aggregate).@"struct".fields.len + @as(usize, @intCast(len_including_sentinel + 1)),
+                @typeInfo(Tag.Aggregate).@"struct".field_names.len + @as(usize, @intCast(len_including_sentinel + 1)),
             );
             items.appendAssumeCapacity(.{
                 .tag = .aggregate,
@@ -7945,7 +7943,7 @@ pub fn get(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerThread.Id, key: 
 
         .memoized_call => |memoized_call| {
             for (memoized_call.arg_values) |arg| assert(arg != .none);
-            try extra.ensureUnusedCapacity(@typeInfo(MemoizedCall).@"struct".fields.len +
+            try extra.ensureUnusedCapacity(@typeInfo(MemoizedCall).@"struct".field_names.len +
                 memoized_call.arg_values.len);
             items.appendAssumeCapacity(.{
                 .tag = .memoized_call,
@@ -8008,7 +8006,7 @@ pub fn getDeclaredStructType(
         .auto => false,
         .@"extern" => true,
         .@"packed" => {
-            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStructPacked).@"struct".fields.len +
+            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStructPacked).@"struct".field_names.len +
                 ini.captures.len + // capture
                 ini.fields_len + // field_name
                 ini.fields_len + // field_type
@@ -8055,7 +8053,7 @@ pub fn getDeclaredStructType(
         },
     };
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStruct).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStruct).@"struct".field_names.len +
         1 + // captures_len
         ini.captures.len + // capture
         ini.fields_len + // field_name
@@ -8152,7 +8150,7 @@ pub fn getReifiedStructType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Pe
         .auto => false,
         .@"extern" => true,
         .@"packed" => {
-            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStructPacked).@"struct".fields.len +
+            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStructPacked).@"struct".field_names.len +
                 2 + // type_hash
                 ini.fields_len + // field_name
                 ini.fields_len + // field_type
@@ -8205,7 +8203,7 @@ pub fn getReifiedStructType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Pe
         },
     };
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStruct).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeStruct).@"struct".field_names.len +
         2 + // type_hash
         ini.fields_len + // field_name
         ini.fields_len + // field_type
@@ -8325,7 +8323,7 @@ pub fn getDeclaredUnionType(
         .auto => false,
         .@"extern" => true,
         .@"packed" => {
-            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnionPacked).@"struct".fields.len +
+            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnionPacked).@"struct".field_names.len +
                 ini.captures.len + // capture
                 ini.fields_len); // field_type
 
@@ -8366,7 +8364,7 @@ pub fn getDeclaredUnionType(
         },
     };
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnion).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnion).@"struct".field_names.len +
         1 + // captures_len
         ini.captures.len + // capture
         ini.fields_len + // field_type
@@ -8447,7 +8445,7 @@ pub fn getReifiedUnionType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Per
         .auto => false,
         .@"extern" => true,
         .@"packed" => {
-            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnionPacked).@"struct".fields.len +
+            try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnionPacked).@"struct".field_names.len +
                 2 + // type_hash
                 ini.fields_len + // reified_field_name
                 ini.fields_len); // field_type
@@ -8492,7 +8490,7 @@ pub fn getReifiedUnionType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.Per
         },
     };
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnion).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeUnion).@"struct".field_names.len +
         2 + // type_hash
         ini.fields_len + // reified_field_name
         ini.fields_len + // field_type
@@ -8599,7 +8597,7 @@ pub fn getDeclaredEnumType(
     const field_value_map = if (have_values) try ip.addMap(gpa, io, tid, ini.fields_len) else undefined;
     errdefer local.mutate.maps.len -= @intFromBool(have_values);
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeEnum).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeEnum).@"struct".field_names.len +
         1 + // zir_index
         ini.captures.len + // capture
         @intFromBool(have_values) + // field_value_map
@@ -8674,7 +8672,7 @@ pub fn getReifiedEnumType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.PerT
     const field_value_map = if (have_values) try ip.addMap(gpa, io, tid, ini.fields_len) else undefined;
     errdefer local.mutate.maps.len -= @intFromBool(have_values);
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeEnum).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeEnum).@"struct".field_names.len +
         1 + // zir_index
         2 + // type_hash
         @intFromBool(have_values) + // field_value_map
@@ -8748,7 +8746,7 @@ pub fn getGeneratedEnumTagType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu
     const field_value_map = if (have_values) try ip.addMap(gpa, io, tid, ini.fields_len) else undefined;
     errdefer local.mutate.maps.len -= @intFromBool(have_values);
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeEnum).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeEnum).@"struct".field_names.len +
         1 + // owner_union
         @intFromBool(have_values) + // field_value_map
         ini.fields_len + // field_name
@@ -8807,7 +8805,7 @@ pub fn getDeclaredOpaqueType(ip: *InternPool, gpa: Allocator, io: Io, tid: Zcu.P
     const extra = local.getMutableExtra(gpa, io);
     try items.ensureUnusedCapacity(1);
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeOpaque).@"struct".fields.len + ini.captures.len);
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeOpaque).@"struct".field_names.len + ini.captures.len);
     const extra_index = addExtraAssumeCapacity(extra, Tag.TypeOpaque{
         .zir_index = ini.zir_index,
         .captures_len = @intCast(ini.captures.len),
@@ -8940,7 +8938,7 @@ pub fn getTupleType(
 
     try items.ensureUnusedCapacity(1);
     try extra.ensureUnusedCapacity(
-        @typeInfo(TypeTuple).@"struct".fields.len + (fields_len * 3),
+        @typeInfo(TypeTuple).@"struct".field_names.len + (fields_len * 3),
     );
 
     const extra_index = addExtraAssumeCapacity(extra, TypeTuple{
@@ -8998,7 +8996,7 @@ pub fn getFuncType(
     const prev_extra_len = extra.mutate.len;
     const params_len: u32 = @intCast(key.param_types.len);
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeFunction).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.TypeFunction).@"struct".field_names.len +
         @intFromBool(key.comptime_bits != 0) +
         @intFromBool(key.noalias_bits != 0) +
         params_len);
@@ -9061,7 +9059,7 @@ pub fn getExtern(
     const items = local.getMutableItems(gpa, io);
     const extra = local.getMutableExtra(gpa, io);
     try items.ensureUnusedCapacity(1);
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.Extern).@"struct".fields.len);
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.Extern).@"struct".field_names.len);
     try local.getMutableNavs(gpa, io).ensureUnusedCapacity(1);
 
     // Predict the index the `@"extern" will live at, so we can construct the owner `Nav` before releasing the shard's mutex.
@@ -9140,7 +9138,7 @@ pub fn getFuncDecl(
     // arrays. This is similar to what `getOrPutTrailingString` does.
     const prev_extra_len = extra.mutate.len;
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncDecl).@"struct".fields.len);
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncDecl).@"struct".field_names.len);
 
     const func_decl_extra_index = addExtraAssumeCapacity(extra, Tag.FuncDecl{
         .analysis = .{
@@ -9227,10 +9225,10 @@ pub fn getFuncDeclIes(
     const prev_extra_len = extra.mutate.len;
     const params_len: u32 = @intCast(key.param_types.len);
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncDecl).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncDecl).@"struct".field_names.len +
         1 + // inferred_error_set
-        @typeInfo(Tag.ErrorUnionType).@"struct".fields.len +
-        @typeInfo(Tag.TypeFunction).@"struct".fields.len +
+        @typeInfo(Tag.ErrorUnionType).@"struct".field_names.len +
+        @typeInfo(Tag.TypeFunction).@"struct".field_names.len +
         @intFromBool(key.comptime_bits != 0) +
         @intFromBool(key.noalias_bits != 0) +
         params_len);
@@ -9366,7 +9364,7 @@ pub fn getErrorSetType(
     const local = ip.getLocal(tid);
     const items = local.getMutableItems(gpa, io);
     const extra = local.getMutableExtra(gpa, io);
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.ErrorSet).@"struct".fields.len + names.len);
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.ErrorSet).@"struct".field_names.len + names.len);
 
     const names_map = try ip.addMap(gpa, io, tid, names.len);
     errdefer local.mutate.maps.len -= 1;
@@ -9442,7 +9440,7 @@ pub fn getFuncInstance(
     const local = ip.getLocal(tid);
     const items = local.getMutableItems(gpa, io);
     const extra = local.getMutableExtra(gpa, io);
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncInstance).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncInstance).@"struct".field_names.len +
         arg.comptime_args.len);
 
     assert(arg.comptime_args.len == ip.funcTypeParamsLen(ip.typeOf(generic_owner)));
@@ -9526,11 +9524,11 @@ fn getFuncInstanceIes(
     const prev_extra_len = extra.mutate.len;
     const params_len: u32 = @intCast(arg.param_types.len);
 
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncInstance).@"struct".fields.len +
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncInstance).@"struct".field_names.len +
         1 + // inferred_error_set
         arg.comptime_args.len +
-        @typeInfo(Tag.ErrorUnionType).@"struct".fields.len +
-        @typeInfo(Tag.TypeFunction).@"struct".fields.len +
+        @typeInfo(Tag.ErrorUnionType).@"struct".field_names.len +
+        @typeInfo(Tag.TypeFunction).@"struct".field_names.len +
         @intFromBool(arg.noalias_bits != 0) +
         params_len);
 
@@ -9776,15 +9774,16 @@ fn addInt(
 }
 
 fn addExtra(extra: Local.Extra.Mutable, item: anytype) Allocator.Error!u32 {
-    const fields = @typeInfo(@TypeOf(item)).@"struct".fields;
-    try extra.ensureUnusedCapacity(fields.len);
+    const field_count = @typeInfo(@TypeOf(item)).@"struct".field_names.len;
+    try extra.ensureUnusedCapacity(field_count);
     return addExtraAssumeCapacity(extra, item);
 }
 
 fn addExtraAssumeCapacity(extra: Local.Extra.Mutable, item: anytype) u32 {
     const result: u32 = extra.mutate.len;
-    inline for (@typeInfo(@TypeOf(item)).@"struct".fields) |field| {
-        extra.appendAssumeCapacity(.{switch (field.type) {
+    const info = @typeInfo(@TypeOf(item)).@"struct";
+    inline for (info.field_types, info.field_names) |field_type, field_name| {
+        extra.appendAssumeCapacity(.{switch (field_type) {
             Index,
             Nav.Index,
             Nav.Index.Optional,
@@ -9799,7 +9798,7 @@ fn addExtraAssumeCapacity(extra: Local.Extra.Mutable, item: anytype) u32 {
             TrackedInst.Index,
             TrackedInst.Index.Optional,
             ComptimeAllocIndex,
-            => @intFromEnum(@field(item, field.name)),
+            => @intFromEnum(@field(item, field_name)),
 
             u32,
             i32,
@@ -9813,9 +9812,9 @@ fn addExtraAssumeCapacity(extra: Local.Extra.Mutable, item: anytype) u32 {
             Tag.TypeStructPacked.Bits,
             Tag.TypeUnionPacked.Bits,
             Tag.TypeEnum.Bits,
-            => @bitCast(@field(item, field.name)),
+            => @bitCast(@field(item, field_name)),
 
-            else => @compileError("bad field type: " ++ @typeName(field.type)),
+            else => @compileError("bad field type: " ++ @typeName(field_type)),
         }});
     }
     return result;
@@ -9828,11 +9827,12 @@ fn addLimbsExtraAssumeCapacity(ip: *InternPool, extra: anytype) u32 {
         else => @compileError("unsupported host"),
     }
     const result: u32 = @intCast(ip.limbs.items.len);
-    inline for (@typeInfo(@TypeOf(extra)).@"struct".fields, 0..) |field, i| {
-        const new: u32 = switch (field.type) {
-            u32 => @field(extra, field.name),
-            Index => @intFromEnum(@field(extra, field.name)),
-            else => @compileError("bad field type: " ++ @typeName(field.type)),
+    const info = @typeInfo(@TypeOf(extra)).@"struct";
+    inline for (info.field_names, info.field_types, 0..) |field_name, field_type, i| {
+        const new: u32 = switch (field_type) {
+            u32 => @field(extra, field_name),
+            Index => @intFromEnum(@field(extra, field_name)),
+            else => @compileError("bad field type: " ++ @typeName(field_type)),
         };
         if (i % 2 == 0) {
             ip.limbs.appendAssumeCapacity(new);
@@ -9846,10 +9846,11 @@ fn addLimbsExtraAssumeCapacity(ip: *InternPool, extra: anytype) u32 {
 fn extraDataTrail(extra: Local.Extra, comptime T: type, index: u32) struct { data: T, end: u32 } {
     const extra_items = extra.view().items(.@"0");
     var result: T = undefined;
-    const fields = @typeInfo(T).@"struct".fields;
-    inline for (fields, index..) |field, extra_index| {
+    const field_names = @typeInfo(T).@"struct".field_names;
+    const field_types = @typeInfo(T).@"struct".field_types;
+    inline for (field_names, field_types, index..) |field_name, field_type, extra_index| {
         const extra_item = extra_items[extra_index];
-        @field(result, field.name) = switch (field.type) {
+        @field(result, field_name) = switch (field_type) {
             Index,
             Nav.Index,
             Nav.Index.Optional,
@@ -9880,12 +9881,12 @@ fn extraDataTrail(extra: Local.Extra, comptime T: type, index: u32) struct { dat
             Tag.TypeEnum.Bits,
             => @bitCast(extra_item),
 
-            else => @compileError("bad field type: " ++ @typeName(field.type)),
+            else => @compileError("bad field type: " ++ @typeName(field_type)),
         };
     }
     return .{
         .data = result,
-        .end = @intCast(index + fields.len),
+        .end = @intCast(index + field_names.len),
     };
 }
 
@@ -10313,7 +10314,7 @@ fn getCoercedFunc(
     const extra = local.getMutableExtra(gpa, io);
 
     const prev_extra_len = extra.mutate.len;
-    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncCoerced).@"struct".fields.len);
+    try extra.ensureUnusedCapacity(@typeInfo(Tag.FuncCoerced).@"struct".field_names.len);
 
     const extra_index = addExtraAssumeCapacity(extra, Tag.FuncCoerced{
         .ty = ty,
@@ -10603,7 +10604,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                 },
 
                 .type_struct => b: {
-                    var n: usize = @typeInfo(Tag.TypeStruct).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeStruct).@"struct".field_names.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeStruct, data);
                     switch (extra.data.flags.any_captures) {
                         .reified => n += 2, // type_hash: PackedU64
@@ -10631,7 +10632,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                     break :b n * @sizeOf(u32);
                 },
                 .type_struct_packed_auto, .type_struct_packed_explicit => b: {
-                    var n: usize = @typeInfo(Tag.TypeStructPacked).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeStructPacked).@"struct".field_names.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeStructPacked, data);
                     switch (extra.data.bits.captures_len) {
                         .reified => n += 2, // type_hash: PackedU64
@@ -10642,7 +10643,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                     break :b n * @sizeOf(u32);
                 },
                 .type_struct_packed_auto_defaults, .type_struct_packed_explicit_defaults => b: {
-                    var n: usize = @typeInfo(Tag.TypeStructPacked).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeStructPacked).@"struct".field_names.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeStructPacked, data);
                     switch (extra.data.bits.captures_len) {
                         .reified => n += 2, // type_hash: PackedU64
@@ -10654,7 +10655,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                     break :b n * @sizeOf(u32);
                 },
                 .type_union => b: {
-                    var n: usize = @typeInfo(Tag.TypeUnion).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeUnion).@"struct".field_names.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeUnion, data);
                     switch (extra.data.flags.any_captures) {
                         .reified => n += 2, // type_hash: PackedU64
@@ -10671,7 +10672,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                     break :b n * @sizeOf(u32);
                 },
                 .type_union_packed_auto, .type_union_packed_explicit => b: {
-                    var n: usize = @typeInfo(Tag.TypeUnionPacked).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeUnionPacked).@"struct".field_names.len;
                     const extra = extraDataTrail(extra_list, Tag.TypeUnionPacked, data);
                     switch (extra.data.bits.captures_len) {
                         .reified => n += 2, // type_hash: PackedU64
@@ -10681,7 +10682,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                     break :b n * @sizeOf(u32);
                 },
                 .type_enum_auto => b: {
-                    var n: usize = @typeInfo(Tag.TypeEnum).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeEnum).@"struct".field_names.len;
                     const extra = extraData(extra_list, Tag.TypeEnum, data);
                     switch (extra.bits.captures_len) {
                         .generated_union_tag => n += 1, // owner_union: Index
@@ -10698,7 +10699,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                     break :b n * @sizeOf(u32);
                 },
                 .type_enum_explicit, .type_enum_nonexhaustive => b: {
-                    var n: usize = @typeInfo(Tag.TypeEnum).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeEnum).@"struct".field_names.len;
                     const extra = extraData(extra_list, Tag.TypeEnum, data);
                     switch (extra.bits.captures_len) {
                         .generated_union_tag => n += 1, // owner_union: Index
@@ -10717,7 +10718,7 @@ fn dumpStatsFallible(ip: *const InternPool, w: *Io.Writer, arena: Allocator) !vo
                     break :b n * @sizeOf(u32);
                 },
                 .type_opaque => b: {
-                    var n: usize = @typeInfo(Tag.TypeEnum).@"struct".fields.len;
+                    var n: usize = @typeInfo(Tag.TypeEnum).@"struct".field_names.len;
                     const extra = extraData(extra_list, Tag.TypeOpaque, data);
                     n += extra.captures_len; // capture: CaptureValue
                     break :b n * @sizeOf(u32);
@@ -12133,8 +12134,8 @@ fn funcIesResolvedPtr(ip: *const InternPool, func_index: Index) *Index {
     const func_extra = unwrapped_func.getExtra(ip);
     const func_item = unwrapped_func.getItem(ip);
     const extra_index = switch (func_item.tag) {
-        .func_decl => func_item.data + @typeInfo(Tag.FuncDecl).@"struct".fields.len,
-        .func_instance => func_item.data + @typeInfo(Tag.FuncInstance).@"struct".fields.len,
+        .func_decl => func_item.data + @typeInfo(Tag.FuncDecl).@"struct".field_names.len,
+        .func_instance => func_item.data + @typeInfo(Tag.FuncInstance).@"struct".field_names.len,
         .func_coerced => {
             const uncoerced_func_index: Index = @enumFromInt(func_extra.view().items(.@"0")[
                 func_item.data + std.meta.fieldIndex(Tag.FuncCoerced, "func").?
@@ -12143,8 +12144,8 @@ fn funcIesResolvedPtr(ip: *const InternPool, func_index: Index) *Index {
             const uncoerced_func_item = unwrapped_uncoerced_func.getItem(ip);
             return @ptrCast(&unwrapped_uncoerced_func.getExtra(ip).view().items(.@"0")[
                 switch (uncoerced_func_item.tag) {
-                    .func_decl => uncoerced_func_item.data + @typeInfo(Tag.FuncDecl).@"struct".fields.len,
-                    .func_instance => uncoerced_func_item.data + @typeInfo(Tag.FuncInstance).@"struct".fields.len,
+                    .func_decl => uncoerced_func_item.data + @typeInfo(Tag.FuncDecl).@"struct".field_names.len,
+                    .func_instance => uncoerced_func_item.data + @typeInfo(Tag.FuncInstance).@"struct".field_names.len,
                     else => unreachable,
                 }
             ]);
