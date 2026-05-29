@@ -112,8 +112,8 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
         }
 
         if (compiler.tracy.enable_allocation) {
-            var gpa_tracy = compiler.tracy.tracyAllocator(gpa);
-            try compiler.mainArgs(gpa_tracy.allocator(), arena, io, args, &environ_map);
+            var tracy_allocator: compiler.tracy.Allocator = .{ .parent_allocator = gpa };
+            try compiler.mainArgs(tracy_allocator.interface(), arena, io, args, &environ_map);
             return 0;
         }
 

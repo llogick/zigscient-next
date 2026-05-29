@@ -14,6 +14,7 @@ const InternPool = @import("../InternPool.zig");
 const link = @import("../link.zig");
 const MappedFile = @import("MappedFile.zig");
 const target_util = @import("../target.zig");
+const tracy = @import("../tracy.zig");
 const Type = @import("../Type.zig");
 const Value = @import("../Value.zig");
 const Zcu = @import("../Zcu.zig");
@@ -127,7 +128,7 @@ section_by_name: std.array_hash_map.Auto(String(.shstrtab), void),
 changed_symtab_index: std.array_hash_map.Auto(String(.strtab), void),
 /// Counts how many relocations are currently in `.rela.dyn` which would require a `DT_TEXTREL`
 /// entry in the `.dynamic` section. This allows adding `DT_TEXTREL` to the output `.dynamic`
-/// section in `flush` only when it is actually necessary. See also `nodeRequiresTextrel`.
+/// section in `flush` only when it is actually necessary. See also `nodeWantsDsoRelocation`.
 textrel_count: u32,
 
 const_prog_node: std.Progress.Node,
@@ -1127,8 +1128,10 @@ const SymbolReloc = struct {
         }
         if (reloc.rela_index.unwrap()) |rela_index| {
             reloc.relaSection(elf).relaDeleteOne(elf, rela_index);
-            if (elf.nodeRequiresTextrel(reloc.node)) {
-                elf.textrel_count -= 1;
+            switch (elf.nodeWantsDsoRelocation(reloc.node)) {
+                .no => unreachable, // there *was* a dynamic relocation!
+                .yes => {},
+                .yes_textrel => elf.textrel_count -= 1,
             }
         }
         if (reloc.type.dependsOnTlsSize()) {
@@ -1671,8 +1674,10 @@ fn setGlobalSymbolValue(
             assert(reloc.target == Symbol.Id.global(global_name));
             if (reloc.rela_index.unwrap()) |rela_index| {
                 reloc.relaSection(elf).relaDeleteOne(elf, rela_index);
-                if (elf.nodeRequiresTextrel(reloc.node)) {
-                    elf.textrel_count -= 1;
+                switch (elf.nodeWantsDsoRelocation(reloc.node)) {
+                    .no => unreachable, // there *was* a dynamic relocation!
+                    .yes => {},
+                    .yes_textrel => elf.textrel_count -= 1,
                 }
                 reloc.rela_index = .none;
             }
@@ -1966,17 +1971,6 @@ const Symbol = struct {
         fn ptr(si: Symbol.Index, elf: *Elf) *Symbol {
             return &elf.symtab.items[@intFromEnum(si)];
         }
-
-        fn applyTargetRelocs(si: Symbol.Index, elf: *Elf) void {
-            assert(elf.ehdrField(.type) != .REL);
-            var ri = si.ptr(elf).first_target_reloc;
-            while (ri != .none) {
-                const reloc = ri.get(elf);
-                assert(reloc.target.index(elf) == si);
-                reloc.apply(elf);
-                ri = reloc.next;
-            }
-        }
     };
 
     /// A `LocalIndex` is a raw index into the symtab like `Index`, but it guarantees that the
@@ -2063,7 +2057,7 @@ const Symbol = struct {
 
             // Re-apply relocations targeting this symbol
             if (elf.ehdrField(.type) != .REL) {
-                sym_index.applyTargetRelocs(elf);
+                sym_id.applyTargetRelocs(elf);
             }
 
             // Update GOT entries targeting this symbol
@@ -2076,6 +2070,17 @@ const Symbol = struct {
             if (elf.got.getIndex(.{ .tlsgd0 = sym_id })) |got_index| {
                 elf.updateGotEntry(got_index);
                 elf.updateGotEntry(got_index + 1); // tlsgd1
+            }
+        }
+
+        fn applyTargetRelocs(sym_id: Symbol.Id, elf: *Elf) void {
+            assert(elf.ehdrField(.type) != .REL);
+            var ri = sym_id.index(elf).ptr(elf).first_target_reloc;
+            while (ri != .none) {
+                const reloc = ri.get(elf);
+                assert(reloc.target == sym_id);
+                reloc.apply(elf);
+                ri = reloc.next;
             }
         }
 
@@ -4441,7 +4446,7 @@ fn loadDso(elf: *Elf, path: std.Build.Cache.Path, fr: *Io.File.Reader) !void {
                         elf.addPltEntry(name, global_ptr.dynsym_index);
                         // ...and therefore, we need to re-apply that symbol's relocations, as
                         // some might be targeting its PLT entry.
-                        global_ptr.symtab_index.applyTargetRelocs(elf);
+                        Symbol.Id.global(name).applyTargetRelocs(elf);
                     }
                 }
             }
@@ -5107,8 +5112,10 @@ fn addSymbolRelocAssumeCapacity(
             } else elf.globalByName(name).?.dynsym_index,
         };
 
-        if (elf.nodeRequiresTextrel(node)) {
-            elf.textrel_count += 1;
+        switch (elf.nodeWantsDsoRelocation(node)) {
+            .no => break :r .none,
+            .yes => {},
+            .yes_textrel => elf.textrel_count += 1,
         }
 
         // It currently looks like we need a runtime relocation for this.
@@ -5382,13 +5389,18 @@ fn updateGotEntry(elf: *Elf, got_index: usize) void {
     };
 }
 
-/// Returns whether a `DT_TEXTREL` dynamic entry is needed to have a runtime relocation in `node`.
-fn nodeRequiresTextrel(elf: *Elf, node: MappedFile.Node.Index) bool {
+/// If `node` cannot contain runtime relocations, returns `.no`.
+///
+/// If `node` can contain runtime relocations, `returns `.yes_textrel` if such a relocation requires
+/// the presence of a `DT_TEXTREL` dynamic entry, or `.yes` otherwise.
+fn nodeWantsDsoRelocation(elf: *Elf, node: MappedFile.Node.Index) enum { yes, yes_textrel, no } {
     const shndx = elf.getNodeShndx(node);
     const shf: std.elf.SHF = switch (elf.shdrPtr(shndx)) {
         inline else => |shdr| elf.targetLoad(&shdr.flags).shf,
     };
-    return shf.ALLOC and !shf.WRITE;
+    if (!shf.ALLOC) return .no;
+    if (!shf.WRITE) return .yes_textrel;
+    return .yes;
 }
 
 pub fn updateNav(elf: *Elf, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) !void {
@@ -5668,7 +5680,7 @@ pub fn idle(elf: *Elf, tid: Zcu.PerThread.Id) !bool {
             };
             break :task;
         }
-        if (elf.changed_symtab_index.pop()) |kv| {
+        while (elf.changed_symtab_index.pop()) |kv| {
             // We only need to do work in relocatables, because in ELF modules (non-relocatables)
             // our `ElfN.Rela` entries use `.dynsym` indices rather than `.symtab` indices, and
             // `.dynsym` indices are (at the time of writing) always immutable.
@@ -5865,6 +5877,8 @@ fn flushFileOffset(elf: *Elf, ni: MappedFile.Node.Index) !void {
 }
 
 fn flushMoved(elf: *Elf, ni: MappedFile.Node.Index) !void {
+    const trace = tracy.trace(@src());
+    defer trace.end();
     switch (elf.getNode(ni)) {
         .file => unreachable,
         .ehdr, .shdr => try elf.flushFileOffset(ni),
@@ -6019,6 +6033,8 @@ fn flushMoved(elf: *Elf, ni: MappedFile.Node.Index) !void {
 }
 
 fn flushResized(elf: *Elf, ni: MappedFile.Node.Index) !void {
+    const trace = tracy.trace(@src());
+    defer trace.end();
     _, const size = ni.location(&elf.mf).resolve(&elf.mf);
     switch (elf.getNode(ni)) {
         .file => {},
@@ -6152,7 +6168,7 @@ fn flushMovedPltSection(elf: *Elf, which: enum { plt, plt_sec, got_plt }, old_ad
                     // specific tracking for PLT relocations---instead just re-apply all relocations
                     // targeting symbols with PLT entries.
                     for (elf.plt.keys()) |sym| {
-                        sym.index(elf).applyTargetRelocs(elf);
+                        sym.applyTargetRelocs(elf);
                     }
                     // We also need to update all of the references from `.plt.sec` to `.got.plt`.
                     // However, if there's also a flush pending for `.got.plt`, don't bother doing
