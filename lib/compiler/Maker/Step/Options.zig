@@ -45,7 +45,7 @@ pub fn make(
         const lazy_path = arg.path.get(conf);
         try step.addWatchInput(maker, arena, lazy_path);
         const arg_path = try maker.resolveLazyPath(arena, lazy_path, step_index);
-        _ = try man.addFilePath(arg_path, null);
+        // _ = try man.addFilePath(arg_path, null);
         try args_bytes.print(arena, "pub const {f}: []const u8 = \"{f}\";\n", .{
             std.zig.fmtId(name), arg_path.fmtEscapeString(),
         });

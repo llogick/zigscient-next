@@ -1664,9 +1664,9 @@ fn cfgLspServer(
         const ls_test_options = b.addOptions();
         ls_test_options.step.name = "test options";
 
-        // ls_test_options.addOptionPath("zig_exe_path", .{ .cwd_relative = b.graph.zig_exe }) catch @panic("OOM");
-        // ls_test_options.addOptionPath("zig_lib_path", .{ .cwd_relative = b.fmt("{f}", .{b.graph.zig_lib_directory}) }) catch @panic("OOM");
-        // ls_test_options.addOptionPath("global_cache_path", .{ .cwd_relative = b.cache_root.join(b.allocator, &.{"zigscient"}) catch @panic("OOM") }) catch @panic("OOM");
+        ls_test_options.addOptionPath("zig_exe_path", .zig_exe);
+        ls_test_options.addOptionPath("zig_lib_path", .zig_lib);
+        ls_test_options.addOptionPath("global_cache_path", .{ .relative = .{ .base = .global_cache } });
 
         break :blk ls_test_options.createModule();
     };
@@ -1771,7 +1771,7 @@ fn cfgLspServer(
 
         // Create run steps
         // @import("src/lsp_server/tests/add_build_runner_cases.zig").addCases(b, test_build_runner_step, test_filters);
-        // @import("src/lsp_server/tests/add_analysis_cases.zig").addCases(b, target, optimize, test_analysis_step, test_filters);
+        @import("src/lsp_server/tests/add_analysis_cases.zig").addCases(b, target, optimize, test_analysis_step, test_filters);
 
         const run_tests = b.addRunArtifact(ls_tests);
         const run_src_tests = b.addRunArtifact(src_tests);

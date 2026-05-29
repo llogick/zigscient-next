@@ -11,7 +11,7 @@ pub fn addCases(
     test_filters: []const []const u8,
 ) void {
     const cases_dir = b.path("src/lsp_server/tests/analysis");
-    const cases_path_from_root = b.pathFromRoot("src/lsp_server/tests/analysis");
+    const cases_path_from_root = b.root.root_dir.join(b.allocator, &.{"src/lsp_server/tests/analysis"}) catch @panic("OOM");
 
     const check_exe = b.addExecutable(.{
         .name = "analysis_check",
@@ -46,15 +46,15 @@ pub fn addCases(
         const run_check = std.Build.Step.Run.create(b, b.fmt("run analysis on {s}", .{entry.name}));
         run_check.producer = check_exe;
 
-        if (target.result.cpu.arch.isWasm() and b.enable_wasmtime) {
-            run_check.skip_foreign_checks = true;
-            run_check.addArgs(&.{
-                "wasmtime",
-                "--dir=.",
-                b.fmt("--dir={f}::/lib", .{b.graph.zig_lib_directory}),
-                "--",
-            });
-        }
+        // if (target.result.cpu.arch.isWasm() and b.enable_wasmtime) {
+        //     run_check.skip_foreign_checks = true;
+        //     run_check.addArgs(&.{
+        //         "wasmtime",
+        //         "--dir=.",
+        //         b.fmt("--dir={f}::/lib", .{b.graph.zig_lib_directory}),
+        //         "--",
+        //     });
+        // }
 
         run_check.addArtifactArg(check_exe);
         if (target.query.eql(b.graph.host.query)) {
@@ -63,7 +63,7 @@ pub fn addCases(
         }
         if (!target.result.cpu.arch.isWasm()) {
             run_check.addArg("--zig-lib-path");
-            run_check.addDirectoryArg(.{ .cwd_relative = b.fmt("{f}", .{b.graph.zig_lib_directory}) });
+            run_check.addDirectoryArg(.zig_lib);
         }
 
         const input_file = cases_dir.path(b, entry.name);
