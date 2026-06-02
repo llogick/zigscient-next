@@ -60,6 +60,7 @@ pending_show_messages: std.ArrayList(types.window.ShowMessageParams) = .empty,
 client_capabilities: ClientCapabilities = .{},
 diagnostics_collection: DiagnosticsCollection,
 workspaces: std.ArrayList(Workspace) = .empty,
+workspaces_io_group: std.Io.Group = .init,
 
 // Code was based off of https://github.com/andersfr/zig-lsp/blob/master/server.zig
 
@@ -327,7 +328,7 @@ fn autofix(server: *Server, arena: std.mem.Allocator, handle: *DocumentStore.Han
     return builder.fixall_text_edits;
 }
 
-fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
+pub fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
     if (!server.client_capabilities.supports_publish_diagnostics) return;
     const do = struct {
         fn do(param_server: *Server, param_handle: *DocumentStore.Handle) std.Io.Cancelable!void {
@@ -409,9 +410,13 @@ fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void {
 }
 
 fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.InitializeParams) Error!types.InitializeResult {
+    const old_cancel_protect = server.io.swapCancelProtection(.blocked);
+    defer _ = server.io.swapCancelProtection(old_cancel_protect);
+
     var support_full_semantic_tokens = true;
 
     if (request.clientInfo) |clientInfo| {
+        log.info("Client init: Name: {s} ({s})", .{ clientInfo.name, clientInfo.version orelse "unknown version" });
         server.client_capabilities.client_name = try server.allocator.dupe(u8, clientInfo.name);
 
         if (std.mem.startsWith(u8, clientInfo.name, "Visual Studio Code") or
@@ -432,6 +437,7 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
 
     if (request.capabilities.general) |general| {
         if (general.positionEncodings) |position_encodings| {
+            log.debug("Client init: Proposed `PositionEncodingKinds`: {any}", .{position_encodings});
             server.offset_encoding = outer: for (position_encodings) |encoding| {
                 switch (encoding) {
                     .@"utf-8" => break :outer .@"utf-8",
@@ -443,6 +449,7 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
         }
     }
     server.diagnostics_collection.offset_encoding = server.offset_encoding;
+    log.debug("Client init: Selected `PositionEncodingKind`:  '{t}'", .{server.offset_encoding});
 
     if (request.capabilities.textDocument) |textDocument| {
         server.client_capabilities.supports_publish_diagnostics = textDocument.publishDiagnostics != null;
@@ -542,14 +549,9 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
         }
     }
 
-    if (request.clientInfo) |clientInfo| {
-        log.info("Client Info: {s} ({s})", .{ clientInfo.name, clientInfo.version orelse "unknown version" });
-    }
-    log.debug("Offset Encoding:  '{t}'", .{server.offset_encoding});
-
     if (request.workspaceFolders) |workspace_folders| {
-        for (workspace_folders) |src| {
-            try server.addWorkspace(src.uri);
+        for (workspace_folders) |folder| {
+            try server.addWorkspace(folder.uri, false);
         }
     }
 
@@ -575,7 +577,7 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
             if (server.client_capabilities.supports_configuration) {
                 // Do not resolve configuration until we received `workspace/configuration`.
             } else {
-                try server.resolveConfiguration();
+                try settings_handler.resolveConfiguration(server);
             }
         } else |err| {
             log.err("failed to read initialization_options: {}", .{err});
@@ -685,7 +687,7 @@ fn initializedHandler(server: *Server, arena: std.mem.Allocator, notification: t
         // and it is unknown whether the client will use the
         // `workspace/didChangeConfiguration` (push model) notification instead.
         // In case they don't, we resolve configuration early and re-resolve if push model is used.
-        try server.resolveConfiguration();
+        try settings_handler.resolveConfiguration(server);
     }
 }
 
@@ -766,7 +768,7 @@ fn handleConfiguration(server: *Server, json: std.json.Value) error{ Canceled, O
             break :blk null;
         },
     } orelse {
-        try server.resolveConfiguration();
+        try settings_handler.resolveConfiguration(server);
         return;
     };
 
@@ -781,7 +783,7 @@ fn handleConfiguration(server: *Server, json: std.json.Value) error{ Canceled, O
         .{ .ignore_unknown_fields = true },
     ) catch |err| {
         log.err("Failed to parse response from 'workspace/configuration': {}", .{err});
-        try server.resolveConfiguration();
+        try settings_handler.resolveConfiguration(server);
         return;
     };
 
@@ -815,27 +817,14 @@ fn handleConfiguration(server: *Server, json: std.json.Value) error{ Canceled, O
     }
 
     try server.config_manager.setConfiguration(.lsp_configuration, &new_config);
-    try server.resolveConfiguration();
+    try settings_handler.resolveConfiguration(server);
 }
 
-fn addWorkspace(server: *Server, uri: types.URI) error{ Canceled, OutOfMemory }!void {
-    try server.workspaces.ensureUnusedCapacity(server.allocator, 1);
-    server.workspaces.appendAssumeCapacity(try Workspace.init(server, uri));
+fn addWorkspace(server: *Server, uri: types.URI, load_configuration: bool) error{ Canceled, OutOfMemory }!void {
+    server.workspaces.ensureUnusedCapacity(server.allocator, 1) catch @panic("OOM");
+    server.workspaces.appendAssumeCapacity(try Workspace.init(server, uri, load_configuration));
 
-    blk: {
-        var arena_state = std.heap.ArenaAllocator.init(server.allocator);
-        defer arena_state.deinit();
-        const arena = arena_state.allocator();
-        const dir_path = uri_util.toFsPath(arena, uri) catch break :blk;
-        if (try DocumentStore.buildDotZigExists(server.io, dir_path)) {
-            const bf_path = try std.fs.path.join(arena, &.{ dir_path, "build.zig" });
-            const bf_uri = try uri_util.fromPath(server.allocator, bf_path);
-            server.workspaces.items[server.workspaces.items.len - 1].build_file_uri = bf_uri;
-            _ = try server.document_store.getOrLoadHandle(bf_uri);
-        }
-    }
-
-    log.info("added Workspace Folder: {s}", .{uri});
+    log.info("Added Workspace: {q}", .{uri});
 
     // if (BuildOnSaveSupport.isSupportedComptime() and
     //     // Don't initialize build on save until initialization finished.
@@ -855,11 +844,11 @@ fn removeWorkspace(server: *Server, uri: types.URI) void {
         if (std.mem.eql(u8, workspace.uri, uri)) {
             var removed_workspace = server.workspaces.swapRemove(i);
             removed_workspace.deinit(server.allocator);
-            log.info("removed Workspace Folder: {s}", .{uri});
+            log.info("Removed Workspace: {q}", .{uri});
             break;
         }
     } else {
-        log.warn("could not remove Workspace Folder: {s}", .{uri});
+        log.warn("Failed to remove Workspace: {q}: Not Found", .{uri});
     }
 }
 
@@ -898,7 +887,7 @@ fn didChangeWorkspaceFoldersHandler(server: *Server, arena: std.mem.Allocator, n
     defer _ = server.io.swapCancelProtection(old_cancel_protect);
 
     for (notification.event.added) |folder| {
-        try server.addWorkspace(folder.uri);
+        try server.addWorkspace(folder.uri, true);
     }
 
     for (notification.event.removed) |folder| {
@@ -942,158 +931,10 @@ fn didChangeConfigurationHandler(server: *Server, arena: std.mem.Allocator, noti
     };
 
     try server.config_manager.setConfiguration(.lsp_configuration, &new_config);
-    try server.resolveConfiguration();
+    try settings_handler.resolveConfiguration(server);
 }
 
-pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void {
-    var result = try server.config_manager.resolveConfiguration(server.allocator);
-    defer result.deinit(server.allocator);
-
-    for (result.messages) |msg| {
-        server.showMessage(.Error, "{s}", .{msg});
-    }
-
-    inline for (comptime std.meta.fieldNames(Settings)) |field_name| {
-        if (@field(result.did_change, field_name)) {
-            const new_value = @field(server.config_manager.config, field_name);
-            log.info("$ {s} -> [{f}]", .{ field_name, std.json.fmt(new_value, .{}) });
-        }
-    }
-
-    const new_zig_exe_path: bool = result.did_change.zig_exe_path;
-    const new_zig_lib_path: bool = result.did_change.zig_lib_path;
-    const new_build_runner_path: bool = result.did_change.build_runner_path;
-    // const new_enable_build_on_save: bool = result.did_change.enable_build_on_save;
-    // const new_build_on_save_args: bool = result.did_change.build_on_save_args;
-    const new_force_autofix: bool = result.did_change.force_autofix;
-
-    server.document_store.config = createDocumentStoreConfig(server.config_manager);
-
-    // if (BuildOnSaveSupport.isSupportedComptime() and
-    //     // If the client supports the `workspace/configuration` request, defer
-    //     // build on save initialization until after we have received workspace
-    //     // configuration from the server
-    //     (!server.client_capabilities.supports_configuration or server.status == .initialized))
-    // {
-    //     const should_restart =
-    //         new_zig_exe_path or
-    //         new_zig_lib_path or
-    //         new_build_runner_path or
-    //         new_enable_build_on_save or
-    //         new_build_on_save_args;
-
-    //     for (server.workspaces.items) |*workspace| {
-    //         try workspace.refreshBuildOnSave(.{
-    //             .server = server,
-    //             .restart = should_restart,
-    //         });
-    //     }
-    // }
-
-    if (DocumentStore.supports_build_system) {
-        if (new_zig_exe_path or new_zig_lib_path or new_build_runner_path) {
-            for (server.document_store.build_files.keys()) |build_file_uri| {
-                server.document_store.invalidateBuildFile(build_file_uri);
-            }
-        }
-    }
-
-    if (server.status == .initialized and
-        (new_zig_exe_path or new_zig_lib_path) and
-        server.client_capabilities.supports_publish_diagnostics)
-    {
-        for (server.document_store.handles.values()) |handle| {
-            if (!handle.isLspSynced()) continue;
-            server.generateDiagnostics(handle);
-        }
-    }
-
-    // <---------------------------------------------------------->
-    //  don't modify config options after here, only show messages
-    // <---------------------------------------------------------->
-
-    check: {
-        if (!std.process.can_spawn) break :check;
-        if (server.status != .initialized) break :check;
-
-        // TODO there should a way to suppress this message
-        if (server.config_manager.zig_exe == null) {
-            server.showMessage(.Warning, "zig executable could not be found", .{});
-        } else if (server.config_manager.zig_lib_dir == null) {
-            server.showMessage(.Warning, "zig standard library directory could not be resolved", .{});
-        }
-    }
-
-    check: {
-        if (server.status != .initialized) break :check;
-
-        switch (server.config_manager.build_runner_supported) {
-            .yes, .no_dont_error => break :check,
-            .no => {},
-        }
-
-        const zig_version = server.config_manager.zig_exe.?.version;
-        const zls_version = build_options.semantic_version;
-
-        const zig_version_is_tagged = zig_version.pre == null;
-        const zls_version_is_tagged = zls_version.pre == null;
-
-        if (zig_version_is_tagged) {
-            server.showMessage(
-                .Warning,
-                "Zig version {f} isn't supported by Zigscient {f} 's build_runner. The server won't be able to resolve project modules information.",
-                .{ zig_version, zls_version },
-            );
-        } else if (zls_version_is_tagged) {
-            server.showMessage(
-                .Warning,
-                "Compatibility mismatch: This version of Zigscient {f} is designed for use with Zig {}.{}. You're currently running Zig {f}",
-                .{ zls_version, zls_version.major, zls_version.minor, zig_version },
-            );
-        } else {
-            server.showMessage(
-                .Warning,
-                "Incompatible Zig version: Zigscient {f} requires at least Zig {s} to function properly. You're currently running Zig {f}",
-                .{ zls_version, build_options.minimum_runtime_zig_version_string, zig_version },
-            );
-        }
-    }
-
-    if (server.config_manager.config.enable_build_on_save orelse false) {
-        if (!BuildOnSaveSupport.isSupportedComptime()) {
-            // This message is not very helpful but it relatively uncommon to happen anyway.
-            log.info("'enable_build_on_save' is ignored because build on save is not supported by this build of the server.", .{});
-        } else if (server.status == .initialized and (server.config_manager.config.zig_exe_path == null or server.config_manager.zig_lib_dir == null)) {
-            log.warn("'enable_build_on_save' is ignored because Zig could not be found", .{});
-        } else if (!server.client_capabilities.supports_publish_diagnostics) {
-            log.warn("'enable_build_on_save' is ignored because it is not supported by {s}", .{server.client_capabilities.client_name orelse "your editor"});
-        } else if (server.status == .initialized and server.config_manager.build_runner_supported == .no and server.config_manager.config.build_runner_path == null) {
-            log.warn("'enable_build_on_save' is ignored because no build runner is available", .{});
-        } else if (server.status == .initialized and server.config_manager.zig_exe != null) {
-            switch (BuildOnSaveSupport.isSupportedRuntime(server.config_manager.zig_exe.?.version)) {
-                .supported => {},
-                .invalid_linux_kernel_version => |*utsname_release| log.warn("Build-On-Save cannot run in watch mode because the Linux version '{s}' could not be parsed", .{std.mem.sliceTo(utsname_release, 0)}),
-                .unsupported_linux_kernel_version => |kernel_version| log.warn("Build-On-Save cannot run in watch mode because it is not supported by Linux '{f}' (requires at least {f})", .{ kernel_version, BuildOnSaveSupport.minimum_linux_version }),
-                .unsupported_zig_version => log.warn("Build-On-Save cannot run in watch mode because it is not supported on {t} by Zig {f} (requires at least {f})", .{ zig_builtin.os.tag, server.resolved_config.zig_runtime_version.?, BuildOnSaveSupport.minimum_zig_version }),
-                .unsupported_os => log.warn("Build-On-Save cannot run in watch mode because it is not supported on {t}", .{zig_builtin.os.tag}),
-            }
-        }
-    }
-
-    if (new_force_autofix) {
-        switch (server.autofixWorkaround()) {
-            .none => {},
-            .unavailable => {
-                log.warn("`force_autofix` is ignored because it is not supported by {s}", .{server.client_capabilities.client_name orelse "your editor"});
-            },
-            .on_save, .will_save_wait_until => |workaround| {
-                log.info("Autofix workaround enabled: '{t}'", .{workaround});
-            },
-        }
-    }
-}
-
-fn createDocumentStoreConfig(config_manager: *const settings_handler.Manager) DocumentStore.Settings {
+pub fn createDocumentStoreConfig(config_manager: *const settings_handler.Manager) DocumentStore.Settings {
     return .{
         .environ_map = config_manager.environ_map,
         .zig_exe_path = config_manager.config.zig_exe_path,
@@ -1883,7 +1724,7 @@ fn handleResponse(server: *Server, response: lsp.JsonRPCMessage.Response) Error!
         .@"error" => |err| {
             log.err("Error response for '{s}': {}, {s}", .{ id, err.code, err.message });
             if (std.mem.eql(u8, id, "i_haz_configuration")) {
-                try server.resolveConfiguration();
+                try settings_handler.resolveConfiguration(server);
             }
             return;
         },

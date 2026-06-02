@@ -55,7 +55,7 @@ pub const Options = struct {
         var args_it = try args.iterateAllocator(allocator);
         defer args_it.deinit();
 
-        const argv0 = args_it.next() orelse "unknown";
+        const argv0 = args_it.next() orelse "";
         options.argv0 = try allocator.dupe(u8, argv0);
 
         var arg_index: u32 = 0;
@@ -102,9 +102,13 @@ pub const Options = struct {
         }
 
         if (builtin.target.os.tag != .wasi and try std.Io.File.stdin().isTty(io)) {
-            log.warn("Zigscient is not a CLI tool, it communicates over the Language Server Protocol.", .{});
-            log.warn("Did you mean to run 'zigscient --help'?", .{});
-            log.warn("", .{});
+            log.warn(
+                \\
+                \\A Zig language server that provides IDE-like features to editors.
+                \\
+                \\Should be used via an editor plugin rather than invoked directly.
+                \\
+            , .{});
             options.disable_lsp_logs = true;
             options.enable_stderr_logs = true;
         }

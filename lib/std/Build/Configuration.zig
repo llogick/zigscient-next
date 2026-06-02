@@ -3433,6 +3433,18 @@ pub fn load(arena: Allocator, reader: *Io.Reader) LoadError!Configuration {
     return result;
 }
 
+pub fn deinit(c: *Configuration, allocator: Allocator) void {
+    allocator.free(c.string_bytes);
+    allocator.free(c.steps);
+    allocator.free(c.path_deps_sub);
+    allocator.free(c.path_deps_base);
+    allocator.free(c.unlazy_deps);
+    allocator.free(c.system_integrations);
+    allocator.free(c.available_options);
+    allocator.free(c.search_prefixes);
+    allocator.free(c.extra);
+}
+
 pub fn loadBits(comptime Int: type, buffer: []const Int, bit_offset: usize, comptime Result: type) Result {
     const index = bit_offset / @bitSizeOf(Int);
     const small_bit_offset = bit_offset % @bitSizeOf(Int);

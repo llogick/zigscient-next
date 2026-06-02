@@ -49,14 +49,21 @@ var safe_allocator: std.heap.SafeAllocator align(@alignOf(std.heap.SafeAllocator
 });
 
 pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
-    const root_gpa = if (use_safe_allocator)
-        safe_allocator.allocator()
-    else if (native_os == .wasi)
-        std.heap.wasm_allocator
-    else if (builtin.link_libc)
-        std.heap.c_allocator
-    else
-        std.heap.smp_allocator;
+    var allocator_name: []const u8 = "Undefined";
+    var root_gpa: Allocator = undefined;
+    if (use_safe_allocator) {
+        root_gpa = safe_allocator.allocator();
+        allocator_name = "Safe";
+    } else if (native_os == .wasi) {
+        root_gpa = std.heap.wasm_allocator;
+        allocator_name = "Wasm";
+    } else if (builtin.link_libc) {
+        root_gpa = std.heap.c_allocator;
+        allocator_name = "LibC";
+    } else {
+        root_gpa = std.heap.smp_allocator;
+        allocator_name = "Smp";
+    }
     defer if (use_safe_allocator) {
         _ = safe_allocator.deinit();
     };
@@ -148,15 +155,9 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
         logger.dump_to_stderr = true;
     }
 
-    log.info(
-        \\Hello/
-        \\                                      ZigscientN {s} {s}
-        \\                                      {s}
-    , .{
-        build_options.version_string,
-        @tagName(builtin.mode),
-        cli_opts.argv0,
-    });
+    log.info("Hello/ , this is:", .{});
+    log.info("Zigscient {s} @ {s}", .{ build_options.version_string, cli_opts.argv0 });
+    log.debug("`- Build type: {t}, Allocator: {s}, Io mode: {t}", .{ builtin.mode, allocator_name, build_options.io_mode });
 
     var config_manager: lsp_server.settings_handler.Manager = try .init(io, gpa, &environ_map);
     defer config_manager.deinit();
@@ -170,6 +171,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
     defer server.destroy();
 
     try lsp_server.settings_handler.loadConfiguration(io, gpa, &environ_map, server, cli_opts.config_path);
+    try lsp_server.settings_handler.resolveConfiguration(server);
 
     try server.loop();
 
