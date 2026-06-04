@@ -113,32 +113,104 @@ pub fn reloadConfiguration(w: *Workspace, s: *Server) error{ OutOfMemory, Cancel
     };
 
     const c = &w.configuration.serialized.?;
+    var stack: std.array_list.Managed(StackItem) = .init(arena);
     // var top_level_steps: std.StringArrayHashMapUnmanaged(Configuration.Step.Index) = .empty;
     for (w.configuration.serialized.?.steps, 0..) |*conf_step, step_index_usize| {
         if (conf_step.owner != .root) continue;
+
         const step_index: std.Build.Configuration.Step.Index = @enumFromInt(step_index_usize);
         const flags = conf_step.flags(c);
-        switch (flags.tag) {
-            .top_level => {
-                const name = step_index.ptr(c).name.slice(c);
-                log.err("ts: {q}", .{name});
-                // try top_level_steps.put(arena, name, step_index);
-            },
-            .compile => {
-                const step = step_index.ptr(c);
-                const cs = step.extended.cast(c, std.Build.Configuration.Step.Compile) orelse continue;
-                if (cs.flags.exec_cmd_args_len) {
-                    for (cs.exec_cmd_args.slice) |opt_slc| {
-                        log.err("exec_cmd_arg: {q}", .{opt_slc.slice(c) orelse "null"});
-                    }
+        if (flags.tag != .top_level) continue;
+
+        try stack.append(.{ .step = step_index, .dep_index = 0, .depth = 0 });
+
+        // Process the graph using the stack
+        while (stack.items.len > 0) {
+            var current = &stack.items[stack.items.len - 1];
+            const step = current.step.ptr(c);
+            const deps = step.deps.slice(c);
+
+            // First time seeing this step at this depth
+            if (current.dep_index == 0) {
+                const name = step.name.slice(c);
+                const step_flags = step.flags(c);
+
+                const indent = max_spaces[0..@min(current.depth * 4, max_spaces.len)];
+                const sub_indent = max_spaces[0..@min((current.depth + 1) * 4, max_spaces.len)];
+
+                switch (step_flags.tag) {
+                    .compile => {
+                        const compile = step.extended.get(c.extra).compile;
+                        const rm = compile.root_module.get(c);
+                        var rsf_path: [:0]const u8 = "";
+                        if (rm.root_source_file.unwrap()) |rsf| {
+                            rsf_path = switch (rsf.get(c)) {
+                                .source_path => |sp| sp.sub_path.slice(c),
+                                .relative => |rp| rp.sub_path.slice(c),
+                                .generated => |gp| if (gp.sub_path != .empty) gp.sub_path.slice(c) else "%gen%",
+                            };
+                        }
+                        log.err("{s}{}: {q} - {q} ({t} {t})", .{
+                            indent,
+                            @intFromEnum(current.step),
+                            compile.root_name.slice(c),
+                            name,
+                            step_flags.tag,
+                            compile.flags3.kind.toOutputMode(),
+                        });
+                        log.err("{s}-> root={q}", .{ sub_indent, rsf_path });
+                        const imports = rm.import_table.get(c).imports;
+                        for (imports.mal.items(.name), imports.mal.items(.module)) |import_name, other_mod_idx| {
+                            const other_mod: std.Build.Configuration.Module = other_mod_idx.get(c);
+                            if (other_mod.root_source_file.unwrap()) |rsf| {
+                                rsf_path = switch (rsf.get(c)) {
+                                    .source_path => |sp| sp.sub_path.slice(c),
+                                    .relative => |rp| rp.sub_path.slice(c),
+                                    .generated => |gp| if (gp.sub_path != .empty) gp.sub_path.slice(c) else "%gen%",
+                                };
+                            } else rsf_path = "";
+                            log.err("{s}-> {s}={q}", .{ sub_indent, import_name.slice(c), rsf_path });
+                        }
+                    },
+                    .top_level => log.err("{s}{}: {q} - {q} ({t})", .{
+                        indent,
+                        @intFromEnum(current.step),
+                        name,
+                        step.extended.get(c.extra).top_level.description.slice(c),
+                        step_flags.tag,
+                    }),
+                    else => log.err("{s}{}: {q} ({t})", .{
+                        indent,
+                        @intFromEnum(current.step),
+                        name,
+                        step_flags.tag,
+                    }),
                 }
-                log.err(
-                    \\cs name: {q}
-                , .{
-                    step.name.slice(c),
+            }
+
+            // Find the next valid dependency to process
+            var found_next_dep = false;
+            while (current.dep_index < deps.len) {
+                const dep = deps[current.dep_index];
+                current.dep_index += 1; // Advance for the next iteration
+
+                const dep_step = dep.ptr(c);
+                if (dep_step.owner != .root) continue;
+
+                // Push the dependency to the stack to process it next
+                try stack.append(.{
+                    .step = dep,
+                    .dep_index = 0,
+                    .depth = current.depth + 1,
                 });
-            },
-            else => {},
+                found_next_dep = true;
+                break;
+            }
+
+            // If no more dependencies, pop this step off the stack
+            if (!found_next_dep) {
+                _ = stack.pop();
+            }
         }
     }
     log.info("Loaded configuration for workspace {q}", .{w.uri});
@@ -149,6 +221,13 @@ pub fn reloadConfiguration(w: *Workspace, s: *Server) error{ OutOfMemory, Cancel
     // w.build_file_uri = bf_uri;
     // _ = try s.document_store.getOrLoadHandle(bf_uri);
 }
+
+const StackItem = struct {
+    step: std.Build.Configuration.Step.Index,
+    dep_index: usize,
+    depth: usize,
+};
+const max_spaces: [64]u8 = @splat(' ');
 
 pub fn deinit(workspace: *Workspace, allocator: std.mem.Allocator) void {
     if (BuildOnSaveSupport.isSupportedComptime()) {

@@ -1954,6 +1954,12 @@ fn createLspServerModule(
         .optimize = options.optimize,
     }).module("extended-zccs");
 
+    const maker_mod = b.createModule(.{
+        .root_source_file = b.path("lib/compiler/Maker.zig"),
+        .target = options.target,
+        .optimize = options.optimize,
+    });
+
     const lsp_server_module = b.createModule(.{
         .root_source_file = b.path("src/lsp_server/components.zig"),
         .target = options.target,
@@ -1966,6 +1972,7 @@ fn createLspServerModule(
             .{ .name = "known-folders", .module = known_folders_module },
             .{ .name = "build_options", .module = options.build_options },
             .{ .name = "version_data", .module = options.version_data },
+            .{ .name = "Maker", .module = maker_mod },
         },
     });
     lsp_server_module.addImport("lsp-server", lsp_server_module);

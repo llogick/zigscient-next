@@ -104,32 +104,38 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
 
     var environ_map = init.environ.createMap(arena) catch |err| fatal("failed to parse environment: {t}", .{err});
 
-    if (args.len > 1 and mem.eql(u8, args[1], "zig")) {
-        if (args.len <= 2) {
-            if (build_options.dev != .full) {
-                log.info(
-                    \\
-                    \\This is a limited build, '{t}', of the Zig compiler,
-                    \\only `zig build-* -fno-emit-bin` commands available.
-                , .{build_options.dev});
-            } else {
-                log.info("{s}", .{compiler.usage});
-            }
-            fatal("expected command argument", .{});
-        }
-
-        if (compiler.tracy.enable_allocation) {
-            var tracy_allocator: compiler.tracy.Allocator = .{ .parent_allocator = gpa };
-            try compiler.mainArgs(tracy_allocator.interface(), arena, io, args, &environ_map);
+    if (args.len > 1) {
+        if (mem.eql(u8, args[1], "tailor")) {
+            try lsp_server.Maker.main(init);
             return 0;
         }
+        if (mem.eql(u8, args[1], "zig")) {
+            if (args.len <= 2) {
+                if (build_options.dev != .full) {
+                    log.info(
+                        \\
+                        \\This is a limited build, '{t}', of the Zig compiler,
+                        \\only `zig build-* -fno-emit-bin` commands available.
+                    , .{build_options.dev});
+                } else {
+                    log.info("{s}", .{compiler.usage});
+                }
+                fatal("expected command argument", .{});
+            }
 
-        if (native_os == .wasi) {
-            compiler.preopens = try .init(arena);
+            if (compiler.tracy.enable_allocation) {
+                var tracy_allocator: compiler.tracy.Allocator = .{ .parent_allocator = gpa };
+                try compiler.mainArgs(tracy_allocator.interface(), arena, io, args, &environ_map);
+                return 0;
+            }
+
+            if (native_os == .wasi) {
+                compiler.preopens = try .init(arena);
+            }
+
+            try compiler.mainArgs(gpa, arena, io, args, &environ_map);
+            return 0;
         }
-
-        try compiler.mainArgs(gpa, arena, io, args, &environ_map);
-        return 0;
     }
 
     const cli_opts: cli.Options = try .parseArgs(io, gpa, &environ_map, init.args);

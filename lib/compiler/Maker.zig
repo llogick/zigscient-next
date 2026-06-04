@@ -100,6 +100,10 @@ const ErrorStyle = enum {
 const MultilineErrors = enum { indent, newline, none };
 const Summary = enum { all, new, failures, line, none };
 
+var override: enum { inactive, active, print_configuration, watch } = .inactive;
+var build_root: []const u8 = undefined;
+var generate_steps_info_file: bool = false;
+
 pub fn main(init: process.Init.Minimal) !void {
     // The build runner is long-lived in the following use cases:
     // * `--watch` mode
@@ -128,9 +132,12 @@ pub fn main(init: process.Init.Minimal) !void {
     // skip my own exe name
     var arg_idx: usize = 1;
 
+    // Handle Zigscient spawning itself with the `tailor` subcmd
+    if (args.len > 1 and std.mem.eql(u8, args[1], "tailor")) arg_idx += 1;
+
     const zig_exe = expectArgOrFatal(args, &arg_idx, "--zig");
     const zig_lib_dir = expectArgOrFatal(args, &arg_idx, "--zig-lib-dir");
-    const build_root = expectArgOrFatal(args, &arg_idx, "--build-root");
+    build_root = expectArgOrFatal(args, &arg_idx, "--build-root");
     const local_cache_root = expectArgOrFatal(args, &arg_idx, "--local-cache");
     const global_cache_root = expectArgOrFatal(args, &arg_idx, "--global-cache");
     const configure_path = expectArgOrFatal(args, &arg_idx, "--configuration");
@@ -221,7 +228,12 @@ pub fn main(init: process.Init.Minimal) !void {
             } else if (mem.eql(u8, arg, "-l") or mem.eql(u8, arg, "--list-steps")) {
                 steps_menu = true;
             } else if (mem.eql(u8, arg, "--print-configuration")) {
+                if (override != .inactive) override = .print_configuration; // custom
                 print_configuration = true;
+            } else if (mem.eql(u8, arg, "--zigscient")) { // custom
+                override = .active;
+            } else if (mem.eql(u8, arg, "--generate-steps-info-file")) { // custom
+                generate_steps_info_file = true;
             } else if (mem.eql(u8, arg, "-p") or mem.eql(u8, arg, "--prefix")) {
                 override_install_prefix = nextArgOrFatal(args, &arg_idx);
             } else if (mem.eql(u8, arg, "--prefix-lib-dir")) {
@@ -360,6 +372,7 @@ pub fn main(init: process.Init.Minimal) !void {
             } else if (mem.eql(u8, arg, "--verbose-llvm-ir")) {
                 graph.verbose_llvm_ir = true;
             } else if (mem.eql(u8, arg, "--watch")) {
+                if (override != .inactive) override = .watch; // custom
                 watch = true;
             } else if (mem.eql(u8, arg, "--time-report")) {
                 graph.time_report = true;
@@ -520,7 +533,7 @@ pub fn main(init: process.Init.Minimal) !void {
         };
         w.flush() catch return stdout_writer_allocation.err.?;
         return cleanExit(io, &scanned_config);
-    } else if (print_configuration) {
+    } else if (override == .inactive and print_configuration) {
         var w = initStdoutWriter(io);
         scanned_config.print(w) catch return stdout_writer_allocation.err.?;
         w.flush() catch return stdout_writer_allocation.err.?;

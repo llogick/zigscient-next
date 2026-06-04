@@ -12,6 +12,7 @@ pub const DocumentScope = @import("DocumentScope.zig");
 pub const ZigDoc = @import("ZigDoc.zig");
 pub const BldDoc = @import("BldDoc.zig");
 pub const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
+pub const Maker = @import("Maker");
 
 pub const ast = @import("ast.zig");
 pub const print_ast = @import("print_ast.zig");

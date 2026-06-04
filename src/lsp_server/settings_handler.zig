@@ -257,6 +257,7 @@ pub const Manager = struct {
         }
 
         if (config.build_runner_path == null) blk: {
+            if (true) break :blk; // Disable the build_runner
             if (!std.process.can_spawn) break :blk;
             const zig_exe = manager.zig_exe orelse break :blk;
             const global_cache_dir = manager.global_cache_dir orelse break :blk;
