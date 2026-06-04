@@ -190,7 +190,7 @@ pub fn reloadConfiguration(w: *Workspace, s: *Server) error{ OutOfMemory, Cancel
 
             // Find the next valid dependency to process
             var found_next_dep = false;
-            while (current.dep_index < deps.len) {
+            if (!(current.depth != 0 and step.flags(c).tag == .top_level)) while (current.dep_index < deps.len) {
                 const dep = deps[current.dep_index];
                 current.dep_index += 1; // Advance for the next iteration
 
@@ -205,7 +205,7 @@ pub fn reloadConfiguration(w: *Workspace, s: *Server) error{ OutOfMemory, Cancel
                 });
                 found_next_dep = true;
                 break;
-            }
+            };
 
             // If no more dependencies, pop this step off the stack
             if (!found_next_dep) {

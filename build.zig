@@ -754,7 +754,7 @@ pub fn build(b: *std.Build) !void {
         "update-mingw",
         "test-incremental",
         "test-libc-nsz",
-    }) |tls_name| _ = b.top_level_steps.swapRemove(tls_name);
+    }) |tls_name| _ = b.top_level_steps.orderedRemove(tls_name);
 }
 
 fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {

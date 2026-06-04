@@ -790,7 +790,7 @@ pub fn loadConfiguration(
 
         switch (config_result) {
             .success => |*config_with_path| {
-                log.info("$ Loaded: {s}", .{config_with_path.path});
+                log.info("$ Loaded: {q}", .{config_with_path.path});
                 config = config_with_path.config;
                 config_arena.state = config_with_path.config_arena;
                 config_with_path.config_arena = .{};
