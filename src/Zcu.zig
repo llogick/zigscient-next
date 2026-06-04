@@ -2866,15 +2866,12 @@ pub fn deinit(zcu: *Zcu) void {
     const io = comp.io;
     const gpa = zcu.gpa;
     {
-        const pt: Zcu.PerThread = .activate(zcu, .main);
-        defer pt.deactivate();
-
         if (zcu.llvm_object) |llvm_object| llvm_object.deinit();
 
         zcu.builtin_modules.deinit(gpa);
         zcu.module_roots.deinit(gpa);
         for (zcu.import_table.keys()) |file_index| {
-            pt.destroyFile(file_index);
+            zcu.destroyFile(file_index);
         }
         zcu.import_table.deinit(gpa);
         zcu.alive_files.deinit(gpa);
@@ -2967,6 +2964,26 @@ pub fn deinit(zcu: *Zcu) void {
         }
     }
     zcu.intern_pool.deinit(gpa, io);
+}
+
+fn deinitFile(zcu: *Zcu, file_index: Zcu.File.Index) void {
+    const gpa = zcu.gpa;
+    const file = zcu.fileByIndex(file_index);
+    log.debug("deinit File {f}", .{file.path.fmt(zcu.comp)});
+    file.path.deinit(gpa);
+    file.unload(gpa);
+    if (file.prev_zir) |prev_zir| {
+        prev_zir.deinit(gpa);
+        gpa.destroy(prev_zir);
+    }
+    file.* = undefined;
+}
+
+fn destroyFile(zcu: *Zcu, file_index: Zcu.File.Index) void {
+    const gpa = zcu.gpa;
+    const file = zcu.fileByIndex(file_index);
+    deinitFile(zcu, file_index);
+    gpa.destroy(file);
 }
 
 pub fn namespacePtr(zcu: *Zcu, index: Namespace.Index) *Namespace {
@@ -5432,9 +5449,9 @@ pub const CodegenTaskPool = struct {
         const io = zcu.comp.io;
         const tid: Zcu.PerThread.Id = .acquire(io);
         defer tid.release(io);
-        const pt: Zcu.PerThread = .activate(zcu, tid);
-        defer pt.deactivate();
-        return pt.runCodegen(func_index, &air);
+        const active = zcu.activate(tid);
+        defer active.deactivate();
+        return active.pt.runCodegen(func_index, &air);
     }
     fn workerCodegenExternalAir(
         zcu: *Zcu,
@@ -5444,9 +5461,9 @@ pub const CodegenTaskPool = struct {
         const io = zcu.comp.io;
         const tid: Zcu.PerThread.Id = .acquire(io);
         defer tid.release(io);
-        const pt: Zcu.PerThread = .activate(zcu, tid);
-        defer pt.deactivate();
-        return pt.runCodegen(func_index, air);
+        const active = zcu.activate(tid);
+        defer active.deactivate();
+        return active.pt.runCodegen(func_index, air);
     }
 };
 
@@ -5474,4 +5491,25 @@ fn updateTracyOutdatedPlots(zcu: *const Zcu) void {
     zcu.updateTracyPlot("outdated", zcu.outdated.count());
     zcu.updateTracyPlot("potentially_outdated", zcu.potentially_outdated.count());
     zcu.updateTracyPlot("outdated_ready", zcu.outdated_ready.funcs.count() + zcu.outdated_ready.other.count());
+}
+
+pub const Active = struct {
+    pt: Zcu.PerThread,
+    ip: InternPool.Active,
+    pub fn deactivate(active: Active) void {
+        active.ip.deactivate();
+    }
+    pub fn release(active: Active) void {
+        active.deactivate();
+        active.pt.tid.release(active.pt.zcu.comp.io);
+    }
+};
+pub fn activate(zcu: *Zcu, tid: PerThread.Id) Active {
+    return .{
+        .pt = .{ .zcu = zcu, .tid = tid },
+        .ip = zcu.intern_pool.activate(),
+    };
+}
+pub fn acquire(zcu: *Zcu) Active {
+    return zcu.activate(.acquire(zcu.comp.io));
 }

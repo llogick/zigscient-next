@@ -551,10 +551,10 @@ fn hoverKeyword(
 
     const zcu = build.compilation.?.zcu orelse return null;
 
-    const pt: Compilation.Zcu.PerThread = .activate(zcu, args.tid);
-    defer pt.deactivate();
+    const active = zcu.activate(args.tid);
+    defer active.deactivate();
 
-    switch (pt.zcu.intern_pool.indexToKey(args.ty)) {
+    switch (active.pt.zcu.intern_pool.indexToKey(args.ty)) {
         .enum_type,
         .union_type,
         .struct_type,
@@ -572,9 +572,9 @@ fn hoverKeyword(
                 \\align({t})
                 \\fqn: {f}
             , .{
-                ty.abiSize(pt.zcu),
-                ty.abiAlignment(pt.zcu),
-                ty.fmt(pt),
+                ty.abiSize(active.pt.zcu),
+                ty.abiAlignment(active.pt.zcu),
+                ty.fmt(active.pt),
             });
 
             if (markup_kind == .markdown) {
@@ -747,12 +747,12 @@ fn getAirSlice(
     const args = decl.handle.computed_data.air.get(node) orelse return null;
     const zcu = build.compilation.?.zcu orelse return null;
 
-    const pt: Compilation.Zcu.PerThread = .activate(zcu, args.tid);
-    defer pt.deactivate();
+    const active = zcu.activate(args.tid);
+    defer active.deactivate();
 
     var aw: std.Io.Writer.Allocating = .init(arena);
     errdefer aw.deinit();
 
-    args.air.write(&aw.writer, pt, null) catch return null;
+    args.air.write(&aw.writer, active.pt, null) catch return null;
     return try aw.toOwnedSlice();
 }
