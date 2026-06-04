@@ -5044,6 +5044,8 @@ pub fn getPositionContext(
         // Single '@' do not return a builtin token so we check this on our own.
         check_tag: switch (tok.tag) {
             .invalid => {
+                // .invalid tokens are weird
+                if (tok.loc.end < tok.loc.start) return .other; // I've seen stuff
                 const s = tree.source[tok.loc.start..tok.loc.end];
                 const q = std.mem.find(u8, s, "\"") orelse {
                     if (!std.mem.startsWith(u8, s, "@")) return .empty;
