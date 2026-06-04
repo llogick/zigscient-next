@@ -100,6 +100,52 @@ pub fn StaticStringMapWithEql(
             }
         }
 
+        /// Returns a map backed by static, comptime allocated memory.
+        ///
+        /// `V` must be an enum. The enum's tag names will be used as the keys.
+        pub inline fn initEnum() Self {
+            comptime {
+                var self: Self = .{};
+
+                const field_names = @typeInfo(V).@"enum".field_names;
+                if (field_names.len == 0) return self;
+
+                // Since the KVs are sorted, a linearly-growing bound will never
+                // be sufficient for extreme cases. So we grow proportional to
+                // N*log2(N).
+                @setEvalBranchQuota(10 * field_names.len * std.math.log2_int_ceil(usize, field_names.len));
+
+                var sorted_keys: [field_names.len][]const u8 = field_names[0..field_names.len].*;
+                var sorted_vals: [field_names.len]V = undefined;
+                for (&sorted_vals, @typeInfo(V).@"enum".field_values) |*x, i| x.* = @enumFromInt(i);
+
+                for (field_names) |field_name| {
+                    self.min_len = @min(self.min_len, field_name.len);
+                    self.max_len = @max(self.max_len, field_name.len);
+                }
+
+                mem.sortUnstableContext(0, sorted_keys.len, SortContext{
+                    .keys = &sorted_keys,
+                    .vals = &sorted_vals,
+                });
+
+                const final_keys = sorted_keys;
+                const final_vals = sorted_vals;
+                self.kvs = &.{
+                    .keys = &final_keys,
+                    .values = &final_vals,
+                    .len = @intCast(field_names.len),
+                };
+
+                var len_indexes: [self.max_len + 1]u32 = undefined;
+                self.initLenIndexes(&len_indexes);
+                const final_len_indexes = len_indexes;
+                self.len_indexes = &final_len_indexes;
+                self.len_indexes_len = @intCast(len_indexes.len);
+                return self;
+            }
+        }
+
         /// Returns a map backed by memory allocated with `allocator`.
         ///
         /// Handles `kvs_list` the same way as `initComptime()`.
@@ -195,6 +241,7 @@ pub fn StaticStringMapWithEql(
             return self.kvs.values[self.getIndex(str) orelse return null];
         }
 
+        /// Returns an **internal** index to the generated **sorted** array
         pub fn getIndex(self: Self, str: []const u8) ?usize {
             const kvs = self.kvs.*;
             if (kvs.len == 0)
@@ -535,4 +582,16 @@ test "sorting kvs doesn't exceed eval branch quota" {
         .{ "t1", 1 },
     });
     try testing.expectEqual(1, TypeToByteSizeLUT.get("t1"));
+}
+
+test "initEnum" {
+    const UnsortedEnum = enum { BB, A, CCC, DDD };
+    const map = StaticStringMap(UnsortedEnum).initEnum();
+    try testing.expect(map.has("A"));
+    try testing.expect(!map.has("a"));
+    try testing.expectEqual(.BB, map.get("BB"));
+    try testing.expectEqual(.A, map.get("A"));
+    try testing.expectEqual(.CCC, map.get("CCC"));
+    try testing.expectEqual(.DDD, map.get("DDD"));
+    try testing.expectEqual(null, map.getIndex("F"));
 }
