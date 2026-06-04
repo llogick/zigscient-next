@@ -724,6 +724,37 @@ pub fn build(b: *std.Build) !void {
         .skip_wasm = skip_wasm,
         .max_rss = 3_500_000_000,
     })) |test_libc_nsz_step| test_step.dependOn(test_libc_nsz_step);
+
+    // Remove steps not relevant to the core of the project
+    // Can always comment out to enable
+    for (&[_][]const u8{
+        "uninstall",
+        "test-compiler",
+        "test-docs",
+        "langref",
+        "std-docs",
+        "docs",
+        "fmt",
+        "test-fmt",
+        "test-cases",
+        "test-modules",
+        "test-behavior",
+        "test-compiler-rt",
+        "test-std",
+        "test-libc",
+        "test-unit",
+        "test-standalone",
+        "test-c-abi",
+        "test-stack-traces",
+        "test-error-traces",
+        "test-cli",
+        "test-debugger",
+        "test-llvm-ir",
+        "update-zig1",
+        "update-mingw",
+        "test-incremental",
+        "test-libc-nsz",
+    }) |tls_name| _ = b.top_level_steps.swapRemove(tls_name);
 }
 
 fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
