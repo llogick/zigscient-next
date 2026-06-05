@@ -4,23 +4,23 @@
     .version = "0.17.0-dev",
     // The minimum Zig version that is required to compile and test this project.
     // Must be a Zig version that is downloadable from https://ziglang.org/download/ or a mirror.
-    .minimum_zig_version = "0.17.0-dev.396+4001724b4",
+    .minimum_zig_version = "0.17.0-dev.690+c5a61e899",
     // The minimum Zig version that the server's build_runner can handle:
     // A breaking change to the Zig Build System should be handled by updating the server's build runner (see src/build_runner)
-    .minimum_runtime_zig_version = "0.17.0-dev.396+4001724b4",
+    .minimum_runtime_zig_version = "0.17.0-dev.690+c5a61e899",
     .dependencies = .{
         .known_folders = .{
             .url = "https://github.com/LamplightWorks/known-folders/archive/207c34a16e4365edc20d92c7892f962b3bed46e8.tar.gz",
             .hash = "known_folders-0.0.0-Fy-PJsbKAACbDh9bBxR0MMThxZSS6A9RH4apWphNHY70",
         },
         .diffz = .{
-            .url = "https://github.com/LamplightWorks/diffz/archive/313629a399b10ffdbcb29afc4fccdc547252717e.tar.gz",
-            .hash = "diffz-0.0.1-G2tlIfrNAQDGLWaQcYgBSnnbxlwRgeYoTU6T1igV_poB",
+            .url = "https://github.com/LamplightWorks/diffz/archive/aac8aa99c436ab8277b0711922aad062c0167b12.tar.gz",
+            .hash = "diffz-0.0.1-G2tlISvOAQDORzPTSxDgiKwlHuADKeJMdJrw4kRfLufj",
             // .path = "../../../diffz",
         },
         .lsp_kit = .{
-            .url = "https://github.com/LamplightWorks/lsp-kit/archive/390922354b57ec605a030a7cb2ff68b76fa9f0cb.tar.gz",
-            .hash = "lsp_kit-0.1.0-bi_PL5YzDADVJpdiOX6wD5xaCJu1uzMkOGilGp9p0gpq",
+            .url = "https://github.com/LamplightWorks/lsp-kit/archive/dcbb8dd686d85a8f178a4389e730d41dd727b991.tar.gz",
+            .hash = "lsp_kit-0.1.0-bi_PL2UzDADxFRnnSjhhN7-ZTi9fDMom827yIp_ptc8l",
             // .path = "../../../lws-lsp-kit",
         },
         .extended_zccs = .{
