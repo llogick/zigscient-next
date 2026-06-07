@@ -53,16 +53,16 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
     var root_gpa: Allocator = undefined;
     if (use_safe_allocator) {
         root_gpa = safe_allocator.allocator();
-        allocator_name = "Safe";
+        allocator_name = "safe";
     } else if (native_os == .wasi) {
         root_gpa = std.heap.wasm_allocator;
-        allocator_name = "Wasm";
+        allocator_name = "wasm";
     } else if (builtin.link_libc) {
         root_gpa = std.heap.c_allocator;
-        allocator_name = "LibC";
+        allocator_name = "libc";
     } else {
         root_gpa = std.heap.smp_allocator;
-        allocator_name = "Smp";
+        allocator_name = "smp";
     }
     defer if (use_safe_allocator) {
         _ = safe_allocator.deinit();
@@ -161,11 +161,24 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
         logger.dump_to_stderr = true;
     }
 
-    log.info("Hello/ , this is:", .{});
-    log.info("Zigscient {s} @ {s}", .{ build_options.version_string, cli_opts.argv0 });
-    log.debug("`- Build type: {t}, Allocator: {s}, Io mode: {t}", .{ builtin.mode, allocator_name, build_options.io_mode });
+    const self_path = sp: {
+        const cur_path = std.process.currentPathAlloc(io, arena) catch break :sp null;
+        const self_dir = std.fs.path.dirname(cli_opts.argv0) orelse "";
+        break :sp std.fs.path.resolve(arena, &.{ cur_path, self_dir }) catch null;
+    };
 
-    var config_manager: lsp_server.settings_handler.Manager = try .init(io, gpa, &environ_map);
+    log.info("Hello/", .{});
+    log.info("", .{});
+    log.info("Zigscient {s} ({t}) [gpa: {s}, io: {t}] @", .{
+        build_options.version_string,
+        builtin.mode,
+        allocator_name,
+        build_options.io_mode,
+    });
+    log.info("{q}", .{cli_opts.argv0});
+    log.info("", .{});
+
+    var config_manager: lsp_server.settings_handler.Manager = try .init(io, gpa, &environ_map, self_path);
     defer config_manager.deinit();
 
     const server: *lsp_server.Server = try .create(.{

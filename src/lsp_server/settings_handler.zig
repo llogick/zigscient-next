@@ -16,6 +16,7 @@ pub const Manager = struct {
     allocator: std.mem.Allocator,
     environ_map: *std.process.Environ.Map,
     config: Settings,
+    self_path: ?[]const u8 = null,
     zig_exe: ?struct {
         /// Same as `Manager.config.zig_exe_path.?`
         path: []const u8,
@@ -46,13 +47,19 @@ pub const Manager = struct {
         arena: std.heap.ArenaAllocator.State,
     },
 
-    pub fn init(io: std.Io, allocator: std.mem.Allocator, environ_map: *std.process.Environ.Map) error{ OutOfMemory, Unexpected }!Manager {
+    pub fn init(
+        io: std.Io,
+        allocator: std.mem.Allocator,
+        environ_map: *std.process.Environ.Map,
+        self_path: ?[]const u8,
+    ) error{ OutOfMemory, Unexpected }!Manager {
         var arena_allocator: std.heap.ArenaAllocator = .init(allocator);
         errdefer arena_allocator.deinit();
         return .{
             .io = io,
             .allocator = allocator,
             .environ_map = environ_map,
+            .self_path = self_path,
             .zig_exe = null,
             .zig_lib_dir = null,
             .global_cache_dir = null,
