@@ -4,10 +4,10 @@
     .version = "0.17.0-dev",
     // The minimum Zig version that is required to compile and test this project.
     // Must be a Zig version that is downloadable from https://ziglang.org/download/ or a mirror.
-    .minimum_zig_version = "0.17.0-dev.690+c5a61e899",
+    .minimum_zig_version = "0.17.0-dev.702+18b3c78a9",
     // The minimum Zig version that the server's build_runner can handle:
     // A breaking change to the Zig Build System should be handled by updating the server's build runner (see src/build_runner)
-    .minimum_runtime_zig_version = "0.17.0-dev.690+c5a61e899",
+    .minimum_runtime_zig_version = "0.17.0-dev.702+18b3c78a9",
     .dependencies = .{
         .known_folders = .{
             .url = "https://github.com/LamplightWorks/known-folders/archive/207c34a16e4365edc20d92c7892f962b3bed46e8.tar.gz",
