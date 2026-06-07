@@ -797,7 +797,7 @@ pub fn loadConfiguration(
 
         switch (config_result) {
             .success => |*config_with_path| {
-                log.info("$ Loaded: {q}", .{config_with_path.path});
+                log.info("$ Loaded {q}.", .{config_with_path.path});
                 config = config_with_path.config;
                 config_arena.state = config_with_path.config_arena;
                 config_with_path.config_arena = .{};
@@ -876,14 +876,14 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
 
     if (server.status == .initialized and DocumentStore.supports_build_system) {
         if (new_zig_exe_path or new_zig_lib_path or new_build_runner_path) {
-            // for (server.document_store.build_files.keys()) |build_file_uri| {
-            //     server.document_store.invalidateBuildFile(build_file_uri);
-            // }
-            for (server.workspaces.items) |*wrkspc| {
-                wrkspc.reloadConfiguration(server) catch |err| {
-                    std.log.err("Failed to reload configuration for workspace {q} : {t}", .{ wrkspc.uri, err });
-                };
+            for (server.document_store.build_files.keys()) |build_file_uri| {
+                server.document_store.invalidateBuildFile(build_file_uri);
             }
+            // for (server.workspaces.items) |*wrkspc| {
+            //     wrkspc.configuration.reload(server, wrkspc) catch |err| {
+            //         std.log.err("Failed to reload configuration for workspace {q} : {t}", .{ wrkspc.uri, err });
+            //     };
+            // }
         }
     }
 

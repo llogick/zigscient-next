@@ -551,7 +551,7 @@ fn initializeHandler(server: *Server, arena: std.mem.Allocator, request: types.I
 
     if (request.workspaceFolders) |workspace_folders| {
         for (workspace_folders) |folder| {
-            try server.addWorkspace(folder.uri, false);
+            try server.addWorkspace(folder.uri);
         }
     }
 
@@ -820,9 +820,15 @@ fn handleConfiguration(server: *Server, json: std.json.Value) error{ Canceled, O
     try settings_handler.resolveConfiguration(server);
 }
 
-fn addWorkspace(server: *Server, uri: types.URI, load_configuration: bool) error{ Canceled, OutOfMemory }!void {
+fn addWorkspace(
+    server: *Server,
+    uri: types.URI,
+) error{ OutOfMemory, Canceled }!void {
     server.workspaces.ensureUnusedCapacity(server.allocator, 1) catch @panic("OOM");
-    server.workspaces.appendAssumeCapacity(try Workspace.init(server, uri, load_configuration));
+    server.workspaces.appendAssumeCapacity(try Workspace.init(
+        server,
+        uri,
+    ));
 
     log.info("Added Workspace: {q}", .{uri});
 
@@ -887,7 +893,7 @@ fn didChangeWorkspaceFoldersHandler(server: *Server, arena: std.mem.Allocator, n
     defer _ = server.io.swapCancelProtection(old_cancel_protect);
 
     for (notification.event.added) |folder| {
-        try server.addWorkspace(folder.uri, true);
+        try server.addWorkspace(folder.uri);
     }
 
     for (notification.event.removed) |folder| {
