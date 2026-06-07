@@ -24,8 +24,8 @@
             // .path = "../../../lws-lsp-kit",
         },
         .extended_zccs = .{
-            .url = "https://github.com/llogick/extended-zccs/archive/daec59dfe92078cc1fcb223ddf7271f9831a7b4c.tar.gz",
-            .hash = "extended_zccs-0.17.0-dev-zEaUNu1hDgDWNae1Q56wDkdi-sZcTKHytg8cbBNryBGH",
+            .url = "https://github.com/llogick/extended-zccs/archive/b2032519bfeb2d7ad0630aa0d9b68d2a6665e0e7.tar.gz",
+            .hash = "extended_zccs-0.17.0-dev-zEaUNgRkDgBjBrpAQXXgNqs8v41a4fEssyoB8fIMpUQt",
             // .path = "../../../extended-zccs",
         },
         .tracy = .{

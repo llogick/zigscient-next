@@ -41,7 +41,7 @@ pub const Context = struct {
 
             const environ_map = try cached_config_arena.allocator().create(std.process.Environ.Map);
             environ_map.* = .init(std.testing.failing_allocator);
-            var config_manager: lsp_server.settings_handler.Manager = try .init(io, cached_config_arena.allocator(), environ_map);
+            var config_manager: lsp_server.settings_handler.Manager = try .init(io, cached_config_arena.allocator(), environ_map, null);
             try config_manager.setConfiguration(.frontend, &config);
             _ = try config_manager.resolveConfiguration(cached_config_arena.allocator());
             cached_config_manager = config_manager;

@@ -3280,6 +3280,7 @@ test "builtin fns return type" {
         .{ .label = "@\"anyframe\"", .kind = .Field, .detail = "AnyFrame" },
         .{ .label = "vector", .kind = .Field, .detail = "Vector" },
         .{ .label = "enum_literal", .kind = .Field, .detail = "void" },
+        .{ .label = "spirv", .kind = .Struct, .detail = "Spirv" },
     });
 }
 
