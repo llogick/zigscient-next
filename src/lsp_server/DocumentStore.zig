@@ -1292,7 +1292,9 @@ pub fn uriFromImportStr(self: *DocumentStore, allocator: std.mem.Allocator, hand
         defer allocator.free(std_path);
 
         return try URI.fromPath(allocator, std_path);
-    } else if (std.mem.eql(u8, import_str, "builtin")) {
+    }
+
+    if (std.mem.eql(u8, import_str, "builtin")) {
         if (supports_build_system) {
             if (try handle.getAssociatedBuildFileUri(self)) |build_file_uri| {
                 const build_file = self.getBuildFile(build_file_uri).?;
@@ -1305,9 +1307,9 @@ pub fn uriFromImportStr(self: *DocumentStore, allocator: std.mem.Allocator, hand
             return try URI.fromPath(allocator, builtin_path);
         }
         return null;
-    } else if (!std.mem.endsWith(u8, import_str, ".zig")) {
-        if (!supports_build_system) return null;
+    }
 
+    if (supports_build_system) {
         if (isBuildFile(handle.uri)) blk: {
             // NOTE deps_build_roots are currently not available in the serialized configuration
             // const build_file = self.getBuildFile(handle.uri) orelse break :blk;
@@ -1390,10 +1392,9 @@ pub fn uriFromImportStr(self: *DocumentStore, allocator: std.mem.Allocator, hand
             //     }
             // }
         }
-        return null;
-    } else {
-        return try uriFromFileImportStr(allocator, handle, import_str);
     }
+
+    return try uriFromFileImportStr(allocator, handle, import_str);
 }
 
 pub fn uriFromFileImportStr(allocator: std.mem.Allocator, handle: *Handle, import_str: []const u8) error{OutOfMemory}!?Uri {
