@@ -1394,7 +1394,10 @@ pub fn uriFromImportStr(self: *DocumentStore, allocator: std.mem.Allocator, hand
         }
     }
 
-    return try uriFromFileImportStr(allocator, handle, import_str);
+    return if (std.mem.endsWith(u8, import_str, ".zig") or std.mem.endsWith(u8, import_str, ".zon"))
+        try uriFromFileImportStr(allocator, handle, import_str)
+    else
+        null;
 }
 
 pub fn uriFromFileImportStr(allocator: std.mem.Allocator, handle: *Handle, import_str: []const u8) error{OutOfMemory}!?Uri {
