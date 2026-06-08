@@ -613,7 +613,7 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
         const config = build_file.getConfiguration(ds.io);
         defer config.release(ds.io);
         if (config.roots.map.count() == 0) return;
-        const compile_step = config.roots.map.get(build_file.roots_index) orelse break :roots_index_msg;
+        const compile_step = config.roots.map.values()[build_file.roots_index];
 
         const message = std.fmt.allocPrint(
             ds.allocator,
