@@ -8,16 +8,53 @@ builtin_uri: ?FlatUri = null,
 options: ?std.json.Parsed(BuildOptions) = null,
 roots_index: u32 = 0,
 build: Build = .{},
-impl: struct {
+configuration: Configuration = .{},
+
+pub const Configuration = struct {
     mutex: std.Io.Mutex = .init,
-    build_runner_state: BuildRunnerState = .idle,
+    loader_state: LoaderState = .ready,
     version: u32 = 0,
-    /// contains information extracted from running build.zig with a custom build runner
-    /// e.g. include paths & packages
-    /// TODO this field should not be nullable, callsites should await the build config to be resolved
-    /// and then continue instead of dealing with missing information.
     config: ?std.json.Parsed(Config) = null,
-} = .{},
+    roots_info_file_path: ?[]const u8 = null,
+    roots: Roots = .init,
+
+    pub fn release(cfg: *Configuration, io: std.Io) void {
+        cfg.mutex.unlock(io);
+    }
+};
+
+pub const Roots = struct {
+    map: std.AutoArrayHashMapUnmanaged(u32, BldDoc.CompileStep),
+
+    pub const init: Roots = .{ .map = .empty };
+
+    pub fn deinit(roots: *Roots, allocator: std.mem.Allocator) void {
+        var map = roots.map;
+        for (map.values()) |*value| {
+            allocator.free(value.name);
+            if (value.args) |args| allocator.free(args);
+            for (value.mods.items) |item| {
+                allocator.free(item.name);
+                allocator.free(item.path);
+            }
+            value.mods.deinit(allocator);
+        }
+        map.deinit(allocator);
+    }
+};
+
+pub const CompileStep = struct {
+    /// The step`s index within configuration.steps
+    index: u32,
+    name: []const u8,
+    args: ?[]const u8 = null,
+    mods: std.ArrayList(NamePathPair) = .empty,
+
+    pub const NamePathPair = struct {
+        name: []const u8,
+        path: []const u8,
+    };
+};
 
 pub const Build = struct {
     mutex: std.Io.Mutex = .init,
@@ -28,22 +65,15 @@ pub const Build = struct {
     has_completed_once: bool = false,
 };
 
-const BuildRunnerState = enum {
-    idle,
+const LoaderState = enum {
+    ready,
     running,
-    running_but_already_invalidated,
+    running_but_result_already_outdated,
 };
 
-pub fn tryLockConfig(self: *BldDoc, io: std.Io) ?Config {
-    self.impl.mutex.lockUncancelable(io);
-    return if (self.impl.config) |cfg| cfg.value else {
-        self.impl.mutex.unlock(io);
-        return null;
-    };
-}
-
-pub fn unlockConfig(self: *BldDoc, io: std.Io) void {
-    self.impl.mutex.unlock(io);
+pub fn getConfiguration(self: *BldDoc, io: std.Io) *Configuration {
+    self.configuration.mutex.lockUncancelable(io);
+    return &self.configuration;
 }
 
 /// Usage example:
@@ -64,12 +94,13 @@ pub fn collectBuildConfigPackageUris(
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const build_config = self.tryLockConfig(io) orelse return false;
-    defer self.unlockConfig(io);
+    const cfg = self.getConfiguration(io);
+    defer cfg.release(io);
+    const build_config = cfg.config orelse return false;
 
-    try package_uris.ensureUnusedCapacity(allocator, build_config.packages.len);
-    for (build_config.packages) |package| {
-        package_uris.appendAssumeCapacity(try uri.fromPath(allocator, package.path));
+    try package_uris.ensureUnusedCapacity(allocator, build_config.value.modules.len);
+    for (build_config.value.modules) |module| {
+        package_uris.appendAssumeCapacity(try uri.fromPath(allocator, module.path));
     }
     return true;
 }
@@ -141,7 +172,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
     try self.build.mutex.lock(ds.io);
     defer self.build.mutex.unlock(ds.io);
 
-    const cfg = self.impl.config orelse return;
+    const cfg = self.configuration.config orelse return;
     if (cfg.value.roots.len == 0) return;
 
     var cleanup: bool = false;
@@ -193,7 +224,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
 
 pub fn deinit(self: *BldDoc, allocator: std.mem.Allocator) void {
     allocator.free(self.flat_uri);
-    if (self.impl.config) |cfg| cfg.deinit();
+    if (self.configuration.config) |cfg| cfg.deinit();
     if (self.builtin_uri) |builtin_uri| allocator.free(builtin_uri);
     if (self.options) |opts| opts.deinit();
 
@@ -205,6 +236,9 @@ pub fn deinit(self: *BldDoc, allocator: std.mem.Allocator) void {
         }
     }
     self.build.arena_instance.deinit();
+
+    if (self.configuration.roots_info_file_path) |rifp| allocator.free(rifp);
+    self.configuration.roots.deinit(allocator);
 }
 
 const std = @import("std");

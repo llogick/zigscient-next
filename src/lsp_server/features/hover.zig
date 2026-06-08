@@ -74,20 +74,22 @@ fn hoverSymbol(
                         if (tree.tokens.items(.tag)[fname_tok] != .identifier) break :blk;
                         const name = tree.tokenSlice(fname_tok);
                         if (!std.mem.eql(u8, name, "build")) break :blk;
-                        const build_config = build_file.tryLockConfig(ds.io) orelse break :blk;
-                        defer build_file.unlockConfig(ds.io);
+                        const build_config = build_file.getConfiguration(ds.io);
+                        defer build_config.release(ds.io);
                         var aw: std.Io.Writer.Allocating = .init(arena);
                         errdefer aw.deinit();
                         aw.writer.writeAll("```\n") catch break :blk;
-                        if (build_config.roots.len != 0) {
-                            if (!(build_file.roots_index < build_config.roots.len)) {
+                        const roots_count = build_config.roots.map.count();
+                        const compile_step = build_config.roots.map.values()[build_file.roots_index];
+                        if (roots_count != 0) {
+                            if (!(build_file.roots_index < roots_count)) {
                                 aw.writer.print("Current root_id > roots.len => defaulting to root_id 0\n\nModules:\n\n", .{}) catch break :blk;
                                 build_file.roots_index = 0;
-                            } else aw.writer.print("### root_id: ```{}, \"{s}\"```\n\n", .{ build_file.roots_index, build_config.roots[build_file.roots_index].name }) catch break :blk;
-                            for (build_config.roots[build_file.roots_index].mods) |mod| {
+                            } else aw.writer.print("### root_id: ```{}, \"{s}\"```\n\n", .{ build_file.roots_index, compile_step.name }) catch break :blk;
+                            for (compile_step.mods.items) |mod| {
                                 aw.writer.print(" * `{s}` [{s}]({s})\n", .{ mod.name, mod.path, try uri.fromPath(arena, mod.path) }) catch break :blk;
                             }
-                            aw.writer.print("\n### See [List of all roots]({s}#L{d})\n", .{ try uri.fromPath(arena, build_config.roots_info_file), 0 }) catch break :blk;
+                            if (build_config.roots_info_file_path) |rifp| aw.writer.print("\n### See [List of all roots]({s}#L{d})\n", .{ try uri.fromPath(arena, rifp), 0 }) catch break :blk;
                         } else aw.writer.writeAll("build_runner reported NO (0) CompileSteps (roots)\n") catch break :blk;
                         aw.writer.writeAll("```zig\n\n") catch break :blk;
                         aw.writer.writeAll(Analyser.getFunctionSignature(tree, fn_proto)) catch break :blk;

@@ -7,13 +7,11 @@ const need_bswap = native_endian != .little;
 
 pub const BuildConfig = struct {
     roots_info_file: []const u8,
-    deps_build_roots: []NamePathPair,
+    // deps_build_roots: []NamePathPair,
     roots: []RootEntry,
-    packages: []NamePathPair,
-    include_dirs: []const []const u8,
+    modules: []NamePathPair,
     top_level_steps: []const []const u8,
     available_options: std.json.ArrayHashMap(AvailableOption),
-    c_macros: []const []const u8 = &.{},
 
     pub const RootEntry = struct {
         name: []const u8,

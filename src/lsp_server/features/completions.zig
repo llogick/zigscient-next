@@ -904,26 +904,29 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
         if (!DocumentStore.supports_build_system) {
             // no build system modules
         } else if (DocumentStore.isBuildFile(builder.orig_handle.uri)) blk: {
-            const build_file = store.getBuildFile(builder.orig_handle.uri) orelse break :blk;
-            const build_config = build_file.tryLockConfig(store.io) orelse break :blk;
-            defer build_file.unlockConfig(store.io);
+            // NOTE deps_build_roots are currently not available in the serialized configuration
+            // const build_file = store.getBuildFile(builder.orig_handle.uri) orelse break :blk;
+            // const build_config = build_file.tryLockConfig(store.io) orelse break :blk;
+            // defer build_file.unlockConfig(store.io);
 
-            try builder.completions.ensureUnusedCapacity(builder.arena, build_config.deps_build_roots.len);
-            for (build_config.deps_build_roots) |dbr| {
-                builder.completions.appendAssumeCapacity(.{
-                    .label = dbr.name,
-                    .kind = .Module,
-                    .detail = dbr.path,
-                    .sortText = "4",
-                });
-            }
+            // try builder.completions.ensureUnusedCapacity(builder.arena, build_config.deps_build_roots.len);
+            // for (build_config.deps_build_roots) |dbr| {
+            //     builder.completions.appendAssumeCapacity(.{
+            //         .label = dbr.name,
+            //         .kind = .Module,
+            //         .detail = dbr.path,
+            //         .sortText = "4",
+            //     });
+            // }
+            break :blk;
         } else if (try builder.orig_handle.getAssociatedBuildFileUri(store)) |uri| blk: {
-            const build_file = store.getBuildFile(uri).?;
-            const build_config = build_file.tryLockConfig(store.io) orelse break :blk;
-            defer build_file.unlockConfig(store.io);
+            const build_file = store.getBuildFile(uri) orelse break :blk;
+            const cfg = build_file.getConfiguration(store.io);
+            defer cfg.release(store.io);
+            const build_config = cfg.config orelse break :blk;
 
-            try builder.completions.ensureUnusedCapacity(builder.arena, build_config.packages.len);
-            for (build_config.packages) |pkg| {
+            try builder.completions.ensureUnusedCapacity(builder.arena, build_config.value.modules.len);
+            for (build_config.value.modules) |pkg| {
                 builder.completions.appendAssumeCapacity(.{
                     .label = pkg.name,
                     .kind = .Module,
