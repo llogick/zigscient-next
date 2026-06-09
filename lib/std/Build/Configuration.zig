@@ -1016,7 +1016,8 @@ pub const Step = extern struct {
             generated_llvm_bc: bool,
             generated_llvm_ir: bool,
             generated_h: bool,
-            _: u9 = 0,
+            incremental: DefaultingBool,
+            _: u7 = 0,
         };
 
         pub fn isDynamicLibrary(compile: *const Compile) bool {
