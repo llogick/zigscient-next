@@ -15,6 +15,7 @@ pub const Configuration = struct {
     loader_state: LoaderState = .ready,
     version: u32 = 0,
     config: ?std.json.Parsed(Config) = null,
+    cfg_file_path: ?[]const u8 = null,
     roots: Roots = .init,
 
     pub fn release(cfg: *Configuration, io: std.Io) void {
@@ -101,7 +102,7 @@ pub fn collectBuildConfigPackageUris(
 
     try package_uris.ensureUnusedCapacity(allocator, build_config.value.modules.len);
     for (build_config.value.modules) |module| {
-        package_uris.appendAssumeCapacity(try uri.fromPath(allocator, module.path));
+        package_uris.appendAssumeCapacity(try uri_util.fromPath(allocator, module.path));
     }
     return true;
 }
@@ -133,7 +134,7 @@ pub fn collectBuildConfigIncludePaths(
             try allocator.dupe(u8, include_path)
         else blk: {
             const build_file_dir = std.fs.path.dirname(self.uri).?;
-            const build_file_path = uri.toFsPath(allocator, build_file_dir) catch |err| switch (err) {
+            const build_file_path = uri_util.toFsPath(allocator, build_file_dir) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => continue,
             };
@@ -153,6 +154,80 @@ pub fn triggerRedoCompilation(self: *BldDoc, ds: *DocumentStore) std.Io.Cancelab
     };
 }
 
+pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
+    if (!std.process.can_spawn) return;
+
+    const self_file_path = ds.config.self_file_path orelse return;
+    const map = build_file.configuration.roots.map;
+    if (!(build_file.roots_index < map.count())) return;
+    const step_index = map.keys()[build_file.roots_index];
+
+    std.debug.assert(ds.config.zig_exe_path != null);
+    std.debug.assert(ds.config.global_cache_dir != null);
+    std.debug.assert(ds.config.zig_lib_dir != null);
+
+    const io = ds.io;
+
+    var arena_state = std.heap.ArenaAllocator.init(ds.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const build_file_path = try uri_util.toFsPath(arena, build_file.flat_uri);
+    const cwd = std.fs.path.dirname(build_file_path).?;
+    var args: std.ArrayList([]const u8) = .empty;
+
+    try args.appendSlice(arena, &.{
+        self_file_path,
+        "tailor",
+        "--zig",
+        ds.config.zig_exe_path.?,
+        "--zig-lib-dir",
+        ds.config.zig_lib_dir.?.path.?,
+        "--build-root",
+        cwd,
+        "--local-cache",
+        try std.fs.path.resolve(arena, &.{ cwd, ".zig-cache" }),
+        "--global-cache",
+        ds.config.global_cache_dir.?.path.?,
+        "--configuration",
+        build_file.configuration.cfg_file_path orelse return,
+        "--zigscient",
+        try std.fmt.allocPrint(arena, "{}", .{step_index}),
+    });
+
+    const tailor_run_result = blk: {
+        const tracy_zone2 = tracy.trace(@src());
+        defer tracy_zone2.end();
+        break :blk try std.process.run(
+            arena,
+            io,
+            .{
+                .argv = args.items,
+                .cwd = .{ .path = cwd },
+                .reserve_amount = 1024 * 1024,
+            },
+        );
+    };
+
+    const is_ok = switch (tailor_run_result.term) {
+        .exited => |exit_code| exit_code == 0,
+        else => false,
+    };
+
+    if (!is_ok) {
+        const joined = try std.mem.join(arena, " ", args.items);
+
+        log.err(
+            "Failed to tailor configuration step_index {} for {q}\nDIR: {s}\nCMD: {s}\nERR:\n{s}",
+            .{ step_index, build_file.flat_uri, cwd, joined, tailor_run_result.stderr },
+        );
+
+        return error.RunFailed;
+    }
+
+    log.err("tailor res:\n{s}", .{tailor_run_result.stdout});
+}
+
 fn destroyCompilation(self: *BldDoc, ds: *DocumentStore) void {
     if (self.build.compilation) |comp| comp.destroy();
     if (self.build.state) |state| {
@@ -166,6 +241,10 @@ fn destroyCompilation(self: *BldDoc, ds: *DocumentStore) void {
 
 fn redoCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
     self.destroyCompilation(ds);
+    self.runTailor(ds) catch |err| switch (err) {
+        error.Canceled => |e| return e,
+        else => {},
+    };
     try self.initCompilation(ds);
 }
 
@@ -238,16 +317,18 @@ pub fn deinit(self: *BldDoc, allocator: std.mem.Allocator) void {
     }
     self.build.arena_instance.deinit();
 
+    if (self.configuration.cfg_file_path) |cfp| allocator.free(cfp);
     self.configuration.roots.deinit(allocator);
 }
 
 const std = @import("std");
 pub const FlatUri = []const u8;
-const uri = @import("uri.zig");
+const uri_util = @import("uri.zig");
 const BuildOptions = @import("BuildOptions.zig");
 const Config = @import("build_runner/shared.zig").BuildConfig;
 const BldDoc = @This();
 const DocumentStore = @import("DocumentStore.zig");
+const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const tracy = @import("tracy");
 const log = std.log.scoped(.lspc_store);
 

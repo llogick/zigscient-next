@@ -16,7 +16,7 @@ pub const Manager = struct {
     allocator: std.mem.Allocator,
     environ_map: *std.process.Environ.Map,
     config: Settings,
-    self_path: ?[]const u8 = null,
+    self_file_path: ?[]const u8 = null,
     zig_exe: ?struct {
         /// Same as `Manager.config.zig_exe_path.?`
         path: []const u8,
@@ -51,7 +51,7 @@ pub const Manager = struct {
         io: std.Io,
         allocator: std.mem.Allocator,
         environ_map: *std.process.Environ.Map,
-        self_path: ?[]const u8,
+        self_file_path: ?[]const u8,
     ) error{ OutOfMemory, Unexpected }!Manager {
         var arena_allocator: std.heap.ArenaAllocator = .init(allocator);
         errdefer arena_allocator.deinit();
@@ -59,7 +59,7 @@ pub const Manager = struct {
             .io = io,
             .allocator = allocator,
             .environ_map = environ_map,
-            .self_path = self_path,
+            .self_file_path = self_file_path,
             .zig_exe = null,
             .zig_lib_dir = null,
             .global_cache_dir = null,
@@ -359,17 +359,17 @@ pub const Manager = struct {
             defer manager.allocator.free(run_result.stderr);
 
             global_cache_dir.handle.writeFile(io, .{
-                .sub_path = "builtin.zig",
+                .sub_path = "default_builtin_source.zig",
                 .data = run_result.stdout,
             }) catch |err| switch (err) {
                 error.Canceled => return error.Canceled,
                 else => {
-                    log.err("failed to write file '{f}builtin.zig': {}", .{ global_cache_dir, err });
+                    log.err("failed to write file '{f}default_builtin_source.zig': {}", .{ global_cache_dir, err });
                     break :blk;
                 },
             };
 
-            config.builtin_path = try global_cache_dir.join(arena, &.{"builtin.zig"});
+            config.builtin_path = try global_cache_dir.join(arena, &.{"default_builtin_source.zig"});
         }
 
         var did_change: DidConfigChange = .{};
@@ -823,7 +823,7 @@ pub fn loadConfiguration(
         };
         defer allocator.free(cache_dir_path);
 
-        config.global_cache_path = try std.fs.path.join(config_arena.allocator(), &.{ cache_dir_path, "zigscient" });
+        config.global_cache_path = try std.fs.path.join(config_arena.allocator(), &.{ cache_dir_path, "zig" });
     }
 
     try server.config_manager.setConfiguration2(.frontend, &config);

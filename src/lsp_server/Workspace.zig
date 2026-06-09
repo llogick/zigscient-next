@@ -7,11 +7,26 @@ pub fn init(
     server: *Server,
     uri: types.URI,
 ) error{ OutOfMemory, Canceled }!Workspace {
-    return .{
+    var w: Workspace = .{
         .uri = try server.allocator.dupe(u8, uri),
         .build_on_save = if (BuildOnSaveSupport.isSupportedComptime()) null else {},
         .build_on_save_mode = if (BuildOnSaveSupport.isSupportedComptime()) null else {},
     };
+
+    blk: {
+        var arena_state = std.heap.ArenaAllocator.init(server.allocator);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+        const dir_path = uri_util.toFsPath(arena, uri) catch break :blk;
+        if (try DocumentStore.buildDotZigExists(server.io, dir_path)) {
+            const bf_path = try std.fs.path.join(arena, &.{ dir_path, "build.zig" });
+            const bf_uri = try uri_util.fromPath(server.allocator, bf_path);
+            w.build_file_uri = bf_uri;
+            _ = try server.document_store.getOrLoadHandle(bf_uri);
+        }
+    }
+
+    return w;
 }
 
 pub fn deinit(workspace: *Workspace, allocator: std.mem.Allocator) void {
@@ -102,6 +117,7 @@ const Workspace = @This();
 const std = @import("std");
 const lsp_server = @import("lsp-server");
 const Server = lsp_server.Server;
+const DocumentStore = lsp_server.DocumentStore;
 const lsp = lsp_server.lsp;
 const types = lsp.types;
 const diagnostics_gen = lsp_server.diagnostics;

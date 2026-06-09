@@ -74,6 +74,7 @@ pub fn computeHash(bytes: []const u8) Hash {
 }
 
 pub const Settings = struct {
+    self_file_path: ?[]const u8,
     environ_map: *std.process.Environ.Map,
     zig_exe_path: ?[]const u8,
     zig_lib_dir: ?std.Build.Cache.Directory,
@@ -442,8 +443,16 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BldDoc) std.Io.C
         build_file.configuration.version += 1;
         const new_version = build_file.configuration.version;
 
-        var roots = loadBuildConfiguration(self, build_file.flat_uri, new_version) catch |err| switch (err) {
+        var roots = loadBuildConfiguration(self, build_file, new_version) catch |err| switch (err) {
             error.Canceled => return error.Canceled,
+            error.NewConfigurationSameAsOldConfiguration => {
+                build_file.configuration.mutex.lockUncancelable(self.io);
+                defer build_file.configuration.mutex.unlock(self.io);
+                build_file.configuration.loader_state = .ready;
+                if (token) |t| self.notifyProgressEnd(t, .success);
+                token = null;
+                return;
+            },
             else => |e| {
                 if (e != error.RunFailed) { // already logged
                     log.err("Failed to load build configuration for {q} : {t}", .{ build_file.flat_uri, e });
@@ -602,7 +611,7 @@ fn appendBuildOptions(
 /// Runs the build.zig and extracts include directories and packages
 fn loadBuildConfiguration(
     self: *DocumentStore,
-    build_file_uri: Uri,
+    build_file: *BldDoc,
     build_file_version: u32,
 ) !BldDoc.Roots {
     const tracy_zone = tracy.trace(@src());
@@ -619,14 +628,14 @@ fn loadBuildConfiguration(
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    const build_file_path = try URI.toFsPath(arena, build_file_uri);
+    const build_file_path = try URI.toFsPath(arena, build_file.flat_uri);
     const cwd = std.fs.path.dirname(build_file_path).?;
     var args: std.ArrayList([]const u8) = .empty;
 
     try args.appendSlice(arena, &.{ self.config.zig_exe_path.?, "build", "--print-configuration-path" });
     if (self.config.zig_lib_dir) |zig_lib_dir| if (zig_lib_dir.path) |zig_lib_dir_path| try args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir_path });
 
-    try self.appendBuildOptions(arena, build_file_uri, &args);
+    try self.appendBuildOptions(arena, build_file.flat_uri, &args);
 
     const get_cfg_path_run_result = blk: {
         const tracy_zone2 = tracy.trace(@src());
@@ -649,7 +658,7 @@ fn loadBuildConfiguration(
 
     const diagnostic_tag: DiagnosticsCollection.Tag = tag: {
         var hasher: std.hash.Wyhash = .init(47); // Chosen by the following prompt: Pwease give a wandom nyumbew
-        hasher.update(build_file_uri);
+        hasher.update(build_file.flat_uri);
         break :tag @enumFromInt(@as(u32, @truncate(hasher.final())));
     };
 
@@ -658,7 +667,7 @@ fn loadBuildConfiguration(
 
         log.err(
             "Failed to get configuration path for {q}\nDIR: {s}\nCMD: {s}\nERR:\n{s}",
-            .{ build_file_uri, cwd, joined, get_cfg_path_run_result.stderr },
+            .{ build_file.flat_uri, cwd, joined, get_cfg_path_run_result.stderr },
         );
 
         const error_bundle = try @import("features/diagnostics.zig").getErrorBundleFromStderr(
@@ -676,8 +685,17 @@ fn loadBuildConfiguration(
         try self.diagnostics_collection.publishDiagnostics();
     }
 
-    const path = try std.fs.path.resolve(arena, &.{ cwd, std.mem.trimEnd(u8, get_cfg_path_run_result.stdout, " \r\n") });
-    log.debug("cfg file: {q}", .{path});
+    const path = try std.fs.path.resolve(self.allocator, &.{ cwd, std.mem.trimEnd(u8, get_cfg_path_run_result.stdout, " \r\n") });
+    log.debug("cfg file: {q}, prev: {?q}", .{ path, build_file.configuration.cfg_file_path });
+    if (build_file.configuration.cfg_file_path) |cfg_path| {
+        if (std.mem.eql(u8, path, cfg_path)) {
+            self.allocator.free(path);
+            return error.NewConfigurationSameAsOldConfiguration;
+        }
+        self.allocator.free(cfg_path);
+    }
+    build_file.configuration.cfg_file_path = path;
+
     const roots_info_file_path = try std.fs.path.resolve(self.allocator, &.{
         cwd,
         ".zig-cache",

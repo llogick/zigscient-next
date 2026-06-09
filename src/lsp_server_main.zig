@@ -161,10 +161,10 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
         logger.dump_to_stderr = true;
     }
 
-    const self_path = sp: {
+    const self_file_path = sp: {
+        if (std.fs.path.isAbsolute(cli_opts.argv0)) break :sp cli_opts.argv0;
         const cur_path = std.process.currentPathAlloc(io, arena) catch break :sp null;
-        const self_dir = std.fs.path.dirname(cli_opts.argv0) orelse "";
-        break :sp std.fs.path.resolve(arena, &.{ cur_path, self_dir }) catch null;
+        break :sp std.fs.path.resolve(arena, &.{ cur_path, cli_opts.argv0 }) catch null;
     };
 
     log.info("Hello/", .{});
@@ -178,7 +178,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
     log.info("{q}", .{cli_opts.argv0});
     log.info("", .{});
 
-    var config_manager: lsp_server.settings_handler.Manager = try .init(io, gpa, &environ_map, self_path);
+    var config_manager: lsp_server.settings_handler.Manager = try .init(io, gpa, &environ_map, self_file_path);
     defer config_manager.deinit();
 
     const server: *lsp_server.Server = try .create(.{

@@ -942,6 +942,7 @@ fn didChangeConfigurationHandler(server: *Server, arena: std.mem.Allocator, noti
 
 pub fn createDocumentStoreConfig(config_manager: *const settings_handler.Manager) DocumentStore.Settings {
     return .{
+        .self_file_path = config_manager.self_file_path,
         .environ_map = config_manager.environ_map,
         .zig_exe_path = config_manager.config.zig_exe_path,
         .zig_lib_dir = config_manager.zig_lib_dir,
