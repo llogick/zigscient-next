@@ -677,7 +677,14 @@ fn loadBuildConfiguration(
     }
 
     const path = try std.fs.path.resolve(arena, &.{ cwd, std.mem.trimEnd(u8, get_cfg_path_run_result.stdout, " \r\n") });
-    log.err("cfg path: {q}", .{path});
+    log.debug("cfg file: {q}", .{path});
+    const roots_info_file_path = try std.fs.path.resolve(self.allocator, &.{
+        cwd,
+        ".zig-cache",
+        try std.fmt.allocPrint(arena, "{s}.txt", .{std.fs.path.basename(path)}),
+    });
+    errdefer self.allocator.free(roots_info_file_path);
+    // TODO if file exists no need to redo
 
     const serialized = c: {
         var file = std.Io.Dir.openFile(.cwd(), io, path, .{}) catch |err| {
@@ -693,18 +700,16 @@ fn loadBuildConfiguration(
 
     var roots: BldDoc.Roots = .init;
     errdefer roots.deinit(self.allocator);
+    var roots_info: std.ArrayList(u8) = .empty;
 
     var stack: std.array_list.Managed(StackItem) = .init(arena);
     const c = &serialized;
     // var top_level_steps: std.StringArrayHashMapUnmanaged(Configuration.Step.Index) = .empty;
     for (c.steps, 0..) |*conf_step, step_index_usize| {
         if (conf_step.owner != .root) continue;
+        if (conf_step.flags(c).tag != .top_level) continue;
 
-        const step_index: std.Build.Configuration.Step.Index = @enumFromInt(step_index_usize);
-        const flags = conf_step.flags(c);
-        if (flags.tag != .top_level) continue;
-
-        try stack.append(.{ .step = step_index, .dep_index = 0, .depth = 0 });
+        try stack.append(.{ .step = @enumFromInt(step_index_usize), .dep_index = 0, .depth = 0 });
 
         // Process the graph using the stack
         while (stack.items.len > 0) {
@@ -722,8 +727,8 @@ fn loadBuildConfiguration(
 
                 switch (step_flags.tag) {
                     .top_level => {
-                        if (current.depth == 0) log.err(" ", .{});
-                        log.err("{s}{}: {q} - {q} ({t})", .{
+                        try roots_info.print(arena, "{s}{s}{}: {q} - {q} ({t})\n", .{
+                            if (current.depth == 0) "\n" else "",
                             indent,
                             @intFromEnum(current.step),
                             name,
@@ -741,7 +746,7 @@ fn loadBuildConfiguration(
                                 else => "%pending%",
                             };
                         }
-                        log.err("{s}{}: {q} - {q} ({t} {t})", .{
+                        try roots_info.print(arena, "{s}{}: {q} - {q} ({t} {t})\n", .{
                             indent,
                             @intFromEnum(current.step),
                             compile.root_name.slice(c),
@@ -751,20 +756,20 @@ fn loadBuildConfiguration(
                         });
                         const root_index = roots.map.count();
                         const gop = try roots.map.getOrPut(self.allocator, @intFromEnum(current.step));
-                        log.err("{s}ID [{}]", .{ sub_indent, if (gop.found_existing) gop.index else root_index });
+                        try roots_info.print(arena, "{s}ID [{}]\n", .{ sub_indent, if (gop.found_existing) gop.index else root_index });
                         var mods: std.ArrayList(BldDoc.CompileStep.NamePathPair) = .empty;
                         if (!gop.found_existing)
                             try mods.append(self.allocator, .{
                                 .name = try self.allocator.dupe(u8, "root"),
                                 .path = try std.fs.path.resolve(self.allocator, &.{ cwd, rsf_path }),
                             });
-                        log.err("{s}-> root={q}", .{ sub_indent, rsf_path });
+                        try roots_info.print(arena, "{s}-> root={q}\n", .{ sub_indent, rsf_path });
                         const imports = rm.import_table.get(c).imports;
                         for (imports.mal.items(.name), imports.mal.items(.module)) |import_name, other_mod_idx| {
                             const other_mod: std.Build.Configuration.Module = other_mod_idx.get(c);
                             if (other_mod.root_source_file.unwrap()) |rsf| {
                                 rsf_path = switch (rsf.get(c)) {
-                                    .source_path => |sp| sp.sub_path.slice(c),
+                                    .source_path => |sp| if (other_mod.owner == .root) sp.sub_path.slice(c) else "%pending%",
                                     else => "%pending%",
                                 };
                             } else rsf_path = "";
@@ -774,7 +779,7 @@ fn loadBuildConfiguration(
                                     .name = try self.allocator.dupe(u8, mod_import_name),
                                     .path = try std.fs.path.resolve(self.allocator, &.{ cwd, rsf_path }),
                                 });
-                            log.err("{s}-> {s}={q}", .{ sub_indent, mod_import_name, rsf_path });
+                            try roots_info.print(arena, "{s}-> {s}={q}\n", .{ sub_indent, mod_import_name, rsf_path });
                         }
                         if (!gop.found_existing) gop.value_ptr.* = .{
                             .index = @intFromEnum(current.step),
@@ -782,7 +787,7 @@ fn loadBuildConfiguration(
                             .mods = mods,
                         };
                     },
-                    else => log.err("{s}{}: {q} ({t})", .{
+                    else => try roots_info.print(arena, "{s}{}: {q} ({t})\n", .{
                         indent,
                         @intFromEnum(current.step),
                         name,
@@ -817,6 +822,19 @@ fn loadBuildConfiguration(
         }
     }
 
+    blk: {
+        const file = std.Io.Dir.createFileAbsolute(io, roots_info_file_path, .{}) catch |err| {
+            log.err("Failed to open {q} for writing: {t}", .{ roots_info_file_path, err });
+            break :blk;
+        };
+        defer file.close(io);
+        var fw = file.writer(io, &.{});
+        fw.interface.writeAll(roots_info.items) catch {
+            log.err("Failed to write roots info to {q}: {t}", .{ roots_info_file_path, fw.err.? });
+            break :blk;
+        };
+        roots.info_file_path = roots_info_file_path;
+    }
     return roots;
 }
 

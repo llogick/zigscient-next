@@ -15,7 +15,6 @@ pub const Configuration = struct {
     loader_state: LoaderState = .ready,
     version: u32 = 0,
     config: ?std.json.Parsed(Config) = null,
-    roots_info_file_path: ?[]const u8 = null,
     roots: Roots = .init,
 
     pub fn release(cfg: *Configuration, io: std.Io) void {
@@ -25,6 +24,7 @@ pub const Configuration = struct {
 
 pub const Roots = struct {
     map: std.AutoArrayHashMapUnmanaged(u32, BldDoc.CompileStep),
+    info_file_path: ?[]const u8 = null,
 
     pub const init: Roots = .{ .map = .empty };
 
@@ -40,6 +40,7 @@ pub const Roots = struct {
             value.mods.deinit(allocator);
         }
         map.deinit(allocator);
+        if (roots.info_file_path) |ifp| allocator.free(ifp);
     }
 };
 
@@ -237,7 +238,6 @@ pub fn deinit(self: *BldDoc, allocator: std.mem.Allocator) void {
     }
     self.build.arena_instance.deinit();
 
-    if (self.configuration.roots_info_file_path) |rifp| allocator.free(rifp);
     self.configuration.roots.deinit(allocator);
 }
 

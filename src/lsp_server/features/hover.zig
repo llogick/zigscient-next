@@ -89,7 +89,7 @@ fn hoverSymbol(
                             for (compile_step.mods.items) |mod| {
                                 aw.writer.print(" * `{s}` [{s}]({s})\n", .{ mod.name, mod.path, try uri.fromPath(arena, mod.path) }) catch break :blk;
                             }
-                            if (build_config.roots_info_file_path) |rifp| aw.writer.print("\n### See [List of all roots]({s}#L{d})\n", .{ try uri.fromPath(arena, rifp), 0 }) catch break :blk;
+                            if (build_config.roots.info_file_path) |rifp| aw.writer.print("\n### See [List of all roots]({s}#L{d})\n", .{ try uri.fromPath(arena, rifp), 0 }) catch break :blk;
                         } else aw.writer.writeAll("build_runner reported NO (0) CompileSteps (roots)\n") catch break :blk;
                         aw.writer.writeAll("```zig\n\n") catch break :blk;
                         aw.writer.writeAll(Analyser.getFunctionSignature(tree, fn_proto)) catch break :blk;
