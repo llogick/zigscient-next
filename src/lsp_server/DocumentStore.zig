@@ -503,13 +503,6 @@ fn invalidateBuildFileWorker(self: *DocumentStore, build_file: *BldDoc) std.Io.C
         };
     }
 
-    for (self.workspaces.items) |wrkspc_item| {
-        if (std.mem.eql(u8, build_file.flat_uri, wrkspc_item.build_file_uri orelse continue)) {
-            self.wait_group.async(self.io, BldDoc.triggerRedoCompilation, .{ build_file, self });
-            break;
-        }
-    }
-
     if (self.transport) |transport| {
         if (self.lsp_capabilities.supports_semantic_tokens_refresh) {
             sendMessageToClient(
@@ -979,7 +972,7 @@ fn createBuildFile(self: *DocumentStore, uri: Uri) error{ Canceled, OutOfMemory 
     if (loadBuildAssociatedConfiguration(self.io, self.allocator, build_file)) |cfg| {
         build_file.options = cfg;
 
-        if (cfg.value.roots_index) |roots_index| build_file.roots_index = roots_index;
+        if (cfg.value.roots_index) |roots_index| build_file.configuration.roots.index = roots_index;
         if (cfg.value.relative_builtin_path) |relative_builtin_path| blk: {
             const build_file_path = URI.toFsPath(self.allocator, build_file.flat_uri) catch break :blk;
             const absolute_builtin_path = try std.fs.path.resolve(self.allocator, &.{ build_file_path, "..", relative_builtin_path });
@@ -1367,12 +1360,12 @@ pub fn uriFromImportStr(self: *DocumentStore, allocator: std.mem.Allocator, hand
 
                 const roots_count = build_cfg.roots.map.count();
                 if (roots_count == 0) break :closest;
-                if (!(build_file.roots_index < roots_count)) {
+                if (!(build_file.configuration.roots.index < roots_count)) {
                     log.err("root_id > roots.len; using id 0", .{});
-                    build_file.roots_index = 0;
+                    build_file.configuration.roots.index = 0;
                 }
 
-                const cs = build_cfg.roots.map.values()[build_file.roots_index];
+                const cs = build_cfg.roots.map.values()[build_cfg.roots.index];
                 for (cs.mods.items) |mod| {
                     if (std.mem.eql(u8, import_str, mod.name)) {
                         return if (!std.mem.endsWith(u8, mod.path, "%pending%")) try URI.fromPath(allocator, mod.path) else null;
@@ -1389,12 +1382,12 @@ pub fn uriFromImportStr(self: *DocumentStore, allocator: std.mem.Allocator, hand
 
                 const roots_count = build_cfg.roots.map.count();
                 if (roots_count == 0) break :search_wrkspc;
-                if (!(build_file.roots_index < roots_count)) {
+                if (!(build_file.configuration.roots.index < roots_count)) {
                     log.err("root_id > roots.len; using id 0", .{});
-                    build_file.roots_index = 0;
+                    build_file.configuration.roots.index = 0;
                 }
 
-                const cs = build_cfg.roots.map.values()[build_file.roots_index];
+                const cs = build_cfg.roots.map.values()[build_cfg.roots.index];
                 for (cs.mods.items) |mod| {
                     if (std.mem.eql(u8, import_str, mod.name)) {
                         return if (!std.mem.endsWith(u8, mod.path, "%pending%")) try URI.fromPath(allocator, mod.path) else null;

@@ -595,32 +595,27 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
                 log.err("{s}: roots_index > roots.len; using id 0", .{zig_doc.uri});
                 roots_index = 0;
             }
-            if (build_file.roots_index == roots_index) return;
-            build_file.roots_index = roots_index;
+            if (config.roots.index == roots_index) return;
+            build_file.configuration.roots.index = roots_index;
             send_noti = true;
-            for (ds.workspaces.items) |wrkspc_item| {
-                if (std.mem.eql(u8, build_file.flat_uri, wrkspc_item.build_file_uri orelse continue)) {
-                    ds.wait_group.async(ds.io, BldDoc.triggerRedoCompilation, .{ build_file, ds });
-                    break;
-                }
-            }
         }
     }
+
+    const config = build_file.getConfiguration(ds.io);
+    defer config.release(ds.io);
+    std.debug.assert(config.roots.index < config.roots.map.count());
+    const compile_step = config.roots.map.values()[config.roots.index];
+    if (compile_step.args == null) ds.wait_group.async(ds.io, BldDoc.triggerTailorRun, .{ build_file, ds });
 
     if (!send_noti or ds.config.disable_notifications) return;
 
     roots_index_msg: {
-        const config = build_file.getConfiguration(ds.io);
-        defer config.release(ds.io);
-        if (config.roots.map.count() == 0) return;
-        const compile_step = config.roots.map.values()[build_file.roots_index];
-
         const message = std.fmt.allocPrint(
             ds.allocator,
             "Using CompileStep \"{s}\" (`roots_index {}`) to resolve module imports for documents with build file {s} .",
             .{
                 compile_step.name,
-                build_file.roots_index,
+                config.roots.index,
                 zig_doc.uri,
             },
         ) catch break :roots_index_msg;

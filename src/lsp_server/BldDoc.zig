@@ -6,7 +6,6 @@ flat_uri: FlatUri,
 builtin_uri: ?FlatUri = null,
 /// options loaded from a zls.build.json
 options: ?std.json.Parsed(BuildOptions) = null,
-roots_index: u32 = 0,
 build: Build = .{},
 configuration: Configuration = .{},
 
@@ -24,8 +23,10 @@ pub const Configuration = struct {
 };
 
 pub const Roots = struct {
-    map: std.AutoArrayHashMapUnmanaged(u32, BldDoc.CompileStep),
+    /// The user selected index within map.keys()
+    index: u32 = 0,
     info_file_path: ?[]const u8 = null,
+    map: std.AutoArrayHashMapUnmanaged(u32, BldDoc.CompileStep),
 
     pub const init: Roots = .{ .map = .empty };
 
@@ -147,26 +148,30 @@ pub fn collectBuildConfigIncludePaths(
     return true;
 }
 
-pub fn triggerRedoCompilation(self: *BldDoc, ds: *DocumentStore) std.Io.Cancelable!void {
-    self.redoCompilation(ds) catch |err| switch (err) {
-        error.Canceled => return error.Canceled,
-        error.OutOfMemory => @panic("OOM"),
+pub fn triggerTailorRun(self: *BldDoc, ds: *DocumentStore) std.Io.Cancelable!void {
+    self.runTailor(ds) catch |err| switch (err) {
+        error.Canceled => |e| return e,
+        else => |e| {
+            log.err("Failed to extract full compile steps info for {q} : {t}", .{ self.flat_uri, e });
+            return;
+        },
     };
 }
 
 pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
     if (!std.process.can_spawn) return;
 
+    const io = ds.io;
     const self_file_path = ds.config.self_file_path orelse return;
-    const map = build_file.configuration.roots.map;
-    if (!(build_file.roots_index < map.count())) return;
-    const step_index = map.keys()[build_file.roots_index];
+    const config = build_file.getConfiguration(io);
+    defer config.release(io);
+    const map = config.roots.map;
+    if (!(config.roots.index < map.count())) return;
+    const step_index = map.keys()[config.roots.index];
 
     std.debug.assert(ds.config.zig_exe_path != null);
     std.debug.assert(ds.config.global_cache_dir != null);
     std.debug.assert(ds.config.zig_lib_dir != null);
-
-    const io = ds.io;
 
     var arena_state = std.heap.ArenaAllocator.init(ds.allocator);
     defer arena_state.deinit();
@@ -194,6 +199,8 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
         "--zigscient",
         try std.fmt.allocPrint(arena, "{}", .{step_index}),
     });
+
+    for (args.items) |arg| log.err("arg: {s}", .{arg});
 
     const tailor_run_result = blk: {
         const tracy_zone2 = tracy.trace(@src());
@@ -226,6 +233,26 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
     }
 
     log.err("tailor res:\n{s}", .{tailor_run_result.stdout});
+    log.err("tailor err:\n{s}", .{tailor_run_result.stderr});
+
+    for (ds.workspaces.items) |wrkspc_item| {
+        if (std.mem.eql(u8, build_file.flat_uri, wrkspc_item.build_file_uri orelse continue)) {
+            ds.wait_group.async(ds.io, BldDoc.triggerRedoCompilation, .{ build_file, ds });
+            break;
+        }
+    }
+}
+
+pub fn triggerRedoCompilation(self: *BldDoc, ds: *DocumentStore) std.Io.Cancelable!void {
+    self.redoCompilation(ds) catch |err| switch (err) {
+        error.Canceled => return error.Canceled,
+        error.OutOfMemory => @panic("OOM"),
+    };
+}
+
+fn redoCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
+    self.destroyCompilation(ds);
+    try self.initCompilation(ds);
 }
 
 fn destroyCompilation(self: *BldDoc, ds: *DocumentStore) void {
@@ -237,15 +264,6 @@ fn destroyCompilation(self: *BldDoc, ds: *DocumentStore) void {
     self.build.compilation = null;
     _ = self.build.arena_instance.reset(.retain_capacity);
     self.build.has_completed_once = false;
-}
-
-fn redoCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
-    self.destroyCompilation(ds);
-    self.runTailor(ds) catch |err| switch (err) {
-        error.Canceled => |e| return e,
-        else => {},
-    };
-    try self.initCompilation(ds);
 }
 
 fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
@@ -261,7 +279,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
         log.err("Failed to create a compilation for: {s}", .{self.flat_uri});
     };
 
-    const root_id = if (!(self.roots_index < cfg.value.roots.len)) 0 else self.roots_index;
+    const root_id = if (!(self.configuration.roots.index < cfg.value.roots.len)) 0 else self.configuration.roots.index;
     const arena = self.build.arena_instance.allocator();
     var args_dups: std.ArrayList([]const u8) = .empty;
 

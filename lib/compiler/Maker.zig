@@ -56,6 +56,19 @@ error_style: ErrorStyle,
 multiline_errors: MultilineErrors,
 summary: Summary,
 
+dump_compile_step_info: bool,
+compile_steps_info: std.AutoArrayHashMapUnmanaged(Configuration.Step.Index, Step.Compile.Info) = .empty,
+
+pub const CompileStepsInfo = struct {
+    compile_steps_info: []CompileStepInfo,
+
+    pub const CompileStepInfo = struct {
+        index: Configuration.Step.Index,
+        args: []const u8,
+        mods: []Step.Compile.Info.NamePathPair,
+    };
+};
+
 var safe_allocator_instance: std.heap.SafeAllocator = .init(std.heap.page_allocator, .{});
 var stdio_buffer_allocation: [256]u8 = undefined;
 var stdout_writer_allocation: Io.File.Writer = undefined;
@@ -100,7 +113,8 @@ const ErrorStyle = enum {
 const MultilineErrors = enum { indent, newline, none };
 const Summary = enum { all, new, failures, line, none };
 
-var override: enum { inactive, active, print_configuration, watch } = .inactive;
+const Override = enum { inactive, active, print_configuration, watch };
+var override: Override = .inactive;
 
 pub fn main(init: process.Init.Minimal) !void {
     // The build runner is long-lived in the following use cases:
@@ -542,7 +556,7 @@ pub fn main(init: process.Init.Minimal) !void {
     }
 
     const main_progress_node = std.Progress.start(io, .{
-        .disable_printing = (graph.stderr_mode.? == .no_color),
+        .disable_printing = (graph.stderr_mode.? == .no_color or override == .active),
     });
     defer main_progress_node.end();
 
@@ -602,6 +616,7 @@ pub fn main(init: process.Init.Minimal) !void {
         .error_style = error_style,
         .multiline_errors = multiline_errors,
         .summary = summary orelse if (watch or webui_listen != null) .line else .failures,
+        .dump_compile_step_info = override == .active,
     };
     defer {
         maker.memory_blocked_steps.deinit(gpa);
@@ -653,6 +668,26 @@ pub fn main(init: process.Init.Minimal) !void {
         if (maker.web_server) |*ws| ws.startBuild();
 
         try maker.makeStepNames(step_names.items, main_progress_node, fuzz);
+
+        if (maker.dump_compile_step_info) {
+            var agg: std.ArrayList(CompileStepsInfo.CompileStepInfo) = .empty;
+
+            for (maker.compile_steps_info.keys(), maker.compile_steps_info.values()) |cs_idx, *cs_xtra| {
+                try agg.append(arena, .{ .index = cs_idx, .args = cs_xtra.args.items, .mods = cs_xtra.mods.items });
+            }
+
+            const stringified_build_config = try std.json.Stringify.valueAlloc(
+                gpa,
+                CompileStepsInfo{
+                    .compile_steps_info = agg.items,
+                },
+                .{ .whitespace = .indent_2 },
+            );
+
+            var file_writer = std.Io.File.stdout().writer(io, &.{});
+            file_writer.interface.writeAll(stringified_build_config) catch return file_writer.err.?;
+            std.process.exit(0);
+        }
 
         if (maker.web_server) |*web_server| {
             if (fuzz) |mode| if (mode != .forever) fatal(
@@ -871,6 +906,8 @@ fn makeStepNames(
         try group.await(io);
     }
 
+    if (maker.dump_compile_step_info) return;
+
     assert(maker.memory_blocked_steps.items.len == 0);
 
     var test_pass_count: usize = 0;
@@ -1029,7 +1066,7 @@ fn makeStepNames(
                 error.Canceled => |e| return e,
                 else => {},
             };
-        } else {
+        } else if (override != .active) {
             const last_index = if (maker.summary == .all) top_level_steps.count() else blk: {
                 var i: usize = step_names.len;
                 while (i > 0) {
@@ -2064,7 +2101,7 @@ fn cleanExit(io: Io, scanned_config: *const ScannedConfig) void {
 }
 
 fn removePoisonedConfiguration(io: Io, scanned_config: *const ScannedConfig) void {
-    if (scanned_config.configuration.poisoned) {
+    if (scanned_config.configuration.poisoned and override != .active) {
         // This configuration file was good for only 1 invocation of the maker
         // process. Delete it to save space on disk.
         Io.Dir.cwd().deleteFile(io, scanned_config.path) catch |err|

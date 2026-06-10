@@ -16,6 +16,16 @@ const Step = @import("../Step.zig");
 const Maker = @import("../../Maker.zig");
 const PkgConfig = @import("../PkgConfig.zig");
 
+pub const Info = struct {
+    args: std.ArrayList(u8) = .empty,
+    mods: std.ArrayList(NamePathPair) = .empty,
+
+    pub const NamePathPair = struct {
+        name: []const u8,
+        path: []const u8,
+    };
+};
+
 /// Populated when there is compiler process that lives across multiple calls
 /// to `make`.
 zig_process: ?*Step.ZigProcess = null,
@@ -43,7 +53,22 @@ pub fn make(
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
 
+    if (maker.dump_compile_step_info) {
+        const gop = try maker.compile_steps_info.getOrPut(maker.graph.arena, compile_index);
+        if (!gop.found_existing) {
+            gop.key_ptr.* = compile_index;
+            gop.value_ptr.* = .{};
+        }
+    }
+
     try lowerZigArgs(arena, compile, compile_index, maker, progress_node, &argv, false);
+
+    if (maker.dump_compile_step_info) {
+        var cs_info = maker.compile_steps_info.getPtr(compile_index).?;
+        if (cs_info.args.items.len == 0) for (argv.items) |arg| {
+            try cs_info.args.print(maker.graph.arena, "{s} ", .{arg});
+        };
+    }
 
     const maybe_output_dir = Step.evalZigProcess(
         compile_index,
@@ -541,6 +566,16 @@ fn lowerZigArgs(
                     if (mod.root_source_file.unwrap()) |lp| {
                         const src = try maker.resolveLazyPathIndexAbs(arena, lp, compile_index);
                         zig_args.appendAssumeCapacity(try allocPrint(arena, "-M{s}={s}", .{ module_cli_name, src }));
+                        if (maker.dump_compile_step_info) blk: {
+                            var info = maker.compile_steps_info.getPtr(compile_index) orelse break :blk;
+                            if (info.args.items.len == 0) {
+                                try info.mods.append(maker.graph.arena, .{
+                                    .name = try maker.graph.arena.dupe(u8, module_cli_name),
+                                    .path = try maker.graph.arena.dupe(u8, src),
+                                });
+                            }
+                            std.log.err("CS: {}: {q}={q}", .{ compile_index, module_cli_name, src });
+                        }
                     } else if (moduleNeedsCliArg(&mod, conf)) {
                         zig_args.appendAssumeCapacity(try allocPrint(arena, "-M{s}", .{module_cli_name}));
                     }

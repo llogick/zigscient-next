@@ -60,7 +60,6 @@ pending_show_messages: std.ArrayList(types.window.ShowMessageParams) = .empty,
 client_capabilities: ClientCapabilities = .{},
 diagnostics_collection: DiagnosticsCollection,
 workspaces: std.ArrayList(Workspace) = .empty,
-workspaces_io_group: std.Io.Group = .init,
 
 // Code was based off of https://github.com/andersfr/zig-lsp/blob/master/server.zig
 
@@ -1530,6 +1529,7 @@ pub fn loop(server: *Server) LoopError!void {
                     handle.setChangePending(true);
                 }
             }
+            try server.document_store.wait_group.await(server.io);
             try server.wait_group.await(server.io);
             server.wait_group = .init;
             try server.processMessageReportError(arena_allocator.state, message);

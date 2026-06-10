@@ -80,12 +80,12 @@ fn hoverSymbol(
                         errdefer aw.deinit();
                         aw.writer.writeAll("```\n") catch break :blk;
                         const roots_count = build_config.roots.map.count();
-                        const compile_step = build_config.roots.map.values()[build_file.roots_index];
+                        const compile_step = build_config.roots.map.values()[build_config.roots.index];
                         if (roots_count != 0) {
-                            if (!(build_file.roots_index < roots_count)) {
+                            if (!(build_config.roots.index < roots_count)) {
                                 aw.writer.print("Current root_id > roots.len => defaulting to root_id 0\n\nModules:\n\n", .{}) catch break :blk;
-                                build_file.roots_index = 0;
-                            } else aw.writer.print("### root_id: ```{}, \"{s}\"```\n\n", .{ build_file.roots_index, compile_step.name }) catch break :blk;
+                                build_config.roots.index = 0;
+                            } else aw.writer.print("### root_id: ```{}, \"{s}\"```\n\n", .{ build_config.roots.index, compile_step.name }) catch break :blk;
                             for (compile_step.mods.items) |mod| {
                                 aw.writer.print(" * `{s}` [{s}]({s})\n", .{ mod.name, mod.path, try uri.fromPath(arena, mod.path) }) catch break :blk;
                             }
