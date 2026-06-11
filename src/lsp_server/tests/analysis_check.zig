@@ -101,6 +101,7 @@ pub fn main(init: std.process.Init) Error!void {
     var environ_map: std.process.Environ.Map = .init(std.testing.failing_allocator);
 
     var config: lsp_server.DocumentStore.Settings = .{
+        .self_file_path = null,
         .environ_map = &environ_map,
         .zig_exe_path = zig_exe_path,
         .zig_lib_dir = zig_lib_dir,
