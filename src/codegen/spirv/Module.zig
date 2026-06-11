@@ -28,7 +28,7 @@ uav_link: std.AutoHashMapUnmanaged(struct { InternPool.Index, spec.StorageClass 
 intern_map: std.AutoHashMapUnmanaged(struct { InternPool.Index, Repr }, Id) = .empty,
 decls: std.ArrayList(Decl) = .empty,
 decl_deps: std.ArrayList(Decl.Index) = .empty,
-entry_points: std.AutoArrayHashMapUnmanaged(Id, EntryPoint) = .empty,
+entry_points: std.array_hash_map.Auto(Id, EntryPoint) = .empty,
 /// This map serves a dual purpose:
 /// - It keeps track of pointers that are currently being emitted, so that we can tell
 ///   if they are recursive and need an OpTypeForwardPointer.
@@ -58,18 +58,18 @@ cache: struct {
     float_types: std.AutoHashMapUnmanaged(std.lang.Type.Float, Id) = .empty,
     vector_types: std.AutoHashMapUnmanaged(struct { Id, u32 }, Id) = .empty,
     array_types: std.AutoHashMapUnmanaged(struct { Id, Id }, Id) = .empty,
-    struct_types: std.ArrayHashMapUnmanaged(StructType, Id, StructType.HashContext, true) = .empty,
-    fn_types: std.ArrayHashMapUnmanaged(FnType, Id, FnType.HashContext, true) = .empty,
+    struct_types: std.array_hash_map.Custom(StructType, Id, StructType.HashContext, true) = .empty,
+    fn_types: std.array_hash_map.Custom(FnType, Id, FnType.HashContext, true) = .empty,
 
     capabilities: std.AutoHashMapUnmanaged(spec.Capability, void) = .empty,
     extensions: std.StringHashMapUnmanaged(void) = .empty,
     extended_instruction_set: std.AutoHashMapUnmanaged(spec.InstructionSet, Id) = .empty,
     decorations: std.AutoHashMapUnmanaged(struct { Id, spec.Decoration }, void) = .empty,
     builtins: std.AutoHashMapUnmanaged(struct { spec.BuiltIn, spec.StorageClass }, Decl.Index) = .empty,
-    strings: std.StringArrayHashMapUnmanaged(Id) = .empty,
+    strings: std.array_hash_map.String(Id) = .empty,
 
     bool_const: [2]?Id = .{ null, null },
-    constants: std.ArrayHashMapUnmanaged(Constant, Id, Constant.HashContext, true) = .empty,
+    constants: std.array_hash_map.Custom(Constant, Id, Constant.HashContext, true) = .empty,
 
     spirv_types: std.AutoHashMapUnmanaged(InternPool.Index, Id) = .empty,
 } = .{},

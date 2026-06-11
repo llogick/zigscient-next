@@ -187,7 +187,7 @@ entry: Entry = .default,
 /// List of symbols forced as undefined in the symbol table
 /// thus forcing their resolution by the linker.
 /// Corresponds to `-u <symbol>` for ELF/MachO and `/include:<symbol>` for COFF/PE.
-force_undefined_symbols: std.StringArrayHashMapUnmanaged(void),
+force_undefined_symbols: std.array_hash_map.String(void),
 
 /// Overrides the default stack size
 stack_size: ?u64 = null,
@@ -759,7 +759,7 @@ pub fn rootModuleTarget(c: *Compile) std.Target {
 pub fn getCompileDependencies(start: *Compile, chase_dynamic: bool) []const *Compile {
     const arena = start.step.owner.graph.arena;
 
-    var compiles: std.AutoArrayHashMapUnmanaged(*Compile, void) = .empty;
+    var compiles: std.array_hash_map.Auto(*Compile, void) = .empty;
     var next_idx: usize = 0;
 
     compiles.putNoClobber(arena, start, {}) catch @panic("OOM");
