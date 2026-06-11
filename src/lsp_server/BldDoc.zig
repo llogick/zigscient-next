@@ -34,7 +34,10 @@ pub const Roots = struct {
         var map = roots.map;
         for (map.values()) |*value| {
             allocator.free(value.name);
-            if (value.args) |args| allocator.free(args);
+            if (value.args) |args| {
+                for (args) |arg| allocator.free(arg);
+                allocator.free(args);
+            }
             for (value.mods.items) |item| {
                 allocator.free(item.name);
                 allocator.free(item.path);
@@ -48,7 +51,7 @@ pub const Roots = struct {
 
 pub const CompileStep = struct {
     name: []const u8,
-    args: ?[]const u8 = null,
+    args: ?[]const []const u8 = null,
     mods: std.ArrayList(NamePathPair) = .empty,
 
     pub const NamePathPair = struct {
@@ -228,6 +231,8 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
         return error.RunFailed;
     }
 
+    log.err("tailor res:\n{s}", .{tailor_run_result.stdout});
+
     const parse_options: std.json.ParseOptions = .{
         // We ignore unknown fields so people can roll
         // their own build runners in libraries with
@@ -249,8 +254,17 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
             log.debug("runTailor: received data for an inactive compile step index: {}", .{csi.index});
             continue;
         };
-        if (cs.args) |prev_args| ds.allocator.free(prev_args);
-        cs.args = try ds.allocator.dupe(u8, csi.args);
+
+        if (cs.args) |prev_args| {
+            for (prev_args) |prev_arg| ds.allocator.free(prev_arg);
+        }
+        var new_args: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (new_args.items) |new_arg| ds.allocator.free(new_arg);
+            new_args.deinit(ds.allocator);
+        }
+        for (csi.args) |new_arg| try new_args.append(ds.allocator, try ds.allocator.dupe(u8, new_arg));
+        cs.args = try new_args.toOwnedSlice(ds.allocator);
 
         for (cs.mods.items) |mod| {
             ds.allocator.free(mod.name);
@@ -295,11 +309,12 @@ fn destroyCompilation(self: *BldDoc, ds: *DocumentStore) void {
 }
 
 fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
-    try self.build.mutex.lock(ds.io);
-    defer self.build.mutex.unlock(ds.io);
+    const cfg = self.getConfiguration(ds.io);
+    defer cfg.release(ds.io);
 
-    const cfg = self.configuration.config orelse return;
-    if (cfg.value.roots.len == 0) return;
+    const roots_count = cfg.roots.map.count();
+    if (roots_count == 0 or !(cfg.roots.index < roots_count)) return;
+    const cs = cfg.roots.map.values()[cfg.roots.index];
 
     var cleanup: bool = false;
     defer if (cleanup) {
@@ -307,21 +322,38 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
         log.err("Failed to create a compilation for: {s}", .{self.flat_uri});
     };
 
-    const root_id = if (!(self.configuration.roots.index < cfg.value.roots.len)) 0 else self.configuration.roots.index;
     const arena = self.build.arena_instance.allocator();
     var args_dups: std.ArrayList([]const u8) = .empty;
+    const proj_path = pp: {
+        const fs_path = uri_util.toFsPath(arena, self.flat_uri) catch return;
+        const proj_path = std.fs.path.dirname(fs_path).?;
+        log.err("pp: {q}", .{proj_path});
+        break :pp proj_path;
+    };
 
-    for (cfg.value.roots[root_id].args) |arg| {
-        if (std.mem.startsWith(u8, arg, "<generated")) continue;
+    const args = cs.args orelse return;
+    for (args) |arg| {
+        if (std.mem.startsWith(u8, arg, "--listen")) continue;
         try args_dups.append(arena, try arena.dupe(u8, arg));
     }
-
+    try args_dups.appendSlice(arena, &.{
+        // "-fllvm",
+        "-fincremental",
+        "-fno-emit-bin",
+        "-fno-emit-asm",
+        "-fno-emit-llvm-ir",
+        "-fno-emit-llvm-bc",
+        "-fno-emit-h",
+        "-fno-emit-docs",
+        "-fno-emit-implib",
+    });
     self.build.args = try args_dups.toOwnedSlice(arena);
 
     log.info("Creating a compilation for: {s}\n{s}", .{ self.flat_uri, try std.json.Stringify.valueAlloc(arena, self.build.args, .{}) });
 
     self.build.state = try arena.create(CompilationState);
     self.build.state.?.* = .{};
+    self.build.state.?.*.project_root_path = proj_path;
 
     const cmd = self.build.args[1];
     const arg_mode: compiler.ArgMode =

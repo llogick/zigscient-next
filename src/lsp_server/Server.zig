@@ -336,7 +336,7 @@ pub fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void 
                 return;
             }
 
-            if (!DocumentStore.isBuildFile(param_handle.uri)) proj_diags: {
+            if (false) if (!DocumentStore.isBuildFile(param_handle.uri)) proj_diags: {
                 const build = build: {
                     if (param_handle.computed_data.build) |build| break :build build;
                     if (param_handle.closest_build_file_uri) |build_file_uri| {
@@ -397,7 +397,7 @@ pub fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void 
                 };
                 if (token) |t| param_server.document_store.notifyProgressEnd(t, .success);
                 return;
-            }
+            };
 
             diagnostics_gen.generateDiagnostics(param_server, param_handle) catch |err| switch (err) {
                 error.Canceled => return error.Canceled,
@@ -1529,7 +1529,7 @@ pub fn loop(server: *Server) LoopError!void {
                     handle.setChangePending(true);
                 }
             }
-            try server.document_store.wait_group.await(server.io);
+            try server.document_store.tailor_run_group.await(server.io);
             try server.wait_group.await(server.io);
             server.wait_group = .init;
             try server.processMessageReportError(arena_allocator.state, message);

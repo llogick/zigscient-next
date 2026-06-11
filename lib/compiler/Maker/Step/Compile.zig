@@ -17,7 +17,7 @@ const Maker = @import("../../Maker.zig");
 const PkgConfig = @import("../PkgConfig.zig");
 
 pub const Info = struct {
-    args: std.ArrayList(u8) = .empty,
+    args: std.ArrayList([]const u8) = .empty,
     mods: std.ArrayList(NamePathPair) = .empty,
 
     pub const NamePathPair = struct {
@@ -68,7 +68,7 @@ pub fn make(
     if (maker.dump_compile_step_info) {
         var cs_info = maker.compile_steps_info.getPtr(compile_index).?;
         if (cs_info.args.items.len == 0) for (argv.items) |arg| {
-            try cs_info.args.print(maker.graph.arena, "{s} ", .{arg});
+            try cs_info.args.append(maker.graph.arena, try maker.graph.arena.dupe(u8, arg));
         };
     }
 

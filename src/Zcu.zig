@@ -347,10 +347,7 @@ codegen_task_pool: CodegenTaskPool,
 
 generation: u32 = 0,
 
-/// In order to generate an absolute file path
-project_root_path: ?[]const u8 = null,
 lsp_document_store: ?*LspDocumentStore = null,
-cimport_files: std.ArrayList(*File) = .empty,
 
 pub const DependencyReason = struct {
     src: LazySrcLoc,
@@ -2912,18 +2909,6 @@ pub fn deinit(zcu: *Zcu) void {
         }
         zcu.cimport_errors.deinit(gpa);
 
-        for (zcu.cimport_files.items) |file| {
-            file.path.deinit(gpa);
-            file.unload(gpa);
-            if (file.uri_slice) |slice| gpa.free(slice);
-            if (file.prev_zir) |prev_zir| {
-                prev_zir.deinit(gpa);
-                gpa.destroy(prev_zir);
-            }
-            gpa.destroy(file);
-        }
-        zcu.cimport_files.deinit(gpa);
-
         zcu.compile_logs.deinit(gpa);
         zcu.compile_log_lines.deinit(gpa);
         zcu.free_compile_log_lines.deinit(gpa);
@@ -2972,6 +2957,7 @@ fn deinitFile(zcu: *Zcu, file_index: Zcu.File.Index) void {
     log.debug("deinit File {f}", .{file.path.fmt(zcu.comp)});
     file.path.deinit(gpa);
     file.unload(gpa);
+    if (file.uri_slice) |slice| gpa.free(slice);
     if (file.prev_zir) |prev_zir| {
         prev_zir.deinit(gpa);
         gpa.destroy(prev_zir);

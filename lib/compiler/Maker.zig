@@ -65,7 +65,7 @@ pub const CompileStepsInfo = struct {
 
     pub const CompileStepInfo = struct {
         index: Configuration.Step.Index,
-        args: []const u8,
+        args: []const []const u8,
         mods: []Step.Compile.Info.NamePathPair,
     };
 };
@@ -192,6 +192,7 @@ pub fn main(init: process.Init.Minimal) !void {
         .local_cache_root = local_cache_directory,
         .zig_lib_directory = zig_lib_directory,
         .build_root_directory = build_root_directory,
+        .reference_trace = if (override == .active) 12 else null,
     };
 
     graph.cache.addPrefix(.{ .path = null, .handle = cwd });

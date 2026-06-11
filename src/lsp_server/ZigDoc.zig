@@ -605,7 +605,7 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
     defer config.release(ds.io);
     std.debug.assert(config.roots.index < config.roots.map.count());
     const compile_step = config.roots.map.values()[config.roots.index];
-    if (compile_step.args == null) ds.wait_group.async(ds.io, BldDoc.triggerTailorRun, .{ build_file, ds });
+    if (compile_step.args == null) ds.tailor_run_group.async(ds.io, BldDoc.triggerTailorRun, .{ build_file, ds });
 
     if (!send_noti or ds.config.disable_notifications) return;
 

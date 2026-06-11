@@ -33,6 +33,7 @@ workspaces: *std.ArrayList(Server.Workspace),
 config: Settings,
 mutex: std.Io.Mutex = .init,
 wait_group: if (supports_build_system) std.Io.Group else void = if (supports_build_system) .init else {},
+tailor_run_group: if (supports_build_system) std.Io.Group else void = if (supports_build_system) .init else {},
 handles: std.StringArrayHashMapUnmanaged(*Handle) = .empty,
 build_files: if (supports_build_system) std.StringArrayHashMapUnmanaged(*BldDoc) else void = if (supports_build_system) .empty else {},
 diagnostics_collection: *DiagnosticsCollection,
@@ -91,6 +92,7 @@ pub const Settings = struct {
 pub fn deinit(self: *DocumentStore) void {
     if (supports_build_system) {
         self.wait_group.cancel(self.io);
+        self.tailor_run_group.cancel(self.io);
     }
 
     for (self.handles.keys(), self.handles.values()) |uri, handle| {

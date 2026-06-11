@@ -1421,9 +1421,6 @@ pub fn buildOutputType(
                             &cs.rc_source_files_owner_index,
                             &cs.cssan,
                         );
-                    } else if (mem.eql(u8, arg, "--proj-path")) {
-                        var it = mem.splitScalar(u8, args_iter.nextOrFatal(), '=');
-                        cs.project_root_path = it.next();
                     } else if (mem.eql(u8, arg, "--error-limit")) {
                         const next_arg = args_iter.nextOrFatal();
                         cs.error_limit = std.fmt.parseUnsigned(Zcu.ErrorInt, next_arg, 0) catch |err| {
@@ -4044,7 +4041,6 @@ pub fn buildOutputType(
         .file_system_inputs = &cs.file_system_inputs,
         .debug_compiler_runtime_libs = cs.debug_compiler_runtime_libs,
         .environ_map = environ_map,
-        .project_root_path = cs.project_root_path,
         .lsp_document_store = ds,
     }) catch |err| switch (err) {
         error.CreateFail => switch (create_diag) {
