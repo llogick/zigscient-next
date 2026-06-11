@@ -793,7 +793,6 @@ fn loadBuildConfiguration(
                             try roots_info.print(arena, "{s}-> {s}={q}\n", .{ sub_indent, mod_import_name, rsf_path });
                         }
                         if (!gop.found_existing) gop.value_ptr.* = .{
-                            .index = @intFromEnum(current.step),
                             .name = try self.allocator.dupe(u8, compile.root_name.slice(c)),
                             .mods = mods,
                         };

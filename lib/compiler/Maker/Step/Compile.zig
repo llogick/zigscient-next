@@ -54,6 +54,8 @@ pub fn make(
     defer argv.deinit(gpa);
 
     if (maker.dump_compile_step_info) {
+        try maker.compile_steps_info_mutex.lock(maker.graph.io);
+        defer maker.compile_steps_info_mutex.unlock(maker.graph.io);
         const gop = try maker.compile_steps_info.getOrPut(maker.graph.arena, compile_index);
         if (!gop.found_existing) {
             gop.key_ptr.* = compile_index;
@@ -574,7 +576,6 @@ fn lowerZigArgs(
                                     .path = try maker.graph.arena.dupe(u8, src),
                                 });
                             }
-                            std.log.err("CS: {}: {q}={q}", .{ compile_index, module_cli_name, src });
                         }
                     } else if (moduleNeedsCliArg(&mod, conf)) {
                         zig_args.appendAssumeCapacity(try allocPrint(arena, "-M{s}", .{module_cli_name}));

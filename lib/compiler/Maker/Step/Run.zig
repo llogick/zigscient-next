@@ -452,7 +452,7 @@ fn waitZigTest(
         var body_r: std.Io.Reader = .fixed(body);
         switch (header.tag) {
             .zig_version => {
-                if (!std.mem.eql(u8, builtin.zig_version_string, body)) return step.fail(
+                if (!maker.dump_compile_step_info) if (!std.mem.eql(u8, builtin.zig_version_string, body)) return step.fail(
                     maker,
                     "zig version mismatch build runner vs compiler: '{s}' vs '{s}'",
                     .{ builtin.zig_version_string, body },
@@ -779,7 +779,7 @@ const FuzzTestRunner = struct {
 
         switch (header.tag) {
             .zig_version => {
-                if (!std.mem.eql(u8, builtin.zig_version_string, body)) return step.fail(
+                if (!maker.dump_compile_step_info) if (!std.mem.eql(u8, builtin.zig_version_string, body)) return step.fail(
                     maker,
                     "zig version mismatch build runner vs compiler: '{s}' vs '{s}'",
                     .{ builtin.zig_version_string, body },

@@ -2032,7 +2032,7 @@ fn createTracyModule(
         .target = options.target,
         .optimize = options.optimize,
         .imports = &.{
-            .{ .name = "options", .module = blk: {
+            .{ .name = "tracy options", .module = blk: {
                 const tracy_options = b.addOptions();
                 tracy_options.step.name = "tracy options";
                 const enable_allocation = b.option(bool, "enable-tracy-allocation", "Enable using TracyAllocator to monitor allocations.") orelse enable;

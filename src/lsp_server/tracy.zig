@@ -25,7 +25,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const options = @import("options");
+const options = @import("tracy options");
 
 pub const enable = if (builtin.is_test) false else options.enable;
 pub const enable_allocation = enable and options.enable_allocation;

@@ -58,6 +58,7 @@ summary: Summary,
 
 dump_compile_step_info: bool,
 compile_steps_info: std.AutoArrayHashMapUnmanaged(Configuration.Step.Index, Step.Compile.Info) = .empty,
+compile_steps_info_mutex: std.Io.Mutex = .init,
 
 pub const CompileStepsInfo = struct {
     compile_steps_info: []CompileStepInfo,
@@ -906,8 +907,6 @@ fn makeStepNames(
         try group.await(io);
     }
 
-    if (maker.dump_compile_step_info) return;
-
     assert(maker.memory_blocked_steps.items.len == 0);
 
     var test_pass_count: usize = 0;
@@ -953,6 +952,8 @@ fn makeStepNames(
             },
         }
     }
+
+    if (failure_count == 0 and maker.dump_compile_step_info) return;
 
     if (fuzz) |mode| blk: {
         switch (builtin.os.tag) {

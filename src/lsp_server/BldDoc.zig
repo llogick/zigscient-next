@@ -47,8 +47,6 @@ pub const Roots = struct {
 };
 
 pub const CompileStep = struct {
-    /// The step`s index within configuration.steps
-    index: u32,
     name: []const u8,
     args: ?[]const u8 = null,
     mods: std.ArrayList(NamePathPair) = .empty,
@@ -200,8 +198,6 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
         try std.fmt.allocPrint(arena, "{}", .{step_index}),
     });
 
-    for (args.items) |arg| log.err("arg: {s}", .{arg});
-
     const tailor_run_result = blk: {
         const tracy_zone2 = tracy.trace(@src());
         defer tracy_zone2.end();
@@ -225,15 +221,47 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
         const joined = try std.mem.join(arena, " ", args.items);
 
         log.err(
-            "Failed to tailor configuration step_index {} for {q}\nDIR: {s}\nCMD: {s}\nERR:\n{s}",
-            .{ step_index, build_file.flat_uri, cwd, joined, tailor_run_result.stderr },
+            "Failed to compile {q} from {q}\nDIR: {s}\nCMD: {s}\nERR:\n{s}",
+            .{ map.values()[config.roots.index].name, build_file.flat_uri, cwd, joined, tailor_run_result.stderr },
         );
 
         return error.RunFailed;
     }
 
-    log.err("tailor res:\n{s}", .{tailor_run_result.stdout});
-    log.err("tailor err:\n{s}", .{tailor_run_result.stderr});
+    const parse_options: std.json.ParseOptions = .{
+        // We ignore unknown fields so people can roll
+        // their own build runners in libraries with
+        // the only requirement being general adherence
+        // to the BuildConfig type
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    };
+    const json = std.json.parseFromSlice(
+        lsp_server.Maker.CompileStepsInfo,
+        arena,
+        tailor_run_result.stdout,
+        parse_options,
+    ) catch return error.InvalidBuildConfig;
+    defer json.deinit();
+
+    for (json.value.compile_steps_info) |csi| {
+        const cs = config.roots.map.getPtr(@intFromEnum(csi.index)) orelse {
+            log.debug("runTailor: received data for an inactive compile step index: {}", .{csi.index});
+            continue;
+        };
+        if (cs.args) |prev_args| ds.allocator.free(prev_args);
+        cs.args = try ds.allocator.dupe(u8, csi.args);
+
+        for (cs.mods.items) |mod| {
+            ds.allocator.free(mod.name);
+            ds.allocator.free(mod.path);
+        }
+        cs.mods.items.len = 0;
+
+        for (csi.mods) |mod| {
+            try cs.mods.append(ds.allocator, .{ .name = try ds.allocator.dupe(u8, mod.name), .path = try ds.allocator.dupe(u8, mod.path) });
+        }
+    }
 
     for (ds.workspaces.items) |wrkspc_item| {
         if (std.mem.eql(u8, build_file.flat_uri, wrkspc_item.build_file_uri orelse continue)) {
@@ -339,16 +367,20 @@ pub fn deinit(self: *BldDoc, allocator: std.mem.Allocator) void {
     self.configuration.roots.deinit(allocator);
 }
 
+const BldDoc = @This();
+
+const lsp_server = @import("lsp-server");
 const std = @import("std");
-pub const FlatUri = []const u8;
 const uri_util = @import("uri.zig");
 const BuildOptions = @import("BuildOptions.zig");
 const Config = @import("build_runner/shared.zig").BuildConfig;
-const BldDoc = @This();
 const DocumentStore = @import("DocumentStore.zig");
 const DiagnosticsCollection = @import("DiagnosticsCollection.zig");
 const tracy = @import("tracy");
+
 const log = std.log.scoped(.lspc_store);
+
+pub const FlatUri = []const u8;
 
 /// Compiler and Compilation declarations
 pub const compiler = @import("compiler");

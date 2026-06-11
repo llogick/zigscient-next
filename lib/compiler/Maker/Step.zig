@@ -581,13 +581,13 @@ fn zigProcessUpdate(step_index: Configuration.Step.Index, maker: *Maker, zp: *Zi
         };
         switch (header.tag) {
             .zig_version => {
-                if (!std.mem.eql(u8, builtin.zig_version_string, body)) {
+                if (!maker.dump_compile_step_info) if (!std.mem.eql(u8, builtin.zig_version_string, body)) {
                     return s.fail(
                         maker,
                         "zig version mismatch build runner vs compiler: '{s}' vs '{s}'",
                         .{ builtin.zig_version_string, body },
                     );
-                }
+                };
             },
             .error_bundle => {
                 s.result_error_bundle = try std.zig.Server.allocErrorBundle(gpa, body);
