@@ -564,7 +564,10 @@ pub fn applyContentChanges(
 // IF this zig_doc is also a BldDoc scan for `$ls root_id N` and apply
 pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notification: bool) error{ Canceled, OutOfMemory }!void {
     if (zig_doc.tree.errors.len != 0) return;
+
     const build_file = ds.getBuildFile(zig_doc.uri) orelse return;
+    const config = build_file.getConfiguration(ds.io);
+    defer config.release(ds.io);
 
     var send_noti: bool = send_notification;
 
@@ -589,8 +592,6 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
             tok = tokenizer.next();
             if (tok.tag != .number_literal) break :switch_roots_index;
             var roots_index = std.fmt.parseInt(u32, source[tok.loc.start..tok.loc.end], 10) catch break :switch_roots_index;
-            const config = build_file.getConfiguration(ds.io);
-            defer config.release(ds.io);
             if (!(roots_index < config.roots.map.count())) {
                 log.err("{s}: roots_index > roots.len; using id 0", .{zig_doc.uri});
                 roots_index = 0;
@@ -601,15 +602,12 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
         }
     }
 
-    const config = build_file.getConfiguration(ds.io);
-    defer config.release(ds.io);
-    std.debug.assert(config.roots.index < config.roots.map.count());
-    const compile_step = config.roots.map.values()[config.roots.index];
-    if (compile_step.args == null) ds.tailor_run_group.async(ds.io, BldDoc.triggerTailorRun, .{ build_file, ds });
+    if (config.roots.tailor_run_state == .pending) ds.tailor_run_group.async(ds.io, BldDoc.triggerTailorRun, .{ build_file, ds });
 
     if (!send_noti or ds.config.disable_notifications) return;
 
     roots_index_msg: {
+        const compile_step = config.roots.map.values()[config.roots.index];
         const message = std.fmt.allocPrint(
             ds.allocator,
             "Using CompileStep \"{s}\" (`roots_index {}`) to resolve module imports for documents with build file {s} .",

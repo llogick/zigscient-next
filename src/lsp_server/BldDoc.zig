@@ -25,6 +25,11 @@ pub const Configuration = struct {
 pub const Roots = struct {
     /// The user selected index within map.keys()
     index: u32 = 0,
+    tailor_run_state: enum {
+        pending,
+        success,
+        failure,
+    } = .pending,
     info_file_path: ?[]const u8 = null,
     map: std.AutoArrayHashMapUnmanaged(u32, BldDoc.CompileStep),
 
@@ -164,10 +169,15 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
 
     const io = ds.io;
     const self_file_path = ds.config.self_file_path orelse return;
+
     const config = build_file.getConfiguration(io);
     defer config.release(io);
+
+    if (config.roots.tailor_run_state != .pending) return;
+    errdefer config.roots.tailor_run_state = .failure;
+
     const map = config.roots.map;
-    if (!(config.roots.index < map.count())) return;
+    if (!(config.roots.index < map.count())) return error.RequestedRootIndexOOB;
     const step_index = map.keys()[config.roots.index];
 
     std.debug.assert(ds.config.zig_exe_path != null);
@@ -276,6 +286,8 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
             try cs.mods.append(ds.allocator, .{ .name = try ds.allocator.dupe(u8, mod.name), .path = try ds.allocator.dupe(u8, mod.path) });
         }
     }
+
+    config.roots.tailor_run_state = .success;
 
     for (ds.workspaces.items) |wrkspc_item| {
         if (std.mem.eql(u8, build_file.flat_uri, wrkspc_item.build_file_uri orelse continue)) {
