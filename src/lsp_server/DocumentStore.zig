@@ -714,6 +714,7 @@ fn loadBuildConfiguration(
     var roots: BldDoc.Roots = .init;
     errdefer roots.deinit(self.allocator);
     var roots_info: std.ArrayList(u8) = .empty;
+    try roots_info.appendSlice(arena, "Basic Project Overview\n    Available root IDs are listed under their corresponding Compile Step, eg `ID [N]`.\n");
 
     var stack: std.array_list.Managed(StackItem) = .init(arena);
     const c = &serialized;
@@ -740,10 +741,9 @@ fn loadBuildConfiguration(
 
                 switch (step_flags.tag) {
                     .top_level => {
-                        try roots_info.print(arena, "{s}{s}{}: {q} - {q} ({t})\n", .{
+                        try roots_info.print(arena, "{s}{s}{q} - {q} ({t})\n", .{
                             if (current.depth == 0) "\n" else "",
                             indent,
-                            @intFromEnum(current.step),
                             name,
                             step.extended.get(c.extra).top_level.description.slice(c),
                             step_flags.tag,
@@ -759,9 +759,8 @@ fn loadBuildConfiguration(
                                 else => "%pending%",
                             };
                         }
-                        try roots_info.print(arena, "{s}{}: {q} - {q} ({t} {t})\n", .{
+                        try roots_info.print(arena, "{s}{q} - {q} ({t} {t})\n", .{
                             indent,
-                            @intFromEnum(current.step),
                             compile.root_name.slice(c),
                             name,
                             step_flags.tag,
@@ -799,9 +798,8 @@ fn loadBuildConfiguration(
                             .mods = mods,
                         };
                     },
-                    else => try roots_info.print(arena, "{s}{}: {q} ({t})\n", .{
+                    else => try roots_info.print(arena, "{s}{q} ({t})\n", .{
                         indent,
-                        @intFromEnum(current.step),
                         name,
                         step_flags.tag,
                     }),
