@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) !void {
     const dev_env: DevEnv = b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .lsp_server;
 
     const flat = b.option(bool, "flat", "Put files into the installation prefix in a manner suited for upstream distribution rather than a posix file system hierarchy standard") orelse false;
-    const single_threaded = b.option(bool, "single-threaded", "Build artifacts that run in single threaded mode");
+    const single_threaded = false; //b.option(bool, "single-threaded", "Build artifacts that run in single threaded mode");
     const use_zig_libcxx = b.option(bool, "use-zig-libcxx", "If libc++ is needed, use zig's bundled version, don't try to integrate with the system") orelse false;
 
     const test_step = b.step("test-compiler", "Run all compiler tests");
