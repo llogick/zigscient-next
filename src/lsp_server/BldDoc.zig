@@ -241,8 +241,6 @@ pub fn runTailor(build_file: *BldDoc, ds: *DocumentStore) !void {
         return error.RunFailed;
     }
 
-    log.err("tailor res:\n{s}", .{tailor_run_result.stdout});
-
     const parse_options: std.json.ParseOptions = .{
         // We ignore unknown fields so people can roll
         // their own build runners in libraries with
@@ -339,7 +337,6 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
     const proj_path = pp: {
         const fs_path = uri_util.toFsPath(arena, self.flat_uri) catch return;
         const proj_path = std.fs.path.dirname(fs_path).?;
-        log.err("pp: {q}", .{proj_path});
         break :pp proj_path;
     };
 
@@ -364,8 +361,29 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
     log.info("Creating a compilation for: {s}\n{s}", .{ self.flat_uri, try std.json.Stringify.valueAlloc(arena, self.build.args, .{}) });
 
     self.build.state = try arena.create(CompilationState);
-    self.build.state.?.* = .{};
-    self.build.state.?.*.project_root_path = proj_path;
+    const cs_ptr = self.build.state.?;
+    cs_ptr.* = .{};
+    cs_ptr.*.project_root_path = proj_path;
+    cs_ptr.*.io_impl = switch (build_options.io_mode) {
+        .threaded => .init(compiler.globals.root_gpa, .{
+            .stack_size = compiler.thread_stack_size,
+
+            .argv0 = .init(compiler.globals.init.args),
+            .environ = compiler.globals.init.environ,
+        }),
+        .evented => try .init(compiler.globals.root_gpa, .{
+            .argv0 = .init(compiler.globals.init.args),
+            .environ = compiler.globals.init.environ,
+
+            .backing_allocator_needs_mutex = false,
+        }),
+    };
+    cs_ptr.*.io = cs_ptr.*.io_impl.io();
+
+    const gpa = switch (build_options.io_mode) {
+        .threaded => compiler.globals.root_gpa,
+        .evented => cs_ptr.*.io_impl.allocator(),
+    };
 
     const cmd = self.build.args[1];
     const arg_mode: compiler.ArgMode =
@@ -377,9 +395,9 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
             return;
         };
     buildOutputType(
-        ds.allocator,
+        gpa,
         arena,
-        ds.io,
+        cs_ptr.*.io,
         self.build.args,
         arg_mode,
         ds.config.environ_map,
@@ -413,6 +431,7 @@ pub fn deinit(self: *BldDoc, allocator: std.mem.Allocator) void {
 
 const BldDoc = @This();
 
+const build_options = @import("build_options");
 const lsp_server = @import("lsp-server");
 const std = @import("std");
 const uri_util = @import("uri.zig");

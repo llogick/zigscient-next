@@ -68,25 +68,24 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
         _ = safe_allocator.deinit();
     };
 
-    var io_impl: compiler.IoImpl = undefined;
+    compiler.globals.init = init;
+    compiler.globals.root_gpa = root_gpa;
 
-    switch (build_options.io_mode) {
-        .threaded => io_impl = .init(root_gpa, .{
+    var io_impl: compiler.IoImpl = switch (build_options.io_mode) {
+        .threaded => .init(root_gpa, .{
             .stack_size = compiler.thread_stack_size,
 
             .argv0 = .init(init.args),
             .environ = init.environ,
         }),
-        .evented => try io_impl.init(root_gpa, .{
+        .evented => try .init(root_gpa, .{
             .argv0 = .init(init.args),
             .environ = init.environ,
 
             .backing_allocator_needs_mutex = false,
         }),
-    }
-
+    };
     defer io_impl.deinit();
-    compiler.io_impl_ptr = &io_impl;
     const io = io_impl.io();
 
     const gpa = switch (build_options.io_mode) {
@@ -123,9 +122,27 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
                 fatal("expected command argument", .{});
             }
 
+            var compiler_io_impl: compiler.IoImpl = switch (build_options.io_mode) {
+                .threaded => .init(root_gpa, .{
+                    .stack_size = compiler.thread_stack_size,
+
+                    .argv0 = .init(init.args),
+                    .environ = init.environ,
+                }),
+                .evented => try .init(root_gpa, .{
+                    .argv0 = .init(init.args),
+                    .environ = init.environ,
+
+                    .backing_allocator_needs_mutex = false,
+                }),
+            };
+            defer compiler_io_impl.deinit();
+            compiler.globals.io_impl_ptr = &compiler_io_impl;
+            const compiler_io = compiler_io_impl.io();
+
             if (compiler.tracy.enable_allocation) {
                 var tracy_allocator: compiler.tracy.Allocator = .{ .parent_allocator = gpa };
-                try compiler.mainArgs(tracy_allocator.interface(), arena, io, args, &environ_map);
+                try compiler.mainArgs(tracy_allocator.interface(), arena, compiler_io, args, &environ_map);
                 return 0;
             }
 
@@ -133,7 +150,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!u8 {
                 compiler.preopens = try .init(arena);
             }
 
-            try compiler.mainArgs(gpa, arena, io, args, &environ_map);
+            try compiler.mainArgs(gpa, arena, compiler_io, args, &environ_map);
             return 0;
         }
     }

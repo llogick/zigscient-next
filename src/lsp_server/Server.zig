@@ -41,6 +41,8 @@ const diagnostics_gen = lsp_server.diagnostics;
 const BuildOnSaveSupport = build_runner_shared.BuildOnSaveSupport;
 pub const Workspace = @import("Workspace.zig");
 
+const compiler = @import("compiler");
+
 const log = std.log.scoped(.lspc_server);
 
 // public fields
@@ -336,7 +338,7 @@ pub fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void 
                 return;
             }
 
-            if (false) if (!DocumentStore.isBuildFile(param_handle.uri)) proj_diags: {
+            if (!DocumentStore.isBuildFile(param_handle.uri)) proj_diags: {
                 const build = build: {
                     if (param_handle.computed_data.build) |build| break :build build;
                     if (param_handle.closest_build_file_uri) |build_file_uri| {
@@ -359,6 +361,8 @@ pub fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void 
                 errdefer if (token) |t| param_server.document_store.notifyProgressEnd(t, .failure);
 
                 comp.file_system_inputs.?.clearRetainingCapacity();
+                compiler.Compilation.Zcu.PerThread.Id.recursive_depth = 1;
+                compiler.Compilation.Zcu.PerThread.Id.recursive_tid = .main;
                 comp.update(.none) catch |err| switch (err) {
                     error.Canceled => return error.Canceled,
                     error.OutOfMemory => @panic("OOM"),
@@ -397,7 +401,7 @@ pub fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void 
                 };
                 if (token) |t| param_server.document_store.notifyProgressEnd(t, .success);
                 return;
-            };
+            }
 
             diagnostics_gen.generateDiagnostics(param_server, param_handle) catch |err| switch (err) {
                 error.Canceled => return error.Canceled,

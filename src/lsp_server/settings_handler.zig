@@ -922,7 +922,7 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
         }
 
         const zig_version = server.config_manager.zig_exe.?.version;
-        const zls_version = build_options.semantic_version;
+        const zls_version = build_options.semver;
 
         const zig_version_is_tagged = zig_version.pre == null;
         const zls_version_is_tagged = zls_version.pre == null;

@@ -68,8 +68,8 @@ pub const Id = if (InternPool.single_threaded) enum {
     /// to `std.Io.Threaded` for asynchronous/concurrent work. The eventual solution
     /// will likely involve significant changes to the `InternPool` implementation.
     var available_tids: std.ArrayList(Id) = .empty;
-    threadlocal var recursive_depth: usize = 0;
-    threadlocal var recursive_tid: Id = undefined;
+    pub threadlocal var recursive_depth: usize = 0;
+    pub threadlocal var recursive_tid: Id = undefined;
 
     pub fn allocate(arena: Allocator, n: usize) Allocator.Error!void {
         available_tids = .empty;

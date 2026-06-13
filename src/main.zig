@@ -194,7 +194,7 @@ pub fn main(init: std.process.Init.Minimal) anyerror!void {
         }),
     }
     defer io_impl.deinit();
-    io_impl_ptr = &io_impl;
+    globals.io_impl_ptr = &io_impl;
     const io = io_impl.io();
     const gpa = switch (build_options.io_mode) {
         .threaded => root_gpa,
@@ -1124,6 +1124,7 @@ pub const CompilationState = struct {
     cache_mode: Compilation.CacheMode = .incremental,
     root_name: []const u8 = undefined,
 
+    io_impl: IoImpl = undefined,
     io: std.Io = undefined,
 
     file_system_inputs: std.ArrayList(u8) = .empty,
@@ -1132,6 +1133,7 @@ pub const CompilationState = struct {
         self.dirs.deinit(self.io);
         self.file_system_inputs.deinit(gpa);
         self.create_module.link_inputs.deinit(gpa);
+        self.io_impl.deinit();
     }
 };
 
@@ -1148,7 +1150,6 @@ pub fn buildOutputType(
     ds: ?*lsp_server.DocumentStore,
     lsp_compilation_build: ?*lsp_server.BldDoc.Build,
 ) !void {
-    cs.io = io;
     cs.provided_name = null;
     cs.root_src_file = null;
     cs.version = .{ .major = 0, .minor = 0, .patch = 0 };
@@ -3835,7 +3836,7 @@ pub fn buildOutputType(
         @max(cs.n_jobs orelse std.Thread.getCpuCount() catch 1, 1),
         std.math.maxInt(Zcu.PerThread.IdBacking),
     );
-    try setThreadLimit(arena, thread_limit);
+    try setThreadLimit(arena, thread_limit, if (ds) |_| &cs.*.io_impl else globals.io_impl_ptr);
 
     for (cs.create_module.c_source_files.items) |*src| {
         dev.check(.c_compiler);
@@ -5606,7 +5607,7 @@ fn cmdBuild(
             @max(n_jobs orelse std.Thread.getCpuCount() catch 1, 1),
             std.math.maxInt(Zcu.PerThread.IdBacking),
         );
-        try setThreadLimit(arena, thread_limit);
+        try setThreadLimit(arena, thread_limit, globals.io_impl_ptr);
 
         // Cache lookup for configure options. If we get a match, we can skip
         // execution of the configure script. If not, we get the file path to pass
@@ -6374,7 +6375,7 @@ fn jitCmd(
         @max(std.Thread.getCpuCount() catch 1, 1),
         std.math.maxInt(Zcu.PerThread.IdBacking),
     );
-    try setThreadLimit(arena, thread_limit);
+    try setThreadLimit(arena, thread_limit, globals.io_impl_ptr);
 
     return jitCmdInner(gpa, arena, io, args, environ_map, root_prog_node, thread_limit, null, options);
 }
@@ -8285,12 +8286,16 @@ fn addLibDirectoryWarn2(
     });
 }
 
+pub const globals = struct {
+    pub var init: process.Init.Minimal = undefined;
+    pub var root_gpa: Allocator = undefined;
+    pub var io_impl_ptr: *IoImpl = undefined;
+};
 pub const IoImpl = switch (build_options.io_mode) {
     .threaded => Io.Threaded,
     .evented => Io.Evented,
 };
-pub var io_impl_ptr: *IoImpl = undefined;
-fn setThreadLimit(arena: std.mem.Allocator, n: usize) Allocator.Error!void {
+fn setThreadLimit(arena: std.mem.Allocator, n: usize, io_impl_ptr: *IoImpl) Allocator.Error!void {
     switch (build_options.io_mode) {
         .threaded => {
             // We want a maximum of n total threads to keep the InternPool happy, but
