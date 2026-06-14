@@ -8695,7 +8695,9 @@ fn checkReturnTypeAndCallConv(
                 @"callconv", ArchListFormatter{ .archs = allowed_archs },
             });
         },
-        .bad_backend => |bad_backend| return sema.fail(block, callconv_src, "calling convention '{t}' not supported by compiler backend '{t}'", .{
+        .bad_backend => |bad_backend| if (zcu.lsp_document_store) |_| {
+            // We're not concerned
+        } else return sema.fail(block, callconv_src, "calling convention '{t}' not supported by compiler backend '{t}'", .{
             @"callconv", bad_backend,
         }),
     }
