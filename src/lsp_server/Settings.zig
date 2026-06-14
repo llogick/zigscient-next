@@ -84,4 +84,7 @@ global_cache_path: ?[]const u8 = null,
 /// Disable LSP Notifications
 disable_notifications: bool = false,
 
+/// Disable the integrated incremental compilations functionality. NOTE: It's highly recommended that the server be restarted.
+disable_compilations: bool = false,
+
 // DO NOT EDIT

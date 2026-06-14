@@ -74,6 +74,7 @@ pub fn computeHash(bytes: []const u8) Hash {
     return hash;
 }
 
+// TODO this shouldn't be a thing -- just take a pointer to the Server's cfg
 pub const Settings = struct {
     self_file_path: ?[]const u8,
     environ_map: *std.process.Environ.Map,
@@ -87,6 +88,7 @@ pub const Settings = struct {
         else => void,
     },
     disable_notifications: bool,
+    disable_compilations: bool,
 };
 
 pub fn deinit(self: *DocumentStore) void {

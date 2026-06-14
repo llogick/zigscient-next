@@ -951,6 +951,7 @@ pub fn createDocumentStoreConfig(config_manager: *const settings_handler.Manager
         .global_cache_dir = config_manager.global_cache_dir,
         .wasi_preopens = config_manager.wasi_preopens,
         .disable_notifications = config_manager.config.disable_notifications,
+        .disable_compilations = config_manager.config.disable_compilations,
     };
 }
 

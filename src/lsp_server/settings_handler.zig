@@ -850,6 +850,7 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
     // const new_enable_build_on_save: bool = result.did_change.enable_build_on_save;
     // const new_build_on_save_args: bool = result.did_change.build_on_save_args;
     const new_force_autofix: bool = result.did_change.force_autofix;
+    const disable_compilations_did_change: bool = result.did_change.disable_compilations;
 
     server.document_store.config = Server.createDocumentStoreConfig(server.config_manager);
 
@@ -884,6 +885,13 @@ pub fn resolveConfiguration(server: *Server) error{ Canceled, OutOfMemory }!void
             //         std.log.err("Failed to reload configuration for workspace {q} : {t}", .{ wrkspc.uri, err });
             //     };
             // }
+        }
+        if (disable_compilations_did_change) {
+            for (server.workspaces.items) |*wrkspc| {
+                const bld_doc_uri = wrkspc.build_file_uri orelse continue;
+                const bld_doc = server.document_store.getBuildFile(bld_doc_uri) orelse continue;
+                try bld_doc.triggerRedoCompilation(&server.document_store);
+            }
         }
     }
 

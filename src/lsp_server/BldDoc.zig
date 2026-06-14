@@ -303,18 +303,22 @@ pub fn triggerRedoCompilation(self: *BldDoc, ds: *DocumentStore) std.Io.Cancelab
 }
 
 fn redoCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemory }!void {
-    self.destroyCompilation(ds);
+    self.destroyCompilation(ds, !ds.config.disable_compilations);
+    if (ds.config.disable_compilations) return;
     try self.initCompilation(ds);
 }
 
-fn destroyCompilation(self: *BldDoc, ds: *DocumentStore) void {
-    if (self.build.compilation) |comp| comp.destroy();
+fn destroyCompilation(self: *BldDoc, ds: *DocumentStore, do_retain_capacity: bool) void {
+    if (self.build.compilation) |comp| {
+        log.info("Destroying the Compilation for {q}", .{self.flat_uri});
+        comp.destroy();
+    }
     if (self.build.state) |state| {
         state.deinit(ds.allocator);
         self.build.state = null;
     }
     self.build.compilation = null;
-    _ = self.build.arena_instance.reset(.retain_capacity);
+    _ = self.build.arena_instance.reset(if (do_retain_capacity) .retain_capacity else .free_all);
     self.build.has_completed_once = false;
 }
 
@@ -328,7 +332,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
 
     var cleanup: bool = false;
     defer if (cleanup) {
-        self.destroyCompilation(ds);
+        self.destroyCompilation(ds, false);
         log.err("Failed to create a compilation for: {s}", .{self.flat_uri});
     };
 
@@ -358,7 +362,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
     });
     self.build.args = try args_dups.toOwnedSlice(arena);
 
-    log.info("Creating a compilation for: {s}\n{s}", .{ self.flat_uri, try std.json.Stringify.valueAlloc(arena, self.build.args, .{}) });
+    log.info("Creating a Compilation for: {s}\n{s}", .{ self.flat_uri, try std.json.Stringify.valueAlloc(arena, self.build.args, .{}) });
 
     self.build.state = try arena.create(CompilationState);
     const cs_ptr = self.build.state.?;
@@ -391,7 +395,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
         else if (std.mem.eql(u8, cmd, "build-lib")) .{ .build = .Lib } //
         else if (std.mem.eql(u8, cmd, "build-obj")) .{ .build = .Obj } //
         else {
-            log.err("redoCompilation: unknown cmd: {s}", .{cmd});
+            log.err("initCompilation: unknown cmd: {s}", .{cmd});
             return;
         };
     buildOutputType(
