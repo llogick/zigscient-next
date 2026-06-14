@@ -309,6 +309,8 @@ fn redoCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
 }
 
 fn destroyCompilation(self: *BldDoc, ds: *DocumentStore, do_retain_capacity: bool) void {
+    self.build.mutex.lockUncancelable(ds.io);
+    defer self.build.mutex.unlock(ds.io);
     if (self.build.compilation) |comp| {
         log.info("Destroying the Compilation for {q}", .{self.flat_uri});
         comp.destroy();
