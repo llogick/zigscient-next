@@ -346,7 +346,6 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
         try args_dups.append(arena, try arena.dupe(u8, arg));
     }
     try args_dups.appendSlice(arena, &.{
-        // "-fllvm",
         "-fincremental",
         "-fno-emit-bin",
         "-fno-emit-asm",
@@ -355,6 +354,7 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
         "-fno-emit-h",
         "-fno-emit-docs",
         "-fno-emit-implib",
+        "-fno-llvm",
     });
     self.build.args = try args_dups.toOwnedSlice(arena);
 
