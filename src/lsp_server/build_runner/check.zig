@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub fn isBuildRunnerSupported(runtime_zig_version: std.SemanticVersion) bool {
     const build_options = @import("build_options");
-    const is_zls_version_tagged = build_options.semver.pre == null;
+    const is_zls_version_tagged = build_options.semantic_version.pre == null;
     const min_runtime_zig_version = comptime std.SemanticVersion.parse(build_options.minimum_runtime_zig_version_string) catch unreachable;
     return isBuildRunnerSupportedInternal(
         min_runtime_zig_version,

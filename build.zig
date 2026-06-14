@@ -336,6 +336,7 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption([:0]const u8, "version", version);
 
     const resolved_proj_version = getVersion(b, opt_version_string);
+    exe_options.addOption(std.SemanticVersion, "semantic_version", resolved_proj_version);
     exe_options.addOption([]const u8, "version_string", b.fmt("{f}", .{resolved_proj_version}));
     exe_options.addOption([]const u8, "minimum_runtime_zig_version_string", minimum_runtime_zig_version);
 
