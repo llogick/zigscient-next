@@ -571,9 +571,10 @@ fn lowerZigArgs(
                         if (maker.dump_compile_step_info) blk: {
                             var info = maker.compile_steps_info.getPtr(compile_index) orelse break :blk;
                             if (info.args.items.len == 0) {
+                                const path = std.fs.path.resolve(maker.graph.arena, &.{src}) catch src;
                                 try info.mods.append(maker.graph.arena, .{
                                     .name = try maker.graph.arena.dupe(u8, module_cli_name),
-                                    .path = try maker.graph.arena.dupe(u8, src),
+                                    .path = try maker.graph.arena.dupe(u8, path),
                                 });
                             }
                         }
