@@ -1611,8 +1611,7 @@ fn cfgLspServer(
 
     const version_data_module = blk: {
         const gen_version_data_cmd = b.addRunArtifact(lsp_server_settings_util_exe);
-        const version = if (proj_version.pre == null) b.fmt("{f}", .{proj_version}) else "master";
-        gen_version_data_cmd.addArgs(&.{ "--langref-version", version });
+        gen_version_data_cmd.addArgs(&.{ "--langref-version", bzz.langref_version });
 
         gen_version_data_cmd.addArg("--langref-path");
         gen_version_data_cmd.addFileArg(b.path("doc/langref.html.in"));
