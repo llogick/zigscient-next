@@ -316,6 +316,7 @@ fn destroyCompilation(self: *BldDoc, ds: *DocumentStore, do_retain_capacity: boo
         comp.destroy();
     }
     if (self.build.state) |state| {
+        ds.diagnostics_collection.clearErrorBundle(self.build.state.?.diag_tag);
         state.deinit(ds.allocator);
         self.build.state = null;
     }
@@ -385,6 +386,11 @@ fn initCompilation(self: *BldDoc, ds: *DocumentStore) error{ Canceled, OutOfMemo
         }),
     };
     cs_ptr.*.io = cs_ptr.*.io_impl.io();
+
+    var hasher: std.hash.Wyhash = .init(@intFromPtr(cs_ptr));
+    hasher.update(proj_path);
+    std.hash.autoHash(&hasher, cs_ptr);
+    cs_ptr.*.diag_tag = @enumFromInt(@as(u32, @truncate(hasher.final())));
 
     const gpa = switch (build_options.io_mode) {
         .threaded => compiler.globals.root_gpa,

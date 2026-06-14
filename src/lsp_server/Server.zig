@@ -380,14 +380,14 @@ pub fn generateDiagnostics(server: *Server, handle: *DocumentStore.Handle) void 
                 build.state.?.diag_rev_id += 1;
 
                 param_server.diagnostics_collection.pushErrorBundle(
-                    .compilation,
+                    build.state.?.diag_tag,
                     build.state.?.diag_rev_id,
                     project_root_path,
                     error_bundle,
                 ) catch @panic("OOM");
                 param_server.diagnostics_collection.collectNotVisibleErrMessages(
                     &param_server.document_store,
-                    .compilation,
+                    build.state.?.diag_tag,
                     build.state.?.diag_rev_id,
                     project_root_path,
                     error_bundle,

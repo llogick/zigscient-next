@@ -927,6 +927,7 @@ const CliModule = struct {
 };
 
 pub const CompilationState = struct {
+    diag_tag: lsp_server.DiagnosticsCollection.Tag = undefined,
     diag_rev_id: u32 = 0,
     project_root_path: ?[]const u8 = null,
     provided_name: ?[]const u8 = null,

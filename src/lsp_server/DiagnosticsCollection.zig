@@ -37,7 +37,6 @@ pub const Tag = enum(u32) {
     /// errors from `@cImport`
     cimport,
     /// errors from compilation.update()
-    compilation,
     /// - Build On Save
     /// - Build Runner
     _,
