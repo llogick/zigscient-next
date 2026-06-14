@@ -325,11 +325,11 @@ pub fn mainArgs(
         }
     }
 
-    const cmd = args[1];
-    const cmd_args = args[2..];
+    const cmd = args[2];
+    const cmd_args = args[3..];
     switch (stringToEnum(Cmd, cmd) orelse {
         std.log.info("{s}", .{usage});
-        fatal("unknown command: {s}", .{args[1]});
+        fatal("unknown command: {s}", .{cmd});
     }) {
         .@"build-exe" => {
             dev.check(.build_exe_command);
@@ -462,7 +462,7 @@ pub fn mainArgs(
             return stdout_writer.interface.flush();
         },
         .version => {
-            dev.check(.version_command);
+            // dev.check(.version_command);
             try Io.File.stdout().writeStreamingAll(io, build_options.version ++ "\n");
             return;
         },
