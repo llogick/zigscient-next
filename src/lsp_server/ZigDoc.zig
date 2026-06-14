@@ -607,6 +607,7 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
     if (!send_noti or ds.config.disable_notifications) return;
 
     roots_index_msg: {
+        if (!(config.roots.index < config.roots.map.count())) return;
         const compile_step = config.roots.map.values()[config.roots.index];
         const message = std.fmt.allocPrint(
             ds.allocator,
