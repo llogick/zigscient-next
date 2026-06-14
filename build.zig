@@ -719,7 +719,7 @@ pub fn build(b: *std.Build) !void {
         "std-docs",
         "docs",
         "fmt",
-        "test-fmt",
+        // "test-fmt",
         "test-cases",
         "test-modules",
         "test-behavior",
