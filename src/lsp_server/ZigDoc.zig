@@ -598,6 +598,7 @@ pub fn handleRootIdComment(zig_doc: *ZigDoc, ds: *DocumentStore, send_notificati
             }
             if (config.roots.index == roots_index) return;
             build_file.configuration.roots.index = roots_index;
+            config.roots.tailor_run_state = .pending;
             send_noti = true;
         }
     }
