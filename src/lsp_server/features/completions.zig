@@ -919,18 +919,25 @@ fn completeFileSystemStringLiteral(builder: *Builder, pos_context: Analyser.Posi
             //     });
             // }
             break :blk;
-        } else if (try builder.orig_handle.getAssociatedBuildFileUri(store)) |uri| blk: {
+        } else if (builder.orig_handle.closest_build_file_uri) |uri| blk: {
             const build_file = store.getBuildFile(uri) orelse break :blk;
-            const cfg = build_file.getConfiguration(store.io);
-            defer cfg.release(store.io);
-            const build_config = cfg.config orelse break :blk;
+            const build_cfg = build_file.getConfiguration(store.io);
+            defer build_cfg.release(store.io);
 
-            try builder.completions.ensureUnusedCapacity(builder.arena, build_config.value.modules.len);
-            for (build_config.value.modules) |pkg| {
+            const roots_count = build_cfg.roots.map.count();
+            if (roots_count == 0) break :blk;
+            if (!(build_file.configuration.roots.index < roots_count)) {
+                log.err("root_id > roots.len; using id 0", .{});
+                build_file.configuration.roots.index = 0;
+            }
+
+            const cs = build_cfg.roots.map.values()[build_cfg.roots.index];
+            try builder.completions.ensureUnusedCapacity(builder.arena, cs.mods.items.len);
+            for (cs.mods.items) |mod| {
                 builder.completions.appendAssumeCapacity(.{
-                    .label = pkg.name,
+                    .label = mod.name,
                     .kind = .Module,
-                    .detail = pkg.path,
+                    .detail = mod.path,
                     .sortText = "4",
                 });
             }
