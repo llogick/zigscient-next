@@ -690,6 +690,10 @@ pub noinline fn captureCurrentStackTrace(options: StackUnwindOptions, addr_buf: 
 
     const io = std.Options.debug_io;
 
+    // do not let stack trace collection consume task cancellation.
+    const prev = io.swapCancelProtection(.blocked);
+    defer _ = io.swapCancelProtection(prev);
+
     var total_frames: usize = 0;
     var index: usize = 0;
     var wait_for: ?usize = options.first_address orelse @returnAddress();
@@ -754,6 +758,8 @@ pub noinline fn writeCurrentStackTrace(options: StackUnwindOptions, t: Io.Termin
     var wait_for = options.first_address;
     var printed_any_frame = false;
     const io = std.Options.debug_io;
+    const prev = io.swapCancelProtection(.blocked);
+    defer _ = io.swapCancelProtection(prev);
     while (true) switch (it.next(io)) {
         .switch_to_fp => |unwind_error| {
             switch (StackIterator.fp_usability) {
@@ -885,6 +891,8 @@ fn writeTrace(
         },
     };
     const io = std.Options.debug_io;
+    const prev = io.swapCancelProtection(.blocked);
+    defer _ = io.swapCancelProtection(prev);
     for (addresses) |addr| {
         // `addr` is the return address, which is *after* the function call.
         // Subtract 1 to get an address *in* the function call for a better source location.
