@@ -1,3 +1,12 @@
+----------------
+>[!NOTE]
+>June 2026: This repository now serves as a staging area for [Zigscient](https://github.com/llogick/zigscient)<sup>*</sup>.
+>
+>The latest commits here may require a build of the latest git tip of Zig.
+>
+><sup>*</sup>The Zigscient repository defers cherry-picking and pushing until a nightly build is available.
+----------------
+
 Using the Zig Compiler's Incremental Semantic Analysis as a Foundation for Near-instant Code Feedback via LSP
 
 ![zigscient-next](https://github.com/user-attachments/assets/a170b5f0-5aaf-47f3-8935-a27ef3684f52)
@@ -29,5 +38,5 @@ https://github.com/user-attachments/assets/9e47daca-1d6d-492e-b840-85fbfb83e4c8
 > This is a resource-intensive piece of software, so a capable CPU with good single-thread performance is recommended.
 
 ```bash
-zig build -Doptimize=ReleaseFast --zig-lib-dir ./lib/
+ZIG_DEBUG_MAKER=TRUE ZIG_LIB_DIR=./lib zig build -Doptimize=ReleaseFast
 ```
