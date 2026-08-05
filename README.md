@@ -38,5 +38,5 @@ https://github.com/user-attachments/assets/9e47daca-1d6d-492e-b840-85fbfb83e4c8
 > This is a resource-intensive piece of software, so a capable CPU with good single-thread performance is recommended.
 
 ```bash
-ZIG_DEBUG_MAKER=TRUE ZIG_LIB_DIR=./lib zig build -Doptimize=ReleaseFast
+ZIG_DEBUG_CMD=1 ZIG_LIB_DIR=./lib zig build -Doptimize=ReleaseFast
 ```

@@ -34,7 +34,7 @@ jobs:
         run: |
           mkdir -p builds
           for target in "x86_64-linux" "aarch64-linux" "x86_64-windows" "aarch64-windows" "x86_64-macos" "aarch64-macos"; do
-            ZIG_DEBUG_MAKER=TRUE ZIG_LIB_DIR=./lib zig build -Dcpu=baseline -Dtarget=${target} -Doptimize=ReleaseFast
+            ZIG_DEBUG_CMD=1 ZIG_LIB_DIR=./lib zig build -Dcpu=baseline -Dtarget=${target} -Doptimize=ReleaseFast
             if [[ $target == *"windows"* ]]; then
               cp zig-out/bin/zigscient.exe builds/zigscient-${target}.exe
             else
