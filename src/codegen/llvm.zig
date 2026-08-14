@@ -336,7 +336,7 @@ pub const Object = struct {
         bin_path: ?[:0]const u8,
         asm_path: ?[:0]const u8,
         post_ir_path: ?[:0]const u8,
-        post_bc_path: ?[]const u8,
+        post_bc_path: ?[:0]const u8,
 
         is_debug: bool,
         is_small: bool,
@@ -543,23 +543,12 @@ pub const Object = struct {
                     return diags.fail("failed to create '{s}': {t}", .{ path, err });
                 defer file.close(io);
 
-                const ptr: [*]const u8 = @ptrCast(bitcode.ptr);
-                file.writeStreamingAll(io, ptr[0..(bitcode.len * 4)]) catch |err|
+                file.writeStreamingAll(io, @ptrCast(bitcode)) catch |err|
                     return diags.fail("failed to write to '{s}': {t}", .{ path, err });
             }
 
             if (options.asm_path == null and options.bin_path == null and
                 options.post_ir_path == null and options.post_bc_path == null) return;
-
-            if (options.post_bc_path) |path| {
-                var file = Io.Dir.cwd().createFile(io, path, .{}) catch |err|
-                    return diags.fail("failed to create '{s}': {t}", .{ path, err });
-                defer file.close(io);
-
-                const ptr: [*]const u8 = @ptrCast(bitcode.ptr);
-                file.writeStreamingAll(io, ptr[0..(bitcode.len * 4)]) catch |err|
-                    return diags.fail("failed to write to '{s}': {t}", .{ path, err });
-            }
 
             if (!build_options.have_llvm or !comp.config.use_lib_llvm) {
                 return diags.fail("emitting without libllvm not implemented", .{});
@@ -663,7 +652,7 @@ pub const Object = struct {
             .asm_filename = null,
             .bin_filename = if (options.bin_path) |x| x.ptr else null,
             .llvm_ir_filename = if (options.post_ir_path) |x| x.ptr else null,
-            .bitcode_filename = null,
+            .bitcode_filename = if (options.post_bc_path) |x| x.ptr else null,
 
             // `.coverage` value is only used when `.sancov` is enabled.
             .sancov = options.fuzz or comp.config.san_cov_trace_pc_guard,
@@ -702,6 +691,7 @@ pub const Object = struct {
             }
             lowered_options.bin_filename = null;
             lowered_options.llvm_ir_filename = null;
+            lowered_options.bitcode_filename = null;
         }
 
         var time_report_c_str: [*:0]u8 = undefined;
