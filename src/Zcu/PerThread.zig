@@ -502,6 +502,7 @@ pub fn updateFile(
         // As well as the file path, we also include the compiler version in case of backwards-incompatible ZIR changes.
         file.path.addToHasher(&h.hasher);
         h.addBytes(build_options.version);
+        h.addBytes("Zigscient");
         h.add(builtin.zig_backend);
         break :d h.final();
     };

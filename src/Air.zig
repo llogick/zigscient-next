@@ -1319,6 +1319,7 @@ pub const Inst = struct {
         pl_op: struct {
             operand: Ref,
             payload: u32,
+            tree_data_index: u32 = 0,
         },
         dbg_stmt: struct {
             line: u32,
