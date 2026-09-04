@@ -51,12 +51,17 @@ fn hoverSymbol(
             .local_var_decl,
             .aligned_var_decl,
             .simple_var_decl,
-            => try Analyser.getVariableSignature(
-                arena,
-                tree,
-                tree.fullVarDecl(node).?,
-                true,
-            ),
+            => def: {
+                const full_var_decl = tree.fullVarDecl(node).?;
+                const def = try Analyser.getVariableSignature(
+                    arena,
+                    tree,
+                    full_var_decl,
+                    true,
+                );
+                // _ = try @import("../Aira.zig").resolveVarDecl(ds.io, decl_handle.handle, node);
+                break :def def;
+            },
             .container_field,
             .container_field_init,
             .container_field_align,
@@ -119,22 +124,26 @@ fn hoverSymbol(
     };
 
     return try hoverSymbolResolvedType(
+        ds.io,
         analyser,
         arena,
         def_str,
         markup_kind,
         &doc_strings,
         maybe_resolved_type,
+        decl_handle,
     );
 }
 
 fn hoverSymbolResolvedType(
+    io: std.Io,
     analyser: *Analyser,
     arena: std.mem.Allocator,
     def_str: []const u8,
     markup_kind: types.MarkupKind,
     doc_strings: *std.ArrayList([]const u8),
     resolved_type_maybe: ?Analyser.Type,
+    maybe_decl_handle: ?Analyser.DeclWithHandle,
 ) error{OutOfMemory}!?[]const u8 {
     var referenced: Analyser.ReferencedType.Set = .empty;
     var resolved_type_strings: std.ArrayList([]const u8) = .empty;
@@ -156,6 +165,9 @@ fn hoverSymbolResolvedType(
         }
     }
     const referenced_types: []const Analyser.ReferencedType = referenced.keys();
+    if (maybe_decl_handle != null and maybe_decl_handle.?.decl == .ast_node) {
+        _ = try @import("../Aira.zig").resolveVarDecl(io, maybe_decl_handle.?.handle, maybe_decl_handle.?.decl.ast_node);
+    }
     return try hoverSymbolResolved(
         arena,
         markup_kind,
@@ -423,7 +435,14 @@ fn hoverDefinitionFieldAccess(
 
     var decls: std.ArrayList(Analyser.DeclWithHandle) = .empty;
     var tys: std.ArrayList(Analyser.Type) = .empty;
-    const highlight_loc = try analyser.getSymbolFieldAccessesHighlight(arena, handle, source_index, loc, &decls, &tys) orelse return null;
+    const highlight_loc = try analyser.getSymbolFieldAccessesHighlight(
+        arena,
+        handle,
+        source_index,
+        loc,
+        &decls,
+        &tys,
+    ) orelse return null;
 
     var content: std.ArrayList([]const u8) = try .initCapacity(arena, decls.items.len + tys.items.len);
 
@@ -433,7 +452,16 @@ fn hoverDefinitionFieldAccess(
     for (tys.items) |ty| {
         const def_str = offsets.locToSlice(handle.tree.source, highlight_loc);
         var doc_strings: std.ArrayList([]const u8) = .empty;
-        content.appendAssumeCapacity(try hoverSymbolResolvedType(analyser, arena, def_str, markup_kind, &doc_strings, ty) orelse continue);
+        content.appendAssumeCapacity(try hoverSymbolResolvedType(
+            ds.io,
+            analyser,
+            arena,
+            def_str,
+            markup_kind,
+            &doc_strings,
+            ty,
+            null,
+        ) orelse continue);
     }
 
     return .{
