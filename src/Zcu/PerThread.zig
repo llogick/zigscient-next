@@ -613,7 +613,7 @@ pub fn updateFile(
     const ignore_hit = comp.time_report != null;
 
     const need_update = while (true) {
-        const result = if (lsp_doc != null) .invalid else switch (file.getMode()) {
+        const result = switch (file.getMode()) {
             inline else => |mode| try loadZirZoirCache(zcu, cache_file, stat, file, mode),
         };
         switch (result) {
@@ -1060,7 +1060,7 @@ pub fn ensureFilePopulated(pt: Zcu.PerThread, file_index: Zcu.File.Index) (Alloc
 
     const file = zcu.fileByIndex(file_index);
     assert(file.getMode() == .zig);
-    std.log.err("getting struct_decl for {?s}", .{file.uri_slice});
+    // std.log.err("getting struct_decl for {?s}", .{file.uri_slice});
     const struct_decl = file.zir.?.getStructDecl(.main_struct_inst);
     const tracked_inst = try ip.trackZir(gpa, io, pt.tid, .{
         .file = file_index,

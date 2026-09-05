@@ -1369,7 +1369,7 @@ pub const Inst = struct {
         // to insert a secret field for safety checks.
         comptime {
             if (!std.debug.runtime_safety) {
-                assert(@sizeOf(Data) == 8);
+                assert(@sizeOf(Data) == 12);
             }
         }
     };
