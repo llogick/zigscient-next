@@ -71,6 +71,26 @@ pub fn resolveVarDecl(io: std.Io, zdoc: *ZigDoc, node: Ast.Node.Index) ErrSet!?v
                             std.log.err("tag: {}", .{sub_inst_tag});
                             switch (sub_inst_tag) {
                                 else => {},
+                                .alloc => {
+                                    const active = zcu.activate(args.tid);
+                                    defer active.deactivate();
+                                    const pt = active.pt;
+                                    const ty = args.air.instructions.items(.data)[@backingInt(sub_inst)].ty;
+                                    var buffer: [4096]u8 = undefined;
+                                    var aw: std.Io.Writer = .fixed(&buffer);
+                                    ty.print(&aw, pt, null) catch @memset(&buffer, 'a');
+                                    std.log.err("{s}", .{aw.buffered()[1..]});
+                                },
+                                .load => {
+                                    const active = zcu.activate(args.tid);
+                                    defer active.deactivate();
+                                    const pt = active.pt;
+                                    const ty_op = args.air.instructions.items(.data)[@backingInt(sub_inst)].ty_op;
+                                    var buffer: [4096]u8 = undefined;
+                                    var aw: std.Io.Writer = .fixed(&buffer);
+                                    ty_op.ty.print(&aw, pt, null) catch @memset(&buffer, 'a');
+                                    std.log.err("{s}", .{aw.buffered()});
+                                },
                                 .call => {
                                     const data = args.air.instructions.items(.data)[@backingInt(sub_inst)];
                                     std.log.err("data: {}", .{data.pl_op.operand});
@@ -85,10 +105,22 @@ pub fn resolveVarDecl(io: std.Io, zdoc: *ZigDoc, node: Ast.Node.Index) ErrSet!?v
                                                 std.log.err("fn ret ty itk: {}", .{pt.zcu.intern_pool.indexToKey(ft.return_type)});
                                                 switch (pt.zcu.intern_pool.indexToKey(ft.return_type)) {
                                                     else => {},
+                                                    .struct_type => {
+                                                        const let = pt.zcu.intern_pool.loadStructType(ft.return_type);
+                                                        for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
+                                                            std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
+                                                        }
+                                                    },
                                                     .ptr_type => |pty| {
                                                         std.log.err("pty child itk: {}", .{pt.zcu.intern_pool.indexToKey(pty.child)});
                                                         switch (pt.zcu.intern_pool.indexToKey(pty.child)) {
                                                             else => {},
+                                                            .struct_type => {
+                                                                const let = pt.zcu.intern_pool.loadStructType(pty.child);
+                                                                for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
+                                                                    std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
+                                                                }
+                                                            },
                                                             .enum_type => {
                                                                 const let = pt.zcu.intern_pool.loadEnumType(pty.child);
                                                                 for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
