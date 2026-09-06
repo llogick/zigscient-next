@@ -27,7 +27,7 @@ pub fn resolveVarDecl(
 
     const full_var_decl = tree.fullVarDecl(node).?;
 
-    std.log.err("hovering over: {} with init node {}", .{ node, full_var_decl.ast.init_node.unwrap().? });
+    // std.log.err("hovering over: {} with init node {}", .{ node, full_var_decl.ast.init_node.unwrap().? });
     const doc_scope = try zdoc.getDocumentScope();
     const fn_scope = Asta.innermostScopeAtIndexWithTag(doc_scope, tree.tokens.items(.start)[full_var_decl.firstToken()], .initOne(.function)).unwrap() orelse return null;
     const fn_node = doc_scope.getScopeAstNode(fn_scope) orelse return null;
@@ -52,24 +52,54 @@ pub fn resolveVarDecl(
     defer active.deactivate();
     const pt = active.pt;
 
-    for (args.air.getMainBody()) |inst| {
-        const tag = args.air.instructions.items(.tag)[@backingInt(inst)];
+    if (matchVarDecl(full_var_decl.ast.init_node.unwrap().?, args.air, args.air.getMainBody())) |inst| return try resolveInst(arena, args.air, inst, pt);
+    return null;
+}
+
+fn matchVarDecl(
+    node: std.zig.Ast.Node.Index,
+    air: compiler.Compilation.Air,
+    instructions: []const compiler.Compilation.Air.Inst.Index,
+) ?compiler.Compilation.Air.Inst.Index {
+    for (instructions) |inst| {
+        const tag = air.instructions.items(.tag)[@backingInt(inst)];
         switch (tag) {
             else => continue,
             .dbg_var_ptr,
             .dbg_var_val,
             // .dbg_arg_inline,
             => {
-                const pl_op = args.air.instructions.items(.data)[@backingInt(inst)].pl_op;
+                const pl_op = air.instructions.items(.data)[@backingInt(inst)].pl_op;
                 // TODO Check that the identifier matches as well
-                if (pl_op.tree_data_index == @backingInt(full_var_decl.ast.init_node.unwrap().?)) {
+                // std.log.err("comparing: {} with {}", .{ pl_op.tree_data_index, @backingInt(node) });
+                if (pl_op.tree_data_index == @backingInt(node)) {
                     std.log.err("found a match! {}", .{pl_op.tree_data_index});
-                    return try resolveInst(arena, args.air, inst, pt);
+                    return inst;
                 }
+            },
+            .loop,
+            .block,
+            => {
+                if (matchVarDecl(node, air, air.unwrapBlock(inst).body)) |i| return i;
+            },
+            .dbg_inline_block => {
+                if (matchVarDecl(node, air, air.unwrapDbgBlock(inst).body)) |i| return i;
+            },
+            .cond_br => {
+                const cond_br = air.unwrapCondBr(inst);
+                if (matchVarDecl(node, air, cond_br.then_body)) |i| return i;
+                if (matchVarDecl(node, air, cond_br.else_body)) |i| return i;
+            },
+            .loop_switch_br,
+            .switch_br,
+            => {
+                const switch_br = air.unwrapSwitch(inst);
+                var it = switch_br.iterateCases();
+                while (it.next()) |case| if (matchVarDecl(node, air, case.body)) |i| return i;
+                if (matchVarDecl(node, air, it.elseBody())) |i| return i;
             },
         }
     }
-
     return null;
 }
 
@@ -161,6 +191,14 @@ fn resolveInst(
                     });
                 }
                 return null;
+            },
+            .block,
+            .dbg_inline_block,
+            => {
+                const ty_pl = datas[@backingInt(inst)].ty_pl;
+                ty_pl.ty.print(&aw.writer, pt, null) catch return null;
+                std.log.err("{s}", .{aw.written()});
+                return try aw.toOwnedSlice();
             },
         }
     }
