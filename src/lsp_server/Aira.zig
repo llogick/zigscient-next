@@ -208,19 +208,30 @@ fn dumpFields(
     pt: compiler.Compilation.Zcu.PerThread,
     index: compiler.Compilation.InternPool.Index,
 ) void {
-    switch (pt.zcu.intern_pool.indexToKey(index)) {
+    var idx = index;
+    sw: switch (pt.zcu.intern_pool.indexToKey(idx)) {
         else => {},
         .struct_type => {
-            const let = pt.zcu.intern_pool.loadStructType(index);
-            for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
-                std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
+            const let = pt.zcu.intern_pool.loadStructType(idx);
+            for (let.field_names.get(&pt.zcu.intern_pool), let.field_types.get(&pt.zcu.intern_pool)) |field_name, field_type_index| {
+                const ty = compiler.Compilation.Type.fromInterned(field_type_index);
+                std.log.err("{s} : {f}", .{ field_name.toSlice(&pt.zcu.intern_pool), ty.fmt(pt) });
             }
         },
         .enum_type => {
-            const let = pt.zcu.intern_pool.loadEnumType(index);
-            for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
-                std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
+            const let = pt.zcu.intern_pool.loadEnumType(idx);
+            for (let.field_names.get(&pt.zcu.intern_pool), 0..) |field_name, i| {
+                const field_values = let.field_values.get(&pt.zcu.intern_pool);
+                if (i < field_values.len) {
+                    const val = compiler.Compilation.Value.fromInterned(field_values[i]);
+                    std.log.err("{s} = {f}", .{ field_name.toSlice(&pt.zcu.intern_pool), val.fmtValue(pt) });
+                } else std.log.err("{s}", .{field_name.toSlice(&pt.zcu.intern_pool)});
             }
+        },
+        .union_type => {
+            const let = pt.zcu.intern_pool.loadUnionType(idx);
+            idx = let.enum_tag_type;
+            continue :sw pt.zcu.intern_pool.indexToKey(let.enum_tag_type);
         },
     }
 }
