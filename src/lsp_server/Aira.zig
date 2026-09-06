@@ -87,7 +87,9 @@ fn resolveInst(
 
     var inst = instruction;
     while (true) {
-        switch (tags[@backingInt(inst)]) {
+        const tag = tags[@backingInt(inst)];
+        std.log.err("tag: {t}", .{tags[@backingInt(inst)]});
+        switch (tag) {
             else => return null,
             .dbg_var_ptr,
             .dbg_var_val,
@@ -102,6 +104,9 @@ fn resolveInst(
                         ty.fmt(pt),
                         compiler.Compilation.Value.fromInterned(ip_index).fmtValue(pt),
                     });
+                    dumpFields(pt, ty.ip_index);
+                    aw.writer.print("{f}", .{ty.fmt(pt)}) catch return null;
+                    return try aw.toOwnedSlice();
                 } else {
                     if (pl_op.operand.toIndex()) |sub_inst| {
                         inst = sub_inst;
@@ -135,28 +140,14 @@ fn resolveInst(
                             std.log.err("fn ret ty itk: {}", .{pt.zcu.intern_pool.indexToKey(ft.return_type)});
                             switch (pt.zcu.intern_pool.indexToKey(ft.return_type)) {
                                 else => {},
-                                .struct_type => {
-                                    const let = pt.zcu.intern_pool.loadStructType(ft.return_type);
-                                    for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
-                                        std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
-                                    }
-                                },
+                                .struct_type => dumpFields(pt, ft.return_type),
                                 .ptr_type => |pty| {
                                     std.log.err("pty child itk: {}", .{pt.zcu.intern_pool.indexToKey(pty.child)});
                                     switch (pt.zcu.intern_pool.indexToKey(pty.child)) {
                                         else => {},
-                                        .struct_type => {
-                                            const let = pt.zcu.intern_pool.loadStructType(pty.child);
-                                            for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
-                                                std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
-                                            }
-                                        },
-                                        .enum_type => {
-                                            const let = pt.zcu.intern_pool.loadEnumType(pty.child);
-                                            for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
-                                                std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
-                                            }
-                                        },
+                                        .enum_type,
+                                        .struct_type,
+                                        => dumpFields(pt, pty.child),
                                     }
                                 },
                             }
@@ -172,5 +163,26 @@ fn resolveInst(
                 return null;
             },
         }
+    }
+}
+
+fn dumpFields(
+    pt: compiler.Compilation.Zcu.PerThread,
+    index: compiler.Compilation.InternPool.Index,
+) void {
+    switch (pt.zcu.intern_pool.indexToKey(index)) {
+        else => {},
+        .struct_type => {
+            const let = pt.zcu.intern_pool.loadStructType(index);
+            for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
+                std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
+            }
+        },
+        .enum_type => {
+            const let = pt.zcu.intern_pool.loadEnumType(index);
+            for (let.field_names.get(&pt.zcu.intern_pool)) |field_name| {
+                std.log.err("name: {q}", .{field_name.toSlice(&pt.zcu.intern_pool)});
+            }
+        },
     }
 }
