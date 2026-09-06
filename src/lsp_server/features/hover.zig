@@ -166,7 +166,12 @@ fn hoverSymbolResolvedType(
     }
     const referenced_types: []const Analyser.ReferencedType = referenced.keys();
     if (maybe_decl_handle != null and maybe_decl_handle.?.decl == .ast_node) {
-        _ = try @import("../Aira.zig").resolveVarDecl(io, maybe_decl_handle.?.handle, maybe_decl_handle.?.decl.ast_node);
+        if (try @import("../Aira.zig").resolveVarDecl(
+            arena,
+            io,
+            maybe_decl_handle.?.handle,
+            maybe_decl_handle.?.decl.ast_node,
+        )) |info| try resolved_type_strings.append(arena, info);
     }
     return try hoverSymbolResolved(
         arena,
