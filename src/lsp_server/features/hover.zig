@@ -17,12 +17,18 @@ const uri = @import("../uri.zig");
 
 const builtins_data = @import("version_data");
 
-fn hoverSymbol(
+const Builder = struct {
     ds: *DocumentStore,
-    analyser: *Analyser,
+    asta: *Analyser,
+    zdoc: *DocumentStore.Handle,
+    markup_kind: types.MarkupKind,
+    offset_encoding: offsets.Encoding,
+};
+
+fn hoverSymbol(
+    b: *Builder,
     arena: std.mem.Allocator,
     param_decl_handle: Analyser.DeclWithHandle,
-    markup_kind: types.MarkupKind,
 ) Analyser.Error!?[]const u8 {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
@@ -30,18 +36,18 @@ fn hoverSymbol(
     var doc_strings: std.ArrayList([]const u8) = .empty;
 
     var decl_handle: Analyser.DeclWithHandle = param_decl_handle;
-    var maybe_resolved_type = try param_decl_handle.resolveType(analyser);
+    var maybe_resolved_type = try param_decl_handle.resolveType(b.asta);
 
     while (true) {
         if (try decl_handle.docComments(arena)) |doc_string| {
             try doc_strings.append(arena, doc_string);
         }
         if (decl_handle.decl != .ast_node) break;
-        decl_handle = try analyser.resolveVarDeclAlias(.{
+        decl_handle = try b.asta.resolveVarDeclAlias(.{
             .node_handle = .of(decl_handle.decl.ast_node, decl_handle.handle),
             .container_type = decl_handle.container_type,
         }) orelse break;
-        maybe_resolved_type = maybe_resolved_type orelse try decl_handle.resolveType(analyser);
+        maybe_resolved_type = maybe_resolved_type orelse try decl_handle.resolveType(b.asta);
     }
 
     const tree = &decl_handle.handle.tree;
@@ -75,12 +81,12 @@ fn hoverSymbol(
                 var buf: [1]Ast.Node.Index = undefined;
                 const fn_proto = tree.fullFnProto(&buf, node).?;
                 if (fn_proto.name_token) |fname_tok| {
-                    if (ds.getBuildFile(decl_handle.handle.uri)) |build_file| blk: {
+                    if (b.ds.getBuildFile(decl_handle.handle.uri)) |build_file| blk: {
                         if (tree.tokens.items(.tag)[fname_tok] != .identifier) break :blk;
                         const name = tree.tokenSlice(fname_tok);
                         if (!std.mem.eql(u8, name, "build")) break :blk;
-                        const build_config = build_file.getConfiguration(ds.io);
-                        defer build_config.release(ds.io);
+                        const build_config = build_file.getConfiguration(b.ds.io);
+                        defer build_config.release(b.ds.io);
                         var aw: std.Io.Writer.Allocating = .init(arena);
                         errdefer aw.deinit();
                         aw.writer.writeAll("```\n") catch break :blk;
@@ -124,11 +130,9 @@ fn hoverSymbol(
     };
 
     return try hoverSymbolResolvedType(
-        ds.io,
-        analyser,
+        b,
         arena,
         def_str,
-        markup_kind,
         &doc_strings,
         maybe_resolved_type,
         decl_handle,
@@ -136,11 +140,9 @@ fn hoverSymbol(
 }
 
 fn hoverSymbolResolvedType(
-    io: std.Io,
-    analyser: *Analyser,
+    b: *Builder,
     arena: std.mem.Allocator,
     def_str: []const u8,
-    markup_kind: types.MarkupKind,
     doc_strings: *std.ArrayList([]const u8),
     resolved_type_maybe: ?Analyser.Type,
     maybe_decl_handle: ?Analyser.DeclWithHandle,
@@ -151,13 +153,13 @@ fn hoverSymbolResolvedType(
     if (resolved_type_maybe) |resolved_type| {
         if (try resolved_type.docComments(arena)) |doc|
             try doc_strings.append(arena, doc);
-        const typeof = try resolved_type.typeOf(analyser);
+        const typeof = try resolved_type.typeOf(b.asta);
         var possible_types: Analyser.Type.ArraySet = .empty;
-        has_more = try typeof.getAllTypesWithHandlesArraySet(analyser, &possible_types);
+        has_more = try typeof.getAllTypesWithHandlesArraySet(b.asta, &possible_types);
         for (possible_types.keys()) |ty| {
             try resolved_type_strings.append(
                 arena,
-                try ty.stringifyTypeVal(analyser, .{
+                try ty.stringifyTypeVal(b.asta, .{
                     .referenced = &referenced,
                     .truncate_container_decls = possible_types.count() > 1,
                 }),
@@ -168,14 +170,14 @@ fn hoverSymbolResolvedType(
     if (maybe_decl_handle != null and maybe_decl_handle.?.decl == .ast_node) {
         if (try @import("../Aira.zig").resolveVarDecl(
             arena,
-            io,
+            b.ds.io,
             maybe_decl_handle.?.handle,
             maybe_decl_handle.?.decl.ast_node,
         )) |info| try resolved_type_strings.append(arena, info);
     }
     return try hoverSymbolResolved(
         arena,
-        markup_kind,
+        b.markup_kind,
         doc_strings.items,
         def_str,
         resolved_type_strings.items,
@@ -234,45 +236,37 @@ fn hoverSymbolResolved(
 }
 
 fn hoverDefinitionLabel(
-    ds: *DocumentStore,
-    analyser: *Analyser,
+    b: *Builder,
     arena: std.mem.Allocator,
-    handle: *DocumentStore.Handle,
     pos_index: usize,
     loc: offsets.Loc,
-    markup_kind: types.MarkupKind,
-    offset_encoding: offsets.Encoding,
 ) Analyser.Error!?types.Hover {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const name = offsets.locToSlice(handle.tree.source, loc);
-    const decl = (try Analyser.lookupLabel(handle, name, pos_index)) orelse return null;
+    const name = offsets.locToSlice(b.zdoc.tree.source, loc);
+    const decl = (try Analyser.lookupLabel(b.zdoc, name, pos_index)) orelse return null;
 
     return .{
         .contents = .{
             .markup_content = .{
-                .kind = markup_kind,
-                .value = (try hoverSymbol(ds, analyser, arena, decl, markup_kind)) orelse return null,
+                .kind = b.markup_kind,
+                .value = (try hoverSymbol(b, arena, decl)) orelse return null,
             },
         },
-        .range = offsets.locToRange(handle.tree.source, loc, offset_encoding),
+        .range = offsets.locToRange(b.zdoc.tree.source, loc, b.offset_encoding),
     };
 }
 
 fn hoverDefinitionBuiltin(
-    analyser: *Analyser,
+    b: *Builder,
     arena: std.mem.Allocator,
-    handle: *DocumentStore.Handle,
     name_loc: offsets.Loc,
-    markup_kind: types.MarkupKind,
-    offset_encoding: offsets.Encoding,
 ) error{OutOfMemory}!?types.Hover {
-    _ = analyser;
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const name = offsets.locToSlice(handle.tree.source, name_loc);
+    const name = offsets.locToSlice(b.zdoc.tree.source, name_loc);
 
     var contents: std.ArrayList(u8) = .empty;
 
@@ -284,7 +278,7 @@ fn hoverDefinitionBuiltin(
         builtin.parameters.len > 3,
     );
 
-    switch (markup_kind) {
+    switch (b.markup_kind) {
         .plaintext, .unknown_value => {
             try contents.print(arena,
                 \\{s}
@@ -304,44 +298,40 @@ fn hoverDefinitionBuiltin(
     return .{
         .contents = .{
             .markup_content = .{
-                .kind = markup_kind,
+                .kind = b.markup_kind,
                 .value = contents.items,
             },
         },
-        .range = offsets.locToRange(handle.tree.source, name_loc, offset_encoding),
+        .range = offsets.locToRange(b.zdoc.tree.source, name_loc, b.offset_encoding),
     };
 }
 
 fn hoverDefinitionGlobal(
-    ds: *DocumentStore,
-    analyser: *Analyser,
+    b: *Builder,
     arena: std.mem.Allocator,
-    handle: *DocumentStore.Handle,
     source_index: usize,
-    markup_kind: types.MarkupKind,
-    offset_encoding: offsets.Encoding,
 ) Analyser.Error!?types.Hover {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const name_token, const name_loc = offsets.identifierTokenAndLocFromIndex(&handle.tree, source_index) orelse return null;
-    const name = offsets.locToSlice(handle.tree.source, name_loc);
+    const name_token, const name_loc = offsets.identifierTokenAndLocFromIndex(&b.zdoc.tree, source_index) orelse return null;
+    const name = offsets.locToSlice(b.zdoc.tree.source, name_loc);
     const hover_text = blk: {
-        const is_escaped_identifier = handle.tree.source[handle.tree.tokenStart(name_token)] == '@';
+        const is_escaped_identifier = b.zdoc.tree.source[b.zdoc.tree.tokenStart(name_token)] == '@';
         if (!is_escaped_identifier) {
             if (std.mem.eql(u8, name, "_")) return null;
-            if (try analyser.resolvePrimitive(name)) |ip_index| {
-                const resolved_type_str = try std.fmt.allocPrint(arena, "{f}", .{analyser.ip.typeOf(ip_index).fmt(analyser.ip)});
-                break :blk try hoverSymbolResolved(arena, markup_kind, &.{}, name, &.{resolved_type_str}, false, &.{});
+            if (try b.asta.resolvePrimitive(name)) |ip_index| {
+                const resolved_type_str = try std.fmt.allocPrint(arena, "{f}", .{b.asta.ip.typeOf(ip_index).fmt(b.asta.ip)});
+                break :blk try hoverSymbolResolved(arena, b.markup_kind, &.{}, name, &.{resolved_type_str}, false, &.{});
             }
         }
-        const decl = (try analyser.lookupSymbolGlobal(handle, name, source_index)) orelse return null;
-        const basic_info = (try hoverSymbol(ds, analyser, arena, decl, markup_kind)) orelse return null;
+        const decl = (try b.asta.lookupSymbolGlobal(b.zdoc, name, source_index)) orelse return null;
+        const basic_info = (try hoverSymbol(b, arena, decl)) orelse return null;
 
-        const nav_info = try lookupNav(ds, arena, handle, source_index, markup_kind) orelse "";
+        const nav_info = try lookupNav(b.ds, arena, b.zdoc, source_index, b.markup_kind) orelse "";
         const extra_info = if (nav_info.len != 0) try std.fmt.allocPrint(arena, "{s}" ++ "\n" ++ "{s}", .{ basic_info, nav_info }) else basic_info;
 
-        const air = try getAirSlice(ds, arena, decl) orelse "";
+        const air = try getAirSlice(b.ds, arena, decl) orelse "";
         const full_info = if (air.len != 0) try std.fmt.allocPrint(arena, "{s}" ++ "\n" ++ "```\n\n{s}\n```", .{ extra_info, air }) else extra_info;
         break :blk full_info;
     };
@@ -349,11 +339,11 @@ fn hoverDefinitionGlobal(
     return .{
         .contents = .{
             .markup_content = .{
-                .kind = markup_kind,
+                .kind = b.markup_kind,
                 .value = hover_text,
             },
         },
-        .range = offsets.tokenToRange(&handle.tree, name_token, offset_encoding),
+        .range = offsets.tokenToRange(&b.zdoc.tree, name_token, b.offset_encoding),
     };
 }
 
@@ -397,52 +387,44 @@ fn hoverDefinitionStructInit(
 }
 
 fn hoverDefinitionEnumLiteral(
-    ds: *DocumentStore,
-    analyser: *Analyser,
+    b: *Builder,
     arena: std.mem.Allocator,
-    handle: *DocumentStore.Handle,
     source_index: usize,
-    markup_kind: types.MarkupKind,
-    offset_encoding: offsets.Encoding,
 ) Analyser.Error!?types.Hover {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const name_token, const name_loc = offsets.identifierTokenAndLocFromIndex(&handle.tree, source_index) orelse {
-        return try hoverDefinitionStructInit(analyser, arena, handle, source_index, markup_kind, offset_encoding);
+    const name_token, const name_loc = offsets.identifierTokenAndLocFromIndex(&b.zdoc.tree, source_index) orelse {
+        return try hoverDefinitionStructInit(b.asta, arena, b.zdoc, source_index, b.markup_kind, b.offset_encoding);
     };
-    const name = offsets.locToSlice(handle.tree.source, name_loc);
-    const decl = (try analyser.getSymbolEnumLiteral(handle, source_index, name)) orelse return null;
+    const name = offsets.locToSlice(b.zdoc.tree.source, name_loc);
+    const decl = (try b.asta.getSymbolEnumLiteral(b.zdoc, source_index, name)) orelse return null;
 
     return .{
         .contents = .{
             .markup_content = .{
-                .kind = markup_kind,
-                .value = (try hoverSymbol(ds, analyser, arena, decl, markup_kind)) orelse return null,
+                .kind = b.markup_kind,
+                .value = (try hoverSymbol(b, arena, decl)) orelse return null,
             },
         },
-        .range = offsets.tokenToRange(&handle.tree, name_token, offset_encoding),
+        .range = offsets.tokenToRange(&b.zdoc.tree, name_token, b.offset_encoding),
     };
 }
 
 fn hoverDefinitionFieldAccess(
-    ds: *DocumentStore,
-    analyser: *Analyser,
+    b: *Builder,
     arena: std.mem.Allocator,
-    handle: *DocumentStore.Handle,
     source_index: usize,
     loc: offsets.Loc,
-    markup_kind: types.MarkupKind,
-    offset_encoding: offsets.Encoding,
 ) Analyser.Error!?types.Hover {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
     var decls: std.ArrayList(Analyser.DeclWithHandle) = .empty;
     var tys: std.ArrayList(Analyser.Type) = .empty;
-    const highlight_loc = try analyser.getSymbolFieldAccessesHighlight(
+    const highlight_loc = try b.asta.getSymbolFieldAccessesHighlight(
         arena,
-        handle,
+        b.zdoc,
         source_index,
         loc,
         &decls,
@@ -452,17 +434,15 @@ fn hoverDefinitionFieldAccess(
     var content: std.ArrayList([]const u8) = try .initCapacity(arena, decls.items.len + tys.items.len);
 
     for (decls.items) |decl| {
-        content.appendAssumeCapacity(try hoverSymbol(ds, analyser, arena, decl, markup_kind) orelse continue);
+        content.appendAssumeCapacity(try hoverSymbol(b, arena, decl) orelse continue);
     }
     for (tys.items) |ty| {
-        const def_str = offsets.locToSlice(handle.tree.source, highlight_loc);
+        const def_str = offsets.locToSlice(b.zdoc.tree.source, highlight_loc);
         var doc_strings: std.ArrayList([]const u8) = .empty;
         content.appendAssumeCapacity(try hoverSymbolResolvedType(
-            ds.io,
-            analyser,
+            b,
             arena,
             def_str,
-            markup_kind,
             &doc_strings,
             ty,
             null,
@@ -471,14 +451,14 @@ fn hoverDefinitionFieldAccess(
 
     return .{
         .contents = .{ .markup_content = .{
-            .kind = markup_kind,
+            .kind = b.markup_kind,
             .value = switch (content.items.len) {
                 0 => return null,
                 1 => content.items[0],
                 else => try std.mem.join(arena, "\n\n", content.items),
             },
         } },
-        .range = offsets.locToRange(handle.tree.source, highlight_loc, offset_encoding),
+        .range = offsets.locToRange(b.zdoc.tree.source, highlight_loc, b.offset_encoding),
     };
 }
 
@@ -534,38 +514,33 @@ fn hoverNumberLiteral(
 }
 
 fn hoverDefinitionNumberLiteral(
+    b: *Builder,
     arena: std.mem.Allocator,
-    handle: *DocumentStore.Handle,
     source_index: usize,
-    markup_kind: types.MarkupKind,
-    offset_encoding: offsets.Encoding,
 ) error{OutOfMemory}!?types.Hover {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
-    const tree = &handle.tree;
+    const tree = &b.zdoc.tree;
     const token_index = offsets.sourceIndexToTokenIndex(tree, source_index).pickPreferred(&.{ .number_literal, .char_literal }, tree) orelse return null;
     const num_loc = offsets.tokenToLoc(tree, token_index);
-    const hover_text = (try hoverNumberLiteral(handle, token_index, arena, markup_kind)) orelse return null;
+    const hover_text = (try hoverNumberLiteral(b.zdoc, token_index, arena, b.markup_kind)) orelse return null;
 
     return .{
         .contents = .{ .markup_content = .{
-            .kind = markup_kind,
+            .kind = b.markup_kind,
             .value = hover_text,
         } },
-        .range = offsets.locToRange(handle.tree.source, num_loc, offset_encoding),
+        .range = offsets.locToRange(b.zdoc.tree.source, num_loc, b.offset_encoding),
     };
 }
 
 fn hoverKeyword(
-    ds: *DocumentStore,
+    b: *Builder,
     arena: std.mem.Allocator,
-    handle: *DocumentStore.Handle,
     token_index: Ast.TokenIndex,
-    markup_kind: types.MarkupKind,
-    offset_encoding: offsets.Encoding,
 ) error{OutOfMemory}!?types.Hover {
-    const tree = &handle.tree;
+    const tree = &b.zdoc.tree;
 
     switch (tree.tokenTag(token_index)) {
         else => return null,
@@ -578,14 +553,14 @@ fn hoverKeyword(
     const nodes = try ast.nodesOverlappingIndex(arena, tree, tree.tokenStart(token_index));
     if (nodes.len == 0) return null;
 
-    handle.computed_data.lock.lockSharedUncancelable(ds.io);
-    defer handle.computed_data.lock.unlockShared(ds.io);
+    b.zdoc.computed_data.lock.lockSharedUncancelable(b.ds.io);
+    defer b.zdoc.computed_data.lock.unlockShared(b.ds.io);
 
-    const args = handle.computed_data.type_decls.get(nodes[0]) orelse return null;
-    const build = handle.computed_data.build orelse return null;
+    const args = b.zdoc.computed_data.type_decls.get(nodes[0]) orelse return null;
+    const build = b.zdoc.computed_data.build orelse return null;
 
     if (!build.mutex.tryLock()) return null;
-    defer build.mutex.unlock(ds.io);
+    defer build.mutex.unlock(b.ds.io);
 
     if (!build.has_completed_once) return null;
 
@@ -604,7 +579,7 @@ fn hoverKeyword(
 
     var output: std.ArrayList(u8) = .empty;
 
-    if (markup_kind == .markdown) {
+    if (b.markup_kind == .markdown) {
         try output.print(arena, "```zig\n", .{});
     }
 
@@ -618,16 +593,16 @@ fn hoverKeyword(
         args.ty.fmt(active.pt),
     });
 
-    if (markup_kind == .markdown) {
+    if (b.markup_kind == .markdown) {
         try output.print(arena, "\n```\n", .{});
     }
 
     return .{
         .contents = .{ .markup_content = .{
-            .kind = markup_kind,
+            .kind = b.markup_kind,
             .value = output.items,
         } },
-        .range = offsets.locToRange(handle.tree.source, offsets.tokenToLoc(tree, token_index), offset_encoding),
+        .range = offsets.locToRange(b.zdoc.tree.source, offsets.tokenToLoc(tree, token_index), b.offset_encoding),
     };
 }
 
@@ -642,14 +617,22 @@ pub fn hover(
 ) Analyser.Error!?types.Hover {
     const pos_context = try Analyser.getPositionContext(arena, &handle.tree, source_index, true);
 
+    var b: Builder = .{
+        .ds = ds,
+        .asta = analyser,
+        .zdoc = handle,
+        .markup_kind = markup_kind,
+        .offset_encoding = offset_encoding,
+    };
+
     const response = switch (pos_context) {
-        .builtin => |loc| try hoverDefinitionBuiltin(analyser, arena, handle, loc, markup_kind, offset_encoding),
-        .var_access, .test_doctest_name => try hoverDefinitionGlobal(ds, analyser, arena, handle, source_index, markup_kind, offset_encoding),
-        .field_access => |loc| try hoverDefinitionFieldAccess(ds, analyser, arena, handle, source_index, loc, markup_kind, offset_encoding),
-        .label_access, .label_decl => |loc| try hoverDefinitionLabel(ds, analyser, arena, handle, source_index, loc, markup_kind, offset_encoding),
-        .enum_literal => try hoverDefinitionEnumLiteral(ds, analyser, arena, handle, source_index, markup_kind, offset_encoding),
-        .number_literal, .char_literal => try hoverDefinitionNumberLiteral(arena, handle, source_index, markup_kind, offset_encoding),
-        .keyword => |token_index| try hoverKeyword(ds, arena, handle, token_index, markup_kind, offset_encoding),
+        .builtin => |loc| try hoverDefinitionBuiltin(&b, arena, loc),
+        .var_access, .test_doctest_name => try hoverDefinitionGlobal(&b, arena, source_index),
+        .field_access => |loc| try hoverDefinitionFieldAccess(&b, arena, source_index, loc),
+        .label_access, .label_decl => |loc| try hoverDefinitionLabel(&b, arena, source_index, loc),
+        .enum_literal => try hoverDefinitionEnumLiteral(&b, arena, source_index),
+        .number_literal, .char_literal => try hoverDefinitionNumberLiteral(&b, arena, source_index),
+        .keyword => |token_index| try hoverKeyword(&b, arena, token_index),
         else => null,
     };
 
