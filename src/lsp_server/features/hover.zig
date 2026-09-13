@@ -173,7 +173,8 @@ fn hoverSymbolResolvedType(
             b.ds.io,
             maybe_decl_handle.?.handle,
             maybe_decl_handle.?.decl.ast_node,
-        )) |info| try resolved_type_strings.append(arena, info);
+            doc_strings,
+        )) |info| try resolved_type_strings.append(arena, try arena.print("Interned: {s}", .{info}));
     }
     return try hoverSymbolResolved(
         arena,
@@ -228,7 +229,7 @@ fn hoverSymbolResolved(
         try output.appendSlice(arena, "\n\n");
         for (doc_strings, 0..) |doc, i| {
             try output.appendSlice(arena, doc);
-            if (i != doc_strings.len - 1) try output.appendSlice(arena, "\n\n");
+            if (i != doc_strings.len - 1) try output.appendSlice(arena, "\n");
         }
     }
 
