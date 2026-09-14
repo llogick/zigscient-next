@@ -18,6 +18,7 @@ const ast = @import("ast.zig");
 const tracy = @import("tracy");
 const InternPool = @import("analyser/InternPool.zig");
 const references = @import("features/references.zig");
+const Aira = @import("Aira.zig");
 
 pub const DocumentScope = @import("DocumentScope.zig");
 pub const Declaration = DocumentScope.Declaration;
@@ -1902,9 +1903,9 @@ fn resolveTypeOfNodeUncached(analyser: *Analyser, options: ResolveOptions) Error
             }
 
             if (var_decl.ast.init_node.unwrap()) |init_node| blk: {
-                return try analyser.resolveTypeOfNodeInternal(.of(init_node, handle)) orelse break :blk;
+                return try analyser.resolveTypeOfNodeInternal(.of(init_node, handle)) orelse
+                    (try airaResolveDecl(analyser, .{ .decl = .{ .ast_node = node }, .handle = handle })) orelse break :blk;
             }
-
             return fallback_type;
         },
         .call,
@@ -2931,7 +2932,7 @@ fn resolveBindingOfNodeUncached(analyser: *Analyser, options: ResolveOptions) Er
             }
 
             const child = try analyser.lookupSymbolGlobal(handle, name, tree.tokenStart(name_token)) orelse return null;
-            const child_ty = try child.resolveType(analyser) orelse return null;
+            const child_ty = (try airaResolveDecl(analyser, child)) orelse return null;
             return .{
                 .type = child_ty,
                 .is_const = child.isConst(),
@@ -4624,8 +4625,6 @@ pub fn getFieldAccessType(
 
     var do_unwrap_error_payload = false; // .keyword_try seen, ie `(try foo())`
 
-    const Aira = @import("Aira.zig");
-
     while (true) {
         const tok = tokenizer.next();
         switch (tok.tag) {
@@ -4637,31 +4636,7 @@ pub fn getFieldAccessType(
                     symbol_name,
                     source_index,
                 )) |child| {
-                    current_type = aira: {
-                        // Need to figure out how to get fields for reified Ts
-                        const asta_ty = (try child.resolveType(analyser));
-                        if (child.decl != .ast_node) break :aira asta_ty;
-                        var aira: Aira = try Aira.init(
-                            analyser.store.io,
-                            child.handle,
-                            child.decl.ast_node,
-                        ) orelse break :aira asta_ty;
-                        defer aira.deinit(analyser.store.io);
-                        const inst = try aira.resolveVarDecl(child.decl.ast_node) orelse break :aira asta_ty;
-                        var ares = Aira.resolveInst(aira.air, inst) orelse break :aira asta_ty;
-                        switch (ares.inst_tag) {
-                            .alloc => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
-                            .call => ares.ip_index = aira.resolveFnRetTy(ares.ip_index) orelse break :aira asta_ty,
-                            else => {},
-                        }
-                        ares.ip_index = aira.derefOrUnwrap(ares.ip_index);
-                        const src_node_info = aira.resolveSrcNode(ares.ip_index) orelse break :aira asta_ty;
-                        const zdoc = try analyser.store.getOrLoadHandle(src_node_info.zdoc_uri) orelse break :aira asta_ty;
-                        const decl: DeclWithHandle = .{ .decl = .{ .ast_node = src_node_info.src_node }, .handle = zdoc };
-                        var rty = (try decl.resolveType(analyser)) orelse (try child.resolveType(analyser)) orelse break :aira asta_ty;
-                        rty.is_type_val = false;
-                        break :aira rty;
-                    } orelse return null;
+                    current_type = (try airaResolveDecl(analyser, child)) orelse return null;
                 } else return null;
             },
             .period => {
@@ -6649,3 +6624,29 @@ pub const ReferencedType = struct {
         }
     };
 };
+
+pub fn airaResolveDecl(asta: *Analyser, decl: DeclWithHandle) Error!?Type {
+    // Need to figure out how to get fields for reified Ts
+    const asta_ty = (try decl.resolveType(asta));
+    if (decl.decl != .ast_node) return asta_ty;
+    var aira: Aira = try Aira.init(
+        asta.store.io,
+        decl.handle,
+        decl.decl.ast_node,
+    ) orelse return asta_ty;
+    defer aira.deinit(asta.store.io);
+    const inst = try aira.resolveVarDecl(decl.decl.ast_node) orelse return asta_ty;
+    var ares = Aira.resolveInst(aira.air, inst) orelse return asta_ty;
+    switch (ares.inst_tag) {
+        .alloc => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
+        .call => ares.ip_index = aira.resolveFnRetTy(ares.ip_index) orelse return asta_ty,
+        else => {},
+    }
+    ares.ip_index = aira.derefOrUnwrap(ares.ip_index);
+    const src_node_info = aira.resolveSrcNode(ares.ip_index) orelse return asta_ty;
+    const zdoc = try asta.store.getOrLoadHandle(src_node_info.zdoc_uri) orelse return asta_ty;
+    const new_decl: DeclWithHandle = .{ .decl = .{ .ast_node = src_node_info.src_node }, .handle = zdoc };
+    var rty = (try new_decl.resolveType(asta)) orelse return asta_ty;
+    rty.is_type_val = false;
+    return rty;
+}
