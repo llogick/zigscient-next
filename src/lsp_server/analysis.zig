@@ -4624,6 +4624,8 @@ pub fn getFieldAccessType(
 
     var do_unwrap_error_payload = false; // .keyword_try seen, ie `(try foo())`
 
+    const Aira = @import("Aira.zig");
+
     while (true) {
         const tok = tokenizer.next();
         switch (tok.tag) {
@@ -4635,7 +4637,31 @@ pub fn getFieldAccessType(
                     symbol_name,
                     source_index,
                 )) |child| {
-                    current_type = (try child.resolveType(analyser)) orelse return null;
+                    current_type = aira: {
+                        // Need to figure out how to get fields for reified Ts
+                        const asta_ty = (try child.resolveType(analyser));
+                        if (child.decl != .ast_node) break :aira asta_ty;
+                        var aira: Aira = try Aira.init(
+                            analyser.store.io,
+                            child.handle,
+                            child.decl.ast_node,
+                        ) orelse break :aira asta_ty;
+                        defer aira.deinit(analyser.store.io);
+                        const inst = try aira.resolveVarDecl(child.decl.ast_node) orelse break :aira asta_ty;
+                        var ares = Aira.resolveInst(aira.air, inst) orelse break :aira asta_ty;
+                        switch (ares.inst_tag) {
+                            .alloc => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
+                            .call => ares.ip_index = aira.resolveFnRetTy(ares.ip_index) orelse break :aira asta_ty,
+                            else => {},
+                        }
+                        ares.ip_index = aira.derefOrUnwrap(ares.ip_index);
+                        const src_node_info = aira.resolveSrcNode(ares.ip_index) orelse break :aira asta_ty;
+                        const zdoc = try analyser.store.getOrLoadHandle(src_node_info.zdoc_uri) orelse break :aira asta_ty;
+                        const decl: DeclWithHandle = .{ .decl = .{ .ast_node = src_node_info.src_node }, .handle = zdoc };
+                        var rty = (try decl.resolveType(analyser)) orelse (try child.resolveType(analyser)) orelse break :aira asta_ty;
+                        rty.is_type_val = false;
+                        break :aira rty;
+                    } orelse return null;
                 } else return null;
             },
             .period => {
