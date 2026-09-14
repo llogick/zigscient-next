@@ -6,6 +6,8 @@ const Ast = std.zig.Ast;
 pub const compiler = @import("compiler");
 pub const Compilation = compiler.Compilation;
 
+const Aira = @import("../Aira.zig");
+
 const ast = @import("../ast.zig");
 const types = @import("lsp").types;
 const offsets = @import("../offsets.zig");
@@ -146,10 +148,11 @@ fn hoverSymbolResolvedType(
     doc_strings: *std.ArrayList([]const u8),
     resolved_type_maybe: ?Analyser.Type,
     maybe_decl_handle: ?Analyser.DeclWithHandle,
-) error{OutOfMemory}!?[]const u8 {
+) Analyser.Error!?[]const u8 {
     var referenced: Analyser.ReferencedType.Set = .empty;
     var resolved_type_strings: std.ArrayList([]const u8) = .empty;
     var has_more = false;
+
     if (resolved_type_maybe) |resolved_type| {
         if (try resolved_type.docComments(arena)) |doc|
             try doc_strings.append(arena, doc);
@@ -166,16 +169,41 @@ fn hoverSymbolResolvedType(
             );
         }
     }
-    const referenced_types: []const Analyser.ReferencedType = referenced.keys();
-    if (maybe_decl_handle != null and maybe_decl_handle.?.decl == .ast_node) {
-        if (try @import("../Aira.zig").resolveVarDecl(
-            arena,
-            b.ds.io,
-            maybe_decl_handle.?.handle,
-            maybe_decl_handle.?.decl.ast_node,
-            doc_strings,
-        )) |info| try resolved_type_strings.append(arena, try arena.print("Interned: {s}", .{info}));
+
+    if (maybe_decl_handle != null and maybe_decl_handle.?.decl == .ast_node) interned: {
+        var aira: Aira = try Aira.init(b.ds.io, maybe_decl_handle.?.handle, maybe_decl_handle.?.decl.ast_node) orelse break :interned;
+        defer aira.deinit(b.ds.io);
+        const inst = try aira.resolveVarDecl(maybe_decl_handle.?.decl.ast_node) orelse break :interned;
+        var ares = Aira.resolveInst(aira.air, inst) orelse break :interned;
+        switch (ares.inst_tag) {
+            .alloc => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
+            .call => ares.ip_index = aira.resolveFnRetTy(ares.ip_index) orelse break :interned,
+            else => {},
+        }
+        resolved_type_strings.clearRetainingCapacity();
+        const type_slice = try aira.typeSlice(arena, ares.ip_index);
+        try resolved_type_strings.append(arena, type_slice);
+
+        ares.ip_index = aira.derefOrUnwrap(ares.ip_index);
+
+        const src_node_info = aira.resolveSrcNode(ares.ip_index);
+        if (src_node_info) |_| blk: {
+            const zdoc = try b.ds.getOrLoadHandle(src_node_info.?.zdoc_uri) orelse break :blk;
+            referenced.clearRetainingCapacity();
+            try referenced.put(arena, .of(
+                short: {
+                    const end = std.mem.find(u8, type_slice, "(") orelse type_slice.len;
+                    const bgn = if (std.mem.findLast(u8, type_slice[0..end], ".")) |di| di + 1 else 0;
+                    break :short if (bgn < end) type_slice[bgn..end] else type_slice;
+                },
+                zdoc,
+                zdoc.tree.firstToken(src_node_info.?.src_node),
+            ), {});
+        }
     }
+
+    const referenced_types: []const Analyser.ReferencedType = referenced.keys();
+
     return try hoverSymbolResolved(
         arena,
         b.markup_kind,
