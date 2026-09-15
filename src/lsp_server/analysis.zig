@@ -6630,11 +6630,11 @@ pub fn airaResolveDecl(asta: *Analyser, decl: DeclWithHandle) Error!?Type {
     const asta_ty = (try decl.resolveType(asta));
     if (decl.decl != .ast_node) return asta_ty;
     var aira: Aira = try Aira.init(
-        asta.store.io,
+        asta.store,
         decl.handle,
         decl.decl.ast_node,
     ) orelse return asta_ty;
-    defer aira.deinit(asta.store.io);
+    defer aira.deinit();
     const inst = try aira.resolveVarDecl(decl.decl.ast_node) orelse return asta_ty;
     var ares = Aira.resolveInst(aira.air, inst) orelse return asta_ty;
     switch (ares.inst_tag) {

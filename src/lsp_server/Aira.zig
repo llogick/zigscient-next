@@ -12,6 +12,7 @@ const Air = Compilation.Air;
 
 const Asta = @import("analysis.zig");
 const ZigDoc = @import("ZigDoc.zig");
+const DocumentStore = @import("DocumentStore.zig");
 const tree_util = @import("offsets.zig");
 
 const Aira = @This();
@@ -23,11 +24,13 @@ const Result = struct {
     ip_index: InternPool.Index,
 };
 
+ds: *DocumentStore,
 zdoc: *ZigDoc,
 air: Air,
 active: Zcu.Active,
 
-pub fn init(io: std.Io, zdoc: *ZigDoc, node: Ast.Node.Index) ErrSet!?Aira {
+pub fn init(ds: *DocumentStore, zdoc: *ZigDoc, node: Ast.Node.Index) ErrSet!?Aira {
+    if (ds.config.disable_aira) return null;
     const doc_scope = try zdoc.getDocumentScope();
     const fn_scope = Asta.innermostScopeAtIndexWithTag(
         doc_scope,
@@ -41,8 +44,8 @@ pub fn init(io: std.Io, zdoc: *ZigDoc, node: Ast.Node.Index) ErrSet!?Aira {
 
     var cleanup: bool = false;
 
-    zdoc.computed_data.lock.lockSharedUncancelable(io);
-    defer if (cleanup) zdoc.computed_data.lock.unlockShared(io);
+    zdoc.computed_data.lock.lockSharedUncancelable(ds.io);
+    defer if (cleanup) zdoc.computed_data.lock.unlockShared(ds.io);
 
     const build = zdoc.computed_data.build orelse {
         cleanup = true;
@@ -53,7 +56,7 @@ pub fn init(io: std.Io, zdoc: *ZigDoc, node: Ast.Node.Index) ErrSet!?Aira {
         cleanup = true;
         return null;
     }
-    defer if (cleanup) build.mutex.unlock(io);
+    defer if (cleanup) build.mutex.unlock(ds.io);
 
     if (!build.has_completed_once) {
         cleanup = true;
@@ -70,16 +73,17 @@ pub fn init(io: std.Io, zdoc: *ZigDoc, node: Ast.Node.Index) ErrSet!?Aira {
     };
 
     return .{
+        .ds = ds,
         .zdoc = zdoc,
         .air = args.air,
         .active = zcu.activate(args.tid),
     };
 }
 
-pub fn deinit(aira: *Aira, io: std.Io) void {
+pub fn deinit(aira: *Aira) void {
     aira.active.deactivate();
-    aira.zdoc.computed_data.build.?.mutex.unlock(io);
-    aira.zdoc.computed_data.lock.unlockShared(io);
+    aira.zdoc.computed_data.build.?.mutex.unlock(aira.ds.io);
+    aira.zdoc.computed_data.lock.unlockShared(aira.ds.io);
 }
 
 pub fn resolveVarDecl(

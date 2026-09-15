@@ -171,8 +171,8 @@ fn hoverSymbolResolvedType(
     }
 
     if (maybe_decl_handle != null and maybe_decl_handle.?.decl == .ast_node) interned: {
-        var aira: Aira = try Aira.init(b.ds.io, maybe_decl_handle.?.handle, maybe_decl_handle.?.decl.ast_node) orelse break :interned;
-        defer aira.deinit(b.ds.io);
+        var aira: Aira = try Aira.init(b.ds, maybe_decl_handle.?.handle, maybe_decl_handle.?.decl.ast_node) orelse break :interned;
+        defer aira.deinit();
         const inst = try aira.resolveVarDecl(maybe_decl_handle.?.decl.ast_node) orelse break :interned;
         var ares = Aira.resolveInst(aira.air, inst) orelse break :interned;
         switch (ares.inst_tag) {
