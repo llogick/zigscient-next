@@ -305,7 +305,7 @@ pub fn resolveSrcNode(
         null;
 }
 
-fn dumpFields(
+pub fn dumpFields(
     arena: Allocator,
     pt: Zcu.PerThread,
     ip_index: InternPool.Index,

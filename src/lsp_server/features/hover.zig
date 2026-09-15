@@ -200,6 +200,8 @@ fn hoverSymbolResolvedType(
                 zdoc.tree.firstToken(src_node_info.?.src_node),
             ), {});
         }
+
+        Aira.dumpFields(arena, aira.active.pt, ares.ip_index, doc_strings);
     }
 
     const referenced_types: []const Analyser.ReferencedType = referenced.keys();
