@@ -5603,7 +5603,8 @@ pub const DeclWithHandle = struct {
                 }
 
                 const init_node = tree.nodeData(pay.node).extra_and_node[1];
-                const node = try analyser.resolveTypeOfNode(.of(init_node, self.handle)) orelse return null;
+                const node = try analyser.resolveTypeOfNode(.of(init_node, self.handle)) orelse
+                    (try airaResolveDecl(analyser, .{ .decl = .{ .ast_node = pay.getVarDeclNode(tree) }, .handle = self.handle })) orelse return null;
                 break :blk switch (node.data) {
                     .array => |array_info| try array_info.elem_ty.instanceTypeVal(analyser),
                     .tuple => try analyser.resolveBracketAccessType(node, .{ .single = pay.index }),
@@ -6635,10 +6636,12 @@ pub fn airaResolveDecl(asta: *Analyser, decl: DeclWithHandle) Error!?Type {
         decl.decl.ast_node,
     ) orelse return asta_ty;
     defer aira.deinit();
-    const inst = try aira.resolveVarDecl(decl.decl.ast_node) orelse return asta_ty;
+    const inst = try aira.resolveNode(decl.decl.ast_node) orelse return asta_ty;
     var ares = Aira.resolveInst(aira.air, inst) orelse return asta_ty;
     switch (ares.inst_tag) {
-        .alloc => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
+        .alloc,
+        .ptr_cast,
+        => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
         .call => ares.ip_index = aira.resolveFnRetTy(ares.ip_index) orelse return asta_ty,
         else => {},
     }

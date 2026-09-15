@@ -59,17 +59,12 @@ fn hoverSymbol(
             .local_var_decl,
             .aligned_var_decl,
             .simple_var_decl,
-            => def: {
-                const full_var_decl = tree.fullVarDecl(node).?;
-                const def = try Analyser.getVariableSignature(
-                    arena,
-                    tree,
-                    full_var_decl,
-                    true,
-                );
-                // _ = try @import("../Aira.zig").resolveVarDecl(ds.io, decl_handle.handle, node);
-                break :def def;
-            },
+            => try Analyser.getVariableSignature(
+                arena,
+                tree,
+                tree.fullVarDecl(node).?,
+                true,
+            ),
             .container_field,
             .container_field_init,
             .container_field_align,
@@ -170,13 +165,20 @@ fn hoverSymbolResolvedType(
         }
     }
 
-    if (maybe_decl_handle != null and maybe_decl_handle.?.decl == .ast_node) interned: {
-        var aira: Aira = try Aira.init(b.ds, maybe_decl_handle.?.handle, maybe_decl_handle.?.decl.ast_node) orelse break :interned;
+    if (maybe_decl_handle != null) interned: {
+        const node = switch (maybe_decl_handle.?.decl) {
+            .ast_node => |n| n,
+            .assign_destructure => |a| a.getVarDeclNode(&maybe_decl_handle.?.handle.tree),
+            else => break :interned,
+        };
+        var aira: Aira = try Aira.init(b.ds, maybe_decl_handle.?.handle, node) orelse break :interned;
         defer aira.deinit();
-        const inst = try aira.resolveVarDecl(maybe_decl_handle.?.decl.ast_node) orelse break :interned;
+        const inst = try aira.resolveNode(node) orelse break :interned;
         var ares = Aira.resolveInst(aira.air, inst) orelse break :interned;
         switch (ares.inst_tag) {
-            .alloc => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
+            .alloc,
+            .ptr_cast,
+            => ares.ip_index = aira.deref(ares.ip_index) orelse ares.ip_index,
             .call => ares.ip_index = aira.resolveFnRetTy(ares.ip_index) orelse break :interned,
             else => {},
         }

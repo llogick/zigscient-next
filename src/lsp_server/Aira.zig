@@ -86,6 +86,22 @@ pub fn deinit(aira: *Aira) void {
     aira.zdoc.computed_data.lock.unlockShared(aira.ds.io);
 }
 
+pub fn resolveNode(
+    aira: *Aira,
+    node: Ast.Node.Index,
+) ErrSet!?Air.Inst.Index {
+    const tree = aira.zdoc.tree;
+    return switch (tree.nodeTag(node)) {
+        .global_var_decl,
+        .local_var_decl,
+        .aligned_var_decl,
+        .simple_var_decl,
+        => try resolveVarDecl(aira, node),
+        .assign_destructure => matchTreeDataIndex(@backingInt(node), aira.air, aira.air.getMainBody()),
+        else => null,
+    };
+}
+
 pub fn resolveVarDecl(
     aira: *Aira,
     node: Ast.Node.Index,
@@ -93,11 +109,12 @@ pub fn resolveVarDecl(
     const tree = aira.zdoc.tree;
     const full_var_decl = tree.fullVarDecl(node) orelse return null;
 
-    return matchTreeDataIndex(
-        @backingInt(full_var_decl.ast.init_node.unwrap().?),
+    const res = matchTreeDataIndex(
+        @backingInt(full_var_decl.ast.init_node.unwrap() orelse node),
         aira.air,
         aira.air.getMainBody(),
     );
+    return res;
 }
 
 fn matchTreeDataIndex(
@@ -183,6 +200,7 @@ pub fn resolveInst(
             .block,
             .dbg_inline_block,
             => |block_tag| return .{ .inst_tag = block_tag, .ip_index = data[@backingInt(inst)].ty_pl.ty.ip_index },
+            .ptr_cast => return .{ .inst_tag = .ptr_cast, .ip_index = data[@backingInt(inst)].ty_op.ty.ip_index },
         }
     }
 }
