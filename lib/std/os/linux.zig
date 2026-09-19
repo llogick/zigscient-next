@@ -8467,7 +8467,7 @@ pub const STATX = bitpack struct(u32) {
 /// See [FS_IOC_SETFLAGS(2const)](https://man7.org/linux/man-pages/man2/FS_IOC_GETFLAGS.2const.html)
 /// for more.
 pub const STATX_ATTR = bitpack struct(u64) {
-    __pad1: u3 = 0,
+    __pad1: u2 = 0,
     /// [I] File is compressed by the fs.
     COMPRESSED: bool = false,
     __pad2: u1 = 0,
@@ -8477,12 +8477,14 @@ pub const STATX_ATTR = bitpack struct(u64) {
     APPEND: bool = false,
     /// [I] File is not to be dumped.
     NODUMP: bool = false,
+    __pad3: u4 = 0,
     /// [I] File requires a key to decrypt in the filesystem.
     ENCRYPTED: bool = false,
     /// File names a directory that triggers an automount.
     AUTOMOUNT: bool = false,
     /// File names the root of a mount.
     MOUNT_ROOT: bool = false,
+    __pad4: u6 = 0,
     /// [I] File is protected by the `dm-verity` device.
     VERITY: bool = false,
     /// File is currently in the CPU direct access state.
@@ -8490,7 +8492,7 @@ pub const STATX_ATTR = bitpack struct(u64) {
     DAX: bool = false,
     /// File supports atomic write operations.
     WRITE_ATOMIC: bool = false,
-    __pad3: u50 = 0,
+    __pad5: u41 = 0,
 };
 
 pub const statx_timestamp = extern struct {
