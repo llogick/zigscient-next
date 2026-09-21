@@ -2052,9 +2052,7 @@ pub const Event = enum(u32) {
 
     pub const WaitTimeoutError = error{Timeout} || Cancelable;
 
-    /// Blocks the calling thread until either the logical boolean is set, the timeout expires, or a
-    /// spurious wakeup occurs. If the timeout expires or a spurious wakeup occurs, `error.Timeout`
-    /// is returned.
+    /// Blocks the calling thread until either the logical boolean is set or the timeout expires.
     pub fn waitTimeout(event: *Event, io: Io, timeout: Timeout) WaitTimeoutError!void {
         if (@cmpxchgStrong(Event, event, .unset, .waiting, .acquire, .acquire)) |prev| switch (prev) {
             .unset => unreachable,
@@ -2068,11 +2066,19 @@ pub const Event = enum(u32) {
             // waiters would wake up when a *new waiter* was added. So it's easiest to just leave
             // the state at `.waiting`---at worst it causes one redundant call to `futexWake`.
         }
-        try io.futexWaitTimeout(Event, event, .waiting, timeout);
-        switch (@atomicLoad(Event, event, .acquire)) {
-            .unset => unreachable, // `reset` called before pending `wait` returned
-            .waiting => return error.Timeout,
-            .is_set => return,
+
+        const deadline = timeout.toDeadline(io);
+
+        while (true) {
+            try io.futexWaitTimeout(Event, event, .waiting, timeout);
+            switch (@atomicLoad(Event, event, .acquire)) {
+                .unset => unreachable, // `reset` called before pending `wait` returned
+                .waiting => {
+                    const remaining = deadline.toDurationFromNow(io) orelse continue;
+                    if (remaining.raw.nanoseconds <= 0) return error.Timeout;
+                },
+                .is_set => return,
+            }
         }
     }
 
