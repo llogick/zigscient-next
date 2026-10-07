@@ -7118,14 +7118,15 @@ pub const WipFunction = struct {
 
     pub fn conv(
         self: *WipFunction,
-        signedness: Instruction.Cast.Signedness,
+        val_signedness: Instruction.Cast.Signedness,
         val: Value,
+        ty_signedness: Instruction.Cast.Signedness,
         ty: Type,
         name: []const u8,
     ) Allocator.Error!Value {
         const val_ty = val.typeOfWip(self);
         if (val_ty == ty) return val;
-        return self.cast(self.builder.convTag(signedness, val_ty, ty), val, ty, name);
+        return self.cast(self.builder.convTag(val_signedness, val_ty, ty_signedness, ty), val, ty, name);
     }
 
     pub fn cast(
@@ -12879,8 +12880,9 @@ fn noCfiConstAssumeCapacity(self: *Builder, function: Function.Index) Constant {
 
 fn convTag(
     self: *Builder,
-    signedness: Constant.Cast.Signedness,
+    val_signedness: Constant.Cast.Signedness,
     val_ty: Type,
+    ty_signedness: Constant.Cast.Signedness,
     ty: Type,
 ) Function.Instruction.Tag {
     assert(val_ty != ty);
@@ -12891,7 +12893,7 @@ fn convTag(
                 .eq => unreachable,
                 .gt => .fptrunc,
             },
-            .integer => switch (signedness) {
+            .integer => switch (ty_signedness) {
                 .unsigned => .fptoui,
                 .signed => .fptosi,
                 .unneeded => unreachable,
@@ -12899,21 +12901,24 @@ fn convTag(
             else => unreachable,
         },
         .integer => switch (ty.scalarTag(self)) {
-            .simple => switch (signedness) {
+            .simple => switch (val_signedness) {
                 .unsigned => .uitofp,
                 .signed => .sitofp,
                 .unneeded => unreachable,
             },
             .integer => switch (std.math.order(val_ty.scalarBits(self), ty.scalarBits(self))) {
-                .lt => switch (signedness) {
+                .lt => switch (val_signedness) {
                     .unsigned => .zext,
                     .signed => .sext,
                     .unneeded => unreachable,
                 },
                 .eq => unreachable,
-                .gt => switch (signedness) {
+                .gt => switch (ty_signedness) {
                     .unsigned => .@"trunc nuw",
-                    .signed => .@"trunc nsw",
+                    .signed => switch (val_signedness) {
+                        .unsigned => .@"trunc nuw nsw",
+                        .signed, .unneeded => .@"trunc nsw",
+                    },
                     .unneeded => .trunc,
                 },
             },

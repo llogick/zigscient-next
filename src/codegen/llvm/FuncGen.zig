@@ -1474,6 +1474,7 @@ fn lowerSwitchDispatch(
         const table_index = try self.wip.conv(
             .unsigned,
             try self.wip.bin(.@"sub nuw", cond, jmp_table.min.toValue(), ""),
+            .unsigned,
             try o.lowerType(.usize, .as_value),
             "",
         );
@@ -2078,7 +2079,7 @@ fn airFloatFromInt(fg: *FuncGen, inst: Air.Inst.Index) TodoError!Builder.Value {
     const target = zcu.getTarget();
 
     if (intrinsicsAllowed(.compiler_rt, dest_scalar_ty, target))
-        return fg.wip.conv(.fromStdLang(operand_scalar_info.signedness), operand, try o.lowerType(dest_ty, .as_value), "");
+        return fg.wip.conv(.fromStdLang(operand_scalar_info.signedness), operand, .unneeded, try o.lowerType(dest_ty, .as_value), "");
 
     const rt_int_ty = compilerRtPromoteInt(operand_scalar_info) orelse {
         return fg.todo("float_from_int on {d} bit integer", .{operand_scalar_info.bits});
@@ -2088,6 +2089,7 @@ fn airFloatFromInt(fg: *FuncGen, inst: Air.Inst.Index) TodoError!Builder.Value {
     const extended = try fg.wip.conv(
         .fromStdLang(operand_scalar_info.signedness),
         operand,
+        .fromStdLang(operand_scalar_info.signedness),
         if (vector_len) |len|
             try o.builder.vectorType(.normal, len, rt_llvm_int_ty)
         else
@@ -2132,7 +2134,7 @@ fn airIntFromFloat(
 
     if (intrinsicsAllowed(.compiler_rt, operand_scalar_ty, target)) {
         // TODO set fast math flag
-        return fg.wip.conv(.fromStdLang(dest_scalar_info.signedness), operand, dest_llvm_ty, "");
+        return fg.wip.conv(.unneeded, operand, .fromStdLang(dest_scalar_info.signedness), dest_llvm_ty, "");
     }
 
     const rt_int_ty = compilerRtPromoteInt(dest_scalar_info) orelse {
@@ -4347,7 +4349,7 @@ fn airShlWithOverflow(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Buil
     const dest_ty = self.typeOfIndex(inst);
     assert(isByRef(dest_ty, zcu)); // auto structs are by-ref
 
-    const casted_rhs = try self.wip.conv(.unsigned, rhs, try o.lowerType(lhs_ty, .as_value), "");
+    const casted_rhs = try self.wip.conv(.unsigned, rhs, .unsigned, try o.lowerType(lhs_ty, .as_value), "");
 
     const result = try self.wip.bin(.shl, lhs, casted_rhs, "");
     const reconstructed = try self.wip.bin(if (lhs_scalar_ty.isSignedInt(zcu))
@@ -4414,7 +4416,7 @@ fn airShlExact(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Val
     }
     const lhs_scalar_ty = lhs_ty.scalarType(zcu);
 
-    const casted_rhs = try self.wip.conv(.unsigned, rhs, try o.lowerType(lhs_ty, .as_value), "");
+    const casted_rhs = try self.wip.conv(.unsigned, rhs, .unsigned, try o.lowerType(lhs_ty, .as_value), "");
     return self.wip.bin(if (lhs_scalar_ty.isSignedInt(zcu))
         .@"shl nsw"
     else
@@ -4435,7 +4437,7 @@ fn airShl(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Value {
         // features which we do not use. Therefore this branch is currently impossible.
         unreachable;
     }
-    const casted_rhs = try self.wip.conv(.unsigned, rhs, try o.lowerType(lhs_ty, .as_value), "");
+    const casted_rhs = try self.wip.conv(.unsigned, rhs, .unsigned, try o.lowerType(lhs_ty, .as_value), "");
     return self.wip.bin(.shl, lhs, casted_rhs, "");
 }
 
@@ -4471,7 +4473,7 @@ fn airShlSat(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Value
             .unsigned => .@"ushl.sat",
         },
         &.{llvm_lhs_ty},
-        &.{ lhs, try self.wip.conv(.unsigned, rhs, llvm_lhs_ty, "") },
+        &.{ lhs, try self.wip.conv(.unsigned, rhs, .unsigned, llvm_lhs_ty, "") },
         "",
     );
 
@@ -4537,7 +4539,7 @@ fn airShr(self: *FuncGen, inst: Air.Inst.Index, is_exact: bool) Allocator.Error!
     }
     const lhs_scalar_ty = lhs_ty.scalarType(zcu);
 
-    const casted_rhs = try self.wip.conv(.unsigned, rhs, try o.lowerType(lhs_ty, .as_value), "");
+    const casted_rhs = try self.wip.conv(.unsigned, rhs, .unsigned, try o.lowerType(lhs_ty, .as_value), "");
     const is_signed_int = lhs_scalar_ty.isSignedInt(zcu);
 
     return self.wip.bin(if (is_exact)
@@ -4576,14 +4578,13 @@ fn airIntCast(fg: *FuncGen, inst: Air.Inst.Index, safety: bool) Allocator.Error!
     const operand = try fg.resolveInst(ty_op.operand);
     const operand_ty = fg.typeOf(ty_op.operand);
     const operand_info = operand_ty.intInfo(zcu);
+    const dest_info = dest_ty.intInfo(zcu);
 
     const dest_is_enum = dest_ty.zigTypeTag(zcu) == .@"enum";
 
     bounds_check: {
         const dest_scalar = dest_ty.scalarType(zcu);
         const operand_scalar = operand_ty.scalarType(zcu);
-
-        const dest_info = dest_ty.intInfo(zcu);
 
         const have_min_check, const have_max_check = c: {
             const dest_pos_bits = dest_info.bits - @intFromBool(dest_info.signedness == .signed);
@@ -4649,10 +4650,13 @@ fn airIntCast(fg: *FuncGen, inst: Air.Inst.Index, safety: bool) Allocator.Error!
         }
     }
 
-    const result = try fg.wip.conv(switch (operand_info.signedness) {
-        .signed => .signed,
-        .unsigned => .unsigned,
-    }, operand, dest_llvm_ty, "");
+    const result = try fg.wip.conv(
+        .fromStdLang(operand_info.signedness),
+        operand,
+        .fromStdLang(dest_info.signedness),
+        dest_llvm_ty,
+        "",
+    );
 
     if (safety and dest_is_enum and !dest_ty.isNonexhaustiveEnum(zcu)) {
         const llvm_fn = try o.getIsNamedEnumValueFunction(dest_ty);
@@ -5105,7 +5109,7 @@ fn buildAlloca(
 
     // The pointer returned from this function should have the generic address space,
     // if this isn't the case then cast it to the generic address space.
-    return fg.wip.conv(.unneeded, alloca, .ptr, "");
+    return fg.wip.conv(.unneeded, alloca, .unneeded, .ptr, "");
 }
 
 fn airStore(fg: *FuncGen, inst: Air.Inst.Index, safety: bool) Allocator.Error!Builder.Value {
@@ -5412,8 +5416,8 @@ fn airCmpxchg(
         // operand needs widening and truncating
         const signedness: Builder.Function.Instruction.Cast.Signedness =
             if (operand_ty.isSignedInt(zcu)) .signed else .unsigned;
-        expected_value = try self.wip.conv(signedness, expected_value, llvm_abi_ty, "");
-        new_value = try self.wip.conv(signedness, new_value, llvm_abi_ty, "");
+        expected_value = try self.wip.conv(signedness, expected_value, signedness, llvm_abi_ty, "");
+        new_value = try self.wip.conv(signedness, new_value, signedness, llvm_abi_ty, "");
     }
 
     self.maybeMarkAllowZeroAccess(ptr_ty.ptrInfo(zcu));
@@ -5588,9 +5592,12 @@ fn airAtomicStore(
 
     if (llvm_abi_ty != .none) {
         // operand needs widening
+        const signedness: Builder.Function.Instruction.Cast.Signedness =
+            if (operand_ty.isSignedInt(zcu)) .signed else .unsigned;
         element = try self.wip.conv(
-            if (operand_ty.isSignedInt(zcu)) .signed else .unsigned,
+            signedness,
             element,
+            signedness,
             llvm_abi_ty,
             "",
         );
@@ -5708,10 +5715,7 @@ fn lowerMemset(
             }
             if (elem_ty.isAbiInt(zcu)) {
                 const info = elem_ty.intInfo(zcu);
-                break :byte try self.wip.conv(switch (info.signedness) {
-                    .unsigned => .unsigned,
-                    .signed => .signed,
-                }, value, .i8, "");
+                break :byte try self.wip.conv(.fromStdLang(info.signedness), value, .fromStdLang(info.signedness), .i8, "");
             }
             if (elem_ty.toIntern() == .bool_type) {
                 break :byte try self.wip.cast(.zext, value, .i8, "");
@@ -5891,7 +5895,7 @@ fn airClzCtz(self: *FuncGen, inst: Air.Inst.Index, intrinsic: Builder.Intrinsic)
         &.{ operand, .false },
         "",
     );
-    return self.wip.conv(.unsigned, result, try o.lowerType(inst_ty, .as_value), "");
+    return self.wip.conv(.unsigned, result, .unsigned, try o.lowerType(inst_ty, .as_value), "");
 }
 
 fn airBitOp(self: *FuncGen, inst: Air.Inst.Index, intrinsic: Builder.Intrinsic) Allocator.Error!Builder.Value {
@@ -5909,7 +5913,7 @@ fn airBitOp(self: *FuncGen, inst: Air.Inst.Index, intrinsic: Builder.Intrinsic) 
         &.{operand},
         "",
     );
-    return self.wip.conv(.unsigned, result, try o.lowerType(inst_ty, .as_value), "");
+    return self.wip.conv(.unsigned, result, .unsigned, try o.lowerType(inst_ty, .as_value), "");
 }
 
 fn airByteSwap(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Value {
@@ -5943,7 +5947,7 @@ fn airByteSwap(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Val
 
     const result =
         try self.wip.callIntrinsic(.normal, .none, .bswap, &.{llvm_operand_ty}, &.{operand}, "");
-    return self.wip.conv(.unsigned, result, try o.lowerType(inst_ty, .as_value), "");
+    return self.wip.conv(.unsigned, result, .unsigned, try o.lowerType(inst_ty, .as_value), "");
 }
 
 fn airErrorSetHasValue(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Value {
@@ -6022,7 +6026,7 @@ fn airErrorName(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Va
     const slice_ty = self.typeOfIndex(inst);
 
     // If operand is small (e.g. `u8`), then signedness becomes a problem -- GEP always treats the index as signed.
-    const operand_usize = try self.wip.conv(.unsigned, operand, try o.lowerType(.usize, .as_value), "");
+    const operand_usize = try self.wip.conv(.unsigned, operand, .unsigned, try o.lowerType(.usize, .as_value), "");
 
     const error_name_table_ptr = try o.getErrorNameTable();
     const error_name_ptr = try self.ptraddScaled(error_name_table_ptr.toValue(&o.builder), operand_usize, slice_ty.abiSize(zcu));
@@ -6471,7 +6475,7 @@ fn airAggregateInit(fg: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.
                         try fg.wip.cast(.bitcast, non_int_val, small_int_ty, "");
                     const shift_rhs = try o.builder.intValue(int_ty, running_bits);
                     const extended_int_val =
-                        try fg.wip.conv(.unsigned, small_int_val, int_ty, "");
+                        try fg.wip.conv(.unsigned, small_int_val, .unsigned, int_ty, "");
                     const shifted = try fg.wip.bin(.shl, extended_int_val, shift_rhs, "");
                     running_int = try fg.wip.bin(.@"or", running_int, shifted, "");
                     running_bits += ty_bit_size;

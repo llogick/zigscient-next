@@ -1,0 +1,104 @@
+#skip amdgcn-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-amdpal-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-mesa3d-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx64-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx64-nvcl-none-baseline-whole-llvm-lld-pic
+
+#obj {
+--name test -fno-lld -fno-new-linker -ofmt=llvmir
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(x: i32) u8 {
+    @setRuntimeSafety(false);
+    return @intCast(x);
+}
+#}
+#update "narrow signed to unsigned"
+#check llvm {
+define #...@test.entry(i32 #...%0) #...{
+#...
+  %#... = trunc nuw i32 %0 to i8#...
+#...
+}
+#}
+
+#write test.zig {
+export fn entry(x: u16) i8 {
+    @setRuntimeSafety(false);
+    return @intCast(x);
+}
+#}
+#update "narrow unsigned to signed"
+#check llvm {
+define #...@test.entry(i16 #...%0) #...{
+#...
+  %#... = trunc nuw nsw i16 %0 to i8#...
+#...
+}
+#}
+
+#write test.zig {
+export fn entry(x: i32) i16 {
+    @setRuntimeSafety(false);
+    return @intCast(x);
+}
+#}
+#update "narrow signed to signed"
+#check llvm {
+define #...@test.entry(i32 #...%0) #...{
+#...
+  %#... = trunc nsw i32 %0 to i16#...
+#...
+}
+#}
+
+#write test.zig {
+export fn entry(x: u64) u16 {
+    @setRuntimeSafety(false);
+    return @intCast(x);
+}
+#}
+#update "narrow unsigned to unsigned"
+#check llvm {
+define #...@test.entry(#...) #...{
+#...
+  %#... = trunc nuw i64 %#... to i16#...
+#...
+}
+#}
+
+#write test.zig {
+export fn entry(x: i8) u16 {
+    @setRuntimeSafety(false);
+    return @intCast(x);
+}
+#}
+#update "widen signed to unsigned"
+#check llvm {
+define #...@test.entry(i8 #...%0) #...{
+#...
+  %#... = sext i8 %0 to i16#...
+#...
+}
+#}
+
+#write test.zig {
+export fn entry(x: u8) i32 {
+    @setRuntimeSafety(false);
+    return @intCast(x);
+}
+#}
+#update "widen unsigned to signed"
+#check llvm {
+define #...@test.entry(i8 #...%0) #...{
+#...
+  %#... = zext i8 %0 to i32#...
+#...
+}
+#}
