@@ -1867,6 +1867,9 @@ pub const Dependency = struct {
             }
         }
         return found orelse {
+            if (d.builder.graph.unlazy_deps.count() != 0) {
+                d.builder.serializeConfigurationExiting();
+            }
             for (d.builder.install_tls.step.dependencies.items) |dep_step| {
                 const inst = dep_step.cast(Step.InstallArtifact) orelse continue;
                 log.info("available artifact: {q}", .{inst.artifact.name});
@@ -1877,18 +1880,27 @@ pub const Dependency = struct {
 
     pub fn module(d: *Dependency, name: []const u8) *Module {
         return d.builder.modules.get(name) orelse {
+            if (d.builder.graph.unlazy_deps.count() != 0) {
+                d.builder.serializeConfigurationExiting();
+            }
             panic("unable to find module {q}", .{name});
         };
     }
 
     pub fn namedWriteFiles(d: *Dependency, name: []const u8) *Step.WriteFile {
         return d.builder.named_writefiles.get(name) orelse {
+            if (d.builder.graph.unlazy_deps.count() != 0) {
+                d.builder.serializeConfigurationExiting();
+            }
             panic("unable to find named writefiles {q}", .{name});
         };
     }
 
     pub fn namedLazyPath(d: *Dependency, name: []const u8) LazyPath {
         return d.builder.named_lazy_paths.get(name) orelse {
+            if (d.builder.graph.unlazy_deps.count() != 0) {
+                d.builder.serializeConfigurationExiting();
+            }
             panic("unable to find named lazypath {q}", .{name});
         };
     }
