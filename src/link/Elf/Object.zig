@@ -502,6 +502,13 @@ fn parseEhFrame(
                     // this can happen for object files built with -r flag by the linker.
                     continue;
                 }
+                if (self.relocs.items[@intCast(rel_start + rel_range.start)].r_sym() == 0) {
+                    // LLD replaces relocations for discarded COMDAT sections with
+                    // NONE relocations referencing the null symbol. These FDEs no
+                    // longer have an associated atom either.
+                    // https://github.com/llvm/llvm-project/blob/b1dd93c6af666442840896e0f30c1506e587b6db/lld/ELF/InputSection.cpp#L506-L526
+                    continue;
+                }
                 try self.fdes.append(gpa, .{
                     .offset = data_start + rec.offset,
                     .size = rec.size,
