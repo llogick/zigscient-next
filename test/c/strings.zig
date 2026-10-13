@@ -26,9 +26,8 @@ fn testFfs(comptime T: type) !void {
     try testing.expectEqual(0, ffs(0));
 
     for (0..@bitSizeOf(T)) |i| {
-        const bit = @as(T, 1) << @intCast(i);
-
-        try testing.expectEqual(@as(T, @intCast(i + 1)), ffs(bit));
+        try testing.expectEqual(@as(c_int, @intCast(i + 1)), ffs(@as(T, 1) << @intCast(i)));
+        try testing.expectEqual(@as(c_int, @intCast(i + 1)), ffs(@as(T, -1) << @intCast(i)));
     }
 }
 
@@ -41,9 +40,6 @@ test "ffs" {
     if (builtin.target.os.tag == .netbsd) return; // no ffsl/ffsll until 11
 
     try testFfs(c_long);
-
-    if (@sizeOf(usize) == 4) return error.SkipZigTest; // TODO
-
     try testFfs(c_longlong);
 }
 

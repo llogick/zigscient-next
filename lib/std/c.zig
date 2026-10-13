@@ -11377,8 +11377,8 @@ pub const wcsdup = switch (builtin.abi) {
 };
 
 pub extern "c" fn ffs(i: c_int) c_int;
-pub extern "c" fn ffsl(i: c_long) c_long;
-pub extern "c" fn ffsll(i: c_longlong) c_longlong;
+pub extern "c" fn ffsl(i: c_long) c_int;
+pub extern "c" fn ffsll(i: c_longlong) c_int;
 
 pub extern "c" fn erand48(xsubi: *[3]c_ushort) f64;
 pub extern "c" fn jrand48(xsubi: *[3]c_ushort) c_long;

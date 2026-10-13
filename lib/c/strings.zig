@@ -44,19 +44,19 @@ fn rindex(str: [*:0]const c_char, value: c_int) callconv(.c) ?[*:0]c_char {
     return @constCast(str[std.mem.findScalarLast(u8, std.mem.span(@as([*:0]const u8, @ptrCast(str))), @truncate(@as(c_uint, @bitCast(value)))) orelse return null ..]);
 }
 
-fn firstBitSet(comptime T: type, value: T) T {
-    return @bitSizeOf(T) - @clz(value);
+fn firstBitSet(comptime T: type, value: T) c_int {
+    return if (value == 0) 0 else @as(c_int, @ctz(value)) + 1;
 }
 
 fn ffs(i: c_int) callconv(.c) c_int {
     return firstBitSet(c_int, i);
 }
 
-fn ffsl(i: c_long) callconv(.c) c_long {
+fn ffsl(i: c_long) callconv(.c) c_int {
     return firstBitSet(c_long, i);
 }
 
-fn ffsll(i: c_longlong) callconv(.c) c_longlong {
+fn ffsll(i: c_longlong) callconv(.c) c_int {
     return firstBitSet(c_longlong, i);
 }
 
