@@ -897,7 +897,7 @@ pub fn main(init: process.Init.Minimal) !void {
                 try s.serveStringMessage(.bsp_configuration, try arena.print("{f}", .{scanned_config.path}));
 
                 var watch: ?Watch = null;
-                defer if (watch) |*w| w.deinit();
+                defer if (Watch.have_impl) if (watch) |*w| w.deinit();
 
                 const Event = union(enum) {
                     message: Reader.Error!Client.Message.Header,
@@ -963,6 +963,7 @@ pub fn main(init: process.Init.Minimal) !void {
                                     });
                                     is_fs_watching = true;
                                 } else if (watch) |*w| {
+                                    if (!Watch.have_impl) unreachable;
                                     w.deinit();
                                     watch = null;
                                 }
@@ -1019,7 +1020,7 @@ pub fn main(init: process.Init.Minimal) !void {
                 if (!Watch.have_impl) fatal("--watch not yet implemented for {t}", .{native_os});
                 break :w try .init(&maker);
             };
-            defer if (watch_flag) w.deinit();
+            defer if (Watch.have_impl and watch_flag) w.deinit();
 
             if (web_server) |ws| try ws.updateConfiguration(&maker);
 
