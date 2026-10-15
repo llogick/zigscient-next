@@ -17,7 +17,6 @@
 //   twos_complement_eval z = let x1 := z[0] + (z[1] << 64) + (z[2] << 128) + (z[3] << 192) in
 //                            if x1 & (2^256-1) < 2^255 then x1 & (2^256-1) else (x1 & (2^256-1)) - 2^256
 
-const std = @import("std");
 const mode = @import("builtin").mode; // Checked arithmetic is disabled in non-debug modes to avoid side channels
 
 // The type MontgomeryDomainFieldElement is a field element in the Montgomery domain.
@@ -28,80 +27,70 @@ pub const MontgomeryDomainFieldElement = [4]u64;
 // Bounds: [[0x0 ~> 0xffffffffffffffff], [0x0 ~> 0xffffffffffffffff], [0x0 ~> 0xffffffffffffffff], [0x0 ~> 0xffffffffffffffff]]
 pub const NonMontgomeryDomainFieldElement = [4]u64;
 
-/// The function addcarryxU64 is an addition with carry.
-///
-/// Postconditions:
-///   out1 = (arg1 + arg2 + arg3) mod 2^64
-///   out2 = ⌊(arg1 + arg2 + arg3) / 2^64⌋
-///
-/// Input Bounds:
-///   arg1: [0x0 ~> 0x1]
-///   arg2: [0x0 ~> 0xffffffffffffffff]
-///   arg3: [0x0 ~> 0xffffffffffffffff]
-/// Output Bounds:
-///   out1: [0x0 ~> 0xffffffffffffffff]
-///   out2: [0x0 ~> 0x1]
+/// Add two limbs and a carry bit, returning the sum modulo 2^64 and the carry bit.
 fn addcarryxU64(out1: *u64, out2: *u1, arg1: u1, arg2: u64, arg3: u64) void {
-    const x = @as(u128, arg2) +% arg3 +% arg1;
-    out1.* = @truncate(x);
-    out2.* = @truncate(x >> 64);
+    @setRuntimeSafety(mode == .debug);
+
+    const x = @addWithOverflow(arg2, arg3);
+    const y = @addWithOverflow(x[0], arg1);
+    out1.* = y[0];
+    out2.* = x[1] | y[1];
 }
 
-/// The function subborrowxU64 is a subtraction with borrow.
-///
-/// Postconditions:
-///   out1 = (-arg1 + arg2 + -arg3) mod 2^64
-///   out2 = -⌊(-arg1 + arg2 + -arg3) / 2^64⌋
-///
-/// Input Bounds:
-///   arg1: [0x0 ~> 0x1]
-///   arg2: [0x0 ~> 0xffffffffffffffff]
-///   arg3: [0x0 ~> 0xffffffffffffffff]
-/// Output Bounds:
-///   out1: [0x0 ~> 0xffffffffffffffff]
-///   out2: [0x0 ~> 0x1]
+/// Subtract two limbs and a borrow bit, returning the difference modulo 2^64 and the borrow bit.
 fn subborrowxU64(out1: *u64, out2: *u1, arg1: u1, arg2: u64, arg3: u64) void {
-    const x = @as(u128, arg2) -% arg3 -% arg1;
-    out1.* = @truncate(x);
-    out2.* = @truncate(x >> 64);
+    @setRuntimeSafety(mode == .debug);
+
+    const x = @subWithOverflow(arg2, arg3);
+    const y = @subWithOverflow(x[0], arg1);
+    out1.* = y[0];
+    out2.* = x[1] | y[1];
 }
 
-/// The function mulxU64 is a multiplication, returning the full double-width result.
-///
-/// Postconditions:
-///   out1 = (arg1 * arg2) mod 2^64
-///   out2 = ⌊arg1 * arg2 / 2^64⌋
-///
-/// Input Bounds:
-///   arg1: [0x0 ~> 0xffffffffffffffff]
-///   arg2: [0x0 ~> 0xffffffffffffffff]
-/// Output Bounds:
-///   out1: [0x0 ~> 0xffffffffffffffff]
-///   out2: [0x0 ~> 0xffffffffffffffff]
+/// Multiply two limbs, returning the low and high halves of the product.
 fn mulxU64(out1: *u64, out2: *u64, arg1: u64, arg2: u64) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x = @as(u128, arg1) * @as(u128, arg2);
-    out1.* = @as(u64, @truncate(x));
-    out2.* = @as(u64, @truncate(x >> 64));
+    const x = @as(u128, arg1) * arg2;
+    out1.* = @truncate(x);
+    out2.* = @intCast(x >> 64);
 }
 
-/// The function cmovznzU64 is a single-word conditional move.
-///
-/// Postconditions:
-///   out1 = (if arg1 = 0 then arg2 else arg3)
-///
-/// Input Bounds:
-///   arg1: [0x0 ~> 0x1]
-///   arg2: [0x0 ~> 0xffffffffffffffff]
-///   arg3: [0x0 ~> 0xffffffffffffffff]
-/// Output Bounds:
-///   out1: [0x0 ~> 0xffffffffffffffff]
+/// Keep selection masks opaque to the optimizer without adding instructions.
+fn selectionMaskU64(arg1: u1) u64 {
+    @setRuntimeSafety(mode == .debug);
+
+    const value: u64 = 0 -% @as(u64, arg1);
+    if (@inComptime()) return value;
+    switch (@import("builtin").zig_backend) {
+        .stage2_c, .stage2_wasm => return value,
+        else => {},
+    }
+    if (@bitSizeOf(u64) <= @bitSizeOf(usize)) {
+        return asm (""
+            : [mask] "=r" (-> u64),
+            : [value] "0" (value),
+        );
+    }
+    var mask: u64 = 0;
+    inline for (0..@divExact(@bitSizeOf(u64), @bitSizeOf(usize))) |i| {
+        const shift = i * @bitSizeOf(usize);
+        const chunk: usize = @truncate(value >> shift);
+        const part = asm (""
+            : [mask] "=r" (-> usize),
+            : [value] "0" (chunk),
+        );
+        mask |= @as(u64, part) << shift;
+    }
+    return mask;
+}
+
+/// Select arg2 when arg1 is zero and arg3 otherwise, using a bit mask.
 fn cmovznzU64(out1: *u64, arg1: u1, arg2: u64, arg3: u64) void {
     @setRuntimeSafety(mode == .debug);
 
-    const mask = 0 -% @as(u64, arg1);
-    out1.* = (mask & arg3) | ((~mask) & arg2);
+    const mask = selectionMaskU64(arg1);
+    out1.* = arg2 ^ ((arg2 ^ arg3) & mask);
 }
 
 /// The function mul multiplies two field elements in the Montgomery domain.
@@ -116,22 +105,22 @@ fn cmovznzU64(out1: *u64, arg1: u1, arg2: u64, arg3: u64) void {
 pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldElement, arg2: MontgomeryDomainFieldElement) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x1 = (arg1[1]);
-    const x2 = (arg1[2]);
-    const x3 = (arg1[3]);
-    const x4 = (arg1[0]);
+    const x1: u64 = arg1[1];
+    const x2: u64 = arg1[2];
+    const x3: u64 = arg1[3];
+    const x4: u64 = arg1[0];
     var x5: u64 = undefined;
     var x6: u64 = undefined;
-    mulxU64(&x5, &x6, x4, (arg2[3]));
+    mulxU64(&x5, &x6, x4, arg2[3]);
     var x7: u64 = undefined;
     var x8: u64 = undefined;
-    mulxU64(&x7, &x8, x4, (arg2[2]));
+    mulxU64(&x7, &x8, x4, arg2[2]);
     var x9: u64 = undefined;
     var x10: u64 = undefined;
-    mulxU64(&x9, &x10, x4, (arg2[1]));
+    mulxU64(&x9, &x10, x4, arg2[1]);
     var x11: u64 = undefined;
     var x12: u64 = undefined;
-    mulxU64(&x11, &x12, x4, (arg2[0]));
+    mulxU64(&x11, &x12, x4, arg2[0]);
     var x13: u64 = undefined;
     var x14: u1 = undefined;
     addcarryxU64(&x13, &x14, 0x0, x12, x9);
@@ -141,7 +130,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x17: u64 = undefined;
     var x18: u1 = undefined;
     addcarryxU64(&x17, &x18, x16, x8, x5);
-    const x19 = (@as(u64, x18) + x6);
+    const x19: u64 = (x18 + x6);
     var x20: u64 = undefined;
     var x21: u64 = undefined;
     mulxU64(&x20, &x21, x11, 0xd838091dd2253531);
@@ -166,7 +155,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x34: u64 = undefined;
     var x35: u1 = undefined;
     addcarryxU64(&x34, &x35, x33, x25, x22);
-    const x36 = (@as(u64, x35) + x23);
+    const x36: u64 = (x35 + x23);
     var x37: u64 = undefined;
     var x38: u1 = undefined;
     addcarryxU64(&x37, &x38, 0x0, x11, x28);
@@ -184,16 +173,16 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     addcarryxU64(&x45, &x46, x44, x19, x36);
     var x47: u64 = undefined;
     var x48: u64 = undefined;
-    mulxU64(&x47, &x48, x1, (arg2[3]));
+    mulxU64(&x47, &x48, x1, arg2[3]);
     var x49: u64 = undefined;
     var x50: u64 = undefined;
-    mulxU64(&x49, &x50, x1, (arg2[2]));
+    mulxU64(&x49, &x50, x1, arg2[2]);
     var x51: u64 = undefined;
     var x52: u64 = undefined;
-    mulxU64(&x51, &x52, x1, (arg2[1]));
+    mulxU64(&x51, &x52, x1, arg2[1]);
     var x53: u64 = undefined;
     var x54: u64 = undefined;
-    mulxU64(&x53, &x54, x1, (arg2[0]));
+    mulxU64(&x53, &x54, x1, arg2[0]);
     var x55: u64 = undefined;
     var x56: u1 = undefined;
     addcarryxU64(&x55, &x56, 0x0, x54, x51);
@@ -203,7 +192,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x59: u64 = undefined;
     var x60: u1 = undefined;
     addcarryxU64(&x59, &x60, x58, x50, x47);
-    const x61 = (@as(u64, x60) + x48);
+    const x61: u64 = (x60 + x48);
     var x62: u64 = undefined;
     var x63: u1 = undefined;
     addcarryxU64(&x62, &x63, 0x0, x39, x53);
@@ -218,7 +207,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     addcarryxU64(&x68, &x69, x67, x45, x59);
     var x70: u64 = undefined;
     var x71: u1 = undefined;
-    addcarryxU64(&x70, &x71, x69, @as(u64, x46), x61);
+    addcarryxU64(&x70, &x71, x69, x46, x61);
     var x72: u64 = undefined;
     var x73: u64 = undefined;
     mulxU64(&x72, &x73, x62, 0xd838091dd2253531);
@@ -243,7 +232,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x86: u64 = undefined;
     var x87: u1 = undefined;
     addcarryxU64(&x86, &x87, x85, x77, x74);
-    const x88 = (@as(u64, x87) + x75);
+    const x88: u64 = (x87 + x75);
     var x89: u64 = undefined;
     var x90: u1 = undefined;
     addcarryxU64(&x89, &x90, 0x0, x62, x80);
@@ -259,19 +248,19 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x97: u64 = undefined;
     var x98: u1 = undefined;
     addcarryxU64(&x97, &x98, x96, x70, x88);
-    const x99 = (@as(u64, x98) + @as(u64, x71));
+    const x99: u64 = (@as(u64, x98) + x71);
     var x100: u64 = undefined;
     var x101: u64 = undefined;
-    mulxU64(&x100, &x101, x2, (arg2[3]));
+    mulxU64(&x100, &x101, x2, arg2[3]);
     var x102: u64 = undefined;
     var x103: u64 = undefined;
-    mulxU64(&x102, &x103, x2, (arg2[2]));
+    mulxU64(&x102, &x103, x2, arg2[2]);
     var x104: u64 = undefined;
     var x105: u64 = undefined;
-    mulxU64(&x104, &x105, x2, (arg2[1]));
+    mulxU64(&x104, &x105, x2, arg2[1]);
     var x106: u64 = undefined;
     var x107: u64 = undefined;
-    mulxU64(&x106, &x107, x2, (arg2[0]));
+    mulxU64(&x106, &x107, x2, arg2[0]);
     var x108: u64 = undefined;
     var x109: u1 = undefined;
     addcarryxU64(&x108, &x109, 0x0, x107, x104);
@@ -281,7 +270,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x112: u64 = undefined;
     var x113: u1 = undefined;
     addcarryxU64(&x112, &x113, x111, x103, x100);
-    const x114 = (@as(u64, x113) + x101);
+    const x114: u64 = (x113 + x101);
     var x115: u64 = undefined;
     var x116: u1 = undefined;
     addcarryxU64(&x115, &x116, 0x0, x91, x106);
@@ -321,7 +310,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x139: u64 = undefined;
     var x140: u1 = undefined;
     addcarryxU64(&x139, &x140, x138, x130, x127);
-    const x141 = (@as(u64, x140) + x128);
+    const x141: u64 = (x140 + x128);
     var x142: u64 = undefined;
     var x143: u1 = undefined;
     addcarryxU64(&x142, &x143, 0x0, x115, x133);
@@ -337,19 +326,19 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x150: u64 = undefined;
     var x151: u1 = undefined;
     addcarryxU64(&x150, &x151, x149, x123, x141);
-    const x152 = (@as(u64, x151) + @as(u64, x124));
+    const x152: u64 = (@as(u64, x151) + x124);
     var x153: u64 = undefined;
     var x154: u64 = undefined;
-    mulxU64(&x153, &x154, x3, (arg2[3]));
+    mulxU64(&x153, &x154, x3, arg2[3]);
     var x155: u64 = undefined;
     var x156: u64 = undefined;
-    mulxU64(&x155, &x156, x3, (arg2[2]));
+    mulxU64(&x155, &x156, x3, arg2[2]);
     var x157: u64 = undefined;
     var x158: u64 = undefined;
-    mulxU64(&x157, &x158, x3, (arg2[1]));
+    mulxU64(&x157, &x158, x3, arg2[1]);
     var x159: u64 = undefined;
     var x160: u64 = undefined;
-    mulxU64(&x159, &x160, x3, (arg2[0]));
+    mulxU64(&x159, &x160, x3, arg2[0]);
     var x161: u64 = undefined;
     var x162: u1 = undefined;
     addcarryxU64(&x161, &x162, 0x0, x160, x157);
@@ -359,7 +348,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x165: u64 = undefined;
     var x166: u1 = undefined;
     addcarryxU64(&x165, &x166, x164, x156, x153);
-    const x167 = (@as(u64, x166) + x154);
+    const x167: u64 = (x166 + x154);
     var x168: u64 = undefined;
     var x169: u1 = undefined;
     addcarryxU64(&x168, &x169, 0x0, x144, x159);
@@ -399,7 +388,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x192: u64 = undefined;
     var x193: u1 = undefined;
     addcarryxU64(&x192, &x193, x191, x183, x180);
-    const x194 = (@as(u64, x193) + x181);
+    const x194: u64 = (x193 + x181);
     var x195: u64 = undefined;
     var x196: u1 = undefined;
     addcarryxU64(&x195, &x196, 0x0, x168, x186);
@@ -415,7 +404,7 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x203: u64 = undefined;
     var x204: u1 = undefined;
     addcarryxU64(&x203, &x204, x202, x176, x194);
-    const x205 = (@as(u64, x204) + @as(u64, x177));
+    const x205: u64 = (@as(u64, x204) + x177);
     var x206: u64 = undefined;
     var x207: u1 = undefined;
     subborrowxU64(&x206, &x207, 0x0, x197, 0xfffffffefffffc2f);
@@ -432,13 +421,14 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     var x215: u1 = undefined;
     subborrowxU64(&x214, &x215, x213, x205, 0x0);
     var x216: u64 = undefined;
-    cmovznzU64(&x216, x215, x206, x197);
+    const x216_selection_mask = selectionMaskU64(x215);
+    x216 = x206 ^ ((x206 ^ x197) & x216_selection_mask);
     var x217: u64 = undefined;
-    cmovznzU64(&x217, x215, x208, x199);
+    x217 = x208 ^ ((x208 ^ x199) & x216_selection_mask);
     var x218: u64 = undefined;
-    cmovznzU64(&x218, x215, x210, x201);
+    x218 = x210 ^ ((x210 ^ x201) & x216_selection_mask);
     var x219: u64 = undefined;
-    cmovznzU64(&x219, x215, x212, x203);
+    x219 = x212 ^ ((x212 ^ x203) & x216_selection_mask);
     out1[0] = x216;
     out1[1] = x217;
     out1[2] = x218;
@@ -456,22 +446,22 @@ pub fn mul(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
 pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldElement) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x1 = (arg1[1]);
-    const x2 = (arg1[2]);
-    const x3 = (arg1[3]);
-    const x4 = (arg1[0]);
+    const x1: u64 = arg1[1];
+    const x2: u64 = arg1[2];
+    const x3: u64 = arg1[3];
+    const x4: u64 = arg1[0];
     var x5: u64 = undefined;
     var x6: u64 = undefined;
-    mulxU64(&x5, &x6, x4, (arg1[3]));
+    mulxU64(&x5, &x6, x4, arg1[3]);
     var x7: u64 = undefined;
     var x8: u64 = undefined;
-    mulxU64(&x7, &x8, x4, (arg1[2]));
+    mulxU64(&x7, &x8, x4, arg1[2]);
     var x9: u64 = undefined;
     var x10: u64 = undefined;
-    mulxU64(&x9, &x10, x4, (arg1[1]));
+    mulxU64(&x9, &x10, x4, arg1[1]);
     var x11: u64 = undefined;
     var x12: u64 = undefined;
-    mulxU64(&x11, &x12, x4, (arg1[0]));
+    mulxU64(&x11, &x12, x4, arg1[0]);
     var x13: u64 = undefined;
     var x14: u1 = undefined;
     addcarryxU64(&x13, &x14, 0x0, x12, x9);
@@ -481,7 +471,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x17: u64 = undefined;
     var x18: u1 = undefined;
     addcarryxU64(&x17, &x18, x16, x8, x5);
-    const x19 = (@as(u64, x18) + x6);
+    const x19: u64 = (x18 + x6);
     var x20: u64 = undefined;
     var x21: u64 = undefined;
     mulxU64(&x20, &x21, x11, 0xd838091dd2253531);
@@ -506,7 +496,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x34: u64 = undefined;
     var x35: u1 = undefined;
     addcarryxU64(&x34, &x35, x33, x25, x22);
-    const x36 = (@as(u64, x35) + x23);
+    const x36: u64 = (x35 + x23);
     var x37: u64 = undefined;
     var x38: u1 = undefined;
     addcarryxU64(&x37, &x38, 0x0, x11, x28);
@@ -524,16 +514,16 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     addcarryxU64(&x45, &x46, x44, x19, x36);
     var x47: u64 = undefined;
     var x48: u64 = undefined;
-    mulxU64(&x47, &x48, x1, (arg1[3]));
+    mulxU64(&x47, &x48, x1, arg1[3]);
     var x49: u64 = undefined;
     var x50: u64 = undefined;
-    mulxU64(&x49, &x50, x1, (arg1[2]));
+    mulxU64(&x49, &x50, x1, arg1[2]);
     var x51: u64 = undefined;
     var x52: u64 = undefined;
-    mulxU64(&x51, &x52, x1, (arg1[1]));
+    mulxU64(&x51, &x52, x1, arg1[1]);
     var x53: u64 = undefined;
     var x54: u64 = undefined;
-    mulxU64(&x53, &x54, x1, (arg1[0]));
+    mulxU64(&x53, &x54, x1, arg1[0]);
     var x55: u64 = undefined;
     var x56: u1 = undefined;
     addcarryxU64(&x55, &x56, 0x0, x54, x51);
@@ -543,7 +533,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x59: u64 = undefined;
     var x60: u1 = undefined;
     addcarryxU64(&x59, &x60, x58, x50, x47);
-    const x61 = (@as(u64, x60) + x48);
+    const x61: u64 = (x60 + x48);
     var x62: u64 = undefined;
     var x63: u1 = undefined;
     addcarryxU64(&x62, &x63, 0x0, x39, x53);
@@ -558,7 +548,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     addcarryxU64(&x68, &x69, x67, x45, x59);
     var x70: u64 = undefined;
     var x71: u1 = undefined;
-    addcarryxU64(&x70, &x71, x69, @as(u64, x46), x61);
+    addcarryxU64(&x70, &x71, x69, x46, x61);
     var x72: u64 = undefined;
     var x73: u64 = undefined;
     mulxU64(&x72, &x73, x62, 0xd838091dd2253531);
@@ -583,7 +573,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x86: u64 = undefined;
     var x87: u1 = undefined;
     addcarryxU64(&x86, &x87, x85, x77, x74);
-    const x88 = (@as(u64, x87) + x75);
+    const x88: u64 = (x87 + x75);
     var x89: u64 = undefined;
     var x90: u1 = undefined;
     addcarryxU64(&x89, &x90, 0x0, x62, x80);
@@ -599,19 +589,19 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x97: u64 = undefined;
     var x98: u1 = undefined;
     addcarryxU64(&x97, &x98, x96, x70, x88);
-    const x99 = (@as(u64, x98) + @as(u64, x71));
+    const x99: u64 = (@as(u64, x98) + x71);
     var x100: u64 = undefined;
     var x101: u64 = undefined;
-    mulxU64(&x100, &x101, x2, (arg1[3]));
+    mulxU64(&x100, &x101, x2, arg1[3]);
     var x102: u64 = undefined;
     var x103: u64 = undefined;
-    mulxU64(&x102, &x103, x2, (arg1[2]));
+    mulxU64(&x102, &x103, x2, arg1[2]);
     var x104: u64 = undefined;
     var x105: u64 = undefined;
-    mulxU64(&x104, &x105, x2, (arg1[1]));
+    mulxU64(&x104, &x105, x2, arg1[1]);
     var x106: u64 = undefined;
     var x107: u64 = undefined;
-    mulxU64(&x106, &x107, x2, (arg1[0]));
+    mulxU64(&x106, &x107, x2, arg1[0]);
     var x108: u64 = undefined;
     var x109: u1 = undefined;
     addcarryxU64(&x108, &x109, 0x0, x107, x104);
@@ -621,7 +611,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x112: u64 = undefined;
     var x113: u1 = undefined;
     addcarryxU64(&x112, &x113, x111, x103, x100);
-    const x114 = (@as(u64, x113) + x101);
+    const x114: u64 = (x113 + x101);
     var x115: u64 = undefined;
     var x116: u1 = undefined;
     addcarryxU64(&x115, &x116, 0x0, x91, x106);
@@ -661,7 +651,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x139: u64 = undefined;
     var x140: u1 = undefined;
     addcarryxU64(&x139, &x140, x138, x130, x127);
-    const x141 = (@as(u64, x140) + x128);
+    const x141: u64 = (x140 + x128);
     var x142: u64 = undefined;
     var x143: u1 = undefined;
     addcarryxU64(&x142, &x143, 0x0, x115, x133);
@@ -677,19 +667,19 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x150: u64 = undefined;
     var x151: u1 = undefined;
     addcarryxU64(&x150, &x151, x149, x123, x141);
-    const x152 = (@as(u64, x151) + @as(u64, x124));
+    const x152: u64 = (@as(u64, x151) + x124);
     var x153: u64 = undefined;
     var x154: u64 = undefined;
-    mulxU64(&x153, &x154, x3, (arg1[3]));
+    mulxU64(&x153, &x154, x3, arg1[3]);
     var x155: u64 = undefined;
     var x156: u64 = undefined;
-    mulxU64(&x155, &x156, x3, (arg1[2]));
+    mulxU64(&x155, &x156, x3, arg1[2]);
     var x157: u64 = undefined;
     var x158: u64 = undefined;
-    mulxU64(&x157, &x158, x3, (arg1[1]));
+    mulxU64(&x157, &x158, x3, arg1[1]);
     var x159: u64 = undefined;
     var x160: u64 = undefined;
-    mulxU64(&x159, &x160, x3, (arg1[0]));
+    mulxU64(&x159, &x160, x3, arg1[0]);
     var x161: u64 = undefined;
     var x162: u1 = undefined;
     addcarryxU64(&x161, &x162, 0x0, x160, x157);
@@ -699,7 +689,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x165: u64 = undefined;
     var x166: u1 = undefined;
     addcarryxU64(&x165, &x166, x164, x156, x153);
-    const x167 = (@as(u64, x166) + x154);
+    const x167: u64 = (x166 + x154);
     var x168: u64 = undefined;
     var x169: u1 = undefined;
     addcarryxU64(&x168, &x169, 0x0, x144, x159);
@@ -739,7 +729,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x192: u64 = undefined;
     var x193: u1 = undefined;
     addcarryxU64(&x192, &x193, x191, x183, x180);
-    const x194 = (@as(u64, x193) + x181);
+    const x194: u64 = (x193 + x181);
     var x195: u64 = undefined;
     var x196: u1 = undefined;
     addcarryxU64(&x195, &x196, 0x0, x168, x186);
@@ -755,7 +745,7 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x203: u64 = undefined;
     var x204: u1 = undefined;
     addcarryxU64(&x203, &x204, x202, x176, x194);
-    const x205 = (@as(u64, x204) + @as(u64, x177));
+    const x205: u64 = (@as(u64, x204) + x177);
     var x206: u64 = undefined;
     var x207: u1 = undefined;
     subborrowxU64(&x206, &x207, 0x0, x197, 0xfffffffefffffc2f);
@@ -772,13 +762,14 @@ pub fn square(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEl
     var x215: u1 = undefined;
     subborrowxU64(&x214, &x215, x213, x205, 0x0);
     var x216: u64 = undefined;
-    cmovznzU64(&x216, x215, x206, x197);
+    const x216_selection_mask = selectionMaskU64(x215);
+    x216 = x206 ^ ((x206 ^ x197) & x216_selection_mask);
     var x217: u64 = undefined;
-    cmovznzU64(&x217, x215, x208, x199);
+    x217 = x208 ^ ((x208 ^ x199) & x216_selection_mask);
     var x218: u64 = undefined;
-    cmovznzU64(&x218, x215, x210, x201);
+    x218 = x210 ^ ((x210 ^ x201) & x216_selection_mask);
     var x219: u64 = undefined;
-    cmovznzU64(&x219, x215, x212, x203);
+    x219 = x212 ^ ((x212 ^ x203) & x216_selection_mask);
     out1[0] = x216;
     out1[1] = x217;
     out1[2] = x218;
@@ -799,16 +790,16 @@ pub fn add(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
 
     var x1: u64 = undefined;
     var x2: u1 = undefined;
-    addcarryxU64(&x1, &x2, 0x0, (arg1[0]), (arg2[0]));
+    addcarryxU64(&x1, &x2, 0x0, arg1[0], arg2[0]);
     var x3: u64 = undefined;
     var x4: u1 = undefined;
-    addcarryxU64(&x3, &x4, x2, (arg1[1]), (arg2[1]));
+    addcarryxU64(&x3, &x4, x2, arg1[1], arg2[1]);
     var x5: u64 = undefined;
     var x6: u1 = undefined;
-    addcarryxU64(&x5, &x6, x4, (arg1[2]), (arg2[2]));
+    addcarryxU64(&x5, &x6, x4, arg1[2], arg2[2]);
     var x7: u64 = undefined;
     var x8: u1 = undefined;
-    addcarryxU64(&x7, &x8, x6, (arg1[3]), (arg2[3]));
+    addcarryxU64(&x7, &x8, x6, arg1[3], arg2[3]);
     var x9: u64 = undefined;
     var x10: u1 = undefined;
     subborrowxU64(&x9, &x10, 0x0, x1, 0xfffffffefffffc2f);
@@ -823,15 +814,16 @@ pub fn add(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
     subborrowxU64(&x15, &x16, x14, x7, 0xffffffffffffffff);
     var x17: u64 = undefined;
     var x18: u1 = undefined;
-    subborrowxU64(&x17, &x18, x16, @as(u64, x8), 0x0);
+    subborrowxU64(&x17, &x18, x16, x8, 0x0);
     var x19: u64 = undefined;
-    cmovznzU64(&x19, x18, x9, x1);
+    const x19_selection_mask = selectionMaskU64(x18);
+    x19 = x9 ^ ((x9 ^ x1) & x19_selection_mask);
     var x20: u64 = undefined;
-    cmovznzU64(&x20, x18, x11, x3);
+    x20 = x11 ^ ((x11 ^ x3) & x19_selection_mask);
     var x21: u64 = undefined;
-    cmovznzU64(&x21, x18, x13, x5);
+    x21 = x13 ^ ((x13 ^ x5) & x19_selection_mask);
     var x22: u64 = undefined;
-    cmovznzU64(&x22, x18, x15, x7);
+    x22 = x15 ^ ((x15 ^ x7) & x19_selection_mask);
     out1[0] = x19;
     out1[1] = x20;
     out1[2] = x21;
@@ -852,18 +844,19 @@ pub fn sub(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
 
     var x1: u64 = undefined;
     var x2: u1 = undefined;
-    subborrowxU64(&x1, &x2, 0x0, (arg1[0]), (arg2[0]));
+    subborrowxU64(&x1, &x2, 0x0, arg1[0], arg2[0]);
     var x3: u64 = undefined;
     var x4: u1 = undefined;
-    subborrowxU64(&x3, &x4, x2, (arg1[1]), (arg2[1]));
+    subborrowxU64(&x3, &x4, x2, arg1[1], arg2[1]);
     var x5: u64 = undefined;
     var x6: u1 = undefined;
-    subborrowxU64(&x5, &x6, x4, (arg1[2]), (arg2[2]));
+    subborrowxU64(&x5, &x6, x4, arg1[2], arg2[2]);
     var x7: u64 = undefined;
     var x8: u1 = undefined;
-    subborrowxU64(&x7, &x8, x6, (arg1[3]), (arg2[3]));
+    subborrowxU64(&x7, &x8, x6, arg1[3], arg2[3]);
     var x9: u64 = undefined;
-    cmovznzU64(&x9, x8, 0x0, 0xffffffffffffffff);
+    const x9_selection_mask = selectionMaskU64(x8);
+    x9 = 0x0 ^ ((0x0 ^ 0xffffffffffffffff) & x9_selection_mask);
     var x10: u64 = undefined;
     var x11: u1 = undefined;
     addcarryxU64(&x10, &x11, 0x0, x1, (x9 & 0xfffffffefffffc2f));
@@ -895,18 +888,19 @@ pub fn opp(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
 
     var x1: u64 = undefined;
     var x2: u1 = undefined;
-    subborrowxU64(&x1, &x2, 0x0, 0x0, (arg1[0]));
+    subborrowxU64(&x1, &x2, 0x0, 0x0, arg1[0]);
     var x3: u64 = undefined;
     var x4: u1 = undefined;
-    subborrowxU64(&x3, &x4, x2, 0x0, (arg1[1]));
+    subborrowxU64(&x3, &x4, x2, 0x0, arg1[1]);
     var x5: u64 = undefined;
     var x6: u1 = undefined;
-    subborrowxU64(&x5, &x6, x4, 0x0, (arg1[2]));
+    subborrowxU64(&x5, &x6, x4, 0x0, arg1[2]);
     var x7: u64 = undefined;
     var x8: u1 = undefined;
-    subborrowxU64(&x7, &x8, x6, 0x0, (arg1[3]));
+    subborrowxU64(&x7, &x8, x6, 0x0, arg1[3]);
     var x9: u64 = undefined;
-    cmovznzU64(&x9, x8, 0x0, 0xffffffffffffffff);
+    const x9_selection_mask = selectionMaskU64(x8);
+    x9 = 0x0 ^ ((0x0 ^ 0xffffffffffffffff) & x9_selection_mask);
     var x10: u64 = undefined;
     var x11: u1 = undefined;
     addcarryxU64(&x10, &x11, 0x0, x1, (x9 & 0xfffffffefffffc2f));
@@ -936,7 +930,7 @@ pub fn opp(out1: *MontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldEleme
 pub fn fromMontgomery(out1: *NonMontgomeryDomainFieldElement, arg1: MontgomeryDomainFieldElement) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x1 = (arg1[0]);
+    const x1: u64 = arg1[0];
     var x2: u64 = undefined;
     var x3: u64 = undefined;
     mulxU64(&x2, &x3, x1, 0xd838091dd2253531);
@@ -975,10 +969,10 @@ pub fn fromMontgomery(out1: *NonMontgomeryDomainFieldElement, arg1: MontgomeryDo
     addcarryxU64(&x24, &x25, x23, 0x0, x16);
     var x26: u64 = undefined;
     var x27: u1 = undefined;
-    addcarryxU64(&x26, &x27, x25, 0x0, (@as(u64, x17) + x5));
+    addcarryxU64(&x26, &x27, x25, 0x0, (x17 + x5));
     var x28: u64 = undefined;
     var x29: u1 = undefined;
-    addcarryxU64(&x28, &x29, 0x0, x20, (arg1[1]));
+    addcarryxU64(&x28, &x29, 0x0, x20, arg1[1]);
     var x30: u64 = undefined;
     var x31: u1 = undefined;
     addcarryxU64(&x30, &x31, x29, x22, 0x0);
@@ -1026,10 +1020,10 @@ pub fn fromMontgomery(out1: *NonMontgomeryDomainFieldElement, arg1: MontgomeryDo
     addcarryxU64(&x58, &x59, x57, x34, x50);
     var x60: u64 = undefined;
     var x61: u1 = undefined;
-    addcarryxU64(&x60, &x61, x59, (@as(u64, x35) + @as(u64, x27)), (@as(u64, x51) + x39));
+    addcarryxU64(&x60, &x61, x59, (@as(u64, x35) + x27), (x51 + x39));
     var x62: u64 = undefined;
     var x63: u1 = undefined;
-    addcarryxU64(&x62, &x63, 0x0, x54, (arg1[2]));
+    addcarryxU64(&x62, &x63, 0x0, x54, arg1[2]);
     var x64: u64 = undefined;
     var x65: u1 = undefined;
     addcarryxU64(&x64, &x65, x63, x56, 0x0);
@@ -1077,10 +1071,10 @@ pub fn fromMontgomery(out1: *NonMontgomeryDomainFieldElement, arg1: MontgomeryDo
     addcarryxU64(&x92, &x93, x91, x68, x84);
     var x94: u64 = undefined;
     var x95: u1 = undefined;
-    addcarryxU64(&x94, &x95, x93, (@as(u64, x69) + @as(u64, x61)), (@as(u64, x85) + x73));
+    addcarryxU64(&x94, &x95, x93, (@as(u64, x69) + x61), (x85 + x73));
     var x96: u64 = undefined;
     var x97: u1 = undefined;
-    addcarryxU64(&x96, &x97, 0x0, x88, (arg1[3]));
+    addcarryxU64(&x96, &x97, 0x0, x88, arg1[3]);
     var x98: u64 = undefined;
     var x99: u1 = undefined;
     addcarryxU64(&x98, &x99, x97, x90, 0x0);
@@ -1128,7 +1122,7 @@ pub fn fromMontgomery(out1: *NonMontgomeryDomainFieldElement, arg1: MontgomeryDo
     addcarryxU64(&x126, &x127, x125, x102, x118);
     var x128: u64 = undefined;
     var x129: u1 = undefined;
-    addcarryxU64(&x128, &x129, x127, (@as(u64, x103) + @as(u64, x95)), (@as(u64, x119) + x107));
+    addcarryxU64(&x128, &x129, x127, (@as(u64, x103) + x95), (x119 + x107));
     var x130: u64 = undefined;
     var x131: u1 = undefined;
     subborrowxU64(&x130, &x131, 0x0, x122, 0xfffffffefffffc2f);
@@ -1143,15 +1137,16 @@ pub fn fromMontgomery(out1: *NonMontgomeryDomainFieldElement, arg1: MontgomeryDo
     subborrowxU64(&x136, &x137, x135, x128, 0xffffffffffffffff);
     var x138: u64 = undefined;
     var x139: u1 = undefined;
-    subborrowxU64(&x138, &x139, x137, @as(u64, x129), 0x0);
+    subborrowxU64(&x138, &x139, x137, x129, 0x0);
     var x140: u64 = undefined;
-    cmovznzU64(&x140, x139, x130, x122);
+    const x140_selection_mask = selectionMaskU64(x139);
+    x140 = x130 ^ ((x130 ^ x122) & x140_selection_mask);
     var x141: u64 = undefined;
-    cmovznzU64(&x141, x139, x132, x124);
+    x141 = x132 ^ ((x132 ^ x124) & x140_selection_mask);
     var x142: u64 = undefined;
-    cmovznzU64(&x142, x139, x134, x126);
+    x142 = x134 ^ ((x134 ^ x126) & x140_selection_mask);
     var x143: u64 = undefined;
-    cmovznzU64(&x143, x139, x136, x128);
+    x143 = x136 ^ ((x136 ^ x128) & x140_selection_mask);
     out1[0] = x140;
     out1[1] = x141;
     out1[2] = x142;
@@ -1169,10 +1164,10 @@ pub fn fromMontgomery(out1: *NonMontgomeryDomainFieldElement, arg1: MontgomeryDo
 pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDomainFieldElement) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x1 = (arg1[1]);
-    const x2 = (arg1[2]);
-    const x3 = (arg1[3]);
-    const x4 = (arg1[0]);
+    const x1: u64 = arg1[1];
+    const x2: u64 = arg1[2];
+    const x3: u64 = arg1[3];
+    const x4: u64 = arg1[0];
     var x5: u64 = undefined;
     var x6: u64 = undefined;
     mulxU64(&x5, &x6, x4, 0x7a2000e90a1);
@@ -1211,13 +1206,13 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     addcarryxU64(&x27, &x28, x26, x7, x19);
     var x29: u64 = undefined;
     var x30: u1 = undefined;
-    addcarryxU64(&x29, &x30, x28, @as(u64, x8), x21);
+    addcarryxU64(&x29, &x30, x28, x8, x21);
     var x31: u64 = undefined;
     var x32: u1 = undefined;
     addcarryxU64(&x31, &x32, x30, 0x0, x23);
     var x33: u64 = undefined;
     var x34: u1 = undefined;
-    addcarryxU64(&x33, &x34, x32, 0x0, (@as(u64, x24) + x12));
+    addcarryxU64(&x33, &x34, x32, 0x0, (x24 + x12));
     var x35: u64 = undefined;
     var x36: u64 = undefined;
     mulxU64(&x35, &x36, x1, 0x7a2000e90a1);
@@ -1232,7 +1227,7 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     addcarryxU64(&x41, &x42, x40, x29, x37);
     var x43: u64 = undefined;
     var x44: u1 = undefined;
-    addcarryxU64(&x43, &x44, x42, x31, @as(u64, x38));
+    addcarryxU64(&x43, &x44, x42, x31, x38);
     var x45: u64 = undefined;
     var x46: u1 = undefined;
     addcarryxU64(&x45, &x46, x44, x33, 0x0);
@@ -1274,7 +1269,7 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     addcarryxU64(&x69, &x70, x68, x45, x61);
     var x71: u64 = undefined;
     var x72: u1 = undefined;
-    addcarryxU64(&x71, &x72, x70, (@as(u64, x46) + @as(u64, x34)), (@as(u64, x62) + x50));
+    addcarryxU64(&x71, &x72, x70, (@as(u64, x46) + x34), (x62 + x50));
     var x73: u64 = undefined;
     var x74: u64 = undefined;
     mulxU64(&x73, &x74, x2, 0x7a2000e90a1);
@@ -1289,7 +1284,7 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     addcarryxU64(&x79, &x80, x78, x67, x75);
     var x81: u64 = undefined;
     var x82: u1 = undefined;
-    addcarryxU64(&x81, &x82, x80, x69, @as(u64, x76));
+    addcarryxU64(&x81, &x82, x80, x69, x76);
     var x83: u64 = undefined;
     var x84: u1 = undefined;
     addcarryxU64(&x83, &x84, x82, x71, 0x0);
@@ -1331,7 +1326,7 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     addcarryxU64(&x107, &x108, x106, x83, x99);
     var x109: u64 = undefined;
     var x110: u1 = undefined;
-    addcarryxU64(&x109, &x110, x108, (@as(u64, x84) + @as(u64, x72)), (@as(u64, x100) + x88));
+    addcarryxU64(&x109, &x110, x108, (@as(u64, x84) + x72), (x100 + x88));
     var x111: u64 = undefined;
     var x112: u64 = undefined;
     mulxU64(&x111, &x112, x3, 0x7a2000e90a1);
@@ -1346,7 +1341,7 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     addcarryxU64(&x117, &x118, x116, x105, x113);
     var x119: u64 = undefined;
     var x120: u1 = undefined;
-    addcarryxU64(&x119, &x120, x118, x107, @as(u64, x114));
+    addcarryxU64(&x119, &x120, x118, x107, x114);
     var x121: u64 = undefined;
     var x122: u1 = undefined;
     addcarryxU64(&x121, &x122, x120, x109, 0x0);
@@ -1388,7 +1383,7 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     addcarryxU64(&x145, &x146, x144, x121, x137);
     var x147: u64 = undefined;
     var x148: u1 = undefined;
-    addcarryxU64(&x147, &x148, x146, (@as(u64, x122) + @as(u64, x110)), (@as(u64, x138) + x126));
+    addcarryxU64(&x147, &x148, x146, (@as(u64, x122) + x110), (x138 + x126));
     var x149: u64 = undefined;
     var x150: u1 = undefined;
     subborrowxU64(&x149, &x150, 0x0, x141, 0xfffffffefffffc2f);
@@ -1403,15 +1398,16 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
     subborrowxU64(&x155, &x156, x154, x147, 0xffffffffffffffff);
     var x157: u64 = undefined;
     var x158: u1 = undefined;
-    subborrowxU64(&x157, &x158, x156, @as(u64, x148), 0x0);
+    subborrowxU64(&x157, &x158, x156, x148, 0x0);
     var x159: u64 = undefined;
-    cmovznzU64(&x159, x158, x149, x141);
+    const x159_selection_mask = selectionMaskU64(x158);
+    x159 = x149 ^ ((x149 ^ x141) & x159_selection_mask);
     var x160: u64 = undefined;
-    cmovznzU64(&x160, x158, x151, x143);
+    x160 = x151 ^ ((x151 ^ x143) & x159_selection_mask);
     var x161: u64 = undefined;
-    cmovznzU64(&x161, x158, x153, x145);
+    x161 = x153 ^ ((x153 ^ x145) & x159_selection_mask);
     var x162: u64 = undefined;
-    cmovznzU64(&x162, x158, x155, x147);
+    x162 = x155 ^ ((x155 ^ x147) & x159_selection_mask);
     out1[0] = x159;
     out1[1] = x160;
     out1[2] = x161;
@@ -1432,7 +1428,7 @@ pub fn toMontgomery(out1: *MontgomeryDomainFieldElement, arg1: NonMontgomeryDoma
 pub fn nonzero(out1: *u64, arg1: [4]u64) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x1 = ((arg1[0]) | ((arg1[1]) | ((arg1[2]) | (arg1[3]))));
+    const x1: u64 = (arg1[0] | (arg1[1] | (arg1[2] | arg1[3])));
     out1.* = x1;
 }
 
@@ -1451,13 +1447,14 @@ pub fn selectznz(out1: *[4]u64, arg1: u1, arg2: [4]u64, arg3: [4]u64) void {
     @setRuntimeSafety(mode == .debug);
 
     var x1: u64 = undefined;
-    cmovznzU64(&x1, arg1, (arg2[0]), (arg3[0]));
+    const x1_selection_mask = selectionMaskU64(arg1);
+    x1 = arg2[0] ^ ((arg2[0] ^ arg3[0]) & x1_selection_mask);
     var x2: u64 = undefined;
-    cmovznzU64(&x2, arg1, (arg2[1]), (arg3[1]));
+    x2 = arg2[1] ^ ((arg2[1] ^ arg3[1]) & x1_selection_mask);
     var x3: u64 = undefined;
-    cmovznzU64(&x3, arg1, (arg2[2]), (arg3[2]));
+    x3 = arg2[2] ^ ((arg2[2] ^ arg3[2]) & x1_selection_mask);
     var x4: u64 = undefined;
-    cmovznzU64(&x4, arg1, (arg2[3]), (arg3[3]));
+    x4 = arg2[3] ^ ((arg2[3] ^ arg3[3]) & x1_selection_mask);
     out1[0] = x1;
     out1[1] = x2;
     out1[2] = x3;
@@ -1478,66 +1475,66 @@ pub fn selectznz(out1: *[4]u64, arg1: u1, arg2: [4]u64, arg3: [4]u64) void {
 pub fn toBytes(out1: *[32]u8, arg1: [4]u64) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x1 = (arg1[3]);
-    const x2 = (arg1[2]);
-    const x3 = (arg1[1]);
-    const x4 = (arg1[0]);
-    const x5 = @as(u8, @truncate((x4 & 0xff)));
-    const x6 = (x4 >> 8);
-    const x7 = @as(u8, @truncate((x6 & 0xff)));
-    const x8 = (x6 >> 8);
-    const x9 = @as(u8, @truncate((x8 & 0xff)));
-    const x10 = (x8 >> 8);
-    const x11 = @as(u8, @truncate((x10 & 0xff)));
-    const x12 = (x10 >> 8);
-    const x13 = @as(u8, @truncate((x12 & 0xff)));
-    const x14 = (x12 >> 8);
-    const x15 = @as(u8, @truncate((x14 & 0xff)));
-    const x16 = (x14 >> 8);
-    const x17 = @as(u8, @truncate((x16 & 0xff)));
-    const x18 = @as(u8, @truncate((x16 >> 8)));
-    const x19 = @as(u8, @truncate((x3 & 0xff)));
-    const x20 = (x3 >> 8);
-    const x21 = @as(u8, @truncate((x20 & 0xff)));
-    const x22 = (x20 >> 8);
-    const x23 = @as(u8, @truncate((x22 & 0xff)));
-    const x24 = (x22 >> 8);
-    const x25 = @as(u8, @truncate((x24 & 0xff)));
-    const x26 = (x24 >> 8);
-    const x27 = @as(u8, @truncate((x26 & 0xff)));
-    const x28 = (x26 >> 8);
-    const x29 = @as(u8, @truncate((x28 & 0xff)));
-    const x30 = (x28 >> 8);
-    const x31 = @as(u8, @truncate((x30 & 0xff)));
-    const x32 = @as(u8, @truncate((x30 >> 8)));
-    const x33 = @as(u8, @truncate((x2 & 0xff)));
-    const x34 = (x2 >> 8);
-    const x35 = @as(u8, @truncate((x34 & 0xff)));
-    const x36 = (x34 >> 8);
-    const x37 = @as(u8, @truncate((x36 & 0xff)));
-    const x38 = (x36 >> 8);
-    const x39 = @as(u8, @truncate((x38 & 0xff)));
-    const x40 = (x38 >> 8);
-    const x41 = @as(u8, @truncate((x40 & 0xff)));
-    const x42 = (x40 >> 8);
-    const x43 = @as(u8, @truncate((x42 & 0xff)));
-    const x44 = (x42 >> 8);
-    const x45 = @as(u8, @truncate((x44 & 0xff)));
-    const x46 = @as(u8, @truncate((x44 >> 8)));
-    const x47 = @as(u8, @truncate((x1 & 0xff)));
-    const x48 = (x1 >> 8);
-    const x49 = @as(u8, @truncate((x48 & 0xff)));
-    const x50 = (x48 >> 8);
-    const x51 = @as(u8, @truncate((x50 & 0xff)));
-    const x52 = (x50 >> 8);
-    const x53 = @as(u8, @truncate((x52 & 0xff)));
-    const x54 = (x52 >> 8);
-    const x55 = @as(u8, @truncate((x54 & 0xff)));
-    const x56 = (x54 >> 8);
-    const x57 = @as(u8, @truncate((x56 & 0xff)));
-    const x58 = (x56 >> 8);
-    const x59 = @as(u8, @truncate((x58 & 0xff)));
-    const x60 = @as(u8, @truncate((x58 >> 8)));
+    const x1: u64 = arg1[3];
+    const x2: u64 = arg1[2];
+    const x3: u64 = arg1[1];
+    const x4: u64 = arg1[0];
+    const x5: u8 = @truncate(x4);
+    const x6: u64 = (x4 >> 8);
+    const x7: u8 = @truncate(x6);
+    const x8: u64 = (x6 >> 8);
+    const x9: u8 = @truncate(x8);
+    const x10: u64 = (x8 >> 8);
+    const x11: u8 = @truncate(x10);
+    const x12: u64 = (x10 >> 8);
+    const x13: u8 = @truncate(x12);
+    const x14: u64 = (x12 >> 8);
+    const x15: u8 = @truncate(x14);
+    const x16: u64 = (x14 >> 8);
+    const x17: u8 = @truncate(x16);
+    const x18: u8 = @truncate((x16 >> 8));
+    const x19: u8 = @truncate(x3);
+    const x20: u64 = (x3 >> 8);
+    const x21: u8 = @truncate(x20);
+    const x22: u64 = (x20 >> 8);
+    const x23: u8 = @truncate(x22);
+    const x24: u64 = (x22 >> 8);
+    const x25: u8 = @truncate(x24);
+    const x26: u64 = (x24 >> 8);
+    const x27: u8 = @truncate(x26);
+    const x28: u64 = (x26 >> 8);
+    const x29: u8 = @truncate(x28);
+    const x30: u64 = (x28 >> 8);
+    const x31: u8 = @truncate(x30);
+    const x32: u8 = @truncate((x30 >> 8));
+    const x33: u8 = @truncate(x2);
+    const x34: u64 = (x2 >> 8);
+    const x35: u8 = @truncate(x34);
+    const x36: u64 = (x34 >> 8);
+    const x37: u8 = @truncate(x36);
+    const x38: u64 = (x36 >> 8);
+    const x39: u8 = @truncate(x38);
+    const x40: u64 = (x38 >> 8);
+    const x41: u8 = @truncate(x40);
+    const x42: u64 = (x40 >> 8);
+    const x43: u8 = @truncate(x42);
+    const x44: u64 = (x42 >> 8);
+    const x45: u8 = @truncate(x44);
+    const x46: u8 = @truncate((x44 >> 8));
+    const x47: u8 = @truncate(x1);
+    const x48: u64 = (x1 >> 8);
+    const x49: u8 = @truncate(x48);
+    const x50: u64 = (x48 >> 8);
+    const x51: u8 = @truncate(x50);
+    const x52: u64 = (x50 >> 8);
+    const x53: u8 = @truncate(x52);
+    const x54: u64 = (x52 >> 8);
+    const x55: u8 = @truncate(x54);
+    const x56: u64 = (x54 >> 8);
+    const x57: u8 = @truncate(x56);
+    const x58: u64 = (x56 >> 8);
+    const x59: u8 = @truncate(x58);
+    const x60: u8 = @truncate((x58 >> 8));
     out1[0] = x5;
     out1[1] = x7;
     out1[2] = x9;
@@ -1587,66 +1584,66 @@ pub fn toBytes(out1: *[32]u8, arg1: [4]u64) void {
 pub fn fromBytes(out1: *[4]u64, arg1: [32]u8) void {
     @setRuntimeSafety(mode == .debug);
 
-    const x1 = (@as(u64, (arg1[31])) << 56);
-    const x2 = (@as(u64, (arg1[30])) << 48);
-    const x3 = (@as(u64, (arg1[29])) << 40);
-    const x4 = (@as(u64, (arg1[28])) << 32);
-    const x5 = (@as(u64, (arg1[27])) << 24);
-    const x6 = (@as(u64, (arg1[26])) << 16);
-    const x7 = (@as(u64, (arg1[25])) << 8);
-    const x8 = (arg1[24]);
-    const x9 = (@as(u64, (arg1[23])) << 56);
-    const x10 = (@as(u64, (arg1[22])) << 48);
-    const x11 = (@as(u64, (arg1[21])) << 40);
-    const x12 = (@as(u64, (arg1[20])) << 32);
-    const x13 = (@as(u64, (arg1[19])) << 24);
-    const x14 = (@as(u64, (arg1[18])) << 16);
-    const x15 = (@as(u64, (arg1[17])) << 8);
-    const x16 = (arg1[16]);
-    const x17 = (@as(u64, (arg1[15])) << 56);
-    const x18 = (@as(u64, (arg1[14])) << 48);
-    const x19 = (@as(u64, (arg1[13])) << 40);
-    const x20 = (@as(u64, (arg1[12])) << 32);
-    const x21 = (@as(u64, (arg1[11])) << 24);
-    const x22 = (@as(u64, (arg1[10])) << 16);
-    const x23 = (@as(u64, (arg1[9])) << 8);
-    const x24 = (arg1[8]);
-    const x25 = (@as(u64, (arg1[7])) << 56);
-    const x26 = (@as(u64, (arg1[6])) << 48);
-    const x27 = (@as(u64, (arg1[5])) << 40);
-    const x28 = (@as(u64, (arg1[4])) << 32);
-    const x29 = (@as(u64, (arg1[3])) << 24);
-    const x30 = (@as(u64, (arg1[2])) << 16);
-    const x31 = (@as(u64, (arg1[1])) << 8);
-    const x32 = (arg1[0]);
-    const x33 = (x31 + @as(u64, x32));
-    const x34 = (x30 + x33);
-    const x35 = (x29 + x34);
-    const x36 = (x28 + x35);
-    const x37 = (x27 + x36);
-    const x38 = (x26 + x37);
-    const x39 = (x25 + x38);
-    const x40 = (x23 + @as(u64, x24));
-    const x41 = (x22 + x40);
-    const x42 = (x21 + x41);
-    const x43 = (x20 + x42);
-    const x44 = (x19 + x43);
-    const x45 = (x18 + x44);
-    const x46 = (x17 + x45);
-    const x47 = (x15 + @as(u64, x16));
-    const x48 = (x14 + x47);
-    const x49 = (x13 + x48);
-    const x50 = (x12 + x49);
-    const x51 = (x11 + x50);
-    const x52 = (x10 + x51);
-    const x53 = (x9 + x52);
-    const x54 = (x7 + @as(u64, x8));
-    const x55 = (x6 + x54);
-    const x56 = (x5 + x55);
-    const x57 = (x4 + x56);
-    const x58 = (x3 + x57);
-    const x59 = (x2 + x58);
-    const x60 = (x1 + x59);
+    const x1: u64 = (@as(u64, arg1[31]) << 56);
+    const x2: u64 = (@as(u64, arg1[30]) << 48);
+    const x3: u64 = (@as(u64, arg1[29]) << 40);
+    const x4: u64 = (@as(u64, arg1[28]) << 32);
+    const x5: u64 = (@as(u64, arg1[27]) << 24);
+    const x6: u64 = (@as(u64, arg1[26]) << 16);
+    const x7: u64 = (@as(u64, arg1[25]) << 8);
+    const x8: u8 = arg1[24];
+    const x9: u64 = (@as(u64, arg1[23]) << 56);
+    const x10: u64 = (@as(u64, arg1[22]) << 48);
+    const x11: u64 = (@as(u64, arg1[21]) << 40);
+    const x12: u64 = (@as(u64, arg1[20]) << 32);
+    const x13: u64 = (@as(u64, arg1[19]) << 24);
+    const x14: u64 = (@as(u64, arg1[18]) << 16);
+    const x15: u64 = (@as(u64, arg1[17]) << 8);
+    const x16: u8 = arg1[16];
+    const x17: u64 = (@as(u64, arg1[15]) << 56);
+    const x18: u64 = (@as(u64, arg1[14]) << 48);
+    const x19: u64 = (@as(u64, arg1[13]) << 40);
+    const x20: u64 = (@as(u64, arg1[12]) << 32);
+    const x21: u64 = (@as(u64, arg1[11]) << 24);
+    const x22: u64 = (@as(u64, arg1[10]) << 16);
+    const x23: u64 = (@as(u64, arg1[9]) << 8);
+    const x24: u8 = arg1[8];
+    const x25: u64 = (@as(u64, arg1[7]) << 56);
+    const x26: u64 = (@as(u64, arg1[6]) << 48);
+    const x27: u64 = (@as(u64, arg1[5]) << 40);
+    const x28: u64 = (@as(u64, arg1[4]) << 32);
+    const x29: u64 = (@as(u64, arg1[3]) << 24);
+    const x30: u64 = (@as(u64, arg1[2]) << 16);
+    const x31: u64 = (@as(u64, arg1[1]) << 8);
+    const x32: u8 = arg1[0];
+    const x33: u64 = (x31 + x32);
+    const x34: u64 = (x30 + x33);
+    const x35: u64 = (x29 + x34);
+    const x36: u64 = (x28 + x35);
+    const x37: u64 = (x27 + x36);
+    const x38: u64 = (x26 + x37);
+    const x39: u64 = (x25 + x38);
+    const x40: u64 = (x23 + x24);
+    const x41: u64 = (x22 + x40);
+    const x42: u64 = (x21 + x41);
+    const x43: u64 = (x20 + x42);
+    const x44: u64 = (x19 + x43);
+    const x45: u64 = (x18 + x44);
+    const x46: u64 = (x17 + x45);
+    const x47: u64 = (x15 + x16);
+    const x48: u64 = (x14 + x47);
+    const x49: u64 = (x13 + x48);
+    const x50: u64 = (x12 + x49);
+    const x51: u64 = (x11 + x50);
+    const x52: u64 = (x10 + x51);
+    const x53: u64 = (x9 + x52);
+    const x54: u64 = (x7 + x8);
+    const x55: u64 = (x6 + x54);
+    const x56: u64 = (x5 + x55);
+    const x57: u64 = (x4 + x56);
+    const x58: u64 = (x3 + x57);
+    const x59: u64 = (x2 + x58);
+    const x60: u64 = (x1 + x59);
     out1[0] = x39;
     out1[1] = x46;
     out1[2] = x53;
@@ -1720,55 +1717,57 @@ pub fn divstep(out1: *u64, out2: *[5]u64, out3: *[5]u64, out4: *[4]u64, out5: *[
     var x1: u64 = undefined;
     var x2: u1 = undefined;
     addcarryxU64(&x1, &x2, 0x0, (~arg1), 0x1);
-    const x3 = (@as(u1, @truncate((x1 >> 63))) & @as(u1, @truncate(((arg3[0]) & 0x1))));
+    const x3: u1 = (@as(u1, @truncate((x1 >> 63))) & @as(u1, @truncate(arg3[0])));
     var x4: u64 = undefined;
     var x5: u1 = undefined;
     addcarryxU64(&x4, &x5, 0x0, (~arg1), 0x1);
     var x6: u64 = undefined;
-    cmovznzU64(&x6, x3, arg1, x4);
+    const x6_selection_mask = selectionMaskU64(x3);
+    x6 = arg1 ^ ((arg1 ^ x4) & x6_selection_mask);
     var x7: u64 = undefined;
-    cmovznzU64(&x7, x3, (arg2[0]), (arg3[0]));
+    x7 = arg2[0] ^ ((arg2[0] ^ arg3[0]) & x6_selection_mask);
     var x8: u64 = undefined;
-    cmovznzU64(&x8, x3, (arg2[1]), (arg3[1]));
+    x8 = arg2[1] ^ ((arg2[1] ^ arg3[1]) & x6_selection_mask);
     var x9: u64 = undefined;
-    cmovznzU64(&x9, x3, (arg2[2]), (arg3[2]));
+    x9 = arg2[2] ^ ((arg2[2] ^ arg3[2]) & x6_selection_mask);
     var x10: u64 = undefined;
-    cmovznzU64(&x10, x3, (arg2[3]), (arg3[3]));
+    x10 = arg2[3] ^ ((arg2[3] ^ arg3[3]) & x6_selection_mask);
     var x11: u64 = undefined;
-    cmovznzU64(&x11, x3, (arg2[4]), (arg3[4]));
+    x11 = arg2[4] ^ ((arg2[4] ^ arg3[4]) & x6_selection_mask);
     var x12: u64 = undefined;
     var x13: u1 = undefined;
-    addcarryxU64(&x12, &x13, 0x0, 0x1, (~(arg2[0])));
+    addcarryxU64(&x12, &x13, 0x0, 0x1, (~arg2[0]));
     var x14: u64 = undefined;
     var x15: u1 = undefined;
-    addcarryxU64(&x14, &x15, x13, 0x0, (~(arg2[1])));
+    addcarryxU64(&x14, &x15, x13, 0x0, (~arg2[1]));
     var x16: u64 = undefined;
     var x17: u1 = undefined;
-    addcarryxU64(&x16, &x17, x15, 0x0, (~(arg2[2])));
+    addcarryxU64(&x16, &x17, x15, 0x0, (~arg2[2]));
     var x18: u64 = undefined;
     var x19: u1 = undefined;
-    addcarryxU64(&x18, &x19, x17, 0x0, (~(arg2[3])));
+    addcarryxU64(&x18, &x19, x17, 0x0, (~arg2[3]));
     var x20: u64 = undefined;
     var x21: u1 = undefined;
-    addcarryxU64(&x20, &x21, x19, 0x0, (~(arg2[4])));
+    addcarryxU64(&x20, &x21, x19, 0x0, (~arg2[4]));
     var x22: u64 = undefined;
-    cmovznzU64(&x22, x3, (arg3[0]), x12);
+    const x22_selection_mask = selectionMaskU64(x3);
+    x22 = arg3[0] ^ ((arg3[0] ^ x12) & x22_selection_mask);
     var x23: u64 = undefined;
-    cmovznzU64(&x23, x3, (arg3[1]), x14);
+    x23 = arg3[1] ^ ((arg3[1] ^ x14) & x22_selection_mask);
     var x24: u64 = undefined;
-    cmovznzU64(&x24, x3, (arg3[2]), x16);
+    x24 = arg3[2] ^ ((arg3[2] ^ x16) & x22_selection_mask);
     var x25: u64 = undefined;
-    cmovznzU64(&x25, x3, (arg3[3]), x18);
+    x25 = arg3[3] ^ ((arg3[3] ^ x18) & x22_selection_mask);
     var x26: u64 = undefined;
-    cmovznzU64(&x26, x3, (arg3[4]), x20);
+    x26 = arg3[4] ^ ((arg3[4] ^ x20) & x22_selection_mask);
     var x27: u64 = undefined;
-    cmovznzU64(&x27, x3, (arg4[0]), (arg5[0]));
+    x27 = arg4[0] ^ ((arg4[0] ^ arg5[0]) & x22_selection_mask);
     var x28: u64 = undefined;
-    cmovznzU64(&x28, x3, (arg4[1]), (arg5[1]));
+    x28 = arg4[1] ^ ((arg4[1] ^ arg5[1]) & x22_selection_mask);
     var x29: u64 = undefined;
-    cmovznzU64(&x29, x3, (arg4[2]), (arg5[2]));
+    x29 = arg4[2] ^ ((arg4[2] ^ arg5[2]) & x22_selection_mask);
     var x30: u64 = undefined;
-    cmovznzU64(&x30, x3, (arg4[3]), (arg5[3]));
+    x30 = arg4[3] ^ ((arg4[3] ^ arg5[3]) & x22_selection_mask);
     var x31: u64 = undefined;
     var x32: u1 = undefined;
     addcarryxU64(&x31, &x32, 0x0, x27, x27);
@@ -1795,11 +1794,11 @@ pub fn divstep(out1: *u64, out2: *[5]u64, out3: *[5]u64, out4: *[4]u64, out5: *[
     subborrowxU64(&x45, &x46, x44, x37, 0xffffffffffffffff);
     var x47: u64 = undefined;
     var x48: u1 = undefined;
-    subborrowxU64(&x47, &x48, x46, @as(u64, x38), 0x0);
-    const x49 = (arg4[3]);
-    const x50 = (arg4[2]);
-    const x51 = (arg4[1]);
-    const x52 = (arg4[0]);
+    subborrowxU64(&x47, &x48, x46, x38, 0x0);
+    const x49: u64 = arg4[3];
+    const x50: u64 = arg4[2];
+    const x51: u64 = arg4[1];
+    const x52: u64 = arg4[0];
     var x53: u64 = undefined;
     var x54: u1 = undefined;
     subborrowxU64(&x53, &x54, 0x0, 0x0, x52);
@@ -1813,7 +1812,8 @@ pub fn divstep(out1: *u64, out2: *[5]u64, out3: *[5]u64, out4: *[4]u64, out5: *[
     var x60: u1 = undefined;
     subborrowxU64(&x59, &x60, x58, 0x0, x49);
     var x61: u64 = undefined;
-    cmovznzU64(&x61, x60, 0x0, 0xffffffffffffffff);
+    const x61_selection_mask = selectionMaskU64(x60);
+    x61 = 0x0 ^ ((0x0 ^ 0xffffffffffffffff) & x61_selection_mask);
     var x62: u64 = undefined;
     var x63: u1 = undefined;
     addcarryxU64(&x62, &x63, 0x0, x53, (x61 & 0xfffffffefffffc2f));
@@ -1827,24 +1827,26 @@ pub fn divstep(out1: *u64, out2: *[5]u64, out3: *[5]u64, out4: *[4]u64, out5: *[
     var x69: u1 = undefined;
     addcarryxU64(&x68, &x69, x67, x59, x61);
     var x70: u64 = undefined;
-    cmovznzU64(&x70, x3, (arg5[0]), x62);
+    const x70_selection_mask = selectionMaskU64(x3);
+    x70 = arg5[0] ^ ((arg5[0] ^ x62) & x70_selection_mask);
     var x71: u64 = undefined;
-    cmovznzU64(&x71, x3, (arg5[1]), x64);
+    x71 = arg5[1] ^ ((arg5[1] ^ x64) & x70_selection_mask);
     var x72: u64 = undefined;
-    cmovznzU64(&x72, x3, (arg5[2]), x66);
+    x72 = arg5[2] ^ ((arg5[2] ^ x66) & x70_selection_mask);
     var x73: u64 = undefined;
-    cmovznzU64(&x73, x3, (arg5[3]), x68);
-    const x74 = @as(u1, @truncate((x22 & 0x1)));
+    x73 = arg5[3] ^ ((arg5[3] ^ x68) & x70_selection_mask);
+    const x74: u1 = @truncate(x22);
     var x75: u64 = undefined;
-    cmovznzU64(&x75, x74, 0x0, x7);
+    const x75_selection_mask = selectionMaskU64(x74);
+    x75 = 0x0 ^ ((0x0 ^ x7) & x75_selection_mask);
     var x76: u64 = undefined;
-    cmovznzU64(&x76, x74, 0x0, x8);
+    x76 = 0x0 ^ ((0x0 ^ x8) & x75_selection_mask);
     var x77: u64 = undefined;
-    cmovznzU64(&x77, x74, 0x0, x9);
+    x77 = 0x0 ^ ((0x0 ^ x9) & x75_selection_mask);
     var x78: u64 = undefined;
-    cmovznzU64(&x78, x74, 0x0, x10);
+    x78 = 0x0 ^ ((0x0 ^ x10) & x75_selection_mask);
     var x79: u64 = undefined;
-    cmovznzU64(&x79, x74, 0x0, x11);
+    x79 = 0x0 ^ ((0x0 ^ x11) & x75_selection_mask);
     var x80: u64 = undefined;
     var x81: u1 = undefined;
     addcarryxU64(&x80, &x81, 0x0, x22, x75);
@@ -1861,13 +1863,14 @@ pub fn divstep(out1: *u64, out2: *[5]u64, out3: *[5]u64, out4: *[4]u64, out5: *[
     var x89: u1 = undefined;
     addcarryxU64(&x88, &x89, x87, x26, x79);
     var x90: u64 = undefined;
-    cmovznzU64(&x90, x74, 0x0, x27);
+    const x90_selection_mask = selectionMaskU64(x74);
+    x90 = 0x0 ^ ((0x0 ^ x27) & x90_selection_mask);
     var x91: u64 = undefined;
-    cmovznzU64(&x91, x74, 0x0, x28);
+    x91 = 0x0 ^ ((0x0 ^ x28) & x90_selection_mask);
     var x92: u64 = undefined;
-    cmovznzU64(&x92, x74, 0x0, x29);
+    x92 = 0x0 ^ ((0x0 ^ x29) & x90_selection_mask);
     var x93: u64 = undefined;
-    cmovznzU64(&x93, x74, 0x0, x30);
+    x93 = 0x0 ^ ((0x0 ^ x30) & x90_selection_mask);
     var x94: u64 = undefined;
     var x95: u1 = undefined;
     addcarryxU64(&x94, &x95, 0x0, x70, x90);
@@ -1894,31 +1897,33 @@ pub fn divstep(out1: *u64, out2: *[5]u64, out3: *[5]u64, out4: *[4]u64, out5: *[
     subborrowxU64(&x108, &x109, x107, x100, 0xffffffffffffffff);
     var x110: u64 = undefined;
     var x111: u1 = undefined;
-    subborrowxU64(&x110, &x111, x109, @as(u64, x101), 0x0);
+    subborrowxU64(&x110, &x111, x109, x101, 0x0);
     var x112: u64 = undefined;
     var x113: u1 = undefined;
     addcarryxU64(&x112, &x113, 0x0, x6, 0x1);
-    const x114 = ((x80 >> 1) | ((x82 << 63) & 0xffffffffffffffff));
-    const x115 = ((x82 >> 1) | ((x84 << 63) & 0xffffffffffffffff));
-    const x116 = ((x84 >> 1) | ((x86 << 63) & 0xffffffffffffffff));
-    const x117 = ((x86 >> 1) | ((x88 << 63) & 0xffffffffffffffff));
-    const x118 = ((x88 & 0x8000000000000000) | (x88 >> 1));
+    const x114: u64 = ((x80 >> 1) | ((x82 << 63) & 0xffffffffffffffff));
+    const x115: u64 = ((x82 >> 1) | ((x84 << 63) & 0xffffffffffffffff));
+    const x116: u64 = ((x84 >> 1) | ((x86 << 63) & 0xffffffffffffffff));
+    const x117: u64 = ((x86 >> 1) | ((x88 << 63) & 0xffffffffffffffff));
+    const x118: u64 = ((x88 & 0x8000000000000000) | (x88 >> 1));
     var x119: u64 = undefined;
-    cmovznzU64(&x119, x48, x39, x31);
+    const x119_selection_mask = selectionMaskU64(x48);
+    x119 = x39 ^ ((x39 ^ x31) & x119_selection_mask);
     var x120: u64 = undefined;
-    cmovznzU64(&x120, x48, x41, x33);
+    x120 = x41 ^ ((x41 ^ x33) & x119_selection_mask);
     var x121: u64 = undefined;
-    cmovznzU64(&x121, x48, x43, x35);
+    x121 = x43 ^ ((x43 ^ x35) & x119_selection_mask);
     var x122: u64 = undefined;
-    cmovznzU64(&x122, x48, x45, x37);
+    x122 = x45 ^ ((x45 ^ x37) & x119_selection_mask);
     var x123: u64 = undefined;
-    cmovznzU64(&x123, x111, x102, x94);
+    const x123_selection_mask = selectionMaskU64(x111);
+    x123 = x102 ^ ((x102 ^ x94) & x123_selection_mask);
     var x124: u64 = undefined;
-    cmovznzU64(&x124, x111, x104, x96);
+    x124 = x104 ^ ((x104 ^ x96) & x123_selection_mask);
     var x125: u64 = undefined;
-    cmovznzU64(&x125, x111, x106, x98);
+    x125 = x106 ^ ((x106 ^ x98) & x123_selection_mask);
     var x126: u64 = undefined;
-    cmovznzU64(&x126, x111, x108, x100);
+    x126 = x108 ^ ((x108 ^ x100) & x123_selection_mask);
     out1.* = x112;
     out2[0] = x7;
     out2[1] = x8;
