@@ -3471,8 +3471,8 @@ fn printStepFailure(
         try w.writeAll(" failure\n");
     } else {
         assert(s.result_stderr.len > 0);
-        try stderr.setColor(.red);
-        try w.writeAll(" w\n");
+        try stderr.setColor(.yellow);
+        try w.writeAll(" stderr\n");
     }
 }
 
