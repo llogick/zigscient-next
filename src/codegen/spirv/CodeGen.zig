@@ -1137,6 +1137,42 @@ fn constBool(cg: *CodeGen, value: bool, repr: Repr) !Id {
     }
 }
 
+/// Returns the OpSwitch literal int corresponding to ref (case of the switch),
+/// where ty is the type we switch on and words is the width of the literal
+/// (words = 1 means up to 32 bits, and 2 means 64 bits).
+fn literalInt(cg: *CodeGen, ty: Type, words: u32, ref: Air.Inst.Ref) spec.LiteralContextDependentNumber {
+    const zcu = cg.zcu;
+    const target = cg.zcu.getTarget();
+
+    var int_ty: Type = ty;
+    var value: Value = .fromInterned(ref.toInterned().?);
+    const int_val: u64 = blk: switch (int_ty.zigTypeTag(zcu)) {
+        .bool, .int => if (int_ty.isSignedInt(zcu)) switch (target.os.tag) {
+            // Kernel only supports unsigned ints, so use the unsigned backing type.
+            .opencl, .amdhsa => switch (cg.backingIntBits(int_ty.intInfo(zcu).bits).@"0") {
+                inline 8, 16, 32, 64 => |bits| @as(@Int(.unsigned, bits), @truncate(@as(u64, @bitCast(value.toSignedInt(zcu))))),
+                else => unreachable,
+            },
+            else => @bitCast(value.toSignedInt(zcu)),
+        } else value.toUnsignedInt(zcu),
+        .@"enum" => {
+            // Handle proper backingInt conversion in the .int case.
+            int_ty = int_ty.backingIntType(zcu);
+            value = value.backingInt(zcu);
+            continue :blk .int;
+        },
+        .error_set => value.getErrorInt(zcu),
+        .pointer => value.toUnsignedInt(zcu),
+        else => unreachable,
+    };
+
+    return switch (words) {
+        1 => .{ .uint32 = @truncate(int_val) },
+        2 => .{ .uint64 = int_val },
+        else => unreachable,
+    };
+}
+
 /// Emits an integer constant.
 /// This function, unlike cg.constInt, takes care to bitcast
 /// the value to an unsigned int first for Kernels.
@@ -7864,19 +7900,7 @@ fn airSwitchBr(cg: *CodeGen, inst: Air.Inst.Index) !void {
             const label = case_labels.at(case.idx);
 
             for (case.items) |item| {
-                const value: Value = .fromInterned(item.toInterned().?);
-                const int_val: u64 = switch (cond_ty.zigTypeTag(zcu)) {
-                    .bool, .int => if (cond_ty.isSignedInt(zcu)) @bitCast(value.toSignedInt(zcu)) else value.toUnsignedInt(zcu),
-                    .@"enum" => value.backingInt(zcu).toUnsignedInt(zcu),
-                    .error_set => value.getErrorInt(zcu),
-                    .pointer => value.toUnsignedInt(zcu),
-                    else => unreachable,
-                };
-                const int_lit: spec.LiteralContextDependentNumber = switch (cond_words) {
-                    1 => .{ .uint32 = @intCast(int_val) },
-                    2 => .{ .uint64 = int_val },
-                    else => unreachable,
-                };
+                const int_lit = cg.literalInt(cond_ty, cond_words, item);
                 cg.body.writeOperand(spec.LiteralContextDependentNumber, int_lit);
                 cg.body.writeOperand(Id, label);
             }
@@ -8098,25 +8122,16 @@ fn airLoopSwitchBr(cg: *CodeGen, inst: Air.Inst.Index) !void {
     cg.body.writeOperand(Id, cond_indirect);
     cg.body.writeOperand(Id, switch_default);
 
+    // Emit the non-range cases into the OpSwitch.
+    // Cases with ranges are handled by the conditional chain below.
     {
         var it = switch_br.iterateCases();
         while (it.next()) |case| {
             if (case.ranges.len > 0) continue;
             const label = case_labels.at(case.idx);
+
             for (case.items) |item| {
-                const value: Value = .fromInterned(item.toInterned().?);
-                const int_val: u64 = switch (cond_ty.zigTypeTag(zcu)) {
-                    .bool, .int => if (cond_ty.isSignedInt(zcu)) @bitCast(value.toSignedInt(zcu)) else value.toUnsignedInt(zcu),
-                    .@"enum" => value.backingInt(zcu).toUnsignedInt(zcu),
-                    .error_set => value.getErrorInt(zcu),
-                    .pointer => value.toUnsignedInt(zcu),
-                    else => unreachable,
-                };
-                const int_lit: spec.LiteralContextDependentNumber = switch (cond_words) {
-                    1 => .{ .uint32 = @intCast(int_val) },
-                    2 => .{ .uint64 = int_val },
-                    else => unreachable,
-                };
+                const int_lit = cg.literalInt(cond_ty, cond_words, item);
                 cg.body.writeOperand(spec.LiteralContextDependentNumber, int_lit);
                 cg.body.writeOperand(Id, label);
             }
