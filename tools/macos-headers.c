@@ -162,6 +162,26 @@
 #include <mach-o/arm64/reloc.h>
 #include <mach-o/x86_64/reloc.h>
 
+// Non-POSIX net headers
+#include <net/bpf.h>
+#include <net/dlil.h>
+#include <net/ethernet.h>
+#include <net/if_arp.h>
+#include <net/if_dl.h>
+#include <net/if_llc.h>
+#include <net/if_media.h>
+#include <net/if_mib.h>
+#include <net/if_types.h>
+#include <net/if_utun.h>
+#include <net/if_var_status.h>
+#include <net/if_var.h>
+#include <net/ipsec_offload.h>
+#include <net/kext_net.h>
+#include <net/ndrv.h>
+#include <net/net_kev.h>
+#include <net/pfkeyv2.h>
+#include <net/route.h>
+
 // Depended on by libcxx
 #include <Block.h>
 #include <xlocale.h>
@@ -205,7 +225,6 @@
 // Depended on by libuv
 #include <paths.h>
 #include <ifaddrs.h>
-#include <net/if_dl.h>
 #include <sys/paths.h>
 
 // Depended on by sqlite-amalgamation
