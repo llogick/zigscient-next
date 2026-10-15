@@ -386,6 +386,9 @@ pub const AsconAead128 = struct {
                     self.st.st[0] ^= mem.readInt(u64, &buf, .little);
                 }
                 self.st.permuteR(8);
+            } else {
+                self.st.st[0] ^= 0x01;
+                self.st.permuteR(8);
             }
         }
 
@@ -589,6 +592,7 @@ pub const AsconHash256 = struct {
     pub const block_length = 8;
 
     st: AsconState,
+    offset: usize,
 
     pub const Options = struct {};
 
@@ -606,7 +610,7 @@ pub const AsconHash256 = struct {
         const words: [5]u64 = .{ iv, 0, 0, 0, 0 };
         var st = AsconState.initFromWords(words);
         st.permuteR(12);
-        return AsconHash256{ .st = st };
+        return AsconHash256{ .st = st, .offset = 0 };
     }
 
     /// Compute Ascon-Hash256 hash of input data in one call.
@@ -630,6 +634,13 @@ pub const AsconHash256 = struct {
     pub fn update(self: *AsconHash256, b: []const u8) void {
         var i: usize = 0;
 
+        // Finish the block left partially absorbed by a previous call
+        while (self.offset > 0 and i < b.len) : (i += 1) {
+            self.st.addByte(b[i], self.offset);
+            self.offset = (self.offset + 1) % block_length;
+            if (self.offset == 0) self.st.permuteR(12);
+        }
+
         // Process full 64-bit blocks
         while (i + 8 <= b.len) : (i += 8) {
             self.st.addBytes(b[i..][0..8]);
@@ -638,16 +649,8 @@ pub const AsconHash256 = struct {
 
         // Store partial block for finalization
         if (i < b.len) {
-            var padded: [8]u8 = @splat(0);
-            const remaining = b.len - i;
-            @memcpy(padded[0..remaining], b[i..]);
-            padded[remaining] = 0x01;
-            self.st.addBytes(&padded);
-        } else {
-            // Add padding block
-            var padded: [8]u8 = @splat(0);
-            padded[0] = 0x01;
-            self.st.addBytes(&padded);
+            self.st.addBytes(b[i..]);
+            self.offset = b.len - i;
         }
     }
 
@@ -658,6 +661,7 @@ pub const AsconHash256 = struct {
     ///
     /// Note: After calling final(), the hasher should not be used again
     pub fn final(self: *AsconHash256, out: *[digest_length]u8) void {
+        self.st.addByte(0x01, self.offset);
         // Final permutation after padding
         self.st.permuteR(12);
 
@@ -772,19 +776,21 @@ pub const AsconXof128 = struct {
             self.st.addBytes(&padded);
             self.st.permuteR(12);
             self.squeezed = true;
+            self.buf_len = 0;
         }
 
         var i: usize = 0;
         while (i < out.len) {
-            const to_copy = @min(8, out.len - i);
+            if (self.buf_len == block_length) {
+                self.st.permuteR(12);
+                self.buf_len = 0;
+            }
+            const to_copy = @min(block_length - self.buf_len, out.len - i);
             var block: [8]u8 = undefined;
             mem.writeInt(u64, &block, self.st.st[0], .little);
-            @memcpy(out[i..][0..to_copy], block[0..to_copy]);
+            @memcpy(out[i..][0..to_copy], block[self.buf_len..][0..to_copy]);
             i += to_copy;
-
-            if (i < out.len) {
-                self.st.permuteR(12);
-            }
+            self.buf_len += to_copy;
         }
     }
 };
@@ -924,19 +930,21 @@ pub const AsconCxof128 = struct {
             self.st.addBytes(&padded);
             self.st.permuteR(12);
             self.squeezed = true;
+            self.buf_len = 0;
         }
 
         var i: usize = 0;
         while (i < out.len) {
-            const to_copy = @min(8, out.len - i);
+            if (self.buf_len == block_length) {
+                self.st.permuteR(12);
+                self.buf_len = 0;
+            }
+            const to_copy = @min(block_length - self.buf_len, out.len - i);
             var block: [8]u8 = undefined;
             mem.writeInt(u64, &block, self.st.st[0], .little);
-            @memcpy(out[i..][0..to_copy], block[0..to_copy]);
+            @memcpy(out[i..][0..to_copy], block[self.buf_len..][0..to_copy]);
             i += to_copy;
-
-            if (i < out.len) {
-                self.st.permuteR(12);
-            }
+            self.buf_len += to_copy;
         }
     }
 };
@@ -949,6 +957,11 @@ test "Ascon-Hash256 basic test" {
 
     // Verify hash is generated (exact value depends on test vectors)
     try testing.expect(hash.len == 32);
+
+    var h = AsconHash256.init(.{});
+    h.update(message[0..5]);
+    h.update(message[5..]);
+    try testing.expectEqualSlices(u8, &hash, &h.finalResult());
 }
 
 test "Ascon-XOF128 basic test" {
@@ -1121,6 +1134,10 @@ test "Ascon-AEAD128 official test vectors" {
 
         var expected_tag: [16]u8 = undefined;
         _ = std.fmt.hexToBytes(&expected_tag, "CCCB674FE18A09A285D6AB11B35675C0") catch unreachable;
+        try testing.expectEqualSlices(u8, &expected_tag, &tag);
+
+        AsconAead128.encrypt(&ciphertext, &tag, plaintext, "0123456789:;<=>?", nonce, key);
+        _ = std.fmt.hexToBytes(&expected_tag, "E4230CDB8330EE9DC0CFD7C7B346E6DC") catch unreachable;
         try testing.expectEqualSlices(u8, &expected_tag, &tag);
     }
 
@@ -1297,7 +1314,8 @@ test "Ascon-XOF128/CXOF128 streaming chunking invariance" {
     var xof2 = AsconXof128.init(.{});
     xof2.update("Hello, ");
     xof2.update("World!");
-    xof2.squeeze(&out2);
+    xof2.squeeze(out2[0..3]);
+    xof2.squeeze(out2[3..]);
     try testing.expectEqualSlices(u8, &out1, &out2);
 
     // CXOF128: one-shot vs split must match
@@ -1309,7 +1327,8 @@ test "Ascon-XOF128/CXOF128 streaming chunking invariance" {
     var cxof2 = AsconCxof128.init(.{ .custom = "cust" });
     cxof2.update("Hello, ");
     cxof2.update("World!");
-    cxof2.squeeze(&cout2);
+    cxof2.squeeze(cout2[0..8]);
+    cxof2.squeeze(cout2[8..]);
     try testing.expectEqualSlices(u8, &cout1, &cout2);
 }
 
