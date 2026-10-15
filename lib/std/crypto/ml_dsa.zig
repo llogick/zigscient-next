@@ -443,14 +443,14 @@ fn PolyVec(comptime len: u8) type {
         }
 
         /// Unpack vector with coefficients in [-eta, eta]
-        fn unpackLeqEta(comptime eta: u8, buf: []const u8) Self {
+        fn unpackLeqEta(comptime eta: u8, buf: []const u8) EncodingError!Self {
             const poly_size = if (eta == 2) 96 else 128;
-            const unpack_fn = struct {
-                fn unpack(b: []const u8) Poly {
-                    return polyUnpackLeqEta(eta, b);
-                }
-            }.unpack;
-            return unpackWith(poly_size, unpack_fn, buf);
+            var result: Self = undefined;
+            inline for (0..len) |i| {
+                const offset = i * poly_size;
+                result.ps[i] = try polyUnpackLeqEta(eta, buf[offset..][0..poly_size]);
+            }
+            return result;
         }
 
         /// Pack vector of polynomials with coefficients < gamma1
@@ -996,7 +996,7 @@ fn polyPackLeqEta(p: Poly, comptime eta: u8, buf: []u8) void {
 
 /// Unpack polynomial with coefficients in [Q-eta, Q+eta] from bytes.
 /// Output coefficients will not be normalized, but in [q-η, q+η].
-fn polyUnpackLeqEta(comptime eta: u8, buf: []const u8) Poly {
+fn polyUnpackLeqEta(comptime eta: u8, buf: []const u8) EncodingError!Poly {
     comptime {
         if (eta != 2 and eta != 4) {
             @compileError("eta must be 2 or 4");
@@ -1010,22 +1010,31 @@ fn polyUnpackLeqEta(comptime eta: u8, buf: []const u8) Poly {
         var j: usize = 0;
         var i: usize = 0;
         while (i < buf.len) : (i += 3) {
-            p.cs[j] = Q + eta - (buf[i] & 7);
-            p.cs[j + 1] = Q + eta - ((buf[i] >> 3) & 7);
-            p.cs[j + 2] = Q + eta - ((buf[i] >> 6) | ((buf[i + 1] << 2) & 7));
-            p.cs[j + 3] = Q + eta - ((buf[i + 1] >> 1) & 7);
-            p.cs[j + 4] = Q + eta - ((buf[i + 1] >> 4) & 7);
-            p.cs[j + 5] = Q + eta - ((buf[i + 1] >> 7) | ((buf[i + 2] << 1) & 7));
-            p.cs[j + 6] = Q + eta - ((buf[i + 2] >> 2) & 7);
-            p.cs[j + 7] = Q + eta - ((buf[i + 2] >> 5) & 7);
+            const values = [_]u8{
+                buf[i] & 7,
+                (buf[i] >> 3) & 7,
+                (buf[i] >> 6) | ((buf[i + 1] << 2) & 7),
+                (buf[i + 1] >> 1) & 7,
+                (buf[i + 1] >> 4) & 7,
+                (buf[i + 1] >> 7) | ((buf[i + 2] << 1) & 7),
+                (buf[i + 2] >> 2) & 7,
+                (buf[i + 2] >> 5) & 7,
+            };
+            for (p.cs[j..][0..values.len], values) |*coefficient, value| {
+                if (value > 2 * eta) return error.InvalidEncoding;
+                coefficient.* = Q + eta - value;
+            }
             j += 8;
         }
     } else { // eta == 4
         // 4 bits per coefficient: unpack 2 coefficients from 1 byte
         var j: usize = 0;
         for (0..buf.len) |i| {
-            p.cs[j] = Q + eta - (buf[i] & 15);
-            p.cs[j + 1] = Q + eta - (buf[i] >> 4);
+            const values = [_]u8{ buf[i] & 15, buf[i] >> 4 };
+            for (p.cs[j..][0..values.len], values) |*coefficient, value| {
+                if (value > 2 * eta) return error.InvalidEncoding;
+                coefficient.* = Q + eta - value;
+            }
             j += 2;
         }
     }
@@ -1589,15 +1598,15 @@ fn MLDSAImpl(comptime p: Params) type {
                 offset += p.tr_size;
 
                 sk.s1 = if (p.eta == 2)
-                    PolyVecL.unpackLeqEta(2, bytes[offset..][0 .. p.l * polyLeqEtaPackedSize()])
+                    try PolyVecL.unpackLeqEta(2, bytes[offset..][0 .. p.l * polyLeqEtaPackedSize()])
                 else
-                    PolyVecL.unpackLeqEta(4, bytes[offset..][0 .. p.l * polyLeqEtaPackedSize()]);
+                    try PolyVecL.unpackLeqEta(4, bytes[offset..][0 .. p.l * polyLeqEtaPackedSize()]);
                 offset += p.l * polyLeqEtaPackedSize();
 
                 sk.s2 = if (p.eta == 2)
-                    PolyVecK.unpackLeqEta(2, bytes[offset..][0 .. p.k * polyLeqEtaPackedSize()])
+                    try PolyVecK.unpackLeqEta(2, bytes[offset..][0 .. p.k * polyLeqEtaPackedSize()])
                 else
-                    PolyVecK.unpackLeqEta(4, bytes[offset..][0 .. p.k * polyLeqEtaPackedSize()]);
+                    try PolyVecK.unpackLeqEta(4, bytes[offset..][0 .. p.k * polyLeqEtaPackedSize()]);
                 offset += p.k * polyLeqEtaPackedSize();
 
                 sk.t0 = PolyVecK.unpackT0(bytes[offset..][0 .. p.k * polyT0PackedSize()]);
@@ -2443,7 +2452,7 @@ test "polyPackLeqEta / polyUnpackLeqEta roundtrip for eta=2" {
     polyPackLeqEta(p, eta, &buf);
 
     // Unpack it
-    const p2 = polyUnpackLeqEta(eta, &buf);
+    const p2 = try polyUnpackLeqEta(eta, &buf);
 
     // Should be identical
     for (0..N) |i| {
@@ -2468,7 +2477,7 @@ test "polyPackLeqEta / polyUnpackLeqEta roundtrip for eta=4" {
     polyPackLeqEta(p, eta, &buf);
 
     // Unpack it
-    const p2 = polyUnpackLeqEta(eta, &buf);
+    const p2 = try polyUnpackLeqEta(eta, &buf);
 
     // Should be identical
     for (0..N) |i| {
@@ -2857,6 +2866,19 @@ test "Key generation basic - all variants" {
     }) |config| {
         const seed: [32]u8 = @splat(config.seed_byte);
         try testKeyGenerationBasic(config.variant, seed);
+    }
+}
+
+test "Reject reserved eta coefficients encodings" {
+    inline for (.{
+        .{ .variant = MLDSA44, .reserved = 7 },
+        .{ .variant = MLDSA65, .reserved = 15 },
+    }) |config| {
+        var encoded: [config.variant.SecretKey.encoded_length]u8 = @splat(0);
+        _ = try config.variant.SecretKey.fromBytes(encoded);
+        const s1_offset = 32 + 32 + config.variant.params.tr_size;
+        encoded[s1_offset] = config.reserved;
+        try testing.expectError(error.InvalidEncoding, config.variant.SecretKey.fromBytes(encoded));
     }
 }
 
