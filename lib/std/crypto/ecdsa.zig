@@ -138,8 +138,10 @@ pub fn Ecdsa(comptime C: type, comptime H: type) type {
             /// The function returns a slice, that can be shorter than der_encoded_length_max.
             pub fn toDer(sig: Signature, buf: *[der_encoded_length_max]u8) []u8 {
                 var w: std.Io.Writer = .fixed(buf);
-                const sig_r = mem.trimStart(u8, &sig.r, &.{0});
-                const sig_s = mem.trimStart(u8, &sig.s, &.{0});
+                const trimmed_r = mem.trimStart(u8, &sig.r, &.{0});
+                const trimmed_s = mem.trimStart(u8, &sig.s, &.{0});
+                const sig_r: []const u8 = if (trimmed_r.len == 0) &.{0} else trimmed_r;
+                const sig_s: []const u8 = if (trimmed_s.len == 0) &.{0} else trimmed_s;
                 const r_len = @as(u8, @intCast(sig_r.len + (sig_r[0] >> 7)));
                 const s_len = @as(u8, @intCast(sig_s.len + (sig_s[0] >> 7)));
                 const seq_len = @as(u8, @intCast(2 + r_len + 2 + s_len));
@@ -171,7 +173,8 @@ pub fn Ecdsa(comptime C: type, comptime H: type) type {
                 }
                 const out_slice = out[out.len - expected_len ..];
                 reader.readSliceAll(out_slice) catch return error.InvalidEncoding;
-                if (@intFromBool(has_top_bit) != out[0] >> 7) return error.InvalidEncoding;
+                if (@intFromBool(has_top_bit) != out_slice[0] >> 7) return error.InvalidEncoding;
+                if (expected_len > 1 and out_slice[0] == 0 and out_slice[1] >> 7 == 0) return error.InvalidEncoding;
             }
 
             /// Create a signature from a DER representation.
@@ -532,6 +535,23 @@ test "Prehashed message operations" {
     const regular_sig = try kp.sign(msg, null);
     try regular_sig.verifyPrehashed(msg_hash, kp.public_key);
     try sig.verify(msg, kp.public_key);
+}
+
+test "DER decoding edge cases" {
+    const Scheme = EcdsaP256Sha256;
+    const negative_r = [_]u8{ 0x30, 0x06, 0x02, 0x01, 0x80, 0x02, 0x01, 0x01 };
+    const padded_r = [_]u8{ 0x30, 0x07, 0x02, 0x02, 0x00, 0x01, 0x02, 0x01, 0x01 };
+    try testing.expectError(error.InvalidEncoding, Scheme.Signature.fromDer(&negative_r));
+    try testing.expectError(error.InvalidEncoding, Scheme.Signature.fromDer(&padded_r));
+
+    const raw: [Scheme.Signature.encoded_length]u8 = @splat(0);
+    const sig = Scheme.Signature.fromBytes(raw);
+    var der: [Scheme.Signature.der_encoded_length_max]u8 = undefined;
+    try testing.expectEqualSlices(
+        u8,
+        &.{ 0x30, 0x06, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00 },
+        sig.toDer(&der),
+    );
 }
 
 const TestVector = struct {
