@@ -905,9 +905,7 @@ pub fn statFile(dir: Dir, io: Io, sub_path: []const u8, options: StatFileOptions
 
 pub const RealPathError = File.RealPathError;
 
-/// Obtains the canonicalized absolute path name of `sub_path` relative to this
-/// `Dir`. If `sub_path` is absolute, ignores this `Dir` handle and obtains the
-/// canonicalized absolute pathname of `sub_path` argument.
+/// Obtains the canonicalized absolute path name of `dir`.
 ///
 /// This function has limited platform support, and using it can lead to
 /// unnecessary failures and race conditions. It is generally advisable to
