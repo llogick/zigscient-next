@@ -289,11 +289,21 @@ pub const JobQueue = struct {
                 \\
             , .{std.fmt.alt(fetch.package_root, .formatEscapeString)});
 
-            if (fetch.has_build_zig) {
+            if (fetch.has_build_zig) b: {
+                if (fetch.have_manifest) {
+                    const project_id: Package.ProjectId = .init(fetch.manifest.name, fetch.manifest.id);
+                    if (jq.fork_set.getKeyPtrAdapted(project_id, @as(JobQueue.Fork.Adapter, .{}))) |fork| {
+                        try w.print(
+                            \\        pub const build_zig = @import({qf});
+                            \\
+                        , .{fork.path});
+                        break :b;
+                    }
+                }
                 try w.print(
-                    \\        pub const build_zig = @import("{f}");
+                    \\        pub const build_zig = @import({q});
                     \\
-                , .{std.zig.fmtString(hash_slice)});
+                , .{hash_slice});
             }
 
             if (fetch.have_manifest) {
@@ -302,7 +312,7 @@ pub const JobQueue = struct {
                     \\        pub const deps: []const struct { []const u8, []const u8 } = &.{
                     \\
                 );
-                for (manifest.dependencies.keys(), manifest.dependencies.values()) |name, dep| {
+                for (manifest.dependencies.keys(), manifest.dependencies.values()) |name, *dep| {
                     const h = depDigest(fetch.package_root, jq.global_cache, dep) orelse continue;
                     try w.print(
                         "            .{{ \"{f}\", \"{f}\" }},\n",
@@ -335,7 +345,7 @@ pub const JobQueue = struct {
         assert(root_fetch.have_manifest);
         const root_manifest = &root_fetch.manifest;
 
-        for (root_manifest.dependencies.keys(), root_manifest.dependencies.values()) |name, dep| {
+        for (root_manifest.dependencies.keys(), root_manifest.dependencies.values()) |name, *dep| {
             const h = depDigest(root_fetch.package_root, jq.global_cache, dep) orelse continue;
             try w.print(
                 "    .{{ \"{f}\", \"{f}\" }},\n",
@@ -595,7 +605,7 @@ pub fn run(f: *Fetch) RunError!void {
     if (remote.hash) |expected_hash| {
         const expected_project_id: Package.ProjectId = expected_hash.projectId();
         if (job_queue.fork_set.getKeyPtrAdapted(expected_project_id, @as(JobQueue.Fork.Adapter, .{}))) |fork| {
-            log.debug("using fork {f} for {s}", .{ fork.path, fork.manifest.name });
+            log.debug("using fork {f} for {s}", .{ fork.path, expected_hash.toSlice() });
             fork.uses += 1;
             f.package_root = fork.path;
             f.remote_package_root = f.package_root;
@@ -2033,7 +2043,7 @@ const Filter = struct {
     }
 };
 
-pub fn depDigest(pkg_root: Path, cache_root: Directory, dep: Manifest.Dependency) ?Package.Hash {
+pub fn depDigest(pkg_root: Path, cache_root: Directory, dep: *const Manifest.Dependency) ?Package.Hash {
     if (dep.hash) |h| return .fromSlice(h);
 
     switch (dep.location) {

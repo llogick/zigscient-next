@@ -1431,7 +1431,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                     printPkgTree(.{
                         .writer = initStdoutWriter(io),
                         .mode = try .detect(io, .stdout(), NO_COLOR, CLICOLOR_FORCE),
-                    }, arena, &job_queue, &fetch) catch |err| switch (err) {
+                    }, arena, graph.global_cache_root, &job_queue, &fetch, &fork_set) catch |err| switch (err) {
                         error.WriteFailed => return stdout_writer_allocation.err.?,
                         else => |e| return e,
                     };
@@ -1444,7 +1444,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                     process.exit(0);
                 }
 
-                try validateFingerprints(gpa, &job_queue);
+                try validateFingerprints(gpa, &job_queue, &fork_set);
 
                 // Create the dependencies.zig file for configurer to
                 // obtain via `@import("@dependencies")`.
@@ -1490,10 +1490,29 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                             // The first one is a dummy package for the current project.
                             continue;
                         }
-                        if (!f.has_build_zig)
-                            continue;
-                        const hash_slice = try arena.dupe(u8, hash.toSlice());
+                        if (!f.has_build_zig) continue;
 
+                        if (f.have_manifest) {
+                            const project_id: Package.ProjectId = .init(f.manifest.name, f.manifest.id);
+                            if (fork_set.getKeyPtrAdapted(project_id, @as(Fetch.JobQueue.Fork.Adapter, .{}))) |fork| {
+                                const path = try fork.path.toString(arena);
+                                const gop = deps_mod.deps.getOrPutAssumeCapacity(path);
+                                if (gop.found_existing) {
+                                    assert(fork.uses > 1);
+                                    f.cli_module = gop.value_ptr.*;
+                                } else {
+                                    const m = try arena.create(CliModule);
+                                    m.* = .{
+                                        .root_path = try f.package_root.toString(arena),
+                                        .name = path,
+                                    };
+                                    gop.value_ptr.* = m;
+                                    f.cli_module = m;
+                                }
+                                continue;
+                            }
+                        }
+                        const hash_slice = try arena.dupe(u8, hash.toSlice());
                         const m = try arena.create(CliModule);
                         m.* = .{
                             .root_path = try f.package_root.toString(arena),
@@ -1515,7 +1534,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                         const man = &f.manifest;
                         const dep_names = man.dependencies.keys();
                         try mod.deps.ensureUnusedCapacity(arena, @intCast(dep_names.len));
-                        for (dep_names, man.dependencies.values()) |name, dep| {
+                        for (dep_names, man.dependencies.values()) |name, *dep| {
                             const dep_digest = Package.Fetch.depDigest(
                                 f.package_root,
                                 graph.global_cache_root,
@@ -1796,7 +1815,11 @@ const ValidFingerprintTable = std.array_hash_map.Custom(
 
 /// Ensure that the dependency tree did not have any fingerprint matches with the same semantic version but
 /// differing package hashes.
-fn validateFingerprints(gpa: Allocator, job_queue: *const Fetch.JobQueue) !void {
+fn validateFingerprints(
+    gpa: Allocator,
+    job_queue: *const Fetch.JobQueue,
+    fork_set: *const Package.Fetch.JobQueue.ForkSet,
+) !void {
     var any_errors = false;
 
     var table: ValidFingerprintTable = .empty;
@@ -1804,8 +1827,13 @@ fn validateFingerprints(gpa: Allocator, job_queue: *const Fetch.JobQueue) !void 
 
     for (job_queue.table.keys(), job_queue.table.values()) |pkg_hash, fetch| {
         if (!fetch.have_manifest) continue;
+
+        // Forked packages are exempt since they overide multiple package hashes to have the forked contents.
+        const project_id: Package.ProjectId = .init(fetch.manifest.name, fetch.manifest.id);
+        if (fork_set.containsAdapted(project_id, @as(Fetch.JobQueue.Fork.Adapter, .{}))) continue;
+
         const gop = try table.getOrPut(gpa, .{
-            .project_id = .init(fetch.manifest.name, fetch.manifest.id),
+            .project_id = project_id,
             .version = fetch.manifest.version,
         });
         if (gop.found_existing) {
@@ -1842,8 +1870,10 @@ fn validateFingerprints(gpa: Allocator, job_queue: *const Fetch.JobQueue) !void 
 fn printPkgTree(
     terminal: Io.Terminal,
     arena: Allocator,
+    global_cache_root: Cache.Directory,
     job_queue: *const Fetch.JobQueue,
     root_fetch: *const Fetch,
+    fork_set: *const Package.Fetch.JobQueue.ForkSet,
 ) !void {
     if (!root_fetch.have_manifest) return;
     const names = root_fetch.manifest.dependencies.keys();
@@ -1852,37 +1882,49 @@ fn printPkgTree(
             .parent = null,
             .last = i == names.len - 1,
         };
-        try printPkgTreeChild(terminal, arena, job_queue, &print_node, name, dep.hash);
+        switch (dep.location) {
+            .url => {
+                const child_hash = if (dep.hash) |h| Package.Hash.fromSlice(h) else null;
+                try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
+            },
+            .path => {
+                const child_hash = Package.Fetch.depDigest(root_fetch.package_root, global_cache_root, dep);
+                try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
+            },
+        }
     }
 }
 
 fn printPkgTreeChild(
     terminal: Io.Terminal,
     arena: Allocator,
+    global_cache_root: Cache.Directory,
     job_queue: *const Fetch.JobQueue,
     parent_print_node: *const PrintNode,
     dep_name: []const u8,
-    opt_hash: ?[]const u8,
+    opt_pkg_hash: ?Package.Hash,
+    fork_set: *const Package.Fetch.JobQueue.ForkSet,
 ) !void {
     const w = terminal.writer;
     try parent_print_node.printPrefixedChild(w, terminal.mode);
     try w.writeAll(dep_name);
 
-    const hash = opt_hash orelse {
+    const pkg_hash = opt_pkg_hash orelse {
         try terminal.setColor(.red);
         try w.writeAll(" (missing hash)\n");
         try terminal.setColor(.reset);
         return;
     };
     try terminal.setColor(.dim);
-    try w.print(" {s}", .{hash});
+    try w.print(" {s}", .{pkg_hash.toSlice()});
     try terminal.setColor(.reset);
-    const child_fetch = job_queue.table.get(.fromSlice(hash)) orelse {
+    const child_fetch = job_queue.table.get(pkg_hash) orelse {
         try terminal.setColor(.red);
         try w.writeAll(" (fetch failed)\n");
         try terminal.setColor(.reset);
         return;
     };
+
     switch (child_fetch.lazy_status) {
         .eager, .available => {},
         .unavailable => {
@@ -1892,8 +1934,19 @@ fn printPkgTreeChild(
             return;
         },
     }
+    if (!child_fetch.have_manifest) {
+        try w.writeByte('\n');
+        return;
+    }
+
+    const project_id: Package.ProjectId = .init(child_fetch.manifest.name, child_fetch.manifest.id);
+    if (fork_set.getKeyPtrAdapted(project_id, @as(Fetch.JobQueue.Fork.Adapter, .{}))) |fork| {
+        try terminal.setColor(.yellow);
+        try w.print(" (fork: {f})", .{fork.path});
+        try terminal.setColor(.reset);
+    }
+
     try w.writeByte('\n');
-    if (!child_fetch.have_manifest) return;
 
     const names = child_fetch.manifest.dependencies.keys();
     for (names, child_fetch.manifest.dependencies.values(), 0..) |name, *dep, i| {
@@ -1901,7 +1954,16 @@ fn printPkgTreeChild(
             .parent = parent_print_node,
             .last = i == names.len - 1,
         };
-        try printPkgTreeChild(terminal, arena, job_queue, &print_node, name, dep.hash);
+        switch (dep.location) {
+            .url => {
+                const child_hash = if (dep.hash) |h| Package.Hash.fromSlice(h) else null;
+                try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
+            },
+            .path => {
+                const child_hash = Package.Fetch.depDigest(child_fetch.package_root, global_cache_root, dep);
+                try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
+            },
+        }
     }
 }
 
