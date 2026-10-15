@@ -316,56 +316,6 @@ fn addLanesAll(
     }
 }
 
-/// Apply Keccak-p[1600,12] to a single state (u64 lane representation)
-fn keccakPLanes(lanes: *[25]u64) void {
-    @setEvalBranchQuota(10000);
-
-    // Apply 12 rounds
-    inline for (RC) |rc| {
-        // θ
-        var C: [5]u64 = undefined;
-        inline for (0..5) |x| {
-            C[x] = lanes[x] ^ lanes[x + 5] ^ lanes[x + 10] ^ lanes[x + 15] ^ lanes[x + 20];
-        }
-        var D: [5]u64 = undefined;
-        inline for (0..5) |x| {
-            D[x] = C[(x + 4) % 5] ^ std.math.rotl(u64, C[(x + 1) % 5], 1);
-        }
-        inline for (0..5) |x| {
-            inline for (0..5) |y| {
-                lanes[x + 5 * y] ^= D[x];
-            }
-        }
-
-        // ρ and π
-        var current = lanes[1];
-        var px: usize = 1;
-        var py: usize = 0;
-        inline for (0..24) |t| {
-            const next_y = (2 * px + 3 * py) % 5;
-            const next_idx = py + 5 * next_y;
-            const temp = lanes[next_idx];
-            const rot_amount = ((t + 1) * (t + 2) / 2) % 64;
-            lanes[next_idx] = std.math.rotl(u64, current, @as(u6, @intCast(rot_amount)));
-            current = temp;
-            px = py;
-            py = next_y;
-        }
-
-        // χ
-        inline for (0..5) |y| {
-            const idx = 5 * y;
-            const T = [5]u64{ lanes[idx], lanes[idx + 1], lanes[idx + 2], lanes[idx + 3], lanes[idx + 4] };
-            inline for (0..5) |x| {
-                lanes[idx + x] = T[x] ^ (~T[(x + 1) % 5] & T[(x + 2) % 5]);
-            }
-        }
-
-        // ι
-        lanes[0] ^= rc;
-    }
-}
-
 /// Generic non-allocating TurboSHAKE: write output to provided buffer
 fn turboShakeMultiSliceToBuffer(
     comptime rate: usize,

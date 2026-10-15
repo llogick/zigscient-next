@@ -300,6 +300,7 @@ test {
     _ = auth.siphash;
 
     _ = core.aes;
+    _ = core.keccak;
     _ = core.Ascon;
     _ = core.modes;
 

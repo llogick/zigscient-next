@@ -177,8 +177,9 @@ pub fn KeccakF(comptime f: u11) type {
 
         /// Apply a (possibly) reduced-round permutation to the state.
         pub fn permuteR(self: *Self, comptime rounds: u5) void {
+            comptime assert(rounds <= max_rounds); // Keccak only supports up to 24 rounds
             var i = RC.len - rounds;
-            while (i < RC.len - RC.len % 3) : (i += 3) {
+            while (i < RC.len - rounds % 3) : (i += 3) {
                 self.round(RC[i]);
                 self.round(RC[i + 1]);
                 self.round(RC[i + 2]);
