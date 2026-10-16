@@ -44,7 +44,8 @@ pub const std_options: std.Options = .{
 
 gpa: Allocator,
 graph: *Graph,
-install_paths: InstallPaths,
+install_paths: PrefixPaths,
+deployed_paths: PrefixPaths,
 scanned_config: *const ScannedConfig,
 /// Includes an extra auto-generated placeholder Step at the end that indicates
 /// configure must be rerun. It is done this way so that the hot path of file
@@ -109,7 +110,7 @@ const use_safe_allocator = switch (builtin.mode) {
     .fast, .small => false,
 };
 
-const InstallPaths = struct {
+const PrefixPaths = struct {
     prefix: Path,
     lib: Path,
     bin: Path,
@@ -715,42 +716,62 @@ pub fn main(init: process.Init.Minimal) !void {
     });
     defer main_progress_node.end();
 
-    const install_prefix_path: Path = if (graph.environ_map.get("DESTDIR")) |dest_dir| .{
-        .root_dir = .cwd(),
-        .sub_path = try Dir.path.join(arena, &.{ dest_dir, override_install_prefix orelse "/usr" }),
-    } else if (override_install_prefix) |cwd_relative| .{
-        .root_dir = .cwd(),
-        .sub_path = cwd_relative,
-    } else .{
-        .root_dir = graph.build_root_directory,
-        .sub_path = "zig-out",
+    const deployed_paths: PrefixPaths = blk: {
+        const prefix: Path = if (override_install_prefix) |cwd_relative| .{
+            .root_dir = .cwd(),
+            .sub_path = cwd_relative,
+        } else if (graph.environ_map.get("DESTDIR") != null) .{
+            .root_dir = .cwd(),
+            .sub_path = "/usr",
+        } else .{
+            .root_dir = graph.build_root_directory,
+            .sub_path = "zig-out",
+        };
+        break :blk .{
+            .prefix = prefix,
+            // The lib/bin/include overrides are interpreted relative to the
+            // install prefix unless absolute paths are used.
+            .lib = if (override_lib_dir) |lib_dir|
+                if (Dir.path.isAbsolute(lib_dir)) .{
+                    .root_dir = .cwd(),
+                    .sub_path = lib_dir,
+                } else try prefix.join(arena, lib_dir)
+            else
+                try prefix.join(arena, "lib"),
+            .bin = if (override_bin_dir) |bin_dir|
+                if (Dir.path.isAbsolute(bin_dir)) .{
+                    .root_dir = .cwd(),
+                    .sub_path = bin_dir,
+                } else try prefix.join(arena, bin_dir)
+            else
+                try prefix.join(arena, "bin"),
+            .include = if (override_include_dir) |include_dir|
+                if (Dir.path.isAbsolute(include_dir)) .{
+                    .root_dir = .cwd(),
+                    .sub_path = include_dir,
+                } else try prefix.join(arena, include_dir)
+            else
+                try prefix.join(arena, "include"),
+        };
     };
-
-    // These three overrides are meant to be relative to the install prefix,
-    // not current working directory, unless absolute paths are used.
-    const install_lib_path: Path = if (override_lib_dir) |lib_dir|
-        if (Dir.path.isAbsolute(lib_dir)) .{
+    const install_paths: PrefixPaths = if (graph.environ_map.get("DESTDIR")) |destdir| .{
+        .prefix = .{
             .root_dir = .cwd(),
-            .sub_path = lib_dir,
-        } else try install_prefix_path.join(arena, lib_dir)
-    else
-        try install_prefix_path.join(arena, "lib");
-
-    const install_bin_path: Path = if (override_bin_dir) |bin_dir|
-        if (Dir.path.isAbsolute(bin_dir)) .{
+            .sub_path = try Dir.path.join(arena, &.{ destdir, deployed_paths.prefix.sub_path }),
+        },
+        .lib = .{
             .root_dir = .cwd(),
-            .sub_path = bin_dir,
-        } else try install_prefix_path.join(arena, bin_dir)
-    else
-        try install_prefix_path.join(arena, "bin");
-
-    const install_include_path: Path = if (override_include_dir) |include_dir|
-        if (Dir.path.isAbsolute(include_dir)) .{
+            .sub_path = try Dir.path.join(arena, &.{ destdir, deployed_paths.lib.sub_path }),
+        },
+        .bin = .{
             .root_dir = .cwd(),
-            .sub_path = include_dir,
-        } else try install_prefix_path.join(arena, include_dir)
-    else
-        try install_prefix_path.join(arena, "include");
+            .sub_path = try Dir.path.join(arena, &.{ destdir, deployed_paths.bin.sub_path }),
+        },
+        .include = .{
+            .root_dir = .cwd(),
+            .sub_path = try Dir.path.join(arena, &.{ destdir, deployed_paths.include.sub_path }),
+        },
+    } else deployed_paths;
 
     const now = Io.Clock.Timestamp.now(io, .awake);
 
@@ -855,12 +876,8 @@ pub fn main(init: process.Init.Minimal) !void {
                 .gpa = gpa,
                 .graph = &graph,
                 .scanned_config = &scanned_config,
-                .install_paths = .{
-                    .prefix = install_prefix_path,
-                    .lib = install_lib_path,
-                    .bin = install_bin_path,
-                    .include = install_include_path,
-                },
+                .install_paths = install_paths,
+                .deployed_paths = deployed_paths,
 
                 .steps = &.{},
                 .generated_files = &.{},
@@ -4155,6 +4172,10 @@ pub fn relativePath(
         .install_lib => try maker.install_paths.lib.join(arena, sub_path),
         .install_bin => try maker.install_paths.bin.join(arena, sub_path),
         .install_include => try maker.install_paths.include.join(arena, sub_path),
+        .deployed_prefix => try maker.deployed_paths.prefix.join(arena, sub_path),
+        .deployed_lib => try maker.deployed_paths.lib.join(arena, sub_path),
+        .deployed_bin => try maker.deployed_paths.bin.join(arena, sub_path),
+        .deployed_include => try maker.deployed_paths.include.join(arena, sub_path),
         .libc_runtimes => if (maker.graph.libc_runtimes_dir) |libc_runtimes_dir| .{
             .root_dir = .cwd(),
             .sub_path = try Dir.path.join(arena, &.{ libc_runtimes_dir, sub_path }),
@@ -4764,6 +4785,10 @@ fn confPathDepToCachePath(
         .install_lib => @panic("TODO"),
         .install_bin => @panic("TODO"),
         .install_include => @panic("TODO"),
+        .deployed_prefix => @panic("TODO"),
+        .deployed_lib => @panic("TODO"),
+        .deployed_bin => @panic("TODO"),
+        .deployed_include => @panic("TODO"),
         .libc_runtimes => @panic("TODO"),
     };
 }

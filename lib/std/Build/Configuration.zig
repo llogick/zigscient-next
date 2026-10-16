@@ -1607,6 +1607,13 @@ pub const LazyPath = union(@This().Tag) {
             _: u16 = 0,
         };
 
+        /// The deployed_prefix and related paths exist to support the use-case
+        /// of embedding absolute paths to other build artifacts in the build
+        /// artifacts themselves. For example pkg-config files are artifacts
+        /// which must contain absolute paths to the other library/header
+        /// artifacts they describe. Note that this feature is only supported to
+        /// faciliate interoperability with such legacy systems. In general,
+        /// embedding absolute paths in build artifacts should be avoided.
         pub const Base = enum(u8) {
             cwd,
             local_cache,
@@ -1615,10 +1622,33 @@ pub const LazyPath = union(@This().Tag) {
             build_root,
             zig_exe,
             zig_lib,
+
+            /// Path that artifacts will be written to by the build system.
+            /// Equivalent to $DESTDIR/deployed_prefix if $DESTDIR is set.
             install_prefix,
+            /// Path that artifacts will be written to by the build system.
+            /// Equivalent to $DESTDIR/deployed_lib if $DESTDIR is set.
             install_lib,
+            /// Path that artifacts will be written to by the build system.
+            /// Equivalent to $DESTDIR/deployed_bin if $DESTDIR is set.
             install_bin,
+            /// Path that artifacts will be written to by the build system.
+            /// Equivalent to $DESTDIR/deployed_include if $DESTDIR is set.
             install_include,
+
+            /// Path that artifacts will be deployed to on the target system.
+            /// Unaffected by $DESTDIR.
+            deployed_prefix,
+            /// Path that artifacts will be deployed to on the target system.
+            /// Unaffected by $DESTDIR.
+            deployed_lib,
+            /// Path that artifacts will be deployed to on the target system.
+            /// Unaffected by $DESTDIR.
+            deployed_bin,
+            /// Path that artifacts will be deployed to on the target system.
+            /// Unaffected by $DESTDIR.
+            deployed_include,
+
             libc_runtimes,
         };
     };
