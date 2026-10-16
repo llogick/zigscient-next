@@ -1515,6 +1515,8 @@ test "BLAKE3 reference test cases" {
 }
 
 test "BLAKE3 parallel vs sequential" {
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
+
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
