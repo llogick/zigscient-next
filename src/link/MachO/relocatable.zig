@@ -152,8 +152,8 @@ pub fn flushStaticLib(macho_file: *MachO, comp: *Compilation) link.Error!void {
     // Update file offsets of contributing objects
     const total_size: usize = blk: {
         var pos: usize = macho.ARMAG.len;
-        pos += @sizeOf(Archive.ar_hdr);
-        pos += Archive.SYMDEF.len + 1;
+        pos += @sizeOf(macho.ar_hdr);
+        pos += macho.SYMDEF.len + 1;
         pos = mem.alignForward(usize, pos, 8);
         pos += ar_symtab.size(format);
 
@@ -164,7 +164,7 @@ pub fn flushStaticLib(macho_file: *MachO, comp: *Compilation) link.Error!void {
                     const state = &zo.output_ar_state;
                     pos = mem.alignForward(usize, pos, 2);
                     state.file_off = pos;
-                    pos += @sizeOf(Archive.ar_hdr);
+                    pos += @sizeOf(macho.ar_hdr);
                     pos += zo.basename.len + 1;
                     pos = mem.alignForward(usize, pos, 8);
                     pos += try macho_file.cast(usize, state.size);
@@ -173,7 +173,7 @@ pub fn flushStaticLib(macho_file: *MachO, comp: *Compilation) link.Error!void {
                     const state = &o.output_ar_state;
                     pos = mem.alignForward(usize, pos, 2);
                     state.file_off = pos;
-                    pos += @sizeOf(Archive.ar_hdr);
+                    pos += @sizeOf(macho.ar_hdr);
                     pos += std.fs.path.basename(o.path).len + 1;
                     pos = mem.alignForward(usize, pos, 8);
                     pos += try macho_file.cast(usize, state.size);
