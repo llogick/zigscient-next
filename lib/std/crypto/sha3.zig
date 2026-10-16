@@ -46,6 +46,28 @@ pub fn TurboShake256(comptime delim: ?u7) type {
     return TurboShake(256, delim);
 }
 
+/// MiniSHAKE128 is a XOF (a secure hash function with a variable output length), with a 128 bit security level.
+/// It works like TurboSHAKE128, with a permutation half the size.
+///
+/// It was designed for hashing many short messages inside zero-knowledge proofs.
+/// Note: on 64-bit CPUs, it is about as fast as TurboSHAKE128 for inputs up to 67 bytes, and much slower for longer ones.
+///
+/// The delimiter is 0x01 by default, but can be changed for domain separation.
+pub fn MiniShake128(comptime delim: ?u7) type {
+    return MiniShake(128, delim);
+}
+
+/// MiniSHAKE256 is a XOF (a secure hash function with a variable output length), with a 256 bit security level.
+/// It works like TurboSHAKE256, with a permutation half the size.
+///
+/// It was designed for hashing many short messages inside zero-knowledge proofs.
+/// Note: on 64-bit CPUs, it is much slower than TurboSHAKE256, even for short inputs.
+///
+/// The delimiter is 0x01 by default, but can be changed for domain separation.
+pub fn MiniShake256(comptime delim: ?u7) type {
+    return MiniShake(256, delim);
+}
+
 /// A generic Keccak hash function.
 pub fn Keccak(comptime f: u11, comptime output_bits: u11, comptime default_delim: u8, comptime rounds: u5) type {
     comptime assert(output_bits > 0 and output_bits * 2 < f and output_bits % 8 == 0); // invalid output length
@@ -97,7 +119,7 @@ pub fn Keccak(comptime f: u11, comptime output_bits: u11, comptime default_delim
 
 /// The SHAKE extendable output hash function.
 pub fn Shake(comptime security_level: u11) type {
-    return ShakeLike(security_level, 0x1f, 24);
+    return ShakeLike(1600, security_level, 0x1f, 24);
 }
 
 /// The TurboSHAKE extendable output hash function.
@@ -108,11 +130,24 @@ pub fn TurboShake(comptime security_level: u11, comptime delim: ?u7) type {
     comptime assert(security_level <= 256);
     const d = delim orelse 0x1f;
     comptime assert(d >= 0x01); // delimiter must be >= 1
-    return ShakeLike(security_level, d, 12);
+    return ShakeLike(1600, security_level, d, 12);
 }
 
-fn ShakeLike(comptime security_level: u11, comptime default_delim: u8, comptime rounds: u5) type {
-    const f = 1600;
+/// The MiniSHAKE extendable output hash function.
+/// It is TurboSHAKE with an 800-bit permutation instead of a 1600-bit one.
+/// The security level must be a multiple of 4, up to 256.
+///
+/// The delimiter is 0x01 by default, but can be changed for domain separation.
+///
+/// https://eprint.iacr.org/2026/2363
+pub fn MiniShake(comptime security_level: u11, comptime delim: ?u7) type {
+    comptime assert(security_level > 0 and security_level <= 256 and security_level % 4 == 0);
+    const d = delim orelse 0x01;
+    comptime assert(d >= 0x01);
+    return ShakeLike(800, security_level, d, 12);
+}
+
+fn ShakeLike(comptime f: u11, comptime security_level: u11, comptime default_delim: u8, comptime rounds: u5) type {
     const State = KeccakState(f, security_level * 2, rounds);
 
     return struct {
@@ -124,7 +159,7 @@ fn ShakeLike(comptime security_level: u11, comptime default_delim: u8, comptime 
         padded: bool = false,
 
         /// The recommended output length, in bytes.
-        pub const digest_length = security_level / 8 * 2;
+        pub const digest_length = security_level * 2 / 8;
         /// The block length, or rate, in bytes.
         pub const block_length = State.rate;
         /// The delimiter can be overwritten in the options.
@@ -202,7 +237,7 @@ pub fn CShake(comptime security_level: u11, comptime fname: ?[]const u8) type {
 
 fn CShakeLike(comptime security_level: u11, comptime default_delim: u8, comptime rounds: u5, comptime fname: ?[]const u8) type {
     return struct {
-        const Shaker = ShakeLike(security_level, default_delim, rounds);
+        const Shaker = ShakeLike(1600, security_level, default_delim, rounds);
         shaker: Shaker,
 
         /// The recommended output length, in bytes.
@@ -680,6 +715,18 @@ test "TurboSHAKE-128" {
     var out: [32]u8 = undefined;
     TurboShake(128, 0x06).hash("\xff", &out, .{});
     try htest.assertEqual("8ec9c66465ed0d4a6c35d13506718d687a25cb05c74cca1e42501abd83874a67", &out);
+}
+
+test "MiniSHAKE-128" {
+    var out: [32]u8 = undefined;
+    MiniShake128(null).hash("", &out, .{});
+    try htest.assertEqual("4e21f95d5dae60ddca7bc29b5a0da731d710b91f7e1effdb7bbd1055fd74618c", &out);
+}
+
+test "MiniSHAKE-256" {
+    var out: [64]u8 = undefined;
+    MiniShake256(null).hash("", &out, .{});
+    try htest.assertEqual("1e56563204eef4cef068b1666eec7ef033c43b70b8133d020773e6197dc7b61101e1b28360a9e589757371d7e3db8e1dface3d5661d39ab1c969850e50f550cc", &out);
 }
 
 test "SHA-3 with streaming" {

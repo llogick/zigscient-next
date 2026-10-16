@@ -31,6 +31,8 @@ const hashes = [_]Crypto{
     Crypto{ .ty = crypto.hash.sha3.Shake256, .name = "shake-256" },
     Crypto{ .ty = crypto.hash.sha3.TurboShake128(null), .name = "turboshake-128" },
     Crypto{ .ty = crypto.hash.sha3.TurboShake256(null), .name = "turboshake-256" },
+    Crypto{ .ty = crypto.hash.sha3.MiniShake128(null), .name = "minishake-128" },
+    Crypto{ .ty = crypto.hash.sha3.MiniShake256(null), .name = "minishake-256" },
     Crypto{ .ty = crypto.hash.sha3.KT128, .name = "kt128" },
     Crypto{ .ty = crypto.hash.blake2.Blake2s256, .name = "blake2s" },
     Crypto{ .ty = crypto.hash.blake2.Blake2b512, .name = "blake2b" },

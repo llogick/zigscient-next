@@ -78,7 +78,7 @@ pub fn KeccakF(comptime f: u11) type {
 
         /// XOR a byte into the state at a given offset.
         pub fn addByte(self: *Self, byte: u8, offset: usize) void {
-            const z = @sizeOf(T) * @as(math.Log2Int(T), @truncate(offset % @sizeOf(T)));
+            const z: math.Log2Int(T) = @intCast(8 * (offset % @sizeOf(T)));
             self.st[offset / @sizeOf(T)] ^= @as(T, byte) << z;
         }
 
@@ -380,6 +380,21 @@ test "Keccak-f800" {
         0x1DB35DF7, 0x5AA60162, 0x358825D5, 0xB3783BAB,
     };
     try std.testing.expectEqualSlices(u32, &st.st, &expected);
+}
+
+test "addByte" {
+    inline for (.{ 200, 400, 800, 1600 }) |f| {
+        const F = KeccakF(f);
+        for (0..F.block_bytes) |offset| {
+            var a: F = .{};
+            a.addByte(0xa5, offset);
+            var bytes: [F.block_bytes]u8 = @splat(0);
+            bytes[offset] = 0xa5;
+            var b: F = .{};
+            b.addBytes(&bytes);
+            try std.testing.expectEqual(b.st, a.st);
+        }
+    }
 }
 
 test "squeeze" {
