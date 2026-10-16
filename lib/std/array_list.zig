@@ -774,7 +774,7 @@ pub fn Aligned(comptime T: type, comptime alignment: ?mem.Alignment) type {
         /// The caller owns the returned memory. Empties this ArrayList.
         /// Its capacity is cleared, making deinit() safe but unnecessary to call.
         ///
-        /// Asserts what the capacity is equal to the length.
+        /// Asserts that the capacity is equal to the length.
         /// Never invalidates element pointers.
         ///
         /// See also:
@@ -787,7 +787,7 @@ pub fn Aligned(comptime T: type, comptime alignment: ?mem.Alignment) type {
         }
 
         /// The caller owns the returned memory. ArrayList becomes empty.
-        /// Asserts what the capacity is equal to the length + 1.
+        /// Asserts that the capacity is equal to the length + 1.
         /// Never invalidates element pointers.
         pub fn toOwnedSliceSentinelAssert(self: *Self, comptime sentinel: T) SentinelSlice(sentinel) {
             std.debug.assert(self.items.len + 1 == self.capacity);
