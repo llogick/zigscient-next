@@ -635,14 +635,16 @@ fn testOrderedArrayAndTreapConsistency(array: []u64, treap: *TestTreap) !void {
 }
 
 test "node.{prev(),next()} with random data" {
+    const gpa = std.testing.allocator;
+
     var nodes: [100]TestNode = undefined;
     var prng = std.Random.DefaultPrng.init(0xdeadbeef);
     var iter = SliceIterRandomOrder(TestNode).init(&nodes, prng.random());
 
     var treap = TestTreap{};
     // A slow, stupid but correct reference. Ordered.
-    var golden = std.array_list.Managed(u64).init(std.testing.allocator);
-    defer golden.deinit();
+    var golden: std.ArrayList(u64) = .empty;
+    defer golden.deinit(gpa);
 
     // Insert.
     iter.reset();
@@ -653,7 +655,7 @@ test "node.{prev(),next()} with random data" {
         const i = findFirstGreaterOrEqual(golden.items, key);
         // Ensure not found. If found: `prng`'s fault.
         try testing.expect(i == golden.items.len or golden.items[i] > key);
-        try golden.insert(i, key);
+        try golden.insert(gpa, i, key);
 
         // Insert into `treap`.
         var entry = treap.getEntryFor(key);

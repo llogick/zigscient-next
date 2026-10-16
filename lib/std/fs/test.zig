@@ -536,24 +536,24 @@ test "Dir.Iterator" {
 
     try tmp_dir.dir.createDir(io, "some_dir", .default_dir);
 
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    var arena_instance = ArenaAllocator.init(testing.allocator);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
 
-    var entries = std.array_list.Managed(Dir.Entry).init(allocator);
+    var entries: std.ArrayList(Dir.Entry) = .empty;
 
     // Create iterator.
     var iter = tmp_dir.dir.iterate();
     while (try iter.next(io)) |entry| {
         // We cannot just store `entry` as on Windows, we're re-using the name buffer
         // which means we'll actually share the `name` pointer between entries!
-        const name = try allocator.dupe(u8, entry.name);
-        try entries.append(Dir.Entry{ .name = name, .kind = entry.kind, .inode = 0 });
+        const name = try arena.dupe(u8, entry.name);
+        try entries.append(arena, Dir.Entry{ .name = name, .kind = entry.kind, .inode = 0 });
     }
 
     try expectEqual(@as(usize, 2), entries.items.len); // note that the Iterator skips '.' and '..'
-    try expect(contains(&entries, .{ .name = "some_file", .kind = .file, .inode = 0 }));
-    try expect(contains(&entries, .{ .name = "some_dir", .kind = .directory, .inode = 0 }));
+    try expect(contains(entries.items, .{ .name = "some_file", .kind = .file, .inode = 0 }));
+    try expect(contains(entries.items, .{ .name = "some_dir", .kind = .directory, .inode = 0 }));
 }
 
 test "Dir.Iterator many entries" {
@@ -571,25 +571,25 @@ test "Dir.Iterator many entries" {
         file.close(io);
     }
 
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    var arena_instance = ArenaAllocator.init(testing.allocator);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
 
-    var entries = std.array_list.Managed(Dir.Entry).init(allocator);
+    var entries: std.ArrayList(Dir.Entry) = .empty;
 
     // Create iterator.
     var iter = tmp_dir.dir.iterate();
     while (try iter.next(io)) |entry| {
         // We cannot just store `entry` as on Windows, we're re-using the name buffer
         // which means we'll actually share the `name` pointer between entries!
-        const name = try allocator.dupe(u8, entry.name);
-        try entries.append(.{ .name = name, .kind = entry.kind, .inode = 0 });
+        const name = try arena.dupe(u8, entry.name);
+        try entries.append(arena, .{ .name = name, .kind = entry.kind, .inode = 0 });
     }
 
     i = 0;
     while (i < num) : (i += 1) {
         const name = try std.mem.print(&buf, "{}", .{i});
-        try expect(contains(&entries, .{ .name = name, .kind = .file, .inode = 0 }));
+        try expect(contains(entries.items, .{ .name = name, .kind = .file, .inode = 0 }));
     }
 }
 
@@ -605,26 +605,26 @@ test "Dir.Iterator twice" {
 
     try tmp_dir.dir.createDir(io, "some_dir", .default_dir);
 
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    var arena_instance = ArenaAllocator.init(testing.allocator);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
 
     var i: u8 = 0;
     while (i < 2) : (i += 1) {
-        var entries = std.array_list.Managed(Dir.Entry).init(allocator);
+        var entries: std.ArrayList(Dir.Entry) = .empty;
 
         // Create iterator.
         var iter = tmp_dir.dir.iterate();
         while (try iter.next(io)) |entry| {
             // We cannot just store `entry` as on Windows, we're re-using the name buffer
             // which means we'll actually share the `name` pointer between entries!
-            const name = try allocator.dupe(u8, entry.name);
-            try entries.append(Dir.Entry{ .name = name, .kind = entry.kind, .inode = 0 });
+            const name = try arena.dupe(u8, entry.name);
+            try entries.append(arena, Dir.Entry{ .name = name, .kind = entry.kind, .inode = 0 });
         }
 
         try expectEqual(@as(usize, 2), entries.items.len); // note that the Iterator skips '.' and '..'
-        try expect(contains(&entries, .{ .name = "some_file", .kind = .file, .inode = 0 }));
-        try expect(contains(&entries, .{ .name = "some_dir", .kind = .directory, .inode = 0 }));
+        try expect(contains(entries.items, .{ .name = "some_file", .kind = .file, .inode = 0 }));
+        try expect(contains(entries.items, .{ .name = "some_dir", .kind = .directory, .inode = 0 }));
     }
 }
 
@@ -640,27 +640,27 @@ test "Dir.Iterator reset" {
 
     try tmp_dir.dir.createDir(io, "some_dir", .default_dir);
 
-    var arena = ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    var arena_instance = ArenaAllocator.init(testing.allocator);
+    defer arena_instance.deinit();
+    const arena = arena_instance.allocator();
 
     // Create iterator.
     var iter = tmp_dir.dir.iterate();
 
     var i: u8 = 0;
     while (i < 2) : (i += 1) {
-        var entries = std.array_list.Managed(Dir.Entry).init(allocator);
+        var entries: std.ArrayList(Dir.Entry) = .empty;
 
         while (try iter.next(io)) |entry| {
             // We cannot just store `entry` as on Windows, we're re-using the name buffer
             // which means we'll actually share the `name` pointer between entries!
-            const name = try allocator.dupe(u8, entry.name);
-            try entries.append(.{ .name = name, .kind = entry.kind, .inode = 0 });
+            const name = try arena.dupe(u8, entry.name);
+            try entries.append(arena, .{ .name = name, .kind = entry.kind, .inode = 0 });
         }
 
         try expectEqual(@as(usize, 2), entries.items.len); // note that the Iterator skips '.' and '..'
-        try expect(contains(&entries, .{ .name = "some_file", .kind = .file, .inode = 0 }));
-        try expect(contains(&entries, .{ .name = "some_dir", .kind = .directory, .inode = 0 }));
+        try expect(contains(entries.items, .{ .name = "some_file", .kind = .file, .inode = 0 }));
+        try expect(contains(entries.items, .{ .name = "some_dir", .kind = .directory, .inode = 0 }));
 
         iter.reader.reset();
     }
@@ -696,11 +696,10 @@ fn entryEql(lhs: Dir.Entry, rhs: Dir.Entry) bool {
     return mem.eql(u8, lhs.name, rhs.name) and lhs.kind == rhs.kind;
 }
 
-fn contains(entries: *const std.array_list.Managed(Dir.Entry), el: Dir.Entry) bool {
-    for (entries.items) |entry| {
-        if (entryEql(entry, el)) return true;
-    }
-    return false;
+fn contains(entries: []const Dir.Entry, el: Dir.Entry) bool {
+    return for (entries) |entry| {
+        if (entryEql(entry, el)) break true;
+    } else false;
 }
 
 test "Dir.realPath smoke test" {
