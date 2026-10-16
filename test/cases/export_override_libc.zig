@@ -13,5 +13,6 @@ pub fn main() void {
 }
 
 // run
-// target=native
+// target=x86_64-linux-gnu,x86_64-linux-musl
+// backend=selfhosted,llvm
 // link_libc=true

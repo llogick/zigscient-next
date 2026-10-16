@@ -1871,6 +1871,17 @@ pub fn updateExports(
 
     for (export_indices) |export_index| {
         const exp = export_index.ptr(zcu);
+        const exp_name = exp.opts.name.toSlice(&zcu.intern_pool);
+
+        const global_sym_index = try self.getGlobalSymbol(elf_file, exp_name, null);
+        const global_sym = self.symbol(global_sym_index);
+        const global_esym = &self.symtab.items(.elf_sym)[global_sym.esym_index];
+
+        if (global_esym.st_shndx != std.elf.SHN_UNDEF and exp.opts.linkage == .weak) {
+            // The symbol is already defined by a previous export, so ignore this weak export.
+            continue;
+        }
+
         const metadata = switch (exp.exported) {
             .nav => |nav| blk: {
                 _ = try self.getOrCreateMetadataForNav(zcu, nav);
@@ -1902,18 +1913,14 @@ pub fn updateExports(
             .weak => elf.STB_WEAK,
         };
         const stt_bits: u8 = @as(u4, @truncate(esym.st_info));
-        const exp_name = exp.opts.name.toSlice(&zcu.intern_pool);
         const name_off = try self.strtab.insert(gpa, exp_name);
-        const global_sym_index = try self.getGlobalSymbol(elf_file, exp_name, null);
         try metadata.exports.append(gpa, global_sym_index);
 
         const value = self.symbol(sym_index).value;
-        const global_sym = self.symbol(global_sym_index);
         global_sym.value = value;
         global_sym.flags.weak = exp.opts.linkage == .weak;
         global_sym.version_index = elf_file.default_sym_version;
         global_sym.ref = .{ .index = esym_shndx, .file = self.index };
-        const global_esym = &self.symtab.items(.elf_sym)[global_sym.esym_index];
         global_esym.st_value = @intCast(value);
         global_esym.st_shndx = esym.st_shndx;
         global_esym.st_info = (stb_bits << 4) | stt_bits;

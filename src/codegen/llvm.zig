@@ -1239,7 +1239,6 @@ pub const Object = struct {
         // The name, aliasee, and type will be set within this block. Other properties of the
         // alias will be set below.
         const alias_global: Builder.Global.Index = global: {
-
             // WORKAROUND (see https://github.com/llvm/llvm-project/issues/213504, https://github.com/llvm/llvm-project/issues/214835)
             // For NVPTX, LLVM throws "NVPTX aliasee must be a non-kernel function definition" if we try to alias a kernel
             // On AMDGCN, LLVM does not generate an alias for the kernel descriptor symbol on associated functions
@@ -1261,33 +1260,24 @@ pub const Object = struct {
             };
             // There is an existing global with this name, so we can't just create an alias. We
             // need to figure out what to do with the existing global instead.
-            switch (existing_global.ptrConst(&o.builder).kind) {
-                .alias => |alias| {
-                    // We can just repurpose the existing alias.
-                    alias.setAliasee(llvm_global.toConst(), &o.builder);
-                    alias.ptrConst(&o.builder).global.ptr(&o.builder).type = llvm_global.typeOf(&o.builder);
-                    alias.ptrConst(&o.builder).global.ptr(&o.builder).addr_space = llvm_global.ptrConst(&o.builder).addr_space;
-                    break :global existing_global;
+            const alias: Builder.Alias.Index = switch (existing_global.ptrConst(&o.builder).kind) {
+                .alias => |alias| alias: {
+                    // The existing alias is from an earlier export, so if `exp` is weak, ignore it.
+                    if (exp.opts.linkage == .weak) return;
+                    // But otherwise, we can just repurpose the existing alias.
+                    break :alias alias;
                 },
-                .variable, .function => {
-                    // This must be an extern, which is no good to us---we need an alias. The
-                    // extern should refer to the value we're exporting, so replace it with the
-                    // exported value. That will free up the name for us to create a new alias.
-                    // We need to make a new global which is an alias. Replace this existing one
-                    // with the target global, making the name available and fixing references
-                    // to this global to point to the target.
-                    try existing_global.replace(llvm_global, &o.builder);
-                    // The name is now free, so create an alias.
-                    const alias = try o.builder.addAlias(
-                        exp_name,
-                        llvm_global_ty,
-                        llvm_global.ptrConst(&o.builder).addr_space,
-                        llvm_global.toConst(),
-                    );
-                    break :global alias.ptrConst(&o.builder).global;
+                .variable, .function => alias: {
+                    // This is an extern which our export resolves, so we can simply convert this
+                    // global into the alias we want.
+                    break :alias try existing_global.toNewAlias(&o.builder);
                 },
                 .replaced => unreachable, // a replaced global would have lost the name `exp_name`
-            }
+            };
+            alias.setAliasee(llvm_global.toConst(), &o.builder);
+            alias.ptrConst(&o.builder).global.ptr(&o.builder).type = llvm_global_ty;
+            alias.ptrConst(&o.builder).global.ptr(&o.builder).addr_space = llvm_global.ptrConst(&o.builder).addr_space;
+            break :global existing_global;
         };
 
         // We need the alias to *not* be `unnamed_addr` to ensure that the alias address equals

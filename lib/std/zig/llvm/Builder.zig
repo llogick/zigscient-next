@@ -3483,7 +3483,7 @@ pub const Global = struct {
             try builder.aliases.ensureUnusedCapacity(builder.gpa, 1);
             errdefer comptime unreachable;
             const alias: Alias.Index = @fromBackingInt(@intCast(builder.aliases.items.len));
-            builder.aliass.appendAssumeCapacity(.{ .global = global, .aliasee = .none });
+            builder.aliases.appendAssumeCapacity(.{ .global = global, .aliasee = .none });
             global.ptr(builder).kind = .{ .alias = alias };
             return alias;
         }
