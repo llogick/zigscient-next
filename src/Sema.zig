@@ -3963,7 +3963,7 @@ fn zirResolveInferredAlloc(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Com
                 const bin_op = sema.air_instructions.items(.data)[@backingInt(store_inst)].bin_op;
                 peer_val.* = bin_op.rhs;
             }
-            const final_elem_ty = try sema.resolvePeerTypes(block, ty_src, peer_vals, .none);
+            const final_elem_ty = try sema.resolvePeerTypes(block, ty_src, .{ .insts = peer_vals }, .none);
             // The layout of the peers is already resolved, so the layout of `final_elem_ty` is too.
             final_elem_ty.assertHasLayout(zcu);
 
@@ -5496,7 +5496,12 @@ fn resolveAnalyzedBlock(
     // Need to set the type and emit the Block instruction. This allows machine code generation
     // to emit a jump instruction to after the block when it encounters the break.
     try parent_block.instructions.append(gpa, merges.block_inst);
-    const resolved_ty = try sema.resolvePeerTypes(parent_block, src, merges.results.items, .{ .override = merges.src_locs.items });
+    const resolved_ty = try sema.resolvePeerTypes(
+        parent_block,
+        src,
+        .{ .insts = merges.results.items },
+        .{ .override = merges.src_locs.items },
+    );
     resolved_ty.assertHasLayout(zcu);
     // TODO add note "missing else causes void value"
 
@@ -12303,11 +12308,10 @@ fn analyzeSwitchPayloadCaptureTaggedUnion(
 
     const capture_ty: Type = capture_ty: {
         if (same_types) break :capture_ty first_field_ty;
-        // We need values to run PTR on, so make a bunch of undef constants.
-        const dummy_captures = try sema.arena.alloc(Air.Inst.Ref, item_refs.len);
-        for (dummy_captures, field_indices) |*dummy, field_idx| {
-            const field_ty: Type = .fromInterned(union_obj.field_types.get(ip)[field_idx]);
-            dummy.* = try pt.undefRef(field_ty);
+
+        const item_types = try sema.arena.alloc(Type, item_refs.len);
+        for (item_types, field_indices) |*field_ty, field_idx| {
+            field_ty.* = .fromInterned(union_obj.field_types.get(ip)[field_idx]);
         }
 
         const item_srcs = try sema.arena.alloc(?LazySrcLoc, item_refs.len);
@@ -12325,7 +12329,7 @@ fn analyzeSwitchPayloadCaptureTaggedUnion(
         break :capture_ty sema.resolvePeerTypes(
             case_block,
             capture_src,
-            dummy_captures,
+            .{ .types = item_types },
             .{ .override = item_srcs },
         ) catch |err| switch (err) {
             error.AlreadyReported => |e| {
@@ -12344,12 +12348,11 @@ fn analyzeSwitchPayloadCaptureTaggedUnion(
         const capture_ptr_ty = resolve: {
             // By-ref captures of hetereogeneous types are only allowed if all field
             // pointer types are peer resolvable to each other.
-            // We need values to run PTR on, so make a bunch of undef constants.
-            const dummy_captures = try sema.arena.alloc(Air.Inst.Ref, item_refs.len);
-            for (field_indices, dummy_captures) |field_index, *dummy| {
-                const field_ptr_ty = try operand_ptr_ty.fieldPtrType(field_index, pt);
-                dummy.* = try pt.undefRef(field_ptr_ty);
+            const item_types = try sema.arena.alloc(Type, item_refs.len);
+            for (item_types, field_indices) |*field_ptr_ty, field_index| {
+                field_ptr_ty.* = try operand_ptr_ty.fieldPtrType(field_index, pt);
             }
+
             const item_srcs = try sema.arena.alloc(?LazySrcLoc, item_refs.len);
             for (item_srcs, 0..) |*item_src, item_i| {
                 item_src.* = .{
@@ -12365,7 +12368,7 @@ fn analyzeSwitchPayloadCaptureTaggedUnion(
             break :resolve sema.resolvePeerTypes(
                 case_block,
                 capture_src,
-                dummy_captures,
+                .{ .types = item_types },
                 .{ .override = item_srcs },
             ) catch |err| switch (err) {
                 error.AlreadyReported => |e| {
@@ -13319,8 +13322,12 @@ fn zirBitwise(
     const rhs_ty = sema.typeOf(rhs);
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
 
-    const instructions = &[_]Air.Inst.Ref{ lhs, rhs };
-    const resolved_type = try sema.resolvePeerTypes(block, src, instructions, .{ .override = &[_]?LazySrcLoc{ lhs_src, rhs_src } });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
     const scalar_type = resolved_type.scalarType(zcu);
     const scalar_tag = scalar_type.zigTypeTag(zcu);
 
@@ -13514,19 +13521,12 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
         return sema.fail(block, rhs_src, "expected indexable; found '{f}'", .{rhs_ty.fmt(zcu)});
     };
 
-    const resolved_elem_ty = t: {
-        var trash_block = block.makeSubBlock();
-        trash_block.comptime_reason = null;
-        defer trash_block.instructions.deinit(sema.gpa);
-
-        const instructions = [_]Air.Inst.Ref{
-            try trash_block.addTyOp(.bit_cast, lhs_info.elem_type, .void_value),
-            try trash_block.addTyOp(.bit_cast, rhs_info.elem_type, .void_value),
-        };
-        break :t try sema.resolvePeerTypes(block, src, &instructions, .{
-            .override = &[_]?LazySrcLoc{ lhs_src, rhs_src },
-        });
-    };
+    const resolved_elem_ty = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .types = &.{ lhs_info.elem_type, rhs_info.elem_type } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     // When there is a sentinel mismatch, no sentinel on the result.
     // Otherwise, use the sentinel value provided by either operand,
@@ -14008,9 +14008,12 @@ fn zirDiv(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Ins
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14117,9 +14120,12 @@ fn zirDivExact(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14213,9 +14219,12 @@ fn zirDivFloor(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14278,9 +14287,12 @@ fn zirDivCeil(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14343,9 +14355,12 @@ fn zirDivTrunc(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14554,9 +14569,12 @@ fn zirModRem(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14655,9 +14673,12 @@ fn zirMod(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Ins
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14719,9 +14740,12 @@ fn zirRem(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Ins
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     try sema.checkInvalidPtrIntArithmetic(block, src, lhs_ty);
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -14789,13 +14813,15 @@ fn zirOverflowArithmetic(
 
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
 
-    const instructions = &[_]Air.Inst.Ref{ uncasted_lhs, uncasted_rhs };
     const dest_ty = if (zir_tag == .shl_with_overflow)
         lhs_ty
     else
-        try sema.resolvePeerTypes(block, src, instructions, .{
-            .override = &[_]?LazySrcLoc{ lhs_src, rhs_src },
-        });
+        try sema.resolvePeerTypes(
+            block,
+            src,
+            .{ .insts = &.{ uncasted_lhs, uncasted_rhs } },
+            .{ .override = &.{ lhs_src, rhs_src } },
+        );
 
     const rhs_dest_ty = if (zir_tag == .shl_with_overflow)
         try sema.log2IntType(block, lhs_ty, src)
@@ -15130,9 +15156,12 @@ fn analyzeArithmetic(
         }
     }
 
-    const resolved_type = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{
-        .override = &.{ lhs_src, rhs_src },
-    });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
 
     const casted_lhs = try sema.coerce(block, resolved_type, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_type, rhs, rhs_src);
@@ -15736,8 +15765,12 @@ fn analyzeCmp(
         const casted_rhs = try sema.analyzeErrUnionCode(block, rhs_src, rhs);
         return sema.cmpSelf(block, src, lhs, casted_rhs, op, lhs_src, rhs_src);
     }
-    const instructions = &[_]Air.Inst.Ref{ lhs, rhs };
-    const resolved_type = try sema.resolvePeerTypes(block, src, instructions, .{ .override = &[_]?LazySrcLoc{ lhs_src, rhs_src } });
+    const resolved_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
     if (!resolved_type.isSelfComparable(zcu, is_equality_cmp)) {
         return sema.fail(block, src, "operator {s} not allowed for type '{f}'", .{
             compareOperatorName(op), resolved_type.fmt(zcu),
@@ -17400,7 +17433,12 @@ fn zirTypeofPeer(
         inst_list[i] = sema.resolveInst(arg_ref);
     }
 
-    const result_type = try sema.resolvePeerTypes(block, src, inst_list, .{ .typeof_builtin_call_node_offset = extra.data.src_node });
+    const result_type = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = inst_list },
+        .{ .typeof_builtin_call_node_offset = extra.data.src_node },
+    );
     return Air.internedToRef(result_type.toIntern());
 }
 
@@ -22977,9 +23015,12 @@ fn checkSimdBinOp(
 
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
     const vec_len: ?usize = if (lhs_ty.zigTypeTag(zcu) == .vector) lhs_ty.vectorLen(zcu) else null;
-    const result_ty = try sema.resolvePeerTypes(block, src, &.{ uncasted_lhs, uncasted_rhs }, .{
-        .override = &[_]?LazySrcLoc{ lhs_src, rhs_src },
-    });
+    const result_ty = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ uncasted_lhs, uncasted_rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
     const lhs = try sema.coerce(block, result_ty, uncasted_lhs, lhs_src);
     const rhs = try sema.coerce(block, result_ty, uncasted_rhs, rhs_src);
 
@@ -32277,7 +32318,12 @@ fn cmpVector(
     assert(rhs_ty.zigTypeTag(zcu) == .vector);
     try sema.checkVectorizableBinaryOperands(block, src, lhs_ty, rhs_ty, lhs_src, rhs_src);
 
-    const resolved_ty = try sema.resolvePeerTypes(block, src, &.{ lhs, rhs }, .{ .override = &.{ lhs_src, rhs_src } });
+    const resolved_ty = try sema.resolvePeerTypes(
+        block,
+        src,
+        .{ .insts = &.{ lhs, rhs } },
+        .{ .override = &.{ lhs_src, rhs_src } },
+    );
     const casted_lhs = try sema.coerce(block, resolved_ty, lhs, lhs_src);
     const casted_rhs = try sema.coerce(block, resolved_ty, rhs, rhs_src);
 
@@ -32611,7 +32657,7 @@ const PeerResolveResult = union(enum) {
         sema: *Sema,
         block: *Block,
         src: LazySrcLoc,
-        instructions: []const Air.Inst.Ref,
+        start_peer_tys: []const Type,
         candidate_srcs: PeerTypeCandidateSrc,
     ) !*Zcu.ErrorMsg {
         const zcu = sema.pt.zcu;
@@ -32619,11 +32665,7 @@ const PeerResolveResult = union(enum) {
         var opt_msg: ?*Zcu.ErrorMsg = null;
         errdefer if (opt_msg) |msg| msg.destroy(sema.gpa);
 
-        // If we mention fields we'll want to include field types, so put peer types in a buffer
-        var peer_tys = try sema.arena.alloc(Type, instructions.len);
-        for (peer_tys, instructions) |*ty, inst| {
-            ty.* = sema.typeOf(inst);
-        }
+        var peer_tys = start_peer_tys;
 
         var cur = result;
         while (true) {
@@ -32699,38 +32741,70 @@ fn resolvePeerTypes(
     sema: *Sema,
     block: *Block,
     src: LazySrcLoc,
-    instructions: []const Air.Inst.Ref,
+    peers: union(enum) {
+        insts: []const Air.Inst.Ref,
+        types: []const Type,
+    },
     candidate_srcs: PeerTypeCandidateSrc,
 ) !Type {
-    switch (instructions.len) {
-        0 => return .noreturn,
-        1 => return sema.typeOf(instructions[0]),
-        else => {},
-    }
+    const peer_tys: []?Type, const peer_vals: []?Value = switch (peers) {
+        .insts => |insts| peers: {
+            if (insts.len == 0) return .noreturn;
 
-    // Fast path: check if everything has the same type to bypass the main PTR logic.
-    same_type: {
-        const ty = sema.typeOf(instructions[0]);
-        for (instructions[1..]) |inst| {
-            if (sema.typeOf(inst).toIntern() != ty.toIntern()) {
-                break :same_type;
+            // If everything is the same type we can bypass the main PTR logic.
+            const first_ty = sema.typeOf(insts[0]);
+            for (insts[1..]) |inst| {
+                if (sema.typeOf(inst).toIntern() != first_ty.toIntern()) {
+                    break;
+                }
+            } else return first_ty;
+
+            const peer_tys = try sema.arena.alloc(?Type, insts.len);
+            const peer_vals = try sema.arena.alloc(?Value, insts.len);
+
+            for (peer_tys, peer_vals, insts) |*ty, *val, inst| {
+                ty.* = sema.typeOf(inst);
+                val.* = sema.resolveValue(inst);
             }
-        }
-        return ty;
-    }
 
-    const peer_tys = try sema.arena.alloc(?Type, instructions.len);
-    const peer_vals = try sema.arena.alloc(?Value, instructions.len);
+            break :peers .{ peer_tys, peer_vals };
+        },
 
-    for (instructions, peer_tys, peer_vals) |inst, *ty, *val| {
-        ty.* = sema.typeOf(inst);
-        val.* = sema.resolveValue(inst);
-    }
+        .types => |types| peers: {
+            if (types.len == 0) return .noreturn;
+
+            // If everything is the same type we can bypass the main PTR logic.
+            for (types[1..]) |ty| {
+                if (ty.toIntern() != types[0].toIntern()) {
+                    break;
+                }
+            } else return types[0];
+
+            const peer_tys = try sema.arena.alloc(?Type, types.len);
+            const peer_vals = try sema.arena.alloc(?Value, types.len);
+
+            for (peer_tys, peer_vals, types) |*opt_ty, *opt_val, ty| {
+                opt_ty.* = ty;
+                opt_val.* = try ty.onePossibleValue(sema.pt);
+            }
+
+            break :peers .{ peer_tys, peer_vals };
+        },
+    };
 
     switch (try sema.resolvePeerTypesInner(block, src, peer_tys, peer_vals)) {
         .success => |ty| return ty,
         else => |result| {
-            const msg = try result.report(sema, block, src, instructions, candidate_srcs);
+            // We can't pass in `peer_tys` because `resolvePeerTypesInner` may clobber it.
+            const report_peer_tys: []const Type = switch (peers) {
+                .insts => |insts| types: {
+                    const types = try sema.arena.alloc(Type, insts.len);
+                    for (types, insts) |*ty, inst| ty.* = sema.typeOf(inst);
+                    break :types types;
+                },
+                .types => |types| types,
+            };
+            const msg = try result.report(sema, block, src, report_peer_tys, candidate_srcs);
             return sema.failWithOwnedErrorMsg(block, msg);
         },
     }
