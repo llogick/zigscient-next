@@ -55,7 +55,9 @@ pub fn print(sc: *const ScannedConfig, w: *Writer) Writer.Error!void {
     {
         var tf = try s.beginTupleField("unlazy_deps", .{});
         for (c.unlazy_deps) |dep| {
-            try tf.field(dep.slice(c), .{});
+            var field = try tf.beginStructField(.{});
+            try printStruct(sc, &field, Configuration.UnlazyDep, dep);
+            try field.end();
         }
         try tf.end();
     }

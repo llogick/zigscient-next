@@ -153,11 +153,11 @@ pub const JobQueue = struct {
     debug_hash: bool,
     mode: Mode,
     /// Set of hashes that will be additionally fetched even if they are marked
-    /// as lazy.
-    unlazy_set: UnlazySet = .{},
+    /// as lazy. Read-only.
+    unlazy_set: UnlazySet = .empty,
     /// Identifies paths that override all packages in the tree with matching
     /// project ids.
-    fork_set: ForkSet = .{},
+    fork_set: ForkSet = .empty,
 
     pub const Mode = enum {
         /// Non-lazy dependencies are always fetched.

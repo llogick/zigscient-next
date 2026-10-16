@@ -36,6 +36,11 @@ max_rss: u64,
 /// to print along with debugging messages.
 debug_stack_trace: std.debug.StackTrace,
 
+/// Managed by:
+/// * `Build.declareDependencyStep`
+/// * `Build.dependencyStep`
+unlazy_deps: std.array_hash_map.Auto(Configuration.String, void),
+
 pub const Tag = Configuration.Step.Tag;
 
 pub fn Type(comptime tag: Tag) type {
@@ -104,6 +109,7 @@ pub fn init(options: StepOptions) Step {
             const first_ret_addr = options.first_ret_addr orelse @returnAddress();
             break :blk std.debug.captureCurrentStackTrace(.{ .first_address = first_ret_addr }, addr_buf);
         },
+        .unlazy_deps = .empty,
     };
 }
 

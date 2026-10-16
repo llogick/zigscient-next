@@ -683,12 +683,21 @@ pub fn write(b: *std.Build, wc: *Configuration.Wip, writer: *std.Io.Writer) !voi
                 .max_rss = .fromBytes(step.max_rss),
                 .extended = @fromBackingInt(extended),
             });
+
+            if (step.unlazy_deps.count() != 0) {
+                try wc.unlazy_deps.append(gpa, .{
+                    .step = @fromBackingInt(@intCast(wc.steps.items.len - 1)),
+                    .list = try wc.addStringListInterned(step.unlazy_deps.keys()),
+                });
+            }
         }
     }
 
-    try wc.unlazy_deps.ensureUnusedCapacity(gpa, graph.needed_lazy_dependencies.keys().len);
-    for (graph.needed_lazy_dependencies.keys()) |k| {
-        wc.unlazy_deps.appendAssumeCapacity(try wc.addString(k));
+    if (graph.unlazy_deps.count() != 0) {
+        try wc.unlazy_deps.append(gpa, .{
+            .step = .none,
+            .list = try wc.addStringListInterned(graph.unlazy_deps.keys()),
+        });
     }
 
     try wc.write(writer, .{

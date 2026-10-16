@@ -786,6 +786,8 @@ pub fn main(init: process.Init.Minimal) !void {
         break :s &protocol_server_allocation;
     } else null;
 
+    var discovered_unlazy_set: Fetch.JobQueue.UnlazySet = .empty; // uses global arena
+
     configure: while (true) {
         // Set of files that, if modified, imply that recompiling and rerunning
         // configurer is needed.
@@ -815,9 +817,12 @@ pub fn main(init: process.Init.Minimal) !void {
             .system_pkg_dir_path = system_pkg_dir_path,
             .print_configuration = print_configuration,
             .forks = forks.items,
+            .unlazy_set = &discovered_unlazy_set,
             .src_files = &configure_source_files,
             .error_bundle = if (protocol_server != null) &configure_error_bundle else null,
         })) |scanned_config| {
+            discovered_unlazy_set.clearRetainingCapacity();
+
             if (help_menu) {
                 scanned_config.printUsage(&graph, initStdoutWriter(io)) catch |err| switch (err) {
                     error.WriteFailed => return stdout_writer_allocation.err.?,
@@ -940,14 +945,15 @@ pub fn main(init: process.Init.Minimal) !void {
                                 try select.concurrent(.message, Server.receiveMessage, .{s});
 
                                 maker.watch = body.flags.watch;
-                                maker.prepare(steps, &configure_source_files) catch |err| switch (err) {
+                                maker.prepare(steps, &configure_source_files, &discovered_unlazy_set) catch |err| switch (err) {
+                                    error.OutOfMemory => |e| return e,
                                     error.DependencyLoopDetected, error.InsufficientMemory => {
-                                        // TODO handle DependencyLoopDetected as error.FailedButCacheIntact
-                                        // and handle InsufficientMemory as error.AlreadyReported
+                                        // TODO handle error.DependencyLoopDetected as error.FailedButCacheIntact
+                                        // TODO handle error.InsufficientMemory as error.AlreadyReported
                                         _ = io.lockStderr(&.{}, graph.stderr_mode) catch {};
                                         process.exit(1);
                                     },
-                                    else => |e| return e,
+                                    error.LazyDependencyNeeded => continue :configure,
                                 };
 
                                 try maker.makeSteps(main_progress_node, null);
@@ -1005,14 +1011,15 @@ pub fn main(init: process.Init.Minimal) !void {
             const initial_steps = try maker.resolveTopLevelSteps(step_names.items);
             defer gpa.free(initial_steps);
 
-            maker.prepare(initial_steps, &configure_source_files) catch |err| switch (err) {
+            maker.prepare(initial_steps, &configure_source_files, &discovered_unlazy_set) catch |err| switch (err) {
+                error.OutOfMemory => |e| return e,
                 error.DependencyLoopDetected, error.InsufficientMemory => {
-                    // TODO handle DependencyLoopDetected as error.FailedButCacheIntact
-                    // and handle InsufficientMemory as error.AlreadyReported
+                    // TODO handle error.DependencyLoopDetected as error.FailedButCacheIntact
+                    // TODO handle error.InsufficientMemory as error.AlreadyReported
                     _ = io.lockStderr(&.{}, graph.stderr_mode) catch {};
                     process.exit(1);
                 },
-                else => |e| return e,
+                error.LazyDependencyNeeded => continue :configure,
             };
 
             var w: Watch = w: {
@@ -1180,6 +1187,7 @@ const ConfigureOptions = struct {
     system_pkg_dir_path: ?[]const u8,
     print_configuration: PrintConfiguration,
     forks: []Fork,
+    unlazy_set: *Fetch.JobQueue.UnlazySet,
     src_files: *Cache.Manifest.SelfContainedFiles,
     error_bundle: ?*ErrorBundle = null,
 };
@@ -1195,8 +1203,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
     var http_client: std.http.Client = .{ .allocator = gpa, .io = io };
     defer http_client.deinit();
 
-    var unlazy_set: Package.Fetch.JobQueue.UnlazySet = .{};
-    var fork_set: Package.Fetch.JobQueue.ForkSet = .{};
+    var fork_set: Fetch.JobQueue.ForkSet = .{};
 
     {
         // Populate fork_set.
@@ -1331,7 +1338,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                 // Reset fork match counts.
                 for (fork_set.keys()) |*fork| fork.uses = 0;
 
-                var job_queue: Package.Fetch.JobQueue = .{
+                var job_queue: Fetch.JobQueue = .{
                     .io = io,
                     .http_client = &http_client,
                     .global_cache = graph.global_cache_root,
@@ -1341,7 +1348,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                     },
                     .recursive = true,
                     .debug_hash = false,
-                    .unlazy_set = unlazy_set,
+                    .unlazy_set = options.unlazy_set.*,
                     .fork_set = fork_set,
                     .mode = options.fetch_mode,
                     .prog_node = fetch_prog_node,
@@ -1358,7 +1365,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
 
                 const phantom_package_root: Cache.Path = .{ .root_dir = options.build_root.directory };
 
-                var fetch: Package.Fetch = .{
+                var fetch: Fetch = .{
                     .arena = std.heap.ArenaAllocator.init(gpa),
                     .location = .{ .relative_path = phantom_package_root },
                     .location_tok = 0,
@@ -1390,11 +1397,11 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                 job_queue.all_fetches.appendAssumeCapacity(&fetch);
 
                 job_queue.table.putAssumeCapacityNoClobber(
-                    Package.Fetch.relativePathDigest(phantom_package_root, graph.global_cache_root),
+                    Fetch.relativePathDigest(phantom_package_root, graph.global_cache_root),
                     &fetch,
                 );
 
-                job_queue.group.async(io, Package.Fetch.workerRun, .{ &fetch, "root" });
+                job_queue.group.async(io, Fetch.workerRun, .{ &fetch, "root" });
                 try job_queue.group.await(io);
 
                 {
@@ -1535,7 +1542,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                         const dep_names = man.dependencies.keys();
                         try mod.deps.ensureUnusedCapacity(arena, @intCast(dep_names.len));
                         for (dep_names, man.dependencies.values()) |name, *dep| {
-                            const dep_digest = Package.Fetch.depDigest(
+                            const dep_digest = Fetch.depDigest(
                                 f.package_root,
                                 graph.global_cache_root,
                                 dep,
@@ -1655,30 +1662,33 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
 
         if (configuration.unlazy_deps.len != 0) {
             var any_errors = false;
-            for (configuration.unlazy_deps) |hash_string| {
-                const hash = hash_string.slice(&configuration);
-                assert(hash.len != 0);
-                if (hash.len > Package.Hash.max_len) {
-                    log.err("invalid digest (length {d} exceeds maximum): {q}", .{ hash.len, hash });
-                    any_errors = true;
-                    continue;
+            options.unlazy_set.clearRetainingCapacity();
+            for (configuration.unlazy_deps) |unlazy_dep| {
+                if (unlazy_dep.step != .none) continue; // Handled in `prepare`.
+                for (unlazy_dep.list.slice(&configuration)) |hash_string| {
+                    const hash = hash_string.slice(&configuration);
+                    assert(hash.len != 0);
+                    if (hash.len > Package.Hash.max_len) {
+                        log.err("invalid digest (length {d} exceeds maximum): {q}", .{ hash.len, hash });
+                        any_errors = true;
+                        continue;
+                    }
+                    log.info("fetching lazy dependency {s}", .{hash});
+                    try options.unlazy_set.put(arena, .fromSlice(hash), {});
                 }
-                log.info("fetching lazy dependency {s}", .{hash});
-                try unlazy_set.put(arena, .fromSlice(hash), {});
             }
             if (any_errors) return error.FailedButCacheIntact;
             if (options.system_pkg_dir_path) |p| {
-                // In this mode, the system needs to provide these packages; they
-                // cannot be fetched by Zig.
+                // In this mode, the system needs to provide these packages; they cannot be fetched by Zig.
                 const s = Dir.path.sep_str;
-                for (unlazy_set.keys()) |*hash| {
+                for (options.unlazy_set.keys()) |*hash| {
                     log.err("lazy dependency package not found: {s}" ++ s ++ "{s}", .{ p, hash.toSlice() });
                 }
                 log.info("remote package fetching disabled due to --system mode", .{});
                 log.info("dependencies might be avoidable depending on build configuration", .{});
                 return error.FailedButCacheIntact;
             }
-            continue :cp;
+            if (options.unlazy_set.count() != 0) continue :cp;
         }
 
         if (config_man) |man| for (configuration.path_deps) |path_dep| {
@@ -1818,7 +1828,7 @@ const ValidFingerprintTable = std.array_hash_map.Custom(
 fn validateFingerprints(
     gpa: Allocator,
     job_queue: *const Fetch.JobQueue,
-    fork_set: *const Package.Fetch.JobQueue.ForkSet,
+    fork_set: *const Fetch.JobQueue.ForkSet,
 ) !void {
     var any_errors = false;
 
@@ -1873,7 +1883,7 @@ fn printPkgTree(
     global_cache_root: Cache.Directory,
     job_queue: *const Fetch.JobQueue,
     root_fetch: *const Fetch,
-    fork_set: *const Package.Fetch.JobQueue.ForkSet,
+    fork_set: *const Fetch.JobQueue.ForkSet,
 ) !void {
     if (!root_fetch.have_manifest) return;
     const names = root_fetch.manifest.dependencies.keys();
@@ -1888,7 +1898,7 @@ fn printPkgTree(
                 try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
             },
             .path => {
-                const child_hash = Package.Fetch.depDigest(root_fetch.package_root, global_cache_root, dep);
+                const child_hash = Fetch.depDigest(root_fetch.package_root, global_cache_root, dep);
                 try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
             },
         }
@@ -1903,7 +1913,7 @@ fn printPkgTreeChild(
     parent_print_node: *const PrintNode,
     dep_name: []const u8,
     opt_pkg_hash: ?Package.Hash,
-    fork_set: *const Package.Fetch.JobQueue.ForkSet,
+    fork_set: *const Fetch.JobQueue.ForkSet,
 ) !void {
     const w = terminal.writer;
     try parent_print_node.printPrefixedChild(w, terminal.mode);
@@ -1960,7 +1970,7 @@ fn printPkgTreeChild(
                 try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
             },
             .path => {
-                const child_hash = Package.Fetch.depDigest(child_fetch.package_root, global_cache_root, dep);
+                const child_hash = Fetch.depDigest(child_fetch.package_root, global_cache_root, dep);
                 try printPkgTreeChild(terminal, arena, global_cache_root, job_queue, &print_node, name, child_hash, fork_set);
             },
         }
@@ -2694,7 +2704,8 @@ fn prepare(
     maker: *Maker,
     step_indices: []const Configuration.Step.Index,
     configure_source_files: *const Cache.Manifest.SelfContainedFiles,
-) !void {
+    discovered_unlazy_set: *Fetch.JobQueue.UnlazySet,
+) error{ InsufficientMemory, OutOfMemory, DependencyLoopDetected, LazyDependencyNeeded }!void {
     const gpa = maker.gpa;
     const graph = maker.graph;
     const arena = graph.arena;
@@ -2742,40 +2753,67 @@ fn prepare(
         try constructGraphAndCheckForDependencyLoop(maker, s, &maker.step_stack, rand);
     }
 
-    {
-        // Check that we have enough memory to complete the build.
-        var any_problems = false;
-        var max_needed: u64 = 0;
-        for (step_stack.keys()) |step_index| {
-            const make_step = maker.stepByIndex(step_index);
-            const conf_step = step_index.ptr(c);
-            const max_rss = conf_step.max_rss.toBytes();
-            if (max_rss == 0) continue;
-            max_needed = @max(max_needed, max_rss);
-            if (max_rss > maker.available_rss) {
-                if (maker.skip_oom_steps) {
-                    make_step.state = .skipped_oom;
-                    for (make_step.dependants.items) |dependant| {
-                        maker.stepByIndex(dependant).pending_deps -= 1;
-                    }
-                } else {
-                    log.err("{s}{s}: this step declares an upper bound of {d} bytes of memory, exceeding the available {d} bytes of memory", .{
-                        conf_step.owner.depPrefixSlice(c),
-                        conf_step.name.slice(c),
-                        max_rss,
-                        maker.available_rss,
-                    });
-                    any_problems = true;
+    // Notice when a step's participation in the evaluation graph implies that additional package dependencies
+    // must be fetched.
+    var needed_step_deps: std.array_hash_map.Auto(Configuration.Step.Index, Configuration.StringList) = .empty;
+    defer needed_step_deps.deinit(gpa);
+
+    for (c.unlazy_deps) |unlazy_dep| {
+        const step_index = unlazy_dep.step.unwrap() orelse continue; // Handled in `configure`.
+        try needed_step_deps.put(gpa, step_index, unlazy_dep.list);
+    }
+
+    assert(discovered_unlazy_set.count() == 0);
+    for (step_stack.keys()) |step_index| {
+        const interned_string_list = needed_step_deps.get(step_index) orelse continue;
+        const hash_strings = interned_string_list.slice(c);
+        for (hash_strings) |hash_string| {
+            const hash = hash_string.slice(c);
+            log.debug("due to step {s}, fetching lazy {s}", .{ step_index.ptr(c).name.slice(c), hash });
+            try discovered_unlazy_set.put(arena, .fromSlice(hash), {});
+        }
+    }
+    if (discovered_unlazy_set.count() != 0) return error.LazyDependencyNeeded;
+
+    try checkSufficientMemory(maker);
+}
+
+fn checkSufficientMemory(maker: *Maker) error{InsufficientMemory}!void {
+    const step_stack = &maker.step_stack;
+    const c = &maker.scanned_config.configuration;
+
+    // Check that we have enough memory to complete the build.
+    var any_problems = false;
+    var max_needed: u64 = 0;
+    for (step_stack.keys()) |step_index| {
+        const make_step = maker.stepByIndex(step_index);
+        const conf_step = step_index.ptr(c);
+        const max_rss = conf_step.max_rss.toBytes();
+        if (max_rss == 0) continue;
+        max_needed = @max(max_needed, max_rss);
+        if (max_rss > maker.available_rss) {
+            if (maker.skip_oom_steps) {
+                make_step.state = .skipped_oom;
+                for (make_step.dependants.items) |dependant| {
+                    maker.stepByIndex(dependant).pending_deps -= 1;
                 }
+            } else {
+                log.err("{s}{s}: this step declares an upper bound of {d} bytes of memory, exceeding the available {d} bytes of memory", .{
+                    conf_step.owner.depPrefixSlice(c),
+                    conf_step.name.slice(c),
+                    max_rss,
+                    maker.available_rss,
+                });
+                any_problems = true;
             }
         }
-        if (any_problems) {
-            log.info("use --skip-oom-steps to proceed, skipping memory limited steps", .{});
-            if (maker.max_rss_is_default) {
-                log.info("use --maxrss {d} to proceed, risking system memory exhaustion", .{max_needed});
-            }
-            return error.InsufficientMemory;
+    }
+    if (any_problems) {
+        log.info("use --skip-oom-steps to proceed, skipping memory limited steps", .{});
+        if (maker.max_rss_is_default) {
+            log.info("use --maxrss {d} to proceed, risking system memory exhaustion", .{max_needed});
         }
+        return error.InsufficientMemory;
     }
 }
 
@@ -3497,17 +3535,17 @@ fn printTreeChildLast(writer: *Writer, mode: Io.Terminal.Mode) !void {
     });
 }
 
-/// Traverse the dependency graph depth-first and make it undirected by having
-/// steps know their dependants (they only know dependencies at start).
-/// Along the way, check that there is no dependency loop, and record the steps
-/// in traversal order in `step_stack`.
-/// Each step has its dependencies traversed in random order, this accomplishes
-/// two things:
-/// - `step_stack` will be in randomized-depth-first order, so the build runner
-///   spawns initial steps in a random order
-/// - each step's `dependants` list is also filled in a random order, so that
-///   when it finishes executing in `makeStep`, it spawns next steps to run in
+/// Traverse the dependency graph depth-first and make it undirected by having steps know their dependants
+/// (they only know dependencies at start).
+///
+/// Along the way, check that there is no dependency loop, and record the steps in traversal order in
+/// `step_stack`.
+///
+/// Each step has its dependencies traversed in random order, this accomplishes two things:
+/// - `step_stack` will be in randomized-depth-first order, so the build runner spawns initial steps in a
 ///   random order
+/// - each step's `dependants` list is also filled in a random order, so that when it finishes executing in
+///   `makeStep`, it spawns next steps to run in random order
 fn constructGraphAndCheckForDependencyLoop(
     maker: *Maker,
     step_index: Configuration.Step.Index,

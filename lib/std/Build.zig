@@ -80,7 +80,11 @@ pub const Graph = struct {
     system_package_mode: bool = false,
     zig_exe: []const u8,
     environ_map: process.Environ.Map,
-    needed_lazy_dependencies: std.array_hash_map.String(void) = .empty,
+    /// Managed by:
+    /// * `Build.declareDependency`
+    /// * `Build.dependency`
+    /// * `Build.dependencyLazy`
+    unlazy_deps: std.array_hash_map.Auto(Configuration.String, void) = .empty,
     /// Information about the native target. Computed before build() is invoked.
     host: ResolvedTarget,
     dependency_cache: PackageInstanceMap = .empty,
@@ -1934,7 +1938,9 @@ inline fn findImportPkgHashOrFatal(b: *Build, comptime asking_build_zig: type, c
 }
 
 fn markNeededLazyDep(b: *Build, pkg_hash: []const u8) void {
-    b.graph.needed_lazy_dependencies.put(b.graph.arena, pkg_hash, {}) catch @panic("OOM");
+    const graph = b.graph;
+    const interned_hash = graph.wip_configuration.addString(pkg_hash) catch @panic("OOM");
+    graph.unlazy_deps.put(graph.arena, interned_hash, {}) catch @panic("OOM");
 }
 
 /// Deprecated in favor of `dependencyLazy`.
@@ -1944,21 +1950,76 @@ pub fn lazyDependency(b: *Build, name: []const u8, args: anytype) ?*Dependency {
     };
 }
 
-/// Declares that the current configuration does in fact require a potentially
-/// lazy dependency.
+/// Indicates that the current configuration needs a potentially lazy dependency.
 ///
-/// If the dependency is already fetched, it is returned. However if the
-/// dependency is not yet fetched, then when the build script is finished
-/// running, the toolchain will not proceed to the make phase. Instead, the
-/// parent process will additionally fetch all the lazy dependencies that were
-/// actually required by running the build script, recompile the build script,
-/// and then run it again. In other words, if this function returns
-/// `error.LazyDependencyNeeded` it means that the only purpose of completing
-/// the configure phase is to find out all the other lazy dependencies that are
-/// also required. In this case, one must propagate the error all the way up
-/// and return it from the main build function.
+/// Related:
+/// * `declareDependencyStep`
+/// * `dependency`
+/// * `dependencyLazy`
+/// * `dependencyStep`
+pub fn declareDependency(b: *Build, name: []const u8) void {
+    const pkg_hash = findPkgHashOrFatal(b, name);
+    markNeededLazyDep(b, pkg_hash);
+}
+
+/// Indicates that the current configuration needs a potentially lazy dependency for the provided `Step`.
+///
+/// Related:
+/// * `declareDependency`
+/// * `dependency`
+/// * `dependencyLazy`
+/// * `dependencyStep`
+pub fn declareDependencyStep(b: *Build, s: *Step, name: []const u8) void {
+    const graph = b.graph;
+    const pkg_hash = findPkgHashOrFatal(b, name);
+    const interned_hash = graph.wip_configuration.addString(pkg_hash) catch @panic("OOM");
+    s.unlazy_deps.put(graph.arena, interned_hash, {}) catch @panic("OOM");
+}
+
+/// Indicates that the current configuration needs a potentially lazy dependency for the provided `Step`.
+///
+/// If the dependency is already fetched, it is returned, otherwise `null` is returned. After configuration
+/// completes, if the dependency is needed after all, it will be fetched and configuration will re-run.
+///
+/// For non-lazy dependencies, this never returns `null`.
+///
+/// Related:
+/// * `dependency`
+/// * `dependencyLazy`
+/// * `declareDependency`
+/// * `declareDependencyStep`
+pub fn dependencyStep(b: *Build, s: *Step, name: []const u8, args: anytype) ?*Dependency {
+    const pkg_hash = findPkgHashOrFatal(b, name);
+    const graph = b.graph;
+    const arena = graph.arena;
+    const entry = package_map.get(pkg_hash).?;
+    if (!entry.available) {
+        const interned_hash = graph.wip_configuration.addString(pkg_hash) catch @panic("OOM");
+        s.unlazy_deps.put(arena, interned_hash, {}) catch @panic("OOM");
+        return null;
+    }
+    var map: PackageOptions.Map = .empty;
+    PackageOptions.fromArgs(arena, &map, args);
+    return dependencyResolved(b, name, entry, &map);
+}
+
+/// Declares that the current configuration does in fact require a potentially lazy dependency.
+///
+/// If the dependency is already fetched, it is returned. However if the dependency is not yet fetched, then
+/// when the build script is finished running, the toolchain will not proceed to the make phase. Instead, the
+/// parent process will additionally fetch all the lazy dependencies that were actually required by running the
+/// build script, recompile the build script, and then run it again. In other words, if this function returns
+/// `error.LazyDependencyNeeded` it means that the only purpose of completing the configure phase is to find
+/// out all the other lazy dependencies that are also required. In this case, one must propagate the error all
+/// the way up and return it from the main build function.
 ///
 /// For non-lazy dependencies, this always succeeds.
+///
+/// Related:
+/// * `dependency`
+/// * `dependencyStep`
+/// * `declareDependency`
+/// * `declareDependencyStep`
 pub fn dependencyLazy(b: *Build, name: []const u8, args: anytype) error{LazyDependencyNeeded}!*Dependency {
     const pkg_hash = findPkgHashOrFatal(b, name);
     const entry = package_map.get(pkg_hash) orelse unreachable;
@@ -2018,7 +2079,7 @@ pub const package_map: std.StaticStringMap(PackageEntry) = blk: {
 pub fn dependency(b: *Build, name: []const u8, args: anytype) *Dependency {
     return dependencyLazy(b, name, args) catch |err| switch (err) {
         error.LazyDependencyNeeded => {
-            assert(b.graph.needed_lazy_dependencies.count() != 0);
+            assert(b.graph.unlazy_deps.count() != 0);
             serializeConfigurationExiting(b);
         },
     };
@@ -2143,7 +2204,7 @@ fn dependencyResolved(
 pub inline fn runPackageScript(b: *Build, comptime build_zig: anytype) void {
     const result: anyerror!void = build_zig.build(b);
     result catch |err| switch (err) {
-        error.LazyDependencyNeeded => assert(b.graph.needed_lazy_dependencies.count() != 0),
+        error.LazyDependencyNeeded => assert(b.graph.unlazy_deps.count() != 0),
         else => {
             if (b.dep_prefix.len == 0) {
                 log.err("package {q} configuration failed: {t}", .{ b.dep_prefix, err });
@@ -2151,7 +2212,7 @@ pub inline fn runPackageScript(b: *Build, comptime build_zig: anytype) void {
                 log.err("configuration failed: {t}", .{err});
             }
             if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
-            const lazy_count = b.graph.needed_lazy_dependencies.count();
+            const lazy_count = b.graph.unlazy_deps.count();
             if (lazy_count == 0) process.exit(1);
             log.info("{d} lazy dependencies detected; fetching and retrying configuration", .{lazy_count});
         },
