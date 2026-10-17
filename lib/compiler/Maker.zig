@@ -2665,7 +2665,7 @@ fn markFailedStepsDirty(maker: *Maker) void {
     for (all_steps) |step_index| {
         const step = maker.stepByIndex(step_index);
         switch (step.state) {
-            .success => step.result_cached = true,
+            .success => step.result_cache_status = .hit,
             else => continue,
         }
     }
@@ -3060,7 +3060,7 @@ fn makeSteps(
                     const found = switch (maker.summary) {
                         .all, .line, .none => unreachable,
                         .failures => step.state != .success,
-                        .new => !step.result_cached,
+                        .new => step.result_cache_status != .hit,
                     };
                     if (found) break :blk i;
                 }
@@ -3298,7 +3298,7 @@ fn printTreeStep(
     const skip = switch (summary) {
         .none, .line => unreachable,
         .all => false,
-        .new => make_step.result_cached,
+        .new => make_step.result_cache_status == .hit,
         .failures => make_step.state == .success,
     };
     if (skip) return;
@@ -3324,7 +3324,7 @@ fn printTreeStep(
                 const found = switch (summary) {
                     .all, .line, .none => unreachable,
                     .failures => dep.state != .success,
-                    .new => !dep.result_cached,
+                    .new => dep.result_cache_status != .hit,
                 };
                 if (found) break :blk i;
             }
@@ -3368,24 +3368,45 @@ fn printStepStatus(maker: *Maker, step_index: Configuration.Step.Index, stderr: 
         },
 
         .success => {
-            try stderr.setColor(.green);
-            if (s.result_cached) {
-                try writer.writeAll(" cached");
-            } else if (s.test_results.test_count > 0) {
-                const pass_count = s.test_results.passCount();
-                assert(s.test_results.test_count == pass_count + s.test_results.skip_count);
-                try writer.print(" {d} pass", .{pass_count});
-                if (s.test_results.skip_count > 0) {
-                    try stderr.setColor(.reset);
-                    try writer.writeAll(", ");
-                    try stderr.setColor(.yellow);
-                    try writer.print("{d} skip", .{s.test_results.skip_count});
+            cs: {
+                switch (s.result_cache_status) {
+                    .hit => {
+                        try stderr.setColor(.green);
+                        try writer.writeAll(" cached");
+                        break :cs;
+                    },
+                    .incomplete_manifest => {
+                        // Common case: first-time cache miss, print nothing.
+                        try stderr.setColor(.green);
+                    },
+                    .invalid_manifest => {
+                        try stderr.setColor(.blue);
+                        try writer.writeAll(" invalid_manifest");
+                        try stderr.setColor(.green);
+                    },
+                    .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |path, tag| {
+                        try stderr.setColor(.blue);
+                        try writer.print(" {t}: {s}", .{ tag, path });
+                        try stderr.setColor(.green);
+                    },
                 }
-                try stderr.setColor(.reset);
-                try writer.print(" ({d} total)", .{s.test_results.test_count});
-            } else {
-                try writer.writeAll(" success");
+                if (s.test_results.test_count > 0) {
+                    const pass_count = s.test_results.passCount();
+                    assert(s.test_results.test_count == pass_count + s.test_results.skip_count);
+                    try writer.print(" {d} pass", .{pass_count});
+                    if (s.test_results.skip_count > 0) {
+                        try stderr.setColor(.reset);
+                        try writer.writeAll(", ");
+                        try stderr.setColor(.yellow);
+                        try writer.print("{d} skip", .{s.test_results.skip_count});
+                    }
+                    try stderr.setColor(.reset);
+                    try writer.print(" ({d} total)", .{s.test_results.test_count});
+                } else {
+                    try writer.writeAll(" success");
+                }
             }
+
             try stderr.setColor(.reset);
             if (s.result_duration_ns) |ns| {
                 try stderr.setColor(.dim);

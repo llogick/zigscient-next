@@ -80,7 +80,7 @@ pub fn make(
     if (try step.cacheHitWatched(maker, &man, progress_node)) {
         const digest = man.hitDigestHex();
         _ = try maker.setGeneratedPath(conf_options.generated_file, .local_cache, &.{ "o", &digest, basename });
-        step.result_cached = true;
+        step.result_cache_status = .hit;
         return;
     }
 

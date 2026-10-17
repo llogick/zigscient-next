@@ -110,7 +110,7 @@ pub fn make(
             if (try step.cacheHit(maker, &man, progress_node)) {
                 const digest = man.hitDigestHex();
                 _ = try maker.setGeneratedPath(conf_wf.generated_directory, .local_cache, &.{ "o", &digest });
-                assert(step.result_cached);
+                assert(step.result_cache_status == .hit);
                 return;
             }
 
@@ -122,7 +122,7 @@ pub fn make(
             try step.finalizeManifest(maker, &man);
         },
         .tmp => {
-            step.result_cached = false;
+            step.result_cache_status = .incomplete_manifest;
 
             var rand_int: u64 = undefined;
             io.random(@ptrCast(&rand_int));
@@ -135,7 +135,7 @@ pub fn make(
             try operate(maker, step_index, open_dir_cache, out_path, progress_node);
         },
         .mutate => {
-            step.result_cached = false;
+            step.result_cache_status = .incomplete_manifest;
             const root_path = try maker.resolveLazyPathIndex(arena, conf_wf.mutate_path.value.?, step_index);
             try operate(maker, step_index, open_dir_cache, root_path, progress_node);
             _ = try maker.setGeneratedPathPath(conf_wf.generated_directory, root_path);

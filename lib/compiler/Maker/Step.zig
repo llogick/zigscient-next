@@ -59,7 +59,8 @@ result_error_msgs: std.ArrayList([]const u8) = .empty,
 result_error_bundle: std.zig.ErrorBundle = .empty,
 /// Owned by `Maker.gpa`.
 result_stderr: []const u8 = "",
-result_cached: bool = false,
+/// Owned by `Maker.gpa`.
+result_cache_status: ResultCacheStatus = .incomplete_manifest,
 /// Indicates error information is missing due to allocation failure.
 result_oom: bool = false,
 result_duration_ns: ?u64 = null,
@@ -77,6 +78,16 @@ comptime {
     // this struct in 128 bytes or less.
     if (std.atomic.cache_line <= 128) assert(@sizeOf(@This()) <= 128 * 3);
 }
+
+const ResultCacheStatus = union(enum) {
+    hit,
+    incomplete_manifest,
+    invalid_manifest,
+    path_deleted: [*:0]const u8,
+    directory_status_changed: [*:0]const u8,
+    metadata_changed: [*:0]const u8,
+    contents_changed: [*:0]const u8,
+};
 
 pub const Extended = union(enum) {
     check_file: CheckFile,
@@ -314,6 +325,7 @@ pub fn make(
 
 pub fn deinit(step: *Step, gpa: Allocator, io: Io) void {
     step.clearResultStderr(gpa);
+    step.clearResultCacheStatus(gpa);
     step.clearFailedCommand(gpa);
     step.clearErrorBundle(gpa);
     step.inputs.deinit(gpa);
@@ -344,8 +356,8 @@ pub fn reset(step: *Step, maker: *Maker) void {
 
     clearFailedCommand(step, gpa);
     clearResultStderr(step, gpa);
+    clearResultCacheStatus(step, gpa);
     step.result_error_msgs.clearRetainingCapacity();
-    step.result_cached = false;
     step.result_duration_ns = null;
     step.result_peak_rss = 0;
     step.test_results = .{};
@@ -650,7 +662,7 @@ fn zigProcessUpdate(step_index: Configuration.Step.Index, maker: *Maker, zp: *Zi
             .emit_digest => {
                 const emit_digest = body_r.takeStruct(std.zig.Server.Message.EmitDigest, .little) catch unreachable;
                 const digest = body_r.takeArray(Cache.bin_digest_len) catch unreachable;
-                s.result_cached = emit_digest.flags.cache_hit;
+                s.result_cache_status = if (emit_digest.flags.cache_hit) .hit else .incomplete_manifest;
                 result = .{ .bin = digest.* };
             },
             .file_system_inputs => {
@@ -779,9 +791,7 @@ pub fn cacheHit(s: *Step, maker: *Maker, man: *Cache.Manifest, parent_progress_n
     var diag: Cache.Manifest.CheckDiagnostic = undefined;
     const status = man.check(&diag, parent_progress_node) catch |err|
         return failWithCacheError(s, maker, man, &diag, err);
-    const hit = .hit == status; // TODO cache miss reason in the build summary
-    s.result_cached = hit;
-    return hit;
+    return setResultCacheStatus(s, man, status);
 }
 
 /// Clears previous watch inputs, if any, and then populates watch inputs from
@@ -792,12 +802,36 @@ pub fn cacheHitWatched(s: *Step, maker: *Maker, man: *Cache.Manifest, parent_pro
     var diag: Cache.Manifest.CheckDiagnostic = undefined;
     const status = man.check(&diag, parent_progress_node) catch |err|
         return failWithCacheError(s, maker, man, &diag, err);
-    const hit = .hit == status; // TODO cache miss reason in the build summary
-    s.result_cached = hit;
-    // The above call to hit() populates the manifest with files, so in case of
-    // a hit, we need to populate watch inputs.
-    if (hit) try setWatchInputsFromManifest(s, maker, man);
-    return hit;
+    // The above call to check() populates the manifest with files, so in case of a hit, we need to
+    // populate watch inputs.
+    if (status == .hit) try setWatchInputsFromManifest(s, maker, man);
+    return setResultCacheStatus(s, man, status);
+}
+
+fn setResultCacheStatus(s: *Step, man: *const Cache.Manifest, status: Cache.Manifest.CheckResult) Allocator.Error!bool {
+    const gpa = man.cache.gpa;
+    clearResultCacheStatus(s, gpa);
+    s.result_cache_status = switch (status) {
+        .hit => .hit,
+        .incomplete_manifest => .incomplete_manifest,
+        .invalid_manifest => .invalid_manifest,
+        inline .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |off, tag| @unionInit(
+            ResultCacheStatus,
+            @tagName(tag),
+            try gpa.dupeSentinel(u8, off.path(man.contents.items), 0),
+        ),
+    };
+    return status == .hit;
+}
+
+fn clearResultCacheStatus(s: *Step, gpa: Allocator) void {
+    switch (s.result_cache_status) {
+        .hit, .incomplete_manifest, .invalid_manifest => {},
+        .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |path| {
+            gpa.free(std.mem.sliceTo(path, 0));
+        },
+    }
+    s.result_cache_status = .incomplete_manifest;
 }
 
 fn failWithCacheError(

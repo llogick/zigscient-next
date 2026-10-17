@@ -978,7 +978,7 @@ pub const Manifest = struct {
         // this is a miss, we'll learn those from future calls to `addDiscoveredPath` etc. As such, the state of
         // `man.hash.hasher` after this function depends on whether this is a hit or a miss.
         //
-        // If we return `CacheStatus.hit`, then `man.hash.hasher` must already include the digests of the discovered
+        // If we return `CheckResult.hit`, then `man.hash.hasher` must already include the digests of the discovered
         // files, so the caller can call `final`. Otherwise, on a cache miss, `man.hash.hasher` will include the digests
         // of all non-discovered files -- that is, the ones we've already been told about. The rest will be discovered
         // through calls to `addDiscoveredPath` etc, which will update the hasher. After all files are added, the user

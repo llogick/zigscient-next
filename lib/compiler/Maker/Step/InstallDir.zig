@@ -95,5 +95,7 @@ pub fn make(
         }
     }
 
-    step.result_cached = all_cached;
+    // TODO instead of a bool, make this a proper Step.ResultCacheStatus that tracks the file path that caused
+    // a miss for better reporting.
+    step.result_cache_status = if (all_cached) .hit else .incomplete_manifest;
 }

@@ -22,5 +22,5 @@ pub fn make(
 
     try step.singleUnchangingWatchInput(maker, arena, conf_if.source.get(conf));
     const p = try maker.installLazyPathSub(arena, conf_if.source, conf_if.dest_dir, conf_if.dest_sub_path.slice(conf), step_index);
-    step.result_cached = p == .fresh;
+    step.result_cache_status = if (p == .fresh) .hit else .incomplete_manifest;
 }

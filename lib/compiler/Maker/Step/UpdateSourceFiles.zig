@@ -84,5 +84,7 @@ pub fn make(
         progress_node.completeOne();
     }
 
-    step.result_cached = !any_miss;
+    // TODO instead of a bool, make this a proper Step.ResultCacheStatus that tracks the file path that caused
+    // a miss for better reporting.
+    step.result_cache_status = if (!any_miss) .hit else .incomplete_manifest;
 }

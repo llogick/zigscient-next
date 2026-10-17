@@ -573,7 +573,7 @@ pub fn make(
             const digest = man.hitDigestHex();
             try populateGeneratedStdIo(maker, &conf_run, &digest);
             try populateGeneratedPaths(maker, output_placeholders.items, &digest);
-            step.result_cached = true;
+            step.result_cache_status = .hit;
             return;
         }
 
