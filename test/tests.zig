@@ -20,7 +20,7 @@ pub const LinkContext = @import("src/Link.zig");
 const ModuleTestTarget = struct {
     linkage: ?std.builtin.LinkMode = null,
     target: std.Target.Query = .{},
-    optimize_mode: ?std.builtin.Optimize = .debug,
+    optimize_mode: std.builtin.Optimize = .debug,
     link_libc: ?bool = null,
     single_threaded: ?bool = null,
     use_llvm: ?bool = null,
@@ -2650,7 +2650,7 @@ pub const ModuleTestOptions = struct {
 
     pub const TestOnly = union(enum) {
         default: void,
-        fuzz: ?OptimizeMode,
+        fuzz: OptimizeMode,
     };
 };
 
@@ -2751,9 +2751,6 @@ fn addOneModuleTest(
     options: ModuleTestOptions,
 ) void {
     const target = &resolved_target.result;
-    const optimize_suffix = if (test_target.optimize_mode) |mode| switch (mode) {
-        inline else => |t| "-" ++ @tagName(t),
-    } else "";
     const libc_suffix = if (test_target.link_libc == true) "-libc" else "";
     const model_txt = target.cpu.model.name;
 
@@ -2806,11 +2803,11 @@ fn addOneModuleTest(
 
     for (options.include_paths) |include_path| these_tests.root_module.addIncludePath(b.path(include_path));
 
-    const qualified_name = b.fmt("{s}-{s}-{s}{s}{s}{s}{s}{s}{s}{s}", .{
+    const qualified_name = b.fmt("{s}-{s}-{s}-{t}{s}{s}{s}{s}{s}{s}", .{
         options.name,
         triple_txt,
         model_txt,
-        optimize_suffix,
+        test_target.optimize_mode,
         libc_suffix,
         single_threaded_suffix,
         backend_suffix,
@@ -2945,11 +2942,11 @@ fn addOneModuleTest(
     }
 }
 
-pub fn wouldUseLlvm(use_llvm: ?bool, query: std.Target.Query, optimize_mode: ?OptimizeMode) bool {
+pub fn wouldUseLlvm(use_llvm: ?bool, query: std.Target.Query, optimize_mode: OptimizeMode) bool {
     if (comptime builtin.cpu.arch.endian() == .big) return true; // https://github.com/ziglang/zig/issues/25961
     if (use_llvm) |x| return x;
     if (query.ofmt == .c) return false;
-    switch (optimize_mode orelse .debug) {
+    switch (optimize_mode) {
         .debug => {},
         else => return true,
     }

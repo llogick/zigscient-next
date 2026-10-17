@@ -860,7 +860,7 @@ fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
 }
 
 const AddCompilerModOptions = struct {
-    optimize: ?std.lang.Optimize,
+    optimize: std.lang.Optimize,
     target: std.Build.ResolvedTarget,
     strip: ?bool = null,
     valgrind: ?bool = null,
