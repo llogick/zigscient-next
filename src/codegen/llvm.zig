@@ -4452,26 +4452,6 @@ pub fn toLlvmAddressSpace(address_space: std.lang.AddressSpace, target: *const s
     };
 }
 
-/// On some targets, global values that are in the generic address space must be generated into a
-/// different address space, and then cast back to the generic address space.
-fn llvmDefaultGlobalAddressSpace(target: *const std.Target) Builder.AddrSpace {
-    return switch (target.cpu.arch) {
-        // On amdgcn, globals must be explicitly allocated and uploaded so that the program can access
-        // them.
-        .amdgcn => Builder.AddrSpace.amdgpu.global,
-        else => .default,
-    };
-}
-
-/// Return the actual address space that a value should be stored in if its a global address space.
-/// When a value is placed in the resulting address space, it needs to be cast back into wanted_address_space.
-fn toLlvmGlobalAddressSpace(wanted_address_space: std.lang.AddressSpace, target: *const std.Target) Builder.AddrSpace {
-    return switch (wanted_address_space) {
-        .generic => llvmDefaultGlobalAddressSpace(target),
-        else => |as| toLlvmAddressSpace(as, target),
-    };
-}
-
 /// We need to insert extra padding if LLVM's isn't enough.
 /// However we don't want to ever call LLVMABIAlignmentOfType or
 /// LLVMABISizeOfType because these functions will trip assertions
