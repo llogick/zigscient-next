@@ -11294,7 +11294,7 @@ else if (native_os.isDarwin())
     c_longdouble
 else
     extern struct {
-        a: c_longlong,
+        a: c_longlong align(if (native_arch == .x86) 8 else @alignOf(c_longlong)),
         b: c_longdouble,
     };
 

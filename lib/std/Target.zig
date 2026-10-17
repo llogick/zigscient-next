@@ -932,6 +932,7 @@ pub const Abi = enum {
             .wiiu => .eabihf,
             .gba => .eabi,
             .psx => .eabi,
+            .ps3 => .ilp32,
             .psp => .eabihf,
             .vita => .eabihf,
             .emscripten => .musl,
@@ -951,7 +952,6 @@ pub const Abi = enum {
             .visionos,
             .watchos,
             .@"switch",
-            .ps3,
             .ps4,
             .ps5,
             .amdhsa,
@@ -2135,6 +2135,7 @@ pub const Cpu = struct {
                 .powerpc64 => switch (os.tag) {
                     .linux, .freebsd => &powerpc.cpu.pwr8,
                     .openbsd => &powerpc.cpu.pwr9,
+                    .ps3 => &powerpc.cpu.cell,
                     else => generic(arch),
                 },
                 .powerpc64le => &powerpc.cpu.ppc64le,
@@ -2468,6 +2469,9 @@ pub const DynamicLinker = struct {
             .tvos,
             .visionos,
             .watchos,
+
+            .ps4,
+            .ps5,
             => .arch_os,
 
             .hurd,
@@ -2488,6 +2492,11 @@ pub const DynamicLinker = struct {
             .@"switch",
             .gba,
 
+            .psx,
+            .ps3,
+            .psp,
+            .vita,
+
             .emscripten,
             .wasi,
 
@@ -2499,13 +2508,6 @@ pub const DynamicLinker = struct {
             .opencl,
             .opengl,
             .vulkan,
-
-            .psx,
-            .ps3,
-            .ps4,
-            .ps5,
-            .psp,
-            .vita,
 
             .tios,
             .ashetos,
@@ -2909,8 +2911,10 @@ pub const DynamicLinker = struct {
                 else => none,
             },
 
-            // Operating systems in this list have been verified as not having a standard
-            // dynamic linker path.
+            .ps4,
+            .ps5,
+            => if (cpu.arch == .x86_64) init("/libexec/ld-elf.so.1") else none,
+
             .freestanding,
             .other,
 
@@ -2926,6 +2930,7 @@ pub const DynamicLinker = struct {
             .gba,
 
             .psx,
+            .ps3,
             .psp,
             .vita,
 
@@ -2943,13 +2948,6 @@ pub const DynamicLinker = struct {
 
             .tios,
             .ashetos,
-            => none,
-
-            // TODO go over each item in this list and either move it to the above list, or
-            // implement the standard dynamic linker path code for it.
-            .ps3,
-            .ps4,
-            .ps5,
             => none,
         } catch unreachable;
     }
@@ -3137,38 +3135,39 @@ pub fn stackGrowth(target: *const Target) StackGrowth {
 /// an option to override the default signedness e.g. GCC's -funsigned-char / -fsigned-char
 /// Returns `null` if no C ABI is defined for this target.
 pub fn cCharSignedness(target: *const Target) ?std.builtin.Signedness {
-    switch (target.os.tag) {
-        .opengl => return null,
-        else => {},
-    }
-    if (target.os.tag.isDarwin() or target.os.tag == .windows or target.os.tag == .uefi) return .signed;
-    return switch (target.cpu.arch) {
-        .aarch64,
-        .aarch64_be,
-        .arm,
-        .armeb,
-        .arc,
-        .arceb,
-        .csky,
-        .ez80,
-        .hexagon,
-        .msp430,
-        .powerpc,
-        .powerpcle,
-        .powerpc64,
-        .powerpc64le,
-        .s390x,
-        .riscv32,
-        .riscv32be,
-        .riscv64,
-        .riscv64be,
-        .thumb,
-        .thumbeb,
-        .xcore,
-        .xtensa,
-        .xtensaeb,
-        => .unsigned,
-        else => .signed,
+    return switch (target.os.tag) {
+        .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => .signed,
+        .windows, .uefi => .signed,
+        .ps3, .vita => .signed,
+        .opengl => null,
+        else => switch (target.cpu.arch) {
+            .aarch64,
+            .aarch64_be,
+            .arm,
+            .armeb,
+            .arc,
+            .arceb,
+            .csky,
+            .ez80,
+            .hexagon,
+            .msp430,
+            .powerpc,
+            .powerpcle,
+            .powerpc64,
+            .powerpc64le,
+            .s390x,
+            .riscv32,
+            .riscv32be,
+            .riscv64,
+            .riscv64be,
+            .thumb,
+            .thumbeb,
+            .xcore,
+            .xtensa,
+            .xtensaeb,
+            => .unsigned,
+            else => .signed,
+        },
     };
 }
 
@@ -3204,6 +3203,7 @@ pub fn cTypeByteSize(t: *const Target, c_type: CType) ?u16 {
         => @divExact(cTypeBitSize(t, c_type) orelse return null, 8),
 
         .longdouble => switch (cTypeBitSize(t, c_type) orelse return null) {
+            32 => 4,
             64 => 8,
             80 => @intCast(std.mem.alignForward(usize, 10, cTypeAlignment(t, c_type).?)),
             128 => 16,
@@ -3240,30 +3240,6 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 .long, .ulong, .float => 32,
                 .double, .longdouble, .longlong, .ulonglong => 64,
             },
-            .mips64,
-            .mips64el,
-            => switch (c_type) {
-                .char => 8,
-                .short, .ushort => 16,
-                .int, .uint, .float => 32,
-                .long, .ulong => switch (target.abi) {
-                    .abin32 => 32,
-                    else => 64,
-                },
-                .longlong, .ulonglong, .double => 64,
-                .longdouble => 128,
-            },
-            .x86_64 => switch (c_type) {
-                .char => 8,
-                .short, .ushort => 16,
-                .int, .uint, .float => 32,
-                .long, .ulong => switch (target.abi) {
-                    .x32 => 32,
-                    else => 64,
-                },
-                .longlong, .ulonglong, .double => 64,
-                .longdouble => 80,
-            },
             else => switch (c_type) {
                 .char => 8,
                 .short, .ushort => 16,
@@ -3271,7 +3247,11 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 .long, .ulong => target.ptrBitWidth(),
                 .longlong, .ulonglong, .double => 64,
                 .longdouble => switch (target.cpu.arch) {
-                    .x86 => 80,
+                    else => 64,
+
+                    .x86,
+                    .x86_64,
+                    => 80,
 
                     .alpha,
                     .riscv32,
@@ -3280,11 +3260,14 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                     .riscv64be,
                     .aarch64,
                     .aarch64_be,
+                    .mips64,
+                    .mips64el,
                     .powerpc,
                     .powerpcle,
                     .powerpc64,
                     .powerpc64le,
                     .s390x,
+                    .sparc,
                     .sparc64,
                     .wasm32,
                     .wasm64,
@@ -3292,13 +3275,12 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                     .loongarch64,
                     .ve,
                     => 128,
-
-                    else => 64,
                 },
             },
         },
 
         .fuchsia,
+        .managarm,
 
         .haiku,
         .hurd,
@@ -3386,6 +3368,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                     .s390x,
                     .mips64,
                     .mips64el,
+                    .sparc,
                     .sparc64,
                     .wasm32,
                     .wasm64,
@@ -3457,52 +3440,20 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             },
         },
 
-        .nvcl, .cuda => switch (c_type) {
+        .cuda, .amdhsa, .amdpal, .mesa3d, .nvcl, .opencl, .vulkan => switch (c_type) {
             .char => 8,
             .short, .ushort => 16,
             .int, .uint, .float => 32,
-            .long, .ulong => switch (target.cpu.arch) {
-                .nvptx => 32,
-                .nvptx64 => 64,
-                else => 64,
-            },
-            .longlong, .ulonglong, .double => 64,
-            .longdouble => 64,
+            .long, .ulong => target.ptrBitWidth(),
+            .longlong, .ulonglong, .double, .longdouble => 64,
         },
 
-        .amdhsa, .amdpal, .mesa3d => switch (c_type) {
-            .char => 8,
-            .short, .ushort => 16,
-            .int, .uint, .float => 32,
-            .long, .ulong, .longlong, .ulonglong, .double => 64,
-            .longdouble => 128,
-        },
-
-        .opencl, .vulkan => switch (c_type) {
-            .char => 8,
-            .short, .ushort => 16,
-            .int, .uint, .float => 32,
-            .long, .ulong, .double => 64,
-            .longlong, .ulonglong => 128,
-            // Note: The OpenCL specification does not guarantee a particular size for long double,
-            // but clang uses 128 bits.
-            .longdouble => 128,
-        },
-
-        .@"3ds" => switch (c_type) {
+        .gba, .@"3ds", .wiiu => switch (c_type) {
             .char => 8,
             .short, .ushort => 16,
             .int, .uint, .float, .long, .ulong => 32,
             .longlong, .ulonglong, .double, .longdouble => 64,
         },
-
-        .wiiu => switch (c_type) {
-            .char => 8,
-            .short, .ushort => 16,
-            .int, .uint, .float, .long, .ulong => 32,
-            .longlong, .ulonglong, .double, .longdouble => 64,
-        },
-
         .@"switch" => switch (c_type) {
             .char => 8,
             .short, .ushort => 16,
@@ -3511,14 +3462,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             .longdouble => 128,
         },
 
-        .gba => switch (c_type) {
-            .char => return 8,
-            .short, .ushort => return 16,
-            .int, .uint, .long, .ulong, .float => return 32,
-            .longlong, .ulonglong, .double, .longdouble => return 64,
-        },
-
-        .psx => switch (c_type) {
+        .psx, .ps3, .psp, .vita => switch (c_type) {
             .char => 8,
             .short, .ushort => 16,
             .int, .uint, .long, .ulong, .float => 32,
@@ -3528,17 +3472,10 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             .char => 8,
             .short, .ushort => 16,
             .int, .uint, .float => 32,
-            .long, .ulong => 64,
-            .longlong, .ulonglong, .double => 64,
+            .long, .ulong, .longlong, .ulonglong, .double => 64,
             .longdouble => 80,
         },
-        .psp, .vita => switch (c_type) {
-            .char => 8,
-            .short, .ushort => 16,
-            .int, .uint, .float => 32,
-            .long, .ulong => 64,
-            .longlong, .ulonglong, .double, .longdouble => 64,
-        },
+
         .tios => switch (c_type) {
             .char => 8,
             .short, .ushort => 16,
@@ -3548,10 +3485,6 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
         },
 
         .opengl => null,
-
-        .ps3,
-        .managarm,
-        => @panic("specify the C integer and float type sizes for this OS"),
     };
 }
 
@@ -3608,8 +3541,6 @@ pub fn cTypeAlignment(target: *const Target, c_type: CType) ?u16 {
             .sheb,
             .x86,
             .xcore,
-            .xtensa,
-            .xtensaeb,
             => 4,
 
             .amdgcn,
@@ -3630,6 +3561,8 @@ pub fn cTypeAlignment(target: *const Target, c_type: CType) ?u16 {
             .sparc,
             .thumb,
             .thumbeb,
+            .xtensa,
+            .xtensaeb,
             => 8,
 
             .aarch64,
