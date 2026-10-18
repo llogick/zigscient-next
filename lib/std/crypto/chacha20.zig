@@ -711,7 +711,6 @@ fn ChaChaPoly1305(comptime rounds_nb: usize) type {
 
             const verify = crypto.timing_safe.eql([tag_length]u8, computed_tag, tag);
             if (!verify) {
-                crypto.secureZero(u8, &computed_tag);
                 @memset(m, undefined);
                 return error.AuthenticationFailed;
             }

@@ -351,10 +351,9 @@ fn Aegis128XGeneric(comptime degree: u7, comptime tag_bits: u9) type {
             if (m.len % block_length != 0) {
                 state.decLast(m[i..], c[i..]);
             }
-            var computed_tag = state.finalize(tag_bits, ad.len, m.len);
+            const computed_tag = state.finalize(tag_bits, ad.len, m.len);
             const verify = crypto.timing_safe.eql([tag_length]u8, computed_tag, tag);
             if (!verify) {
-                crypto.secureZero(u8, &computed_tag);
                 @memset(m, undefined);
                 return error.AuthenticationFailed;
             }
@@ -646,10 +645,9 @@ fn Aegis256XGeneric(comptime degree: u7, comptime tag_bits: u9) type {
             if (m.len % block_length != 0) {
                 state.decLast(m[i..], c[i..]);
             }
-            var computed_tag = state.finalize(tag_bits, ad.len, m.len);
+            const computed_tag = state.finalize(tag_bits, ad.len, m.len);
             const verify = crypto.timing_safe.eql([tag_length]u8, computed_tag, tag);
             if (!verify) {
-                crypto.secureZero(u8, &computed_tag);
                 @memset(m, undefined);
                 return error.AuthenticationFailed;
             }

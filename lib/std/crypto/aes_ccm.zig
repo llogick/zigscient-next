@@ -91,9 +91,6 @@ fn AesCcm(comptime BlockCipher: type, comptime tag_len: usize, comptime nonce_le
                 for (tag, mac_result[0..tag_length], s0[0..tag_length]) |*t, mac_byte, s_byte| {
                     t.* = mac_byte ^ s_byte;
                 }
-
-                crypto.secureZero(u8, &mac_result);
-                crypto.secureZero(u8, &s0);
             }
 
             // Encrypt the plaintext using CTR mode (starting from counter = 1)
@@ -153,16 +150,9 @@ fn AesCcm(comptime BlockCipher: type, comptime tag_len: usize, comptime nonce_le
                 // Constant-time tag comparison
                 const valid = crypto.timing_safe.eql([tag_length]u8, expected_mac, tag);
                 if (!valid) {
-                    crypto.secureZero(u8, &expected_mac);
-                    crypto.secureZero(u8, &mac_result);
-                    crypto.secureZero(u8, &s0);
                     crypto.secureZero(u8, m);
                     return error.AuthenticationFailed;
                 }
-
-                crypto.secureZero(u8, &expected_mac);
-                crypto.secureZero(u8, &mac_result);
-                crypto.secureZero(u8, &s0);
             }
         }
 

@@ -417,6 +417,8 @@ test "issue #4532: no index out of bounds" {
 
 /// Sets a slice to zeroes.
 /// Prevents the store from being optimized out.
+/// Does not clear copies in registers or elsewhere in memory.
+/// Wiping a value held in registers can force an extra copy into memory.
 pub fn secureZero(comptime T: type, s: []volatile T) void {
     @memset(s, std.mem.zeroes(T));
 }

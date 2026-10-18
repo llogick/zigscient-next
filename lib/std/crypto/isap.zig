@@ -78,7 +78,6 @@ pub const IsapA128A = struct {
 
         var out: [out_len]u8 = undefined;
         isap.st.extractBytes(&out);
-        isap.st.secureZero();
         return out;
     }
 
@@ -106,7 +105,6 @@ pub const IsapA128A = struct {
 
         var tag: [16]u8 = undefined;
         isap.st.extractBytes(&tag);
-        isap.st.secureZero();
         return tag;
     }
 
@@ -139,7 +137,6 @@ pub const IsapA128A = struct {
                 break;
             }
         }
-        isap.st.secureZero();
     }
 
     pub fn encrypt(c: []u8, tag: *[tag_length]u8, m: []const u8, ad: []const u8, npub: [nonce_length]u8, key: [key_length]u8) void {
@@ -157,10 +154,9 @@ pub const IsapA128A = struct {
     ///
     /// Contents of `m` are undefined if an error is returned.
     pub fn decrypt(m: []u8, c: []const u8, tag: [tag_length]u8, ad: []const u8, npub: [nonce_length]u8, key: [key_length]u8) AuthenticationError!void {
-        var computed_tag = mac(c, ad, npub, key);
+        const computed_tag = mac(c, ad, npub, key);
         const verify = crypto.timing_safe.eql([tag_length]u8, computed_tag, tag);
         if (!verify) {
-            crypto.secureZero(u8, &computed_tag);
             @memset(m, undefined);
             return error.AuthenticationFailed;
         }

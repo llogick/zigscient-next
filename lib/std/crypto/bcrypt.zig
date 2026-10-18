@@ -556,8 +556,7 @@ const pbkdf_prf = struct {
             std.mem.writeInt(u32, out[4 * i ..][0..4], v, .little);
         }
 
-        // zap
-        crypto.secureZero(u32, &cdata);
+        // Clear the key schedule, which is already stored in memory.
         crypto.secureZero(u32, &state.subkeys);
 
         return out;
@@ -611,8 +610,8 @@ pub fn opensshKdf(pass: []const u8, salt: []const u8, key: []u8, rounds: u32) !v
             key[dest] = tmp[i];
         } else amt;
     }
+    // Unlike these buffers, tmp2 can stay in registers; wiping it can force an extra copy into memory.
     crypto.secureZero(u8, &tmp);
-    crypto.secureZero(u8, &tmp2);
     crypto.secureZero(u8, &sha2pass);
 }
 
