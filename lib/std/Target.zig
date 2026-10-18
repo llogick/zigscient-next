@@ -1228,6 +1228,9 @@ pub const Cpu = struct {
         dependencies: Set,
 
         /// A bit set of all the features.
+        ///
+        /// The typed features for a given `Target.Cpu.Arch` can be found in
+        /// `@field(Target, @tagName(arch.family()))`.
         pub const Set = struct {
             ints: [usize_count]usize,
 

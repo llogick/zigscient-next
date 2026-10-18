@@ -18,9 +18,19 @@ cpu_arch: ?Target.Cpu.Arch = null,
 cpu_model: CpuModel = .determined_by_arch_os,
 
 /// Sparse set of CPU features to add to the set from `cpu_model`.
+///
+/// The typed features for a given `Target.Cpu.Arch` can be found in
+/// `@field(Target, @tagName(arch.family()))`.
+/// 
+/// For example, `std.Target.x86.cpu.x86_64_v3.features` or `std.Target.s390x.cpu.z13.features`.
 cpu_features_add: Target.Cpu.Feature.Set = .empty,
 
 /// Sparse set of CPU features to remove from the set from `cpu_model`.
+///
+/// The typed features for a given `Target.Cpu.Arch` can be found in
+/// `@field(Target, @tagName(arch.family()))`.
+/// 
+/// For example, `std.Target.x86.cpu.x86_64_v3.features` or `std.Target.s390x.cpu.z13.features`.
 cpu_features_sub: Target.Cpu.Feature.Set = .empty,
 
 /// `null` means native.
