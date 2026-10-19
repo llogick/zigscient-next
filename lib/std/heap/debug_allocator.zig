@@ -1098,13 +1098,13 @@ test "small allocations - free in same order" {
     defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
     const allocator = gpa.allocator();
 
-    var list = std.array_list.Managed(*u64).init(std.testing.allocator);
-    defer list.deinit();
+    var list: std.ArrayList(*u64) = .empty;
+    defer list.deinit(std.testing.allocator);
 
     var i: usize = 0;
     while (i < 513) : (i += 1) {
         const ptr = try allocator.create(u64);
-        try list.append(ptr);
+        try list.append(std.testing.allocator, ptr);
     }
 
     for (list.items) |ptr| {
@@ -1117,13 +1117,13 @@ test "small allocations - free in reverse order" {
     defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
     const allocator = gpa.allocator();
 
-    var list = std.array_list.Managed(*u64).init(std.testing.allocator);
-    defer list.deinit();
+    var list: std.ArrayList(*u64) = .empty;
+    defer list.deinit(std.testing.allocator);
 
     var i: usize = 0;
     while (i < 513) : (i += 1) {
         const ptr = try allocator.create(u64);
-        try list.append(ptr);
+        try list.append(std.testing.allocator, ptr);
     }
 
     while (list.pop()) |ptr| {
@@ -1281,9 +1281,9 @@ test "shrink large object to large object with larger alignment" {
     // This loop allocates until we find a page that is not aligned to the big
     // alignment. Then we shrink the allocation after the loop, but increase the
     // alignment to the higher one, that we know will force it to realloc.
-    var stuff_to_free = std.array_list.Managed([]align(16) u8).init(debug_allocator);
+    var stuff_to_free: std.ArrayList([]align(16) u8) = .empty;
     while (mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {
-        try stuff_to_free.append(slice);
+        try stuff_to_free.append(debug_allocator, slice);
         slice = try allocator.alignedAlloc(u8, .@"16", alloc_size);
     }
     while (stuff_to_free.pop()) |item| {
@@ -1344,9 +1344,9 @@ test "realloc large object to larger alignment" {
 
     const big_alignment: usize = default_page_size * 2;
     // This loop allocates until we find a page that is not aligned to the big alignment.
-    var stuff_to_free = std.array_list.Managed([]align(16) u8).init(debug_allocator);
+    var stuff_to_free: std.ArrayList([]align(16) u8) = .empty;
     while (mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {
-        try stuff_to_free.append(slice);
+        try stuff_to_free.append(debug_allocator, slice);
         slice = try allocator.alignedAlloc(u8, .@"16", default_page_size * 2 + 50);
     }
     while (stuff_to_free.pop()) |item| {
