@@ -21,7 +21,7 @@ cpu_model: CpuModel = .determined_by_arch_os,
 ///
 /// The typed features for a given `Target.Cpu.Arch` can be found in
 /// `@field(Target, @tagName(arch.family()))`.
-/// 
+///
 /// For example, `std.Target.x86.cpu.x86_64_v3.features` or `std.Target.s390x.cpu.z13.features`.
 cpu_features_add: Target.Cpu.Feature.Set = .empty,
 
@@ -29,7 +29,7 @@ cpu_features_add: Target.Cpu.Feature.Set = .empty,
 ///
 /// The typed features for a given `Target.Cpu.Arch` can be found in
 /// `@field(Target, @tagName(arch.family()))`.
-/// 
+///
 /// For example, `std.Target.x86.cpu.x86_64_v3.features` or `std.Target.s390x.cpu.z13.features`.
 cpu_features_sub: Target.Cpu.Feature.Set = .empty,
 
