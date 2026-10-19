@@ -724,15 +724,49 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
             fe.v.limbs_len = new_len;
         }
 
+        // Doubles modulo m without using `rr`, so it can be used for modulus construction.
+        fn double(self: Self, x: *Fe) void {
+            const y = x.v;
+            _ = addAndReduce(&x.v, y, self.v);
+        }
+
         // Computes R^2 for the Montgomery representation.
         fn computeRR(self: *Self) void {
-            self.rr = self.zero;
-            const n = self.rr.limbs_count();
-            self.rr.v.limbs()[n - 1] = 1;
-            for ((n - 1)..(2 * n)) |_| {
-                self.shiftIn(&self.rr, 0);
+            const n = self.limbs_count();
+            var rr = self.zero;
+
+            if (n < 3) {
+                rr.v.limbs()[n - 1] = 1;
+                for ((n - 1)..(2 * n)) |_| {
+                    self.shiftIn(&rr, 0);
+                }
+                self.rr = rr;
+                return;
             }
-            self.shrink(&self.rr) catch unreachable;
+
+            const start = self.bits() - 1; // largest power of two < m.
+            const log_r = n * t_bits;
+            rr.v.limbs()[start / t_bits] = math.shl(Limb, 1, start % t_bits);
+            for (start..log_r) |_| {
+                self.double(&rr);
+            }
+
+            const threshold = n / 4;
+            var i: usize = math.log2_int(usize, log_r);
+            while (i > 0 and math.shr(usize, log_r, i) <= threshold) i -= 1;
+            for (0..math.shr(usize, log_r, i)) |_| {
+                self.double(&rr);
+            }
+            while (i > 0) {
+                rr = self.montgomerySq(rr);
+                i -= 1;
+                if (math.shr(usize, log_r, i) & 1 != 0) {
+                    self.double(&rr);
+                }
+            }
+
+            rr.montgomery = false;
+            self.rr = rr;
         }
 
         /// Computes x << t_bits + y (mod m)
