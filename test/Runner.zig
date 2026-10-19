@@ -41,9 +41,6 @@ pub const Target = struct {
                 features: struct {
                     add: []const Feature = &.{},
                     remove: []const Feature = &.{},
-                    comptime {
-                        _ = &family; // hack around compiler bug
-                    }
                 } = .{},
 
                 pub const Model = Model: {

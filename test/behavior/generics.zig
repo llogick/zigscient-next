@@ -656,3 +656,12 @@ test "noalias paramters with generic return type" {
     _ = S.e;
     _ = S.f;
 }
+
+comptime {
+    for (.{ u1, u2 }) |Int| {
+        _ = struct {
+            outer: struct { inner: Inner },
+            const Inner = Int;
+        }{ .outer = .{ .inner = ~@as(Int, 0) } };
+    }
+}

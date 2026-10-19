@@ -4891,7 +4891,7 @@ fn structDeclInner(
         .node = node,
         .inst = decl_inst,
         .declaring_gz = gz,
-        .maybe_generic = astgen.within_fn,
+        .maybe_generic = astgen.within_fn or scope.isPotentiallyGeneric(),
     };
     defer namespace.deinit(gpa);
 
@@ -5193,7 +5193,7 @@ fn unionDeclInner(
         .node = node,
         .inst = decl_inst,
         .declaring_gz = gz,
-        .maybe_generic = astgen.within_fn,
+        .maybe_generic = astgen.within_fn or scope.isPotentiallyGeneric(),
     };
     defer namespace.deinit(gpa);
 
@@ -5416,7 +5416,7 @@ fn containerDecl(
                 .node = node,
                 .inst = decl_inst,
                 .declaring_gz = gz,
-                .maybe_generic = astgen.within_fn,
+                .maybe_generic = astgen.within_fn or scope.isPotentiallyGeneric(),
             };
             defer namespace.deinit(gpa);
 
@@ -5578,7 +5578,7 @@ fn containerDecl(
                 .node = node,
                 .inst = decl_inst,
                 .declaring_gz = gz,
-                .maybe_generic = astgen.within_fn,
+                .maybe_generic = astgen.within_fn or scope.isPotentiallyGeneric(),
             };
             defer namespace.deinit(gpa);
 
@@ -11170,6 +11170,21 @@ const Scope = struct {
             .defer_normal, .defer_error => base.cast(Defer).?.parent,
             .namespace => base.cast(Namespace).?.parent,
             .top => null,
+        };
+    }
+
+    /// Whether a container declared in this scope may depend on a local value.
+    fn isPotentiallyGeneric(base: *Scope) bool {
+        var scope = base;
+        while (true) switch (scope.unwrap()) {
+            .local_val, .local_ptr => return true,
+            .gen_zir => |gz| scope = gz.parent,
+            .defer_normal, .defer_error => |defer_scope| scope = defer_scope.parent,
+            .namespace => |namespace| {
+                if (namespace.maybe_generic) return true;
+                scope = namespace.parent;
+            },
+            .top => return false,
         };
     }
 
