@@ -5,10 +5,12 @@ const testing = std.testing;
 const has_aesni = builtin.cpu.has(.x86, .aes);
 const has_avx = builtin.cpu.has(.x86, .avx);
 const has_armaes = builtin.cpu.has(.aarch64, .aes);
-// C backend doesn't currently support passing vectors to inline asm.
-const impl = if (builtin.cpu.arch == .x86_64 and has_aesni and has_avx) impl: {
+const use_aesni = builtin.cpu.arch == .x86_64 and has_aesni and has_avx;
+// C backend doesn't currently support passing vectors to inline asm (#37125)
+const use_armaes = builtin.cpu.arch == .aarch64 and (builtin.zig_backend != .stage2_c or !builtin.os.tag.isDarwin()) and has_armaes;
+const impl = if (use_aesni) impl: {
     break :impl @import("aes/aesni.zig");
-} else if (builtin.cpu.arch == .aarch64 and (builtin.zig_backend != .stage2_c or !builtin.os.tag.isDarwin()) and has_armaes) impl: {
+} else if (use_armaes) impl: {
     break :impl @import("aes/armcrypto.zig");
 } else impl: {
     break :impl @import("aes/soft.zig");
@@ -16,9 +18,7 @@ const impl = if (builtin.cpu.arch == .x86_64 and has_aesni and has_avx) impl: {
 
 /// `true` if AES is backed by hardware (AES-NI on x86_64, ARM Crypto Extensions on AArch64).
 /// Software implementations are much slower, and should be avoided if possible.
-pub const has_hardware_support =
-    (builtin.cpu.arch == .x86_64 and has_aesni and has_avx) or
-    (builtin.cpu.arch == .aarch64 and has_armaes);
+pub const has_hardware_support = use_aesni or use_armaes;
 
 pub const Block = impl.Block;
 pub const BlockVec = impl.BlockVec;
