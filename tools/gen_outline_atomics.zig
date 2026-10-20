@@ -32,7 +32,7 @@ pub fn main(init: std.process.Init) !void {
         \\/// It is intentionally not exported in order to make the machine code that
         \\/// uses it a statically predicted direct branch rather than using the PLT,
         \\/// which ARM is concerned would have too much overhead.
-        \\var __aarch64_have_lse_atomics: u8 = @intFromBool(always_has_lse);
+        \\pub var __aarch64_have_lse_atomics: u8 = @intFromBool(always_has_lse);
         \\
         \\
     );
