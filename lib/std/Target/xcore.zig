@@ -4,7 +4,12 @@ const std = @import("../std.zig");
 const CpuFeature = std.Target.Cpu.Feature;
 const CpuModel = std.Target.Cpu.Model;
 
-pub const Feature = enum {};
+pub const Feature = enum {
+    fpu,
+    vpu,
+    xs2,
+    xs3,
+};
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
 pub const featureSetHas = CpuFeature.FeatureSetFns(Feature).featureSetHas;
@@ -15,6 +20,32 @@ pub const all_features = blk: {
     const len = @typeInfo(Feature).@"enum".field_names.len;
     std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
     var result: [len]CpuFeature = undefined;
+    result[@backingInt(Feature.fpu)] = .{
+        .llvm_name = null,
+        .description = "Enable single-precision floating point unit",
+        .dependencies = featureSet(&[_]Feature{
+            .xs3,
+        }),
+    };
+    result[@backingInt(Feature.vpu)] = .{
+        .llvm_name = null,
+        .description = "Enable vector processing unit",
+        .dependencies = featureSet(&[_]Feature{
+            .xs3,
+        }),
+    };
+    result[@backingInt(Feature.xs2)] = .{
+        .llvm_name = null,
+        .description = "Enable XS2 architecture",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.xs3)] = .{
+        .llvm_name = null,
+        .description = "Enable XS3 architecture",
+        .dependencies = featureSet(&[_]Feature{
+            .xs2,
+        }),
+    };
     const ti = @typeInfo(Feature);
     for (&result, 0..) |*elem, i| {
         elem.index = i;
@@ -24,14 +55,24 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
+    pub const xs1b: CpuModel = .{
+        .name = "xs1b",
+        .llvm_name = null,
         .features = featureSet(&[_]Feature{}),
     };
-    pub const xs1b_generic: CpuModel = .{
-        .name = "xs1b_generic",
-        .llvm_name = "xs1b-generic",
-        .features = featureSet(&[_]Feature{}),
+    pub const xs2a: CpuModel = .{
+        .name = "xs2a",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .xs2,
+        }),
+    };
+    pub const xs3a: CpuModel = .{
+        .name = "xs3a",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .fpu,
+            .vpu,
+        }),
     };
 };

@@ -1200,7 +1200,6 @@ pub const all_features = blk: {
             .db,
             .dsp,
             .has_v7,
-            .neon,
             .perfmon,
         }),
     };
@@ -1250,7 +1249,6 @@ pub const all_features = blk: {
             .dsp,
             .has_v7,
             .mp,
-            .neon,
             .perfmon,
             .trustzone,
             .virtualization,
@@ -1262,12 +1260,12 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
             .has_v8_1a,
             .mp,
+            .neon,
             .trustzone,
             .virtualization,
         }),
@@ -1276,7 +1274,6 @@ pub const all_features = blk: {
         .llvm_name = "armv8.1-m.main",
         .description = "ARMv81mMainline architecture",
         .dependencies = featureSet(&[_]Feature{
-            .@"8msecext",
             .acquire_release,
             .db,
             .has_v8_1m_main,
@@ -1294,12 +1291,12 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
             .has_v8_2a,
             .mp,
+            .neon,
             .ras,
             .trustzone,
             .virtualization,
@@ -1311,12 +1308,12 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
             .has_v8_3a,
             .mp,
+            .neon,
             .ras,
             .trustzone,
             .virtualization,
@@ -1328,7 +1325,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
@@ -1345,7 +1341,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
@@ -1362,7 +1357,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
@@ -1379,7 +1373,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
@@ -1396,7 +1389,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
@@ -1413,7 +1405,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
@@ -1430,12 +1421,12 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
             .has_v8,
             .mp,
+            .neon,
             .trustzone,
             .virtualization,
         }),
@@ -1444,7 +1435,6 @@ pub const all_features = blk: {
         .llvm_name = "armv8-m.base",
         .description = "ARMv8mBaseline architecture",
         .dependencies = featureSet(&[_]Feature{
-            .@"8msecext",
             .acquire_release,
             .db,
             .has_v7clrex,
@@ -1460,7 +1450,6 @@ pub const all_features = blk: {
         .llvm_name = "armv8-m.main",
         .description = "ARMv8mMainline architecture",
         .dependencies = featureSet(&[_]Feature{
-            .@"8msecext",
             .acquire_release,
             .db,
             .has_v8m_main,
@@ -1523,7 +1512,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .aclass,
             .crc,
-            .crypto,
             .db,
             .dsp,
             .fp_armv8,
@@ -1949,6 +1937,7 @@ pub const cpu = struct {
         .llvm_name = "generic",
         .features = featureSet(&[_]Feature{
             .v7a,
+            .vfp3d16,
         }),
     };
     pub const cortex_a12: CpuModel = .{
@@ -1960,7 +1949,6 @@ pub const cpu = struct {
             .ret_addr_stack,
             .trustzone,
             .v7a,
-            .vfp4,
             .virtualization,
             .vmlx_forwarding,
         }),
@@ -1976,7 +1964,6 @@ pub const cpu = struct {
             .splat_vfp_neon,
             .trustzone,
             .v7a,
-            .vfp4,
             .virtualization,
             .vldn_align,
         }),
@@ -1990,7 +1977,6 @@ pub const cpu = struct {
             .ret_addr_stack,
             .trustzone,
             .v7a,
-            .vfp4,
             .virtualization,
             .vmlx_forwarding,
         }),
@@ -2020,7 +2006,6 @@ pub const cpu = struct {
             .slowfpvmlx,
             .trustzone,
             .v7a,
-            .vfp4,
             .vmlx_forwarding,
         }),
     };
@@ -2072,7 +2057,6 @@ pub const cpu = struct {
             .slowfpvmlx,
             .trustzone,
             .v7a,
-            .vfp4,
             .virtualization,
             .vmlx_forwarding,
             .vmlx_hazards,
@@ -2186,7 +2170,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
             .expand_fp_mlx,
-            .fp16,
             .mp,
             .muxed_units,
             .neon_fpmovs,
@@ -2285,12 +2268,10 @@ pub const cpu = struct {
         .name = "cortex_m52",
         .llvm_name = "cortex-m52",
         .features = featureSet(&[_]Feature{
-            .fp_armv8d16,
+            .dsp,
             .loop_align,
             .mve1beat,
-            .mve_fp,
             .no_branch_predictor,
-            .pacbti,
             .slowfpvmlx,
             .use_misched,
             .v8_1m_main,
@@ -2324,6 +2305,7 @@ pub const cpu = struct {
         .name = "cortex_m85",
         .llvm_name = "cortex-m85",
         .features = featureSet(&[_]Feature{
+            .@"8msecext",
             .branch_align_64,
             .dsp,
             .m85,
@@ -2364,16 +2346,13 @@ pub const cpu = struct {
             .slowfpvfmx,
             .slowfpvmlx,
             .v7r,
-            .vfp3d16,
         }),
     };
     pub const cortex_r52: CpuModel = .{
         .name = "cortex_r52",
         .llvm_name = "cortex-r52",
         .features = featureSet(&[_]Feature{
-            .fp_armv8,
             .fpao,
-            .neon,
             .use_misched,
             .v8r,
         }),
@@ -2382,9 +2361,7 @@ pub const cpu = struct {
         .name = "cortex_r52plus",
         .llvm_name = "cortex-r52plus",
         .features = featureSet(&[_]Feature{
-            .fp_armv8,
             .fpao,
-            .neon,
             .use_misched,
             .v8r,
         }),
@@ -2394,7 +2371,6 @@ pub const cpu = struct {
         .llvm_name = "cortex-r7",
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
-            .fp16,
             .hwdiv_arm,
             .mp,
             .ret_addr_stack,
@@ -2402,7 +2378,6 @@ pub const cpu = struct {
             .slowfpvfmx,
             .slowfpvmlx,
             .v7r,
-            .vfp3d16,
         }),
     };
     pub const cortex_r8: CpuModel = .{
@@ -2410,7 +2385,6 @@ pub const cpu = struct {
         .llvm_name = "cortex-r8",
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
-            .fp16,
             .hwdiv_arm,
             .mp,
             .ret_addr_stack,
@@ -2418,7 +2392,6 @@ pub const cpu = struct {
             .slowfpvfmx,
             .slowfpvmlx,
             .v7r,
-            .vfp3d16,
         }),
     };
     pub const cortex_x1: CpuModel = .{
@@ -2445,6 +2418,7 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .avoid_movs_shop,
             .avoid_partial_cpsr,
+            .crypto,
             .disable_postra_scheduler,
             .neonfp,
             .ret_addr_stack,
@@ -2466,6 +2440,7 @@ pub const cpu = struct {
         .name = "exynos_m1",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .crypto,
             .expand_fp_mlx,
             .fuse_aes,
             .fuse_literals,
@@ -2486,6 +2461,7 @@ pub const cpu = struct {
         .name = "exynos_m2",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .crypto,
             .expand_fp_mlx,
             .fuse_aes,
             .fuse_literals,
@@ -2506,6 +2482,7 @@ pub const cpu = struct {
         .name = "exynos_m3",
         .llvm_name = "exynos-m3",
         .features = featureSet(&[_]Feature{
+            .crypto,
             .expand_fp_mlx,
             .fuse_aes,
             .fuse_literals,
@@ -2526,6 +2503,7 @@ pub const cpu = struct {
         .name = "exynos_m4",
         .llvm_name = "exynos-m4",
         .features = featureSet(&[_]Feature{
+            .crypto,
             .dotprod,
             .expand_fp_mlx,
             .fullfp16,
@@ -2548,6 +2526,7 @@ pub const cpu = struct {
         .name = "exynos_m5",
         .llvm_name = "exynos-m5",
         .features = featureSet(&[_]Feature{
+            .crypto,
             .dotprod,
             .expand_fp_mlx,
             .fullfp16,
@@ -2578,6 +2557,26 @@ pub const cpu = struct {
             .v5te,
         }),
     };
+    pub const kermit: CpuModel = .{
+        .name = "kermit",
+        .llvm_name = "cortex-a9",
+        .features = featureSet(&[_]Feature{
+            .avoid_partial_cpsr,
+            .expand_fp_mlx,
+            .fp16,
+            .mp,
+            .muxed_units,
+            .neon,
+            .neon_fpmovs,
+            .prefer_vmovsr,
+            .ret_addr_stack,
+            .trustzone,
+            .v7a,
+            .vldn_align,
+            .vmlx_forwarding,
+            .vmlx_hazards,
+        }),
+    };
     pub const krait: CpuModel = .{
         .name = "krait",
         .llvm_name = "krait",
@@ -2586,6 +2585,7 @@ pub const cpu = struct {
             .hwdiv,
             .hwdiv_arm,
             .muxed_units,
+            .neon,
             .ret_addr_stack,
             .v7a,
             .vfp4,
@@ -2597,6 +2597,7 @@ pub const cpu = struct {
         .name = "kryo",
         .llvm_name = "kryo",
         .features = featureSet(&[_]Feature{
+            .crypto,
             .v8a,
         }),
     };
@@ -2666,9 +2667,7 @@ pub const cpu = struct {
         .llvm_name = "star-mc1",
         .features = featureSet(&[_]Feature{
             .avoid_muls,
-            .dsp,
             .fix_cmse_cve_2021_35465,
-            .fp_armv8d16sp,
             .loop_align,
             .no_branch_predictor,
             .slowfpvfmx,
@@ -2681,12 +2680,10 @@ pub const cpu = struct {
         .name = "star_mc3",
         .llvm_name = "star-mc3",
         .features = featureSet(&[_]Feature{
-            .fp_armv8d16,
+            .dsp,
             .loop_align,
             .mve1beat,
-            .mve_fp,
             .no_branch_predictor,
-            .pacbti,
             .slowfpvmlx,
             .use_misched,
             .v8_1m_main,
@@ -2730,6 +2727,7 @@ pub const cpu = struct {
             .hwdiv,
             .hwdiv_arm,
             .mp,
+            .neon,
             .neonfp,
             .prefer_ishst,
             .prof_unpr,

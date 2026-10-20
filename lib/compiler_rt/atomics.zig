@@ -13,7 +13,7 @@ const symbol = compiler_rt.symbol;
 // detail to keep the export logic clean and because we need some kind of CAS to
 // implement the spinlocks.
 const supports_atomic_ops = switch (arch) {
-    .msp430, .avr, .bpfel, .bpfeb => false,
+    .msp430, .avr, .bpfel, .bpfeb, .lanai => false,
     .arm, .armeb, .thumb, .thumbeb =>
     // The ARM v6m ISA has no ldrex/strex and so it's impossible to do CAS
     // operations (unless we're targeting Linux, the kernel provides a way to

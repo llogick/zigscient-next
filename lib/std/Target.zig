@@ -2069,10 +2069,12 @@ pub const Cpu = struct {
                 .riscv64, .riscv64be => &riscv.cpu.generic_rv64,
                 .sparc => &sparc.cpu.v7,
                 .sparc64 => &sparc.cpu.v9, // SPARC can only be 64-bit from v9 and up.
+                .ve => &ve.cpu.ve10,
                 .wasm32, .wasm64 => &wasm.cpu.mvp,
                 .x86_16 => &x86.cpu.i86,
                 .x86 => &x86.cpu.i386,
                 .x86_64 => &x86.cpu.x86_64,
+                .xcore => &xcore.cpu.xs1b,
                 inline else => |a| &@field(Target, @tagName(a.family())).cpu.generic,
             };
         }
@@ -2087,16 +2089,16 @@ pub const Cpu = struct {
         /// `Os.Tag.freestanding`.
         pub fn baseline(arch: Arch, os: Os) *const Model {
             return switch (arch) {
-                .alpha => &alpha.cpu.ev6,
+                .alpha => &alpha.cpu.ev56,
                 .amdgcn => &amdgcn.cpu.gfx906,
                 .arm => switch (os.tag) {
                     .@"3ds" => &arm.cpu.mpcore,
-                    .vita => &arm.cpu.cortex_a9,
+                    .vita => &arm.cpu.kermit,
                     .gba => &arm.cpu.arm7tdmi,
                     else => &arm.cpu.baseline,
                 },
                 .thumb => switch (os.tag) {
-                    .vita => &arm.cpu.cortex_a9,
+                    .vita => &arm.cpu.kermit,
                     .gba => &arm.cpu.arm7tdmi,
                     else => &arm.cpu.baseline,
                 },
@@ -2114,8 +2116,7 @@ pub const Cpu = struct {
                 .bpfel, .bpfeb => &bpf.cpu.v3,
                 .csky => &csky.cpu.ck810, // gcc/clang do not have a generic csky model.
                 .hexagon => &hexagon.cpu.hexagonv68, // gcc/clang do not have a generic hexagon model.
-                .hppa => &hppa.cpu.pa_7300lc,
-                .kvx => &kvx.cpu.coolidge_v2,
+                .hppa => &hppa.cpu.pa_7000,
                 .lanai => &lanai.cpu.v11, // clang does not have a generic lanai model.
                 .loongarch32 => &loongarch.cpu.la32v1_0,
                 .loongarch64 => &loongarch.cpu.la64v1_0,
@@ -2160,7 +2161,6 @@ pub const Cpu = struct {
                     .ps5 => &x86.cpu.znver2,
                     else => generic(arch),
                 },
-                .xcore => &xcore.cpu.xs1b_generic,
                 .xtensa => &xtensa.cpu.esp32,
                 .wasm32, .wasm64 => &wasm.cpu.lime1,
 
@@ -2601,6 +2601,16 @@ pub const DynamicLinker = struct {
 
                     else => none,
                 }
+            else if (abi.isOpenHarmony())
+                switch (cpu.arch) {
+                    .aarch64,
+                    .x86_64,
+                    => |arch| if (abi == .ohos) initFmt("/lib/ld-musl-{s}.so.1", .{@tagName(arch)}) else none,
+
+                    .arm => if (abi == .ohoseabi) init("/lib/ld-musl-arm.so.1") else none,
+
+                    else => none,
+                }
             else if (abi.isMusl())
                 switch (cpu.arch) {
                     .arm,
@@ -2750,7 +2760,6 @@ pub const DynamicLinker = struct {
                         },
                     }),
 
-                    .hppa,
                     .m68k,
                     .microblaze,
                     .microblazeel,
@@ -2780,7 +2789,9 @@ pub const DynamicLinker = struct {
                         if (cpu.has(.mips, .nan2008)) "-linux-mipsn8" else "",
                     }),
 
-                    .powerpc => switch (abi) {
+                    .hppa,
+                    .powerpc,
+                    => switch (abi) {
                         .gnueabi,
                         .gnueabihf,
                         => init("/lib/ld.so.1"),
@@ -3058,14 +3069,17 @@ pub fn ptrBitWidth(target: *const Target) u16 {
 pub fn stackAlignment(target: *const Target) u16 {
     // Overrides for when the stack alignment is not equal to the pointer width.
     switch (target.cpu.arch) {
-        .ez80 => return 1,
+        .avr,
+        .ez80,
+        => return 1,
 
-        .m68k => return 2,
+        .m68k => if (target.os.tag != .netbsd) return 2,
 
         .amdgcn => return 4,
 
         .arm,
         .armeb,
+        .hexagon,
         .hppa,
         .lanai,
         .mips,
@@ -3083,20 +3097,21 @@ pub fn stackAlignment(target: *const Target) u16 {
         .hppa64,
         .loongarch32,
         .loongarch64,
+        .m88k,
         .mips64,
         .mips64el,
+        .powerpc,
+        .powerpcle,
+        .powerpc64,
+        .powerpc64le,
         .sparc64,
         .ve,
         .wasm32,
         .wasm64,
         .x86_64,
+        .xtensa,
+        .xtensaeb,
         => return 16,
-
-        // Some of the following prongs should really be testing the ABI, but our current `Abi` enum
-        // can't handle that level of nuance yet.
-        .powerpc64,
-        .powerpc64le,
-        => if (target.os.tag == .linux) return 16,
 
         .riscv32,
         .riscv32be,
@@ -3104,7 +3119,12 @@ pub fn stackAlignment(target: *const Target) u16 {
         .riscv64be,
         => if (!target.cpu.has(.riscv, .e)) return 16,
 
-        .x86 => if (target.os.tag != .windows and target.os.tag != .uefi) return 16,
+        .x86 => switch (target.os.tag) {
+            .hurd,
+            .linux,
+            => return 16,
+            else => {},
+        },
 
         .kvx => return 32,
 
@@ -3160,6 +3180,7 @@ pub fn cCharSignedness(target: *const Target) ?std.builtin.Signedness {
             .powerpcle,
             .powerpc64,
             .powerpc64le,
+            .propeller,
             .s390x,
             .riscv32,
             .riscv32be,
@@ -3223,6 +3244,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
         .freestanding,
         .other,
         .ashetos,
+        .tios,
         => switch (target.cpu.arch) {
             .msp430,
             .x86_16,
@@ -3244,6 +3266,13 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 .short, .ushort, .int, .uint => 16,
                 .long, .ulong, .float => 32,
                 .double, .longdouble, .longlong, .ulonglong => 64,
+            },
+            .ez80 => switch (c_type) {
+                .char => 8,
+                .short, .ushort => 16,
+                .int, .uint => 24,
+                .long, .ulong, .float, .double => 32,
+                .longlong, .ulonglong, .longdouble => 64,
             },
             else => switch (c_type) {
                 .char => 8,
@@ -3302,88 +3331,73 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
 
         .wasi,
         .emscripten,
-        => switch (target.cpu.arch) {
-            .mips64,
-            .mips64el,
-            => switch (c_type) {
-                .char => 8,
-                .short, .ushort => 16,
-                .int, .uint, .float => 32,
-                .long, .ulong => switch (target.abi) {
-                    .gnuabin32, .muslabin32, .abin32 => 32,
-                    else => 64,
-                },
-                .longlong, .ulonglong, .double => 64,
-                .longdouble => 128,
+        => switch (c_type) {
+            .char => 8,
+            .short, .ushort => 16,
+            .int, .uint, .float => 32,
+            .long, .ulong => switch (target.os.tag) {
+                .plan9 => 32, // This is certainly A Choice.
+                else => target.ptrBitWidth(),
             },
-            .x86_64 => switch (c_type) {
-                .char => 8,
-                .short, .ushort => 16,
-                .int, .uint, .float => 32,
-                .long, .ulong => switch (target.abi) {
-                    .gnux32, .muslx32, .x32 => 32,
-                    else => 64,
+            .longlong, .ulonglong, .double => 64,
+            .longdouble => switch (target.cpu.arch) {
+                .x86,
+                .x86_64,
+                => switch (target.abi) {
+                    .android, .ohos => 64,
+                    else => 80,
                 },
-                .longlong, .ulonglong, .double => 64,
-                .longdouble => 80,
-            },
-            else => switch (c_type) {
-                .char => 8,
-                .short, .ushort => 16,
-                .int, .uint, .float => 32,
-                .long, .ulong => target.ptrBitWidth(),
-                .longlong, .ulonglong, .double => 64,
-                .longdouble => switch (target.cpu.arch) {
-                    .x86 => switch (target.abi) {
-                        .android => 64,
-                        else => 80,
+
+                .powerpc,
+                .powerpcle,
+                => switch (target.abi) {
+                    .musleabi, .musleabihf => 64,
+                    else => switch (target.os.tag) {
+                        .netbsd,
+                        .openbsd,
+                        => 64,
+                        else => 128,
                     },
-
-                    .powerpc,
-                    .powerpcle,
-                    => switch (target.abi) {
-                        .musleabi, .musleabihf => 64,
-                        else => switch (target.os.tag) {
-                            .netbsd,
-                            .openbsd,
-                            => 64,
-                            else => 128,
-                        },
-                    },
-
-                    .powerpc64,
-                    .powerpc64le,
-                    => switch (target.abi) {
-                        .musl => 64,
-                        else => switch (target.os.tag) {
-                            .freebsd,
-                            .openbsd,
-                            => 64,
-                            else => 128,
-                        },
-                    },
-
-                    .alpha,
-                    .riscv32,
-                    .riscv32be,
-                    .riscv64,
-                    .riscv64be,
-                    .aarch64,
-                    .aarch64_be,
-                    .s390x,
-                    .mips64,
-                    .mips64el,
-                    .sparc,
-                    .sparc64,
-                    .wasm32,
-                    .wasm64,
-                    .loongarch32,
-                    .loongarch64,
-                    .ve,
-                    => 128,
-
-                    else => 64,
                 },
+
+                .powerpc64,
+                .powerpc64le,
+                => switch (target.abi) {
+                    .musl => 64,
+                    else => switch (target.os.tag) {
+                        .freebsd,
+                        .openbsd,
+                        => 64,
+                        else => 128,
+                    },
+                },
+
+                .alpha => switch (target.os.tag) {
+                    .netbsd,
+                    .openbsd,
+                    => 64,
+                    else => 128,
+                },
+
+                .riscv32,
+                .riscv32be,
+                .riscv64,
+                .riscv64be,
+                .aarch64,
+                .aarch64_be,
+                .s390x,
+                .mips64,
+                .mips64el,
+                .sparc,
+                .sparc64,
+                .wasm32,
+                .wasm64,
+                .loongarch32,
+                .loongarch64,
+                .ve,
+                => 128,
+
+                else => 64,
             },
         },
 
@@ -3479,14 +3493,6 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             .int, .uint, .float => 32,
             .long, .ulong, .longlong, .ulonglong, .double => 64,
             .longdouble => 80,
-        },
-
-        .tios => switch (c_type) {
-            .char => 8,
-            .short, .ushort => 16,
-            .int, .uint => 24,
-            .long, .ulong, .float, .double => 32,
-            .longlong, .ulonglong, .longdouble => 64,
         },
 
         .opengl => null,
@@ -3739,7 +3745,10 @@ pub fn cCallingConvention(target: *const Target) ?std.builtin.CallingConvention 
         .lanai => .{ .lanai_sysv = .{} },
         .loongarch64 => .{ .loongarch64_lp64 = .{} },
         .loongarch32 => .{ .loongarch32_ilp32 = .{} },
-        .m68k => .{ .m68k_gnu = .{} },
+        .m68k => switch (target.os.tag) {
+            .netbsd => .{ .m68k_sysv = .{} },
+            else => .{ .m68k_gnu = .{} },
+        },
         .m88k => .{ .m88k_sysv = .{} },
         .microblaze, .microblazeel => .{ .microblaze_std = .{} },
         .msp430 => .{ .msp430_eabi = .{} },
@@ -3749,7 +3758,10 @@ pub fn cCallingConvention(target: *const Target) ?std.builtin.CallingConvention 
         .sh, .sheb => .{ .sh_gnu = .{} },
         .ve => .{ .ve_sysv = .{} },
         .xcore => .{ .xcore_xs1 = .{} },
-        .xtensa, .xtensaeb => .{ .xtensa_call0 = .{} },
+        .xtensa, .xtensaeb => switch (target.abi) {
+            .call0 => .{ .xtensa_call0 = .{} },
+            else => .{ .xtensa_windowed = .{} },
+        },
         .amdgcn => .{ .amdgcn_device = .{} },
         .nvptx, .nvptx64 => .nvptx_device,
         .spirv32, .spirv64 => .spirv_device,

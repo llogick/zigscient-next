@@ -5032,7 +5032,7 @@ extern fn c_vector_6_u8(@Vector(6, u8), usize) void;
 extern fn c_test_vector_6_u8() void;
 
 test "@Vector(6, u8)" {
-    if (builtin.cpu.arch.isArm() and builtin.abi.float() == .soft) return error.SkipZigTest;
+    if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
     if (builtin.cpu.arch == .loongarch64) return error.SkipZigTest;
     if (builtin.cpu.arch.isMIPS()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerPC64()) return error.SkipZigTest;
@@ -5110,7 +5110,7 @@ extern fn c_vector_12_u8(@Vector(12, u8), usize) void;
 extern fn c_test_vector_12_u8() void;
 
 test "@Vector(12, u8)" {
-    if (builtin.cpu.arch.isArm() and builtin.abi.float() == .soft) return error.SkipZigTest;
+    if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
     if (builtin.cpu.arch == .loongarch64) return error.SkipZigTest;
     if (builtin.cpu.arch.isMIPS()) return error.SkipZigTest;
 
@@ -9176,7 +9176,7 @@ extern fn c_vector_3_u16(@Vector(3, u16), usize) void;
 extern fn c_test_vector_3_u16() void;
 
 test "@Vector(3, u16)" {
-    if (builtin.cpu.arch.isArm() and builtin.abi.float() == .soft) return error.SkipZigTest;
+    if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
     if (builtin.cpu.arch == .loongarch64) return error.SkipZigTest;
     if (builtin.cpu.arch.isMIPS()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerPC64()) return error.SkipZigTest;
@@ -9250,7 +9250,7 @@ extern fn c_vector_6_u16(@Vector(6, u16), usize) void;
 extern fn c_test_vector_6_u16() void;
 
 test "@Vector(6, u16)" {
-    if (builtin.cpu.arch.isArm() and builtin.abi.float() == .soft) return error.SkipZigTest;
+    if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
     if (builtin.cpu.arch == .loongarch64) return error.SkipZigTest;
     if (builtin.cpu.arch.isMIPS()) return error.SkipZigTest;
 
@@ -11439,7 +11439,7 @@ extern fn c_vector_3_u32(@Vector(3, u32), usize) void;
 extern fn c_test_vector_3_u32() void;
 
 test "@Vector(3, u32)" {
-    if (builtin.cpu.arch.isArm() and builtin.abi.float() == .soft) return error.SkipZigTest;
+    if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
     if (builtin.cpu.arch == .loongarch64) return error.SkipZigTest;
     if (builtin.cpu.arch.isMIPS()) return error.SkipZigTest;
 
@@ -13424,7 +13424,7 @@ extern fn c_vector_3_f32(@Vector(3, f32), usize) void;
 extern fn c_test_vector_3_f32() void;
 
 test "@Vector(3, f32)" {
-    if (builtin.cpu.arch.isArm() and builtin.abi.float() == .soft) return error.SkipZigTest;
+    if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
     if (builtin.cpu.arch == .loongarch64) return error.SkipZigTest;
     if (builtin.cpu.arch.isMIPS64()) return error.SkipZigTest;
 

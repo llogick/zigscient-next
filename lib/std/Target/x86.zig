@@ -3136,7 +3136,7 @@ pub const cpu = struct {
     };
     pub const goldmont_plus: CpuModel = .{
         .name = "goldmont_plus",
-        .llvm_name = "goldmont-plus",
+        .llvm_name = "goldmont_plus",
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .aes,
@@ -3163,6 +3163,8 @@ pub const cpu = struct {
             .slow_incdec,
             .slow_lea,
             .slow_two_mem_ops,
+            .smap,
+            .smep,
             .sse4_2,
             .use_glm_div_sqrt_costs,
             .vzeroupper,
@@ -3564,7 +3566,7 @@ pub const cpu = struct {
     };
     pub const icelake_client: CpuModel = .{
         .name = "icelake_client",
-        .llvm_name = "icelake-client",
+        .llvm_name = "icelake_client",
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .adx,
@@ -3615,6 +3617,8 @@ pub const cpu = struct {
             .sahf,
             .sha,
             .slow_pmullq,
+            .smap,
+            .smep,
             .tuning_fast_imm_vector_shift,
             .vaes,
             .vpclmulqdq,
@@ -3627,7 +3631,7 @@ pub const cpu = struct {
     };
     pub const icelake_server: CpuModel = .{
         .name = "icelake_server",
-        .llvm_name = "icelake-server",
+        .llvm_name = "icelake_server",
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .adx,
@@ -3680,6 +3684,8 @@ pub const cpu = struct {
             .sahf,
             .sha,
             .slow_pmullq,
+            .smap,
+            .smep,
             .tuning_fast_imm_vector_shift,
             .vaes,
             .vpclmulqdq,
@@ -4872,7 +4878,7 @@ pub const cpu = struct {
     };
     pub const skylake_avx512: CpuModel = .{
         .name = "skylake_avx512",
-        .llvm_name = "skylake-avx512",
+        .llvm_name = "skylake_avx512",
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .adx,
@@ -4919,6 +4925,8 @@ pub const cpu = struct {
             .rdseed,
             .sahf,
             .slow_3ops_lea,
+            .smap,
+            .smep,
             .tuning_fast_imm_vector_shift,
             .vzeroupper,
             .x87,

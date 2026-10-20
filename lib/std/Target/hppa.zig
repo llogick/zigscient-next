@@ -5,7 +5,6 @@ const CpuFeature = std.Target.Cpu.Feature;
 const CpuModel = std.Target.Cpu.Model;
 
 pub const Feature = enum {
-    @"64bit",
     max_1,
     max_2,
     v1_1,
@@ -21,13 +20,6 @@ pub const all_features = blk: {
     const len = @typeInfo(Feature).@"enum".field_names.len;
     std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
     var result: [len]CpuFeature = undefined;
-    result[@backingInt(Feature.@"64bit")] = .{
-        .llvm_name = null,
-        .description = "Enable 64-bit PA-RISC 2.0",
-        .dependencies = featureSet(&[_]Feature{
-            .v2_0,
-        }),
-    };
     result[@backingInt(Feature.max_1)] = .{
         .llvm_name = null,
         .description = "Enable MAX-1 multimedia acceleration extensions",
@@ -120,49 +112,49 @@ pub const cpu = struct {
         .name = "pa_8000",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
+            .v2_0,
         }),
     };
     pub const pa_8200: CpuModel = .{
         .name = "pa_8200",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
+            .v2_0,
         }),
     };
     pub const pa_8500: CpuModel = .{
         .name = "pa_8500",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
+            .v2_0,
         }),
     };
     pub const pa_8600: CpuModel = .{
         .name = "pa_8600",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
+            .v2_0,
         }),
     };
     pub const pa_8700: CpuModel = .{
         .name = "pa_8700",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
+            .v2_0,
         }),
     };
     pub const pa_8800: CpuModel = .{
         .name = "pa_8800",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
+            .v2_0,
         }),
     };
     pub const pa_8900: CpuModel = .{
         .name = "pa_8900",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
+            .v2_0,
         }),
     };
     pub const pcx: CpuModel = .{

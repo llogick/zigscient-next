@@ -7,8 +7,6 @@ const CpuModel = std.Target.Cpu.Model;
 pub const Feature = enum {
     allows_misaligned_mem_access,
     alu32,
-    dummy,
-    dwarfris,
 };
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
@@ -28,16 +26,6 @@ pub const all_features = blk: {
     result[@backingInt(Feature.alu32)] = .{
         .llvm_name = "alu32",
         .description = "Enable ALU32 instructions",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.dummy)] = .{
-        .llvm_name = "dummy",
-        .description = "unused feature",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.dwarfris)] = .{
-        .llvm_name = "dwarfris",
-        .description = "Disable MCAsmInfo DwarfUsesRelocationsAcrossSections",
         .dependencies = featureSet(&[_]Feature{}),
     };
     const ti = @typeInfo(Feature);

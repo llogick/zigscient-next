@@ -32,7 +32,7 @@ pub const all_features = blk: {
     };
     result[@backingInt(Feature.fix)] = .{
         .llvm_name = null,
-        .description = "Enable floating point move and square root extensions",
+        .description = "Enable FPR-to-GPR move and square root extensions",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.max)] = .{

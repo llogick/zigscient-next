@@ -27,9 +27,7 @@ pub const all_features = blk: {
     result[@backingInt(Feature.v3_2)] = .{
         .llvm_name = null,
         .description = "Enable ISA v3.2",
-        .dependencies = featureSet(&[_]Feature{
-            .v3_1,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.v4_1)] = .{
         .llvm_name = null,

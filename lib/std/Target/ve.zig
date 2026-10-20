@@ -5,6 +5,7 @@ const CpuFeature = std.Target.Cpu.Feature;
 const CpuModel = std.Target.Cpu.Model;
 
 pub const Feature = enum {
+    ve3,
     vpu,
 };
 
@@ -17,6 +18,11 @@ pub const all_features = blk: {
     const len = @typeInfo(Feature).@"enum".field_names.len;
     std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
     var result: [len]CpuFeature = undefined;
+    result[@backingInt(Feature.ve3)] = .{
+        .llvm_name = null,
+        .description = "Enable VE3 instructions",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
     result[@backingInt(Feature.vpu)] = .{
         .llvm_name = "vpu",
         .description = "Enable the VPU",
@@ -31,10 +37,25 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
+    pub const ve10: CpuModel = .{
+        .name = "ve10",
+        .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .vpu,
+        }),
+    };
+    pub const ve20: CpuModel = .{
+        .name = "ve20",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .vpu,
+        }),
+    };
+    pub const ve30: CpuModel = .{
+        .name = "ve30",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .ve3,
             .vpu,
         }),
     };
