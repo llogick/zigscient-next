@@ -9,7 +9,7 @@ const always_has_lse = builtin.cpu.has(.aarch64, .lse);
 /// It is intentionally not exported in order to make the machine code that
 /// uses it a statically predicted direct branch rather than using the PLT,
 /// which ARM is concerned would have too much overhead.
-pub var __aarch64_have_lse_atomics: u8 = @intFromBool(always_has_lse);
+var __aarch64_have_lse_atomics: u8 = @intFromBool(always_has_lse);
 
 fn __aarch64_cas1_relax() align(16) callconv(.naked) void {
     @setRuntimeSafety(false);

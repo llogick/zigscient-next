@@ -18,7 +18,7 @@ comptime {
 const aarch64 = struct {
     comptime {
         symbol(&__aarch64_cpu_features, "__aarch64_cpu_features");
-        symbol(&@import("aarch64_outline_atomics.zig").__aarch64_have_lse_atomics, "__aarch64_have_lse_atomics");
+        symbol(&__aarch64_have_lse_atomics, "__aarch64_have_lse_atomics");
         symbol(&__init_cpu_features_resolver, "__init_cpu_features_resolver");
     }
 
@@ -27,6 +27,8 @@ const aarch64 = struct {
     } = .{
         .features = 0,
     };
+
+    var __aarch64_have_lse_atomics: bool = false;
 
     const __init_cpu_features_resolver = switch (builtin.target.os.tag) {
         .fuchsia,
