@@ -631,3 +631,36 @@ test "@bitCast deeply nested arrays to scalar" {
     try static.doTheTest(src);
     try comptime static.doTheTest(src);
 }
+
+test "@bitCast between float and vector" {
+    const static = struct {
+        fn doTheTest() !void {
+            {
+                var v: @Vector(5, u16) = undefined;
+                v = .{ 0xf5c3, 0x5c28, 0xc28f, 0xc8f5, 0x4000 };
+                const f: f80 = @bitCast(v);
+                try expect(f == 3.14);
+            }
+            {
+                var f: f80 = undefined;
+                f = 3.14;
+                const v: @Vector(5, u16) = @bitCast(f);
+                try expect(std.mem.eql(u16, &@as([5]u16, v), &.{ 0xf5c3, 0x5c28, 0xc28f, 0xc8f5, 0x4000 }));
+            }
+            {
+                var v: @Vector(4, u32) = undefined;
+                v = .{ 0x51eb851f, 0xeb851eb8, 0x851eb851, 0x400191eb };
+                const f: f128 = @bitCast(v);
+                try expect(f == 6.28);
+            }
+            {
+                var f: f128 = undefined;
+                f = 6.28;
+                const v: @Vector(4, u32) = @bitCast(f);
+                try expect(std.mem.eql(u32, &@as([4]u32, v), &.{ 0x51eb851f, 0xeb851eb8, 0x851eb851, 0x400191eb }));
+            }
+        }
+    };
+    try static.doTheTest();
+    try comptime static.doTheTest();
+}

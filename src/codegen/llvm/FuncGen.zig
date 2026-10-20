@@ -4670,38 +4670,38 @@ fn airBitCast(fg: *FuncGen, inst: Air.Inst.Index, safety: bool) Allocator.Error!
     // We have the following `Air.Legalize` features enabled:
     //
     // * `.scalarize_bit_cast_array`
-    // * `.scalarize_bit_cast_vector_non_elementwise`
+    // * `.scalarize_bit_cast_vector_non_elementwise` (big-endian only)
     //
-    // That means the `bit_cast` instructions we might see are limited to the following:
+    // That means that on big-endian, the `bit_cast` instructions we might see are limited to the following:
     //
     // * bool/int/float <-> bool/int/float
     // * `@Vector(n, A)` <-> `@Vector(n, B)`
     //
-    // Most of these cases can be handled by LLVM's `bitcast` instruction, except when
-    // a non-native type like `f80` is used.
+    // While on little-endian, the `bit_cast` instructions we might see can be any of the following:
+    //
+    // * bool/int/float/`@Vector(n, A)` <-> bool/int/float/`@Vector(m, B)`
 
     if (isByRef(operand_ty, zcu)) {
         const operand_scalar_ty = operand_ty.scalarType(zcu);
         const target = zcu.getTarget();
-        const bits = operand_scalar_ty.floatBits(target);
-        const dest_scalar_ty = dest_ty.scalarType(zcu);
+        const scalar_bits = operand_scalar_ty.floatBits(target);
         if (isByRef(dest_ty, zcu)) {
-            assert(dest_scalar_ty.floatBits(target) == bits);
-            return operand;
+            const dest_scalar_ty = dest_ty.scalarType(zcu);
+            // Converting between equivalent floats with the same repr.
+            if (dest_scalar_ty.floatBits(target) == scalar_bits) return operand;
         }
-        assert(dest_scalar_ty.intInfo(zcu).bits == bits);
 
         const len = if (operand_ty.toIntern() != operand_scalar_ty.toIntern())
             operand_ty.vectorLen(zcu)
         else
             null;
         const operand_scalar_size = operand_scalar_ty.abiSize(zcu);
-        var result = if (len) |_|
-            try o.builder.poisonValue(try o.lowerType(dest_ty, .as_value))
+        var result = if (len) |l|
+            try o.builder.poisonValue(try o.builder.vectorType(.normal, l, try o.intType(scalar_bits, .as_value)))
         else
             undefined;
         for (0..len orelse 1) |index| {
-            const result_elem = result_elem: switch (bits) {
+            const result_elem = result_elem: switch (scalar_bits) {
                 else => unreachable,
                 80 => {
                     const f80_layout = o.softF80Layout(.{}) catch unreachable;
@@ -4747,28 +4747,30 @@ fn airBitCast(fg: *FuncGen, inst: Air.Inst.Index, safety: bool) Allocator.Error!
             else
                 result_elem;
         }
-        return result;
+        return fg.wip.cast(.bitcast, result, try o.lowerType(dest_ty, .as_value), "");
     }
 
     if (isByRef(dest_ty, zcu)) {
         const dest_scalar_ty = dest_ty.scalarType(zcu);
-        const bits = dest_scalar_ty.floatBits(zcu.getTarget());
-        assert(dest_scalar_ty.isRuntimeFloat());
-        const operand_scalar_ty = operand_ty.scalarType(zcu);
-        assert(operand_scalar_ty.intInfo(zcu).bits == bits);
+        const scalar_bits = dest_scalar_ty.floatBits(zcu.getTarget());
 
-        const len = if (operand_ty.toIntern() != operand_scalar_ty.toIntern())
+        const len = if (dest_ty.toIntern() != dest_scalar_ty.toIntern())
             operand_ty.vectorLen(zcu)
         else
             null;
-        const operand_scalar_size = operand_scalar_ty.abiSize(zcu);
+        const operand_scalar_int_ty = try o.intType(scalar_bits, .as_value);
+        const bitcasted_operand = try fg.wip.cast(.bitcast, operand, if (len) |l|
+            try o.builder.vectorType(.normal, l, operand_scalar_int_ty)
+        else
+            operand_scalar_int_ty, "");
+        const operand_scalar_size = operand_ty.scalarType(zcu).abiSize(zcu);
         const result_ptr = try fg.buildZigAlloca(dest_ty, .none);
         for (0..len orelse 1) |index| {
             const operand_elem = if (len) |_|
-                try fg.wip.extractElement(operand, try o.builder.intValue(.i32, index), "elementwise.operand_elem")
+                try fg.wip.extractElement(bitcasted_operand, try o.builder.intValue(.i32, index), "elementwise.operand_elem")
             else
-                operand;
-            switch (bits) {
+                bitcasted_operand;
+            switch (scalar_bits) {
                 else => unreachable,
                 80 => {
                     const f80_layout = o.softF80Layout(.{}) catch unreachable;
