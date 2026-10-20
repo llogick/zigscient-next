@@ -6093,6 +6093,9 @@ fn cmdAstCheck(arena: Allocator, io: Io, args: []const []const u8, environ_map: 
 
 /// This is only enabled for debug builds.
 fn cmdDumpZir(arena: Allocator, io: Io, args: []const []const u8) !void {
+    if (args.len == 0)
+        fatal("zir cache file is required", .{});
+
     const Zir = std.zig.Zir;
 
     const cache_file = args[0];

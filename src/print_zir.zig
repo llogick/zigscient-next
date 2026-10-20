@@ -725,7 +725,7 @@ const Writer = struct {
 
     fn writeExtNode(self: *Writer, stream: *std.Io.Writer, extended: Zir.Inst.Extended.InstData) !void {
         try stream.writeAll(")) ");
-        const src_node: Ast.Node.Offset = @fromBackingInt(@intCast(@as(i32, @bitCast(extended.operand))));
+        const src_node: Ast.Node.Offset = @fromBackingInt(@bitCast(extended.operand));
         try self.writeSrcNode(stream, src_node);
     }
 
@@ -819,25 +819,25 @@ const Writer = struct {
         var extra_index = extra.end;
         if (inst_data.flags.has_sentinel) {
             try stream.writeAll(", ");
-            try self.writeInstRef(stream, @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index]))));
+            try self.writeInstRef(stream, @fromBackingInt(self.code.extra[extra_index]));
             extra_index += 1;
         }
         if (inst_data.flags.has_align) {
             try stream.writeAll(", align(");
-            try self.writeInstRef(stream, @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index]))));
+            try self.writeInstRef(stream, @fromBackingInt(self.code.extra[extra_index]));
             extra_index += 1;
             if (inst_data.flags.has_bit_range) {
                 const bit_start = extra_index + @intFromBool(inst_data.flags.has_addrspace);
                 try stream.writeAll(":");
-                try self.writeInstRef(stream, @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[bit_start]))));
+                try self.writeInstRef(stream, @fromBackingInt(self.code.extra[bit_start]));
                 try stream.writeAll(":");
-                try self.writeInstRef(stream, @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[bit_start + 1]))));
+                try self.writeInstRef(stream, @fromBackingInt(self.code.extra[bit_start + 1]));
             }
             try stream.writeAll(")");
         }
         if (inst_data.flags.has_addrspace) {
             try stream.writeAll(", addrspace(");
-            try self.writeInstRef(stream, @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index]))));
+            try self.writeInstRef(stream, @fromBackingInt(self.code.extra[extra_index]));
             try stream.writeAll(")");
         }
         try stream.writeAll(") ");
@@ -1294,7 +1294,7 @@ const Writer = struct {
 
         try self.writeFlag(stream, "volatile, ", small.is_volatile);
         if (tmpl_is_expr) {
-            try self.writeInstRef(stream, @fromBackingInt(@intCast(@backingInt(extra.data.asm_source))));
+            try self.writeInstRef(stream, @fromBackingInt(@backingInt(extra.data.asm_source)));
         } else {
             const asm_source = self.code.nullTerminatedString(extra.data.asm_source);
             try stream.print("\"{f}\"", .{std.zig.fmtString(asm_source)});
@@ -1675,9 +1675,9 @@ const Writer = struct {
             extra_index += 2;
 
             try stream.print("@\"{d}\": ", .{field_idx});
-            try self.writeInstRef(stream, @fromBackingInt(@intCast(field_ty)));
+            try self.writeInstRef(stream, @fromBackingInt(field_ty));
             try stream.writeAll(" = ");
-            try self.writeInstRef(stream, @fromBackingInt(@intCast(field_init)));
+            try self.writeInstRef(stream, @fromBackingInt(field_init));
         }
 
         try stream.writeAll(" }) ");
@@ -1696,10 +1696,10 @@ const Writer = struct {
         try stream.writeAll("{\n");
         self.indent += 2;
 
-        var extra_index = @as(u32, @intCast(extra.end));
+        var extra_index: u32 = @intCast(extra.end);
         const extra_index_end = extra_index + extra.data.fields_len;
         while (extra_index < extra_index_end) : (extra_index += 1) {
-            const name_index: Zir.NullTerminatedString = @fromBackingInt(@intCast(self.code.extra[extra_index]));
+            const name_index: Zir.NullTerminatedString = @fromBackingInt(self.code.extra[extra_index]);
             const name = self.code.nullTerminatedString(name_index);
             try stream.splatByteAll(' ', self.indent);
             try stream.print("{f},\n", .{std.zig.fmtIdP(name)});
@@ -1923,7 +1923,7 @@ const Writer = struct {
                 ret_ty_ref = .void_type;
             },
             1 => {
-                ret_ty_ref = @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index])));
+                ret_ty_ref = @fromBackingInt(self.code.extra[extra_index]);
                 extra_index += 1;
             },
             else => {
@@ -1974,7 +1974,7 @@ const Writer = struct {
             cc_body = self.code.bodySlice(extra_index, body_len);
             extra_index += cc_body.len;
         } else if (extra.data.bits.has_cc_ref) {
-            cc_ref = @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index])));
+            cc_ref = @fromBackingInt(self.code.extra[extra_index]);
             extra_index += 1;
         }
         if (extra.data.bits.has_ret_ty_body) {
@@ -1983,7 +1983,7 @@ const Writer = struct {
             ret_ty_body = self.code.bodySlice(extra_index, body_len);
             extra_index += ret_ty_body.len;
         } else if (extra.data.bits.has_ret_ty_ref) {
-            ret_ty_ref = @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index])));
+            ret_ty_ref = @fromBackingInt(self.code.extra[extra_index]);
             extra_index += 1;
         }
 
@@ -2019,16 +2019,16 @@ const Writer = struct {
 
     fn writeAllocExtended(self: *Writer, stream: *std.Io.Writer, extended: Zir.Inst.Extended.InstData) !void {
         const extra = self.code.extraData(Zir.Inst.AllocExtended, extended.operand);
-        const small = @as(Zir.Inst.AllocExtended.Small, @bitCast(extended.small));
+        const small: Zir.Inst.AllocExtended.Small = @bitCast(extended.small);
 
         var extra_index: usize = extra.end;
         const type_inst: Zir.Inst.Ref = if (!small.has_type) .none else blk: {
-            const type_inst = @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index])));
+            const type_inst: Zir.Inst.Ref = @fromBackingInt(self.code.extra[extra_index]);
             extra_index += 1;
             break :blk type_inst;
         };
         const align_inst: Zir.Inst.Ref = if (!small.has_align) .none else blk: {
-            const align_inst = @as(Zir.Inst.Ref, @fromBackingInt(@intCast(self.code.extra[extra_index])));
+            const align_inst: Zir.Inst.Ref = @fromBackingInt(self.code.extra[extra_index]);
             extra_index += 1;
             break :blk align_inst;
         };
@@ -2269,20 +2269,20 @@ const Writer = struct {
 
     fn writeClosureGet(self: *Writer, stream: *std.Io.Writer, extended: Zir.Inst.Extended.InstData) !void {
         try stream.print("{d})) ", .{extended.small});
-        const src_node: Ast.Node.Offset = @fromBackingInt(@intCast(@as(i32, @bitCast(extended.operand))));
+        const src_node: Ast.Node.Offset = @fromBackingInt(@bitCast(extended.operand));
         try self.writeSrcNode(stream, src_node);
     }
 
     fn writeStdLangValue(self: *Writer, stream: *std.Io.Writer, extended: Zir.Inst.Extended.InstData) !void {
-        const val: Zir.Inst.StdLangValue = @fromBackingInt(@intCast(extended.small));
+        const val: Zir.Inst.StdLangValue = @fromBackingInt(extended.small);
         try stream.print("{s})) ", .{@tagName(val)});
-        const src_node: Ast.Node.Offset = @fromBackingInt(@intCast(@as(i32, @bitCast(extended.operand))));
+        const src_node: Ast.Node.Offset = @fromBackingInt(@bitCast(extended.operand));
         try self.writeSrcNode(stream, src_node);
     }
 
     fn writeInplaceArithResultTy(self: *Writer, stream: *std.Io.Writer, extended: Zir.Inst.Extended.InstData) !void {
-        const op: Zir.Inst.InplaceOp = @fromBackingInt(@intCast(extended.small));
-        try self.writeInstRef(stream, @fromBackingInt(@intCast(extended.operand)));
+        const op: Zir.Inst.InplaceOp = @fromBackingInt(extended.small);
+        try self.writeInstRef(stream, @fromBackingInt(extended.operand));
         try stream.print(", {s}))", .{@tagName(op)});
     }
 
@@ -2292,7 +2292,7 @@ const Writer = struct {
         } else if (ref.toIndex()) |i| {
             return self.writeInstIndex(stream, i);
         } else {
-            const val: InternPool.Index = @fromBackingInt(@intCast(@backingInt(ref)));
+            const val: InternPool.Index = @fromBackingInt(@backingInt(ref));
             return stream.print("@{s}", .{@tagName(val)});
         }
     }
