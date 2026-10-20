@@ -447,7 +447,7 @@ pub const Os = struct {
 
                                 break :blk default_min;
                             },
-                            .max = .{ .major = 7, .minor = 2, .patch = 0 },
+                            .max = .{ .major = 7, .minor = 3, .patch = 0 },
                         },
                         .glibc = blk: {
                             //

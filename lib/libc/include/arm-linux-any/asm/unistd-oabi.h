@@ -437,5 +437,6 @@
 #define __NR_file_setattr (__NR_SYSCALL_BASE + 469)
 #define __NR_listns (__NR_SYSCALL_BASE + 470)
 #define __NR_rseq_slice_yield (__NR_SYSCALL_BASE + 471)
+#define __NR_fchroot (__NR_SYSCALL_BASE + 472)
 
 #endif /* _ASM_UNISTD_OABI_H */
