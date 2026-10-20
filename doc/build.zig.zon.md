@@ -71,6 +71,9 @@ Struct.
 
 Each dependency must either provide a `url` and `hash`, or a `path`.
 
+May also include `paths` and `version` which provides those values in
+the case that the package lacks a `build.zig.zon` file.
+
 #### `url`
 
 String. 

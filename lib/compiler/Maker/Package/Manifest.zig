@@ -25,6 +25,10 @@ pub const Dependency = struct {
     node: Ast.Node.Index,
     name_tok: Ast.TokenIndex,
     lazy: bool,
+    paths: std.array_hash_map.String(void),
+    paths_tok: Ast.OptionalTokenIndex,
+    version: std.SemanticVersion,
+    version_tok: Ast.OptionalTokenIndex,
 
     pub const Location = union(enum) {
         url: []const u8,
@@ -177,7 +181,7 @@ const Parse = struct {
                 try parseDependencies(p, field_init);
             } else if (mem.eql(u8, field_name, "paths")) {
                 have_included_paths = true;
-                try parseIncludedPaths(p, field_init);
+                try parseIncludedPaths(p, &p.paths, field_init);
             } else if (mem.eql(u8, field_name, "name")) {
                 p.name = try parseName(p, field_init);
                 have_name = true;
@@ -185,15 +189,13 @@ const Parse = struct {
                 fingerprint = try parseFingerprint(p, field_init);
             } else if (mem.eql(u8, field_name, "version")) {
                 p.version_node = field_init;
-                const version_text = try parseString(p, field_init);
-                if (version_text.len > max_version_len) {
-                    try appendError(p, ast.nodeMainToken(field_init), "version string length {d} exceeds maximum of {d}", .{ version_text.len, max_version_len });
-                }
-                p.version = std.SemanticVersion.parse(version_text) catch |err| v: {
-                    try appendError(p, ast.nodeMainToken(field_init), "unable to parse semantic version: {s}", .{@errorName(err)});
-                    break :v undefined;
-                };
                 have_version = true;
+                if (parseVersion(p, field_init)) |v| {
+                    p.version = v;
+                } else |err| switch (err) {
+                    else => |e| return e,
+                    error.ParseFailure => {},
+                }
             } else if (mem.eql(u8, field_name, "minimum_zig_version")) {
                 const version_text = try parseString(p, field_init);
                 p.minimum_zig_version = std.SemanticVersion.parse(version_text) catch |err| v: {
@@ -236,6 +238,21 @@ const Parse = struct {
         }
     }
 
+    fn parseVersion(p: *Parse, node: Ast.Node.Index) InnerError!std.SemanticVersion {
+        const ast = p.ast;
+        const version_text = try parseString(p, node);
+        if (version_text.len > max_version_len) {
+            try appendError(p, ast.nodeMainToken(node), "version string length {d} exceeds maximum of {d}", .{
+                version_text.len, max_version_len,
+            });
+        }
+        return std.SemanticVersion.parse(version_text) catch |err| {
+            return fail(p, ast.nodeMainToken(node), "parsing semantic version {q} failed: {t}", .{
+                version_text, err,
+            });
+        };
+    }
+
     fn parseDependencies(p: *Parse, node: Ast.Node.Index) !void {
         const ast = p.ast;
 
@@ -272,6 +289,10 @@ const Parse = struct {
             .node = node,
             .name_tok = undefined,
             .lazy = false,
+            .paths = .empty,
+            .paths_tok = .none,
+            .version = undefined,
+            .version_tok = .none,
         };
         var has_location = false;
 
@@ -320,6 +341,17 @@ const Parse = struct {
                     error.ParseFailure => continue,
                     else => |e| return e,
                 };
+            } else if (mem.eql(u8, field_name, "paths")) {
+                dep.paths_tok = .fromToken(name_token);
+                try parseIncludedPaths(p, &dep.paths, field_init);
+            } else if (mem.eql(u8, field_name, "version")) {
+                if (parseVersion(p, field_init)) |v| {
+                    dep.version = v;
+                    dep.version_tok = .fromToken(name_token);
+                } else |err| switch (err) {
+                    else => |e| return e,
+                    error.ParseFailure => {},
+                }
             } else {
                 // Ignore unknown fields so that we can add fields in future zig
                 // versions without breaking older zig versions.
@@ -333,7 +365,7 @@ const Parse = struct {
         return dep;
     }
 
-    fn parseIncludedPaths(p: *Parse, node: Ast.Node.Index) !void {
+    fn parseIncludedPaths(p: *Parse, paths: *std.array_hash_map.String(void), node: Ast.Node.Index) !void {
         const ast = p.ast;
 
         var buf: [2]Ast.Node.Index = undefined;
@@ -347,7 +379,11 @@ const Parse = struct {
             // This is normalized so that it can be used in string comparisons
             // against file system paths.
             const normalized = try std.fs.path.resolve(p.arena, &.{path_string});
-            try p.paths.put(p.gpa, normalized, {});
+            if (try paths.fetchPut(p.gpa, normalized, {})) |kv| {
+                return fail(p, ast.nodeMainToken(elem_node), "path {q} already included as {q}", .{
+                    normalized, kv.key,
+                });
+            }
         }
     }
 
