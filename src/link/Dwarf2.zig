@@ -2101,11 +2101,9 @@ pub fn updateExtern(
     dwarf: *Dwarf,
     pt: Zcu.PerThread,
     di_nw: *link.MappedFile.Node.Writer,
-    arch: std.Target.Cpu.Arch,
-    si: link.File.SymbolId,
     global: InternPool.Nav.Index,
 ) link.Error!void {
-    dwarf.updateExternInner(pt, di_nw, arch, si, global) catch |err| switch (err) {
+    dwarf.updateExternInner(pt, di_nw, global) catch |err| switch (err) {
         else => |e| return e,
         error.WriteFailed => return dwarf.reportWriteError(di_nw),
     };
@@ -2114,20 +2112,17 @@ fn updateExternInner(
     dwarf: *Dwarf,
     pt: Zcu.PerThread,
     di_nw: *link.MappedFile.Node.Writer,
-    arch: std.Target.Cpu.Arch,
-    si: link.File.SymbolId,
     global: InternPool.Nav.Index,
 ) link.EmitError!void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
     const nav = ip.getNav(global);
     log.debug("updateExtern({f})", .{nav.fqn.fmt(ip)});
-    const nav_align, const nav_const, const nav_threadlocal, const nav_extern = nav_resolved: {
+    const nav_align, const nav_const, const nav_extern = nav_resolved: {
         const nav_resolved = nav.resolved.?;
         break :nav_resolved .{
             nav_resolved.@"align",
             nav_resolved.@"const",
-            nav_resolved.@"threadlocal",
             ip.indexToKey(nav_resolved.value).@"extern",
         };
     };
@@ -2162,7 +2157,7 @@ fn updateExternInner(
             try di_w.writeByte(if (decl.is_pub) DW.ACCESS.public else DW.ACCESS.private);
             try dwarf.strx(di_nw, nav.name.toSlice(ip));
         } else {
-            try dwarf.abbrevCode(di_nw, .decl_var);
+            try dwarf.abbrevCode(di_nw, .decl_extern_var);
             try dwarf.refType(pt, di_nw, .fromInterned(zcu.fileRootType(inst_info.file)));
             try di_w.writeInt(u32, decl.src_line + 1, dwarf.endian);
             try di_w.writeUleb128(decl.src_column + 1);
@@ -2173,7 +2168,6 @@ fn updateExternInner(
     try dwarf.strx(di_nw, nav_extern.name.toSlice(ip));
     if (maybe_func_type) |func_type| {
         try dwarf.refType(pt, di_nw, .fromInterned(func_type.return_type));
-        try dwarf.addrSym(di_nw, si, 0);
         try di_w.writeByte(@intFromBool(Type.fromInterned(func_type.return_type).isNoReturn(zcu)));
         for (func_type.param_types.get(ip)) |param_type| {
             try dwarf.abbrevCode(di_nw, .extern_param);
@@ -2182,23 +2176,13 @@ fn updateExternInner(
         if (func_type.is_var_args) try dwarf.abbrevCode(di_nw, .is_var_args);
         if (!is_empty) try di_w.writeUleb128(@backingInt(AbbrevCode.null));
     } else {
-        const addr: Loc = .{ .addr_sym = .{ .si = si } };
-        const loc: Loc = if (nav_threadlocal) switch (arch) {
-            .x86_64 => .{ .form_tls_address = &addr },
-            else => unreachable,
-        } else addr;
         const type_offset = di_w.end;
         if (nav_const)
             try dwarf.secOffsetPlaceholder(di_w)
         else
             try dwarf.refType(pt, di_nw, .fromInterned(nav_extern.ty));
-        try dwarf.exprLoc(di_nw, loc);
         try di_w.writeUleb128(nav_align.toByteUnits() orelse
             Type.fromInterned(nav_extern.ty).abiAlignment(zcu).toByteUnits().?);
-        switch (nav_extern.source) {
-            .builtin => {},
-            .syntax => try di_w.writeByte(@intFromBool(decl.linkage != .normal)),
-        }
         if (nav_const) {
             try dwarf.secOffsetFinish(di_nw, type_offset, di_nw.ni, di_w.end);
             try dwarf.abbrevCode(di_nw, .is_const);
@@ -4800,6 +4784,7 @@ pub const AbbrevCode = enum {
     decl_func_generic,
     decl_extern_empty_func,
     decl_extern_func,
+    decl_extern_var,
     decl_specification_empty_struct,
     decl_specification_struct,
     type_decl_specification_empty_struct,
@@ -5285,7 +5270,6 @@ pub const AbbrevCode = enum {
             .attrs = decl_attrs ++ .{
                 .{ .linkage_name, .strx },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -5296,9 +5280,17 @@ pub const AbbrevCode = enum {
             .attrs = decl_attrs ++ .{
                 .{ .linkage_name, .strx },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
+            },
+        },
+        .decl_extern_var = .{
+            .tag = .variable,
+            .attrs = decl_attrs ++ .{
+                .{ .linkage_name, .strx },
+                .{ .type, .ref_addr },
+                .{ .alignment, .udata },
+                .{ .external, .flag_present },
             },
         },
         .decl_specification_empty_struct = .{
@@ -5995,7 +5987,6 @@ pub const AbbrevCode = enum {
                 .{ .ZIG_parent, .ref_addr },
                 .{ .linkage_name, .strx },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -6007,7 +5998,6 @@ pub const AbbrevCode = enum {
                 .{ .ZIG_parent, .ref_addr },
                 .{ .linkage_name, .strx },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -6018,7 +6008,6 @@ pub const AbbrevCode = enum {
                 .{ .ZIG_parent, .ref_addr },
                 .{ .linkage_name, .strx },
                 .{ .type, .ref_addr },
-                .{ .location, .exprloc },
                 .{ .alignment, .udata },
                 .{ .external, .flag_present },
             },

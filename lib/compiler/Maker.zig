@@ -1147,6 +1147,9 @@ pub fn main(init: process.Init.Minimal) !void {
                     if (help_menu) printUsageWithoutConfiguration(&graph, "build.zig compilation failure");
                     break :c true;
                 },
+                error.StdoutWriteFailed => {
+                    fatal("failed writing to stdout: {t}", .{stdout_writer_allocation.err.?});
+                },
                 else => |e| w: {
                     log.err("configuration failed: {t}", .{e});
                     break :w false;
@@ -1209,7 +1212,14 @@ const ConfigureOptions = struct {
     error_bundle: ?*ErrorBundle = null,
 };
 
-fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
+const ConfigureError = Allocator.Error || Io.Cancelable || error{
+    Unexpected,
+    AlreadyReported,
+    FailedButCacheIntact,
+    StdoutWriteFailed,
+};
+
+fn configure(graph: *Graph, options: ConfigureOptions) ConfigureError!ScannedConfig {
     const configure_argv = options.configure_argv;
     const gpa = graph.cache.gpa;
     const io = graph.io;
@@ -1374,7 +1384,19 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                 defer job_queue.deinit();
 
                 if (options.system_pkg_dir_path == null) {
-                    try http_client.initDefaultProxies(arena, &graph.environ_map);
+                    http_client.initDefaultProxies(arena, &graph.environ_map) catch |err| switch (err) {
+                        error.NameTooLong,
+                        error.InvalidHostName,
+                        error.InvalidPort,
+                        error.InvalidFormat,
+                        error.UnexpectedCharacter,
+                        error.UriMissingHost,
+                        => |e| {
+                            log.err("failed to initialize HTTP client: {t}", .{e});
+                            return error.AlreadyReported;
+                        },
+                        else => |e| return e,
+                    };
                 }
 
                 try job_queue.all_fetches.ensureUnusedCapacity(gpa, 1);
@@ -1456,10 +1478,10 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                         .writer = initStdoutWriter(io),
                         .mode = try .detect(io, .stdout(), NO_COLOR, CLICOLOR_FORCE),
                     }, arena, graph.global_cache_root, &job_queue, &fetch, &fork_set) catch |err| switch (err) {
-                        error.WriteFailed => return stdout_writer_allocation.err.?,
+                        error.WriteFailed => return error.StdoutWriteFailed,
                         else => |e| return e,
                     };
-                    try stdout_writer_allocation.flush();
+                    stdout_writer_allocation.flush() catch return error.StdoutWriteFailed;
                     process.exit(0);
                 }
 
@@ -1490,11 +1512,17 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
                         .root_dir = graph.local_cache_root,
                         .sub_path = try arena.print("o/{s}/dependencies.zig", .{&hex_digest}),
                     };
-                    var atomic_file = try dependencies_zig_path.root_dir.handle.createFileAtomic(
+                    var atomic_file = dependencies_zig_path.root_dir.handle.createFileAtomic(
                         io,
                         dependencies_zig_path.sub_path,
                         .{ .make_path = true, .replace = true },
-                    );
+                    ) catch |err| switch (err) {
+                        error.Canceled => |e| return e,
+                        else => |e| {
+                            log.err("failed to write {qf}: {t}", .{ dependencies_zig_path, e });
+                            return error.AlreadyReported;
+                        },
+                    };
                     defer atomic_file.deinit(io);
                     atomic_file.file.writeStreamingAll(io, dependencies_source.items) catch |err|
                         fatal("writing dependencies.zig contents: {t}", .{err});
@@ -1643,11 +1671,17 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
             .root_dir = graph.local_cache_root,
             .sub_path = try arena.print("tmp" ++ Dir.path.sep_str ++ "{x}", .{randInt(io, u64)}),
         };
-        const config_tmp_file: Io.File = try config_tmp_path.root_dir.handle.createFile(
+        const config_tmp_file: Io.File = config_tmp_path.root_dir.handle.createFile(
             io,
             config_tmp_path.sub_path,
             .{ .read = true, .exclusive = true },
-        );
+        ) catch |err| switch (err) {
+            error.Canceled => |e| return e,
+            else => |e| {
+                log.err("failed to create {qf}: {t}", .{ config_tmp_path, e });
+                return error.AlreadyReported;
+            },
+        };
         defer config_tmp_file.close(io);
 
         const term = term: {
@@ -1710,11 +1744,19 @@ fn configure(graph: *Graph, options: ConfigureOptions) !ScannedConfig {
 
         if (config_man) |man| for (configuration.path_deps) |path_dep| {
             const path = try confPathDepToCachePath(arena, graph, &configuration, path_dep);
-            try man.addDiscoveredPath(.{
+            var diag: Cache.Manifest.AddDiscoveredPathDiagnostic = undefined;
+            man.addDiscoveredPath(.{
                 .discovered_path = .{ .unresolved = path },
                 .handle = if (path_dep.flags.is_directory) .{ .dir = null } else .{ .file = null },
                 .metadata_only = path_dep.flags.metadata_only,
-            });
+                .diagnostic = &diag,
+            }) catch |err| switch (err) {
+                error.FileSystemFailure => {
+                    log.err("failed to register dependency on {qf}: {f}", .{ path, diag });
+                    return error.AlreadyReported;
+                },
+                else => |e| return e,
+            };
         };
 
         // If it is poisoned, there is no point in moving it to cached
@@ -2341,6 +2383,7 @@ fn cacheCatOne(input_hex_digest: []const u8, contents: []const u8, writer: *Io.W
         try file_obj.field("digest", @as([]const u8, &hex_digest), .{});
         if (file.flags.is_directory) try file_obj.field("directory", true, .{});
         if (file.flags.metadata_only) try file_obj.field("metadata", true, .{});
+        if (!file.flags.exists) try file_obj.field("exists", false, .{});
         try file_obj.field("prefix", file.flags.prefix, .{});
         try file_obj.field("path", path, .{});
         try file_obj.end();
@@ -3384,7 +3427,12 @@ fn printStepStatus(maker: *Maker, step_index: Configuration.Step.Index, stderr: 
                         try writer.writeAll(" invalid_manifest");
                         try stderr.setColor(.green);
                     },
-                    .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |path, tag| {
+                    .path_created,
+                    .path_deleted,
+                    .directory_status_changed,
+                    .metadata_changed,
+                    .contents_changed,
+                    => |path, tag| {
                         try stderr.setColor(.blue);
                         try writer.print(" {t}: {s}", .{ tag, path });
                         try stderr.setColor(.green);

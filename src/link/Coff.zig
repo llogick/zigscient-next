@@ -6100,7 +6100,7 @@ pub fn idle(coff: *Coff) !bool {
             break :task;
         }
         while (coff.mf.updates.pop()) |ni| : (coff.mf.update_prog_node.completeOne()) {
-            if (ni.pendingDelete(&coff.mf)) continue;
+            ni.cleanUpdated(&coff.mf);
             const clean_moved = ni.cleanMoved(&coff.mf);
             const clean_resized = ni.cleanResized(&coff.mf);
             const clean_next_moved = ni.cleanNextMoved(&coff.mf);

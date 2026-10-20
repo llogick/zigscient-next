@@ -3342,6 +3342,7 @@ pub fn idle(macho: *MachO) link.Error!bool {
         }
 
         while (macho.mf.updates.pop()) |ni| {
+            ni.cleanUpdated(&macho.mf);
             const clean_moved = ni.cleanMoved(&macho.mf);
             const clean_resized = ni.cleanResized(&macho.mf);
             const clean_next_moved = ni.cleanNextMoved(&macho.mf);

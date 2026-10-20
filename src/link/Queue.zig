@@ -196,6 +196,7 @@ fn runLinkTasks(q: *Queue, comp: *Compilation) Io.Cancelable!void {
         };
     }
 
+    have_idle_tasks = true;
     zcu_tasks: while (true) {
         var task_buf: [128]ZcuTask = undefined;
         const limit: usize = if (have_idle_tasks) 0 else 1;

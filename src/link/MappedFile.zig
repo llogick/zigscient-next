@@ -207,6 +207,7 @@ pub fn init(file: Io.File, gpa: Allocator, io: Io) (Allocator.Error || Io.Cancel
             .resized = false,
             .next_moved = false,
             .has_content = false,
+            .updated = false,
         },
         .location_payload = switch (root_location) {
             .small => |small| .{ .small = small },
@@ -287,7 +288,14 @@ pub const Node = extern struct {
         next_moved: bool,
         /// Whether this node might contain initialized bytes.
         has_content: bool,
-        unused: u17 = 0,
+
+        /// Whether this node is currently in `updates`. Usually this is just equal to whether any
+        /// of `moved`, `resized`, or `next_moved` is set, but when a node is deleted and later
+        /// reused, it may still be in `updates`, so preserving this flag through the deletion
+        /// prevents us from adding it to `updates` a second time.
+        updated: bool,
+
+        unused: u16 = 0,
     };
 
     pub const Location = union(enum(u1)) {
@@ -494,6 +502,11 @@ pub const Node = extern struct {
             }
         }
 
+        pub fn cleanUpdated(ni: Node.Index, mf: *MappedFile) void {
+            assert(ni.get(mf).flags.updated);
+            ni.get(mf).flags.updated = false;
+        }
+
         pub fn hasMoved(ni: Node.Index, mf: *const MappedFile) bool {
             var cur_ni = ni;
             while (cur_ni != .root) {
@@ -518,9 +531,11 @@ pub const Node = extern struct {
             if (node.prev.unwrap()) |prev_ni| prev_ni.nextMovedAssumeCapacity(mf);
             if (ni.hasMoved(mf)) return;
             node.flags.moved = true;
-            if (node.flags.resized or node.flags.next_moved) return;
-            mf.updates.appendAssumeCapacity(ni);
-            mf.update_prog_node.increaseEstimatedTotalItems(1);
+            if (!node.flags.updated) {
+                node.flags.updated = true;
+                mf.updates.appendAssumeCapacity(ni);
+                mf.update_prog_node.increaseEstimatedTotalItems(1);
+            }
         }
 
         pub fn hasResized(ni: Node.Index, mf: *const MappedFile) bool {
@@ -539,9 +554,11 @@ pub const Node = extern struct {
             const node = ni.get(mf);
             if (node.flags.resized) return;
             node.flags.resized = true;
-            if (node.flags.moved or node.flags.next_moved) return;
-            mf.updates.appendAssumeCapacity(ni);
-            mf.update_prog_node.increaseEstimatedTotalItems(1);
+            if (!node.flags.updated) {
+                node.flags.updated = true;
+                mf.updates.appendAssumeCapacity(ni);
+                mf.update_prog_node.increaseEstimatedTotalItems(1);
+            }
         }
 
         pub fn hasNextMoved(ni: Node.Index, mf: *const MappedFile) bool {
@@ -560,9 +577,11 @@ pub const Node = extern struct {
             const node = ni.get(mf);
             if (!node.flags.enable_next_moved or node.flags.next_moved) return;
             node.flags.next_moved = true;
-            if (node.flags.moved or node.flags.resized) return;
-            mf.updates.appendAssumeCapacity(ni);
-            mf.update_prog_node.increaseEstimatedTotalItems(1);
+            if (!node.flags.updated) {
+                node.flags.updated = true;
+                mf.updates.appendAssumeCapacity(ni);
+                mf.update_prog_node.increaseEstimatedTotalItems(1);
+            }
         }
 
         pub fn alignment(ni: Node.Index, mf: *const MappedFile) Alignment {
@@ -647,19 +666,30 @@ pub const Node = extern struct {
         pub fn delete(ni: Node.Index, gpa: Allocator, mf: *MappedFile) Allocator.Error!void {
             const node = ni.get(mf);
             assert(node.first == .none and node.last == .none); // has children
-            mf.removeNodesFromChildList(gpa, ni, ni);
-            const updated = node.flags.moved or node.flags.resized or node.flags.next_moved;
-            node.* = undefined;
-            node.next = ni.toOptional();
-            if (!updated) assert(ni.pendingDelete(mf));
-        }
-
-        pub fn pendingDelete(ni: Node.Index, mf: *MappedFile) bool {
-            const node = ni.get(mf);
-            if (node.next != ni.toOptional()) return false;
-            node.next = mf.free_ni;
+            try mf.removeNodesFromChildList(gpa, ni, ni);
+            node.* = .{
+                .parent = undefined,
+                .prev = undefined,
+                .next = mf.free_ni,
+                .first = undefined,
+                .last = undefined,
+                .flags = .{
+                    .position = .floating,
+                    .alignment = .@"1",
+                    .bubbles_moved = false,
+                    .enable_next_moved = false,
+                    .location_tag = .small,
+                    .moved = false,
+                    .resized = false,
+                    .next_moved = false,
+                    .has_content = false,
+                    // It is important that we preserve this flag! When the node gets reused, this
+                    // prevents it being redundantly added to `mf.updates` if it is already there.
+                    .updated = node.flags.updated,
+                },
+                .location_payload = undefined,
+            };
             mf.free_ni = ni.toOptional();
-            return true;
         }
 
         /// Ensures that the size of `ni` is at least `min_size`. Valid for any node.
@@ -946,6 +976,7 @@ fn addNode(mf: *MappedFile, gpa: Allocator, opts: struct {
             .resized = false,
             .next_moved = false,
             .has_content = false,
+            .updated = false,
         },
         .location_payload = switch (location) {
             .small => |small| .{ .small = small },

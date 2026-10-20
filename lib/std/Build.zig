@@ -2643,9 +2643,11 @@ pub fn systemIntegrationOption(
 
 /// Indicates that the build.zig logic depends on a particular file's contents.
 ///
-/// If the file is created, deleted, or has its contents changed, the configure
-/// phase will be repeated. If the inode or mtime change, but the file contents
-/// remain the same, it will not cause the configure logic to be repeated.
+/// The file must exist when this function is called.
+///
+/// If the file is deleted, or has its contents changed, the configure phase
+/// will be repeated. If the inode or mtime change, but the file contents remain
+/// the same, it will not cause the configure logic to be repeated.
 ///
 /// This is an alternative to `Graph.poisonCache` that avoids making every invocation
 /// of `zig build` into a cache miss.
@@ -2694,6 +2696,8 @@ pub fn dependOnFileMetadata(b: *Build, lazy_path: LazyPath) void {
 }
 
 /// Indicates that the build.zig logic depends on a particular directory's entries.
+///
+/// The directory must exist when this function is called.
 ///
 /// This is an alternative to `Graph.poisonCache` that avoids making every invocation
 /// of `zig build` into a cache miss.

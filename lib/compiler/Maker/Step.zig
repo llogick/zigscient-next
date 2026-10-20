@@ -84,6 +84,7 @@ const ResultCacheStatus = union(enum) {
     incomplete_manifest,
     invalid_manifest,
     path_deleted: [*:0]const u8,
+    path_created: [*:0]const u8,
     directory_status_changed: [*:0]const u8,
     metadata_changed: [*:0]const u8,
     contents_changed: [*:0]const u8,
@@ -815,7 +816,13 @@ fn setResultCacheStatus(s: *Step, man: *const Cache.Manifest, status: Cache.Mani
         .hit => .hit,
         .incomplete_manifest => .incomplete_manifest,
         .invalid_manifest => .invalid_manifest,
-        inline .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |off, tag| @unionInit(
+
+        inline .path_created,
+        .path_deleted,
+        .directory_status_changed,
+        .metadata_changed,
+        .contents_changed,
+        => |off, tag| @unionInit(
             ResultCacheStatus,
             @tagName(tag),
             try gpa.dupeSentinel(u8, off.path(man.contents.items), 0),
@@ -827,7 +834,13 @@ fn setResultCacheStatus(s: *Step, man: *const Cache.Manifest, status: Cache.Mani
 fn clearResultCacheStatus(s: *Step, gpa: Allocator) void {
     switch (s.result_cache_status) {
         .hit, .incomplete_manifest, .invalid_manifest => {},
-        .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |path| {
+
+        .path_created,
+        .path_deleted,
+        .directory_status_changed,
+        .metadata_changed,
+        .contents_changed,
+        => |path| {
             gpa.free(std.mem.sliceTo(path, 0));
         },
     }

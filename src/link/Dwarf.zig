@@ -2662,7 +2662,6 @@ fn initWipNavInner(
                 try wip_nav.strp(@"extern".name.toSlice(ip));
                 try wip_nav.refType(.fromInterned(if (maybe_func_type) |func_type| func_type.return_type else @"extern".ty));
                 if (maybe_func_type) |func_type| {
-                    try wip_nav.infoAddrSym(sym_index, 0);
                     try diw.writeByte(@intFromBool(Type.fromInterned(func_type.return_type).isNoReturn(zcu)));
                     if (func_type.param_types.len > 0 or func_type.is_var_args) {
                         for (func_type.param_types.get(ip)) |param_type| {
@@ -2672,7 +2671,7 @@ fn initWipNavInner(
                         if (func_type.is_var_args) try wip_nav.abbrevCode(.is_var_args);
                         try diw.writeUleb128(@backingInt(AbbrevCode.null));
                     }
-                } else try wip_nav.infoExprLoc(.{ .addr_reloc = sym_index });
+                }
             },
             .syntax => switch (ip.isFunctionType(@"extern".ty)) {
                 false => continue :nav_val .{ .undef = @"extern".ty },
@@ -2690,7 +2689,6 @@ fn initWipNavInner(
                     }, &nav, inst_info.file, &decl);
                     try wip_nav.strp(@"extern".name.toSlice(ip));
                     try wip_nav.refType(.fromInterned(func_type.return_type));
-                    try wip_nav.infoAddrSym(sym_index, 0);
                     try diw.writeByte(@intFromBool(Type.fromInterned(func_type.return_type).isNoReturn(zcu)));
                     if (func_type.param_types.len > 0 or func_type.is_var_args) {
                         for (func_type.param_types.get(ip)) |param_type| {
@@ -2817,13 +2815,19 @@ fn initWipNavInner(
         else => {
             const diw = &wip_nav.debug_info.writer;
             try wip_nav.declCommon(.{
-                .decl = .decl_var,
+                .decl = switch (decl.linkage) {
+                    .@"extern" => .decl_extern_var,
+                    else => .decl_var,
+                },
                 .decl_specification = switch (decl.kind) {
                     .unnamed_test, .@"test", .decltest, .@"comptime" => unreachable,
                     .@"const" => .decl_specification_const,
                     .@"var" => .decl_specification_var,
                 },
-                .decl_instance = .decl_instance_var,
+                .decl_instance = switch (decl.linkage) {
+                    .@"extern" => .decl_instance_extern_var,
+                    else => .decl_instance_var,
+                },
             }, &nav, inst_info.file, &decl);
             try wip_nav.strp(switch (decl.linkage) {
                 .normal => nav.fqn,
@@ -2842,20 +2846,24 @@ fn initWipNavInner(
                 .unnamed_test, .@"test", .decltest, .@"comptime" => unreachable,
                 .@"const" => {
                     const const_ty_reloc_index = try wip_nav.refForward();
-                    try wip_nav.infoExprLoc(loc);
+                    if (decl.linkage != .@"extern") try wip_nav.infoExprLoc(loc);
                     try diw.writeUleb128(nav.resolved.?.@"align".toByteUnits() orelse
                         ty.abiAlignment(zcu).toByteUnits().?);
-                    try diw.writeByte(@intFromBool(decl.linkage != .normal));
+                    if (decl.linkage != .@"extern") {
+                        try diw.writeByte(@intFromBool(decl.linkage != .normal));
+                    }
                     wip_nav.finishForward(const_ty_reloc_index);
                     try wip_nav.abbrevCode(.is_const);
                     try wip_nav.refType(ty);
                 },
                 .@"var" => {
                     try wip_nav.refType(ty);
-                    try wip_nav.infoExprLoc(loc);
+                    if (decl.linkage != .@"extern") try wip_nav.infoExprLoc(loc);
                     try diw.writeUleb128(nav.resolved.?.@"align".toByteUnits() orelse
                         ty.abiAlignment(zcu).toByteUnits().?);
-                    try diw.writeByte(@intFromBool(decl.linkage != .normal));
+                    if (decl.linkage != .@"extern") {
+                        try diw.writeByte(@intFromBool(decl.linkage != .normal));
+                    }
                 },
             }
         },
@@ -5138,6 +5146,7 @@ const AbbrevCode = enum {
     decl_union,
     decl_packed_union,
     decl_var,
+    decl_extern_var,
     decl_const,
     decl_const_runtime_bits,
     decl_const_comptime_state,
@@ -5160,6 +5169,7 @@ const AbbrevCode = enum {
     decl_instance_union,
     decl_instance_packed_union,
     decl_instance_var,
+    decl_instance_extern_var,
     decl_instance_const,
     decl_instance_const_runtime_bits,
     decl_instance_const_comptime_state,
@@ -5360,6 +5370,15 @@ const AbbrevCode = enum {
                 .{ .external, .flag },
             },
         },
+        .decl_extern_var = .{
+            .tag = .variable,
+            .attrs = decl_abbrev_common_attrs ++ .{
+                .{ .linkage_name, .strp },
+                .{ .type, .ref_addr },
+                .{ .alignment, .udata },
+                .{ .external, .flag_present },
+            },
+        },
         .decl_const = .{
             .tag = .constant,
             .attrs = decl_abbrev_common_attrs ++ .{
@@ -5443,7 +5462,6 @@ const AbbrevCode = enum {
             .attrs = decl_abbrev_common_attrs ++ .{
                 .{ .linkage_name, .strp },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -5454,7 +5472,6 @@ const AbbrevCode = enum {
             .attrs = decl_abbrev_common_attrs ++ .{
                 .{ .linkage_name, .strp },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -5534,6 +5551,15 @@ const AbbrevCode = enum {
                 .{ .location, .exprloc },
                 .{ .alignment, .udata },
                 .{ .external, .flag },
+            },
+        },
+        .decl_instance_extern_var = .{
+            .tag = .variable,
+            .attrs = decl_instance_abbrev_common_attrs ++ .{
+                .{ .linkage_name, .strp },
+                .{ .location, .exprloc },
+                .{ .alignment, .udata },
+                .{ .external, .flag_present },
             },
         },
         .decl_instance_const = .{
@@ -5619,7 +5645,6 @@ const AbbrevCode = enum {
             .attrs = decl_instance_abbrev_common_attrs ++ .{
                 .{ .linkage_name, .strp },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -5630,7 +5655,6 @@ const AbbrevCode = enum {
             .attrs = decl_instance_abbrev_common_attrs ++ .{
                 .{ .linkage_name, .strp },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -6048,7 +6072,6 @@ const AbbrevCode = enum {
                 .{ .ZIG_parent, .ref_addr },
                 .{ .linkage_name, .strp },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -6060,7 +6083,6 @@ const AbbrevCode = enum {
                 .{ .ZIG_parent, .ref_addr },
                 .{ .linkage_name, .strp },
                 .{ .type, .ref_addr },
-                .{ .low_pc, .addr },
                 .{ .external, .flag_present },
                 .{ .noreturn, .flag },
             },
@@ -6071,7 +6093,6 @@ const AbbrevCode = enum {
                 .{ .ZIG_parent, .ref_addr },
                 .{ .linkage_name, .strp },
                 .{ .type, .ref_addr },
-                .{ .location, .exprloc },
                 .{ .external, .flag_present },
             },
         },

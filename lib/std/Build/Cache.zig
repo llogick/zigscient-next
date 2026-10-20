@@ -56,7 +56,7 @@ pub fn prefixes(cache: *const Cache) []const Directory {
     return cache.prefixes_buffer[0..cache.prefixes_len];
 }
 
-const PrefixIndex = u6;
+const PrefixIndex = u3;
 
 const PrefixedPath = struct {
     prefix: PrefixIndex,
@@ -453,7 +453,9 @@ pub const Manifest = struct {
         pub const Flags = packed struct(u8) {
             is_directory: bool,
             metadata_only: bool,
+            exists: bool,
             prefix: PrefixIndex,
+            _: u2 = 0,
         };
 
         /// Prefixes path names in encoded directory contents. Starts numbering
@@ -576,6 +578,7 @@ pub const Manifest = struct {
 
         /// Returns true if the stat was changed. Updates the `file` with the new stat value.
         fn setStatChanged(file: *File, m: *Manifest, s: Stat) Io.Cancelable!bool {
+            assert(file.flags.exists);
             if (s.size == file.size and
                 s.mtime.nanoseconds == file.mtime and
                 s.inode == file.inode)
@@ -693,12 +696,12 @@ pub const Manifest = struct {
     };
 
     /// Add a file or directory path as a dependency of process being cached.
-    /// When `hit` is called, the contents will be checked to ensure
+    /// When `check` is called, the contents will be checked to ensure
     /// that it matches the contents from previous times.
     ///
     /// The contents of the input file may be requested and subsequently
     /// obtained via methods of the returned `InputPath.Index` after calling
-    /// `hit`.
+    /// `check`.
     ///
     /// Contents of a directory are considered to be the sorted list of file
     /// names of direct entries, separated by null byte. Each file name is
@@ -726,6 +729,7 @@ pub const Manifest = struct {
             .prefix = new_prefix,
             .is_directory = is_directory,
             .metadata_only = options.metadata_only,
+            .exists = true, // modified later if necessary
         };
 
         const gop = m.files.getOrPutAssumeCapacityContext(new_file_offset, .{ .contents = m.contents.items });
@@ -841,6 +845,7 @@ pub const Manifest = struct {
         hit,
         incomplete_manifest,
         invalid_manifest,
+        path_created: File.Offset,
         path_deleted: File.Offset,
         directory_status_changed: File.Offset,
         metadata_changed: File.Offset,
@@ -853,7 +858,7 @@ pub const Manifest = struct {
             pub fn format(this: @This(), w: *Io.Writer) Io.Writer.Error!void {
                 switch (this.check_result) {
                     .hit, .incomplete_manifest, .invalid_manifest => return w.writeAll(@tagName(this.check_result)),
-                    .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |off| {
+                    .path_created, .path_deleted, .directory_status_changed, .metadata_changed, .contents_changed => |off| {
                         const path = off.path(this.manifest.contents.items);
                         return w.print("{t} {s}", .{ this.check_result, path });
                     },
@@ -1192,38 +1197,36 @@ pub const Manifest = struct {
         };
         if (!input_path.have_stat and stat_path_ok) {
             // Since this is an input file, FileNotFound counts as a failure, not a cache miss.
-            const actual_stat = switch (input_path.getHandle(input_file)) {
-                .none => parent_dir.statFile(io, file_path, .{}) catch |err| switch (err) {
-                    error.Canceled => |e| return e,
-                    else => |e| return fail(diag, .{ .file_stat = .{
-                        .file_offset = file_off,
-                        .err = e,
-                    } }),
-                },
-                .file => |opened_file| opened_file.stat(io) catch |err| switch (err) {
-                    error.Canceled => |e| return e,
-                    else => |e| return fail(diag, .{ .file_stat = .{
-                        .file_offset = file_off,
-                        .err = e,
-                    } }),
-                },
-                .dir => |opened_dir| opened_dir.stat(io) catch |err| switch (err) {
-                    error.Canceled => |e| return e,
-                    else => |e| return fail(diag, .{ .file_stat = .{
-                        .file_offset = file_off,
-                        .err = e,
-                    } }),
-                },
+            const stat_result = switch (input_path.getHandle(input_file)) {
+                .none => parent_dir.statFile(io, file_path, .{}),
+                .file => |opened_file| opened_file.stat(io),
+                .dir => |opened_dir| opened_dir.stat(io),
             };
-            const actual_is_directory = actual_stat.kind == .directory;
-            if (actual_is_directory != input_file.flags.is_directory) {
-                // Since this is an input file, this is a failure, not a cache miss.
-                return fail(diag, .{ .file_stat = .{
+            if (stat_result) |actual_stat| {
+                const actual_is_directory = actual_stat.kind == .directory;
+                if (actual_is_directory != input_file.flags.is_directory) {
+                    // Since this is an input file, this is a failure, not a cache miss.
+                    return fail(diag, .{ .file_stat = .{
+                        .file_offset = file_off,
+                        .err = if (actual_is_directory) error.IsDir else error.NotDir,
+                    } });
+                }
+                try input_file.setStat(m, .init(actual_stat));
+            } else |err| switch (err) {
+                error.Canceled => |e| return e,
+
+                error.FileNotFound => |e| if (input_file.flags.metadata_only) {
+                    input_file.flags.exists = false;
+                } else return fail(diag, .{ .file_stat = .{
                     .file_offset = file_off,
-                    .err = if (actual_is_directory) error.IsDir else error.NotDir,
-                } });
+                    .err = e,
+                } }),
+
+                else => |e| return fail(diag, .{ .file_stat = .{
+                    .file_offset = file_off,
+                    .err = e,
+                } }),
             }
-            try input_file.setStat(m, .init(actual_stat));
         }
 
         if (input_file.flags.metadata_only) {
@@ -1369,6 +1372,9 @@ pub const Manifest = struct {
         // space to compute the digest in case stat changed, in order to compare with `disk_file.digest`.
 
         if (input_path.have_stat) {
+            if (!disk_file.flags.exists) {
+                return .{ .path_created = file_off };
+            }
             const changed = try disk_file.setStatChanged(m, input_file.stat());
             if (!changed) return .hit;
         }
@@ -1376,29 +1382,28 @@ pub const Manifest = struct {
         if (disk_file.flags.metadata_only) {
             if (!input_path.have_stat) {
                 // Since this is an input file, FileNotFound counts as a failure, not a cache miss.
-                const actual_stat = switch (input_path.getHandle(input_file)) {
-                    .none => parent_dir.statFile(io, file_path, .{}) catch |err| switch (err) {
-                        error.Canceled => |e| return e,
-                        else => |e| return fail(diag, .{ .file_stat = .{
-                            .file_offset = file_off,
-                            .err = e,
-                        } }),
-                    },
-                    .file => |opened_file| opened_file.stat(io) catch |err| switch (err) {
-                        error.Canceled => |e| return e,
-                        else => |e| return fail(diag, .{ .file_stat = .{
-                            .file_offset = file_off,
-                            .err = e,
-                        } }),
-                    },
-                    .dir => |opened_dir| opened_dir.stat(io) catch |err| switch (err) {
-                        error.Canceled => |e| return e,
-                        else => |e| return fail(diag, .{ .file_stat = .{
-                            .file_offset = file_off,
-                            .err = e,
-                        } }),
-                    },
+                const stat_result = switch (input_path.getHandle(input_file)) {
+                    .none => parent_dir.statFile(io, file_path, .{}),
+                    .file => |opened_file| opened_file.stat(io),
+                    .dir => |opened_dir| opened_dir.stat(io),
                 };
+                const actual_stat = stat_result catch |err| switch (err) {
+                    error.Canceled => |e| return e,
+                    error.FileNotFound => |e| switch (disk_file.flags.exists) {
+                        false => return .hit,
+                        true => return fail(diag, .{ .file_stat = .{
+                            .file_offset = file_off,
+                            .err = e,
+                        } }),
+                    },
+                    else => |e| return fail(diag, .{ .file_stat = .{
+                        .file_offset = file_off,
+                        .err = e,
+                    } }),
+                };
+                if (!disk_file.flags.exists) {
+                    return .{ .path_created = file_off };
+                }
                 // In the other case (have_stat=true), this check is redundant since we already asserted the flags are
                 // identical, which contains the prefix.
                 const actual_is_directory = actual_stat.kind == .directory;
@@ -1559,13 +1564,20 @@ pub const Manifest = struct {
 
         if (file.flags.metadata_only) {
             const actual_stat = parent_dir.statFile(io, file_path, .{}) catch |err| switch (err) {
-                error.FileNotFound => return .{ .path_deleted = file_off },
+                error.FileNotFound => switch (file.flags.exists) {
+                    false => return .hit,
+                    true => return .{ .path_deleted = file_off },
+                },
                 error.Canceled => |e| return e,
                 else => |e| return fail(diag, .{ .file_stat = .{
                     .file_offset = file_off,
                     .err = e,
                 } }),
             };
+
+            if (!file.flags.exists) {
+                return .{ .path_created = file_off };
+            }
 
             const actual_is_directory = actual_stat.kind == .directory;
             if (actual_is_directory != file.flags.is_directory) return .{ .directory_status_changed = file_off };
@@ -1575,6 +1587,8 @@ pub const Manifest = struct {
             if (changed) return .{ .metadata_changed = file_off };
             return .hit;
         }
+
+        assert(file.flags.exists); // file not existing can only be tracked with metadata_only
 
         if (file.flags.is_directory) {
             const opened_dir = parent_dir.openDir(io, file_path, .{
@@ -1727,7 +1741,14 @@ pub const Manifest = struct {
         pub fn format(this: @This(), w: *Io.Writer) Io.Writer.Error!void {
             switch (this) {
                 .none => return w.writeAll("none"),
-                else => |err, tag| return w.print("{t}: {t}", .{ tag, err }),
+
+                .open_file,
+                .open_dir,
+                .stat_file,
+                .stat_dir,
+                .read_file,
+                .read_dir,
+                => |err, tag| return w.print("{t}: {t}", .{ tag, err }),
             }
         }
     };
@@ -1767,6 +1788,7 @@ pub const Manifest = struct {
             .prefix = new_prefix,
             .is_directory = is_directory,
             .metadata_only = options.metadata_only,
+            .exists = true, // modified later if necessary
         };
 
         const gop = m.files.getOrPutAssumeCapacityContext(new_file_offset, .{ .contents = m.contents.items });
@@ -1810,18 +1832,25 @@ pub const Manifest = struct {
             } else {
                 const dir = cache.prefixes()[prefix].handle;
                 const sub_path = file_offset.path(m.contents.items);
-                const handle = dir.openDir(io, sub_path, .{
+                if (dir.openDir(io, sub_path, .{
                     .access_sub_paths = false,
                     .iterate = true,
-                }) catch |err| switch (err) {
+                })) |handle| {
+                    defer handle.close(io);
+                    try populateDirectory(m, header, need_stat, handle, options.contents, metadata_only, options.diagnostic);
+                } else |err| switch (err) {
                     error.Canceled => |e| return e,
+                    error.FileNotFound => |e| if (options.metadata_only) {
+                        header.flags.exists = false;
+                    } else {
+                        if (options.diagnostic) |d| d.* = .{ .open_dir = e };
+                        return error.FileSystemFailure;
+                    },
                     else => |e| {
                         if (options.diagnostic) |d| d.* = .{ .open_dir = e };
                         return error.FileSystemFailure;
                     },
-                };
-                defer handle.close(io);
-                try populateDirectory(m, header, need_stat, handle, options.contents, metadata_only, options.diagnostic);
+                }
             },
 
             .file => |opt_handle| if (opt_handle) |handle| {
@@ -1829,15 +1858,22 @@ pub const Manifest = struct {
             } else {
                 const dir = cache.prefixes()[prefix].handle;
                 const sub_path = file_offset.path(m.contents.items);
-                const handle = dir.openFile(io, sub_path, .{ .mode = .read_only }) catch |err| switch (err) {
+                if (dir.openFile(io, sub_path, .{ .mode = .read_only })) |handle| {
+                    defer handle.close(io);
+                    try populateFile(m, header, need_stat, handle, options.contents, metadata_only, options.diagnostic);
+                } else |err| switch (err) {
                     error.Canceled => |e| return e,
+                    error.FileNotFound => |e| if (options.metadata_only) {
+                        header.flags.exists = false;
+                    } else {
+                        if (options.diagnostic) |d| d.* = .{ .open_file = e };
+                        return error.FileSystemFailure;
+                    },
                     else => |e| {
                         if (options.diagnostic) |d| d.* = .{ .open_file = e };
                         return error.FileSystemFailure;
                     },
-                };
-                defer handle.close(io);
-                try populateFile(m, header, need_stat, handle, options.contents, metadata_only, options.diagnostic);
+                }
             },
         }
     }

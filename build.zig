@@ -280,8 +280,9 @@ pub fn build(b: *std.Build) !void {
         const cmake_cfg = if (static_llvm) null else blk: {
             const io = b.graph.io;
             const cwd: Io.Dir = .cwd();
-            if (findConfigH(b, config_h_path_option)) |config_h_path| {
-                const file_contents = cwd.readFileAlloc(io, config_h_path, arena, .limited(max_config_h_bytes)) catch unreachable;
+            if (try findConfigH(b, config_h_path_option)) |config_h_path| {
+                b.dependOnFileContents(b.graph.cwdRelativePath(config_h_path));
+                const file_contents = try cwd.readFileAlloc(io, config_h_path, arena, .limited(max_config_h_bytes));
                 break :blk parseConfigH(b, file_contents);
             } else {
                 std.log.warn("config.h could not be located automatically", .{});
@@ -1175,7 +1176,7 @@ const CMakeConfig = struct {
 
 const max_config_h_bytes = 1 * 1024 * 1024;
 
-fn findConfigH(b: *std.Build, config_h_path_option: ?[]const u8) ?[]const u8 {
+fn findConfigH(b: *std.Build, config_h_path_option: ?[]const u8) std.mem.Allocator.Error!?[]const u8 {
     const arena = b.graph.arena;
     const io = b.graph.io;
     const cwd: Io.Dir = .cwd();
@@ -1193,21 +1194,25 @@ fn findConfigH(b: *std.Build, config_h_path_option: ?[]const u8) ?[]const u8 {
 
     var check_dir = fs.path.dirname(b.graph.zig_exe).?;
     while (true) {
-        var dir = cwd.openDir(io, check_dir, .{}) catch unreachable;
+        var dir = cwd.openDir(io, check_dir, .{}) catch |err| {
+            std.debug.panic("failed to open {q}: {t}", .{ check_dir, err });
+        };
         defer dir.close(io);
 
         // Check if config.h is present in dir
         var config_h_or_err = dir.openFile(io, "config.h", .{});
         if (config_h_or_err) |*file| {
             file.close(io);
-            return fs.path.join(
+            return try fs.path.join(
                 arena,
                 &[_][]const u8{ check_dir, "config.h" },
-            ) catch unreachable;
-        } else |e| switch (e) {
+            );
+        } else |err| switch (err) {
             error.FileNotFound => {},
-            else => unreachable,
+            else => |e| std.debug.panic("failed to check for config.h in {q}: {t}", .{ check_dir, e }),
         }
+
+        b.dependOnFileMetadata(b.graph.cwdRelativePath(check_dir).path(b, "config.h"));
 
         // Check if we reached the source root by looking for .git, and bail if so
         var git_dir_or_err = dir.openDir(io, ".git", .{});

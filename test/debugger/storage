@@ -67,12 +67,8 @@ Process #... stopped
 (u64) global_threadlocal1 = 0xb4d643528c042121
 (u64) global_threadlocal2 = 0x43faea1cf5ad7a22
 (u64) extern_const = 0x1b0c91ea0470b0b2
-(u64) extern_const = 0x1b0c91ea0470b0b2
-(u64) extern_var = 0x19bc17b3f0b61ebc
 (u64) extern_var = 0x19bc17b3f0b61ebc
 (u64) extern_threadlocal1 = 0x3034c4ce967ed64d
-(u64) extern_threadlocal1 = 0x3034c4ce967ed64d
-(u64) extern_threadlocal2 = 0xfd330ab00b4bc5eb
 (u64) extern_threadlocal2 = 0xfd330ab00b4bc5eb
 (lldb) frame variable --show-all-children --show-types --format hex -- param1 param2 param3 param4 param5 param6 param7 param8 local_comptime_val 'local_comptime_ptr.@"0"' local_comptime_ptr[0] local_const local_var
 (u64) param1 = 0x6a607e08125c7e00
