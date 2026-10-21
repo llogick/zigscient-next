@@ -1297,16 +1297,16 @@ pub const File = struct {
             else => return diags.failParse(sdk_settings_path, "failed to parse Darwin SDK settings: file is not a JSON object", .{}),
         };
 
-        const version_json = parsed_object.get("MinimalDisplayName") orelse return diags.failParse(
+        const version_json = parsed_object.get("Version") orelse return diags.failParse(
             sdk_settings_path,
-            "failed to parse Darwin SDK settings: 'MinimalDisplayName' missing",
+            "failed to parse Darwin SDK settings: 'Version' missing",
             .{},
         );
         const version_str: []const u8 = switch (version_json) {
             .string => |str| str,
             else => return diags.failParse(
                 sdk_settings_path,
-                "failed to parse Darwin SDK settings: 'MinimalDisplayName' not a string",
+                "failed to parse Darwin SDK settings: 'Version' not a string",
                 .{},
             ),
         };
