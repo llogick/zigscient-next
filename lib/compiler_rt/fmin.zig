@@ -11,7 +11,7 @@ comptime {
     symbol(&fmin, "fmin");
     symbol(&__fminx, "__fminx");
     symbol(&fminq, "fminf128");
-    symbol(&fminl, "fminl");
+    if (compiler_rt.have_c_longdouble) symbol(&fminl, "fminl");
 }
 
 fn __fminh(x: compiler_rt.f16.Abi, y: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

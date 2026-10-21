@@ -2186,6 +2186,11 @@ pub const Inst = struct {
         /// For example: Provided with `error{Foo}!?f64`, returns `f64`.
         /// `operand` is payload index to `UnNode`.
         float_op_result_ty,
+        /// Validate that the given `CType` is valid for the current target.
+        /// This can be folded into the `@CType` tag once that is implemented.
+        /// `operand` is `src_node: Ast.Node.Offset`.
+        /// `small` is  a `std.Target.CType`.
+        validate_c_type,
 
         pub const InstData = struct {
             opcode: Extended,
@@ -4443,6 +4448,7 @@ fn findTrackableInner(
                 .astgen_error,
                 .float_op_result_ty,
                 .round_op_ty,
+                .validate_c_type,
                 => return,
 
                 // `@TypeOf` has a body.

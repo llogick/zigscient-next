@@ -399,6 +399,14 @@ fn complexAbi(comptime Float: type, comptime float: type) type {
     };
 }
 
+pub const have_c_longdouble = if (builtin.target.cTypeBitSize(.longdouble)) |bits| switch (bits) {
+    else => true,
+    80 => switch (std.zig.target.compilerRtFloatAbi(&builtin.target, bits)) {
+        .soft => false,
+        .hard => true,
+    },
+} else false;
+
 pub fn Complex(comptime Float: type) type {
     return struct { real: Float, imag: Float };
 }

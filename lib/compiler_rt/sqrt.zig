@@ -23,7 +23,7 @@ comptime {
     } else if (compiler_rt.want_sparc32_abi) {
         symbol(&sqrtq, "_Q_sqrt");
     }
-    symbol(&sqrtl, "sqrtl");
+    if (compiler_rt.have_c_longdouble) symbol(&sqrtl, "sqrtl");
 }
 
 fn __sqrth(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

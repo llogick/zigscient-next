@@ -10,7 +10,7 @@ comptime {
     symbol(&fabs, "fabs");
     symbol(&__fabsx, "__fabsx");
     symbol(&fabsq, "fabsf128");
-    symbol(&fabsl, "fabsl");
+    if (compiler_rt.have_c_longdouble) symbol(&fabsl, "fabsl");
 }
 
 fn __fabsh(a: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

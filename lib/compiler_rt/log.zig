@@ -19,7 +19,7 @@ comptime {
     symbol(&log, "log");
     symbol(&__logx, "__logx");
     symbol(&logq, "logf128");
-    symbol(&logl, "logl");
+    if (compiler_rt.have_c_longdouble) symbol(&logl, "logl");
 }
 
 fn __logh(a: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

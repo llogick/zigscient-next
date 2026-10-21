@@ -8140,6 +8140,22 @@ fn identifier(
     // if not @"" syntax, just use raw token slice
     if (ident_name_raw[0] != '@') {
         if (primitive_instrs.get(ident_name_raw)) |zir_const_ref| {
+            const maybe_c_type: ?std.Target.CType = switch (zir_const_ref) {
+                else => null,
+                .c_char_type => .char,
+                .c_short_type => .short,
+                .c_ushort_type => .ushort,
+                .c_int_type => .int,
+                .c_uint_type => .uint,
+                .c_long_type => .long,
+                .c_ulong_type => .ulong,
+                .c_longlong_type => .longlong,
+                .c_ulonglong_type => .ulonglong,
+                .c_longdouble_type => .longdouble,
+            };
+            if (maybe_c_type) |c_type| {
+                _ = try gz.addExtendedNodeSmall(.validate_c_type, ident, @backingInt(c_type));
+            }
             return rvalue(gz, ri, zir_const_ref, ident);
         }
 

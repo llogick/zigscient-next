@@ -19,7 +19,7 @@ comptime {
     symbol(&sincos, "sincos");
     symbol(&sincosx, "__sincosx");
     symbol(&sincosq, "sincosf128");
-    symbol(&sincosl, "sincosl");
+    if (compiler_rt.have_c_longdouble) symbol(&sincosl, "sincosl");
 }
 
 fn sincosh(x: compiler_rt.f16.Abi, r_sin: *compiler_rt.f16.Abi, r_cos: *compiler_rt.f16.Abi) callconv(.c) void {

@@ -12,10 +12,11 @@ pub const long_double = struct {
 
     inline fn bitWidth(x: anytype) u16 {
         const T = @TypeOf(x);
-        return switch (T) {
-            f80, f128, c_longdouble => @typeInfo(T).float.bits,
-            else => @compileError("Unsupported type: " ++ @typeName(T) ++ "\nPass a `f80`, `f128`, or `c_longdouble`."),
-        };
+        switch (@typeInfo(T)) {
+            .float => |float| if (float.bits >= 80) return float.bits,
+            else => {},
+        }
+        @compileError("Unsupported type: " ++ @typeName(T) ++ "\nPass a `f80`, `f128`, or `c_longdouble`.");
     }
 
     /// Returns the sign + exponent bits of a `long double`.

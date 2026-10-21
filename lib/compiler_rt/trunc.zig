@@ -18,7 +18,7 @@ comptime {
     symbol(&trunc, "trunc");
     symbol(&__truncx, "__truncx");
     symbol(&truncq, "truncf128");
-    symbol(&truncl, "truncl");
+    if (compiler_rt.have_c_longdouble) symbol(&truncl, "truncl");
 }
 
 fn __trunch(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

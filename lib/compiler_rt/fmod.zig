@@ -13,7 +13,7 @@ comptime {
     symbol(&fmod, "fmod");
     symbol(&__fmodx, "__fmodx");
     symbol(&fmodq, "fmodf128");
-    symbol(&fmodl, "fmodl");
+    if (compiler_rt.have_c_longdouble) symbol(&fmodl, "fmodl");
 }
 
 fn __fmodh(a: compiler_rt.f16.Abi, b: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

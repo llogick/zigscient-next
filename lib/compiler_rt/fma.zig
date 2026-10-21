@@ -18,7 +18,7 @@ comptime {
     symbol(&fma, "fma");
     symbol(&__fmax, "__fmax");
     symbol(&fmaq, "fmaf128");
-    symbol(&fmal, "fmal");
+    if (compiler_rt.have_c_longdouble) symbol(&fmal, "fmal");
 }
 
 fn __fmah(x: compiler_rt.f16.Abi, y: compiler_rt.f16.Abi, z: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

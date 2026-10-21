@@ -712,8 +712,14 @@ const Writer = struct {
             .std_lang_value => try self.writeStdLangValue(stream, extended),
             .inplace_arith_result_ty => try self.writeInplaceArithResultTy(stream, extended),
 
-            .dbg_empty_stmt => try stream.writeAll("))"),
-            .astgen_error => try stream.writeAll("))"),
+            .dbg_empty_stmt, .astgen_error => try stream.writeAll("))"),
+
+            .validate_c_type => {
+                const c_type: std.Target.CType = @fromBackingInt(@intCast(extended.small));
+                const src_node: Ast.Node.Offset = @fromBackingInt(@bitCast(extended.operand));
+                try stream.print("{t})) ", .{c_type});
+                try self.writeSrcNode(stream, src_node);
+            },
         }
     }
 

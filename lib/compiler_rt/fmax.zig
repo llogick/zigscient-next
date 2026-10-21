@@ -11,7 +11,7 @@ comptime {
     symbol(&fmax, "fmax");
     symbol(&__fmaxx, "__fmaxx");
     symbol(&fmaxq, "fmaxf128");
-    symbol(&fmaxl, "fmaxl");
+    if (compiler_rt.have_c_longdouble) symbol(&fmaxl, "fmaxl");
 }
 
 fn __fmaxh(x: compiler_rt.f16.Abi, y: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

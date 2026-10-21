@@ -3212,7 +3212,7 @@ pub const CType = enum {
     longdouble,
 };
 
-/// Returns `null` if no C ABI is defined for this target.
+/// Returns `null` if no C ABI for `c_type` is defined for this target.
 pub fn cTypeByteSize(t: *const Target, c_type: CType) ?u16 {
     return switch (c_type) {
         .char,
@@ -3238,7 +3238,7 @@ pub fn cTypeByteSize(t: *const Target, c_type: CType) ?u16 {
     };
 }
 
-/// Returns `null` if no C ABI is defined for this target.
+/// Returns `null` if no C ABI for `c_type` is defined for this target.
 pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
     return switch (target.os.tag) {
         .freestanding,
@@ -3285,7 +3285,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
 
                     .x86,
                     .x86_64,
-                    => 80,
+                    => if (target.cpu.has(.x86, .x87)) 80 else null,
 
                     .alpha,
                     .riscv32,
@@ -3345,7 +3345,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 .x86_64,
                 => switch (target.abi) {
                     .android, .ohos => 64,
-                    else => 80,
+                    else => if (target.cpu.has(.x86, .x87)) 80 else null,
                 },
 
                 .powerpc,
@@ -3409,7 +3409,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 .long, .ulong => 32,
                 .longlong, .ulonglong, .double => 64,
                 .longdouble => switch (target.abi) {
-                    .gnu => 80,
+                    .gnu => if (target.cpu.has(.x86, .x87)) 80 else null,
                     else => 64,
                 },
             },
@@ -3420,7 +3420,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 .long, .ulong => 32,
                 .longlong, .ulonglong, .double => 64,
                 .longdouble => switch (target.abi) {
-                    .gnu => 80,
+                    .gnu => if (target.cpu.has(.x86, .x87)) 80 else null,
                     else => 64,
                 },
             },
@@ -3454,7 +3454,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             },
             .longlong, .ulonglong, .double => 64,
             .longdouble => switch (target.cpu.arch) {
-                .x86_64 => 80,
+                .x86_64 => if (target.cpu.has(.x86, .x87)) 80 else null,
                 else => 64,
             },
         },
@@ -3492,14 +3492,14 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             .short, .ushort => 16,
             .int, .uint, .float => 32,
             .long, .ulong, .longlong, .ulonglong, .double => 64,
-            .longdouble => 80,
+            .longdouble => if (target.cpu.has(.x86, .x87)) 80 else null,
         },
 
         .opengl => null,
     };
 }
 
-/// Returns `null` if no C ABI is defined for this target.
+/// Returns `null` if no C ABI for `c_type` is defined for this target.
 pub fn cTypeAlignment(target: *const Target, c_type: CType) ?u16 {
     // Overrides for unusual alignments
     switch (target.cpu.arch) {

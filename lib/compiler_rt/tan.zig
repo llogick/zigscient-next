@@ -29,7 +29,7 @@ comptime {
     symbol(&tan, "tan");
     symbol(&__tanx, "__tanx");
     symbol(&tanq, "tanf128");
-    symbol(&tanl, "tanl");
+    if (compiler_rt.have_c_longdouble) symbol(&tanl, "tanl");
 }
 
 fn __tanh(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

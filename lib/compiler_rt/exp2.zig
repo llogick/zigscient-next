@@ -20,7 +20,7 @@ comptime {
     symbol(&exp2, "exp2");
     symbol(&__exp2x, "__exp2x");
     symbol(&exp2q, "exp2f128");
-    symbol(&exp2l, "exp2l");
+    if (compiler_rt.have_c_longdouble) symbol(&exp2l, "exp2l");
 }
 
 fn __exp2h(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

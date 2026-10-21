@@ -1469,6 +1469,11 @@ fn analyzeBodyInner(
                     },
                     .astgen_error => return sema.failTransitive(.astgen_error),
                     .float_op_result_ty => try sema.zirFloatOpResultType(block, extended),
+                    .validate_c_type => {
+                        try sema.zirValidateCType(block, extended);
+                        i += 1;
+                        continue;
+                    },
                 };
             },
 
@@ -4313,6 +4318,14 @@ fn zirTryOperandTy(sema: *Sema, block: *Block, inst: Zir.Inst.Index, is_ref: boo
     } else {
         return Air.internedToRef(eu_ty.toIntern());
     }
+}
+
+fn zirValidateCType(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!void {
+    const c_type: std.Target.CType = @fromBackingInt(@intCast(extended.small));
+    if (sema.pt.zcu.getTarget().cTypeBitSize(c_type)) |_| return;
+    const src_node: std.zig.Ast.Node.Offset = @fromBackingInt(@bitCast(extended.operand));
+    const src = block.nodeOffset(src_node);
+    return sema.fail(block, src, "'c_{t}' is not valid on this target", .{c_type});
 }
 
 fn zirValidateRefTy(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void {

@@ -25,8 +25,10 @@ comptime {
     symbol(&sin, "sin");
     symbol(&__sinx, "__sinx");
     symbol(&sinq, "sinf128");
-    symbol(&sinl, "sinl");
-    symbol(&sinl, "__sinl"); // required by musl
+    if (compiler_rt.have_c_longdouble) {
+        symbol(&sinl, "sinl");
+        symbol(&sinl, "__sinl"); // required by musl
+    }
 }
 
 fn __sinh(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

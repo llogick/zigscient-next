@@ -24,7 +24,7 @@ comptime {
     symbol(&floor, "floor");
     symbol(&__floorx, "__floorx");
     symbol(&floorq, "floorf128");
-    symbol(&floorl, "floorl");
+    if (compiler_rt.have_c_longdouble) symbol(&floorl, "floorl");
 
     // ceil
     symbol(&__ceilh, "__ceilh");
@@ -32,7 +32,7 @@ comptime {
     symbol(&ceil, "ceil");
     symbol(&__ceilx, "__ceilx");
     symbol(&ceilq, "ceilf128");
-    symbol(&ceill, "ceill");
+    if (compiler_rt.have_c_longdouble) symbol(&ceill, "ceill");
 }
 
 fn __floorh(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

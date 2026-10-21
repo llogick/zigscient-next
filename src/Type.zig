@@ -3191,7 +3191,10 @@ pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool 
         },
         .float => switch (ty.floatBits(zcu.getTarget())) {
             else => true,
-            80 => |bits| std.zig.target.compilerRtFloatAbi(zcu.getTarget(), bits) == .hard,
+            80 => |bits| switch (std.zig.target.compilerRtFloatAbi(zcu.getTarget(), bits)) {
+                .soft => false,
+                .hard => true,
+            },
         },
         .@"fn" => {
             if (position != .other) return false;

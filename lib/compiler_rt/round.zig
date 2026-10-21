@@ -19,7 +19,7 @@ comptime {
     symbol(&round, "round");
     symbol(&__roundx, "__roundx");
     symbol(&roundq, "roundf128");
-    symbol(&roundl, "roundl");
+    if (compiler_rt.have_c_longdouble) symbol(&roundl, "roundl");
 }
 
 fn __roundh(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {

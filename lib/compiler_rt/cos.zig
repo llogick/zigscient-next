@@ -25,8 +25,10 @@ comptime {
     symbol(&cos, "cos");
     symbol(&__cosx, "__cosx");
     symbol(&cosq, "cosf128");
-    symbol(&cosl, "cosl");
-    symbol(&cosl, "__cosl"); // required by musl
+    if (compiler_rt.have_c_longdouble) {
+        symbol(&cosl, "cosl");
+        symbol(&cosl, "__cosl"); // required by musl
+    }
 }
 
 fn __cosh(x: compiler_rt.f16.Abi) callconv(.c) compiler_rt.f16.Abi {
