@@ -11,7 +11,7 @@ const ParseError = @import("./static.zig").ParseError;
 const isNumberFormattedLikeAnInteger = @import("Scanner.zig").isNumberFormattedLikeAnInteger;
 
 pub const ObjectMap = StringArrayHashMap(Value);
-pub const Array = std.array_list.Managed(Value);
+pub const Array = std.ArrayList(Value);
 
 /// Represents any JSON value, potentially containing other JSON values.
 /// A .float value may be an approximation of the original value.
@@ -76,8 +76,8 @@ pub const Value = union(enum) {
     pub fn jsonParse(allocator: Allocator, source: anytype, options: ParseOptions) ParseError(@TypeOf(source.*))!@This() {
         // The grammar of the stack is:
         //  (.array | .object .string)*
-        var stack = Array.init(allocator);
-        defer stack.deinit();
+        var stack: Array = .empty;
+        defer stack.deinit(allocator);
 
         while (true) {
             // Assert the stack grammar at the top of the stack.
@@ -105,7 +105,7 @@ pub const Value = union(enum) {
                     switch (try source.nextAllocMax(allocator, .alloc_always, options.max_value_len.?)) {
                         .object_end => return try handleCompleteValue(&stack, allocator, source, Value{ .object = .empty }, options) orelse continue,
                         .allocated_string => |key| {
-                            try stack.appendSlice(&[_]Value{
+                            try stack.appendSlice(allocator, &[_]Value{
                                 Value{ .object = .empty },
                                 Value{ .string = key },
                             });
@@ -114,7 +114,7 @@ pub const Value = union(enum) {
                     }
                 },
                 .array_begin => {
-                    try stack.append(Value{ .array = Array.init(allocator) });
+                    try stack.append(allocator, Value{ .array = .empty });
                 },
                 .array_end => return try handleCompleteValue(&stack, allocator, source, stack.pop().?, options) orelse continue,
 
@@ -170,7 +170,7 @@ fn handleCompleteValue(stack: *Array, allocator: Allocator, source: anytype, val
                     },
                     .allocated_string => |next_key| {
                         // We've got another key.
-                        try stack.append(Value{ .string = next_key });
+                        try stack.append(allocator, Value{ .string = next_key });
                         // stack: [..., .object, .string]
                         return null;
                     },
@@ -179,7 +179,7 @@ fn handleCompleteValue(stack: *Array, allocator: Allocator, source: anytype, val
             },
             .array => |*array| {
                 // stack: [..., .array]
-                try array.append(value);
+                try array.append(allocator, value);
                 return null;
             },
             else => unreachable,

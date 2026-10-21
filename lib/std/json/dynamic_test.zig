@@ -122,18 +122,6 @@ test "parsing empty string gives appropriate error" {
     try testing.expectError(error.UnexpectedEndOfInput, testParse(arena_allocator.allocator(), ""));
 }
 
-test "Value.array allocator should still be usable after parsing" {
-    var parsed = try parseFromSlice(Value, std.testing.allocator, "[]", .{});
-    defer parsed.deinit();
-
-    // Allocation should succeed
-    var i: usize = 0;
-    while (i < 100) : (i += 1) {
-        try parsed.value.array.append(Value{ .integer = 100 });
-    }
-    try testing.expectEqual(parsed.value.array.items.len, 100);
-}
-
 test "integer after float has proper type" {
     var arena_allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_allocator.deinit();
@@ -236,7 +224,7 @@ test "Value.jsonStringify" {
         .{ .number_string = "43" },
         .{ .float = 42 },
         .{ .string = "weeee" },
-        .{ .array = Array.fromOwnedSlice(undefined, &vals) },
+        .{ .array = .fromOwnedSlice(&vals) },
         .{ .object = obj },
     };
     var buffer: [0x1000]u8 = undefined;

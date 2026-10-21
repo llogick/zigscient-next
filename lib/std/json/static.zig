@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const ArrayList = std.array_list.Managed;
+const ArrayList = std.ArrayList;
 
 const Scanner = @import("Scanner.zig");
 const Token = Scanner.Token;
@@ -469,7 +469,7 @@ pub fn innerParse(
                             _ = try source.next();
 
                             // Typical array.
-                            var arraylist = ArrayList(ptrInfo.child).init(allocator);
+                            var arraylist: ArrayList(ptrInfo.child) = .empty;
                             while (true) {
                                 switch (try source.peekNextTokenType()) {
                                     .array_end => {
@@ -479,15 +479,15 @@ pub fn innerParse(
                                     else => {},
                                 }
 
-                                try arraylist.ensureUnusedCapacity(1);
+                                try arraylist.ensureUnusedCapacity(allocator, 1);
                                 arraylist.appendAssumeCapacity(try innerParse(ptrInfo.child, allocator, source, options));
                             }
 
                             if (ptrInfo.sentinel()) |s| {
-                                return try arraylist.toOwnedSliceSentinel(s);
+                                return try arraylist.toOwnedSliceSentinel(allocator, s);
                             }
 
-                            return try arraylist.toOwnedSlice();
+                            return try arraylist.toOwnedSlice(allocator);
                         },
                         .string => {
                             if (ptrInfo.child != u8) return error.UnexpectedToken;
@@ -495,9 +495,9 @@ pub fn innerParse(
                             // Dynamic length string.
                             if (ptrInfo.sentinel()) |s| {
                                 // Use our own array list so we can append the sentinel.
-                                var value_list = ArrayList(u8).init(allocator);
-                                _ = try source.allocNextIntoArrayListMax(&value_list, .alloc_always, options.max_value_len.?);
-                                return try value_list.toOwnedSliceSentinel(s);
+                                var value_list: ArrayList(u8) = .empty;
+                                _ = try source.allocNextIntoArrayListMax(allocator, &value_list, .alloc_always, options.max_value_len.?);
+                                return try value_list.toOwnedSliceSentinel(allocator, s);
                             }
                             if (ptrInfo.attrs.@"const") {
                                 switch (try source.nextAllocMax(allocator, options.allocate.?, options.max_value_len.?)) {

@@ -135,11 +135,10 @@ pub fn nextAllocMax(self: *@This(), allocator: Allocator, when: AllocWhen, max_v
     };
     switch (token_type) {
         .number, .string => {
-            var value_list = std.array_list.Managed(u8).init(allocator);
-            errdefer {
-                value_list.deinit();
-            }
-            if (self.allocNextIntoArrayListMax(&value_list, when, max_value_len) catch |e| switch (e) {
+            var value_list: std.ArrayList(u8) = .empty;
+            defer value_list.deinit(allocator);
+
+            if (self.allocNextIntoArrayListMax(allocator, &value_list, when, max_value_len) catch |e| switch (e) {
                 error.BufferUnderrun => unreachable,
                 else => |err| return err,
             }) |slice| {
@@ -149,9 +148,9 @@ pub fn nextAllocMax(self: *@This(), allocator: Allocator, when: AllocWhen, max_v
                     Token{ .string = slice };
             } else {
                 return if (token_type == .number)
-                    Token{ .allocated_number = try value_list.toOwnedSlice() }
+                    Token{ .allocated_number = try value_list.toOwnedSlice(allocator) }
                 else
-                    Token{ .allocated_string = try value_list.toOwnedSlice() };
+                    Token{ .allocated_string = try value_list.toOwnedSlice(allocator) };
             }
         },
 
@@ -172,8 +171,8 @@ pub fn nextAllocMax(self: *@This(), allocator: Allocator, when: AllocWhen, max_v
 }
 
 /// Equivalent to `allocNextIntoArrayListMax(value_list, when, default_max_value_len);`
-pub fn allocNextIntoArrayList(self: *@This(), value_list: *std.array_list.Managed(u8), when: AllocWhen) AllocIntoArrayListError!?[]const u8 {
-    return self.allocNextIntoArrayListMax(value_list, when, default_max_value_len);
+pub fn allocNextIntoArrayList(self: *@This(), allocator: Allocator, value_list: *std.ArrayList(u8), when: AllocWhen) AllocIntoArrayListError!?[]const u8 {
+    return self.allocNextIntoArrayListMax(allocator, value_list, when, default_max_value_len);
 }
 /// The next token type must be either `.number` or `.string`. See `peekNextTokenType()`.
 /// When allocation is not necessary with `.alloc_if_needed`,
@@ -185,25 +184,25 @@ pub fn allocNextIntoArrayList(self: *@This(), value_list: *std.array_list.Manage
 /// can be resumed by passing the same array list in again.
 /// This method does not indicate whether the token content being returned is for a `.number` or `.string` token type;
 /// the caller of this method is expected to know which type of token is being processed.
-pub fn allocNextIntoArrayListMax(self: *@This(), value_list: *std.array_list.Managed(u8), when: AllocWhen, max_value_len: usize) AllocIntoArrayListError!?[]const u8 {
+pub fn allocNextIntoArrayListMax(self: *@This(), allocator: Allocator, value_list: *std.ArrayList(u8), when: AllocWhen, max_value_len: usize) AllocIntoArrayListError!?[]const u8 {
     while (true) {
         const token = try self.next();
         switch (token) {
             // Accumulate partial values.
             .partial_number, .partial_string => |slice| {
-                try appendSlice(value_list, slice, max_value_len);
+                try appendSlice(allocator, value_list, slice, max_value_len);
             },
             .partial_string_escaped_1 => |buf| {
-                try appendSlice(value_list, buf[0..], max_value_len);
+                try appendSlice(allocator, value_list, buf[0..], max_value_len);
             },
             .partial_string_escaped_2 => |buf| {
-                try appendSlice(value_list, buf[0..], max_value_len);
+                try appendSlice(allocator, value_list, buf[0..], max_value_len);
             },
             .partial_string_escaped_3 => |buf| {
-                try appendSlice(value_list, buf[0..], max_value_len);
+                try appendSlice(allocator, value_list, buf[0..], max_value_len);
             },
             .partial_string_escaped_4 => |buf| {
-                try appendSlice(value_list, buf[0..], max_value_len);
+                try appendSlice(allocator, value_list, buf[0..], max_value_len);
             },
 
             // Return complete values.
@@ -212,7 +211,7 @@ pub fn allocNextIntoArrayListMax(self: *@This(), value_list: *std.array_list.Man
                     // No alloc necessary.
                     return slice;
                 }
-                try appendSlice(value_list, slice, max_value_len);
+                try appendSlice(allocator, value_list, slice, max_value_len);
                 // The token is complete.
                 return null;
             },
@@ -221,7 +220,7 @@ pub fn allocNextIntoArrayListMax(self: *@This(), value_list: *std.array_list.Man
                     // No alloc necessary.
                     return slice;
                 }
-                try appendSlice(value_list, slice, max_value_len);
+                try appendSlice(allocator, value_list, slice, max_value_len);
                 // The token is complete.
                 return null;
             },
@@ -1607,20 +1606,19 @@ pub const Reader = struct {
         const token_type = try self.peekNextTokenType();
         switch (token_type) {
             .number, .string => {
-                var value_list = std.array_list.Managed(u8).init(allocator);
-                errdefer {
-                    value_list.deinit();
-                }
-                if (try self.allocNextIntoArrayListMax(&value_list, when, max_value_len)) |slice| {
+                var value_list: std.ArrayList(u8) = .empty;
+                defer value_list.deinit(allocator);
+
+                if (try self.allocNextIntoArrayListMax(allocator, &value_list, when, max_value_len)) |slice| {
                     return if (token_type == .number)
                         Token{ .number = slice }
                     else
                         Token{ .string = slice };
                 } else {
                     return if (token_type == .number)
-                        Token{ .allocated_number = try value_list.toOwnedSlice() }
+                        Token{ .allocated_number = try value_list.toOwnedSlice(allocator) }
                     else
-                        Token{ .allocated_string = try value_list.toOwnedSlice() };
+                        Token{ .allocated_string = try value_list.toOwnedSlice(allocator) };
                 }
             },
 
@@ -1638,13 +1636,19 @@ pub const Reader = struct {
     }
 
     /// Equivalent to `allocNextIntoArrayListMax(value_list, when, default_max_value_len);`
-    pub fn allocNextIntoArrayList(self: *@This(), value_list: *std.array_list.Managed(u8), when: AllocWhen) Reader.AllocError!?[]const u8 {
-        return self.allocNextIntoArrayListMax(value_list, when, default_max_value_len);
+    pub fn allocNextIntoArrayList(self: *@This(), allocator: Allocator, value_list: *std.ArrayList(u8), when: AllocWhen) Reader.AllocError!?[]const u8 {
+        return self.allocNextIntoArrayListMax(allocator, value_list, when, default_max_value_len);
     }
     /// Calls `std.json.Scanner.allocNextIntoArrayListMax` and handles `error.BufferUnderrun`.
-    pub fn allocNextIntoArrayListMax(self: *@This(), value_list: *std.array_list.Managed(u8), when: AllocWhen, max_value_len: usize) Reader.AllocError!?[]const u8 {
+    pub fn allocNextIntoArrayListMax(
+        self: *@This(),
+        allocator: Allocator,
+        value_list: *std.ArrayList(u8),
+        when: AllocWhen,
+        max_value_len: usize,
+    ) Reader.AllocError!?[]const u8 {
         while (true) {
-            return self.scanner.allocNextIntoArrayListMax(value_list, when, max_value_len) catch |err| switch (err) {
+            return self.scanner.allocNextIntoArrayListMax(allocator, value_list, when, max_value_len) catch |err| switch (err) {
                 error.BufferUnderrun => {
                     try self.refillBuffer();
                     continue;
@@ -1745,10 +1749,10 @@ pub const Reader = struct {
 const OBJECT_MODE = 0;
 const ARRAY_MODE = 1;
 
-fn appendSlice(list: *std.array_list.Managed(u8), buf: []const u8, max_value_len: usize) !void {
+fn appendSlice(allocator: Allocator, list: *std.ArrayList(u8), buf: []const u8, max_value_len: usize) !void {
     const new_len = std.math.add(usize, list.items.len, buf.len) catch return error.ValueTooLong;
     if (new_len > max_value_len) return error.ValueTooLong;
-    try list.appendSlice(buf);
+    try list.appendSlice(allocator, buf);
 }
 
 /// For the slice you get from a `Token.number` or `Token.allocated_number`,
