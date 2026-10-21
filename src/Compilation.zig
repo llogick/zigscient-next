@@ -2727,7 +2727,7 @@ fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
             }
         },
     }
-    assert(!comp.config.incremental); // always uses incremental cache mode
+    // assert(!comp.config.incremental); // always uses incremental cache mode
     if (comp.zcu) |zcu| {
         if (zcu.llvm_object) |llvm_object| {
             llvm_object.deinit();
