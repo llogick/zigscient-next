@@ -416,8 +416,7 @@ test "switch loop with tag capture" {
                     _ = &tag;
                     return error.AnalyzedNoreturnProng;
                 },
-                else => |un, tag| {
-                    try expect(tag == .c);
+                else => |un| {
                     try expect(un == .c);
                     if (un.c == 0xFF) continue :label .a;
                     if (un.c == 0x00) break :label false;

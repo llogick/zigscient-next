@@ -7731,6 +7731,12 @@ fn switchExpr(
             const tag_name = try astgen.identAsString(tag_token);
             try astgen.detectLocalShadowing(payload_sub_scope, tag_name, tag_token, tag_slice, .@"switch tag capture");
 
+            if (case_node.toOptional() == else_case_node and case.inline_token == null) {
+                return astgen.failTokNotes(tag_token, "cannot capture tag of 'else' prong", .{}, &.{
+                    try astgen.errNoteTok(ident, "first capture in 'else' prong always captures 'switch' operand", .{}),
+                });
+            }
+
             assert(any_has_tag_capture);
             has_tag_capture = true;
 
