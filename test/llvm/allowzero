@@ -6,6 +6,13 @@
 
 #skip bpfel-freestanding-none-baseline-whole-llvm-lld-pic
 
+#skip csky-freestanding-eabi-baseline-whole-llvm-lld-pic
+#skip csky-freestanding-eabihf-baseline-whole-llvm-lld-pic
+#skip csky-linux-eabi-baseline-whole-llvm-lld-pic
+#skip csky-linux-eabihf-baseline-whole-llvm-lld-pic
+#skip csky-linux-gnueabi-baseline-whole-llvm-lld-pic
+#skip csky-linux-gnueabihf-baseline-whole-llvm-lld-pic
+
 #skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
 #skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
 
