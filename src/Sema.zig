@@ -28463,6 +28463,7 @@ fn coerceExtra(
                             .child = dest_info.child,
                             .sentinel = dest_info.sentinel,
                         });
+                        try sema.ensureLayoutResolved(empty_array_ty, inst_src, .init);
                         const empty_array_val = try pt.aggregateValue(empty_array_ty, &.{});
                         const empty_array_ptr = try sema.uavRef(empty_array_val);
                         return sema.coerceArrayPtrToSlice(block, dest_ty, empty_array_ptr, inst_src);

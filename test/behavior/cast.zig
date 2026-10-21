@@ -3164,3 +3164,23 @@ test "coercing a coerced function" {
     };
     try S.doTheTest();
 }
+
+test "pointer to empty tuple coerces to any slice" {
+    const tuple_ptr = &.{};
+
+    const const_slice_0: []const u8 = tuple_ptr;
+    const const_slice_1: []const struct {} = tuple_ptr;
+    const const_slice_2: []align(64) const struct { x: u8 } = tuple_ptr;
+
+    const mut_slice_0: []const u8 = tuple_ptr;
+    const mut_slice_1: []const struct {} = tuple_ptr;
+    const mut_slice_2: []align(64) const struct { x: u8 } = tuple_ptr;
+
+    comptime assert(const_slice_0.len == 0);
+    comptime assert(const_slice_1.len == 0);
+    comptime assert(const_slice_2.len == 0);
+
+    comptime assert(mut_slice_0.len == 0);
+    comptime assert(mut_slice_1.len == 0);
+    comptime assert(mut_slice_2.len == 0);
+}
