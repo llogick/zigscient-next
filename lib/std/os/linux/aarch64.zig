@@ -4,13 +4,67 @@ const SYS = std.os.linux.SYS;
 
 pub const syscall_arg_t = u64;
 
+/// Declared only with SVE, since a Z clobber also clobbers the V register within it.
+const clobbers: std.lang.assembly.Clobbers = if (builtin.zig_backend != .stage2_aarch64 and
+    builtin.cpu.has(.aarch64, .sve)) .{
+    .memory = true,
+    .p0 = true,
+    .p1 = true,
+    .p2 = true,
+    .p3 = true,
+    .p4 = true,
+    .p5 = true,
+    .p6 = true,
+    .p7 = true,
+    .p8 = true,
+    .p9 = true,
+    .p10 = true,
+    .p11 = true,
+    .p12 = true,
+    .p13 = true,
+    .p14 = true,
+    .p15 = true,
+    .z0 = true,
+    .z1 = true,
+    .z2 = true,
+    .z3 = true,
+    .z4 = true,
+    .z5 = true,
+    .z6 = true,
+    .z7 = true,
+    .z8 = true,
+    .z9 = true,
+    .z10 = true,
+    .z11 = true,
+    .z12 = true,
+    .z13 = true,
+    .z14 = true,
+    .z15 = true,
+    .z16 = true,
+    .z17 = true,
+    .z18 = true,
+    .z19 = true,
+    .z20 = true,
+    .z21 = true,
+    .z22 = true,
+    .z23 = true,
+    .z24 = true,
+    .z25 = true,
+    .z26 = true,
+    .z27 = true,
+    .z28 = true,
+    .z29 = true,
+    .z30 = true,
+    .z31 = true,
+} else .{ .memory = true };
+
 pub fn syscall0(
     number: SYS,
 ) u64 {
     return asm volatile ("svc #0"
         : [ret] "={x0}" (-> u64),
         : [number] "{x8}" (@backingInt(number)),
-        : .{ .memory = true });
+        : clobbers);
 }
 
 pub fn syscall1(
@@ -21,7 +75,7 @@ pub fn syscall1(
         : [ret] "={x0}" (-> u64),
         : [number] "{x8}" (@backingInt(number)),
           [arg1] "{x0}" (arg1),
-        : .{ .memory = true });
+        : clobbers);
 }
 
 pub fn syscall2(
@@ -34,7 +88,7 @@ pub fn syscall2(
         : [number] "{x8}" (@backingInt(number)),
           [arg1] "{x0}" (arg1),
           [arg2] "{x1}" (arg2),
-        : .{ .memory = true });
+        : clobbers);
 }
 
 pub fn syscall3(
@@ -49,7 +103,7 @@ pub fn syscall3(
           [arg1] "{x0}" (arg1),
           [arg2] "{x1}" (arg2),
           [arg3] "{x2}" (arg3),
-        : .{ .memory = true });
+        : clobbers);
 }
 
 pub fn syscall4(
@@ -66,7 +120,7 @@ pub fn syscall4(
           [arg2] "{x1}" (arg2),
           [arg3] "{x2}" (arg3),
           [arg4] "{x3}" (arg4),
-        : .{ .memory = true });
+        : clobbers);
 }
 
 pub fn syscall5(
@@ -85,7 +139,7 @@ pub fn syscall5(
           [arg3] "{x2}" (arg3),
           [arg4] "{x3}" (arg4),
           [arg5] "{x4}" (arg5),
-        : .{ .memory = true });
+        : clobbers);
 }
 
 pub fn syscall6(
@@ -106,7 +160,7 @@ pub fn syscall6(
           [arg4] "{x3}" (arg4),
           [arg5] "{x4}" (arg5),
           [arg6] "{x5}" (arg6),
-        : .{ .memory = true });
+        : clobbers);
 }
 
 pub fn clone() callconv(.naked) u64 {
