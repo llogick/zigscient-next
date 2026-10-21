@@ -436,9 +436,7 @@ pub fn io(ev: *Evented) Io {
             .processSetCurrentDir = processSetCurrentDir,
             .processSetCurrentPath = processSetCurrentPath,
             .processReplace = processReplace,
-            .processReplacePath = processReplacePath,
             .processSpawn = processSpawn,
-            .processSpawnPath = processSpawnPath,
             .childWait = childWait,
             .childKill = childKill,
 
@@ -463,6 +461,8 @@ pub fn io(ev: *Evented) Io {
             .netInterfaceNameResolve = netInterfaceNameResolveUnavailable,
             .netInterfaceName = netInterfaceNameUnavailable,
             .netLookup = netLookupUnavailable,
+            .inheritParentDir = Io.failingInheritParentDir,
+            .inheritParentFile = Io.failingInheritParentFile,
         },
     };
 }
@@ -2134,6 +2134,7 @@ fn batchDrainSubmitted(
                     break :result null;
                 },
                 .device_io_control => {},
+                .net_accept => @panic("TODO implement batched net_accept"),
                 .net_receive => @panic("TODO implement batched net_receive"),
                 .net_send => @panic("TODO implement batched net_send"),
                 .net_read => @panic("TODO implement batched net_read"),
@@ -2196,6 +2197,7 @@ fn batchSourceEvent(context: ?*anyopaque) callconv(.c) void {
             } };
         },
         .device_io_control => unreachable,
+        .net_accept => @panic("TODO implement batched net_accept"),
         .net_receive => @panic("TODO implement batched net_receive"),
         .net_send => @panic("TODO implement batched net_send"),
         .net_read => @panic("TODO implement batched net_read"),
