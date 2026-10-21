@@ -45,11 +45,13 @@ comptime {
                 symbol(&__aeabi_read_tp, "__aeabi_read_tp");
             }
 
-            symbol(&__gnu_thumb1_case_sqi, "__gnu_thumb1_case_sqi");
-            symbol(&__gnu_thumb1_case_uqi, "__gnu_thumb1_case_uqi");
-            symbol(&__gnu_thumb1_case_shi, "__gnu_thumb1_case_shi");
-            symbol(&__gnu_thumb1_case_uhi, "__gnu_thumb1_case_uhi");
-            symbol(&__gnu_thumb1_case_si, "__gnu_thumb1_case_si");
+            if (builtin.target.cpu.has(.arm, .has_v4t)) {
+                symbol(&__gnu_thumb1_case_sqi, "__gnu_thumb1_case_sqi");
+                symbol(&__gnu_thumb1_case_uqi, "__gnu_thumb1_case_uqi");
+                symbol(&__gnu_thumb1_case_shi, "__gnu_thumb1_case_shi");
+                symbol(&__gnu_thumb1_case_uhi, "__gnu_thumb1_case_uhi");
+                symbol(&__gnu_thumb1_case_si, "__gnu_thumb1_case_si");
+            }
 
             // floating-point helper functions (single+double-precision reverse subtraction, y – x), see subdf3.zig
             symbol(&__aeabi_frsub, "__aeabi_frsub");

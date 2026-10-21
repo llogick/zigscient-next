@@ -146,7 +146,7 @@ pub const __clzsi2 = switch (builtin.cpu.arch) {
             break :impl __clzsi2_thumb1;
         }
         // From here on we're either targeting Thumb2 or ARM.
-        else if (!builtin.cpu.arch.isThumb()) {
+        else if (!builtin.cpu.arch.isThumb() and builtin.target.cpu.has(.arm, .has_v4t)) {
             break :impl __clzsi2_arm32;
         }
         // Use the generic implementation otherwise.
