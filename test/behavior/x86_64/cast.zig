@@ -12,7 +12,6 @@ const math = @import("math.zig");
 const nan = math.nan;
 const next = math.next;
 const Scalar = math.Scalar;
-const splat = math.splat;
 const Sse = math.Sse;
 const tmin = math.tmin;
 
@@ -14508,18 +14507,18 @@ inline fn intCast(comptime Result: type, comptime Type: type, rhs: Type, comptim
                 rhs & imax(Type) >> bits,
             .vector => rhs | @select(
                 Scalar(Type),
-                ct_rhs < splat(Type, 0),
-                splat(Type, imin(Scalar(Type)) >> bits),
-                splat(Type, 0),
+                ct_rhs < @as(Type, @splat(0)),
+                @as(Type, @splat(imin(Scalar(Type)) >> bits)),
+                @as(Type, @splat(0)),
             ) & ~@select(
                 Scalar(Type),
-                ct_rhs >= splat(Type, 0),
-                splat(Type, imin(Scalar(Type)) >> bits),
-                splat(Type, 0),
+                ct_rhs >= @as(Type, @splat(0)),
+                @as(Type, @splat(imin(Scalar(Type)) >> bits)),
+                @as(Type, @splat(0)),
             ),
             else => comptime unreachable,
         },
-        .mask => |bits| if (bits == rhs_info.bits) rhs else rhs & splat(Type, (1 << bits) - 1),
+        .mask => |bits| if (bits == rhs_info.bits) rhs else rhs & @as(Type, @splat((1 << bits) - 1)),
     });
 }
 test intCast {

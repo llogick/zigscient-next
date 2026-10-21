@@ -72,19 +72,13 @@ pub fn Log2Int(comptime Type: type) type {
 pub fn Log2IntCeil(comptime Type: type) type {
     return ChangeScalar(Type, math.Log2IntCeil(Scalar(Type)));
 }
-pub fn splat(comptime Type: type, scalar: Scalar(Type)) Type {
-    return switch (@typeInfo(Type)) {
-        else => scalar,
-        .vector => @splat(scalar),
-    };
-}
 pub fn sign(rhs: anytype) ChangeScalar(@TypeOf(rhs), bool) {
     const Int = ChangeScalar(@TypeOf(rhs), switch (@typeInfo(Scalar(@TypeOf(rhs)))) {
         .int, .comptime_int => Scalar(@TypeOf(rhs)),
         .float => |float| @Int(.signed, float.bits),
         else => @compileError(@typeName(@TypeOf(rhs))),
     });
-    return @as(Int, @bitCast(rhs)) < splat(Int, 0);
+    return @as(Int, @bitCast(rhs)) < @as(Int, @splat(0));
 }
 pub fn select(cond: anytype, lhs: anytype, rhs: @TypeOf(lhs)) @TypeOf(lhs) {
     return switch (@typeInfo(@TypeOf(cond))) {
@@ -117,19 +111,19 @@ pub noinline fn checkExpected(expected: anytype, actual: @TypeOf(expected), comp
                     .approx_or_overflow => @exp2(@log2(epsilon) * 0.4),
                 };
                 const approx_unequal = @abs(expected - actual) > @max(
-                    @abs(expected) * splat(Expected, tolerance),
-                    splat(Expected, switch (compare) {
+                    @abs(expected) * @as(Expected, @splat(tolerance)),
+                    @as(Expected, @splat(switch (compare) {
                         .strict, .relaxed => comptime unreachable,
                         .approx, .approx_or_overflow => tolerance,
                         .approx_int => 1,
-                    }),
+                    })),
                 );
                 break :unexpected switch (compare) {
                     .strict, .relaxed => comptime unreachable,
                     .approx, .approx_int => approx_unequal,
                     .approx_or_overflow => approx_unequal &
-                        (((@abs(expected) != splat(Expected, inf(Expected))) &
-                            (@abs(actual) != splat(Expected, inf(Expected)))) |
+                        (((@abs(expected) != @as(Expected, @splat(inf(Expected)))) &
+                            (@abs(actual) != @as(Expected, @splat(inf(Expected))))) |
                             (sign(expected) != sign(actual))),
                 };
             },

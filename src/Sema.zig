@@ -7517,13 +7517,12 @@ fn zirSplatOpResultType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Compil
     const un_node = sema.code.instructions.items(.data)[@backingInt(inst)].un_node;
 
     const raw_ty = try sema.resolveTypeOrPoison(block, LazySrcLoc.unneeded, un_node.operand) orelse return .generic_poison_type;
-    const vec_ty = raw_ty.optEuBaseType(zcu);
+    const base_ty = raw_ty.optEuBaseType(zcu);
 
-    switch (vec_ty.zigTypeTag(zcu)) {
-        .array, .vector => {},
-        else => return sema.fail(block, block.nodeOffset(un_node.src_node), "expected array or vector type, found '{f}'", .{vec_ty.fmt(zcu)}),
+    switch (base_ty.zigTypeTag(zcu)) {
+        .array, .vector => return Air.internedToRef(base_ty.childType(zcu).toIntern()),
+        else => return Air.internedToRef(base_ty.toIntern()),
     }
-    return Air.internedToRef(vec_ty.childType(zcu).toIntern());
 }
 
 fn zirVectorType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.Inst.Ref {
@@ -23297,17 +23296,17 @@ fn zirSplat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.I
     const inst_data = sema.code.instructions.items(.data)[@backingInt(inst)].pl_node;
     const extra = sema.code.extraData(Zir.Inst.Bin, inst_data.payload_index).data;
     const src = block.nodeOffset(inst_data.src_node);
-    const scalar_src = block.builtinCallArgSrc(inst_data.src_node, 0);
+    const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const dest_ty = try sema.resolveDestType(block, src, extra.lhs, .remove_eu_opt, "@splat");
+    const operand = sema.resolveInst(extra.rhs);
 
     switch (dest_ty.zigTypeTag(zcu)) {
         .array, .vector => {},
-        else => return sema.fail(block, src, "expected array or vector type, found '{f}'", .{dest_ty.fmt(zcu)}),
+        else => return sema.coerce(block, dest_ty, operand, operand_src),
     }
 
-    const operand = sema.resolveInst(extra.rhs);
     const scalar_ty = dest_ty.childType(zcu);
-    const scalar = try sema.coerce(block, scalar_ty, operand, scalar_src);
+    const scalar = try sema.coerce(block, scalar_ty, operand, operand_src);
 
     const len = try sema.usizeCast(block, src, dest_ty.arrayLen(zcu));
 
@@ -23331,7 +23330,7 @@ fn zirSplat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.I
         return .fromValue(try pt.aggregateSplatValue(dest_ty, scalar_val));
     }
 
-    try sema.requireRuntimeBlock(block, src, scalar_src);
+    try sema.requireRuntimeBlock(block, src, operand_src);
 
     switch (dest_ty.zigTypeTag(zcu)) {
         .vector, .array => return block.addTyOp(.splat, dest_ty, scalar),

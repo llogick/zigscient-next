@@ -160,3 +160,22 @@ test "vector @splat" {
     try S.doTheTest();
     try comptime S.doTheTest();
 }
+
+test "scalar @splat" {
+    const S = struct {
+        fn testForTypes(R: type, result: R, Op: type, op: Op) !void {
+            try expect(@as(R, result) == @as(Op, @splat(op)));
+        }
+        fn doTheTest() !void {
+            try testForTypes(comptime_float, 3.1415, comptime_float, 3.1415);
+            try testForTypes(f32, 3.1415, comptime_float, 3.1415);
+            try testForTypes(f32, 3.1415, f32, 3.1415);
+            try testForTypes(u8, 31, u8, 31);
+            try testForTypes(u8, 31, u16, 31);
+            try testForTypes(i16, 31, i16, 31);
+            try testForTypes(i16, 31, i8, 31);
+        }
+    };
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}

@@ -5591,7 +5591,7 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       <p>
       Produces an array or vector where each element is the value
       {#syntax#}element{#endsyntax#}. The return type, including the number of
-      elements, is inferred.
+      elements, is inferred. If the result type is a scalar, `element` is returned.
       </p>
       {#code|test_splat_builtin.zig#}
       {#see_also|Vectors|Arrays|@shuffle#}

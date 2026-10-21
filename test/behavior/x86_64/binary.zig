@@ -16,7 +16,6 @@ const nan = math.nan;
 const Scalar = math.Scalar;
 const select = math.select;
 const sign = math.sign;
-const splat = math.splat;
 const Sse = math.Sse;
 const tmin = math.tmin;
 
@@ -5250,7 +5249,7 @@ test divTruncUnoptimized {
 
 inline fn divTruncOptimized(comptime Type: type, lhs: Type, rhs: Type) Type {
     @setFloatMode(.optimized);
-    return @divTrunc(lhs, select(@abs(rhs) > splat(Type, 0.0), rhs, splat(Type, 1.0)));
+    return @divTrunc(lhs, select(@abs(rhs) > @as(Type, @splat(0.0)), rhs, @as(Type, @splat(1.0))));
 }
 test divTruncOptimized {
     const test_div_trunc_optimized = binary(divTruncOptimized, .{ .compare = .approx_int });
@@ -5271,7 +5270,7 @@ test divFloorUnoptimized {
 
 inline fn divFloorOptimized(comptime Type: type, lhs: Type, rhs: Type) Type {
     @setFloatMode(.optimized);
-    return @divFloor(lhs, select(@abs(rhs) > splat(Type, 0.0), rhs, splat(Type, 1.0)));
+    return @divFloor(lhs, select(@abs(rhs) > @as(Type, @splat(0.0)), rhs, @as(Type, @splat(1.0))));
 }
 test divFloorOptimized {
     const test_div_floor_optimized = binary(divFloorOptimized, .{ .compare = .approx_int });
@@ -5292,7 +5291,7 @@ test divCeilUnoptimized {
 
 inline fn divCeilOptimized(comptime Type: type, lhs: Type, rhs: Type) Type {
     @setFloatMode(.optimized);
-    return @divCeil(lhs, select(@abs(rhs) > splat(Type, 0.0), rhs, splat(Type, 1.0)));
+    return @divCeil(lhs, select(@abs(rhs) > @as(Type, @splat(0.0)), rhs, @as(Type, @splat(1.0))));
 }
 test divCeilOptimized {
     const test_div_ceil_optimized = binary(divCeilOptimized, .{ .compare = .approx_int });
@@ -5393,7 +5392,7 @@ test mulWithOverflow {
 inline fn shlWithOverflow(comptime Type: type, lhs: Type, rhs: Type) struct { Type, ChangeScalar(Type, u1) } {
     const bit_cast_rhs: AsSignedness(Type, .unsigned) = @bitCast(rhs);
     const truncate_rhs: Log2Int(Type) = @truncate(bit_cast_rhs);
-    return @shlWithOverflow(lhs, if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % splat(Log2Int(Type), bits) else truncate_rhs);
+    return @shlWithOverflow(lhs, if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % @as(Log2Int(Type), @splat(bits)) else truncate_rhs);
 }
 test shlWithOverflow {
     const test_shl_with_overflow = binary(shlWithOverflow, .{});
@@ -5492,7 +5491,7 @@ test bitOr {
 inline fn shr(comptime Type: type, lhs: Type, rhs: Type) Type {
     const bit_cast_rhs: AsSignedness(Type, .unsigned) = @bitCast(rhs);
     const truncate_rhs: Log2Int(Type) = @truncate(bit_cast_rhs);
-    return lhs >> if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % splat(Log2Int(Type), bits) else truncate_rhs;
+    return lhs >> if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % @as(Log2Int(Type), @splat(bits)) else truncate_rhs;
 }
 test shr {
     const test_shr = binary(shr, .{});
@@ -5503,7 +5502,7 @@ test shr {
 inline fn shrExact(comptime Type: type, lhs: Type, rhs: Type) Type {
     const bit_cast_rhs: AsSignedness(Type, .unsigned) = @bitCast(rhs);
     const truncate_rhs: Log2Int(Type) = @truncate(bit_cast_rhs);
-    const final_rhs = if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % splat(Log2Int(Type), bits) else truncate_rhs;
+    const final_rhs = if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % @as(Log2Int(Type), @splat(bits)) else truncate_rhs;
     return @shrExact(lhs >> final_rhs << final_rhs, final_rhs);
 }
 test shrExact {
@@ -5515,7 +5514,7 @@ test shrExact {
 inline fn shl(comptime Type: type, lhs: Type, rhs: Type) Type {
     const bit_cast_rhs: AsSignedness(Type, .unsigned) = @bitCast(rhs);
     const truncate_rhs: Log2Int(Type) = @truncate(bit_cast_rhs);
-    return lhs << if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % splat(Log2Int(Type), bits) else truncate_rhs;
+    return lhs << if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % @as(Log2Int(Type), @splat(bits)) else truncate_rhs;
 }
 test shl {
     const test_shl = binary(shl, .{});
@@ -5527,7 +5526,7 @@ inline fn shlExactUnsafe(comptime Type: type, lhs: Type, rhs: Type) Type {
     @setRuntimeSafety(false);
     const bit_cast_rhs: AsSignedness(Type, .unsigned) = @bitCast(rhs);
     const truncate_rhs: Log2Int(Type) = @truncate(bit_cast_rhs);
-    const final_rhs = if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % splat(Log2Int(Type), bits) else truncate_rhs;
+    const final_rhs = if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % @as(Log2Int(Type), @splat(bits)) else truncate_rhs;
     return @shlExact(lhs << final_rhs >> final_rhs, final_rhs);
 }
 test shlExactUnsafe {
@@ -5540,7 +5539,7 @@ inline fn shlSaturate(comptime Type: type, lhs: Type, rhs: Type) Type {
     // workaround https://github.com/ziglang/zig/issues/23034
     if (@inComptime()) {
         // workaround https://github.com/ziglang/zig/issues/23139
-        return lhs <<| @min(@abs(rhs), splat(ChangeScalar(Type, u64), imax(u64)));
+        return lhs <<| @min(@abs(rhs), @as(ChangeScalar(Type, u64), @splat(imax(u64))));
     }
     return lhs <<| @abs(rhs);
 }
