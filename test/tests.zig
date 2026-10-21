@@ -6,14 +6,12 @@ const OptimizeMode = std.builtin.Optimize;
 const Step = std.Build.Step;
 
 // Cases
-const llvm_ir = @import("llvm_ir.zig");
 const libc = @import("libc.zig");
 const link = @import("link.zig");
 
 // Implementations
 pub const ErrorTracesContext = @import("src/ErrorTrace.zig");
 pub const StackTracesContext = @import("src/StackTrace.zig");
-pub const LlvmIrContext = @import("src/LlvmIr.zig");
 pub const LibcContext = @import("src/Libc.zig");
 pub const LinkContext = @import("src/Link.zig");
 
@@ -2188,150 +2186,6 @@ const link_targets = blk: {
     };
 };
 
-/// These are passed to `src/Runner.zig` as `<target>-<cache_mode>-<backend>-<linker>-<pic>` strings.
-///
-/// If only one specific test is failing on a target, instead of entirely disabling the target here, you
-/// can skip the target for that specific test only by adding a line like this to top of the manifest:
-///   #skip x86_64-linux-selfhosted
-const RunnerTarget = struct {
-    target: std.Target.Query,
-    cache_mode: enum { whole, incremental },
-    backend: enum { selfhosted, llvm, cbe },
-    linker: enum { lld, old, new },
-    pic: enum { nopic, pic, pie },
-};
-
-pub const incremental_matrix: []const RunnerTarget = &.{
-    // Avoid adding more CBE or LLVM targets without good reason: they're a lot slower than others
-    // to run due to the output (C source code or LLVM IR) being built non-incrementally (by Clang
-    // or LLVM). We just have a couple here to make sure that it works.
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .musl,
-        },
-        .cache_mode = .incremental,
-        .backend = .cbe,
-        .linker = .old,
-        .pic = .nopic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .incremental,
-        .backend = .llvm,
-        .linker = .lld,
-        .pic = .nopic,
-    },
-
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .incremental,
-        .backend = .selfhosted,
-        .linker = .new,
-        .pic = .nopic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .windows,
-            .abi = .none,
-        },
-        .cache_mode = .incremental,
-        .backend = .selfhosted,
-        .linker = .old,
-        .pic = .pic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .wasm32,
-            .os_tag = .wasi,
-            .abi = .none,
-        },
-        .cache_mode = .incremental,
-        .backend = .selfhosted,
-        .linker = .old,
-        .pic = .nopic,
-    },
-};
-
-pub const debugger_matrix: []const RunnerTarget = &.{
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .whole,
-        .backend = .selfhosted,
-        .linker = .old,
-        .pic = .nopic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .whole,
-        .backend = .selfhosted,
-        .linker = .old,
-        .pic = .pic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .whole,
-        .backend = .selfhosted,
-        .linker = .new,
-        .pic = .nopic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .whole,
-        .backend = .selfhosted,
-        .linker = .new,
-        .pic = .pic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .incremental,
-        .backend = .selfhosted,
-        .linker = .new,
-        .pic = .nopic,
-    },
-    .{
-        .target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .linux,
-            .abi = .none,
-        },
-        .cache_mode = .incremental,
-        .backend = .selfhosted,
-        .linker = .new,
-        .pic = .pic,
-    },
-};
-
 pub fn addStackTraceTests(b: *std.Build, options: StackTracesContext.Options) *Step {
     const step = b.step("test-stack-traces", "Run the stack trace tests");
 
@@ -3170,7 +3024,6 @@ pub fn addCases(
     b: *std.Build,
     parent_step: *Step,
     case_test_options: @import("src/Cases.zig").CaseTestOptions,
-    build_options: @import("cases.zig").BuildOptions,
 ) !void {
     const arena = b.allocator;
     const gpa = b.allocator;
@@ -3184,7 +3037,7 @@ pub fn addCases(
     defer dir.close(io);
 
     cases.addFromDir(dir, "test/cases", b);
-    try @import("cases.zig").addCases(&cases, build_options, b);
+    try @import("cases.zig").addCases(&cases, b);
 
     cases.lowerToBuildSteps(
         b,
@@ -3193,6 +3046,7 @@ pub fn addCases(
     );
 }
 
+pub const RunnerTarget = @import("Runner.zig").Target;
 pub const RunnerOptions = struct {
     test_filters: []const []const u8,
     test_target_filters: []const []const u8,
@@ -3205,10 +3059,13 @@ pub const RunnerOptions = struct {
     skip_darwin: bool,
     skip_linux: bool,
     skip_llvm: bool,
+    llvm_has_m68k: bool,
+    llvm_has_csky: bool,
+    llvm_has_arc: bool,
+    llvm_has_xtensa: bool,
     gdb: ?[]const u8,
     lldb: ?[]const u8,
 };
-
 pub fn addRunnerTests(
     b: *std.Build,
     runner: *std.Build.Step.Compile,
@@ -3224,21 +3081,24 @@ pub fn addRunnerTests(
     defer tests_dir.close(b.graph.io);
     var test_it = tests_dir.iterate();
     while (try test_it.next(b.graph.io)) |@"test"| {
+        switch (@"test".kind) {
+            else => continue,
+            .file => {
+                if (std.mem.eql(u8, @"test".name, "matrix.zon")) continue;
+                if (isEditorFileName(@"test".name)) continue;
+            },
+            .directory => {},
+        }
+
         for (options.test_filters) |filter| {
             if (std.mem.find(u8, @"test".name, filter) != null) break;
         } else if (options.test_filters.len > 0) continue;
-
-        const test_path = tests_path.path(b, @"test".name);
-        switch (@"test".kind) {
-            else => continue,
-            .file => if (isEditorFileName(@"test".name)) continue,
-            .directory => {},
-        }
 
         const run = b.addRunArtifact(runner);
         run.setName(@"test".name);
         run.enableProtocolMode();
 
+        const test_path = tests_path.path(b, @"test".name);
         switch (@"test".kind) {
             else => continue,
             .file => run.addFileArg(test_path),
@@ -3249,7 +3109,7 @@ pub fn addRunnerTests(
         _ = run.addPrefixedOutputDirectoryArg("--src=", "src");
 
         for (matrix) |test_target| {
-            const resolved_target = b.resolveTargetQuery(test_target.target);
+            const resolved_target = b.resolveTargetQuery(test_target.toQuery());
 
             if (options.skip_non_native and !std.zig.target.isNative(&resolved_target.query, &resolved_target.result, &b.graph.host.result))
                 continue;
@@ -3265,15 +3125,18 @@ pub fn addRunnerTests(
             if (options.skip_darwin and target.os.tag.isDarwin()) continue;
             if (options.skip_linux and target.os.tag == .linux) continue;
 
-            if (options.skip_llvm and test_target.backend == .llvm) continue;
+            if (test_target.backend == .llvm) {
+                if (options.skip_llvm) continue;
+                switch (target.cpu.arch) {
+                    else => {},
+                    .m68k => if (!options.llvm_has_m68k) continue,
+                    .csky => if (!options.llvm_has_csky) continue,
+                    .arc => if (!options.llvm_has_arc) continue,
+                    .xtensa => if (!options.llvm_has_xtensa) continue,
+                }
+            }
 
-            const target_str = b.fmt("{s}-{t}-{t}-{t}-{t}", .{
-                resolved_target.query.zigTriple(b.allocator) catch @panic("OOM"),
-                test_target.cache_mode,
-                test_target.backend,
-                test_target.linker,
-                test_target.pic,
-            });
+            const target_str = b.fmt("{f}", .{test_target});
 
             for (options.test_target_filters) |filter| {
                 if (std.mem.find(u8, target_str, filter) != null) break;
@@ -3301,25 +3164,6 @@ pub fn addRunnerTests(
 fn isEditorFileName(name: []const u8) bool {
     return (std.mem.startsWith(u8, name, "#") and std.mem.endsWith(u8, name, "#")) or
         std.mem.endsWith(u8, name, "~") or std.mem.endsWith(u8, name, ".swp");
-}
-
-pub fn addLlvmIrTests(b: *std.Build, options: LlvmIrContext.Options) ?*Step {
-    const step = b.step("test-llvm-ir", "Run the LLVM IR tests");
-
-    if (!options.enable_llvm) {
-        step.dependOn(&b.addFail("test-llvm-ir requires -Denable-llvm").step);
-        return null;
-    }
-
-    var context: LlvmIrContext = .{
-        .b = b,
-        .options = options,
-        .root_step = step,
-    };
-
-    llvm_ir.addCases(&context);
-
-    return step;
 }
 
 const libc_test_nsz_targets: []const std.Target.Query = &.{

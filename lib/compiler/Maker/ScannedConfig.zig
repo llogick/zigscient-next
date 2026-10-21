@@ -351,6 +351,8 @@ const general_usage =
     \\                               preferred optimization mode: fast, safe, small
     \\
     \\  --verbose                    Print commands before executing them
+    \\  --verbose-cc                 Print C compiler commands before executing them
+    \\  --verbose-link               Print linker commands before executing them
     \\  --color [auto|off|on]        Enable or disable colored error messages
     \\  --error-style [style]        Control how build errors are printed
     \\    verbose                    (Default) Report errors with full context
@@ -417,11 +419,5 @@ const general_usage =
     \\      none                     (default) No build ID
     \\  --debug-log [scope]          Enable debugging the compiler
     \\  --debug-pkg-config           Fail if unknown pkg-config flags encountered
-    \\  --verbose-link               Enable compiler debug output for linking
-    \\  --verbose-air                Enable compiler debug output for Zig AIR
-    \\  --verbose-llvm-ir            Enable compiler debug output for LLVM IR
-    \\  --verbose-cimport            Enable compiler debug output for C imports
-    \\  --verbose-cc                 Enable compiler debug output for C compilation
-    \\  --verbose-llvm-cpu-features  Enable compiler debug output for LLVM CPU features
     \\
 ;

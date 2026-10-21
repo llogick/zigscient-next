@@ -8387,6 +8387,8 @@ pub const AT = switch (native_os) {
         /// to determine the target of relative file paths in the openat() and
         /// similar syscalls.
         pub const FDCWD = -100;
+        /// Fail rename if target exists
+        pub const RENAME_NOREPLACE = 0x0001;
         /// Check access using effective user and group ID
         pub const EACCESS = 0x0100;
         /// Do not follow symbolic links
@@ -8397,6 +8399,10 @@ pub const AT = switch (native_os) {
         pub const REMOVEDIR = 0x0800;
         /// Fail if not under dirfd
         pub const BENEATH = 0x1000;
+        /// Do not allow name resolution to walk out of dirfd
+        pub const RESOLVE_BENEATH = 0x2000;
+        /// Operate on dirfd if path is empty
+        pub const EMPTY_PATH = 0x4000;
     },
     .netbsd => struct {
         /// Magic value that specify the use of the current working directory
@@ -8552,7 +8558,11 @@ pub const O = switch (native_os) {
         DIRECTORY: bool = false,
         CLOEXEC: bool = false,
         SEARCH: bool = false,
-        _: u8 = 0,
+        NOSIGPIPE: bool = false,
+        REGULAR: bool = false,
+        EXEC: bool = false,
+        CLOFORK: bool = false,
+        _: u4 = 0,
     },
     .openbsd => packed struct(u32) {
         ACCMODE: std.posix.ACCMODE = .RDONLY,
@@ -10937,9 +10947,13 @@ pub extern "c" fn mkdirat(dirfd: fd_t, path: [*:0]const u8, mode: mode_t) c_int;
 pub extern "c" fn symlink(existing: [*:0]const u8, new: [*:0]const u8) c_int;
 pub extern "c" fn symlinkat(oldpath: [*:0]const u8, newdirfd: fd_t, newpath: [*:0]const u8) c_int;
 pub extern "c" fn rename(old: [*:0]const u8, new: [*:0]const u8) c_int;
-pub extern "c" fn renameat(olddirfd: fd_t, old: [*:0]const u8, newdirfd: fd_t, new: [*:0]const u8) c_int;
+pub extern "c" fn renameat(olddirfd: fd_t, oldpath: [*:0]const u8, newdirfd: fd_t, newpath: [*:0]const u8) c_int;
 pub extern "c" fn chdir(path: [*:0]const u8) c_int;
 pub extern "c" fn fchdir(fd: fd_t) c_int;
+pub const fexecve = switch (native_os) {
+    else => {},
+    .freebsd, .linux, .netbsd => private.fexecve,
+};
 pub extern "c" fn execve(path: [*:0]const u8, argv: [*:null]const ?[*:0]const u8, envp: [*:null]const ?[*:0]const u8) c_int;
 pub extern "c" fn execveat(dirfd: fd_t, path: [*:0]const u8, argv: [*:null]const ?[*:0]const u8, envp: [*:null]const ?[*:0]const u8, flags: EXECVEAT) c_int;
 pub extern "c" fn dup(fd: fd_t) c_int;
@@ -11791,34 +11805,35 @@ pub const setkeymap = serenity.setkeymap;
 
 /// External definitions shared by two or more operating systems.
 const private = struct {
-    pub extern "c" fn strdup(s: [*:0]const c_char) ?[*:0]c_char;
-    pub extern "c" fn _strdup(s: [*:0]const c_char) ?[*:0]c_char;
-    pub extern "c" fn wcsdup(s: [*:0]const wchar_t) ?[*:0]wchar_t;
-    pub extern "c" fn _wcsdup(s: [*:0]const wchar_t) ?[*:0]wchar_t;
+    extern "c" fn strdup(s: [*:0]const c_char) ?[*:0]c_char;
+    extern "c" fn _strdup(s: [*:0]const c_char) ?[*:0]c_char;
+    extern "c" fn wcsdup(s: [*:0]const wchar_t) ?[*:0]wchar_t;
+    extern "c" fn _wcsdup(s: [*:0]const wchar_t) ?[*:0]wchar_t;
 
-    pub extern "c" fn swab(noalias from: *const anyopaque, noalias to: *anyopaque, n: isize) void;
-    pub extern "c" fn _swab(noalias from: *const anyopaque, noalias to: *anyopaque, n: isize) void;
+    extern "c" fn swab(noalias from: *const anyopaque, noalias to: *anyopaque, n: isize) void;
+    extern "c" fn _swab(noalias from: *const anyopaque, noalias to: *anyopaque, n: isize) void;
 
-    extern "c" fn close(fd: fd_t) c_int;
     extern "c" fn clock_getres(clk_id: clockid_t, tp: *timespec) c_int;
     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+    extern "c" fn clock_nanosleep(clockid: clockid_t, flags: TIMER, t: *const timespec, remain: ?*timespec) c_int;
+    extern "c" fn close(fd: fd_t) c_int;
     extern "c" fn copy_file_range(fd_in: fd_t, off_in: ?*i64, fd_out: fd_t, off_out: ?*i64, len: usize, flags: c_uint) isize;
+    extern "c" fn fexecve(fd: fd_t, argv: [*:null]const ?[*:0]const u8, envp: [*:null]const ?[*:0]const u8) c_int;
     extern "c" fn flock(fd: fd_t, operation: c_int) c_int;
     extern "c" fn fork() c_int;
     extern "c" fn fstat(fd: fd_t, buf: *Stat) c_int;
     extern "c" fn fstatat(dirfd: fd_t, path: [*:0]const u8, buf: *Stat, flag: u32) c_int;
     extern "c" fn getdirentries(fd: fd_t, buf_ptr: [*]u8, nbytes: usize, basep: *i64) isize;
     extern "c" fn getdents(fd: c_int, buf_ptr: [*]u8, nbytes: usize) switch (native_os) {
+        else => c_int,
         .freebsd => isize,
         .illumos => usize,
-        else => c_int,
     };
     extern "c" fn getrusage(who: c_int, usage: *rusage) c_int;
     extern "c" fn gettimeofday(noalias tv: ?*timeval, noalias tz: ?*timezone) c_int;
     extern "c" fn ioctl(fd: fd_t, request: c_int, ...) c_int;
     extern "c" fn msync(addr: *align(page_size) const anyopaque, len: usize, flags: c_int) c_int;
     extern "c" fn nanosleep(rqtp: *const timespec, rmtp: ?*timespec) c_int;
-    extern "c" fn clock_nanosleep(clockid: clockid_t, flags: TIMER, t: *const timespec, remain: ?*timespec) c_int;
     extern "c" fn pipe2(fds: *[2]fd_t, flags: O) c_int;
     extern "c" fn readdir(dir: *DIR) ?*dirent;
     extern "c" fn realpath(noalias file_name: [*:0]const u8, noalias resolved_name: [*]u8) ?[*:0]u8;

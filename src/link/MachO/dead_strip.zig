@@ -123,8 +123,9 @@ fn markLive(atom: *Atom, macho_file: *MachO) void {
         atom.getName(macho_file),
     });
 
-    if (build_options.enable_logging)
+    if (build_options.enable_debug_extensions) {
         track_live_level.incr();
+    }
 
     for (atom.getRelocs(macho_file)) |rel| {
         const target_atom = switch (rel.tag) {

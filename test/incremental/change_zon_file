@@ -21,15 +21,13 @@ Hello, World!
 #write message.zon {
 "Hello again, World!\n"
 #}
-#update {
-change ZON file contents#}
+#update "change ZON file contents"
 #check stdout {
 Hello again, World!
 #}
 
 #delete message.zon
-#update {
-delete file#}
+#update "delete file"
 #check errors {
 message.zon:1:1: error: unable to load "message.zon": FileNotFound
 main.zig:2:37: note: file imported here
@@ -43,8 +41,7 @@ pub fn main() !void {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-remove reference to ZON file#}
+#update "remove reference to ZON file"
 #check errors {
 message.zon:1:1: error: unable to load "message.zon": FileNotFound
 main.zig:2:37: note: file imported here
@@ -53,8 +50,7 @@ main.zig:2:37: note: file imported here
 #write message.zon {
 "We're back, World!\n"
 #}
-#update {
-recreate ZON file#}
+#update "recreate ZON file"
 #check stdout {
 a hardcoded string
 #}
@@ -67,8 +63,7 @@ pub fn main() !void {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-re-introduce reference to ZON file#}
+#update "re-introduce reference to ZON file"
 #check stdout {
 We're back, World!
 #}

@@ -31,8 +31,7 @@ pub fn main() !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-remove enum field#}
+#update "remove enum field"
 #check errors {
 main.zig:7:68: error: enum 'main.MyEnum' has no member named 'foo'
 main.zig:1:16: note: enum declared here

@@ -13,10 +13,10 @@ const InternPool = @import("InternPool.zig");
 const Type = @import("Type.zig");
 const Value = @import("Value.zig");
 const Zcu = @import("Zcu.zig");
-const print = @import("Air/print.zig");
 
 pub const Legalize = @import("Air/Legalize.zig");
 pub const Liveness = @import("Air/Liveness.zig");
+pub const Print = @import("Air/Print.zig");
 pub const Verify = @import("Air/Verify.zig");
 
 instructions: std.MultiArrayList(Inst).Slice,
@@ -2518,10 +2518,10 @@ pub fn unwrapShuffleTwo(air: *const Air, zcu: *const Zcu, inst_index: Inst.Index
 }
 
 pub const legalize = Legalize.legalize;
-pub const write = print.write;
-pub const writeInst = print.writeInst;
-pub const dump = print.dump;
-pub const dumpInst = print.dumpInst;
+pub const write = Print.write;
+pub const writeInst = Print.writeInst;
+pub const dump = Print.dump;
+pub const dumpInst = Print.dumpInst;
 
 pub const CoveragePoint = enum(u1) {
     /// Indicates the block is not a place of interest corresponding to

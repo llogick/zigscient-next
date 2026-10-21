@@ -1,0 +1,95 @@
+#skip amdgcn-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-amdpal-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-mesa3d-none-baseline-whole-llvm-lld-pic
+
+#skip bpfeb-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip bpfel-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip loongarch32-freestanding-none-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-gnu-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-gnuf32-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-gnusf-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-musl-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-muslf32-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-muslsf-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-none-baseline-whole-llvm-lld-pic
+#skip loongarch32-uefi-none-baseline-whole-llvm-lld-pic
+
+#skip loongarch64-freestanding-none-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnu-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnuf32-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnu-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnuf32-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnusf-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-musl-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-muslf32-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-muslsf-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-none-baseline-whole-llvm-lld-pic
+#skip loongarch64-uefi-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx64-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx64-nvcl-none-baseline-whole-llvm-lld-pic
+
+#skip riscv32-freestanding-none-baseline-whole-llvm-lld-pic
+#skip riscv32-linux-gnu-baseline-whole-llvm-lld-pic
+#skip riscv32-linux-musl-baseline-whole-llvm-lld-pic
+#skip riscv32-linux-none-baseline-whole-llvm-lld-pic
+#skip riscv32-netbsd-none-baseline-whole-llvm-lld-pic
+#skip riscv32-rtems-none-baseline-whole-llvm-lld-pic
+#skip riscv32-uefi-none-baseline-whole-llvm-lld-pic
+
+#skip riscv32be-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip riscv64-freebsd-none-baseline-whole-llvm-lld-pic
+#skip riscv64-freestanding-none-baseline-whole-llvm-lld-pic
+#skip riscv64-fuchsia-none-baseline-whole-llvm-lld-pic
+#skip riscv64-haiku-none-baseline-whole-llvm-lld-pic
+#skip riscv64-hurd-gnu-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-android-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-gnu-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-musl-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-none-baseline-whole-llvm-lld-pic
+#skip riscv64-netbsd-none-baseline-whole-llvm-lld-pic
+#skip riscv64-openbsd-none-baseline-whole-llvm-lld-pic
+#skip riscv64-rtems-none-baseline-whole-llvm-lld-pic
+#skip riscv64-serenity-none-baseline-whole-llvm-lld-pic
+#skip riscv64-uefi-none-baseline-whole-llvm-lld-pic
+
+#skip riscv64be-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip x86_64-linux-gnux32-baseline-whole-llvm-new-pic
+#skip x86_64-linux-muslx32-baseline-whole-llvm-new-pic
+#skip x86_64-linux-x32-baseline-whole-llvm-new-pic
+
+#obj {
+--name test -fno-lld -fno-new-linker -ofmt=llvmir
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo(a: *bool, b: *align(2) bool) void {
+    const tmp = a.*;
+    a.* = b.*;
+    b.* = tmp;
+}
+#}
+#update
+#check llvm {
+define #...void @test.foo(ptr #...%0, ptr #...%1) #...{
+#...
+  %5 = load i8, ptr %0, align 1#...
+  %6 = trunc nuw i8 %5 to i1#...
+  %8 = load i8, ptr %1, align 2#...
+  %9 = trunc nuw i8 %8 to i1#...
+  %10 = zext i1 %9 to i8#...
+  store i8 %10, ptr %0, align 1#...
+  %11 = zext i1 %6 to i8#...
+  store i8 %11, ptr %1, align 2#...
+  ret void#...
+}
+
+#}

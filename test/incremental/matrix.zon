@@ -1,0 +1,51 @@
+.{
+    // Avoid adding more CBE or LLVM targets without good reason: they're a lot slower than others
+    // to run due to the output (C source code or LLVM IR) being built non-incrementally (by Clang
+    // or LLVM). We just have a couple here to make sure that it works.
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .musl = .{} },
+        .cache_mode = .incremental,
+        .backend = .cbe,
+        .linker = .old,
+        .pic = .nopic,
+    },
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .incremental,
+        .backend = .llvm,
+        .linker = .lld,
+        .pic = .nopic,
+    },
+
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .incremental,
+        .backend = .selfhosted,
+        .linker = .new,
+        .pic = .nopic,
+    },
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .windows = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .incremental,
+        .backend = .selfhosted,
+        .linker = .old,
+        .pic = .pic,
+    },
+    .{
+        .cpu = .{ .wasm32 = .{} },
+        .os = .{ .wasi = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .incremental,
+        .backend = .selfhosted,
+        .linker = .old,
+        .pic = .nopic,
+    },
+}

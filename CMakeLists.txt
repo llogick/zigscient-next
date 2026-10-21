@@ -330,7 +330,7 @@ set(ZIG_STAGE2_SOURCES
     src/Air/Legalize.zig
     src/Air/Liveness.zig
     src/Air/Liveness/Verify.zig
-    src/Air/print.zig
+    src/Air/Print.zig
     src/Builtin.zig
     src/Compilation.zig
     src/Compilation/Config.zig

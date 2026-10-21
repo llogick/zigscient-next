@@ -1,0 +1,109 @@
+#skip amdgcn-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-amdpal-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-mesa3d-none-baseline-whole-llvm-lld-pic
+
+#skip bpfeb-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip bpfel-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip loongarch32-freestanding-none-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-gnu-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-gnuf32-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-gnusf-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-musl-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-muslf32-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-muslsf-baseline-whole-llvm-lld-pic
+#skip loongarch32-linux-none-baseline-whole-llvm-lld-pic
+#skip loongarch32-uefi-none-baseline-whole-llvm-lld-pic
+
+#skip loongarch64-freestanding-none-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnu-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnuf32-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-gnusf-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-musl-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-muslf32-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-muslsf-baseline-whole-llvm-lld-pic
+#skip loongarch64-linux-none-baseline-whole-llvm-lld-pic
+#skip loongarch64-uefi-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx64-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx64-nvcl-none-baseline-whole-llvm-lld-pic
+
+#skip riscv32-freestanding-none-baseline-whole-llvm-lld-pic
+#skip riscv32-linux-gnu-baseline-whole-llvm-lld-pic
+#skip riscv32-linux-musl-baseline-whole-llvm-lld-pic
+#skip riscv32-linux-none-baseline-whole-llvm-lld-pic
+#skip riscv32-netbsd-none-baseline-whole-llvm-lld-pic
+#skip riscv32-rtems-none-baseline-whole-llvm-lld-pic
+#skip riscv32-uefi-none-baseline-whole-llvm-lld-pic
+#skip riscv32be-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip riscv64-freebsd-none-baseline-whole-llvm-lld-pic
+#skip riscv64-freestanding-none-baseline-whole-llvm-lld-pic
+#skip riscv64-fuchsia-none-baseline-whole-llvm-lld-pic
+#skip riscv64-haiku-none-baseline-whole-llvm-lld-pic
+#skip riscv64-hurd-gnu-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-android-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-gnu-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-musl-baseline-whole-llvm-lld-pic
+#skip riscv64-linux-none-baseline-whole-llvm-lld-pic
+#skip riscv64-netbsd-none-baseline-whole-llvm-lld-pic
+#skip riscv64-openbsd-none-baseline-whole-llvm-lld-pic
+#skip riscv64-rtems-none-baseline-whole-llvm-lld-pic
+#skip riscv64-serenity-none-baseline-whole-llvm-lld-pic
+#skip riscv64-uefi-none-baseline-whole-llvm-lld-pic
+#skip riscv64be-freestanding-none-baseline-whole-llvm-lld-pic
+
+#skip spirv32-opencl-none-baseline-whole-llvm-lld-pic
+#skip spirv32-opengl-none-baseline-whole-llvm-lld-pic
+#skip spirv32-vulkan-none-baseline-whole-llvm-lld-pic
+
+#skip spirv64-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip spirv64-opencl-none-baseline-whole-llvm-lld-pic
+#skip spirv64-vulkan-none-baseline-whole-llvm-lld-pic
+
+#skip x86_64-linux-gnux32-baseline-whole-llvm-new-pic
+#skip x86_64-linux-muslx32-baseline-whole-llvm-new-pic
+#skip x86_64-linux-x32-baseline-whole-llvm-new-pic
+
+#obj {
+--name test -fno-lld -fno-new-linker -ofmt=llvmir
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(arr: *const [16]u8) @Vector(16, u8) {
+    return arr.*;
+}
+#}
+#update "one vector load"
+#check llvm {
+define #...<16 x i8> @test.entry(#...) #...{
+#...
+  %1 = alloca [16 x i8], align 1#...
+  %3 = load <16 x i8>, ptr %1, align 1#...
+  ret <16 x i8> %3#...
+#}
+
+#write test.zig {
+export fn entry(a: *@Vector(8, u8), b: *@Vector(8, u8), src: [*]const u8) void {
+    const q: @Vector(16, u8) = src[0..16].*;
+    a.* = @shuffle(u8, q, undefined, @Vector(8, i32){ 0, 1, 2, 3, 4, 5, 6, 7 });
+    b.* = @shuffle(u8, q, undefined, @Vector(8, i32){ 7, 8, 9, 10, 11, 12, 13, 14 });
+}
+#}
+#update "feeding overlapping shuffles"
+#check llvm {
+define #...void @test.entry(ptr #...%0, ptr #...%1, #...) #...{
+#...
+  %11 = load <16 x i8>, ptr %#...
+  %12 = shufflevector <16 x i8> %11, #...
+  store <8 x i8> %12, ptr %0, align 8#...
+  %13 = shufflevector <16 x i8> %11, #...
+  store <8 x i8> %13, ptr %1, align 8#...
+  ret void#...
+}
+#}

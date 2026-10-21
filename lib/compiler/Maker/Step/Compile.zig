@@ -647,11 +647,8 @@ fn lowerZigArgs(
 
     try addBool(gpa, zig_args, "--debug-compile-errors", graph.debug_compile_errors);
     try addBool(gpa, zig_args, "--debug-incremental", graph.debug_incremental);
-    try addBool(gpa, zig_args, "--verbose-air", graph.verbose_air);
-    try addBool(gpa, zig_args, "--verbose-llvm-ir", graph.verbose_llvm_ir);
-    try addBool(gpa, zig_args, "--verbose-link", graph.verbose_link or conf_comp.flags.verbose_link);
     try addBool(gpa, zig_args, "--verbose-cc", graph.verbose_cc or conf_comp.flags.verbose_cc);
-    try addBool(gpa, zig_args, "--verbose-llvm-cpu-features", graph.verbose_llvm_cpu_features);
+    try addBool(gpa, zig_args, "--verbose-link", graph.verbose_link or conf_comp.flags.verbose_link);
     try addBool(gpa, zig_args, "--time-report", graph.time_report);
 
     if (conf_comp.generated_bin.value == null) try zig_args.append(gpa, "-fno-emit-bin");

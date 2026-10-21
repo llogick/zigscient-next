@@ -285,7 +285,13 @@ pub fn Alt(
 pub fn alt(
     context: anytype,
     comptime func_name: @EnumLiteral(),
-) Alt(@TypeOf(context), @field(@TypeOf(context), @tagName(func_name))) {
+) Alt(@TypeOf(context), @field(switch (@typeInfo(@TypeOf(context))) {
+    else => @TypeOf(context),
+    .pointer => |pointer| switch (pointer.size) {
+        else => @TypeOf(context),
+        .one => pointer.child,
+    },
+}, @tagName(func_name))) {
     return .{ .data = context };
 }
 

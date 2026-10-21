@@ -39,8 +39,7 @@ pub fn main() !void {
     try Printer("bar\n").print();
 }
 #}
-#update {
-change line number#}
+#update "change line number"
 #check stdout {
 foo
 bar

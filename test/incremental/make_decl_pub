@@ -28,8 +28,7 @@ pub fn hello() !void {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-make hello pub#}
+#update "make hello pub"
 #check stdout {
 Hello, World!
 #}

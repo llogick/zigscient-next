@@ -26,6 +26,7 @@ fully_qualified_name: []const u8,
 deps: Deps = .{},
 
 resolved_target: ResolvedTarget,
+llvm_cpu_features: ?[:0]const u8,
 optimize_mode: std.lang.Optimize,
 code_model: std.lang.CodeModel,
 single_threaded: bool,
@@ -94,7 +95,6 @@ pub const ResolvedTarget = struct {
     is_native_os: bool,
     is_native_abi: bool,
     is_explicit_dynamic_linker: bool,
-    llvm_cpu_features: ?[*:0]const u8 = null,
 };
 
 pub const CreateError = error{
@@ -362,15 +362,13 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         break :b 0;
     };
 
-    const llvm_cpu_features: ?[*:0]const u8 = b: {
-        if (resolved_target.llvm_cpu_features) |x| break :b x;
+    const llvm_cpu_features: ?[:0]const u8 = b: {
         if (!options.global.use_llvm) break :b null;
-
-        var buf = std.array_list.Managed(u8).init(arena);
-        var disabled_features = std.array_list.Managed(u8).init(arena);
-        defer disabled_features.deinit();
+        if (options.inherited.resolved_target == null) break :b options.parent.?.llvm_cpu_features;
 
         // Append disabled features after enabled ones, so that their effects aren't overwritten.
+        var buf = std.array_list.Managed(u8).init(arena);
+        var disabled_features = std.array_list.Managed(u8).init(arena);
         for (target.cpu.arch.allFeaturesList()) |feature| {
             if (feature.llvm_name) |llvm_name| {
                 // Ignore these until we figure out how to handle the concept of omitting features.
@@ -401,10 +399,9 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
 
         try buf.appendSlice(disabled_features.items);
         if (buf.items.len == 0) break :b "";
-        assert(std.mem.endsWith(u8, buf.items, ","));
+        assert(buf.items[buf.items.len - 1] == ',');
         buf.items[buf.items.len - 1] = 0;
-        buf.shrinkAndFree(buf.items.len);
-        break :b buf.items[0 .. buf.items.len - 1 :0].ptr;
+        break :b buf.items[0 .. buf.items.len - 1 :0];
     };
 
     const mod = try arena.create(Module);
@@ -417,8 +414,8 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
             .is_native_os = resolved_target.is_native_os,
             .is_native_abi = resolved_target.is_native_abi,
             .is_explicit_dynamic_linker = resolved_target.is_explicit_dynamic_linker,
-            .llvm_cpu_features = llvm_cpu_features,
         },
+        .llvm_cpu_features = llvm_cpu_features,
         .optimize_mode = optimize_mode,
         .single_threaded = single_threaded,
         .error_tracing = error_tracing,
@@ -494,8 +491,8 @@ pub fn createBuiltin(arena: Allocator, opts: Builtin, dirs: std.zig.Directories)
             .is_native_os = false,
             .is_native_abi = false,
             .is_explicit_dynamic_linker = false,
-            .llvm_cpu_features = null,
         },
+        .llvm_cpu_features = null,
         .optimize_mode = opts.optimize_mode,
         .single_threaded = opts.single_threaded,
         .error_tracing = opts.error_tracing,

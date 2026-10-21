@@ -67,8 +67,8 @@ struct ZigLLVMEmitOptions {
     bool is_debug;
     bool is_small;
     // If not null, and `ZigLLVMTargetMachineEmitToFile` returns `false` indicating success, this
-    // `char *` will be populated with a `malloc`-allocated string containing the serialized (as
-    // JSON) time report data. The caller is responsible for freeing that memory.
+    // `char *` will be populated with the serialized (as JSON) time report data. The caller is
+    // responsible for freeing that memory with `disposeMessage`.
     char **time_report_out;
     bool tsan;
     bool sancov;
@@ -79,6 +79,10 @@ struct ZigLLVMEmitOptions {
     const char *bin_filename;
     const char *llvm_ir_filename;
     const char *bitcode_filename;
+    // If not null and `ZigLLVMTargetMachineEmitToFile` returns `false` indicating success, this
+    // `char *` will be populated with the optimized LLVM IR. The caller is responsible for freeing
+    // this memory with `disposeMessage`.
+    char **llvm_ir_out;
     ZigLLVMCoverageOptions coverage;
 };
 

@@ -13,8 +13,7 @@ const Enum = enum { foo, bar };
 const std = @import("std");
 #}
 #update
-#check stdout {
-foo#}
+#check stdout "foo"
 
 #write main.zig {
 fn getEnum(s: @Struct(.auto, null, &.{"field"}, &.{Enum}, &.{.{}})) Enum {
@@ -26,7 +25,5 @@ pub fn main(init: std.process.Init) !void {
 const Enum = enum { foo, bar };
 const std = @import("std");
 #}
-#update {
-change field type#}
-#check stdout {
-bar#}
+#update "change field type"
+#check stdout "bar"

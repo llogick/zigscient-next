@@ -12,8 +12,7 @@ fn foo() !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-non-inline version#}
+#update "non-inline version"
 #check stdout {
 Hello, World!
 #}
@@ -28,8 +27,7 @@ inline fn foo() !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-make function inline#}
+#update "make function inline"
 #check stdout {
 Hello, World!
 #}
@@ -44,8 +42,7 @@ inline fn foo() !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change string#}
+#update "change string"
 #check stdout {
 Hello, `inline` World!
 #}

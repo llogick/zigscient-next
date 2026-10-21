@@ -1209,3 +1209,21 @@ test "modify slice through coerced array pointer" {
         assert(slice[2] == 0);
     }
 }
+
+test "iterate empty slice of uninstantiable types" {
+    const E = enum {};
+    var slice_enum: []const E = undefined;
+    slice_enum = &.{};
+    for (slice_enum) |elem| {
+        _ = elem;
+        return error.ReachedUnreachable;
+    }
+
+    const U = union { foo: struct { a: u8, b: noreturn }, bar: E };
+    var slice_union: []const U = undefined;
+    slice_union = &.{};
+    for (slice_union) |elem| {
+        _ = elem;
+        return error.ReachedUnreachable;
+    }
+}

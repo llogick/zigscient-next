@@ -291,7 +291,7 @@ pub fn flush(self: *ZigObject, elf_file: *Elf, tid: Zcu.PerThread.Id) !void {
         if (metadata.rodata_state != .unused) metadata.rodata_state = .flushed;
     }
 
-    if (build_options.enable_logging) {
+    if (build_options.enable_debug_extensions) {
         const active = elf_file.base.comp.zcu.?.activate(tid);
         defer active.deactivate();
         for (self.navs.keys(), self.navs.values()) |nav_index, meta| {

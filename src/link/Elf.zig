@@ -860,9 +860,7 @@ fn flushInner(self: *Elf, arena: Allocator, tid: Zcu.PerThread.Id) !void {
 
     // Dump the state for easy debugging.
     // State can be dumped via `--debug-log link_state`.
-    if (build_options.enable_logging) {
-        state_log.debug("{f}", .{self.dumpState()});
-    }
+    state_log.debug("{f}", .{self.dumpState()});
 
     // Beyond this point, everything has been allocated a virtual address and we can resolve
     // the relocations, and commit objects to file.

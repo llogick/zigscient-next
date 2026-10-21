@@ -33,8 +33,7 @@ fn bar(comptime x: u8) @This().FooAlias {
 }
 const std = @import("std");
 #}
-#update {
-change generic signature to use non-existent member#}
+#update "change generic signature to use non-existent member"
 #check errors {
 main.zig:8:31: error: root source file struct 'main' has no member named 'FooAlias'
 main.zig:1:1: note: struct declared here
@@ -54,8 +53,7 @@ fn bar(comptime x: u8) @This().FooAlias {
 }
 const std = @import("std");
 #}
-#update {
-add that member, fixing the error#}
+#update "add that member, fixing the error"
 #check stdout {
 Z
 #}

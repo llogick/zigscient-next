@@ -14,8 +14,7 @@ pub fn main() void {
 }
 #}
 #update
-#check stdout {
-#}
+#check stdout
 
 #write main.zig {
 const SomeType = comptime_int;
@@ -28,10 +27,8 @@ pub fn main() void {
     s.foo();
 }
 #}
-#update {
-make S comptime-only#}
-#check stdout {
-#}
+#update "make S comptime-only"
+#check stdout
 
 #write main.zig {
 const SomeType = u16;
@@ -44,7 +41,5 @@ pub fn main() void {
     s.foo();
 }
 #}
-#update {
-make S runtime again#}
-#check stdout {
-#}
+#update "make S runtime again"
+#check stdout

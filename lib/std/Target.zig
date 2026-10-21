@@ -1043,6 +1043,10 @@ pub const ObjectFormat = enum {
     elf,
     /// The Intel HEX format for storing binary code in ASCII text.
     hex,
+    /// LLVM binary intermediate representation.
+    llvmbc,
+    /// LLVM text intermediate representation.
+    llvmir,
     /// The Mach object format used by macOS and other Apple platforms.
     macho,
     /// The a.out format used by Plan 9 from Bell Labs.
@@ -1060,6 +1064,8 @@ pub const ObjectFormat = enum {
             .coff => ".obj",
             .elf, .macho, .wasm => ".o",
             .hex => ".ihex",
+            .llvmbc => ".bc",
+            .llvmir => ".ll",
             .plan9 => arch.plan9Ext(),
             .raw => ".bin",
             .spirv => ".spv",

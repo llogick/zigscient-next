@@ -2519,6 +2519,8 @@ pub const TargetQuery = struct {
         coff,
         elf,
         hex,
+        llvmbc,
+        llvmir,
         macho,
         plan9,
         raw,

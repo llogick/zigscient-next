@@ -116,6 +116,7 @@ pub const Env = enum {
                 .loongarch_backend,
                 .spork8_backend,
                 .lld_linker,
+                .llvm_linker,
                 .coff_linker,
                 .elf_linker,
                 .elf2_linker,
@@ -340,6 +341,7 @@ pub const Feature = enum {
     spork8_backend,
 
     lld_linker,
+    llvm_linker,
     coff_linker,
     elf_linker,
     elf2_linker,

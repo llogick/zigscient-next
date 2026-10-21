@@ -148,6 +148,7 @@ failed_win32_resources: if (dev.env.supports(.win32_resource)) std.array_hash_ma
     pub fn values(_: @This()) [0]void {
         return .{};
     }
+    pub fn clearRetainingCapacity(_: @This()) void {}
     pub fn deinit(_: @This(), _: Allocator) void {}
 } = .{},
 
@@ -162,12 +163,6 @@ clang_passthrough_mode: bool,
 clang_preprocessor_mode: ClangPreprocessorMode,
 /// Whether to print clang argvs to stdout.
 verbose_cc: bool,
-verbose_air: bool,
-verbose_intern_pool: bool,
-verbose_generic_instances: bool,
-verbose_llvm_ir: ?[]const u8,
-verbose_llvm_bc: ?[]const u8,
-verbose_llvm_cpu_features: bool,
 verbose_link: bool,
 link_depfile: ?[]const u8,
 disable_c_depfile: bool,
@@ -243,8 +238,6 @@ reference_trace: ?u32 = null,
 
 /// This mutex guards all `Compilation` mutable state.
 mutex: std.Io.Mutex = .init,
-
-test_filters: []const []const u8,
 
 link_prog_node: std.Progress.Node = .none,
 
@@ -1547,13 +1540,7 @@ pub const CreateOptions = struct {
     clang_passthrough_mode: bool = false,
     verbose_cc: bool = false,
     verbose_link: bool = false,
-    verbose_air: bool = false,
-    verbose_intern_pool: bool = false,
-    verbose_generic_instances: bool = false,
-    verbose_llvm_ir: ?[]const u8 = null,
-    verbose_llvm_bc: ?[]const u8 = null,
     link_depfile: ?[]const u8 = null,
-    verbose_llvm_cpu_features: bool = false,
     debug_compiler_runtime_libs: ?std.lang.Optimize = null,
     debug_compile_errors: bool = false,
     debug_incremental: bool = false,
@@ -1651,28 +1638,11 @@ pub const CreateOptions = struct {
     };
 };
 
-fn addModuleTableToCacheHash(zcu: *Zcu, hash: *Cache.HashHelper) error{ OutOfMemory, Unexpected }!void {
-    assert(zcu.module_roots.count() != 0); // module_roots is populated
-
-    for (zcu.module_roots.keys(), zcu.module_roots.values()) |mod, opt_mod_root_file| {
-        if (mod == zcu.std_mod) continue; // redundant
-        if (opt_mod_root_file.unwrap()) |mod_root_file| {
-            if (zcu.fileByIndex(mod_root_file).is_builtin) continue; // redundant
-        }
-        cache_helpers.addModule(hash, mod);
-        hash.add(mod.root.root);
-        hash.addBytes(mod.root.sub_path);
-        hash.addBytes(mod.root_src_path);
-        hash.addListOfBytes(mod.deps.keys());
-    }
-}
-
 const RtStrat = enum { none, lib, obj, zcu };
 
 pub const CreateDiagnostic = union(enum) {
     export_table_import_table_conflict,
     emit_h_without_zcu,
-    illegal_zig_import,
     cross_libc_unavailable,
     find_native_libc: std.zig.LibCInstallation.FindError,
     libc_installation_missing_cc_dir,
@@ -1688,7 +1658,6 @@ pub const CreateDiagnostic = union(enum) {
         switch (diag) {
             .export_table_import_table_conflict => try w.writeAll("'--import-table' and '--export-table' cannot be used together"),
             .emit_h_without_zcu => try w.writeAll("cannot emit C header with no Zig source files"),
-            .illegal_zig_import => try w.writeAll("this compiler implementation does not support importing the root source file of a provided module"),
             .cross_libc_unavailable => try w.writeAll("unable to provide libc for this target"),
             .find_native_libc => |err| try w.print("failed to find libc installation: {t}", .{err}),
             .libc_installation_missing_cc_dir => try w.writeAll("libc installation is missing cc directory"),
@@ -1736,7 +1705,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
     const use_llvm = options.config.use_llvm;
     const target = &options.root_mod.resolved_target.result;
 
-    const comp: *Compilation = comp: {
+    const comp = comp: {
         // We put the `Compilation` itself in the arena. Freeing the arena will free the module.
         // It's initialized later after we prepare the initialization options.
         const root_name = try arena.dupeSentinel(u8, options.root_name, 0);
@@ -1937,21 +1906,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
             try options.root_mod.deps.putNoClobber(arena, "zigc", zigc_mod);
         }
 
-        if (options.verbose_llvm_cpu_features) {
-            if (options.root_mod.resolved_target.llvm_cpu_features) |cf| {
-                const stderr = try io.lockStderr(&.{}, null);
-                defer io.unlockStderr();
-                const w = &stderr.file_writer.interface;
-                printVerboseLlvmCpuFeatures(w, arena, options.root_name, target, cf) catch |err| switch (err) {
-                    error.WriteFailed => switch (stderr.file_writer.err.?) {
-                        error.Canceled => |e| return e,
-                        else => {},
-                    },
-                    error.OutOfMemory => |e| return e,
-                };
-            }
-        }
-
         const error_limit = options.error_limit orelse (std.math.maxInt(u16) - 1);
         const main_mod = options.main_mod orelse options.root_mod;
 
@@ -2020,7 +1974,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
         // TODO audit this and make sure everything is in it
 
         const comp = try arena.create(Compilation);
-        const opt_zcu: ?*Zcu = if (have_zcu) blk: {
+        const opt_zcu = if (have_zcu) blk: {
             // Pre-open the directory handles for cached ZIR code so that it does not need
             // to redundantly happen for each AstGen operation.
             const zir_sub_dir = "z";
@@ -2073,20 +2027,97 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
             zcu.* = .{
                 .gpa = gpa,
                 .comp = comp,
-                .main_mod = main_mod,
+                .llvm_object = null,
+
                 .root_mod = options.root_mod,
+                .main_mod = main_mod,
                 .std_mod = std_mod,
+                .sema_prog_node = .none,
+                .codegen_prog_node = .none,
+                .pending_codegen_jobs = .init(0),
+
+                .cur_sema_prog_node = .none,
+
                 .global_zir_cache = global_zir_cache,
                 .local_zir_cache = local_zir_cache,
+
+                .all_exports = .empty,
+                .free_exports = .empty,
+                .single_exports = .empty,
+                .multi_exports = .empty,
+
+                .module_roots = .empty,
+                .builtin_modules = .empty,
+
+                .import_table = .empty,
+                .alive_files = .empty,
+                .embed_table = .empty,
+
+                .intern_pool = .empty,
+
+                .compile_logs = .empty,
+                .compile_log_lines = .empty,
+                .free_compile_log_lines = .empty,
+
+                .illegal_module_root = null,
+                .multi_module_err = null,
+                .failed_imports = .empty,
+                .failed_files = .empty,
+                .skip_analysis_this_update = false,
+                .analysis_in_progress = .empty,
+                .failed_analysis = .empty,
+                .transitive_failed_analysis = .empty,
+                .dependency_loops = .empty,
+                .dependency_loop_nodes = .empty,
+                .failed_codegen = .empty,
+                .failed_types = .empty,
+                .failed_exports = .empty,
+
                 .error_limit = error_limit,
-                .llvm_object = null,
+
+                .outdated_lock = if (std.debug.runtime_safety) .init,
+                .potentially_outdated = .empty,
+                .outdated = .empty,
+                .outdated_ready = .{
+                    .funcs = .empty,
+                    .other = .empty,
+                },
+                .retryable_failures = .empty,
+
                 .analysis_roots_buffer = undefined,
                 .analysis_roots_len = 0,
+                .resolved_references = null,
+
+                .test_filters = options.test_filters,
+                .test_functions = .empty,
+
+                .global_assembly = .empty,
+
+                .reference_table = .empty,
+                .all_references = .empty,
+                .free_references = .empty,
+
+                .inline_reference_frames = .empty,
+                .free_inline_reference_frames = .empty,
+
+                .type_reference_table = .empty,
+                .all_type_references = .empty,
+                .free_type_references = .empty,
+
+                .std_lang_decl_values = .initFill(.none),
+
+                .incremental_debug_state = if (build_options.enable_debug_extensions) .init,
+
+                .cur_analysis_timer = null,
+
                 .codegen_task_pool = try .init(arena),
-                .lsp_document_store = options.lsp_document_store,
+
+                .generation = 0,
+
                 .anon_name_counter = 0,
+
+                .lsp_document_store = options.lsp_document_store,
             };
-            try zcu.init(gpa, io, options.thread_limit);
             break :blk zcu;
         } else blk: {
             if (options.emit_h != .no) return diag.fail(.emit_h_without_zcu);
@@ -2118,19 +2149,12 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
             .clang_passthrough_mode = options.clang_passthrough_mode,
             .clang_preprocessor_mode = options.clang_preprocessor_mode,
             .verbose_cc = options.verbose_cc,
-            .verbose_air = options.verbose_air,
-            .verbose_intern_pool = options.verbose_intern_pool,
-            .verbose_generic_instances = options.verbose_generic_instances,
-            .verbose_llvm_ir = options.verbose_llvm_ir,
-            .verbose_llvm_bc = options.verbose_llvm_bc,
-            .link_depfile = options.link_depfile,
-            .verbose_llvm_cpu_features = options.verbose_llvm_cpu_features,
             .verbose_link = options.verbose_link,
+            .link_depfile = options.link_depfile,
             .disable_c_depfile = options.disable_c_depfile,
             .reference_trace = options.reference_trace,
             .time_report = if (options.time_report) .init else null,
             .stack_report = options.stack_report,
-            .test_filters = options.test_filters,
             .debug_compiler_runtime_libs = options.debug_compiler_runtime_libs,
             .debug_compile_errors = options.debug_compile_errors,
             .debug_incremental = options.debug_incremental,
@@ -2182,18 +2206,8 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
         comp.config.any_sanitize_c = any_sanitize_c;
         comp.config.any_fuzz = any_fuzz;
 
-        if (opt_zcu) |zcu| {
-            // Finish initializing the `zcu` after the fields on `comp` have been initialized.
-            zcu.initAfterCompilation();
-
-            // Populate `zcu.module_roots`.
-            const active = zcu.acquire();
-            defer active.release();
-            active.pt.populateModuleRootTable() catch |err| switch (err) {
-                error.OutOfMemory => |e| return e,
-                error.IllegalZigImport => return diag.fail(.illegal_zig_import),
-            };
-        }
+        // Initialize the `zcu` after the fields on `comp` have been initialized.
+        if (opt_zcu) |zcu| zcu.init();
 
         const lf_open_opts: link.File.OpenOptions = .{
             .linker_script = options.linker_script,
@@ -2289,20 +2303,10 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 hash.add(options.config.is_test);
                 hash.addListOfBytes(options.test_filters);
                 hash.add(options.skip_linker_dependencies);
-                hash.add(options.emit_h != .no);
+                //hash.add(options.emit_h != .no);
                 hash.add(error_limit);
 
-                // Here we put the root source file path name, but *not* with addFile.
-                // We want the hash to be the same regardless of the contents of the
-                // source file, because incremental compilation will handle it, but we
-                // do want to namespace different source file names because they are
-                // likely different compilations and therefore this would be likely to
-                // cause cache hits.
-                if (comp.zcu) |zcu| {
-                    try addModuleTableToCacheHash(zcu, &hash);
-                } else {
-                    cache_helpers.addModule(&hash, options.root_mod);
-                }
+                try comp.addModuleTableToCacheHash(&hash);
 
                 // In the case of incremental cache mode, this `artifact_directory`
                 // is computed based on a hash of non-linker inputs, and it is where all
@@ -2354,21 +2358,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 comp.cache_use = .{ .whole = whole };
             },
         }
-
-        if (use_llvm and
-            (comp.emit_bin != null or
-                comp.emit_asm != null or
-                comp.emit_llvm_ir != null or
-                comp.emit_llvm_bc != null or
-                comp.verbose_llvm_ir != null or
-                comp.verbose_llvm_bc != null))
-        {
-            if (opt_zcu) |zcu| {
-                dev.check(.llvm_backend);
-                zcu.llvm_object = try LlvmObject.create(arena, zcu);
-            }
-        }
-
         break :comp comp;
     };
     errdefer comp.destroy();
@@ -2573,19 +2562,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
     return comp;
 }
 
-fn printVerboseLlvmCpuFeatures(
-    w: *Writer,
-    arena: Allocator,
-    root_name: []const u8,
-    target: *const std.Target,
-    cf: [*:0]const u8,
-) (Writer.Error || Allocator.Error)!void {
-    try w.print("compilation: {s}\n", .{root_name});
-    try w.print("  target: {s}\n", .{try target.zigTriple(arena)});
-    try w.print("  cpu: {s}\n", .{target.cpu.model.name});
-    try w.print("  features: {s}\n", .{cf});
-}
-
 pub fn destroy(comp: *Compilation) void {
     const gpa = comp.gpa;
     const io = comp.io;
@@ -2650,8 +2626,8 @@ pub fn destroy(comp: *Compilation) void {
     }
     comp.win32_resources.deinit(gpa);
 
-    for (comp.failed_win32_resources.values()) |*value| {
-        value.deinit(gpa);
+    for (comp.failed_win32_resources.values()) |*bundle| {
+        bundle.deinit(gpa);
     }
     comp.failed_win32_resources.deinit(gpa);
 
@@ -2675,8 +2651,8 @@ pub fn clearMiscFailures(comp: *Compilation) void {
     comp.misc_failures = .{};
 }
 
-pub fn getTarget(self: *const Compilation) *const Target {
-    return &self.root_mod.resolved_target.result;
+pub fn getTarget(comp: *const Compilation) *const Target {
+    return &comp.root_mod.resolved_target.result;
 }
 
 /// Only legal to call when cache mode is incremental and a link file is present.
@@ -2695,6 +2671,18 @@ pub fn hotCodeSwap(
 fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
     const io = comp.io;
 
+    if (comp.bin_file) |lf| {
+        lf.endProgress();
+        comp.link_prog_node.end();
+        comp.link_prog_node = .none;
+        switch (comp.cache_use) {
+            .none, .whole => {
+                lf.destroy();
+                comp.bin_file = null;
+            },
+            .incremental => {},
+        }
+    }
     switch (comp.cache_use) {
         .none => |none| {
             if (none.tmp_artifact_directory) |*tmp_dir| {
@@ -2711,17 +2699,14 @@ fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
                 // replicated in the output binary (the output instead contains a reference to that
                 // file which debug tooling can look through). So, in that particular case, we need
                 // to keep this directory around so that the output binary can be debugged.
-                if (comp.bin_file != null and comp.getTarget().ofmt == .macho and comp.config.debug_format != .strip) {
-                    // We are emitting an unstripped Mach-O binary with the LLVM backend: the ZCU
-                    // object file must remain on-disk for its debug info.
-                    return;
+                if (comp.bin_file == null or comp.getTarget().ofmt != .macho or comp.config.debug_format == .strip) {
+                    const tmp_dir_sub_path = "tmp" ++ fs.path.sep_str ++ std.fmt.hex(tmp_dir_rand_int);
+                    comp.dirs.local_cache.handle.deleteTree(io, tmp_dir_sub_path) catch |err| {
+                        log.warn("failed to delete temporary directory '{s}{c}{s}': {t}", .{
+                            comp.dirs.local_cache.path orelse ".", fs.path.sep, tmp_dir_sub_path, err,
+                        });
+                    };
                 }
-                const tmp_dir_sub_path = "tmp" ++ fs.path.sep_str ++ std.fmt.hex(tmp_dir_rand_int);
-                comp.dirs.local_cache.handle.deleteTree(io, tmp_dir_sub_path) catch |err| {
-                    log.warn("failed to delete temporary directory '{s}{c}{s}': {t}", .{
-                        comp.dirs.local_cache.path orelse ".", fs.path.sep, tmp_dir_sub_path, err,
-                    });
-                };
             }
         },
         .incremental => return,
@@ -2729,10 +2714,6 @@ fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
             if (whole.cache_manifest) |man| {
                 man.deinit();
                 whole.cache_manifest = null;
-            }
-            if (comp.bin_file) |lf| {
-                lf.destroy();
-                comp.bin_file = null;
             }
             if (whole.tmp_artifact_directory) |*tmp_dir| {
                 tmp_dir.handle.close(io);
@@ -2745,6 +2726,13 @@ fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
                 };
             }
         },
+    }
+    assert(!comp.config.incremental); // always uses incremental cache mode
+    if (comp.zcu) |zcu| {
+        if (zcu.llvm_object) |llvm_object| {
+            llvm_object.deinit();
+            zcu.llvm_object = null;
+        }
     }
 }
 
@@ -2767,11 +2755,24 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    comp.clearMiscFailures();
-    comp.last_update_was_cache_hit = false;
-    if (comp.time_report) |*tr| {
-        tr.deinit(gpa); // this is information about an old update
-        tr.* = .init;
+    reset: {
+        comp.clearMiscFailures();
+        comp.last_update_was_cache_hit = false;
+        if (comp.time_report) |*tr| {
+            tr.deinit(comp.gpa);
+            tr.* = .init;
+        }
+        if (comp.file_system_inputs) |file_system_inputs| file_system_inputs.clearRetainingCapacity();
+
+        if (comp.zcu) |zcu| {
+            zcu.skip_analysis_this_update = false;
+            if (zcu.generation > 0) break :reset;
+            try zcu.reset(arena);
+        }
+        for (comp.failed_c_objects.values()) |bundle| bundle.destroy(comp.gpa);
+        comp.failed_c_objects.clearRetainingCapacity();
+        for (comp.failed_win32_resources.values()) |*bundle| bundle.deinit(comp.gpa);
+        comp.failed_win32_resources.clearRetainingCapacity();
     }
 
     var tmp_dir_rand_int: u64 = undefined;
@@ -2916,38 +2917,9 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
     if (comp.zcu) |zcu| {
         assert(zcu.cur_analysis_timer == null);
 
-        zcu.skip_analysis_this_update = false;
-
         // TODO: doing this in `resolveReferences` later could avoid adding inputs for dead embedfiles. Investigate!
         for (zcu.embed_table.keys()) |embed_file| {
             try comp.appendFileSystemInput(embed_file.path);
-        }
-
-        zcu.analysis_roots_len = 0;
-
-        zcu.analysis_roots_buffer[zcu.analysis_roots_len] = zcu.std_mod;
-        zcu.analysis_roots_len += 1;
-
-        // Normally we rely on importing std to in turn import the root source file in the start code.
-        // However, the main module is distinct from the root module in tests, so that won't happen there.
-        if (comp.config.is_test and zcu.main_mod != zcu.std_mod) {
-            zcu.analysis_roots_buffer[zcu.analysis_roots_len] = zcu.main_mod;
-            zcu.analysis_roots_len += 1;
-        }
-
-        if (zcu.root_mod.deps.get("compiler_rt")) |compiler_rt_mod| {
-            zcu.analysis_roots_buffer[zcu.analysis_roots_len] = compiler_rt_mod;
-            zcu.analysis_roots_len += 1;
-        }
-
-        if (zcu.root_mod.deps.get("ubsan_rt")) |ubsan_rt_mod| {
-            zcu.analysis_roots_buffer[zcu.analysis_roots_len] = ubsan_rt_mod;
-            zcu.analysis_roots_len += 1;
-        }
-
-        if (zcu.root_mod.deps.get("zigc")) |zigc_mod| {
-            zcu.analysis_roots_buffer[zcu.analysis_roots_len] = zigc_mod;
-            zcu.analysis_roots_len += 1;
         }
     }
 
@@ -2970,11 +2942,6 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
         comp.link_prog_node = main_progress_node.start("Linking", initial_estimated_total);
         lf.startProgress(comp.link_prog_node);
     }
-    defer if (comp.bin_file) |lf| {
-        lf.endProgress();
-        comp.link_prog_node.end();
-        comp.link_prog_node = .none;
-    };
 
     try comp.performAllTheWork(main_progress_node, arena);
 
@@ -2998,14 +2965,19 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
             try pt.processExports();
         }
 
-        if (build_options.enable_debug_extensions and comp.verbose_intern_pool) {
-            std.debug.print("intern pool stats for {q}:\n", .{comp.root_name});
-            zcu.intern_pool.dump();
-        }
-
-        if (build_options.enable_debug_extensions and comp.verbose_generic_instances) {
-            std.debug.print("generic instances for '{s}:0x{x}':\n", .{ comp.root_name, @intFromPtr(zcu) });
-            zcu.intern_pool.dumpGenericInstances(gpa);
+        {
+            var d: InternPool.Dump = .{
+                .name = comp.root_name,
+                .arena = arena,
+                .ip = &zcu.intern_pool,
+                .err = null,
+            };
+            std.log.scoped(.@"ip-stats").debug("{f}", .{&d});
+            if (d.err) |err| return err;
+            std.log.scoped(.@"ip-values").debug("{f}", .{std.fmt.alt(&d, .formatAll)});
+            if (d.err) |err| return err;
+            std.log.scoped(.@"ip-generic-instances").debug("{f}", .{std.fmt.alt(&d, .formatGenericInstances)});
+            if (d.err) |err| return err;
         }
     }
 
@@ -3015,7 +2987,7 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
             comp.setMiscFailure(.link_depfile, "writing linker dependency file failed: {t}", .{err});
     };
 
-    if (anyErrors(comp)) {
+    if (comp.anyErrors()) {
         // Skip flushing and keep source files loaded for error reporting.
         return;
     }
@@ -3029,7 +3001,7 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
     }
 
     switch (comp.cache_use) {
-        .none, .incremental => try flush(comp, arena),
+        .none, .incremental => try comp.flush(arena),
         .whole => |whole| {
             if (comp.file_system_inputs) |buf| try man.populateFileSystemInputs(buf);
             if (comp.parent_whole_cache) |pwc| {
@@ -3110,11 +3082,11 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
                 };
             }
 
-            try flush(comp, arena);
+            try comp.flush(arena);
 
             // Calling `flush` may have produced errors, in which case the
             // cache manifest must not be written.
-            if (anyErrors(comp)) return;
+            if (comp.anyErrors()) return;
 
             // Release the lock and close the file before writing the manifest.
             // This avoids the potential of another process getting a cache hit and
@@ -3214,7 +3186,6 @@ fn flush(comp: *Compilation, arena: Allocator) (Io.Cancelable || Allocator.Error
     defer tid.release(io);
     if (comp.zcu) |zcu| {
         if (zcu.llvm_object) |llvm_object| {
-
             // Emit the ZCU object from LLVM now; it's required to flush the output file.
             // If there's an output file, it wants to decide where the LLVM object goes!
             const sub_prog_node = comp.link_prog_node.start("LLVM Emit Object", 0);
@@ -3227,28 +3198,29 @@ fn flush(comp: *Compilation, arena: Allocator) (Io.Cancelable || Allocator.Error
                 comp.time_report.?.stats.real_ns_llvm_emit = ns;
             };
 
-            const zcu_obj_path: ?Cache.Path = if (comp.bin_file != null) p: {
-                break :p try comp.resolveEmitPathFlush(arena, .temp, llvm_object.out_bin_basename);
-            } else null;
+            const zcu_obj_path: ?Cache.Path = switch (comp.getTarget().ofmt) {
+                .llvmbc, .llvmir => null,
+                else => if (comp.bin_file != null)
+                    try comp.resolveEmitPathFlush(arena, .temp, llvm_object.out_bin_basename)
+                else
+                    null,
+            };
 
             const active = zcu.activate(tid);
             defer active.deactivate();
             llvm_object.emit(active.pt, .{
-                .pre_ir_path = comp.verbose_llvm_ir,
-                .pre_bc_path = comp.verbose_llvm_bc,
-
                 .bin_path = if (zcu_obj_path) |p| try p.toStringZ(arena) else null,
                 .asm_path = p: {
                     const raw = comp.emit_asm orelse break :p null;
                     const p = try comp.resolveEmitPathFlush(arena, .artifact, raw);
                     break :p try p.toStringZ(arena);
                 },
-                .post_ir_path = p: {
+                .opt_ir_path = p: {
                     const raw = comp.emit_llvm_ir orelse break :p null;
                     const p = try comp.resolveEmitPathFlush(arena, .artifact, raw);
                     break :p try p.toStringZ(arena);
                 },
-                .post_bc_path = p: {
+                .opt_bc_path = p: {
                     const raw = comp.emit_llvm_bc orelse break :p null;
                     const p = try comp.resolveEmitPathFlush(arena, .artifact, raw);
                     break :p try p.toStringZ(arena);
@@ -3274,7 +3246,7 @@ fn flush(comp: *Compilation, arena: Allocator) (Io.Cancelable || Allocator.Error
                     error.Canceled, error.OutOfMemory => |e| return e,
                     error.AlreadyReported => return,
                 };
-            }
+            } else return;
         }
     }
     if (comp.bin_file) |lf| {
@@ -3348,23 +3320,42 @@ fn renameTmpIntoCache(
 /// anything from the link cache manifest.
 pub const link_hash_implementation_version = 14;
 
-fn addNonIncrementalStuffToCacheManifest(comp: *Compilation, man: *Cache.Manifest) !void {
-    comptime assert(link_hash_implementation_version == 14);
+fn addModuleTableToCacheHash(comp: *Compilation, hash: *Cache.HashHelper) Allocator.Error!void {
+    const gpa = comp.gpa;
+    var mods: std.array_hash_map.Auto(*Module, void) = .empty;
+    defer mods.deinit(gpa);
 
-    if (comp.zcu) |zcu| {
+    try mods.putNoClobber(gpa, comp.root_mod, {});
+    if (comp.zcu) |zcu| try mods.put(gpa, zcu.main_mod, {});
+
+    var mod_index: usize = 0;
+    while (mod_index < mods.count()) : (mod_index += 1) {
+        const mod = mods.keys()[mod_index];
+
         // No need to hash the actual file contents here because it is
         // redundant with the logic in `PerThread.update` which iterates over
         // `zcu.alive_files` and adds those files discovered via `@import` to
         // the whole cache manifest.
-        try addModuleTableToCacheHash(zcu, &man.hash);
+        cache_helpers.addModule(hash, mod);
+        hash.add(mod.root.root);
+        hash.addBytes(mod.root.sub_path);
+        hash.addBytes(mod.root_src_path);
+        hash.addListOfBytes(mod.deps.keys());
 
+        for (mod.deps.values()) |dep_mod| try mods.put(gpa, dep_mod, {});
+    }
+}
+
+fn addNonIncrementalStuffToCacheManifest(comp: *Compilation, man: *Cache.Manifest) !void {
+    comptime assert(link_hash_implementation_version == 14);
+
+    try comp.addModuleTableToCacheHash(&man.hash);
+
+    if (comp.zcu) |zcu| {
         // Synchronize with other matching comments: ZigOnlyHashStuff
-        man.hash.addListOfBytes(comp.test_filters);
-        man.hash.add(comp.skip_linker_dependencies);
+        man.hash.addListOfBytes(zcu.test_filters);
         //man.hash.add(zcu.emit_h != .no);
         man.hash.add(zcu.error_limit);
-    } else {
-        cache_helpers.addModule(&man.hash, comp.root_mod);
     }
 
     try link.hashInputs(man, comp.link_inputs);
@@ -3833,7 +3824,7 @@ fn addBuf(list: *std.array_list.Managed([]const u8), buf: []const u8) void {
 }
 
 /// This function is temporally single-threaded.
-pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
+pub fn getAllErrorsAlloc(comp: *Compilation) Allocator.Error!ErrorBundle {
     const gpa = comp.gpa;
     const io = comp.io;
 
@@ -3876,6 +3867,15 @@ pub fn getAllErrorsAlloc(comp: *Compilation) error{OutOfMemory}!ErrorBundle {
     }
 
     if (comp.zcu) |zcu| zcu_errors: {
+        if (zcu.illegal_module_root) |mod| {
+            try bundle.addRootErrorMessage(.{
+                .msg = try bundle.printString(
+                    "this compiler implementation does not support using '{f}/{s}' as the root of module '{s}'",
+                    .{ mod.root.fmt(comp), mod.root_src_path, mod.fully_qualified_name },
+                ),
+                .notes_len = 0,
+            });
+        }
         if (zcu.multi_module_err != null) {
             try zcu.addFileInMultipleModulesError(&bundle);
             break :zcu_errors;
@@ -4406,7 +4406,9 @@ fn performAllTheWork(
     defer if (comp.zcu) |zcu| zcu.codegen_task_pool.cancel(zcu);
     if (comp.zcu) |zcu| {
         // Regardless of errors, `comp.zcu` needs to update its generation number.
-        defer zcu.generation += 1;
+        defer if (comp.config.incremental) {
+            zcu.generation += 1;
+        };
         const active = zcu.acquire();
         defer active.release();
         try active.pt.update(main_progress_node, &decl_work_timer);
@@ -4912,12 +4914,6 @@ fn workerDocsWasmFallible(comp: *Compilation, prog_node: std.Progress.Node) SubU
         .emit_bin = .yes_cache,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,
-        .verbose_air = comp.verbose_air,
-        .verbose_intern_pool = comp.verbose_intern_pool,
-        .verbose_generic_instances = comp.verbose_intern_pool,
-        .verbose_llvm_ir = comp.verbose_llvm_ir,
-        .verbose_llvm_bc = comp.verbose_llvm_bc,
-        .verbose_llvm_cpu_features = comp.verbose_llvm_cpu_features,
         .environ_map = comp.environ_map,
     }) catch |err| switch (err) {
         error.CreateFail => {
@@ -7426,12 +7422,6 @@ fn buildOutputFromZig(
         .data_sections = true,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,
-        .verbose_air = comp.verbose_air,
-        .verbose_intern_pool = comp.verbose_intern_pool,
-        .verbose_generic_instances = comp.verbose_intern_pool,
-        .verbose_llvm_ir = comp.verbose_llvm_ir,
-        .verbose_llvm_bc = comp.verbose_llvm_bc,
-        .verbose_llvm_cpu_features = comp.verbose_llvm_cpu_features,
         .clang_passthrough_mode = comp.clang_passthrough_mode,
         .skip_linker_dependencies = true,
         .environ_map = comp.environ_map,
@@ -7563,12 +7553,6 @@ pub fn build_crt_file(
         .c_source_files = c_source_files,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,
-        .verbose_air = comp.verbose_air,
-        .verbose_intern_pool = comp.verbose_intern_pool,
-        .verbose_generic_instances = comp.verbose_generic_instances,
-        .verbose_llvm_ir = comp.verbose_llvm_ir,
-        .verbose_llvm_bc = comp.verbose_llvm_bc,
-        .verbose_llvm_cpu_features = comp.verbose_llvm_cpu_features,
         .clang_passthrough_mode = comp.clang_passthrough_mode,
         .skip_linker_dependencies = true,
         .environ_map = comp.environ_map,

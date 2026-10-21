@@ -32,11 +32,8 @@ debug_compile_errors: bool = false,
 debug_incremental: bool = false,
 fuzzing: bool = false,
 verbose: bool = false,
-verbose_air: bool = false,
 verbose_cc: bool = false,
 verbose_link: bool = false,
-verbose_llvm_cpu_features: bool = false,
-verbose_llvm_ir: bool = false,
 libc_file: ?[]const u8 = null,
 /// What does this do? Nobody bothered to document it, and I think it's a
 /// smelly option. So unless somebody deletes these passive aggressive comments

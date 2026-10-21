@@ -190,7 +190,7 @@ pub fn resolve(options: Options) ResolveError!Config {
     // *If* the LLVM backend were to be selected, should Zig use the LLVM
     // library to build the LLVM module?
     const use_lib_llvm = b: {
-        if (!build_options.have_llvm) {
+        if (!build_options.have_llvm or target.ofmt == .llvmbc or target.ofmt == .llvmir) {
             if (options.use_lib_llvm == true) return error.LlvmLibraryUnavailable;
             break :b false;
         }
@@ -324,7 +324,7 @@ pub fn resolve(options: Options) ResolveError!Config {
         if (!options.have_zcu) break :b false;
 
         // If emitting to LLVM bitcode object format, must use LLVM backend.
-        if (options.emit_llvm_ir or options.emit_llvm_bc) {
+        if (target.ofmt == .llvmbc or target.ofmt == .llvmir or options.emit_llvm_bc or options.emit_llvm_ir) {
             if (options.use_llvm == false)
                 return error.EmittingLlvmModuleRequiresLlvmBackend;
             if (!target_util.hasLlvmSupport(target, target.ofmt))
@@ -379,7 +379,7 @@ pub fn resolve(options: Options) ResolveError!Config {
     const backend = target_util.zigBackend(target, use_llvm);
 
     if (options.emit_bin and options.have_zcu) {
-        if (!use_lib_llvm and use_llvm) {
+        if (target.ofmt != .llvmbc and target.ofmt != .llvmir and !use_lib_llvm and use_llvm) {
             // Explicit request to use LLVM to produce an object file, but without
             // using LLVM libraries. Impossible.
             return error.EmittingBinaryRequiresLlvmLibrary;
@@ -513,7 +513,7 @@ pub fn resolve(options: Options) ResolveError!Config {
         break :b switch (target.ofmt) {
             .elf, .macho, .wasm => .{ .dwarf = .@"32" },
             .coff => .code_view,
-            .c => switch (target.os.tag) {
+            .c, .llvmbc, .llvmir => switch (target.os.tag) {
                 .windows, .uefi => .code_view,
                 else => .{ .dwarf = .@"32" },
             },

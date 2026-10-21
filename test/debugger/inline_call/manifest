@@ -1,8 +1,6 @@
-#todo {
-implement inline line info in lldb
-#}
-#skip x86_64-linux-none-incremental-selfhosted-new-nopic
-#skip x86_64-linux-none-incremental-selfhosted-new-pic
+#todo "implement inline line info in lldb"
+#skip x86_64-linux-none-baseline-incremental-selfhosted-new-nopic
+#skip x86_64-linux-none-baseline-incremental-selfhosted-new-pic
 
 #exe {
 --name inline_call
@@ -10,9 +8,9 @@ implement inline line info in lldb
 -Mmodule=mod0.zig
 #}
 
-#write root0.zig root0.zig
-#write root1.zig root1.zig
-#write mod0.zig mod0.zig
-#write mod1.zig mod1.zig
+#write root0.zig @root0.zig
+#write root1.zig @root1.zig
+#write mod0.zig @mod0.zig
+#write mod1.zig @mod1.zig
 #update
-#check lldb lldb
+#check lldb @lldb

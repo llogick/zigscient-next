@@ -22,8 +22,7 @@ pub fn main() !void {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change line number#}
+#update "change line number"
 #check stdout {
 foo
 #}

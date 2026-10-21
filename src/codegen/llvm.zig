@@ -10,6 +10,7 @@ const build_options = @import("build_options");
 const Air = @import("../Air.zig");
 const codegen = @import("../codegen.zig");
 const Compilation = @import("../Compilation.zig");
+const debugLogScopeEnabled = @import("../main.zig").debugLogScopeEnabled;
 const InternPool = @import("../InternPool.zig");
 const link = @import("../link.zig");
 const Module = @import("../Module.zig");
@@ -331,12 +332,10 @@ pub const Object = struct {
     }
 
     pub const EmitOptions = struct {
-        pre_ir_path: ?[]const u8,
-        pre_bc_path: ?[]const u8,
         bin_path: ?[:0]const u8,
         asm_path: ?[:0]const u8,
-        post_ir_path: ?[:0]const u8,
-        post_bc_path: ?[:0]const u8,
+        opt_ir_path: ?[:0]const u8,
+        opt_bc_path: ?[:0]const u8,
 
         is_debug: bool,
         is_small: bool,
@@ -351,6 +350,7 @@ pub const Object = struct {
         const comp = zcu.comp;
         const io = comp.io;
         const diags = &comp.link_diags;
+        const target = &comp.root_mod.resolved_target.result;
 
         {
             if (o.errors_len_variable != .none) {
@@ -403,7 +403,7 @@ pub const Object = struct {
             const behavior_max = try o.builder.metadataConstant(try o.builder.intConst(.i32, 7));
             const behavior_min = try o.builder.metadataConstant(try o.builder.intConst(.i32, 8));
 
-            if (target_util.llvmMachineAbi(&comp.root_mod.resolved_target.result)) |abi| {
+            if (target_util.llvmMachineAbi(target)) |abi| {
                 module_flags.appendAssumeCapacity(try o.builder.metadataTuple(&.{
                     behavior_error,
                     (try o.builder.metadataString("target-abi")).toMetadata(),
@@ -411,7 +411,7 @@ pub const Object = struct {
                 }));
             }
 
-            const pic_level = target_util.picLevel(&comp.root_mod.resolved_target.result);
+            const pic_level = target_util.picLevel(target);
             if (comp.root_mod.pic) {
                 module_flags.appendAssumeCapacity(try o.builder.metadataTuple(&.{
                     behavior_min,
@@ -434,7 +434,7 @@ pub const Object = struct {
                     (try o.builder.metadataString("Code Model")).toMetadata(),
                     try o.builder.metadataConstant(try o.builder.intConst(.i32, @as(
                         i32,
-                        switch (codeModel(comp.root_mod.code_model, &comp.root_mod.resolved_target.result)) {
+                        switch (codeModel(comp.root_mod.code_model, target)) {
                             .default => unreachable,
                             .tiny => 0,
                             .small => 1,
@@ -480,7 +480,6 @@ pub const Object = struct {
                 }
             }
 
-            const target = &comp.root_mod.resolved_target.result;
             if (target.os.tag == .windows and (target.cpu.arch == .x86_64 or target.cpu.arch == .x86)) {
                 // Add the "RegCallv4" flag so that any functions using `x86_regcallcc` use regcall
                 // v4, which is essentially a requirement on Windows. See corresponding logic in
@@ -515,21 +514,26 @@ pub const Object = struct {
 
         const emit_asm_msg = options.asm_path orelse "(none)";
         const emit_bin_msg = options.bin_path orelse "(none)";
-        const post_llvm_ir_msg = options.post_ir_path orelse "(none)";
-        const post_llvm_bc_msg = options.post_bc_path orelse "(none)";
+        const opt_llvm_ir_msg = options.opt_ir_path orelse "(none)";
+        const opt_llvm_bc_msg = options.opt_bc_path orelse "(none)";
         log.debug("emit LLVM object asm={s} bin={s} ir={s} bc={s}", .{
-            emit_asm_msg, emit_bin_msg, post_llvm_ir_msg, post_llvm_bc_msg,
+            emit_asm_msg, emit_bin_msg, opt_llvm_ir_msg, opt_llvm_bc_msg,
         });
+        const log_opt_llvm_ir = debugLogScopeEnabled("opt-llvm-ir");
 
         const context, const module = emit: {
-            if (options.pre_ir_path) |path| {
-                if (std.mem.eql(u8, path, "-")) {
-                    o.builder.dump(io);
-                } else {
-                    o.builder.printToFilePath(io, Io.Dir.cwd(), path) catch |err| {
-                        log.err("failed printing LLVM module to \"{s}\": {t}", .{ path, err });
-                    };
-                }
+            {
+                var p: Builder.Print = .{ .name = comp.root_name, .builder = &o.builder, .err = null };
+                std.log.scoped(.@"llvm-ir").debug("{f}", .{&p});
+                if (p.err) |err| return err;
+            }
+
+            if (target.ofmt == .llvmir) {
+                const path = comp.bin_file.?.emit;
+                o.builder.printToFilePath(io, path.root_dir.handle, path.sub_path) catch |err| {
+                    return diags.fail("failed emitting LLVM module to {qf}: {t}", .{ path, err });
+                };
+                return;
             }
 
             const bitcode = try o.builder.toBitcode(o.gpa, .{
@@ -538,23 +542,26 @@ pub const Object = struct {
             });
             defer o.gpa.free(bitcode);
 
-            if (options.pre_bc_path) |path| {
-                var file = Io.Dir.cwd().createFile(io, path, .{}) catch |err|
-                    return diags.fail("failed to create '{s}': {t}", .{ path, err });
+            if (target.ofmt == .llvmbc) {
+                const path = comp.bin_file.?.emit;
+                var file = path.root_dir.handle.createFile(io, path.sub_path, .{}) catch |err|
+                    return diags.fail("failed to create {qf}: {t}", .{ path, err });
                 defer file.close(io);
 
                 file.writeStreamingAll(io, @ptrCast(bitcode)) catch |err|
-                    return diags.fail("failed to write to '{s}': {t}", .{ path, err });
+                    return diags.fail("failed to write to {qf}: {t}", .{ path, err });
+                return;
             }
 
             if (options.asm_path == null and options.bin_path == null and
-                options.post_ir_path == null and options.post_bc_path == null) return;
+                options.opt_ir_path == null and options.opt_bc_path == null and
+                !log_opt_llvm_ir) return;
 
             if (!build_options.have_llvm or !comp.config.use_lib_llvm) {
                 return diags.fail("emitting without libllvm not implemented", .{});
             }
 
-            initializeLLVMTarget(io, comp.root_mod.resolved_target.result.cpu.arch);
+            initializeLLVMTarget(io, target.cpu.arch);
 
             const context: *bindings.Context = .create();
             errdefer context.dispose();
@@ -577,9 +584,9 @@ pub const Object = struct {
         };
         defer context.dispose();
 
-        var target: *bindings.Target = undefined;
+        var llvm_target: *bindings.Target = undefined;
         var error_message: [*:0]const u8 = undefined;
-        if (bindings.Target.getFromTriple(target_triple_sentinel, &target, &error_message).toBool()) {
+        if (bindings.Target.getFromTriple(target_triple_sentinel, &llvm_target, &error_message).toBool()) {
             defer bindings.disposeMessage(error_message);
             return diags.fail("LLVM failed to parse '{s}': {s}", .{ target_triple_sentinel, error_message });
         }
@@ -598,7 +605,7 @@ pub const Object = struct {
         else
             .Static;
 
-        const code_model: bindings.CodeModel = switch (codeModel(comp.root_mod.code_model, &comp.root_mod.resolved_target.result)) {
+        const code_model: bindings.CodeModel = switch (codeModel(comp.root_mod.code_model, target)) {
             .default => .Default,
             .tiny => .Tiny,
             .small => .Small,
@@ -607,24 +614,22 @@ pub const Object = struct {
             .large => .Large,
         };
 
-        const float_abi: bindings.TargetMachine.FloatABI = if (comp.root_mod.resolved_target.result.abi.float() == .hard)
-            .Hard
-        else
-            .Soft;
-
         var target_machine = bindings.TargetMachine.create(
-            target,
+            llvm_target,
             target_triple_sentinel,
-            if (comp.root_mod.resolved_target.result.cpu.model.llvm_name) |s| s.ptr else null,
-            comp.root_mod.resolved_target.llvm_cpu_features.?,
+            if (target.cpu.model.llvm_name) |s| s.ptr else null,
+            comp.root_mod.llvm_cpu_features.?,
             opt_level,
             reloc_mode,
             code_model,
             comp.function_sections,
             comp.data_sections,
-            float_abi,
-            if (target_util.llvmMachineAbi(&comp.root_mod.resolved_target.result)) |s| s.ptr else null,
-            target_util.useEmulatedTls(&comp.root_mod.resolved_target.result),
+            switch (target.abi.float()) {
+                .hard => .Hard,
+                .soft => .Soft,
+            },
+            if (target_util.llvmMachineAbi(target)) |s| s.ptr else null,
+            target_util.useEmulatedTls(target),
         );
         errdefer target_machine.dispose();
 
@@ -634,7 +639,10 @@ pub const Object = struct {
 
         // Unfortunately, LLVM shits the bed when we ask for both binary and assembly.
         // So we call the entire pipeline multiple times if this is requested.
-        // var error_message: [*:0]const u8 = undefined;
+        var time_report_c_str: ?[*:0]u8 = null;
+        defer if (time_report_c_str) |time_report| bindings.disposeMessage(time_report);
+        var llvm_ir_c_str: ?[*:0]u8 = null;
+        defer if (llvm_ir_c_str) |llvm_ir| bindings.disposeMessage(llvm_ir);
         var lowered_options: bindings.TargetMachine.EmitOptions = .{
             .is_debug = options.is_debug,
             .is_small = options.is_small,
@@ -648,11 +656,12 @@ pub const Object = struct {
             .allow_fast_isel = true,
             // LLVM's RISC-V backend for some reason enables the machine outliner by default even
             // though it's clearly not ready and produces multiple miscompilations in our std tests.
-            .allow_machine_outliner = !comp.root_mod.resolved_target.result.cpu.arch.isRISCV(),
+            .allow_machine_outliner = !target.cpu.arch.isRISCV(),
             .asm_filename = null,
             .bin_filename = if (options.bin_path) |x| x.ptr else null,
-            .llvm_ir_filename = if (options.post_ir_path) |x| x.ptr else null,
-            .bitcode_filename = if (options.post_bc_path) |x| x.ptr else null,
+            .llvm_ir_filename = if (options.opt_ir_path) |x| x.ptr else null,
+            .bitcode_filename = if (options.opt_bc_path) |x| x.ptr else null,
+            .llvm_ir_out = if (log_opt_llvm_ir) &llvm_ir_c_str else null,
 
             // `.coverage` value is only used when `.sancov` is enabled.
             .sancov = options.fuzz or comp.config.san_cov_trace_pc_guard,
@@ -684,33 +693,31 @@ pub const Object = struct {
         };
         if (options.asm_path != null and options.bin_path != null) {
             if (target_machine.emitToFile(module, &error_message, &lowered_options)) {
-                defer bindings.disposeMessage(error_message);
                 return diags.fail("LLVM failed to emit bin={s} ir={s}: {s}", .{
-                    emit_bin_msg, post_llvm_ir_msg, error_message,
+                    emit_bin_msg, opt_llvm_ir_msg, error_message,
                 });
             }
             lowered_options.bin_filename = null;
             lowered_options.llvm_ir_filename = null;
             lowered_options.bitcode_filename = null;
+            lowered_options.llvm_ir_out = null;
         }
-
-        var time_report_c_str: [*:0]u8 = undefined;
-        if (options.time_report != null) {
-            lowered_options.time_report_out = &time_report_c_str;
-        }
-
+        if (options.time_report) |_| lowered_options.time_report_out = &time_report_c_str;
         lowered_options.asm_filename = if (options.asm_path) |x| x.ptr else null;
         if (target_machine.emitToFile(module, &error_message, &lowered_options)) {
             defer bindings.disposeMessage(error_message);
             return diags.fail("LLVM failed to emit asm={s} bin={s} ir={s} bc={s}: {s}", .{
-                emit_asm_msg, emit_bin_msg, post_llvm_ir_msg, post_llvm_bc_msg, error_message,
+                emit_asm_msg, emit_bin_msg, opt_llvm_ir_msg, opt_llvm_bc_msg, error_message,
             });
         }
-        if (options.time_report) |tr| {
-            defer std.c.free(time_report_c_str);
-            const time_report_data = std.mem.span(time_report_c_str);
-            assert(tr.llvm_pass_timings.len == 0);
-            tr.llvm_pass_timings = try comp.gpa.dupe(u8, time_report_data);
+        if (log_opt_llvm_ir) std.log.scoped(.@"opt-llvm-ir").debug("{s}", .{
+            llvm_ir_c_str orelse return error.OutOfMemory,
+        });
+        if (options.time_report) |time_report| {
+            assert(time_report.llvm_pass_timings.len == 0);
+            time_report.llvm_pass_timings = try comp.gpa.dupe(u8, std.mem.span(
+                time_report_c_str orelse return error.OutOfMemory,
+            ));
         }
     }
 
@@ -2184,10 +2191,10 @@ pub const Object = struct {
                 .value = try o.builder.string(s),
             } }, &o.builder);
         }
-        if (owner_mod.resolved_target.llvm_cpu_features) |s| {
+        if (owner_mod.llvm_cpu_features) |s| {
             try attributes.addFnAttr(.{ .string = .{
                 .kind = try o.builder.string("target-features"),
-                .value = try o.builder.string(std.mem.span(s)),
+                .value = try o.builder.string(s),
             } }, &o.builder);
         }
 

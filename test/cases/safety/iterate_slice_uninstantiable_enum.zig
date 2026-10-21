@@ -8,15 +8,12 @@ pub fn panic(message: []const u8, stack_trace: ?*std.builtin.StackTrace, _: ?usi
     std.process.exit(1);
 }
 
-const U = union {
-    foo: struct { a: u8, b: noreturn, },
-    bar: enum {},
-};
+const E = enum {};
 pub fn main() error{TestFailed}!void {
     const bytes: [32]u8 = @splat(0);
-    const ptr: *const [1]U = @ptrCast(&bytes);
-    const slice: []const U = ptr;
-    _ = slice[0];
+    const ptr: *const [1]E = @ptrCast(&bytes);
+    const slice: []const E = ptr;
+    for (slice) |elem| _ = elem;
     return error.TestFailed;
 }
 // run

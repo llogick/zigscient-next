@@ -39,8 +39,7 @@ fn myPanic(msg: []const u8, _: ?usize) noreturn {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change the panic handler body#}
+#update "change the panic handler body"
 #check stdout {
 new panic message: integer overflow
 #}
@@ -61,8 +60,7 @@ fn myPanicNew(msg: []const u8, _: ?usize) noreturn {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change the panic handler function value#}
+#update "change the panic handler function value"
 #check stdout {
 third panic message: integer overflow
 #}

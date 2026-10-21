@@ -44,8 +44,7 @@ comptime {
     _ = y;
 }
 #}
-#update {
-delete and modify comptime decls#}
+#update "delete and modify comptime decls"
 #check errors {
 main.zig:6:16: error: slice of null pointer
 #}

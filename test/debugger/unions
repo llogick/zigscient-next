@@ -1,10 +1,8 @@
-#todo {
-passes, but prints errors
-#}
-#skip x86_64-linux-none-whole-selfhosted-new-nopic
-#skip x86_64-linux-none-whole-selfhosted-new-pic
-#skip x86_64-linux-none-incremental-selfhosted-new-nopic
-#skip x86_64-linux-none-incremental-selfhosted-new-pic
+#todo "passes, but prints errors"
+#skip x86_64-linux-none-baseline-whole-selfhosted-new-nopic
+#skip x86_64-linux-none-baseline-whole-selfhosted-new-pic
+#skip x86_64-linux-none-baseline-incremental-selfhosted-new-nopic
+#skip x86_64-linux-none-baseline-incremental-selfhosted-new-pic
 
 #exe {
 --name unions

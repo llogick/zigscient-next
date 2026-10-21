@@ -27,7 +27,7 @@ const Target = std.Target;
 const log = std.log.scoped(.riscv_codegen);
 const tracking_log = std.log.scoped(.tracking);
 const verbose_tracking_log = std.log.scoped(.verbose_tracking);
-const wip_mir_log = std.log.scoped(.wip_mir);
+const wip_mir_log = std.log.scoped(.@"wip-mir");
 const Alignment = InternPool.Alignment;
 
 const bits = @import("bits.zig");

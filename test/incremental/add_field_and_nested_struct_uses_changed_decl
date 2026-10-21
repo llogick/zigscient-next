@@ -14,8 +14,7 @@ const S = struct {
 };
 #}
 #update
-#check stdout {
-#}
+#check stdout
 
 #write main.zig {
 pub fn main() void {
@@ -29,7 +28,5 @@ const S = struct {
     bar: u32,
 };
 #}
-#update {
-add field to outer struct, change decl used by inner struct#}
-#check stdout {
-#}
+#update "add field to outer struct, change decl used by inner struct"
+#check stdout

@@ -23,6 +23,10 @@ pub fn build(b: *std.Build) !void {
         },
     });
     const optimize = b.standardOptimizeOption(.{});
+    const is_debug = switch (optimize) {
+        .debug => true,
+        .safe, .fast, .small => false,
+    };
 
     const dev_env: DevEnv = b.option(DevEnv, "dev", "Build a compiler with a reduced feature set for development of specific features") orelse if (only_c) .bootstrap else .lsp_server;
 
@@ -205,9 +209,9 @@ pub fn build(b: *std.Build) !void {
     const value_tracing = b.option(bool, "value-tracing", "Enable extra state tracking to help troubleshoot bugs in the compiler (using the std.debug.Trace API)") orelse false;
 
     const mem_leak_frames: u32 = b.option(u32, "mem-leak-frames", "How many stack frames to print when a memory leak occurs. Tests get 2x this amount.") orelse blk: {
-        if (strip == true) break :blk @as(u32, 0);
-        if (optimize != .debug) break :blk 0;
-        break :blk 4;
+        if (strip == true) break :blk 0;
+        if (is_debug) break :blk 4;
+        break :blk 0;
     };
 
     const exe_options = b.addOptions();
@@ -262,9 +266,15 @@ pub fn build(b: *std.Build) !void {
         exe.root_module.link_libc = true;
     }
 
-    const is_debug = optimize == .debug;
     const enable_debug_extensions = b.option(bool, "debug-extensions", "Enable commands and options useful for debugging the compiler") orelse is_debug;
-    const enable_logging = b.option(bool, "log", "Enable debug logging with --debug-log") orelse is_debug;
+    const log_level: std.log.Level = b.option(std.log.Level, "log", "Enable logs of the given or higher severity. Passing 'debug' still requires passing '--debug-log' to actually see any debug logs.") orelse switch (enable_debug_extensions) {
+        true => .debug,
+        false => switch (optimize) {
+            .debug => .debug,
+            .safe, .fast => .info,
+            .small => .err,
+        },
+    };
 
     const opt_version_string = b.option([]const u8, "version-string", "Override Zig version string. Default is to find out with git.");
     const version_slice = bzz.compiler_internals_version;
@@ -326,7 +336,7 @@ pub fn build(b: *std.Build) !void {
     exe_options.addOption(std.SemanticVersion, "semver", semver);
 
     exe_options.addOption(bool, "enable_debug_extensions", enable_debug_extensions);
-    exe_options.addOption(bool, "enable_logging", enable_logging);
+    exe_options.addOption(std.log.Level, "log_level", log_level);
     exe_options.addOption(bool, "enable_tracy", tracy != null);
     exe_options.addOption(bool, "enable_tracy_callstack", tracy_callstack);
     exe_options.addOption(bool, "enable_tracy_allocation", tracy_allocation);
@@ -434,12 +444,6 @@ pub fn build(b: *std.Build) !void {
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
         .skip_libc = skip_libc,
-    }, .{
-        .enable_llvm = enable_llvm,
-        .llvm_has_m68k = llvm_has_m68k,
-        .llvm_has_csky = llvm_has_csky,
-        .llvm_has_arc = llvm_has_arc,
-        .llvm_has_xtensa = llvm_has_xtensa,
     });
     test_step.dependOn(test_cases_step);
 
@@ -643,11 +647,6 @@ pub fn build(b: *std.Build) !void {
         .skip_libc = skip_libc,
     }));
     test_step.dependOn(tests.addCliTests(b));
-    if (tests.addLlvmIrTests(b, .{
-        .enable_llvm = enable_llvm,
-        .test_filters = test_filters,
-        .test_target_filters = test_target_filters,
-    })) |test_llvm_ir_step| test_step.dependOn(test_llvm_ir_step);
 
     try addWasiUpdateStep(b, version);
 
@@ -724,7 +723,7 @@ pub fn build(b: *std.Build) !void {
     const runner = b.addExecutable(.{
         .name = "runner",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("test/src/Runner.zig"),
+            .root_source_file = b.path("test/Runner.zig"),
             .target = b.graph.host,
         }),
     });
@@ -740,21 +739,27 @@ pub fn build(b: *std.Build) !void {
         .skip_darwin = skip_darwin,
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
+        .llvm_has_m68k = llvm_has_m68k,
+        .llvm_has_csky = llvm_has_csky,
+        .llvm_has_arc = llvm_has_arc,
+        .llvm_has_xtensa = llvm_has_xtensa,
         .gdb = b.option([]const u8, "gdb", "path to gdb binary"),
         .lldb = b.option([]const u8, "lldb", "path to lldb binary"),
     };
 
+    const test_debugger_step = b.step("test-debugger", "Run the debugger tests");
+    if (runner_opts.gdb != null or runner_opts.lldb != null) {
+        try tests.addRunnerTests(b, runner, test_debugger_step, "test/debugger", @import("test/debugger/matrix.zon"), runner_opts);
+        test_step.dependOn(test_debugger_step);
+    } else test_debugger_step.dependOn(&b.addFail("test-debugger requires -Dgdb and/or -Dlldb").step);
+
     const test_incremental_step = b.step("test-incremental", "Run the incremental compilation tests");
-    try tests.addRunnerTests(b, runner, test_incremental_step, "test/incremental", tests.incremental_matrix, runner_opts);
+    try tests.addRunnerTests(b, runner, test_incremental_step, "test/incremental", @import("test/incremental/matrix.zon"), runner_opts);
     test_step.dependOn(test_incremental_step);
 
-    const test_debugger_step = b.step("test-debugger", "Run the debugger tests");
-    if (runner_opts.gdb == null and runner_opts.lldb == null) {
-        test_debugger_step.dependOn(&b.addFail("test-debugger requires -Dgdb and/or -Dlldb").step);
-    } else {
-        try tests.addRunnerTests(b, runner, test_debugger_step, "test/debugger", tests.debugger_matrix, runner_opts);
-        test_step.dependOn(test_debugger_step);
-    }
+    const test_llvm_step = b.step("test-llvm", "Run the LLVM IR tests");
+    try tests.addRunnerTests(b, runner, test_llvm_step, "test/llvm", @import("test/llvm/matrix.zon"), runner_opts);
+    test_step.dependOn(test_llvm_step);
 
     // Remove steps not relevant to the core of the project
     // Can always comment out to enable
@@ -813,7 +818,7 @@ fn addWasiUpdateStep(b: *std.Build, version: [:0]const u8) !void {
     exe_options.addOption([:0]const u8, "version", version);
     exe_options.addOption(std.SemanticVersion, "semver", semver);
     exe_options.addOption(bool, "enable_debug_extensions", false);
-    exe_options.addOption(bool, "enable_logging", false);
+    exe_options.addOption(std.log.Level, "log_level", .err);
     exe_options.addOption(bool, "enable_tracy", false);
     exe_options.addOption(bool, "enable_tracy_callstack", false);
     exe_options.addOption(bool, "enable_tracy_allocation", false);

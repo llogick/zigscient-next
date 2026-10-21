@@ -61,9 +61,7 @@ pub fn flushObject(macho_file: *MachO, comp: *Compilation) link.Error!void {
     };
     allocateSegment(macho_file);
 
-    if (build_options.enable_logging) {
-        state_log.debug("{f}", .{macho_file.dumpState()});
-    }
+    state_log.debug("{f}", .{macho_file.dumpState()});
 
     try writeSections(macho_file);
     sortRelocs(macho_file);
@@ -107,9 +105,7 @@ pub fn flushStaticLib(macho_file: *MachO, comp: *Compilation) link.Error!void {
             return diags.fail("failed to allocate sections: {s}", .{@errorName(err)});
         allocateSegment(macho_file);
 
-        if (build_options.enable_logging) {
-            state_log.debug("{f}", .{macho_file.dumpState()});
-        }
+        state_log.debug("{f}", .{macho_file.dumpState()});
 
         try writeSections(macho_file);
         sortRelocs(macho_file);
@@ -185,9 +181,7 @@ pub fn flushStaticLib(macho_file: *MachO, comp: *Compilation) link.Error!void {
         break :blk pos;
     };
 
-    if (build_options.enable_logging) {
-        state_log.debug("ar_symtab\n{f}\n", .{ar_symtab.fmt(macho_file)});
-    }
+    state_log.debug("ar_symtab\n{f}\n", .{ar_symtab.fmt(macho_file)});
 
     const buffer = try gpa.alloc(u8, total_size);
     defer gpa.free(buffer);

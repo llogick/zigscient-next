@@ -9,7 +9,7 @@ pub fn panic(message: []const u8, stack_trace: ?*std.builtin.StackTrace, _: ?usi
 }
 
 const U = union {
-    foo: struct { a: u8, b: noreturn, },
+    foo: struct { a: u8, b: noreturn },
     bar: enum {},
 };
 pub fn main() error{TestFailed}!void {

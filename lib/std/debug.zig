@@ -76,7 +76,7 @@ pub fn TargetInfo(os: std.Target.Os.Tag, arch: std.Target.Cpu.Arch) type {
         },
         .macho => @import("debug/SelfInfo/MachO.zig"),
         .plan9, .spirv, .wasm, .raw, .hex => void,
-        .c => unreachable,
+        .c, .llvmbc, .llvmir => unreachable,
     };
 }
 

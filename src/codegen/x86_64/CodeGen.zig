@@ -5,7 +5,7 @@ const link = @import("../../link.zig");
 const log = std.log.scoped(.codegen);
 const tracking_log = std.log.scoped(.tracking);
 const verbose_tracking_log = std.log.scoped(.verbose_tracking);
-const wip_mir_log = std.log.scoped(.wip_mir);
+const wip_mir_log = std.log.scoped(.@"wip-mir");
 const Writer = std.Io.Writer;
 
 const Air = @import("../../Air.zig");

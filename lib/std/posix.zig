@@ -797,7 +797,7 @@ pub fn dl_iterate_phdr(
     const dl = @import("dynamic_library.zig");
 
     switch (builtin.object_format) {
-        .elf, .c => {},
+        .c, .elf, .llvmbc, .llvmir => {},
         else => @compileError("dl_iterate_phdr is not available for this target"),
     }
 

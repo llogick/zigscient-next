@@ -26,8 +26,7 @@ Hello, World!
     .b_number = 0,
 }
 #}
-#update {
-change ZON file#}
+#update "change ZON file"
 #check stdout {
 Hello again, World!
 #}

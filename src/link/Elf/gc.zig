@@ -98,7 +98,7 @@ fn markAtom(atom: *Atom) bool {
 }
 
 fn markLive(atom: *Atom, elf_file: *Elf) void {
-    if (@import("build_options").enable_logging) track_live_level.incr();
+    if (@import("build_options").enable_debug_extensions) track_live_level.incr();
 
     assert(atom.visited);
     const file = atom.file(elf_file).?;

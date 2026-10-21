@@ -410,6 +410,10 @@ ZIG_EXTERN_C bool ZigLLVMTargetMachineEmitToFile(LLVMTargetMachineRef targ_machi
     // Code generation phase
     codegen_pm.run(llvm_module);
 
+    if (options->llvm_ir_out != nullptr) {
+        *options->llvm_ir_out = LLVMPrintModuleToString(module_ref);
+    }
+
     if (options->llvm_ir_filename) {
         if (LLVMPrintModuleToFile(module_ref, options->llvm_ir_filename, error_message)) {
             return true;
@@ -430,9 +434,7 @@ ZIG_EXTERN_C bool ZigLLVMTargetMachineEmitToFile(LLVMTargetMachineRef targ_machi
         auto os = raw_string_ostream(out_str);
         TimerGroup::printAll(os);
         TimerGroup::clearAll();
-        auto c_str = (char *)malloc(out_str.length() + 1);
-        strcpy(c_str, out_str.c_str());
-        *options->time_report_out = c_str;
+        *options->time_report_out = LLVMCreateMessage(out_str.c_str());
     }
     return false;
 }

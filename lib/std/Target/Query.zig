@@ -261,13 +261,11 @@ pub fn parse(args: ParseOptions) !Query {
         if (abi_it.next() != null) {
             if (abi.isGnu()) {
                 result.glibc_version = parseVersion(abi_ver_text) catch |err| switch (err) {
-                    error.Overflow => return error.InvalidAbiVersion,
-                    error.InvalidVersion => return error.InvalidAbiVersion,
+                    error.Overflow, error.InvalidVersion => return error.InvalidAbiVersion,
                 };
             } else if (abi.isAndroid()) {
                 result.android_api_level = std.fmt.parseUnsigned(u32, abi_ver_text, 10) catch |err| switch (err) {
-                    error.InvalidCharacter => return error.InvalidVersion,
-                    error.Overflow => |e| return e,
+                    error.InvalidCharacter, error.Overflow => return error.InvalidAbiVersion,
                 };
             } else {
                 return error.InvalidAbiVersion;
@@ -428,139 +426,105 @@ pub fn canDetectLibC(self: Query) bool {
     return false;
 }
 
-/// Formats a version with the patch component omitted if it is zero,
+/// Prints a version with the patch component omitted if it is zero,
 /// unlike SemanticVersion.format which formats all its version components regardless.
-fn formatVersion(version: SemanticVersion, gpa: Allocator, list: *ArrayList(u8)) !void {
-    if (version.patch == 0) {
-        try list.print(gpa, "{d}.{d}", .{ version.major, version.minor });
-    } else {
-        try list.print(gpa, "{d}.{d}.{d}", .{ version.major, version.minor, version.patch });
+pub const PrintVersion = struct {
+    version: SemanticVersion,
+    pub fn format(print: PrintVersion, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("{d}.{d}", .{ print.version.major, print.version.minor });
+        switch (print.version.patch) {
+            0 => {},
+            else => |patch| try w.print(".{d}", .{patch}),
+        }
     }
-}
+};
 
-pub fn zigTriple(self: Query, gpa: Allocator) Allocator.Error![]u8 {
-    if (self.isNativeTriple()) return gpa.dupe(u8, "native");
+pub fn printZigTriple(query: *const Query, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    if (query.isNativeTriple()) return w.writeAll("native");
 
-    const arch_name = if (self.cpu_arch) |arch| @tagName(arch) else "native";
-    const os_name = if (self.os_tag) |os_tag| @tagName(os_tag) else "native";
-
-    var result: ArrayList(u8) = .empty;
-    defer result.deinit(gpa);
-
-    try result.print(gpa, "{s}-{s}", .{ arch_name, os_name });
+    try w.print("{s}-{s}", .{
+        if (query.cpu_arch) |arch| @tagName(arch) else "native",
+        if (query.os_tag) |os_tag| @tagName(os_tag) else "native",
+    });
 
     // The zig target syntax does not allow specifying a max os version with no min, so
     // if either are present, we need the min.
-    if (self.os_version_min) |min| {
+    if (query.os_version_min) |min| {
         switch (min) {
             .none => {},
-            .semver => |v| {
-                try result.appendSlice(gpa, ".");
-                try formatVersion(v, gpa, &result);
-            },
-            .windows => |v| {
-                try result.print(gpa, "{f}", .{v});
-            },
+            .semver => |v| try w.print(".{f}", .{PrintVersion{ .version = v }}),
+            .windows => |v| try w.print("{f}", .{v}),
         }
     }
-    if (self.os_version_max) |max| {
+    if (query.os_version_max) |max| {
         switch (max) {
             .none => {},
-            .semver => |v| {
-                try result.appendSlice(gpa, "...");
-                try formatVersion(v, gpa, &result);
-            },
-            .windows => |v| {
-                // This is counting on a custom format() function defined on `WindowsVersion`
-                // to add a prefix '.' and make there be a total of three dots.
-                try result.print(gpa, "..{f}", .{v});
-            },
+            .semver => |v| try w.print("...{f}", .{PrintVersion{ .version = v }}),
+            // This is counting on a custom format() function defined on `WindowsVersion`
+            // to add a prefix '.' and make there be a total of three dots.
+            .windows => |v| try w.print("..{f}", .{v}),
         }
     }
 
-    if (self.glibc_version) |v| {
-        const name = @tagName(self.abi.?);
-        try result.ensureUnusedCapacity(gpa, name.len + 2);
-        result.appendAssumeCapacity('-');
-        result.appendSliceAssumeCapacity(name);
-        result.appendAssumeCapacity('.');
-        try formatVersion(v, gpa, &result);
-    } else if (self.android_api_level) |lvl| {
-        const name = @tagName(self.abi.?);
-        try result.ensureUnusedCapacity(gpa, name.len + 2);
-        result.appendAssumeCapacity('-');
-        result.appendSliceAssumeCapacity(name);
-        result.appendAssumeCapacity('.');
-        try result.print(gpa, "{d}", .{lvl});
-    } else if (self.abi) |abi| {
-        const name = @tagName(abi);
-        try result.ensureUnusedCapacity(gpa, name.len + 1);
-        result.appendAssumeCapacity('-');
-        result.appendSliceAssumeCapacity(name);
+    if (query.glibc_version) |v| {
+        try w.print("-{t}.{f}", .{ query.abi.?, PrintVersion{ .version = v } });
+    } else if (query.android_api_level) |lvl| {
+        try w.print("-{t}.{d}", .{ query.abi.?, lvl });
+    } else if (query.abi) |abi| {
+        try w.print("-{t}", .{abi});
     }
-
-    return result.toOwnedSlice(gpa);
 }
 
-/// Renders the query into a textual representation that can be parsed via the
+/// Prints the query into a textual representation that can be parsed via the
 /// `-mcpu` flag passed to the Zig compiler.
-/// Appends the result to `buffer`.
-pub fn serializeCpu(q: Query, buffer: *std.array_list.Managed(u8)) Allocator.Error!void {
-    try buffer.ensureUnusedCapacity(8);
-    switch (q.cpu_model) {
-        .native => {
-            buffer.appendSliceAssumeCapacity("native");
-        },
-        .baseline => {
-            buffer.appendSliceAssumeCapacity("baseline");
-        },
-        .determined_by_arch_os => {
-            if (q.cpu_arch == null) {
-                buffer.appendSliceAssumeCapacity("native");
-            } else {
-                buffer.appendSliceAssumeCapacity("baseline");
-            }
-        },
-        .explicit => |model| {
-            try buffer.appendSlice(model.name);
-        },
+pub fn printCpu(query: *const Query, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    cpu_model: switch (query.cpu_model) {
+        .native, .baseline => |_, cpu_model| try w.print("{t}", .{cpu_model}),
+        .determined_by_arch_os => continue :cpu_model if (query.cpu_arch) |_| .baseline else .native,
+        .explicit => |model| try w.writeAll(model.name),
     }
 
-    if (q.cpu_features_add.isEmpty() and q.cpu_features_sub.isEmpty()) {
+    if (query.cpu_features_add.isEmpty() and query.cpu_features_sub.isEmpty()) {
         // The CPU name alone is sufficient.
         return;
     }
 
-    const cpu_arch = q.cpu_arch orelse builtin.cpu.arch;
+    const cpu_arch = query.cpu_arch orelse builtin.cpu.arch;
     const all_features = cpu_arch.allFeaturesList();
 
     for (all_features, 0..) |feature, i_usize| {
         const i: Target.Cpu.Feature.Set.Index = @intCast(i_usize);
-        try buffer.ensureUnusedCapacity(feature.name.len + 1);
-        if (q.cpu_features_sub.isEnabled(i)) {
-            buffer.appendAssumeCapacity('-');
-            buffer.appendSliceAssumeCapacity(feature.name);
-        } else if (q.cpu_features_add.isEnabled(i)) {
-            buffer.appendAssumeCapacity('+');
-            buffer.appendSliceAssumeCapacity(feature.name);
+        if (query.cpu_features_sub.isEnabled(i)) {
+            try w.print("-{s}", .{feature.name});
+        } else if (query.cpu_features_add.isEnabled(i)) {
+            try w.print("+{s}", .{feature.name});
         }
     }
 }
 
-pub fn serializeCpuAlloc(q: Query, ally: Allocator) Allocator.Error![]u8 {
-    var buffer = std.array_list.Managed(u8).init(ally);
-    try serializeCpu(q, &buffer);
-    return buffer.toOwnedSlice();
+/// Deprecated; use `printZigTriple` instead. Will be removed in 0.19.0.
+pub fn zigTriple(query: Query, gpa: Allocator) Allocator.Error![]u8 {
+    return gpa.print("{f}", .{std.fmt.alt(&query, .printZigTriple)});
+}
+
+/// Deprecated; use `printCpu` instead. Will be removed in 0.19.0.
+pub fn serializeCpu(query: Query, buffer: *std.array_list.Managed(u8)) Allocator.Error!void {
+    try buffer.print("{f}", .{std.fmt.alt(&query, .printCpu)});
+}
+
+/// Deprecated; use `printCpu` instead. Will be removed in 0.19.0.
+pub fn serializeCpuAlloc(query: Query, gpa: Allocator) Allocator.Error![]u8 {
+    return gpa.print("{f}", .{std.fmt.alt(&query, .printCpu)});
 }
 
 /// Deprecated; use `zigTriple` instead. Will be removed in 0.18.0.
-pub fn allocDescription(self: Query, allocator: Allocator) ![]u8 {
-    return self.zigTriple(allocator);
+pub fn allocDescription(query: Query, allocator: Allocator) ![]u8 {
+    return query.zigTriple(allocator);
 }
 
 /// Deprecated; set `glibc_version` directly. Will be removed in 0.18.0.
-pub fn setGnuLibCVersion(self: *Query, major: u32, minor: u32, patch: u32) void {
-    self.glibc_version = SemanticVersion{ .major = major, .minor = minor, .patch = patch };
+pub fn setGnuLibCVersion(query: *Query, major: u32, minor: u32, patch: u32) void {
+    query.glibc_version = SemanticVersion{ .major = major, .minor = minor, .patch = patch };
 }
 
 fn parseOs(result: *Query, diags: *ParseOptions.Diagnostics, text: []const u8) !void {

@@ -39,8 +39,7 @@ fn foo(val: *const S) !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change struct layout#}
+#update "change struct layout"
 #check stdout {
 100 200
 #}
@@ -61,8 +60,7 @@ fn foo(val: *const S) !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change values#}
+#update "change values"
 #check stdout {
 1234 5678
 #}

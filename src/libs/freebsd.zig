@@ -1120,10 +1120,6 @@ fn buildSharedLib(
         .emit_bin = .{ .yes_path = try bin_directory.join(arena, &.{basename}) },
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,
-        .verbose_air = comp.verbose_air,
-        .verbose_llvm_ir = comp.verbose_llvm_ir,
-        .verbose_llvm_bc = comp.verbose_llvm_bc,
-        .verbose_llvm_cpu_features = comp.verbose_llvm_cpu_features,
         .clang_passthrough_mode = comp.clang_passthrough_mode,
         .version = version,
         .version_script = .{

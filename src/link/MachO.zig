@@ -456,9 +456,7 @@ pub fn flush(
     self.allocateSegments();
     self.allocateSyntheticSymbols();
 
-    if (build_options.enable_logging) {
-        state_log.debug("{f}", .{self.dumpState()});
-    }
+    state_log.debug("{f}", .{self.dumpState()});
 
     // Beyond this point, everything has been allocated a virtual address and we can resolve
     // the relocations, and commit objects to file.

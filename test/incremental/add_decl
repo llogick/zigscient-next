@@ -24,8 +24,7 @@ const foo = "good morning\n";
 const bar = "good evening\n";
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-add new declaration#}
+#update "add new declaration"
 #check stdout {
 good morning
 #}
@@ -39,8 +38,7 @@ const foo = "good morning\n";
 const bar = "good evening\n";
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-reference new declaration#}
+#update "reference new declaration"
 #check stdout {
 good evening
 #}
@@ -54,8 +52,7 @@ const foo = "good morning\n";
 const bar = "good evening\n";
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-reference missing declaration#}
+#update "reference missing declaration"
 #check errors {
 main.zig:3:52: error: use of undeclared identifier 'qux'
 #}
@@ -70,8 +67,7 @@ const bar = "good evening\n";
 const qux = "good night\n";
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-add missing declaration#}
+#update "add missing declaration"
 #check stdout {
 good night
 #}
@@ -84,8 +80,7 @@ pub fn main() !void {
 const qux = "good night\n";
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-remove unused declarations#}
+#update "remove unused declarations"
 #check stdout {
 good night
 #}

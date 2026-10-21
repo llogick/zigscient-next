@@ -35,8 +35,7 @@ pub fn main(init: std.process.Init) !void {
 }
 const std = @import("std");
 #}
-#update {
-increase array length#}
+#update "increase array length"
 #check stdout {
 arr[999] = 234
 #}

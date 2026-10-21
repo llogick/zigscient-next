@@ -16,8 +16,7 @@ main.zig:2:5: error: uh oh
 pub fn main() !void {
     @compileError("uh oh");
 #}
-#update {
-add parse error#}
+#update "add parse error"
 #check errors {
 main.zig:3:1: error: expected statement, found 'EOF'
 #}
@@ -27,8 +26,7 @@ pub fn main() !void {
     @compileError("uh oh");
 }
 #}
-#update {
-fix parse error#}
+#update "fix parse error"
 #check errors {
 main.zig:2:5: error: uh oh
 #}
@@ -37,8 +35,7 @@ main.zig:2:5: error: uh oh
 pub fn main() !void {
     @compileError("uh oh");
 #}
-#update {
-add parse error again#}
+#update "add parse error again"
 #check errors {
 main.zig:3:1: error: expected statement, found 'EOF'
 #}
@@ -47,8 +44,7 @@ main.zig:3:1: error: expected statement, found 'EOF'
 pub fn main() !void {
     //@compileError("uh oh");
 #}
-#update {
-comment @compileError call#}
+#update "comment @compileError call"
 #check errors {
 main.zig:3:1: error: expected statement, found 'EOF'
 #}
@@ -58,7 +54,5 @@ pub fn main() !void {
     //@compileError("uh oh");
 }
 #}
-#update {
-fix parse error again#}
-#check stdout {
-#}
+#update "fix parse error again"
+#check stdout

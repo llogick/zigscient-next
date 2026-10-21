@@ -9,8 +9,7 @@ pub fn main() !void {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-no compile log#}
+#update "no compile log"
 #check stdout {
 Hello, World!
 #}
@@ -23,8 +22,7 @@ pub fn main() !void {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-add compile log#}
+#update "add compile log"
 #check errors {
 main.zig:4:5: error: found compile log statement
 
@@ -39,8 +37,7 @@ pub fn main() !void {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-remove compile log#}
+#update "remove compile log"
 #check stdout {
 Hello, World!
 #}

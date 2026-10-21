@@ -38,6 +38,11 @@ pub const Error = union(enum) {
     invalid_character: usize,
     /// `''`. Not returned for string literals.
     empty_char_literal,
+    /// The input ended before the end of the literal.
+    end_of_input: usize,
+    /// The literal ended before the end of the input. There was an otherwise successful
+    /// parse of a prefix of the input of length given by this payload written to the writer.
+    end_of_literal: usize,
 
     const FormatMessage = struct {
         err: Error,
@@ -83,6 +88,12 @@ pub const Error = union(enum) {
             .empty_char_literal => try writer.writeAll(
                 "empty character literal",
             ),
+            .end_of_input => try writer.writeAll(
+                "expected end of string literal",
+            ),
+            .end_of_literal => try writer.writeAll(
+                "unexpected end of string literal",
+            ),
         }
     }
 
@@ -104,6 +115,8 @@ pub const Error = union(enum) {
             .expected_rbrace,
             .expected_single_quote,
             .invalid_character,
+            .end_of_input,
+            .end_of_literal,
             => |n| n,
             .empty_char_literal => 0,
         };
@@ -339,13 +352,16 @@ pub fn parseWrite(writer: *Writer, bytes: []const u8) Writer.Error!Result {
                             try writer.writeAll(buf[0..len]);
                         } else {
                             try writer.writeByte(@as(u8, @intCast(codepoint)));
+                            if (index == bytes.len) return .{ .failure = .{ .end_of_input = index } };
                         }
                     },
                     .failure => |err| return .{ .failure = err },
                 }
             },
             '\n' => return .{ .failure = .{ .invalid_character = index } },
-            '"' => return .success,
+            '"' => return if (index < bytes.len - 1) .{
+                .failure = .{ .end_of_literal = index },
+            } else .success,
             else => {
                 try writer.writeByte(b);
                 index += 1;

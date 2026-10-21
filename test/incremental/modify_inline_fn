@@ -29,8 +29,7 @@ inline fn getStr() []const u8 {
 }
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change the string#}
+#update "change the string"
 #check stdout {
 bar
 #}

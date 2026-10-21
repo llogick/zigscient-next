@@ -7,14 +7,12 @@ const std = @import("std");
 pub fn main() !void {}
 #}
 #update
-#check stdout {
-#}
+#check stdout
 
 #write main.zig {
 pub fn main() !void {
 #}
-#update {
-introduce parse error#}
+#update "introduce parse error"
 #check errors {
 main.zig:2:1: error: expected statement, found 'EOF'
 #}
@@ -22,7 +20,5 @@ main.zig:2:1: error: expected statement, found 'EOF'
 #write main.zig {
 pub fn main() !void {}
 #}
-#update {
-fix parse error#}
-#check stdout {
-#}
+#update "fix parse error"
+#check stdout

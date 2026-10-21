@@ -51,9 +51,7 @@ pub fn flushStaticLib(elf_file: *Elf, comp: *Compilation) !void {
         try allocateAllocSections(elf_file);
         try elf_file.allocateNonAllocSections();
 
-        if (build_options.enable_logging) {
-            state_log.debug("{f}", .{elf_file.dumpState()});
-        }
+        state_log.debug("{f}", .{elf_file.dumpState()});
 
         try elf_file.writeMergeSections();
         try writeSyntheticSections(elf_file);
@@ -117,10 +115,8 @@ pub fn flushStaticLib(elf_file: *Elf, comp: *Compilation) !void {
         break :blk pos;
     };
 
-    if (build_options.enable_logging) {
-        state_log.debug("ar_symtab\n{f}\n", .{ar_symtab.fmt(elf_file)});
-        state_log.debug("ar_strtab\n{f}\n", .{ar_strtab});
-    }
+    state_log.debug("ar_symtab\n{f}\n", .{ar_symtab.fmt(elf_file)});
+    state_log.debug("ar_strtab\n{f}\n", .{ar_strtab});
 
     const buffer = try gpa.alloc(u8, total_size);
     defer gpa.free(buffer);
@@ -193,9 +189,7 @@ pub fn flushObject(elf_file: *Elf, comp: *Compilation) !void {
     try allocateAllocSections(elf_file);
     try elf_file.allocateNonAllocSections();
 
-    if (build_options.enable_logging) {
-        state_log.debug("{f}", .{elf_file.dumpState()});
-    }
+    state_log.debug("{f}", .{elf_file.dumpState()});
 
     try writeAtoms(elf_file);
     try elf_file.writeMergeSections();

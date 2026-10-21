@@ -38,8 +38,7 @@ comptime {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-make backing types signed#}
+#update "make backing types signed"
 #check errors {
 main.zig:5:5: error: found compile log statement
 main.zig:8:5: note: also here
@@ -62,8 +61,7 @@ comptime {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-make backing types too small#}
+#update "make backing types too small"
 #check errors {
 main.zig:1:20: error: backing integer bit width does not match total bit width of fields
 main.zig:1:27: note: backing integer 'i5' has bit width '5'
@@ -87,8 +85,7 @@ comptime {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-make backing types too big#}
+#update "make backing types too big"
 #check errors {
 main.zig:1:20: error: backing integer bit width does not match total bit width of fields
 main.zig:1:27: note: backing integer 'u10' has bit width '10'

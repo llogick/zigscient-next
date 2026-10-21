@@ -8,9 +8,20 @@ const Value = @import("../Value.zig");
 const Type = @import("../Type.zig");
 const Air = @import("../Air.zig");
 const InternPool = @import("../InternPool.zig");
+const Printer = @This();
+
+zcu: *Zcu,
+fqn: InternPool.NullTerminatedString,
+air: *const Air,
+liveness: *const ?Air.Liveness,
+
+pub fn format(p: *const Printer, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    try w.print("{qf}:\n", .{p.fqn.fmt(&p.zcu.intern_pool)});
+    try p.air.write(w, p.zcu, p.liveness.*);
+}
 
 pub fn write(air: Air, stream: *std.Io.Writer, zcu: *Zcu, liveness: ?Air.Liveness) !void {
-    // comptime assert(build_options.enable_debug_extensions);
+    // comptime assert(build_options.log_level == .debug);
     const instruction_bytes = air.instructions.len *
         // Here we don't use @sizeOf(Air.Inst.Data) because it would include
         // the debug safety tag but we want to measure release size.
@@ -69,7 +80,7 @@ pub fn writeInst(
     zcu: *Zcu,
     liveness: ?Air.Liveness,
 ) void {
-    // comptime assert(build_options.enable_debug_extensions);
+    // comptime assert(build_options.log_level == .debug);
     var writer: Writer = .{
         .zcu = zcu,
         .gpa = zcu.comp.gpa,

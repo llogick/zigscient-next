@@ -33,7 +33,5 @@ pub fn main() void {
     _ = u;
 }
 #}
-#update {
-remove invalid backing enum#}
-#check stdout {
-#}
+#update "remove invalid backing enum"
+#check stdout

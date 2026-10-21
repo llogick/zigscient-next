@@ -51,7 +51,7 @@ pub const Module = opaque {
 };
 
 pub const disposeMessage = LLVMDisposeMessage;
-extern fn LLVMDisposeMessage(Message: [*:0]const u8) void;
+extern fn LLVMDisposeMessage(Message: ?[*:0]const u8) void;
 
 pub const TargetMachine = opaque {
     pub const FloatABI = enum(c_int) {
@@ -85,7 +85,7 @@ pub const TargetMachine = opaque {
     pub const EmitOptions = extern struct {
         is_debug: bool,
         is_small: bool,
-        time_report_out: ?*[*:0]u8,
+        time_report_out: ?*?[*:0]u8,
         tsan: bool,
         sancov: bool,
         lto: LtoPhase,
@@ -95,6 +95,7 @@ pub const TargetMachine = opaque {
         bin_filename: ?[*:0]const u8,
         llvm_ir_filename: ?[*:0]const u8,
         bitcode_filename: ?[*:0]const u8,
+        llvm_ir_out: ?*?[*:0]u8,
         coverage: Coverage,
 
         pub const LtoPhase = enum(c_int) {

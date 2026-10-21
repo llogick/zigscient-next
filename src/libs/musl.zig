@@ -246,9 +246,6 @@ pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Pro
                 .emit_bin = .yes_cache,
                 .verbose_cc = comp.verbose_cc,
                 .verbose_link = comp.verbose_link,
-                .verbose_air = comp.verbose_air,
-                .verbose_llvm_ir = comp.verbose_llvm_ir,
-                .verbose_llvm_cpu_features = comp.verbose_llvm_cpu_features,
                 .clang_passthrough_mode = comp.clang_passthrough_mode,
                 .c_source_files = &.{
                     .{

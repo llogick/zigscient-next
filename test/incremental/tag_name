@@ -11,8 +11,7 @@ pub fn main() !void {
 }
 #}
 #update
-#check stdout {
-first#}
+#check stdout "first"
 
 #write main.zig {
 const std = @import("std");
@@ -22,10 +21,8 @@ pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, @tagName(some_enum));
 }
 #}
-#update {
-no change#}
-#check stdout {
-first#}
+#update "no change"
+#check stdout "first"
 
 #write main.zig {
 const std = @import("std");
@@ -35,7 +32,5 @@ pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, @tagName(some_enum));
 }
 #}
-#update {
-swap fields#}
-#check stdout {
-first#}
+#update "swap fields"
+#check stdout "first"

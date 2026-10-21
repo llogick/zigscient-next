@@ -7191,9 +7191,9 @@ fn realPathPosix(fd: posix.fd_t, out_buffer: []u8) File.RealPathError!usize {
             return n;
         },
         .linux, .serenity, .illumos => {
-            var procfs_buf: ["/proc/self/path/-2147483648\x00".len]u8 = undefined;
+            var proc_buf: [std.fmt.count("/proc/self/path/{d}\x00", .{std.math.minInt(posix.fd_t)})]u8 = undefined;
             const template = if (native_os == .illumos) "/proc/self/path/{d}" else "/proc/self/fd/{d}";
-            const proc_path = std.mem.printSentinel(&procfs_buf, template, .{fd}, 0) catch unreachable;
+            const proc_path = std.mem.printSentinel(&proc_buf, template, .{fd}, 0) catch unreachable;
             const syscall: Syscall = try .start();
             while (true) {
                 const rc = posix.system.readlink(proc_path, out_buffer.ptr, out_buffer.len);
@@ -7266,27 +7266,32 @@ fn fileHardLink(
     new_sub_path: []const u8,
     options: File.HardLinkOptions,
 ) File.HardLinkError!void {
-    _ = userdata;
-    if (native_os != .linux) return error.OperationUnsupported;
+    const t: *Threaded = @ptrCast(@alignCast(userdata));
+    _ = t;
 
     var new_path_buffer: [posix.PATH_MAX]u8 = undefined;
     const new_sub_path_posix = try pathToPosix(new_sub_path, &new_path_buffer);
 
-    const flags: u32 = if (options.follow_symlinks)
-        posix.AT.SYMLINK_FOLLOW | posix.AT.EMPTY_PATH
-    else
-        posix.AT.EMPTY_PATH;
+    switch (native_os) {
+        else => return error.OperationUnsupported,
+        .freebsd, .linux => {
+            const flags: u32 = if (options.follow_symlinks)
+                posix.AT.SYMLINK_FOLLOW | posix.AT.EMPTY_PATH
+            else
+                posix.AT.EMPTY_PATH;
 
-    return linkat(file.handle, "", new_dir.handle, new_sub_path_posix, flags) catch |err| switch (err) {
-        error.FileNotFound => {
-            if (options.follow_symlinks) return error.FileNotFound;
-            var proc_buf: ["/proc/self/fd/-2147483648\x00".len]u8 = undefined;
-            const proc_path = std.mem.printSentinel(&proc_buf, "/proc/self/fd/{d}", .{file.handle}, 0) catch
-                unreachable;
-            return linkat(posix.AT.FDCWD, proc_path, new_dir.handle, new_sub_path_posix, posix.AT.SYMLINK_FOLLOW);
+            return linkat(file.handle, "", new_dir.handle, new_sub_path_posix, flags) catch |err| switch (err) {
+                error.FileNotFound => {},
+                else => |e| return e,
+            };
         },
-        else => |e| return e,
-    };
+        .netbsd, .openbsd => {},
+    }
+
+    if (options.follow_symlinks) return error.FileNotFound;
+    var dev_buf: [std.fmt.count("/dev/fd/{d}\x00", .{std.math.minInt(posix.fd_t)})]u8 = undefined;
+    const dev_path = std.mem.printSentinel(&dev_buf, "/dev/fd/{d}", .{file.handle}, 0) catch unreachable;
+    return linkat(posix.AT.FDCWD, dev_path, new_dir.handle, new_sub_path_posix, posix.AT.SYMLINK_FOLLOW);
 }
 
 fn linkat(
@@ -8732,12 +8737,12 @@ fn fchmodatFallback(
 ) Dir.SetFilePermissionsError!void {
     comptime assert(native_os == .linux);
 
-    // Fallback to changing permissions using procfs:
+    // Fallback to changing permissions using devfs:
     //
     // 1. Open `path` as a `PATH` descriptor.
     // 2. Stat the fd and check if it isn't a symbolic link.
-    // 3. Generate the procfs reference to the fd via `/proc/self/fd/{fd}`.
-    // 4. Pass the procfs path to `chmod` with the `mode`.
+    // 3. Generate the devfs reference to the fd via `/dev/fd/{fd}`.
+    // 4. Pass the devfs path to `chmod` with the `mode`.
     const path_fd: posix.fd_t = fd: {
         const syscall: Syscall = try .start();
         while (true) {
@@ -8808,11 +8813,11 @@ fn fchmodatFallback(
     if ((path_mode & posix.S.IFMT) == posix.S.IFLNK)
         return error.OperationUnsupported;
 
-    var procfs_buf: ["/proc/self/fd/-2147483648\x00".len]u8 = undefined;
-    const proc_path = std.mem.printSentinel(&procfs_buf, "/proc/self/fd/{d}", .{path_fd}, 0) catch unreachable;
+    var dev_buf: [std.fmt.count("/dev/fd/{d}\x00", .{std.math.minInt(posix.fd_t)})]u8 = undefined;
+    const dev_path = std.mem.printSentinel(&dev_buf, "/dev/fd/{d}", .{path_fd}, 0) catch unreachable;
     const syscall: Syscall = try .start();
     while (true) {
-        switch (posix.errno(posix.system.chmod(proc_path, mode))) {
+        switch (posix.errno(posix.system.chmod(dev_path, mode))) {
             .SUCCESS => return syscall.finish(),
             .INTR => {
                 try syscall.checkCancel();
@@ -8821,7 +8826,7 @@ fn fchmodatFallback(
             else => |e| {
                 syscall.finish();
                 switch (e) {
-                    .NOENT => return error.OperationUnsupported, // procfs not mounted.
+                    .NOENT => return error.OperationUnsupported, // devfs not mounted.
                     .BADF => |err| return errnoBug(err),
                     .FAULT => |err| return errnoBug(err),
                     .INVAL => |err| return errnoBug(err),
@@ -17446,9 +17451,6 @@ pub fn posixExecveat(
 ) process.ReplaceError {
     try Thread.checkCancel();
     switch (err: {
-        if (path) |p| if (dir == posix.AT.FDCWD or Dir.path.isAbsoluteZ(p)) {
-            break :err posix.errno(posix.system.execve(p, argv, env_block.slice.ptr));
-        };
         if (comptime native_os == .linux and (!builtin.link_libc or
             (builtin.target.isGnuLibC() and builtin.target.os.version_range.linux.glibc.order(
                 .{ .major = 2, .minor = 34, .patch = 0 },
@@ -17462,34 +17464,57 @@ pub fn posixExecveat(
                 .NOSYS => {},
             }
         }
-        var path_buffer: [posix.PATH_MAX]u8 = undefined;
-        var path_len = realPathPosix(dir, &path_buffer) catch |err| switch (err) {
-            else => |e| return e,
-            error.InputOutput,
-            error.FileTooBig,
-            error.NoSpaceLeft,
-            error.PathAlreadyExists,
-            error.SymLinkLoop,
-            error.NetworkNotFound,
-            error.PipeBusy,
-            error.AntivirusInterference,
-            => return error.FileNotFound,
-            error.DeviceBusy,
-            error.NoDevice,
-            error.UnrecognizedVolume,
-            => return error.FileSystem,
+        if (path) |p| if (dir == posix.AT.FDCWD or Dir.path.isAbsoluteZ(p)) {
+            break :err posix.errno(posix.system.execve(p, argv, env_block.slice.ptr));
         };
-        if (path) |p| {
-            const path_slice = std.mem.span(p);
-            path_buffer[path_len] = Dir.path.sep;
-            path_len += 1;
-            @memcpy(path_buffer[path_len..][0..path_slice.len], path_slice);
-            path_len += path_slice.len;
+        const exe: posix.fd_t = if (path) |p| exe: {
+            var flags: posix.O = .{};
+            if (@hasField(posix.O, "CLOEXEC")) flags.CLOEXEC = true;
+            if (@hasField(posix.O, "LARGEFILE")) flags.LARGEFILE = true;
+            if (@hasField(posix.O, "NOCTTY")) flags.NOCTTY = true;
+            if (@hasField(posix.O, "PATH")) flags.PATH = true;
+            if (@hasField(posix.O, "EXEC")) flags.EXEC = true;
+            const rc = openat_sym(dir, p, flags, @as(posix.mode_t, 0));
+            while (true) switch (posix.errno(rc)) {
+                .SUCCESS => break :exe @intCast(rc),
+                .INTR, .AGAIN => {},
+                .FAULT => |err| return errnoBug(err),
+                .INVAL => return error.BadPathName,
+                .BADF => |err| return errnoBug(err), // File descriptor used after closed.
+                .ACCES => return error.AccessDenied,
+                .FBIG => return error.InvalidExe,
+                .OVERFLOW => return error.InvalidExe,
+                .ISDIR => return error.IsDir,
+                .LOOP => return error.InvalidExe,
+                .MFILE => return error.ProcessFdQuotaExceeded,
+                .NAMETOOLONG => return error.NameTooLong,
+                .NFILE => return error.SystemFdQuotaExceeded,
+                .NODEV => return error.FileSystem,
+                .NOENT => return error.FileNotFound,
+                .SRCH => return error.FileNotFound, // Linux when opening procfs files.
+                .NOMEM => return error.SystemResources,
+                .NOTDIR => return error.NotDir,
+                .PERM => return error.PermissionDenied,
+                .BUSY => return error.FileSystem,
+                .TXTBSY => return error.FileBusy,
+                .NXIO => return error.FileSystem,
+                .ILSEQ => return error.BadPathName,
+                else => |err| return posix.unexpectedErrno(err),
+            };
+        } else dir;
+        defer closeFd(exe);
+        if (builtin.link_libc and @TypeOf(posix.system.fexecve) != void) {
+            break :err posix.errno(posix.system.fexecve(exe, argv, env_block.slice.ptr));
         }
-        path_buffer[path_len] = 0;
-        break :err posix.errno(
-            posix.system.execve(path_buffer[0..path_len :0], argv, env_block.slice.ptr),
-        );
+        switch (native_os) {
+            else => return error.OperationUnsupported,
+            .linux, .serenity, .illumos => {
+                var proc_buf: [std.fmt.count("/proc/self/path/{d}\x00", .{std.math.minInt(posix.fd_t)})]u8 = undefined;
+                const template = if (native_os == .illumos) "/proc/self/path/{d}" else "/proc/self/fd/{d}";
+                const proc_path = std.mem.printSentinel(&proc_buf, template, .{exe}, 0) catch unreachable;
+                break :err posix.errno(posix.system.execve(proc_path, argv, env_block.slice.ptr));
+            },
+        }
     }) {
         .FAULT => |err| return errnoBug(err), // Bad pointer parameter.
         .@"2BIG" => return error.SystemResources,

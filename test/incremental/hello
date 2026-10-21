@@ -21,8 +21,7 @@ pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, "おはようございます\n");
 }
 #}
-#update {
-change the string#}
+#update "change the string"
 #check stdout {
 おはようございます
 #}

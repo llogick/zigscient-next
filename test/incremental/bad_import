@@ -26,8 +26,7 @@ comptime {
     _ = @import("this_is/not_real.zig");
 }
 #}
-#update {
-change bad import#}
+#update "change bad import"
 #check errors {
 this_is/not_real.zig:1:1: error: unable to load "not_real.zig": FileNotFound
 foo.zig:2:17: note: file imported here
@@ -41,8 +40,7 @@ pub fn main() !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-remove import of 'foo.zig'#}
+#update "remove import of 'foo.zig'"
 #check stdout {
 success
 #}

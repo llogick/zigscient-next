@@ -3,6 +3,6 @@
 -Mroot=basic.zig
 #}
 
-#write basic.zig basic.zig
+#write basic.zig @basic.zig
 #update
-#check lldb lldb
+#check lldb @lldb

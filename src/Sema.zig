@@ -1126,6 +1126,8 @@ fn analyzeBodyInner(
     crash_info.push(sema, block, body);
     defer crash_info.pop();
 
+    const path = zcu.namespacePtr(block.namespace).fileScope(zcu).path;
+
     // We use a while (true) loop here to avoid a redundant way of breaking out of
     // the loop. The only way to break out of the loop is with a `noreturn`
     // instruction.
@@ -1134,11 +1136,7 @@ fn analyzeBodyInner(
         crash_info.setBodyIndex(i);
         const inst = body[i];
 
-        // This log is a bit expensive, and LLVM fails to optimize it away.
-        if (build_options.enable_logging) {
-            const path = zcu.namespacePtr(block.namespace).fileScope(zcu).path;
-            std.log.scoped(.sema_zir).debug("sema ZIR {f} %{d}", .{ path.fmt(comp), inst });
-        }
+        std.log.scoped(.sema_zir).debug("sema ZIR {f} %{d}", .{ path.fmt(comp), inst });
 
         const air_ref: Air.Inst.Ref = inst: switch (tags[@backingInt(inst)]) {
             // zig fmt: off
@@ -27903,7 +27901,25 @@ fn elemValSlice(
         }
     }
 
-    if (try elem_ty.onePossibleValue(pt)) |opv| return .fromValue(opv);
+    switch (elem_ty.classify(zcu)) {
+        .no_possible_value => switch (elem_ty.zigTypeTag(zcu)) {
+            .@"opaque" => return sema.fail(block, src, "cannot load opaque type '{f}'", .{elem_ty.fmt(zcu)}),
+            else => {
+                // Loading an uninstantiable type always invokes Illegal Behavior.
+                if (block.isComptime()) {
+                    return sema.fail(block, src, "cannot load uninstantiable type '{f}'", .{elem_ty.fmt(zcu)});
+                } else if (block.wantSafety()) {
+                    try sema.safetyPanic(block, src, .load_uninstantiable_type);
+                    return .unreachable_value;
+                } else {
+                    _ = try block.addNoOp(.unreach);
+                    return .unreachable_value;
+                }
+            },
+        },
+        .one_possible_value => return .fromValue((try elem_ty.onePossibleValue(pt)).?),
+        .runtime, .partially_comptime, .fully_comptime => {},
+    }
 
     try sema.validateRuntimeElemAccess(block, elem_index_src, elem_ty, slice_src);
     try sema.validateRuntimeValue(block, slice_src, slice);

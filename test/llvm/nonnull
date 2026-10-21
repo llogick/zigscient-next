@@ -1,0 +1,44 @@
+#skip amdgcn-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-amdpal-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-mesa3d-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
+
+#skip nvptx64-cuda-none-baseline-whole-llvm-lld-pic
+#skip nvptx64-nvcl-none-baseline-whole-llvm-lld-pic
+
+#skip x86_64-linux-gnux32-baseline-whole-llvm-new-pic
+#skip x86_64-linux-muslx32-baseline-whole-llvm-new-pic
+#skip x86_64-linux-x32-baseline-whole-llvm-new-pic
+
+#obj {
+--name test -fno-lld -fno-new-linker -ofmt=llvmir
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(ptr: *i16) i16 {
+    return ptr.*;
+}
+#}
+#update "store"
+#check llvm {
+define #...@test.entry(ptr #...nonnull #...%0) #...{
+#...load i16, ptr %0#...
+}
+
+#}
+
+#write test.zig {
+export fn entry(ptr: *i16) void {
+    ptr.* = 42;
+}
+#}
+#update "load"
+#check llvm {
+define #...@test.entry(ptr #...nonnull #...%0) #...{
+#...store i16 42, ptr %0#...
+}
+
+#}

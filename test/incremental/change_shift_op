@@ -29,8 +29,7 @@ fn foo(x: u16) !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change to right shift#}
+#update "change to right shift"
 #check stdout {
 0x130
 #}

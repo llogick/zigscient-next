@@ -29,8 +29,7 @@ pub fn main(init: std.process.Init) !void {
 }
 const std = @import("std");
 #}
-#update {
-change tag type#}
+#update "change tag type"
 #check errors {
 main.zig:3:24: error: no field named 'a' in enum 'main.B'
 main.zig:2:11: note: enum declared here
@@ -47,8 +46,7 @@ pub fn main(init: std.process.Init) !void {
 }
 const std = @import("std");
 #}
-#update {
-change field name to match new tag type#}
+#update "change field name to match new tag type"
 #check stdout {
 b
 #}

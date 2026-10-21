@@ -218,6 +218,8 @@ pub fn binNameAlloc(allocator: Allocator, options: BinNameOptions) error{OutOfMe
             },
             .Obj => return std.fmt.allocPrint(allocator, "{s}.o", .{root_name}),
         },
+        .llvmbc => return std.fmt.allocPrint(allocator, "{s}.bc", .{root_name}),
+        .llvmir => return std.fmt.allocPrint(allocator, "{s}.ll", .{root_name}),
         .macho => switch (options.output_mode) {
             .Exe => return allocator.dupe(u8, root_name),
             .Lib => {

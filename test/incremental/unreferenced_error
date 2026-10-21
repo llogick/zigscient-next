@@ -23,8 +23,7 @@ pub fn main() !void {
 const a = @compileError("bad a");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-introduce compile error#}
+#update "introduce compile error"
 #check errors {
 main.zig:5:11: error: bad a
 #}
@@ -38,8 +37,7 @@ const a = @compileError("bad a");
 const b = "Hi there!\n";
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-remove error reference#}
+#update "remove error reference"
 #check stdout {
 Hi there!
 #}
@@ -53,8 +51,7 @@ const a = "Back to a\n";
 const b = @compileError("bad b");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-introduce and remove reference to error#}
+#update "introduce and remove reference to error"
 #check stdout {
 Back to a
 #}

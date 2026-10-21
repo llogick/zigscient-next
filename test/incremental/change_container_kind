@@ -12,8 +12,7 @@ pub fn main() void {
 #write foo.zig {
 pub const T = struct { x: u8 };
 #}
-#update {
-T is struct#}
+#update "T is struct"
 #check errors {
 main.zig:3:5: error: found compile log statement
 
@@ -25,8 +24,7 @@ Compile Log Output:
 #write foo.zig {
 pub const T = union {};
 #}
-#update {
-T is union#}
+#update "T is union"
 #check errors {
 main.zig:3:5: error: found compile log statement
 
@@ -38,8 +36,7 @@ Compile Log Output:
 #write foo.zig {
 pub const T = enum {};
 #}
-#update {
-T is enum#}
+#update "T is enum"
 #check errors {
 main.zig:3:5: error: found compile log statement
 
@@ -51,8 +48,7 @@ Compile Log Output:
 #write foo.zig {
 pub const T = opaque {};
 #}
-#update {
-T is opaque#}
+#update "T is opaque"
 #check errors {
 main.zig:3:5: error: found compile log statement
 
@@ -64,8 +60,7 @@ Compile Log Output:
 #write foo.zig {
 pub const T = packed struct {};
 #}
-#update {
-T is packed struct#}
+#update "T is packed struct"
 #check errors {
 main.zig:3:5: error: found compile log statement
 
@@ -77,8 +72,7 @@ Compile Log Output:
 #write foo.zig {
 pub const T = packed union { x: void }; // packed unions need at least 1 field
 #}
-#update {
-T is packed union#}
+#update "T is packed union"
 #check errors {
 main.zig:3:5: error: found compile log statement
 
@@ -90,8 +84,7 @@ Compile Log Output:
 #write foo.zig {
 pub const T = extern struct {};
 #}
-#update {
-T is extern struct#}
+#update "T is extern struct"
 #check errors {
 main.zig:3:5: error: found compile log statement
 
@@ -103,8 +96,7 @@ Compile Log Output:
 #write foo.zig {
 pub const T = extern union { x: void }; // extern unions need at least 1 field
 #}
-#update {
-T is extern union#}
+#update "T is extern union"
 #check errors {
 main.zig:3:5: error: found compile log statement
 

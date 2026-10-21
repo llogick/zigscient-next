@@ -10855,11 +10855,22 @@ pub fn resolveAlignmentForwardReference(b: *Builder, fwd_ref: Alignment.Lazy, va
     b.alignment_forward_references.items[index] = value;
 }
 
-pub fn dump(b: *Builder, io: Io) void {
-    var buffer: [4000]u8 = undefined;
-    const stderr: Io.File = .stderr();
-    b.printToFile(io, stderr, &buffer) catch {};
-}
+pub const Print = struct {
+    name: []const u8,
+    builder: *Builder,
+    err: ?Allocator.Error,
+
+    pub fn format(p: *Print, w: *Writer) Writer.Error!void {
+        try w.print("{q}", .{p.name});
+        p.builder.print(w) catch |err| switch (err) {
+            error.WriteFailed => |e| return e,
+            error.OutOfMemory => |e| {
+                p.err = e;
+                return error.WriteFailed;
+            },
+        };
+    }
+};
 
 pub fn printToFilePath(b: *Builder, io: Io, dir: Io.Dir, path: []const u8) !void {
     var buffer: [4000]u8 = undefined;

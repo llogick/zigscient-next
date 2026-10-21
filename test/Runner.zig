@@ -3,6 +3,256 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Runner = @This();
 
+/// These are passed as `<target>-<cache_mode>-<backend>-<linker>-<pic>` strings.
+///
+/// If only one specific test is failing on a target, instead of entirely disabling the target here, you
+/// can skip the target for that specific test only by adding a line like this to top of the manifest:
+///
+///     #skip x86_64-linux-none-baseline-whole-selfhosted-new-pic
+pub const Target = struct {
+    cpu: Cpu = .{ .native = .{} },
+    os: Os = .native,
+    abi: Abi = .default,
+    ofmt: ObjectFormat = .default,
+    dynamic_linker: DynamicLinker = .default,
+
+    cache_mode: enum { whole, incremental },
+    backend: enum { selfhosted, llvm, cbe },
+    linker: enum { lld, old, new },
+    pic: enum { nopic, pic, pie },
+
+    pub const Cpu = Cpu: {
+        @setEvalBranchQuota(3_000);
+        const Arch = std.Target.Cpu.Arch;
+        const arch_info = @typeInfo(Arch).@"enum";
+        const field_names = .{"native"} ++ arch_info.field_names;
+        var field_types: [field_names.len]type = undefined;
+        field_types[0] = struct {
+            model: Model = .native,
+
+            pub const Model = enum { native, baseline };
+        };
+        for (field_types[1..], field_names[1..]) |*field_type, field_name| {
+            const arch = @field(Arch, field_name);
+            const models = arch.allCpuModels();
+            const family = @field(std.Target, @tagName(arch.family()));
+            field_type.* = struct {
+                model: Model = .baseline,
+                features: struct {
+                    add: []const Feature = &.{},
+                    remove: []const Feature = &.{},
+                    comptime {
+                        _ = &family; // hack around compiler bug
+                    }
+                } = .{},
+
+                pub const Model = Model: {
+                    const explicit_models = @typeInfo(family.cpu).@"struct".decl_names;
+                    var model_names: []const []const u8 = &.{"native"};
+                    if (!@hasDecl(family.cpu, "baseline")) model_names = model_names ++ .{"baseline"};
+                    model_names = model_names ++ explicit_models;
+                    const TagInt = std.math.IntFittingRange(0, model_names.len - 1);
+                    var model_values: [model_names.len]TagInt = undefined;
+                    var model_index = 0;
+                    {
+                        var model_value = explicit_models.len;
+                        model_values[model_index] = model_value;
+                        model_index += 1;
+                        model_value += 1;
+                        if (!@hasDecl(family.cpu, "baseline")) {
+                            model_values[model_index] = model_value;
+                            model_index += 1;
+                            model_value += 1;
+                        }
+                    }
+                    for (model_values[model_index..], 0..) |*model_value, value| model_value.* = value;
+                    break :Model @Enum(TagInt, .exhaustive, model_names, &model_values);
+                };
+
+                pub const Feature = family.Feature;
+
+                pub fn updateQuery(cpu: *const @This(), query: *std.Target.Query) void {
+                    query.cpu_model = switch (cpu.model) {
+                        .native => .native,
+                        .baseline => .baseline,
+                        else => |model| .{ .explicit = models[@backingInt(model)] },
+                    };
+                    for (cpu.features.add) |add_feature|
+                        query.cpu_features_add.addFeature(@backingInt(add_feature));
+                    for (cpu.features.remove) |remove_feature|
+                        query.cpu_features_sub.addFeature(@backingInt(remove_feature));
+                }
+            };
+        }
+        const TagInt = std.math.IntFittingRange(0, field_names.len - 1);
+        var field_values: [field_names.len]TagInt = undefined;
+        field_values[0] = field_names.len - 1;
+        for (field_values[1..], arch_info.field_values) |*field_value, value| field_value.* = value;
+        const Tag = @Enum(TagInt, .exhaustive, field_names, &field_values);
+        break :Cpu @Union(.auto, Tag, field_names, &field_types, &@splat(.{}));
+    };
+
+    pub const Os = Os: {
+        const os_info = @typeInfo(std.Target.Os.Tag).@"enum";
+        const field_names = .{"native"} ++ os_info.field_names;
+        var field_types: [field_names.len]type = undefined;
+        field_types[0] = void;
+        for (field_types[1..], field_names[1..]) |*field_type, field_name| {
+            const version: enum {
+                none,
+                semver,
+                windows,
+            } = switch (@field(std.Target.Os.Tag, field_name).versionRangeTag()) {
+                .none => .none,
+                .semver, .hurd, .linux => .semver,
+                .windows => .windows,
+            };
+            field_type.* = struct {
+                version: ?Version = null,
+
+                pub const Version = switch (version) {
+                    .none => struct {},
+                    .semver => struct {
+                        min: std.SemanticVersion,
+                        max: ?std.SemanticVersion = null,
+                    },
+                    .windows => struct {
+                        min: std.Target.Os.WindowsVersion,
+                        max: ?std.Target.Os.WindowsVersion = null,
+                    },
+                };
+
+                pub fn updateQuery(os: *const @This(), query: *std.Target.Query) void {
+                    if (os.version) |v| switch (version) {
+                        .none => {},
+                        .semver => {
+                            query.os_version_min = .{ .semver = v.min };
+                            if (v.max) |max| query.os_version_max = .{ .semver = max };
+                        },
+                        .windows => {
+                            query.os_version_min = .{ .windows = v.min };
+                            if (v.max) |max| query.os_version_max = .{ .windows = max };
+                        },
+                    };
+                }
+            };
+        }
+        const TagInt = std.math.IntFittingRange(0, field_names.len - 1);
+        var field_values: [field_names.len]TagInt = undefined;
+        field_values[0] = field_names.len - 1;
+        for (field_values[1..], os_info.field_values) |*field_value, value| field_value.* = value;
+        const Tag = @Enum(TagInt, .exhaustive, field_names, &field_values);
+        break :Os @Union(.auto, Tag, field_names, &field_types, &@splat(.{}));
+    };
+
+    pub const Abi = Abi: {
+        const abi_info = @typeInfo(std.Target.Abi).@"enum";
+        const field_names = .{"default"} ++ abi_info.field_names;
+        var field_types: [field_names.len]type = undefined;
+        field_types[0] = void;
+        for (field_types[1..], field_names[1..]) |*field_type, field_name| {
+            const abi_tag = @field(std.Target.Abi, field_name);
+            const version: enum { none, libc, android } = if (abi_tag.isAndroid())
+                .android
+            else if (abi_tag.isGnu() or abi_tag.isMusl())
+                .libc
+            else
+                .none;
+            field_type.* = struct {
+                version: ?Version = null,
+
+                pub const Version = switch (version) {
+                    .none => struct {},
+                    .libc => std.SemanticVersion,
+                    .android => u32,
+                };
+
+                pub fn updateQuery(abi: *const @This(), query: *std.Target.Query) void {
+                    if (abi.version) |v| switch (version) {
+                        .none => {},
+                        .libc => query.glibc_version = v,
+                        .android => query.android_api_level = v,
+                    };
+                }
+            };
+        }
+        const TagInt = std.math.IntFittingRange(0, field_names.len - 1);
+        var field_values: [field_names.len]TagInt = undefined;
+        field_values[0] = field_names.len - 1;
+        for (field_values[1..], abi_info.field_values) |*field_value, value| field_value.* = value;
+        const Tag = @Enum(TagInt, .exhaustive, field_names, &field_values);
+        break :Abi @Union(.auto, Tag, field_names, &field_types, &@splat(.{}));
+    };
+
+    pub const ObjectFormat = ObjectFormat: {
+        const ofmt_info = @typeInfo(std.Target.ObjectFormat).@"enum";
+        const field_names = .{"default"} ++ ofmt_info.field_names;
+        const TagInt = std.math.IntFittingRange(0, field_names.len - 1);
+        var field_values: [field_names.len]TagInt = undefined;
+        field_values[0] = field_names.len - 1;
+        for (field_values[1..], ofmt_info.field_values) |*field_value, value| field_value.* = value;
+        break :ObjectFormat @Enum(TagInt, .exhaustive, field_names, &field_values);
+    };
+
+    pub const DynamicLinker = union(enum) {
+        default,
+        none,
+        explicit: []const u8,
+    };
+
+    pub fn toQuery(target: *const Target) std.Target.Query {
+        var query: std.Target.Query = .{};
+        query.cpu_arch = switch (target.cpu) {
+            .native => null,
+            else => |_, arch| @fromBackingInt(@backingInt(arch)),
+        };
+        switch (target.cpu) {
+            .native => |native| query.cpu_model = switch (native.model) {
+                .native => .native,
+                .baseline => .baseline,
+            },
+            inline else => |cpu| cpu.updateQuery(&query),
+        }
+        query.os_tag = switch (target.os) {
+            .native => null,
+            else => |_, os| @fromBackingInt(@backingInt(os)),
+        };
+        switch (target.os) {
+            .native => {},
+            inline else => |os| os.updateQuery(&query),
+        }
+        query.abi = switch (target.abi) {
+            .default => null,
+            else => |_, abi| @fromBackingInt(@backingInt(abi)),
+        };
+        switch (target.abi) {
+            .default => {},
+            inline else => |abi| abi.updateQuery(&query),
+        }
+        query.ofmt = switch (target.ofmt) {
+            .default => null,
+            else => |ofmt| @fromBackingInt(@backingInt(ofmt)),
+        };
+        query.dynamic_linker = switch (target.dynamic_linker) {
+            .default => null,
+            .none => .none,
+            .explicit => |dynamic_linker| .init(dynamic_linker),
+        };
+        return query;
+    }
+
+    pub fn format(target: *const Target, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("{f}-{f}-{t}-{t}-{t}-{t}", .{
+            std.fmt.alt(&target.toQuery(), .printZigTriple),
+            std.fmt.alt(&target.toQuery(), .printCpu),
+            target.cache_mode,
+            target.backend,
+            target.linker,
+            target.pic,
+        });
+    }
+};
+
 gpa: std.mem.Allocator,
 arena: *std.heap.ArenaAllocator,
 environ_map: std.process.Environ.Map,
@@ -64,9 +314,7 @@ fn fail(runner: *Runner, comptime fmt: []const u8, args: anytype) FailError {
     return runner.failString(try runner.eb_wip.printString(fmt, args));
 }
 fn failString(runner: *Runner, msg: std.zig.ErrorBundle.String) FailError {
-    try runner.eb_wip.addRootErrorMessage(.{
-        .msg = msg,
-    });
+    try runner.eb_wip.addRootErrorMessage(.{ .msg = msg });
     return error.AlreadyReported;
 }
 
@@ -505,33 +753,34 @@ pub const SourceReader = struct {
         src_loc: []const u8,
         msg: std.zig.ErrorBundle.String,
     ) FailError {
+        try s.eb_wip.addRootErrorMessage(.{ .msg = msg, .src_loc = try s.srcLoc(src_loc) });
+        return error.AlreadyReported;
+    }
+    fn srcLoc(
+        s: *SourceReader,
+        src_loc: []const u8,
+    ) std.mem.Allocator.Error!std.zig.ErrorBundle.SourceLocationIndex {
         const line: u32, const column: u32, const source_line = src_loc: {
-            const pos = src_loc.ptr - s.interface.buffer.ptr;
-            const end = std.mem.findScalarPos(u8, s.interface.buffer, pos, '\n') orelse
-                s.interface.buffer.len;
-            const start = if (std.mem.findScalarLast(u8, s.interface.buffer[0..end], '\n')) |newline|
-                newline + 1
-            else
-                0;
+            const buffer = s.interface.buffer[0..s.interface.end];
+            const pos = src_loc.ptr - buffer.ptr;
+            const end = std.mem.findScalarPos(u8, buffer, pos, '\n') orelse buffer.len;
+            const start =
+                if (std.mem.findScalarLast(u8, buffer[0..end], '\n')) |newline| newline + 1 else 0;
             break :src_loc .{
-                @intCast(s.line + std.mem.countScalar(u8, s.interface.buffer[0..start], '\n')),
+                @intCast(s.line + std.mem.countScalar(u8, buffer[0..start], '\n')),
                 @intCast(pos - start),
-                s.interface.buffer[start..end],
+                buffer[start..end],
             };
         };
-        try s.eb_wip.addRootErrorMessage(.{
-            .msg = msg,
-            .src_loc = try s.eb_wip.addSourceLocation(.{
-                .src_path = s.src_path,
-                .line = line,
-                .column = column,
-                .span_start = column,
-                .span_main = column,
-                .span_end = @intCast(column + src_loc.len),
-                .source_line = try s.eb_wip.addString(source_line),
-            }),
+        return s.eb_wip.addSourceLocation(.{
+            .src_path = s.src_path,
+            .line = line,
+            .column = column,
+            .span_start = column,
+            .span_main = column,
+            .span_end = @intCast(column + src_loc.len),
+            .source_line = try s.eb_wip.addString(source_line),
         });
-        return error.AlreadyReported;
     }
 };
 pub const DelimitedReader = struct {
@@ -585,10 +834,66 @@ const Update = struct {
     manifest_sr: SourceReader,
     compiler: ?Compiler,
     src_dir: std.Io.Dir,
+    eb_wip: *std.zig.ErrorBundle.Wip,
+    cmd_src_loc: std.zig.ErrorBundle.SourceLocationIndex,
+    src_loc: ?std.zig.ErrorBundle.SourceLocationIndex,
+    num: usize,
+    name: []const u8,
     prog_node: std.Progress.Node,
     mtime: std.Io.Timestamp,
-    num: usize,
     allow_skip: bool,
+
+    fn checkMatches(
+        update: *const Update,
+        what: []const u8,
+        expected: []const u8,
+        actual: []const u8,
+    ) FailError!void {
+        var expected_match_it = std.mem.splitSequence(u8, expected, "#...");
+        var pos: usize = 0;
+        while (expected_match_it.next()) |expected_match| : (pos += expected_match.len) {
+            var context_len: usize = expected_match.len;
+            pos = while (true) : (context_len -= 1) break std.mem.findPos(
+                u8,
+                actual,
+                pos,
+                expected_match[0..context_len],
+            ) orelse continue;
+            const actual_match = actual[pos..];
+            std.testing.expectEqualStrings(
+                expected_match,
+                actual_match[0..@min(actual_match.len, expected_match.len)],
+            ) catch |err| switch (err) {
+                error.TestExpectedEqual => {
+                    std.testing.failPrint("\n=============== full output: =========\n", .{});
+                    std.testing.failPrintWithVisibleNewlines(actual_match);
+                    std.testing.failPrint("\n======================================\n", .{});
+                    return update.fail("{s} did not match expected", .{what});
+                },
+            };
+        }
+    }
+
+    fn fail(update: *const Update, comptime fmt: []const u8, args: anytype) FailError {
+        return update.failString(try update.eb_wip.printString(fmt, args));
+    }
+    fn failString(update: *const Update, msg: std.zig.ErrorBundle.String) FailError {
+        var notes_buffer: [1]std.zig.ErrorBundle.ErrorMessage = undefined;
+        var notes_len: u32 = 0;
+        if (update.src_loc) |src_loc| {
+            notes_buffer[notes_len] = .{
+                .msg = try update.eb_wip.addString("after this update"),
+                .src_loc = src_loc,
+            };
+            notes_len += 1;
+        }
+        try update.eb_wip.addRootErrorMessageWithNotes(.{
+            .msg = msg,
+            .src_loc = update.cmd_src_loc,
+            .notes_len = 1,
+        }, notes_buffer[0..notes_len]);
+        return error.AlreadyReported;
+    }
 };
 
 const TestError = error{
@@ -626,13 +931,18 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
             error.Canceled => |e| return e,
             else => |e| return runner.fail("unable to create {q}: {t}", .{ target_query, e }),
         },
+        .eb_wip = &runner.eb_wip,
+        .cmd_src_loc = undefined,
+        .src_loc = null,
+        .num = 0,
+        .name = undefined,
         .prog_node = .none,
         .mtime = .now(runner.io, .real),
-        .num = 0,
         .allow_skip = true,
     };
     defer {
         update.manifest_sr.deinit();
+        if (update.compiler) |*comp| comp.deinit();
         update.src_dir.close(runner.io);
         update.prog_node.end();
     }
@@ -654,6 +964,7 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
                 return update.manifest_sr.fail(unexpected, "unexpected argument {q}", .{unexpected});
             continue;
         }
+        update.cmd_src_loc = try update.manifest_sr.srcLoc(cmd_src_loc);
         const cmd = std.meta.stringToEnum(Command, std.mem.cutPrefix(u8, cmd_src_loc, "#") orelse
             return update.manifest_sr.fail(cmd_src_loc, "expected command", .{})) orelse
             return update.manifest_sr.fail(cmd_src_loc, "unknown command", .{});
@@ -666,7 +977,7 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
         defer if (contents_file) |file| file.close(runner.io);
         var contents_buffer: [512]u8 = undefined;
         var contents_impl: union(enum) {
-            ending: std.Io.Reader,
+            r: std.Io.Reader,
             dr: DelimitedReader,
             fr: std.Io.File.Reader,
         } = undefined;
@@ -678,42 +989,75 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
                     "unexpected argument {q}",
                     .{unexpected},
                 );
-                contents_impl = .{ .ending = .ending_instance };
-                break :contents_r &contents_impl.ending;
+                contents_impl = .{ .r = .ending_instance };
+                break :contents_r &contents_impl.r;
             },
             else => {
-                const contents_path = line_it.rest();
-                if (contents_path.len == 0) {
-                    contents_impl = .{ .ending = .ending_instance };
-                    break :contents_r &contents_impl.ending;
+                const contents = line_it.rest();
+                if (contents.len == 0) {
+                    contents_impl = .{ .r = .ending_instance };
+                    break :contents_r &contents_impl.r;
                 }
+                contents: switch (contents[0]) {
+                    else => return update.manifest_sr.fail(contents, "invalid contents syntax", .{}),
+                    '"' => {
+                        if (contents.len < 2 or contents[contents.len - 1] != '"') continue :contents 0;
+                        var contents_fw: std.Io.Writer = .fixed(&contents_buffer);
+                        switch (std.zig.string_literal.parseWrite(
+                            &contents_fw,
+                            contents,
+                        ) catch |err| switch (err) {
+                            error.WriteFailed => return update.manifest_sr.fail(
+                                contents,
+                                "contents string too long, use inline or file syntax instead",
+                                .{},
+                            ),
+                        }) {
+                            .success => {
+                                contents_impl = .{ .r = .fixed(contents_fw.buffered()) };
+                                break :contents_r &contents_impl.r;
+                            },
+                            .failure => |err| return update.manifest_sr.fail(
+                                contents[err.offset()..][0..0],
+                                "{f}",
+                                .{err.fmt(contents)},
+                            ),
+                        }
+                    },
+                    '{' => {
+                        if (contents.len != 1) continue :contents 0;
 
-                if (std.mem.eql(u8, contents_path, "{")) {
-                    contents_impl = .{
-                        .dr = .init(&update.manifest_sr.interface, "#}", &contents_buffer),
-                    };
-                    skip_delimiter = true;
-                    break :contents_r &contents_impl.dr.interface;
-                }
+                        contents_impl = .{
+                            .dr = .init(&update.manifest_sr.interface, "#}", &contents_buffer),
+                        };
+                        skip_delimiter = true;
+                        break :contents_r &contents_impl.dr.interface;
+                    },
+                    '@' => {
+                        const args_test = runner.args.@"test" orelse return update.manifest_sr.fail(
+                            contents,
+                            "contents file requires directory test",
+                            .{},
+                        );
+                        const contents_path = contents[1..];
+                        try runner.discoverInput(args_test.input_dir, contents_path);
 
-                const args_test = runner.args.@"test" orelse return update.manifest_sr.fail(
-                    contents_path,
-                    "contents file requires directory test",
-                    .{},
-                );
-                try runner.discoverInput(args_test.input_dir, contents_path);
-
-                contents_file =
-                    args_test.dir.openFile(runner.io, contents_path, .{}) catch |err| switch (err) {
-                        error.Canceled => |e| return e,
-                        else => |e| return update.manifest_sr.fail(
+                        contents_file = args_test.dir.openFile(
+                            runner.io,
                             contents_path,
-                            "unable to open contents file: {t}",
-                            .{e},
-                        ),
-                    };
-                contents_impl = .{ .fr = contents_file.?.reader(runner.io, &contents_buffer) };
-                break :contents_r &contents_impl.fr.interface;
+                            .{},
+                        ) catch |err| switch (err) {
+                            error.Canceled => |e| return e,
+                            else => |e| return update.manifest_sr.fail(
+                                contents_path,
+                                "unable to open contents file: {t}",
+                                .{e},
+                            ),
+                        };
+                        contents_impl = .{ .fr = contents_file.?.reader(runner.io, &contents_buffer) };
+                        break :contents_r &contents_impl.fr.interface;
+                    },
+                }
             },
         };
 
@@ -724,28 +1068,41 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
             error.SkipTest,
             => |e| return e,
             error.ContentsReadFailed => switch (contents_impl) {
-                .ending => unreachable,
+                .r => unreachable,
                 .dr => switch (manifest_fr.err orelse return error.OutOfMemory) {
                     error.Canceled => |e| return e,
-                    else => |e| return runner.fail("unable to read manifest: {t}", .{e}),
+                    else => |e| return update.fail("unable to read manifest: {t}", .{e}),
                 },
                 .fr => |fr| switch (fr.err.?) {
                     error.Canceled => |e| return e,
-                    else => |e| return runner.fail("unable to read contents file: {t}", .{e}),
+                    else => |e| return update.fail("unable to read contents file: {t}", .{e}),
                 },
             },
         };
     } else |err| switch (err) {
         error.ReadFailed => switch (manifest_fr.err orelse return error.OutOfMemory) {
             error.Canceled => |e| return e,
-            else => |e| return runner.fail("unable to read manifest: {t}", .{e}),
+            else => |e| return update.fail("unable to read manifest: {t}", .{e}),
         },
         error.StreamTooLong => unreachable,
-        error.EndOfStream => if (skip_delimiter)
-            return runner.fail("manifest missing \"#}}\" delimiter", .{}),
+        error.EndOfStream => {
+            const final_line = update.manifest_sr.interface.buffered();
+            switch (final_line.len) {
+                0 => if (skip_delimiter) return update.manifest_sr.fail(
+                    final_line[0..0],
+                    "missing \"#}}\" delimiter",
+                    .{},
+                ),
+                else => return update.manifest_sr.fail(
+                    final_line[final_line.len..],
+                    "missing trailing newline",
+                    .{},
+                ),
+            }
+        },
     }
     if (update.compiler) |*comp| {
-        if (comp.state != .idle) return runner.fail("missing \"#check\"", .{});
+        if (comp.state != .idle) return update.fail("missing \"#check\"", .{});
         try comp.exit();
     }
 }
@@ -781,40 +1138,94 @@ fn handleCommand(
         }, contents_r, target: {
             var component_it = std.mem.splitBackwardsScalar(u8, update.target_query, '-');
             const pic_str = component_it.next() orelse
-                return runner.fail("target {q} missing pic", .{update.target_query});
+                return update.fail("target {q} missing pic", .{update.target_query});
             const pic = std.meta.stringToEnum(Compiler.Target.Pic, pic_str) orelse
-                return runner.fail("target {q} unknown pic {q}", .{ update.target_query, pic_str });
+                return update.fail("target {q} unknown pic {q}", .{ update.target_query, pic_str });
             const linker_str = component_it.next() orelse
-                return runner.fail("target {q} missing linker", .{update.target_query});
+                return update.fail("target {q} missing linker", .{update.target_query});
             const linker = std.meta.stringToEnum(Compiler.Target.Linker, linker_str) orelse
-                return runner.fail("target {q} unknown linker {q}", .{ update.target_query, linker_str });
+                return update.fail("target {q} unknown linker {q}", .{
+                    update.target_query, linker_str,
+                });
             const backend_str = component_it.next() orelse
-                return runner.fail("target {q} missing backend", .{update.target_query});
+                return update.fail("target {q} missing backend", .{update.target_query});
             const backend = std.meta.stringToEnum(Compiler.Target.Backend, backend_str) orelse
-                return runner.fail("target {q} unknown backend {q}", .{ update.target_query, backend_str });
+                return update.fail("target {q} unknown backend {q}", .{
+                    update.target_query, backend_str,
+                });
             const cache_mode_str = component_it.next() orelse
-                return runner.fail("target {q} missing cache mode", .{update.target_query});
+                return update.fail("target {q} missing cache mode", .{update.target_query});
             const cache_mode = std.meta.stringToEnum(Compiler.Target.CacheMode, cache_mode_str) orelse
-                return runner.fail("target {q} unknown cache mode {q}", .{ update.target_query, cache_mode_str });
-            const triple = component_it.rest();
+                return update.fail("target {q} unknown cache mode {q}", .{
+                    update.target_query, cache_mode_str,
+                });
+            const triple_cpu = component_it.rest();
+            var triple_len: usize = 0;
+            for (0..3) |_| {
+                const component_start = triple_len;
+                triple_len = if (std.mem.findScalarPos(u8, triple_cpu, triple_len, '-')) |dash_pos|
+                    dash_pos + 1
+                else
+                    return update.fail("target {q} missing cpu", .{update.target_query});
+                if (std.mem.eql(u8, triple_cpu[component_start..triple_len], "native-")) break;
+            }
+            const triple = triple_cpu[0 .. triple_len - 1];
+            const cpu = triple_cpu[triple_len..];
+            var query_parse_diags: std.Target.Query.ParseOptions.Diagnostics = undefined;
             break :target .{
                 .triple = triple,
                 .resolved = std.zig.system.resolveTargetQuery(
                     runner.io,
-                    std.Build.parseTargetQuery(.{
+                    std.Target.Query.parse(.{
                         .arch_os_abi = triple,
+                        .cpu_features = cpu,
                         .object_format = switch (backend) {
                             .sema, .selfhosted, .llvm => null,
                             .cbe => "c",
                         },
+                        .diagnostics = &query_parse_diags,
                     }) catch |err| switch (err) {
-                        error.ParseFailed => return runner.fail("unable to parse triple {q}", .{
-                            triple,
-                        }),
+                        error.UnknownArchitecture => return update.fail(
+                            "unable to resolve target {q}: unknown architecture: {q}",
+                            .{ update.target_query, query_parse_diags.unknown_architecture_name.? },
+                        ),
+                        error.MissingOperatingSystem => return update.fail(
+                            "unable to resolve target {q}: missing operating system",
+                            .{update.target_query},
+                        ),
+                        error.UnknownOperatingSystem => return update.fail(
+                            "unable to resolve target {q}: unknown operating system: {q}",
+                            .{ update.target_query, query_parse_diags.os_name.? },
+                        ),
+                        error.InvalidOperatingSystemVersion => return update.fail(
+                            "unable to resolve target {q}: invalid operating system version",
+                            .{update.target_query},
+                        ),
+                        error.UnknownApplicationBinaryInterface => return update.fail(
+                            "unable to resolve target {q}: unknown abi",
+                            .{update.target_query},
+                        ),
+                        error.InvalidAbiVersion => return update.fail(
+                            "unable to resolve target {q}: invalid abi version",
+                            .{update.target_query},
+                        ),
+                        error.UnexpectedExtraField => unreachable, // validated above
+                        error.UnknownCpuModel => return update.fail(
+                            "unable to resolve target {q}: unknown cpu: {q}",
+                            .{ update.target_query, query_parse_diags.cpu_name.? },
+                        ),
+                        error.UnknownCpuFeature => return update.fail(
+                            "unable to resolve target {q}: unknown cpu feature: {q}",
+                            .{ update.target_query, query_parse_diags.unknown_feature_name.? },
+                        ),
+                        error.UnknownObjectFormat => return update.fail(
+                            "unable to resolve target {q}: unknown object format",
+                            .{update.target_query},
+                        ),
                     },
                 ) catch |err| switch (err) {
                     error.Canceled => |e| return e,
-                    else => |e| return runner.fail("unable to resolve target {q}: {t}", .{ triple, e }),
+                    else => |e| return update.fail("unable to resolve target {q}: {t}", .{ triple, e }),
                 },
                 .cache_mode = cache_mode,
                 .backend = backend,
@@ -822,7 +1233,7 @@ fn handleCommand(
                 .pic = pic,
             };
         }) catch |err| switch (err) {
-            error.Canceled, error.OutOfMemory, error.AlreadyReported => |e| return e,
+            error.Canceled, error.OutOfMemory, error.AlreadyReported, error.SkipTest => |e| return e,
             error.ReadFailed => return error.ContentsReadFailed,
         },
         .write => {
@@ -868,25 +1279,24 @@ fn handleCommand(
             else => |e| return update.manifest_sr.fail(arg.?, "unable to delete file: {t}", .{e}),
         },
         .update => {
+            update.src_loc = update.cmd_src_loc;
             const comp = &(update.compiler orelse return update.manifest_sr.fail(
                 cmd_src_loc,
                 "missing \"#exe\", \"#lib\", or \"#obj\"",
                 .{},
             ));
             update.prog_node.end();
-            update.prog_node = runner.prog_node.start(
-                switch (contents_r.readSliceShort(&name_buffer) catch |err| switch (err) {
-                    error.ReadFailed => return error.ContentsReadFailed,
-                }) {
-                    0 => switch (update.num) {
-                        0 => "initial update",
-                        else => |num| std.mem.print(&name_buffer, "update {d}", .{num}) catch
-                            &name_buffer,
-                    },
-                    else => |name_len| name_buffer[0..name_len],
+            const arena = runner.arena.allocator();
+            update.name = switch (contents_r.readSliceShort(&name_buffer) catch |err| switch (err) {
+                error.ReadFailed => return error.ContentsReadFailed,
+            }) {
+                0 => switch (update.num) {
+                    0 => "initial update",
+                    else => |num| try arena.print("update {d}", .{num}),
                 },
-                0,
-            );
+                else => |name_len| try arena.dupe(u8, name_buffer[0..name_len]),
+            };
+            update.prog_node = runner.prog_node.start(update.name, 0);
             _ = contents_r.discardRemaining() catch |err| switch (err) {
                 error.ReadFailed => return error.ContentsReadFailed,
             };
@@ -895,7 +1305,7 @@ fn handleCommand(
             comp.client.serveBodylessMessage(.update) catch |err| switch (err) {
                 error.WriteFailed => switch (comp.fw.err.?) {
                     error.Canceled => |e| return e,
-                    else => |e| return runner.fail("unable to send message to compiler: {t}", .{e}),
+                    else => |e| return update.fail("unable to send message to compiler: {t}", .{e}),
                 },
             };
             comp.state = .update;
@@ -934,7 +1344,7 @@ fn handleCommand(
                         unreachable;
                     const digest = body_r.takeArray(std.Build.Cache.bin_digest_len) catch
                         unreachable;
-                    try comp.checkSuccess(check, expected, update.src_dir, digest);
+                    try comp.checkSuccess(update, check, expected, digest);
                 },
                 .error_bundle => {
                     const eb = std.zig.Server.allocErrorBundle(
@@ -942,7 +1352,7 @@ fn handleCommand(
                         message.body,
                     ) catch |err| switch (err) {
                         error.OutOfMemory => |e| return e,
-                        error.EndOfStream => return runner.fail("error bundle truncated", .{}),
+                        error.EndOfStream => return update.fail("error bundle truncated", .{}),
                     };
                     switch (check) {
                         .errors => {
@@ -958,18 +1368,18 @@ fn handleCommand(
                             const actual = error_aw.written();
                             std.mem.replaceScalar(u8, actual, '\\', '/');
                             std.testing.expectEqualStrings(expected, actual) catch |err| switch (err) {
-                                error.TestExpectedEqual => return runner.fail(
+                                error.TestExpectedEqual => return update.fail(
                                     "errors did not match expected",
                                     .{},
                                 ),
                             };
                         },
-                        .stdout, .exit, .gdb, .lldb => if (eb.errorMessageCount() > 0) {
+                        .stdout, .exit, .llvm, .gdb, .lldb => if (eb.errorMessageCount() > 0) {
                             eb.renderToStderr(runner.io, .{}, .auto) catch |err| switch (err) {
                                 error.Canceled => {},
                                 else => {},
                             };
-                            return runner.fail("unexpected compile errors", .{});
+                            return update.fail("unexpected compile errors", .{});
                         },
                     }
                     comp.state = .idle;
@@ -977,17 +1387,14 @@ fn handleCommand(
                 },
             };
 
-            const buffered_stderr = stderr.buffered();
-            if (buffered_stderr.len > 0) {
+            const stderr_buffered = stderr.buffered();
+            if (stderr_buffered.len > 0) {
                 if (comp.allow_compiler_stderr) {
-                    std.log.info("stderr:\n{s}", .{buffered_stderr});
-                } else {
-                    return runner.fail("unexpected stderr:\n{s}", .{buffered_stderr});
-                }
+                    std.log.info("#update {q} stderr:\n{s}", .{ update.name, stderr_buffered });
+                } else return update.fail("unexpected stderr:\n{s}", .{stderr_buffered});
             }
 
-            try comp.exit();
-            return runner.fail("compiler failed to send terminating error_bundle", .{});
+            return update.fail("compiler failed to send terminating error_bundle", .{});
         },
     }
     assert(contents_r.discardRemaining() catch |err| switch (err) {
@@ -1006,13 +1413,31 @@ fn spawnCompiler(
     output_mode: std.lang.OutputMode,
     args_r: *std.Io.Reader,
     target: Compiler.Target,
-) (std.Io.Reader.ShortError || FailError)!void {
+) (std.Io.Reader.ShortError || TestError)!void {
     const gpa = runner.gpa;
     const arena = runner.arena.allocator();
     if (compiler.*) |*comp| {
-        try comp.exit();
+        comp.deinit();
         compiler.* = null;
     }
+    errdefer compiler.* = null;
+
+    compiler.* = .{
+        .runner = runner,
+        .allow_compiler_stderr = true,
+        .output_mode = output_mode,
+        .state = .idle,
+        .child = undefined,
+        .fw = undefined,
+        .mr_buffer = undefined,
+        .mr = undefined,
+        .client = undefined,
+        .target = target,
+        .emit_name = null,
+        .prog_node = .none,
+        .config = null,
+    };
+    const comp = &compiler.*.?;
 
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
@@ -1024,16 +1449,16 @@ fn spawnCompiler(
             .Lib => "build-lib",
         },
         "-target",
-        target.triple,
+        comp.target.triple,
         "--cache-dir",
         ".zig-cache",
     });
-    switch (target.cache_mode) {
+    switch (comp.target.cache_mode) {
         .whole => {},
         .incremental => try argv.append(gpa, "-fincremental"),
     }
     var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    if (target.backend) |b| switch (b) {
+    if (comp.target.backend) |b| switch (b) {
         .sema => try argv.append(gpa, "-fno-emit-bin"),
         .selfhosted => try argv.append(gpa, "-fno-llvm"),
         .llvm => try argv.append(gpa, "-fllvm"),
@@ -1044,12 +1469,12 @@ fn spawnCompiler(
         error.Canceled => |e| return e,
         else => |e| return runner.fail("unable to get lib path: {t}", .{e}),
     }] });
-    switch (target.linker) {
+    switch (comp.target.linker) {
         .lld => try argv.appendSlice(gpa, &.{ "-flld", "-fno-new-linker" }),
         .old => try argv.appendSlice(gpa, &.{ "-fno-lld", "-fno-new-linker" }),
         .new => try argv.appendSlice(gpa, &.{ "-fno-lld", "-fnew-linker" }),
     }
-    switch (target.pic) {
+    switch (comp.target.pic) {
         .nopic => try argv.appendSlice(gpa, &.{ "-fno-PIC", "-fno-PIE" }),
         .pic => try argv.appendSlice(gpa, &.{ "-fPIC", "-fno-PIE" }),
         .pie => try argv.appendSlice(gpa, &.{ "-fPIC", "-fPIE" }),
@@ -1058,6 +1483,7 @@ fn spawnCompiler(
     var need: usize = 1;
     var state: enum { positional, @"--name" } = .positional;
     var root_name: ?[]const u8 = null;
+    var emit: ?std.zig.EmitArtifact = .bin;
     while (true) {
         const done = if (args_r.fill(need)) false else |err| switch (err) {
             error.ReadFailed => |e| return e,
@@ -1071,10 +1497,42 @@ fn spawnCompiler(
             switch (state) {
                 .positional => if (std.mem.eql(u8, arg, "--name")) {
                     state = .@"--name";
+                } else if (std.mem.cutPrefix(u8, arg, "-ofmt=")) |ofmt| {
+                    comp.target.resolved.ofmt =
+                        std.meta.stringToEnum(std.Target.ObjectFormat, ofmt) orelse
+                        return runner.fail("invalid object format {q}", .{ofmt});
                 } else if (std.mem.cutPrefix(u8, arg, "-M")) |module| {
                     var module_name_it = std.mem.splitScalar(u8, module, '=');
                     const module_name = module_name_it.next().?;
                     root_name = root_name orelse module_name;
+                } else if (std.mem.eql(u8, arg, "-femit-asm")) {
+                    emit = .@"asm";
+                } else if (std.mem.eql(u8, arg, "-femit-bin")) {
+                    emit = .bin;
+                } else if (std.mem.eql(u8, arg, "-femit-docs")) {
+                    emit = .docs;
+                } else if (std.mem.eql(u8, arg, "-femit-h")) {
+                    emit = .h;
+                } else if (std.mem.eql(u8, arg, "-femit-implib")) {
+                    emit = .implib;
+                } else if (std.mem.eql(u8, arg, "-femit-llvm-bc")) {
+                    emit = .llvm_bc;
+                } else if (std.mem.eql(u8, arg, "-femit-llvm-ir")) {
+                    emit = .llvm_ir;
+                } else if (std.mem.eql(u8, arg, "-fno-emit-asm")) {
+                    if (emit == .@"asm") emit = null;
+                } else if (std.mem.eql(u8, arg, "-fno-emit-bin")) {
+                    if (emit == .bin) emit = null;
+                } else if (std.mem.eql(u8, arg, "-fno-emit-docs")) {
+                    if (emit == .docs) emit = null;
+                } else if (std.mem.eql(u8, arg, "-fno-emit-h")) {
+                    if (emit == .h) emit = null;
+                } else if (std.mem.eql(u8, arg, "-fno-emit-implib")) {
+                    if (emit == .implib) emit = null;
+                } else if (std.mem.eql(u8, arg, "-fno-emit-llvm-bc")) {
+                    if (emit == .llvm_bc) emit = null;
+                } else if (std.mem.eql(u8, arg, "-fno-emit-llvm-ir")) {
+                    if (emit == .llvm_ir) emit = null;
                 },
                 .@"--name" => {
                     root_name = arg;
@@ -1092,59 +1550,43 @@ fn spawnCompiler(
     }
     try argv.append(gpa, "--listen=-");
 
-    const out_name = try std.zig.EmitArtifact.bin.cacheName(arena, .{
+    comp.emit_name = if (emit) |e| try e.cacheName(arena, .{
         .root_name = root_name orelse "root",
-        .cpu_arch = target.resolved.cpu.arch,
-        .os_tag = target.resolved.os.tag,
-        .ofmt = target.resolved.ofmt,
-        .abi = target.resolved.abi,
+        .cpu_arch = comp.target.resolved.cpu.arch,
+        .os_tag = comp.target.resolved.os.tag,
+        .ofmt = comp.target.resolved.ofmt,
+        .abi = comp.target.resolved.abi,
         .output_mode = output_mode,
-    });
+    }) else null;
 
     var name_buffer: [std.Progress.Node.max_name_len]u8 = undefined;
-    const comp_prog_node = runner.prog_node.start(std.mem.print(&name_buffer, "compile {s}", .{
-        out_name,
+    comp.prog_node = runner.prog_node.start(std.mem.print(&name_buffer, "compile {s}", .{
+        comp.emit_name orelse root_name orelse "root",
     }) catch &name_buffer, 0);
-    errdefer comp_prog_node.end();
+    errdefer comp.prog_node.end();
 
-    const child = std.process.spawn(runner.io, .{
+    comp.child = std.process.spawn(runner.io, .{
         .exe = .{ .file = runner.args.zig_exe orelse
             return runner.fail("missing \"--zig=path/to/zig\" arg", .{}) },
         .argv = argv.items,
         .cwd = .{ .dir = src_dir },
-        .progress_node = comp_prog_node,
+        .progress_node = comp.prog_node,
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .pipe,
     }) catch |err| switch (err) {
         error.Canceled, error.OutOfMemory => |e| return e,
+        error.OperationUnsupported => return error.SkipTest,
         else => |e| return runner.fail("unable to spawn compiler: {t}", .{e}),
     };
-    compiler.* = .{
-        .runner = runner,
-        .prog_node = comp_prog_node,
-        .allow_compiler_stderr = true,
-        .output_mode = output_mode,
-        .state = .idle,
-        .child = child,
-        .fw = undefined,
-        .mr_buffer = undefined,
-        .mr = undefined,
-        .client = undefined,
-        .target = target,
-        .out_name = out_name,
-        .config = null,
-    };
-    const comp = &compiler.*.?;
-    comp.fw = child.stdin.?.writerStreaming(runner.io, &.{});
+    comp.fw = comp.child.stdin.?.writerStreaming(runner.io, &.{});
     comp.mr.init(gpa, runner.io, comp.mr_buffer.toStreams(), &.{
-        child.stdout.?, child.stderr.?,
+        comp.child.stdout.?, comp.child.stderr.?,
     });
     comp.client = .{ .in = comp.mr.reader(0), .out = &comp.fw.interface };
 }
 const Compiler = struct {
     runner: *Runner,
-    prog_node: std.Progress.Node,
     allow_compiler_stderr: bool,
     output_mode: std.lang.OutputMode,
     state: enum { idle, update },
@@ -1153,8 +1595,9 @@ const Compiler = struct {
     mr_buffer: std.Io.File.MultiReader.Buffer(2),
     mr: std.Io.File.MultiReader,
     client: std.zig.Client,
-    target: Target,
-    out_name: []const u8,
+    target: Compiler.Target,
+    emit_name: ?[]const u8,
+    prog_node: std.Progress.Node,
     config: ?std.zig.Server.Message.Config,
 
     const Target = struct {
@@ -1187,6 +1630,12 @@ const Compiler = struct {
         const Pic = enum { nopic, pic, pie };
     };
 
+    fn deinit(comp: *Compiler) void {
+        comp.child.kill(comp.runner.io);
+        comp.prog_node.end();
+        comp.prog_node = .none;
+    }
+
     fn receiveMessage(comp: *Compiler) FailError!?struct {
         tag: std.zig.Server.Message.Tag,
         body: []const u8,
@@ -1215,19 +1664,24 @@ const Compiler = struct {
         return .{ .tag = header.tag, .body = body };
     }
 
-    const Check = enum { errors, stdout, exit, gdb, lldb };
+    const Check = enum { errors, stdout, exit, llvm, gdb, lldb };
     fn checkSuccess(
         comp: *Compiler,
+        update: *const Update,
         check: Check,
         expected: []const u8,
-        src_dir: std.Io.Dir,
         digest: *const std.Build.Cache.BinDigest,
-    ) FailError!void {
+    ) TestError!void {
         const runner = comp.runner;
         const gpa = runner.gpa;
         const arena = runner.arena.allocator();
         const io = runner.io;
         const target = &comp.target.resolved;
+        const emit_name = switch (check) {
+            else => comp.emit_name orelse
+                return update.fail("unable to perform {t} check without emitted file", .{check}),
+            .errors => return, // expect no emitted file
+        };
         const config = &comp.config.?;
         var path_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
 
@@ -1237,30 +1691,66 @@ const Compiler = struct {
         const debug_success = 99;
 
         const tmp_dir_path = ".zig-cache" ++ std.Io.Dir.path.sep_str ++ "tmp";
-        src_dir.createDirPath(io, tmp_dir_path) catch |err| switch (err) {
+        update.src_dir.createDirPath(io, tmp_dir_path) catch |err| switch (err) {
             error.Canceled => |e| return e,
-            else => |e| return runner.fail("unable to create dir path {q}: {t}", .{
+            else => |e| return update.fail("unable to create dir path {q}: {t}", .{
                 tmp_dir_path, e,
             }),
         };
 
-        var argv: std.ArrayList([]const u8) = .initBuffer(try arena.alloc([]const u8, 5 + 4));
+        const emit_path = emit_path: {
+            const emit_dir_path = ".zig-cache" ++ std.Io.Dir.path.sep_str ++
+                "o" ++ std.Io.Dir.path.sep_str ++ std.Build.Cache.binToHex(digest.*);
+            const emit_path =
+                try std.Io.Dir.path.join(arena, &.{ emit_dir_path, emit_name });
+            break :emit_path switch (comp.target.backend.?) {
+                .sema => return,
+                .selfhosted, .llvm => emit_path,
+                .cbe => try comp.compileC(update.src_dir, emit_path),
+            };
+        };
+
+        const emit_file = update.src_dir.openFile(io, emit_path, .{}) catch |err| switch (err) {
+            error.Canceled => |e| return e,
+            else => |e| return update.fail("unable to open {q}: {t}", .{ emit_path, e }),
+        };
+        defer emit_file.close(io);
+
+        var argv: std.ArrayList([]const u8) = try .initCapacity(arena, 5 + 4);
         var environ_map: std.process.Environ.Map = .init(gpa);
         defer environ_map.deinit();
         try environ_map.putAll(&runner.environ_map);
         var script_buffer: [512]u8 = undefined;
         const script_path, const script_file, var script_fw = script: switch (check) {
-            .errors => return,
+            .errors => unreachable,
             .stdout, .exit => .{ undefined, null, undefined },
+            .llvm => {
+                var emit_fr = emit_file.reader(io, &.{});
+                const actual = emit_fr.interface.readAllocAll(arena, @intCast(
+                    emit_fr.getSize() catch |err| switch (err) {
+                        error.Canceled => |e| return e,
+                        else => |e| return runner.fail("unable to get size of {q}: {t}", .{ emit_path, e }),
+                    },
+                )) catch |err| switch (switch (err) {
+                    error.OutOfMemory => |e| return e,
+                    error.EndOfStream => |e| e,
+                    error.ReadFailed => emit_fr.err.?,
+                }) {
+                    error.Canceled => |e| return e,
+                    else => |e| return runner.fail("unable to read {q}: {t}", .{ emit_path, e }),
+                };
+                return update.checkMatches("LLVM IR", expected, actual);
+            },
             .gdb => {
                 const script_path = tmp_dir_path ++ std.Io.Dir.path.sep_str ++ "gdb";
                 argv.appendSliceAssumeCapacity(&.{ "gdb", "--batch", "--command", script_path, "--args" });
-                const script_file = src_dir.createFile(io, script_path, .{}) catch |err| switch (err) {
-                    error.Canceled => |e| return e,
-                    else => |e| return runner.fail("unable to create debugger script {q}: {t}", .{
-                        script_path, e,
-                    }),
-                };
+                const script_file =
+                    update.src_dir.createFile(io, script_path, .{}) catch |err| switch (err) {
+                        error.Canceled => |e| return e,
+                        else => |e| return update.fail("unable to create debugger script {q}: {t}", .{
+                            script_path, e,
+                        }),
+                    };
                 errdefer script_file.close(io);
                 var script_fw = script_file.writer(io, &script_buffer);
                 script_fw.interface.writeAll(
@@ -1270,7 +1760,9 @@ const Compiler = struct {
                 ) catch |err| switch (err) {
                     error.WriteFailed => switch (script_fw.err.?) {
                         error.Canceled => |e| return e,
-                        else => |e| return runner.fail("unable to write debugger script {q}: {t}", .{ script_path, e }),
+                        else => |e| return update.fail("unable to write debugger script {q}: {t}", .{
+                            script_path, e,
+                        }),
                     },
                 };
                 break :script .{ script_path, script_file, script_fw };
@@ -1279,13 +1771,13 @@ const Compiler = struct {
                 const script_path = tmp_dir_path ++ std.Io.Dir.path.sep_str ++ "lldb";
                 argv.appendSliceAssumeCapacity(&.{ "lldb", "--batch", "--source", script_path, "--" });
                 try environ_map.put("LANG", "C.UTF-8"); // affects output formatting
-                const script_file = src_dir.createFile(io, script_path, .{}) catch |err| switch (err) {
-                    error.Canceled => |e| return e,
-                    else => |e| return runner.fail("unable to create debugger script {q}: {t}", .{
-                        script_path,
-                        e,
-                    }),
-                };
+                const script_file =
+                    update.src_dir.createFile(io, script_path, .{}) catch |err| switch (err) {
+                        error.Canceled => |e| return e,
+                        else => |e| return update.fail("unable to create debugger script {q}: {t}", .{
+                            script_path, e,
+                        }),
+                    };
                 errdefer script_file.close(io);
                 var script_fw = script_file.writer(io, &script_buffer);
                 script_fw.interface.writeAll(
@@ -1297,22 +1789,15 @@ const Compiler = struct {
                 ) catch |err| switch (err) {
                     error.WriteFailed => switch (script_fw.err.?) {
                         error.Canceled => |e| return e,
-                        else => |e| return runner.fail("unable to write debugger script {q}: {t}", .{ script_path, e }),
+                        else => |e| return update.fail("unable to write debugger script {q}: {t}", .{
+                            script_path, e,
+                        }),
                     },
                 };
                 break :script .{ script_path, script_file, script_fw };
             },
         };
         defer if (script_file) |file| file.close(io);
-
-        const out_dir_path = ".zig-cache" ++ std.Io.Dir.path.sep_str ++
-            "o" ++ std.Io.Dir.path.sep_str ++ std.Build.Cache.binToHex(digest.*);
-        const out_path = try std.Io.Dir.path.join(arena, &.{ out_dir_path, comp.out_name });
-        const bin_path = switch (comp.target.backend.?) {
-            .sema => return,
-            .selfhosted, .llvm => out_path,
-            .cbe => try comp.compileC(src_dir, out_path),
-        };
 
         const need_cross_libc =
             target.os.tag == .linux and config.flags.link_libc and config.flags.link_mode == .dynamic;
@@ -1346,7 +1831,7 @@ const Compiler = struct {
                         &path_buffer,
                     ) catch |err| switch (err) {
                         error.Canceled => |e| return e,
-                        else => |e| return runner.fail("unable to get libc runtimes path: {t}", .{e}),
+                        else => |e| return update.fail("unable to get libc runtimes path: {t}", .{e}),
                     }];
                     argv.appendSliceAssumeCapacity(&.{ "-L", try std.Io.Dir.path.join(arena, &.{
                         libc_runtimes_path,
@@ -1380,12 +1865,15 @@ const Compiler = struct {
                 break :use_executor true;
             } else continue :use_executor .bad_os_or_cpu,
         };
-        argv.appendAssumeCapacity(bin_path);
+        argv.appendAssumeCapacity(emit_path);
 
         if (!runner.args.quiet) std.log.info("{f}", .{std.zig.SubprocessCommand{
             .argv = argv.items,
             .cwd = cwd_path: {
-                break :cwd_path path_buffer[0 .. src_dir.realPath(io, &path_buffer) catch |err| switch (err) {
+                break :cwd_path path_buffer[0 .. update.src_dir.realPath(
+                    io,
+                    &path_buffer,
+                ) catch |err| switch (err) {
                     error.Canceled => |e| return e,
                     else => break :cwd_path null,
                 }];
@@ -1396,24 +1884,19 @@ const Compiler = struct {
 
         var name_buffer: [std.Progress.Node.max_name_len]u8 = undefined;
         const run_prog_node = runner.prog_node.start(std.mem.print(&name_buffer, "run {s}", .{
-            comp.out_name,
+            emit_name,
         }) catch &name_buffer, 0);
         defer run_prog_node.end();
 
-        const bin_file = src_dir.openFile(io, bin_path, .{}) catch |err| switch (err) {
-            error.Canceled => |e| return e,
-            else => |e| return runner.fail("unable to open {q}: {t}", .{ bin_path, e }),
-        };
-        defer bin_file.close(io);
         const result = std.process.run(gpa, io, .{
             .exe = exe: switch (check) {
-                .errors => unreachable,
-                .stdout, .exit => if (use_executor) .search else .{ .file = bin_file },
+                .errors, .llvm => unreachable,
+                .stdout, .exit => if (use_executor) .search else .{ .file = emit_file },
                 .gdb, .lldb => {
                     if (use_executor) {
                         if (!runner.args.quiet) std.log.warn(
                             "skipping debugging of {q} via executor for foreign target {q}",
-                            .{ bin_path, comp.target.triple },
+                            .{ emit_path, comp.target.triple },
                         );
                         return;
                     }
@@ -1429,7 +1912,7 @@ const Compiler = struct {
                     , .{cmd}) catch |err| switch (err) {
                         error.WriteFailed => switch (script_fw.err.?) {
                             error.Canceled => |e| return e,
-                            else => |e| return runner.fail("unable to write debugger script {q}: {t}", .{
+                            else => |e| return update.fail("unable to write debugger script {q}: {t}", .{
                                 script_path, e,
                             }),
                         },
@@ -1441,14 +1924,14 @@ const Compiler = struct {
                     , .{debug_success}) catch |err| switch (err) {
                         error.WriteFailed => switch (script_fw.err.?) {
                             error.Canceled => |e| return e,
-                            else => |e| return runner.fail("unable to write debugger script {q}: {t}", .{
+                            else => |e| return update.fail("unable to write debugger script {q}: {t}", .{
                                 script_path, e,
                             }),
                         },
                     };
                     script_fw.flush() catch |err| switch (err) {
                         error.Canceled => |e| return e,
-                        else => |e| return runner.fail("unable to write debugger script {q}: {t}", .{
+                        else => |e| return update.fail("unable to write debugger script {q}: {t}", .{
                             script_path, e,
                         }),
                     };
@@ -1459,25 +1942,25 @@ const Compiler = struct {
                     } orelse {
                         if (!runner.args.quiet) std.log.warn(
                             "skipping debugging of {q} because of missing \"--{t}=path/to/{[1]t}\" arg",
-                            .{ bin_path, check },
+                            .{ emit_path, check },
                         );
                         return;
                     } };
                 },
             },
             .argv = argv.items,
-            .cwd = .{ .dir = src_dir },
+            .cwd = .{ .dir = update.src_dir },
             .environ_map = &environ_map,
             .progress_node = run_prog_node,
         }) catch |err| if (use_executor) {
             // Chances are the foreign executor isn't available. Skip this evaluation.
             if (!runner.args.quiet) std.log.warn(
                 "skipping execution of {q} via executor for foreign target {q}: {t}",
-                .{ bin_path, comp.target.triple, err },
+                .{ emit_path, comp.target.triple, err },
             );
             return;
-        } else return runner.fail("unable to run the generated executable {q}: {t}", .{
-            bin_path, err,
+        } else return update.fail("unable to run the generated executable {q}: {t}", .{
+            emit_path, err,
         });
         defer {
             gpa.free(result.stdout);
@@ -1485,82 +1968,64 @@ const Compiler = struct {
         }
         switch (result.term) {
             .exited => |code| switch (check) {
-                .errors => unreachable,
+                .errors, .llvm => unreachable,
                 .stdout => {
-                    if (code != 0) return runner.fail(
+                    if (code != 0) return update.fail(
                         "generated executable {q} failed with code {d}",
-                        .{ bin_path, code },
+                        .{ emit_path, code },
                     );
                     std.testing.expectEqualStrings(
                         expected,
                         result.stdout,
                     ) catch |err| switch (err) {
-                        error.TestExpectedEqual => return runner.fail("stdout did not match expected", .{}),
+                        error.TestExpectedEqual => return update.fail(
+                            "stdout did not match expected",
+                            .{},
+                        ),
                     };
                 },
                 .exit => {
-                    var actual_code_buffer: [std.fmt.count("{d}", .{std.math.maxInt(u8)})]u8 = undefined;
+                    var actual_code_buffer: [std.fmt.count("{d}", .{std.math.maxInt(u8)})]u8 =
+                        undefined;
                     std.testing.expectEqualStrings(
                         expected,
                         std.mem.print(&actual_code_buffer, "{d}", .{code}) catch unreachable,
                     ) catch |err| switch (err) {
-                        error.TestExpectedEqual => return runner.fail(
+                        error.TestExpectedEqual => return update.fail(
                             "exit code did not match expected",
                             .{},
                         ),
                     };
                 },
                 .gdb, .lldb => {
-                    if (code != debug_success) return runner.fail(
+                    if (code != debug_success) return update.fail(
                         "debugging {q} failed with code {d}",
-                        .{ bin_path, code },
+                        .{ emit_path, code },
                     );
-                    var expected_match_it = std.mem.splitSequence(u8, expected, "#...");
-                    var pos: usize = 0;
-                    while (expected_match_it.next()) |expected_match| : (pos += expected_match.len) {
-                        var context_len: usize = expected_match.len;
-                        pos = while (true) : (context_len -= 1) break std.mem.findPos(
-                            u8,
-                            result.stdout,
-                            pos,
-                            expected_match[0..context_len],
-                        ) orelse continue;
-                        const actual_match = result.stdout[pos..];
-                        std.testing.expectEqualStrings(
-                            expected_match,
-                            actual_match[0..@min(actual_match.len, expected_match.len)],
-                        ) catch |err| switch (err) {
-                            error.TestExpectedEqual => {
-                                std.testing.failPrint("\n=============== full output: =========\n", .{});
-                                std.testing.failPrintWithVisibleNewlines(actual_match);
-                                std.testing.failPrint("\n======================================\n", .{});
-                                return runner.fail("stdout did not match expected", .{});
-                            },
-                        };
-                    }
+                    try update.checkMatches("stdout", expected, result.stdout);
                 },
             },
-            .signal => |sig| return runner.fail(
+            .signal => |sig| return update.fail(
                 "generated executable {q} terminated with signal {t}",
-                .{ bin_path, sig },
+                .{ emit_path, sig },
             ),
-            .stopped => |sig| return runner.fail(
+            .stopped => |sig| return update.fail(
                 "generated executable {q} stopped with signal {t}",
-                .{ bin_path, sig },
+                .{ emit_path, sig },
             ),
-            .unknown => return runner.fail(
+            .unknown => return update.fail(
                 "generated executable {q} terminated unexpectedly",
-                .{bin_path},
+                .{emit_path},
             ),
         }
         if (!use_executor and result.stderr.len > 0) {
-            std.log.err("generated executable {q} had unexpected stderr:\n{s}", .{
-                bin_path, result.stderr,
+            std.log.err("#update {q} generated executable {q} had unexpected stderr:\n{s}", .{
+                update.name, emit_path, result.stderr,
             });
         }
     }
 
-    fn compileC(parent_comp: *Compiler, src_dir: std.Io.Dir, c_path: []const u8) FailError![]const u8 {
+    fn compileC(parent_comp: *Compiler, src_dir: std.Io.Dir, c_path: []const u8) TestError![]const u8 {
         const runner = parent_comp.runner;
         const arena = runner.arena.allocator();
         var compiler: ?Compiler = null;
@@ -1577,10 +2042,11 @@ const Compiler = struct {
             .linker = .lld,
             .pic = parent_comp.target.pic,
         }) catch |err| switch (err) {
-            error.Canceled, error.OutOfMemory, error.AlreadyReported => |e| return e,
+            error.Canceled, error.OutOfMemory, error.AlreadyReported, error.SkipTest => |e| return e,
             error.ReadFailed => unreachable, // .fixed
         };
         const comp = &compiler.?;
+        defer comp.deinit();
         comp.client.serveBodylessMessage(.update) catch |err| switch (err) {
             error.WriteFailed => switch (comp.fw.err.?) {
                 error.Canceled => |e| return e,
@@ -1588,7 +2054,7 @@ const Compiler = struct {
             },
         };
         comp.state = .update;
-        var out_path: ?[]const u8 = null;
+        var emit_path: ?[]const u8 = null;
         while (try comp.receiveMessage()) |message| switch (message.tag) {
             else => {}, // Ignore other messages,
             .config => {
@@ -1601,9 +2067,9 @@ const Compiler = struct {
                 _ = body_r.takeStruct(std.zig.Server.Message.EmitDigest, .little) catch unreachable;
                 const digest = body_r.takeArray(std.Build.Cache.bin_digest_len) catch unreachable;
 
-                const out_dir = ".zig-cache" ++ std.Io.Dir.path.sep_str ++
+                const emit_dir = ".zig-cache" ++ std.Io.Dir.path.sep_str ++
                     "o" ++ std.Io.Dir.path.sep_str ++ std.Build.Cache.binToHex(digest.*);
-                out_path = try std.Io.Dir.path.join(arena, &.{ out_dir, comp.out_name });
+                emit_path = try std.Io.Dir.path.join(arena, &.{ emit_dir, comp.emit_name.? });
             },
             .error_bundle => {
                 const eb = std.zig.Server.allocErrorBundle(
@@ -1622,7 +2088,7 @@ const Compiler = struct {
             },
         };
         try comp.exit();
-        return out_path.?;
+        return emit_path.?;
     }
 
     fn exit(comp: *Compiler) FailError!void {
@@ -1640,7 +2106,6 @@ const Compiler = struct {
         if (comp.client.in.bufferedLen() > 0) return runner.fail("unable to receive messages", .{});
         const term = comp.child.wait(runner.io) catch |err|
             return runner.fail("child process failed: {t}", .{err});
-        comp.prog_node.end();
         switch (term) {
             .exited => |code| if (code != 0)
                 return runner.fail("compiler failed with code {d}", .{code}),
@@ -1891,8 +2356,8 @@ pub fn main(init: std.process.Init) (std.mem.Allocator.Error || std.Io.Cancelabl
         };
     }
 
-    var inherit_dirs: std.ArrayList(std.Io.Dir) = .initBuffer(try arena.alloc(std.Io.Dir, 3));
-    var inherit_files: std.ArrayList(std.Io.File) = .initBuffer(try arena.alloc(std.Io.File, 4));
+    var inherit_dirs: std.ArrayList(std.Io.Dir) = try .initCapacity(arena, 3);
+    var inherit_files: std.ArrayList(std.Io.File) = try .initCapacity(arena, 4);
     inherit_files.appendSliceAssumeCapacity(&.{ args.test_file, args.zig_exe });
     inherit_dirs.appendSliceAssumeCapacity(&.{ args.lib_dir, args.src_dir });
     if (args.libc_runtimes_dir) |libc_runtimes_dir| inherit_dirs.appendAssumeCapacity(libc_runtimes_dir);

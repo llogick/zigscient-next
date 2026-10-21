@@ -31,8 +31,7 @@ fn foo(recurse: bool) !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-eliminate recursion and change argument#}
+#update "eliminate recursion and change argument"
 #check stdout {
 x==1
 #}

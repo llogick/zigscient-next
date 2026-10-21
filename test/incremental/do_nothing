@@ -1,6 +1,4 @@
-#todo {
-it'd be great if we could actually check that no analysis happened!
-#}
+#todo "it'd be great if we could actually check that no analysis happened!"
 #exe {
 -Mroot=main.zig
 #}
@@ -25,8 +23,7 @@ const O = opaque {
 };
 #}
 #update
-#check stdout {
-#}
+#check stdout
 
 #write main.zig {
 pub fn main() void {
@@ -47,7 +44,5 @@ const O = opaque {
     }
 };
 #}
-#update {
-do literally nothing#}
-#check stdout {
-#}
+#update "do literally nothing"
+#check stdout

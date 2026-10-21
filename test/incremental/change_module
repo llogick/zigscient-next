@@ -41,8 +41,7 @@ comptime {
     //_ = @import("other.zig");
 }
 #}
-#update {
-change module of other.zig#}
+#update "change module of other.zig"
 #check errors {
 other.zig:2:5: error: found compile log statement
 
@@ -61,8 +60,7 @@ comptime {
     _ = @import("other.zig");
 }
 #}
-#update {
-put other.zig in both modules#}
+#update "put other.zig in both modules"
 #check errors {
 other.zig:1:1: error: file exists in modules 'root' and 'foo'
 other.zig:1:1: note: files must belong to only one module
@@ -81,7 +79,5 @@ comptime {
     //_ = @import("other.zig");
 }
 #}
-#update {
-put other.zig in no modules#}
-#check stdout {
-#}
+#update "put other.zig in no modules"
+#check stdout

@@ -193,6 +193,8 @@ pub fn hasLlvmSupport(target: *const std.Target, ofmt: std.Target.ObjectFormat) 
         .coff,
         .elf,
         .hex,
+        .llvmbc,
+        .llvmir,
         .macho,
         .spirv,
         .raw,

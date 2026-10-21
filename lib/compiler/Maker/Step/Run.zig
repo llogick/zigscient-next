@@ -795,6 +795,7 @@ fn waitZigTest(
     multi_reader: *Io.File.MultiReader,
     opt_metadata: *?TestMetadata,
     results: *Step.TestResults,
+    eb_wip: *std.zig.ErrorBundle.Wip,
 ) !union(enum) {
     write_failed: anyerror,
     no_poll: struct {
@@ -885,7 +886,7 @@ fn waitZigTest(
                     .{ builtin.zig_version_string, body },
                 );
             },
-            .error_bundle => step.result_error_bundle = try std.zig.Server.allocErrorBundle(gpa, body),
+            .error_bundle => try eb_wip.addBundleAsRoots(try std.zig.Server.allocErrorBundle(arena, body)),
             .test_metadata => {
                 // `metadata` would only be populated if we'd already seen a `test_metadata`, but we
                 // only request it once (and importantly, we don't re-request it if we kill and
@@ -1573,6 +1574,9 @@ fn evalZigTest(
     };
     var test_metadata: ?TestMetadata = null;
 
+    var eb_wip: std.zig.ErrorBundle.Wip = try .init(gpa);
+    defer eb_wip.deinit();
+
     while (true) {
         var child = try process.spawn(io, spawn_options);
         var multi_reader_buffer: Io.File.MultiReader.Buffer(2) = undefined;
@@ -1602,6 +1606,7 @@ fn evalZigTest(
             &multi_reader,
             &test_metadata,
             &test_results,
+            &eb_wip,
         )) {
             .write_failed => |err| {
                 // The runner unexpectedly closed a stdio pipe, which means a crash. Make sure we've captured
@@ -1687,6 +1692,7 @@ fn evalZigTest(
                         }
                     }
                 }
+                step.result_error_bundle = try eb_wip.toOwnedBundle("");
                 return;
             },
             .timeout => |timeout| {

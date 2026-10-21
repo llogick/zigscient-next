@@ -11,8 +11,7 @@ comptime {
     @compileLog("this is a log");
 }
 #}
-#update {
-compile error#}
+#update "compile error"
 #check errors {
 main.zig:3:5: error: this is an error
 
@@ -29,8 +28,7 @@ comptime {
     @compileLog("this is a log");
 }
 #}
-#update {
-remove the compile error#}
+#update "remove the compile error"
 #check errors {
 main.zig:6:5: error: found compile log statement
 

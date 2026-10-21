@@ -28,8 +28,7 @@ pub fn main() !void {
 }
 #}
 #update
-#check stdout {
-0#}
+#check stdout "0"
 
 #write main.zig {
 //! This update must preserve `bar` `InternPool.Index` value, while changing its wasm function type.
@@ -54,7 +53,5 @@ pub fn main() !void {
     try bar(.one);
 }
 #}
-#update {
-remove foo and change bar wasm function type#}
-#check stdout {
-1#}
+#update "remove foo and change bar wasm function type"
+#check stdout "1"

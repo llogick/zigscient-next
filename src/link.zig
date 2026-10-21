@@ -550,6 +550,7 @@ pub const File = struct {
                 return &ptr.base;
             },
             .lld => unreachable, // not known from ofmt
+            .llvm => |tag| return createDummy(arena, tag, comp, emit),
         }
     }
 
@@ -573,7 +574,24 @@ pub const File = struct {
                 return &ptr.base;
             },
             .lld => unreachable, // not known from ofmt
+            .llvm => |tag| return createDummy(arena, tag, comp, emit),
         }
+    }
+
+    fn createDummy(arena: Allocator, tag: Tag, comp: *Compilation, path: Path) Allocator.Error!*File {
+        const base = try arena.create(File);
+        base.* = .{
+            .tag = tag,
+            .comp = comp,
+            .emit = path,
+            .file = null,
+            .gc_sections = false,
+            .print_gc_sections = false,
+            .build_id = .none,
+            .allow_shlib_undefined = false,
+            .stack_size = 0,
+        };
+        return base;
     }
 
     pub fn cast(base: *File, comptime tag: Tag) if (dev.env.supports(tag.devFeature())) ?*tag.Type() else ?noreturn {
@@ -606,7 +624,7 @@ pub const File = struct {
         const gpa = comp.gpa;
         const io = comp.io;
         switch (base.tag) {
-            .lld => assert(base.file == null),
+            .lld, .llvm => assert(base.file == null),
             .elf, .macho, .wasm => {
                 dev.checkAny(&.{ .coff_linker, .elf_linker, .macho_linker, .plan9_linker, .wasm_linker });
                 if (base.file != null) return;
@@ -706,7 +724,7 @@ pub const File = struct {
         if (!base.canMakeExecutable())
             return;
         switch (base.tag) {
-            .lld => assert(base.file == null),
+            .lld, .llvm => assert(base.file == null),
             .elf => if (base.file) |f| {
                 dev.check(.elf_linker);
                 f.close(io);
@@ -827,6 +845,7 @@ pub const File = struct {
 
         switch (base.tag) {
             .lld => unreachable,
+            .llvm => unreachable,
             .plan9 => unreachable,
             inline else => |tag| {
                 dev.check(tag.devFeature());
@@ -862,6 +881,7 @@ pub const File = struct {
         assert(pt.zcu.llvm_object == null);
         switch (base.tag) {
             .lld => unreachable,
+            .llvm => unreachable,
             .plan9 => unreachable,
             inline else => |tag| {
                 dev.check(tag.devFeature());
@@ -897,6 +917,7 @@ pub const File = struct {
         }
         switch (base.tag) {
             .lld => unreachable,
+            .llvm => unreachable,
             .plan9 => unreachable,
             .spirv => {},
             .coff => {},
@@ -941,6 +962,7 @@ pub const File = struct {
         base.releaseLock();
         if (base.file) |f| f.close(io);
         switch (base.tag) {
+            .llvm => {},
             .plan9 => unreachable,
             inline else => |tag| {
                 dev.check(tag.devFeature());
@@ -1003,6 +1025,7 @@ pub const File = struct {
         }
         assert(base.post_prelink);
         switch (base.tag) {
+            .llvm => {},
             .plan9 => unreachable,
             inline else => |tag| {
                 dev.check(tag.devFeature());
@@ -1030,6 +1053,7 @@ pub const File = struct {
 
         switch (base.tag) {
             .lld => unreachable,
+            .llvm => unreachable,
             .plan9 => unreachable,
             inline else => |tag| {
                 dev.check(tag.devFeature());
@@ -1056,6 +1080,7 @@ pub const File = struct {
         assert(base.comp.zcu.?.llvm_object == null);
         switch (base.tag) {
             .lld => unreachable,
+            .llvm => unreachable,
             .c => unreachable,
             .spirv => unreachable,
             .wasm => unreachable,
@@ -1078,6 +1103,7 @@ pub const File = struct {
         assert(pt.zcu.llvm_object == null);
         switch (base.tag) {
             .lld => unreachable,
+            .llvm => unreachable,
             .c => unreachable,
             .spirv => unreachable,
             .wasm => unreachable,
@@ -1095,6 +1121,7 @@ pub const File = struct {
         assert(base.comp.zcu.?.llvm_object == null);
         switch (base.tag) {
             .lld => unreachable,
+            .llvm => unreachable,
             .c => unreachable,
             .spirv => unreachable,
             .wasm => unreachable,
@@ -1124,6 +1151,7 @@ pub const File = struct {
             .spirv,
             .plan9,
             .lld,
+            .llvm,
             .spork8,
             => return .unimplemented,
             inline else => |tag| {
@@ -1240,7 +1268,7 @@ pub const File = struct {
                 dev.check(tag.devFeature());
                 return @as(*tag.Type(), @fieldParentPtr("base", base)).loadInput(input);
             },
-            .c, .spork8, .plan9, .lld => {},
+            .c, .spork8, .plan9, .lld, .llvm => {},
         }
     }
 
@@ -1352,6 +1380,7 @@ pub const File = struct {
         coff,
         elf,
         elf2,
+        llvm,
         macho,
         macho2,
         c,
@@ -1366,13 +1395,14 @@ pub const File = struct {
                 .coff => Coff,
                 .elf => Elf,
                 .elf2 => Elf2,
+                .llvm => File,
                 .macho => MachO,
                 .macho2 => MachO2,
                 .c => C,
                 .wasm => Wasm,
                 .spirv => Spirv,
                 .lld => Lld,
-                .plan9 => comptime unreachable,
+                .plan9 => unreachable,
                 .spork8 => Spork8,
             };
         }
@@ -1381,6 +1411,7 @@ pub const File = struct {
             return switch (ofmt) {
                 .coff => .coff,
                 .elf => if (use_new_linker) .elf2 else .elf,
+                .llvmbc, .llvmir => .llvm,
                 .macho => if (use_new_linker) .macho2 else .macho,
                 .wasm => .wasm,
                 .plan9 => .plan9,

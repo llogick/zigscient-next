@@ -15,8 +15,7 @@ comptime {
 pub fn main() void {}
 #}
 #update
-#check stdout {
-#}
+#check stdout
 
 #write main.zig {
 const foo = @as(u16, 123);
@@ -30,8 +29,7 @@ comptime {
 }
 pub fn main() void {}
 #}
-#update {
-change the type#}
+#update "change the type"
 #check errors {
 main.zig:8:37: error: reached unreachable code
 #}

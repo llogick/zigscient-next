@@ -9,8 +9,7 @@ pub fn main() void {
 }
 #}
 #update
-#check stdout {
-#}
+#check stdout
 
 #write main.zig {
 const foo = something;
@@ -18,8 +17,7 @@ pub fn main() void {
     _ = &foo;
 }
 #}
-#update {
-introduce use of undeclared identifier#}
+#update "introduce use of undeclared identifier"
 #check errors {
 main.zig:1:13: error: use of undeclared identifier 'something'
 #}
@@ -30,7 +28,5 @@ pub fn main() void {
     _ = &foo;
 }
 #}
-#update {
-revert use of undeclared identifier#}
-#check stdout {
-#}
+#update "revert use of undeclared identifier"
+#check stdout

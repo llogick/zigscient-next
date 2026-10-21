@@ -23,8 +23,7 @@ pub fn main(init: std.process.Init) !void {
 }
 const std = @import("std");
 #}
-#update {
-change to `@TypeOf` anonymous init#}
+#update "change to `@TypeOf` anonymous init"
 #check stdout {
 anon_field
 #}

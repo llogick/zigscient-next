@@ -29,8 +29,7 @@ fn foo(x: i64) !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change function type#}
+#update "change function type"
 #check stdout {
 123
 #}
@@ -46,8 +45,7 @@ fn foo(x: i64) !void {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 #}
-#update {
-change function argument#}
+#update "change function argument"
 #check stdout {
 -42
 #}
