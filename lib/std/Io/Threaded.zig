@@ -2869,69 +2869,83 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout
     } = .{ .gpa = t.allocator, .batch = b, .slice = &poll_buffer, .len = 0 };
     {
         var index = b.submitted.head;
+        var prev_index: Io.Operation.OptionalIndex = .none;
         while (index != .none) {
             const storage = &b.storage[index.toIndex()];
             const submission = storage.submission;
-            switch (submission.operation) {
-                .file_read_streaming => |o| try poll_storage.add(o.file.handle, posix.POLL.IN | posix.POLL.ERR),
-                .file_write_streaming => |o| try poll_storage.add(o.file.handle, posix.POLL.OUT | posix.POLL.ERR),
-                .device_io_control => |o| try poll_storage.add(o.file.handle, posix.POLL.IN | posix.POLL.OUT | posix.POLL.ERR),
-                .net_receive => |*o| nb: {
-                    var data_i: usize = 0;
-                    const result: Io.Operation.Result = .{ .net_receive = for (o.message_buffer, 0..) |*msg, msg_i| {
-                        const remaining_data_buffer = o.data_buffer[data_i..];
-                        netReceivePosix(o.socket_handle, msg, remaining_data_buffer, o.flags, true) catch |err| switch (err) {
-                            error.Canceled => |e| return e,
-                            error.WouldBlock => {
-                                if (msg_i != 0) break .{ null, msg_i };
-                                try poll_storage.add(o.socket_handle, posix.POLL.IN | posix.POLL.ERR);
-                                break :nb;
-                            },
-                            else => |e| break .{ e, msg_i },
-                        };
-                        data_i += msg.data.len;
-                    } else .{ null, o.message_buffer.len } };
-                    switch (b.completed.tail) {
-                        .none => b.completed.head = index,
-                        else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
-                    }
-                    storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
-                    b.completed.tail = index;
-                },
-                .net_send => |*o| nb: {
-                    const result: Io.Operation.Result = .{
-                        .net_send = o: {
-                            const send_err, const sent = netSendPosix(t, o.socket_handle, o.messages, o.flags, true);
-                            if (send_err) |err| switch (err) {
-                                error.Canceled => |e| if (sent == 0) {
-                                    return e;
-                                } else {
-                                    // Leave the `error.Canceled` for later, but don't try to send any more messages.
-                                    recancelInner();
-                                    break :o .{ null, sent };
-                                },
+            const next_index = submission.node.next;
+            const result: Io.Operation.Result = eager: {
+                // If control flow makes it to the end of this switch, it is handled as a
+                // non-blocking operation and stays in the submission queue. The other possibility
+                // is breaking from the eager block, making the operation handled immediately.
+                switch (submission.operation) {
+                    .file_read_streaming => |o| try poll_storage.add(o.file.handle, posix.POLL.IN | posix.POLL.ERR),
+                    .file_write_streaming => |o| try poll_storage.add(o.file.handle, posix.POLL.OUT | posix.POLL.ERR),
+                    .device_io_control => |o| try poll_storage.add(o.file.handle, posix.POLL.IN | posix.POLL.OUT | posix.POLL.ERR),
+                    .net_receive => |*o| nb: {
+                        var data_i: usize = 0;
+                        break :eager .{ .net_receive = for (o.message_buffer, 0..) |*msg, msg_i| {
+                            const remaining_data_buffer = o.data_buffer[data_i..];
+                            netReceivePosix(o.socket_handle, msg, remaining_data_buffer, o.flags, true) catch |err| switch (err) {
+                                error.Canceled => |e| return e,
                                 error.WouldBlock => {
-                                    if (sent != 0) break :o .{ null, sent };
-                                    try poll_storage.add(o.socket_handle, posix.POLL.OUT | posix.POLL.ERR);
+                                    if (msg_i != 0) break .{ null, msg_i };
+                                    try poll_storage.add(o.socket_handle, posix.POLL.IN | posix.POLL.ERR);
                                     break :nb;
                                 },
-                                else => |e| break :o .{ e, sent },
+                                else => |e| break .{ e, msg_i },
                             };
-                            break :o .{ null, sent };
-                        },
-                    };
-                    switch (b.completed.tail) {
-                        .none => b.completed.head = index,
-                        else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
-                    }
-                    storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
-                    b.completed.tail = index;
-                },
-                .net_accept => |o| try poll_storage.add(o.socket_handle, posix.POLL.IN | posix.POLL.ERR),
-                .net_read => |o| try poll_storage.add(o.socket_handle, posix.POLL.IN | posix.POLL.ERR),
-                .net_write => |o| try poll_storage.add(o.socket_handle, posix.POLL.OUT | posix.POLL.ERR),
+                            data_i += msg.data.len;
+                        } else .{ null, o.message_buffer.len } };
+                    },
+                    .net_send => |*o| nb: {
+                        break :eager .{
+                            .net_send = o: {
+                                const send_err, const sent = netSendPosix(t, o.socket_handle, o.messages, o.flags, true);
+                                if (send_err) |err| switch (err) {
+                                    error.Canceled => |e| if (sent == 0) {
+                                        return e;
+                                    } else {
+                                        // Leave the `error.Canceled` for later, but don't try to send any more messages.
+                                        recancelInner();
+                                        break :o .{ null, sent };
+                                    },
+                                    error.WouldBlock => {
+                                        if (sent != 0) break :o .{ null, sent };
+                                        try poll_storage.add(o.socket_handle, posix.POLL.OUT | posix.POLL.ERR);
+                                        break :nb;
+                                    },
+                                    else => |e| break :o .{ e, sent },
+                                };
+                                break :o .{ null, sent };
+                            },
+                        };
+                    },
+                    .net_accept => |o| try poll_storage.add(o.socket_handle, posix.POLL.IN | posix.POLL.ERR),
+                    .net_read => |o| try poll_storage.add(o.socket_handle, posix.POLL.IN | posix.POLL.ERR),
+                    .net_write => |o| try poll_storage.add(o.socket_handle, posix.POLL.OUT | posix.POLL.ERR),
+                }
+                // Non-blocking case. Submission entry stays alive.
+                prev_index = index;
+                index = next_index;
+                continue;
+            };
+            // The operation completed without blocking so we must evict it from the submission list
+            // and add it to the completion list.
+            switch (prev_index) {
+                .none => b.submitted.head = next_index,
+                else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
             }
-            index = submission.node.next;
+            if (next_index == .none) b.submitted.tail = prev_index;
+
+            switch (b.completed.tail) {
+                .none => b.completed.head = index,
+                else => |tail_index| b.storage[tail_index.toIndex()].completion.node.next = index,
+            }
+            storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+            b.completed.tail = index;
+
+            index = next_index;
         }
     }
     switch (poll_storage.len) {
