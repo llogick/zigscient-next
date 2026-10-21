@@ -544,7 +544,7 @@ const Parse = struct {
                 try p.appendErrorOff(
                     token,
                     offset + @as(u32, @intCast(bad_index)),
-                    "unicode escape does not correspond to a valid unicode scalar value",
+                    "unicode escape does not correspond to a unicode code point",
                     .{},
                 );
             },
