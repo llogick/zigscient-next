@@ -1,4 +1,4 @@
-/* $OpenBSD: art.h,v 1.28 2025/07/10 05:28:13 dlg Exp $ */
+/* $OpenBSD: art.h,v 1.29 2026/04/23 01:28:03 jsg Exp $ */
 
 /*
  * Copyright (c) 2015 Martin Pieuchot
@@ -160,9 +160,6 @@ void		 art_iter_close(struct art_iter *);
 	for ((_an) = art_iter_open((_art), (_ai));			\
 	     (_an) != NULL;						\
 	     (_an) = art_iter_next((_ai)))
-
-int		 art_walk(struct art *,
-		     int (*)(struct art_node *, void *), void *);
 
 #endif /* _KERNEL */
 

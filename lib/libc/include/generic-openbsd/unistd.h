@@ -1,4 +1,4 @@
-/*	$OpenBSD: unistd.h,v 1.113 2025/10/07 12:02:21 brynet Exp $ */
+/*	$OpenBSD: unistd.h,v 1.115 2026/08/31 15:21:18 deraadt Exp $ */
 /*	$NetBSD: unistd.h,v 1.26.4.1 1996/05/28 02:31:51 mrg Exp $	*/
 
 /*-
@@ -346,6 +346,9 @@ char	*getcwd(char *, size_t)
 		__attribute__((__bounded__(__string__,1,2)));
 gid_t	 getegid(void);
 uid_t	 geteuid(void);
+#if __BSD_VISIBLE
+int	 getexecpath(char *, size_t);
+#endif
 gid_t	 getgid(void);
 int	 getgroups(int, gid_t *);
 char	*getlogin(void);
@@ -508,7 +511,7 @@ int	 mkstemps(char *, int);
 int	 nfssvc(int, void *);
 int	 profil(void *, size_t, size_t, unsigned long, unsigned int, int)
 		__attribute__ ((__bounded__(__string__,1,2)));
-int	 quotactl(const char *, int, int, char *);
+int	 quotactl(const char *, int, int, void *);
 int	 rcmd(char **, int, const char *,
 	    const char *, const char *, int *);
 int	 rcmd_af(char **, int, const char *,

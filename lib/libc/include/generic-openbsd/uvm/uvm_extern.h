@@ -1,4 +1,4 @@
-/*	$OpenBSD: uvm_extern.h,v 1.187 2025/11/13 10:55:51 mpi Exp $	*/
+/*	$OpenBSD: uvm_extern.h,v 1.190 2026/07/24 15:03:50 kettenis Exp $	*/
 /*	$NetBSD: uvm_extern.h,v 1.57 2001/03/09 01:02:12 chs Exp $	*/
 
 /*
@@ -139,7 +139,6 @@ typedef int		vm_prot_t;
 #define UVM_PLA_NOWAIT		0x0002	/* can't sleep (need one of the two) */
 #define UVM_PLA_ZERO		0x0004	/* zero all pages before returning */
 #define UVM_PLA_TRYCONTIG	0x0008	/* try to allocate contig physmem */
-#define UVM_PLA_FAILOK		0x0010	/* caller can handle failure */
 #define UVM_PLA_NOWAKE		0x0020	/* don't wake page daemon on failure */
 #define UVM_PLA_USERESERVE	0x0040	/* can allocate from kernel reserve */
 
@@ -358,6 +357,7 @@ extern const struct kmem_pa_mode kp_zero;
 extern const struct kmem_pa_mode kp_dma;
 extern const struct kmem_pa_mode kp_dma_contig;
 extern const struct kmem_pa_mode kp_dma_zero;
+extern const struct kmem_pa_mode kp_mbuf_contig;
 extern const struct kmem_pa_mode kp_pageable;
 extern const struct kmem_pa_mode kp_none;
 
@@ -398,8 +398,6 @@ int			uvm_pagealloc_multi(struct uvm_object *, voff_t,
     			    vsize_t, int);
 void			uvm_pagerealloc(struct vm_page *, 
 			    struct uvm_object *, voff_t);
-int			uvm_pagerealloc_multi(struct uvm_object *, voff_t,
-			    vsize_t, int, struct uvm_constraint_range *);
 /* Actually, uvm_page_physload takes PF#s which need their own type */
 void			uvm_page_physload(paddr_t, paddr_t, paddr_t,
 			    paddr_t, int);

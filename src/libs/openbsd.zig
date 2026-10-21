@@ -90,7 +90,6 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 try includePath(comp, arena, "generic-openbsd"),
                 "-I",
                 try csuPath(comp, arena, switch (target.cpu.arch) {
-                    .mips64el => "mips64",
                     .x86 => "i386",
                     .x86_64 => "amd64",
                     else => |t| @tagName(t),

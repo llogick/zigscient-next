@@ -2534,7 +2534,7 @@ const signal_ucontext_t = switch (native_os) {
             },
         },
         // https://github.com/openbsd/src/blob/42468faed8369d07ae49ae02dd71ec34f59b66cd/sys/arch/mips64/include/signal.h
-        .mips64, .mips64el => extern struct {
+        .mips64 => extern struct {
             _cookie: i64,
             _mask: i64,
             mcontext: extern struct {

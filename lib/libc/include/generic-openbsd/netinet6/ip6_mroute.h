@@ -1,4 +1,4 @@
-/*	$OpenBSD: ip6_mroute.h,v 1.25 2025/05/19 04:54:04 jan Exp $	*/
+/*	$OpenBSD: ip6_mroute.h,v 1.27 2026/09/17 15:56:59 bluhm Exp $	*/
 /*	$KAME: ip6_mroute.h,v 1.17 2001/02/10 02:05:52 itojun Exp $	*/
 
 /*
@@ -146,6 +146,7 @@ struct mrt6stat {
 	u_int64_t mrt6s_q_overflow;	/* pkts dropped - Q overflow       */
 	u_int64_t mrt6s_pkt2large;	/* pkts dropped - size > BKT SIZE  */
 	u_int64_t mrt6s_upq_sockfull;	/* upcalls dropped - socket full   */
+	u_int64_t mrt6s_hop_limit;	/* ip6 hlim not above one           */
 };
 
 /*
@@ -206,6 +207,7 @@ enum mrt6stat_counters {
 	mrt6s_q_overflow,
 	mrt6s_pkt2large,
 	mrt6s_upq_sockfull,
+	mrt6s_hop_limit,
 	mrt6s_ncounters
 };
 
@@ -219,6 +221,8 @@ mrt6stat_inc(enum mrt6stat_counters c)
 
 /* How frequent should we look for expired entries (in seconds). */
 #define	MCAST_EXPIRE_TIMEOUT	30
+
+extern int ip6_mrtproto;
 
 /*
  * The kernel's multicast-interface structure.

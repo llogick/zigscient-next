@@ -1,4 +1,4 @@
-/*	$OpenBSD: nfsm_subs.h,v 1.49 2024/09/11 12:22:34 claudio Exp $	*/
+/*	$OpenBSD: nfsm_subs.h,v 1.52 2026/06/09 02:52:26 jsg Exp $	*/
 /*	$NetBSD: nfsm_subs.h,v 1.10 1996/03/20 21:59:56 fvdl Exp $	*/
 
 /*
@@ -48,13 +48,36 @@ struct nfsm_info {
 
 	/* Setting up / Tearing down. */
 	struct mbuf	*nmi_md;
-	struct mbuf	*nmi_mb;
 	caddr_t		 nmi_dpos;
 
 	int		 nmi_v3;  
 
 	int		*nmi_errorp;
 };
+
+static inline void *
+nfsd_dissect(struct nfsrv_descript *nfsd, int s, int *errorp)
+{
+	caddr_t ret;
+	int avail, error;
+
+	avail = mtod(nfsd->nd_md, caddr_t) + nfsd->nd_md->m_len -
+	    nfsd->nd_dpos;
+	if (avail >= s) {
+		ret = nfsd->nd_dpos;
+		nfsd->nd_dpos += s;
+		return ret;
+	}
+	error = nfsm_disct(&nfsd->nd_md, &nfsd->nd_dpos, s, avail, &ret);
+	if (error != 0) {
+		m_freem(nfsd->nd_mrep);
+		nfsd->nd_mrep = NULL;
+		*errorp = error;
+		return NULL;
+	} else {
+		return ret;
+	}
+}
 
 static inline void *
 nfsm_dissect(struct nfsm_info *infop, int s)
@@ -81,6 +104,27 @@ nfsm_dissect(struct nfsm_info *infop, int s)
 }
 
 #define nfsm_rndup(a)	(((a)+3)&(~0x3))
+
+static inline int
+nfsd_adv(struct nfsrv_descript *nfsd, int s, int *errorp)
+{
+	int avail, error;
+       
+	avail = mtod(nfsd->nd_md, caddr_t) + nfsd->nd_md->m_len -
+	    nfsd->nd_dpos;
+	if (avail >= s) {
+		nfsd->nd_dpos += s;
+		return 0;
+	}
+	error = nfs_adv(&nfsd->nd_md, &nfsd->nd_dpos, s, avail);
+	if (error != 0) {
+		m_freem(nfsd->nd_mrep);
+		nfsd->nd_mrep = NULL;
+		*errorp = error;
+		return error;
+	}
+	return 0;
+}
 
 static inline int
 nfsm_adv(struct nfsm_info *infop, int s)
@@ -134,6 +178,24 @@ nfsm_postop_attr(struct nfsm_info *infop, struct vnode **vpp, int *attrflagp)
 }
 
 static inline int
+nfsd_strsiz(struct nfsrv_descript *nfsd, int *lenp, int maxlen, int *errorp)
+{
+	uint32_t *tl = (uint32_t *)nfsd_dissect(nfsd, NFSX_UNSIGNED, errorp);
+	int len;
+	if (tl == NULL)
+		return 1;
+	len = fxdr_unsigned(int32_t, *tl);
+	if (len < 0 || len > maxlen) {
+		m_freem(nfsd->nd_mrep);
+		nfsd->nd_mrep = NULL;
+		*errorp = EBADRPC;
+		return 1;
+	}
+	*lenp = len;
+	return 0;
+}
+
+static inline int
 nfsm_strsiz(struct nfsm_info *infop, int *lenp, int maxlen)
 {
 	uint32_t *tl = (uint32_t *)nfsm_dissect(infop, NFSX_UNSIGNED);
@@ -148,6 +210,24 @@ nfsm_strsiz(struct nfsm_info *infop, int *lenp, int maxlen)
 		return 1;
 	}
 	*lenp = len;
+	return 0;
+}
+
+static inline int
+nfsd_mtouio(struct nfsrv_descript *nfsd, struct uio *uiop, int len, int *errorp)
+{
+	int error;
+
+	if (len <= 0)
+		return 0;
+
+	error = nfsm_mbuftouio(&nfsd->nd_md, uiop, len, &nfsd->nd_dpos);
+	if (error != 0) {
+		m_freem(nfsd->nd_mrep);
+		nfsd->nd_mrep = NULL;
+		*errorp = error;
+		return error;
+	}
 	return 0;
 }
 
@@ -170,7 +250,8 @@ nfsm_mtouio(struct nfsm_info *infop, struct uio *uiop, int len)
 }
 
 static inline int
-nfsm_strtom(struct nfsm_info *infop, char *str, size_t len, size_t maxlen)
+nfsm_strtom(struct nfsm_info *infop, struct mbuf **mb,
+    char *str, size_t len, size_t maxlen)
 {
 	if (len > maxlen) {
 		m_freem(infop->nmi_mreq);
@@ -178,7 +259,7 @@ nfsm_strtom(struct nfsm_info *infop, char *str, size_t len, size_t maxlen)
 		*infop->nmi_errorp = ENAMETOOLONG;
 		return 1;
 	}
-	nfsm_strtombuf(&infop->nmi_mb, str, len);
+	nfsm_strtombuf(mb, str, len);
 	return 0;
 }
 

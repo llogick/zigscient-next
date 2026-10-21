@@ -546,7 +546,7 @@ pub const Os = struct {
                 .openbsd => .{
                     .semver = .{
                         .min = blk: {
-                            const default_min: std.SemanticVersion = .{ .major = 7, .minor = 8, .patch = 0 };
+                            const default_min: std.SemanticVersion = .{ .major = 7, .minor = 9, .patch = 0 };
 
                             for (std.zig.target.available_libcs) |libc| {
                                 if (libc.arch != arch or libc.os != tag or libc.abi != abi) continue;
@@ -558,7 +558,7 @@ pub const Os = struct {
 
                             break :blk default_min;
                         },
-                        .max = .{ .major = 7, .minor = 9, .patch = 0 },
+                        .max = .{ .major = 8, .minor = 0, .patch = 0 },
                     },
                 },
 
@@ -2907,7 +2907,6 @@ pub const DynamicLinker = struct {
                 .hppa,
                 .m88k,
                 .mips64,
-                .mips64el,
                 .powerpc,
                 .powerpc64,
                 .riscv64,

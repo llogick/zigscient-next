@@ -189,7 +189,6 @@ pub const can_unwind: bool = s: {
             .arm,
             .m88k,
             .mips64,
-            .mips64el,
             .riscv64,
             .x86,
             .x86_64,

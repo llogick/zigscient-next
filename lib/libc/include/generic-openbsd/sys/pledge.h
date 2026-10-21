@@ -1,4 +1,4 @@
-/*	$OpenBSD: pledge.h,v 1.53 2026/02/26 07:42:25 deraadt Exp $	*/
+/*	$OpenBSD: pledge.h,v 1.55 2026/09/19 17:21:52 dv Exp $	*/
 
 /*
  * Copyright (c) 2015 Nicholas Marriott <nicm@openbsd.org>
@@ -124,11 +124,12 @@ int	pledge_sysctl(struct proc *p, int namelen, int *name, void *new);
 int	pledge_chown(struct proc *p, uid_t, gid_t);
 int	pledge_adjtime(struct proc *p, const void *v);
 int	pledge_sendit(struct proc *p, const void *to);
-int	pledge_sockopt(struct proc *p, int set, int level, int optname);
+struct protosw;
+int	pledge_sockopt(struct proc *p, int set, const struct protosw *pr,
+	    int level, int optname);
 int	pledge_socket(struct proc *p, int domain, unsigned int state);
 int	pledge_ioctl(struct proc *p, long com, struct file *);
 int	pledge_ioctl_drm(struct proc *p, long com, dev_t device);
-int	pledge_ioctl_vmm(struct proc *p, long com);
 int	pledge_ioctl_psp(struct proc *p, long com);
 int	pledge_flock(struct proc *p);
 int	pledge_fcntl(struct proc *p, int cmd);

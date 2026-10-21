@@ -1,4 +1,4 @@
-/*	$OpenBSD: i82489reg.h,v 1.5 2019/07/26 04:35:38 kevlo Exp $	*/
+/*	$OpenBSD: i82489reg.h,v 1.9 2026/09/19 16:11:07 mlarkin Exp $	*/
 /*	$NetBSD: i82489reg.h,v 1.1 2003/02/26 21:26:10 fvdl Exp $	*/
 
 /*-
@@ -73,6 +73,8 @@
 #define LAPIC_IRR	0x200
 #define LAPIC_ESR	0x280			/* Err status. R */
 
+#define LAPIC_LVT_CMCI	0x2f0			/* Corrected machine chk LVT */
+
 #define LAPIC_ICRLO	0x300			/* Int. cmd. RW */
 #	define LAPIC_DLMODE_MASK	0x00000700
 #	define LAPIC_DLMODE_FIXED	0x00000000
@@ -82,6 +84,7 @@
 #	define LAPIC_DLMODE_NMI		0x00000400
 #	define LAPIC_DLMODE_INIT	0x00000500
 #	define LAPIC_DLMODE_STARTUP	0x00000600
+#	define LAPIC_DLMODE_EXTINT	0x00000700
 
 #	define LAPIC_DSTMODE_LOG	0x00000800
 
@@ -110,11 +113,12 @@
 #	define LAPIC_LVTT_VEC_MASK	0x000000ff
 #	define LAPIC_LVTT_DS		0x00001000
 #	define LAPIC_LVTT_M		0x00010000
-#	define LAPIC_LVTT_TM		0x00020000
+#	define LAPIC_LVTT_TM		0x00060000
 #	 define LAPIC_LVTT_TM_ONESHOT	0x00000000
 #	 define LAPIC_LVTT_TM_PERIODIC	0x00020000
 #	 define LAPIC_LVTT_TM_TSCDL	0x00040000
 
+#define LAPIC_LVT_THERM	0x330			/* Thermal sensor LVT */
 #define LAPIC_PCINT	0x340
 #define LAPIC_LVINT0	0x350			/* Loc.vec (LINT0) RW */
 #	define LAPIC_LVT_PERIODIC	0x00020000
@@ -144,6 +148,31 @@
 #define LAPIC_IRQ_MASK(i)	(1 << ((i) + 1))
 
 #define	MSR_X2APIC_BASE		0x800
-#define	MSR_X2APIC_EOI		(MSR_X2APIC_BASE+0x0b)	/* End Int. W */
-#define	MSR_X2APIC_ID		(MSR_X2APIC_BASE+0x02)	/* ID. RW */
+#define	MSR_X2APIC_END		0x83f
+#define	MSR_X2APIC_ID		(MSR_X2APIC_BASE + 0x02)	/* ID. R */
+#define	MSR_X2APIC_VERSION	(MSR_X2APIC_BASE + 0x03)	/* Version. R */
+#define	MSR_X2APIC_TPR		(MSR_X2APIC_BASE + 0x08)	/* Task prio. RW */
+#define	MSR_X2APIC_PPR		(MSR_X2APIC_BASE + 0x0a)	/* Processor prio. R */
+#define	MSR_X2APIC_EOI		(MSR_X2APIC_BASE + 0x0b)	/* End Int. W */
+#define	MSR_X2APIC_LDR		(MSR_X2APIC_BASE + 0x0d)	/* Logical dest. R */
+#define	MSR_X2APIC_SVR		(MSR_X2APIC_BASE + 0x0f)	/* Spurious intvec RW */
+#define	MSR_X2APIC_ISR0		(MSR_X2APIC_BASE + 0x10)	/* ISR 31:0. R */
+#define	MSR_X2APIC_ISR7		(MSR_X2APIC_BASE + 0x17)	/* ISR 255:224. R */
+#define	MSR_X2APIC_TMR0		(MSR_X2APIC_BASE + 0x18)	/* TMR 31:0. R */
+#define	MSR_X2APIC_TMR7		(MSR_X2APIC_BASE + 0x1f)	/* TMR 255:224. R */
+#define	MSR_X2APIC_IRR0		(MSR_X2APIC_BASE + 0x20)	/* IRR 31:0. R */
+#define	MSR_X2APIC_IRR7		(MSR_X2APIC_BASE + 0x27)	/* IRR 255:224. R */
+#define	MSR_X2APIC_ESR		(MSR_X2APIC_BASE + 0x28)	/* Error status RW */
+#define	MSR_X2APIC_LVT_CMCI	(MSR_X2APIC_BASE + 0x2f)	/* CMCI LVT. RW */
+#define	MSR_X2APIC_ICR		(MSR_X2APIC_BASE + 0x30)	/* ICR. RW */
+#define	MSR_X2APIC_LVT_TIMER	(MSR_X2APIC_BASE + 0x32)	/* Timer LVT. RW */
+#define	MSR_X2APIC_LVT_THERM	(MSR_X2APIC_BASE + 0x33)	/* Thermal LVT. RW */
+#define	MSR_X2APIC_LVT_PCINT	(MSR_X2APIC_BASE + 0x34)	/* Perf LVT. RW */
+#define	MSR_X2APIC_LVT_LINT0	(MSR_X2APIC_BASE + 0x35)	/* LINT0 LVT. RW */
+#define	MSR_X2APIC_LVT_LINT1	(MSR_X2APIC_BASE + 0x36)	/* LINT1 LVT. RW */
+#define	MSR_X2APIC_LVT_ERROR	(MSR_X2APIC_BASE + 0x37)	/* Error LVT. RW */
+#define	MSR_X2APIC_TIMER_ICR	(MSR_X2APIC_BASE + 0x38)	/* Initial count RW */
+#define	MSR_X2APIC_TIMER_CCR	(MSR_X2APIC_BASE + 0x39)	/* Current count R */
+#define	MSR_X2APIC_TIMER_DCR	(MSR_X2APIC_BASE + 0x3e)	/* Divisor config RW */
+#define	MSR_X2APIC_SELF_IPI	(MSR_X2APIC_BASE + 0x3f)	/* Self IPI. W */
 #define	X2APIC_ID_MASK		0xff

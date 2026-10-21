@@ -1,4 +1,4 @@
-/*	$OpenBSD: proc.h,v 1.397 2025/08/18 04:15:35 dlg Exp $	*/
+/*	$OpenBSD: proc.h,v 1.401 2026/09/19 17:53:49 gnezdo Exp $	*/
 /*	$NetBSD: proc.h,v 1.44 1996/04/22 01:23:21 christos Exp $	*/
 
 /*-
@@ -52,6 +52,7 @@
 #include <sys/sigio.h>			/* For struct sigio */
 #include <sys/refcnt.h>			/* For struct refcnt */
 #include <sys/pclock.h>
+#include <sys/ptrace.h>		/* For struct ptrace_state */
 
 #ifdef _KERNEL
 #include <sys/atomic.h>
@@ -207,7 +208,7 @@ struct process {
 
 	pid_t	ps_ppid;		/* [K|m] Cached parent pid */
 	int	ps_ptmask;		/* Ptrace event mask */
-	struct	ptrace_state *ps_ptstat;/* Ptrace state */
+	struct	ptrace_state ps_ptstat;	/* Ptrace state */
 	struct	process *ps_opptr; 	/* [K|m] Old parent during ptrace. */
 
 	struct	rusage *ps_ru;		/* sum of stats for dead threads. */

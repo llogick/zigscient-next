@@ -1,4 +1,4 @@
-/*	$OpenBSD: bpf.h,v 1.75 2025/11/16 02:20:08 dlg Exp $	*/
+/*	$OpenBSD: bpf.h,v 1.78 2026/09/10 18:31:39 claudio Exp $	*/
 /*	$NetBSD: bpf.h,v 1.15 1996/12/13 07:57:33 mikel Exp $	*/
 
 /*
@@ -52,7 +52,10 @@ typedef u_int32_t	bpf_u_int32;
 #define BPF_ALIGNMENT sizeof(u_int32_t)
 #define BPF_WORDALIGN(x) (((x) + (BPF_ALIGNMENT - 1)) & ~(BPF_ALIGNMENT - 1))
 
+#ifdef _KERNEL
 #define BPF_MAXINSNS 512
+#endif
+
 #define BPF_MAXBUFSIZE (2 * 1024 * 1024)
 #define BPF_MINBUFSIZE 32
 
@@ -309,18 +312,20 @@ struct bpf_ops {
 #define BPF_JUMP(code, k, jt, jf) { (u_int16_t)(code), jt, jf, k }
 
 __BEGIN_DECLS
+#ifndef _KERNEL
 u_int	 bpf_filter(const struct bpf_insn *, const u_char *, u_int, u_int)
 	    __bounded((__buffer__, 2, 4));
 
 u_int	 _bpf_filter(const struct bpf_insn *, const struct bpf_ops *,
 	     const void *, u_int);
+#endif /* _KERNEL */
 __END_DECLS
 
 #ifdef _KERNEL
 struct ifnet;
 struct mbuf;
 
-int	 bpf_validate(struct bpf_insn *, int);
+int	 bpf_validate(struct bpf_insn *, u_int);
 int	 bpf_mtap(caddr_t, const struct mbuf *, u_int);
 int	 bpf_mtap_hdr(caddr_t, const void *, u_int, const struct mbuf *, u_int);
 int	 bpf_mtap_af(caddr_t, u_int32_t, const struct mbuf *, u_int);
@@ -333,7 +338,10 @@ void	*bpfxattach(caddr_t *, const char *, struct ifnet *, u_int, u_int);
 void	 bpfsdetach(void *);
 void	 bpfilterattach(int);
 
-u_int	 bpf_mfilter(const struct bpf_insn *, const struct mbuf *, u_int);
+u_int	 _bpf_lfilter(const struct bpf_insn *, u_int, const struct bpf_ops *,
+	    const void *, u_int);
+
+u_int	 bpf_mfilter(const struct bpf_program *, const struct mbuf *, u_int);
 #endif /* _KERNEL */
 
 /*

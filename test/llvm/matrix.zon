@@ -173,7 +173,6 @@
     .{ .cpu = .{ .mips64el = .{} }, .os = .{ .linux = .{} }, .abi = .{ .muslabi64 = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .mips64el = .{} }, .os = .{ .linux = .{} }, .abi = .{ .muslabin32 = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .mips64el = .{} }, .os = .{ .linux = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
-    .{ .cpu = .{ .mips64el = .{} }, .os = .{ .openbsd = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
 
     .{ .cpu = .{ .msp430 = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
 

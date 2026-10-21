@@ -1,4 +1,4 @@
-/*	$OpenBSD: ieee80211_node.h,v 1.101 2026/03/29 21:16:21 kirill Exp $	*/
+/*	$OpenBSD: ieee80211_node.h,v 1.103 2026/09/19 19:36:43 stsp Exp $	*/
 /*	$NetBSD: ieee80211_node.h,v 1.9 2004/04/30 22:57:32 dyoung Exp $	*/
 
 /*-
@@ -306,6 +306,8 @@ struct ieee80211_node {
 	/* power saving mode */
 	u_int8_t		ni_pwrsave;
 	struct mbuf_queue	ni_savedq;	/* packets queued for pspoll */
+	u_int8_t		ni_uapsd_ac;
+	u_int8_t		ni_uapsd_maxsp;
 
 	/* RSN */
 	struct timeout		ni_eapol_to;
@@ -446,6 +448,7 @@ struct ieee80211_node {
 #define IEEE80211_NODE_HE		0x200000 /* HE negotiated */
 #define IEEE80211_NODE_HECAP		0x400000 /* claims to support HE */
 #define IEEE80211_NODE_CSA		0x800000 /* channel switch announced */
+#define IEEE80211_NODE_UAPSD		0x1000000 /* uAPSD negotiated */
 
 	/* If not NULL, this function gets called when ni_refcnt hits zero. */
 	void			(*ni_unref_cb)(struct ieee80211com *,
@@ -675,6 +678,8 @@ void ieee80211_clean_nodes(struct ieee80211com *, int);
 void ieee80211_setup_htcaps(struct ieee80211_node *, const uint8_t *,
     uint8_t);
 void ieee80211_clear_htcaps(struct ieee80211_node *);
+uint8_t ieee80211_node_ht_secondary_channel_offset(struct ieee80211_node *);
+uint8_t ieee80211_node_vht_channel_width(struct ieee80211_node *);
 int ieee80211_setup_htop(struct ieee80211_node *, const uint8_t *,
     uint8_t, int);
 void ieee80211_setup_vhtcaps(struct ieee80211_node *, const uint8_t *,

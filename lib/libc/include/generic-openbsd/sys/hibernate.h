@@ -1,4 +1,4 @@
-/*	$OpenBSD: hibernate.h,v 1.51 2025/07/05 09:24:37 jsg Exp $	*/
+/*	$OpenBSD: hibernate.h,v 1.52 2026/09/06 18:26:41 mglocker Exp $	*/
 
 /*
  * Copyright (c) 2011 Ariane van der Steldt <ariane@stack.nl>
@@ -150,6 +150,10 @@ void	hibernate_unpack_image(union hibernate_info *);
 void	hibernate_populate_resume_pt(union hibernate_info *, paddr_t, paddr_t);
 int	hibernate_alloc(void);
 void	hibernate_free(void);
+
+/* MD pmap setup/teardown for suspend-time HIBERNATE_HIBALLOC_PAGE access. */
+int	hibernate_pmap_setup_md(void);
+void	hibernate_pmap_teardown_md(void);
 void	hib_getentropy(char **, size_t *);
 
 int	hibernate_write(union hibernate_info *, daddr_t, vaddr_t, size_t, int);

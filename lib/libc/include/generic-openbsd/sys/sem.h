@@ -1,4 +1,4 @@
-/*	$OpenBSD: sem.h,v 1.26 2024/10/26 05:39:03 jsg Exp $	*/
+/*	$OpenBSD: sem.h,v 1.31 2026/08/20 16:14:20 sthen Exp $	*/
 /*	$NetBSD: sem.h,v 1.8 1996/02/09 18:25:29 christos Exp $	*/
 
 /*
@@ -103,12 +103,27 @@ union semun {
 
 #ifdef _KERNEL
 #include <sys/queue.h>
+#include <sys/refcnt.h>
 
 /*
  * Kernel implementation stuff
  */
 #define SEMVMX	32767		/* semaphore maximum value */
 #define SEMAEM	16384		/* adjust on exit max value */
+
+/*
+ * In-kernel semaphore implementation
+ */
+struct semid_ds_kern {
+	struct ipc_perm	sem_perm;	/* operation permission struct */
+	struct sem	*sem_base;	/* pointer to first semaphore in set */
+	unsigned short	sem_nsems;	/* number of sems in set */
+	time_t		sem_otime;	/* last operation time */
+	time_t		sem_ctime;	/* last change time */
+	    				/* Times measured in secs since */
+	    				/* 00:00:00 GMT, Jan. 1, 1970 */
+	struct refcnt	sem_refcnt;
+};
 
 /*
  * Undo structure (one per process)
@@ -144,16 +159,17 @@ struct sem_sysctl_info {
 	struct	semid_ds semids[1];
 };
 
+extern struct rwlock	sysvsem_lock;
 extern struct seminfo	seminfo;
 
 /*
  * Configuration parameters
  */
 #ifndef SEMMNI
-#define SEMMNI	10		/* # of semaphore identifiers */
+#define SEMMNI	25		/* # of semaphore identifiers */
 #endif
 #ifndef SEMMNS
-#define SEMMNS	60		/* # of semaphores in system */
+#define SEMMNS	350		/* # of semaphores in system */
 #endif
 #ifndef SEMUME
 #define SEMUME	10		/* max # of undo entries per process */
@@ -173,7 +189,7 @@ extern struct seminfo	seminfo;
 /* actual size of an undo structure */
 #define SEMUSZ	(sizeof(struct sem_undo)+sizeof(struct undo)*SEMUME)
 
-extern struct	semid_ds **sema;	/* semaphore id list */
+extern struct	semid_ds_kern **sema;	/* semaphore id list */
 
 void	seminit(void);
 void	semexit(struct process *);

@@ -1,4 +1,4 @@
-/* $OpenBSD: cpu.h,v 1.55 2026/04/03 14:20:23 kettenis Exp $ */
+/* $OpenBSD: cpu.h,v 1.57 2026/09/06 20:02:12 kettenis Exp $ */
 /*
  * Copyright (c) 2016 Dale Rahn <drahn@dalerahn.com>
  *
@@ -37,7 +37,8 @@
 #define	CPU_ID_AA64SMFR0       10
 #define	CPU_ID_AA64ZFR0	       11
 #define	CPU_LIDACTION          12
-#define	CPU_MAXID	       13	/* number of valid machdep ids */
+#define	CPU_LED_BLINK	       13	/* int: blink leds? */
+#define	CPU_MAXID	       14	/* number of valid machdep ids */
 
 #define	CTL_MACHDEP_NAMES { \
 	{ 0, 0 }, \
@@ -53,6 +54,7 @@
 	{ "id_aa64smfr0", CTLTYPE_QUAD }, \
 	{ "id_aa64zfr0", CTLTYPE_QUAD }, \
 	{ "lidaction", CTLTYPE_INT }, \
+	{ "led_blink", CTLTYPE_INT }, \
 }
 
 #ifdef _KERNEL
@@ -200,6 +202,8 @@ struct cpu_info {
 #define CPUF_PRESENT		(1<<4)
 #define CPUF_GO			(1<<5)
 #define CPUF_RUNNING		(1<<6)
+#define CPUF_PARK		(1<<7)
+#define CPUF_PARKED		(1<<8)
 
 static inline struct cpu_info *
 curcpu(void)
@@ -356,6 +360,14 @@ void	cpu_wfi(void);
 
 void	delay (unsigned);
 #define	DELAY(x)	delay(x)
+
+struct blink_led {
+	void (*bl_func)(void *, int);
+	void *bl_arg;
+	SLIST_ENTRY(blink_led) bl_next;
+};
+
+void blink_led_register(struct blink_led *);
 
 #endif /* _KERNEL */
 

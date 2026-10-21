@@ -1,4 +1,4 @@
-/*	$OpenBSD: ip6_var.h,v 1.129 2025/12/31 04:10:00 jsg Exp $	*/
+/*	$OpenBSD: ip6_var.h,v 1.132 2026/09/17 15:56:59 bluhm Exp $	*/
 /*	$KAME: ip6_var.h,v 1.33 2000/06/11 14:59:20 jinmei Exp $	*/
 
 /*
@@ -138,6 +138,7 @@ struct	ip6q {
 	struct in6_addr	ip6q_src, ip6q_dst;
 	int		ip6q_unfrglen;	/* len of unfragmentable part */
 	int		ip6q_nfrag;	/* # of fragments */
+	u_int		ip6q_rdomain;	/* routing domain for reassembly */
 	u_int32_t	ip6q_ident;	/* fragment identification */
 	u_int8_t	ip6q_nxt;	/* ip6f_nxt in first fragment */
 	u_int8_t	ip6q_ecn;
@@ -164,15 +165,7 @@ struct	ip6_moptions {
  * Control options for outgoing packets
  */
 
-/* Routing header related info */
-struct	ip6po_rhinfo {
-	struct	ip6_rthdr *ip6po_rhi_rthdr; /* Routing header */
-	struct	route ip6po_rhi_route; /* Route to the 1st hop */
-};
-#define ip6po_rthdr	ip6po_rhinfo.ip6po_rhi_rthdr
-#define ip6po_route	ip6po_rhinfo.ip6po_rhi_route
-
-struct	ip6_pktopts {
+struct ip6_pktopts {
 	/* Hoplimit for outgoing packets */
 	int	ip6po_hlim;
 
@@ -184,9 +177,6 @@ struct	ip6_pktopts {
 
 	/* Destination options header (before a routing header) */
 	struct	ip6_dest *ip6po_dest1;
-
-	/* Routing header related info. */
-	struct	ip6po_rhinfo ip6po_rhinfo;
 
 	/* Destination options header (after a routing header) */
 	struct	ip6_dest *ip6po_dest2;
@@ -310,6 +300,7 @@ int	ip6_unknown_opt(struct mbuf **, u_int8_t *, int);
 int	ip6_get_prevhdr(struct mbuf *, int);
 int	ip6_nexthdr(struct mbuf *, int, int, int *);
 int	ip6_lasthdr(struct mbuf *, int, int, int *);
+int	ip6_mrouter_active(u_int);
 int	ip6_mforward(struct ip6_hdr *, struct ifnet *, struct mbuf *, int);
 int	ip6_process_hopopts(struct mbuf **, u_int8_t *, int, u_int32_t *,
 	     u_int32_t *);
@@ -371,7 +362,7 @@ struct tdb;
 int	ip6_output_ipsec_lookup(struct mbuf *, const struct ipsec_level *,
 	    struct tdb **);
 int	ip6_output_ipsec_send(struct tdb *, struct mbuf *, struct route *,
-	    u_int, int, int);
+	    u_int, int);
 #endif /* IPSEC */
 
 #endif /* _KERNEL */

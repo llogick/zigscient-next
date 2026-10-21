@@ -1530,15 +1530,6 @@ const module_test_targets = blk: {
 
         .{
             .target = .{
-                .cpu_arch = .mips64el,
-                .os_tag = .openbsd,
-                .abi = .none,
-            },
-            .link_libc = true,
-        },
-
-        .{
-            .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .openbsd,
                 .abi = .eabihf,

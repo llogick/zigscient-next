@@ -1,4 +1,4 @@
-/*	$OpenBSD: ip_var.h,v 1.123 2025/07/31 09:05:11 mvs Exp $	*/
+/*	$OpenBSD: ip_var.h,v 1.127 2026/08/11 14:28:59 bluhm Exp $	*/
 /*	$NetBSD: ip_var.h,v 1.16 1996/02/13 23:43:20 christos Exp $	*/
 
 /*
@@ -191,9 +191,10 @@ struct ipqent {
  */
 struct ipq {
 	LIST_ENTRY(ipq) ipq_q;		/* to other reass headers */
+	u_int	  ipq_rdomain;		/* routing domain for reassembly */
+	u_int16_t ipq_id;		/* sequence id for reassembly */
 	u_int8_t  ipq_ttl;		/* time for reass q to live */
 	u_int8_t  ipq_p;		/* protocol of this fragment */
-	u_int16_t ipq_id;		/* sequence id for reassembly */
 	struct	  ipqehead ipq_fragq;	/* to ip fragment queue */
 	struct	  in_addr ipq_src, ipq_dst;
 };
@@ -247,10 +248,12 @@ int	 ip_getmoptions(int, struct ip_moptions *, struct mbuf *);
 void	 ip_init(void);
 struct mbuf*
 	 ip_insertoptions(struct mbuf *, struct mbuf *, int *);
+int	 ip_mrouter_active(u_int);
 int	 ip_mforward(struct mbuf *, struct ifnet *, int);
 int	 ip_optcopy(struct ip *, struct ip *);
 int	 ip_output(struct mbuf *, struct mbuf *, struct route *, int,
-	    struct ip_moptions *, const struct ipsec_level *, u_int32_t);
+	    struct ip_moptions *, const struct ipsec_level *, uint32_t);
+void	 ip_randomid_init(void);
 u_int16_t
 	 ip_randomid(void);
 void	 ip_send(struct mbuf *);
@@ -281,9 +284,6 @@ int	 rip_disconnect(struct socket *);
 int	 rip_shutdown(struct socket *);
 int	 rip_send(struct socket *, struct mbuf *, struct mbuf *,
 	     struct mbuf *);
-#ifdef MROUTING
-extern struct socket *ip_mrouter[];	/* multicast routing daemon */
-#endif
 
 #endif /* _KERNEL */
 #endif /* _NETINET_IP_VAR_H_ */

@@ -1,4 +1,4 @@
-/*	$OpenBSD: specialreg.h,v 1.122 2026/04/19 01:10:28 jsg Exp $	*/
+/*	$OpenBSD: specialreg.h,v 1.129 2026/09/19 16:11:07 mlarkin Exp $	*/
 /*	$NetBSD: specialreg.h,v 1.1 2003/04/26 18:39:48 fvdl Exp $	*/
 /*	$NetBSD: x86/specialreg.h,v 1.2 2003/04/25 21:54:30 fvdl Exp $	*/
 
@@ -281,6 +281,11 @@
     ("\20" "\03AVX512FNNIW" "\04AVX512FMAPS" "\012SRBDS_CTRL" "\013MD_CLEAR" \
      "\016TSXFA" "\025IBT" "\033IBRS,IBPB" "\034STIBP" "\035L1DF" "\040SSBD" )
 
+/* SEFF subleaf 2 EDX bits */
+#define SEFF2EDX_BHI_CTRL	0x00000010 /* BHI_DIS_S supported */
+#define SEFF2_EDX_BITS \
+    ("\20" "\05BHI_CTRL" )
+
 /*
  * Thermal and Power Management (CPUID function 0x6) EAX bits
  */
@@ -465,6 +470,7 @@
 #define APICBASE_BSP		0x100
 #define APICBASE_ENABLE_X2APIC	0x400
 #define APICBASE_GLOBAL_ENABLE	0x800
+#define APICBASE_ADDRESS_MASK	0x000ffffffffff000ULL
 #define MSR_EBL_CR_POWERON	0x02a
 #define MSR_EBC_FREQUENCY_ID    0x02c   /* Pentium 4 only */
 #define	MSR_TEST_CTL		0x033
@@ -474,6 +480,7 @@
 #define SPEC_CTRL_IBRS		(1ULL << 0)
 #define SPEC_CTRL_STIBP		(1ULL << 1)
 #define SPEC_CTRL_SSBD		(1ULL << 2)
+#define SPEC_CTRL_BHI_DIS_S	(1ULL << 10)
 #define MSR_PRED_CMD		0x049	/* Speculation Control IBPB */
 #define PRED_CMD_IBPB		(1ULL << 0)
 #define MSR_BIOS_UPDT_TRIG	0x079
@@ -710,6 +717,9 @@
 #define DE_CFG_SERIALIZE_LFENCE	(1 << 1)	/* Enable serializing lfence */
 #define DE_CFG_SERIALIZE_9 (1 << 9)	/* Zenbleed chickenbit */
 
+#define MSR_BP_CFG	0xc001102e
+#define BP_CFG_33	(1ULL << 33)	/* op cache chickenbit, AMD-SB-7052 */
+
 #define IPM_C1E_CMP_HLT	0x10000000
 #define IPM_SMI_CMP_HLT	0x08000000
 
@@ -734,6 +744,7 @@
 #define MSR_SEV_STATUS	0xc0010131
 #define		SEV_STAT_ENABLED	0x00000001
 #define		SEV_STAT_ES_ENABLED	0x00000002
+#define		SEV_STAT_SNP_ACTIVE	0x00000004
 
 #define	MSR_LS_CFG	0xc0011020
 #define		LS_CFG_DIS_LS2_SQUISH	0x02000000
@@ -1357,6 +1368,8 @@
 #define VMCS_GUEST_IA32_LDTR_AR		0x4820
 #define VMCS_GUEST_IA32_TR_AR		0x4822
 #define VMCS_GUEST_INTERRUPTIBILITY_ST	0x4824
+#define VMX_INT_STATE_BLOCK_STI		(1 << 0)
+#define VMX_INT_STATE_BLOCK_MOVSS	(1 << 1)
 #define VMCS_GUEST_ACTIVITY_STATE	0x4826
 #define VMCS_GUEST_SMBASE		0x4828
 #define VMCS_GUEST_IA32_SYSENTER_CS	0x482A
@@ -1405,6 +1418,8 @@
 #define VMCS_GUEST_IA32_SYSENTER_ESP	0x6824
 #define VMCS_GUEST_IA32_SYSENTER_EIP	0x6826
 #define VMCS_GUEST_IA32_S_CET		0x6828
+#define VMCS_GUEST_SSP			0x682A
+#define VMCS_GUEST_IA32_INTR_SSP_TABLE	0x682C
 
 /* Natural-width host state fields */
 #define VMCS_HOST_IA32_CR0		0x6C00
@@ -1420,6 +1435,8 @@
 #define VMCS_HOST_IA32_RSP		0x6C14
 #define VMCS_HOST_IA32_RIP		0x6C16
 #define VMCS_HOST_IA32_S_CET		0x6C18
+#define VMCS_HOST_SSP			0x6C1A
+#define VMCS_HOST_IA32_INTR_SSP_TABLE	0x6C1C
 
 #define IA32_VMX_INVVPID_INDIV_ADDR_CTX	0x0
 #define IA32_VMX_INVVPID_SINGLE_CTX	0x1
@@ -1450,6 +1467,7 @@
 #define MSR_AMD_VM_HSAVE_PA		0xc0010117
 #define CPUID_AMD_SVM_CAP		0x8000000A
 #define AMD_SVM_NESTED_PAGING_CAP	(1 << 0)
+#define AMD_SVM_NRIP_SAVE_CAP		(1 << 3)
 #define AMD_SVM_VMCB_CLEAN_CAP		(1 << 5)
 #define AMD_SVM_FLUSH_BY_ASID_CAP	(1 << 6)
 #define AMD_SVM_DECODE_ASSIST_CAP	(1 << 7)

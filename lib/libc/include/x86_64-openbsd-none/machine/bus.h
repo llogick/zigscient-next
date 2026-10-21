@@ -1,4 +1,4 @@
-/*	$OpenBSD: bus.h,v 1.37 2025/08/23 10:15:49 sf Exp $	*/
+/*	$OpenBSD: bus.h,v 1.38 2026/04/19 09:59:22 kettenis Exp $	*/
 /*	$NetBSD: bus.h,v 1.6 1996/11/10 03:19:25 thorpej Exp $	*/
 
 /*-
@@ -670,6 +670,8 @@ struct bus_dmamap {
 	int		dm_nsegs;	/* # valid segments in mapping */
 	bus_dma_segment_t dm_segs[1];	/* segments; variable length */
 };
+
+void	bus_dma_init(void);
 
 int	_bus_dmamap_create(bus_dma_tag_t, bus_size_t, int, bus_size_t,
 	    bus_size_t, int, bus_dmamap_t *);

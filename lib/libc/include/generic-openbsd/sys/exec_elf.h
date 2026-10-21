@@ -1,4 +1,4 @@
-/*	$OpenBSD: exec_elf.h,v 1.108 2025/07/31 16:09:59 kettenis Exp $	*/
+/*	$OpenBSD: exec_elf.h,v 1.112 2026/09/16 03:22:35 deraadt Exp $	*/
 /*
  * Copyright (c) 1995, 1996 Erik Theisen.  All rights reserved.
  *
@@ -734,16 +734,8 @@ enum AuxID {
 	AUX_sun_gid = 2002,		/* egid */
 	AUX_sun_rgid = 2003,		/* rgid */
 	AUX_openbsd_timekeep = 4000,	/* userland clock_gettime */
+	AUX_openbsd_execpath = 4001,	/* realpath'd executable path */
 };
-
-struct elf_args {
-        u_long  arg_entry;		/* program entry point */
-        u_long  arg_interp;		/* Interpreter load address */
-        u_long  arg_phaddr;		/* program header address */
-        u_long  arg_phentsize;		/* Size of program header */
-        u_long  arg_phnum;		/* Number of program headers */
-};
-
 #endif
 
 #if !defined(ELFSIZE) && defined(ARCH_ELFSIZE)
@@ -822,7 +814,7 @@ extern Elf_Dyn		_DYNAMIC[];
 /*
  * How many entries are in the AuxInfo array we pass to the process?
  */
-#define	ELF_AUX_ENTRIES	11
+#define	ELF_AUX_ENTRIES	12
 #define	ELF_AUX_WORDS	(sizeof(AuxInfo) * ELF_AUX_ENTRIES / sizeof(char *))
 
 #define	ELFROUNDSIZE	sizeof(Elf_Word)

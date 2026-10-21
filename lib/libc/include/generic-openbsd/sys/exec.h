@@ -1,4 +1,4 @@
-/*	$OpenBSD: exec.h,v 1.57 2025/05/24 06:49:16 deraadt Exp $	*/
+/*	$OpenBSD: exec.h,v 1.61 2026/09/17 19:45:07 dgl Exp $	*/
 /*	$NetBSD: exec.h,v 1.59 1996/02/09 18:25:09 christos Exp $	*/
 
 /*-
@@ -106,9 +106,8 @@ struct exec_vmcmd_set {
 	struct	exec_vmcmd evs_start[EXEC_DEFAULT_VMCMD_SETSIZE];
 };
 
-struct elf_args;
 struct exec_package {
-	char	*ep_name;		/* file's name */
+	const char *ep_name;		/* file's name */
 	void	*ep_hdr;		/* file's exec header */
 	u_int	ep_hdrlen;		/* length of ep_hdr */
 	u_int	ep_hdrvalid;		/* bytes of ep_hdr that are valid */
@@ -123,16 +122,19 @@ struct exec_package {
 	u_long	ep_maxsaddr;		/* proc's max stack addr ("top") */
 	u_long	ep_minsaddr;		/* proc's min stack addr ("bottom") */
 	u_long	ep_ssize;		/* size of process's stack */
-	u_long	ep_entry;		/* process's entry point */
+	u_long	ep_entry;		/* process's (maybe ld.so) point */
+	u_long	ep_entrymain;		/* process's (main) entry point */
+	u_long	ep_phdraddr;		/* process's elf phdr location */
+	u_long	ep_interpaddr;		/* process's ld.so location */
 	u_int	ep_flags;		/* flags; see below. */
 	char	**ep_fa;		/* a fake args vector for scripts */
 	int	ep_fd;			/* a file descriptor we're holding */
-	struct	elf_args *ep_args;	/* ELF info */
 	void	*ep_auxinfo;		/* userspace auxinfo address */
 	char	*ep_interp;		/* name of interpreter if any */
 	vaddr_t	ep_pinstart, ep_pinend;	/* executable region */
 	u_int	*ep_pins;		/* array of system call offsets */
 	int	ep_npins;		/* entries in array */
+	char	*ep_execpath;		/* execve path on userland stack */
 };
 #define	EXEC_INDIR	0x0001		/* script handling already done */
 #define	EXEC_HASFD	0x0002		/* holding a shell script */
