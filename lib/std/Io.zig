@@ -333,7 +333,10 @@ pub const Operation = union(enum) {
         else => struct {
             file: File,
             /// Device-dependent operation code.
-            code: u32,
+            code: switch (builtin.target.os.tag) {
+                .dragonfly, .freebsd, .openbsd => usize,
+                else => u32,
+            },
             arg: ?*anyopaque,
 
             /// Device and operation dependent result. Negative values are

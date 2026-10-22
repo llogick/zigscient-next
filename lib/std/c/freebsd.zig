@@ -16,15 +16,21 @@ const nlink_t = std.c.nlink_t;
 const off_t = std.c.off_t;
 const pid_t = std.c.pid_t;
 const sockaddr = std.c.sockaddr;
+const socklen_t = std.c.socklen_t;
 const time_t = std.c.time_t;
 const timespec = std.c.timespec;
 const uid_t = std.c.uid_t;
 const sf_hdtr = std.c.sf_hdtr;
 const clockid_t = std.c.clockid_t;
+const mmsghdr = std.c.mmsghdr;
+const NI = std.c.NI;
+const EAI = std.c.EAI;
 
 comptime {
     assert(builtin.os.tag == .freebsd); // Prevent access of std.c symbols on wrong OS.
 }
+
+pub extern "c" fn ioctl(fd: fd_t, request: c_ulong, ...) c_int;
 
 pub extern "c" fn ptrace(request: c_int, pid: pid_t, addr: caddr_t, data: c_int) c_int;
 
@@ -40,6 +46,18 @@ pub extern "c" fn sendfile(
     sbytes: ?*off_t,
     flags: u32,
 ) c_int;
+
+pub extern "c" fn sendmmsg(sockfd: fd_t, msgvec: [*]mmsghdr, vlen: usize, flags: u32) isize;
+
+pub extern "c" fn getnameinfo(
+    noalias addr: *const sockaddr,
+    addrlen: socklen_t,
+    noalias host: ?[*]u8,
+    hostlen: usize,
+    noalias serv: ?[*]u8,
+    servlen: usize,
+    flags: NI,
+) EAI;
 
 pub const UMTX_OP = enum(c_int) {
     LOCK = 0,

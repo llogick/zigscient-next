@@ -1,10 +1,12 @@
 const std = @import("../std.zig");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
+const MAP = std.c.MAP;
 const O = std.c.O;
 const clockid_t = std.c.clockid_t;
 const pid_t = std.c.pid_t;
 const timespec = std.c.timespec;
+const page_size = std.heap.page_size_min;
 
 comptime {
     assert(builtin.os.tag == .serenity); // Prevent access of std.c symbols on wrong OS.
@@ -43,6 +45,7 @@ pub const PERF_EVENT = packed struct(c_int) {
     SYSCALL: bool = false,
     SIGNPOST: bool = false,
     FILESYSTEM: bool = false,
+    _: @Int(.unsigned, @bitSizeOf(c_int) - 17) = 0,
 };
 
 // https://github.com/SerenityOS/serenity/blob/abc150085f532f123b598949218893cb272ccc4c/Userland/Libraries/LibC/serenity.h
@@ -66,6 +69,9 @@ pub extern "c" fn anon_create(size: usize, options: O) c_int;
 
 pub extern "c" fn getkeymap(name_buffer: [*]u8, name_buffer_size: usize, map: [*]u32, shift_map: [*]u32, alt_map: [*]u32, altgr_map: [*]u32, shift_altgr_map: [*]u32) c_int;
 pub extern "c" fn setkeymap(name: [*]const u8, map: [*]const u32, shift_map: [*]const u32, alt_map: [*]const u32, altgr_map: [*]const u32, shift_altgr_map: [*]const u32) c_int;
+
+// https://github.com/SerenityOS/serenity/blob/fe4f3879551f2fdd8a24de06b88f4450e2f3b93d/Userland/Libraries/LibC/sys/mman.h#L17
+pub extern "c" fn mremap(old_address: ?*align(page_size) anyopaque, old_size: usize, new_size: usize, flags: MAP) *anyopaque;
 
 // https://github.com/SerenityOS/serenity/blob/5bd8af99be0bc4b2e14f361fd7d7590e6bcfa4d6/Kernel/API/POSIX/netinet/in.h#L29
 pub const IP = struct {

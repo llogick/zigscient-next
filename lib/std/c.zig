@@ -174,6 +174,7 @@ pub const blksize_t = switch (native_os) {
     .emscripten => emscripten.blksize_t,
     // https://github.com/SerenityOS/serenity/blob/b98f537f117b341788023ab82e0c11ca9ae29a57/Kernel/API/POSIX/sys/types.h#L42
     .serenity => u64,
+    .dragonfly => i64,
     else => i32,
 };
 
@@ -217,7 +218,7 @@ pub const passwd = switch (native_os) {
 };
 
 pub const group = switch (native_os) {
-    .linux, .freebsd, .openbsd, .dragonfly, .netbsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => extern struct {
+    .linux, .freebsd, .openbsd, .dragonfly, .netbsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .serenity => extern struct {
         name: ?[*:0]const u8,
         passwd: ?[*:0]const u8,
         gid: gid_t,
@@ -318,7 +319,7 @@ pub const clockid_t = switch (native_os) {
         THREAD_CPUTIME_ID = 0x20000000,
         PROCESS_CPUTIME_ID = 0x40000000,
     },
-    .dragonfly => enum(u32) {
+    .dragonfly => enum(c_ulong) {
         REALTIME = 0,
         VIRTUAL = 1,
         PROF = 2,
@@ -1978,9 +1979,16 @@ pub const RLIM = switch (native_os) {
     .linux => linux.RLIM,
     .emscripten => emscripten.RLIM,
     // https://github.com/SerenityOS/serenity/blob/aae106e37b48f2158e68902293df1e4bf7b80c0f/Userland/Libraries/LibC/sys/resource.h#L52
-    .openbsd, .haiku, .dragonfly, .netbsd, .freebsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .serenity => struct {
+    .openbsd, .dragonfly, .netbsd, .freebsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .serenity => struct {
         /// No limit
         pub const INFINITY: rlim_t = (1 << 63) - 1;
+
+        pub const SAVED_MAX = INFINITY;
+        pub const SAVED_CUR = INFINITY;
+    },
+    .haiku => struct {
+        /// No limit
+        pub const INFINITY: rlim_t = 0xffffffff;
 
         pub const SAVED_MAX = INFINITY;
         pub const SAVED_CUR = INFINITY;
@@ -4085,6 +4093,10 @@ pub const clock_t = switch (native_os) {
 pub const cpu_set_t = switch (native_os) {
     .linux => linux.cpu_set_t,
     .emscripten => emscripten.cpu_set_t,
+    .dragonfly => extern struct {
+        ary: [4]u64,
+    },
+    .freebsd => [1024 / @bitSizeOf(c_ulong)]c_ulong,
     else => void,
 };
 pub const dl_phdr_info = switch (native_os) {
@@ -4320,6 +4332,10 @@ const posix_msghdr_const = extern struct {
 };
 
 pub const mmsghdr = switch (native_os) {
+    .freebsd => extern struct {
+        hdr: msghdr,
+        len: isize,
+    },
     .linux => linux.mmsghdr,
     else => extern struct {
         hdr: msghdr,
@@ -4470,7 +4486,8 @@ pub const rlim_t = switch (native_os) {
     .linux => linux.rlim_t,
     .emscripten => emscripten.rlim_t,
     .openbsd, .netbsd, .illumos, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => u64,
-    .haiku, .dragonfly, .freebsd => i64,
+    .dragonfly, .freebsd => i64,
+    .haiku => c_ulong,
     // https://github.com/SerenityOS/serenity/blob/aae106e37b48f2158e68902293df1e4bf7b80c0f/Userland/Libraries/LibC/sys/resource.h#L54
     .serenity => usize,
     else => void,
@@ -4840,12 +4857,15 @@ pub const siginfo_t = switch (native_os) {
     },
     .haiku => extern struct {
         signo: SIG,
-        code: i32,
-        errno: i32,
+        code: c_int,
+        errno: c_int,
 
         pid: pid_t,
         uid: uid_t,
         addr: *allowzero anyopaque,
+        status: c_int,
+        band: c_long,
+        value: sigval,
     },
     .openbsd => extern struct {
         signo: SIG,
@@ -4854,9 +4874,9 @@ pub const siginfo_t = switch (native_os) {
         data: extern union {
             proc: extern struct {
                 pid: pid_t,
+                uid: uid_t,
                 pdata: extern union {
                     kill: extern struct {
-                        uid: uid_t,
                         value: sigval,
                     },
                     cld: extern struct {
@@ -4904,7 +4924,7 @@ pub const sigset_t = switch (native_os) {
 pub const sigval = switch (native_os) {
     .linux => linux.sigval,
     // https://github.com/SerenityOS/serenity/blob/ec492a1a0819e6239ea44156825c4ee7234ca3db/Kernel/API/POSIX/signal.h#L22-L25
-    .openbsd, .dragonfly, .freebsd, .serenity => extern union {
+    .openbsd, .dragonfly, .freebsd, .haiku, .serenity => extern union {
         int: c_int,
         ptr: ?*anyopaque,
     },
@@ -5205,7 +5225,7 @@ pub const sockaddr = switch (native_os) {
         /// address family
         family: sa_family_t,
         /// actually longer; address value
-        data: [14]u8,
+        data: [30]u8,
 
         pub const SS_MAXSIZE = 128;
         pub const storage = extern struct {
@@ -5224,7 +5244,7 @@ pub const sockaddr = switch (native_os) {
             family: sa_family_t = AF.INET,
             port: in_port_t,
             addr: u32,
-            zero: [8]u8 = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+            zero: [24]u8 = @splat(0),
         };
 
         pub const in6 = extern struct {
@@ -5239,7 +5259,7 @@ pub const sockaddr = switch (native_os) {
         pub const un = extern struct {
             len: u8 = @sizeOf(un),
             family: sa_family_t = AF.UNIX,
-            path: [104]u8,
+            path: [126]u8,
         };
     },
     .openbsd => extern struct {
@@ -5738,7 +5758,7 @@ pub const PF = if (builtin.abi.isAndroid()) struct {
         pub const PIP = AF.pseudo_PIP;
         pub const ISDN = AF.ISDN;
         pub const KEY = AF.pseudo_KEY;
-        pub const INET6 = AF.pseudo_INET6;
+        pub const INET6 = AF.INET6;
         pub const NATM = AF.NATM;
         pub const ATM = AF.ATM;
         pub const NETGRAPH = AF.NETGRAPH;
@@ -7222,7 +7242,7 @@ pub const utsname = switch (native_os) {
         machine: [256:0]u8,
         domainname: [256:0]u8,
     },
-    .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => extern struct {
+    .openbsd, .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => extern struct {
         sysname: [255:0]u8,
         nodename: [255:0]u8,
         release: [255:0]u8,
@@ -7337,13 +7357,12 @@ pub const RTLD = switch (native_os) {
     },
     // https://github.com/SerenityOS/serenity/blob/36a26d7fa80bc9c72b19442912d8967f448368ff/Userland/Libraries/LibC/dlfcn.h#L13-L17
     .serenity => packed struct(c_int) {
-        DEFAULT: bool = false,
-        _1: u1,
+        _0: u1,
         LAZY: bool = false,
         NOW: bool = false,
         GLOBAL: bool = false,
         LOCAL: bool = false,
-        _: @Int(.unsigned, @bitSizeOf(c_int) - 6) = 0,
+        _: @Int(.unsigned, @bitSizeOf(c_int) - 5) = 0,
     },
     else => void,
 };
@@ -7884,11 +7903,11 @@ pub const Stat = switch (native_os) {
         ctim: timespec,
         size: c_ulong,
         blocks: i64,
-        blksize: u32,
+        _old_blksize: u32,
         flags: u32,
         gen: u32,
         lspare: i32,
-        qspare1: i64,
+        blksize: blksize_t,
         qspare2: i64,
         pub fn atime(self: @This()) timespec {
             return self.atim;
@@ -7999,7 +8018,7 @@ pub const Stat = switch (native_os) {
 
 pub const pthread_spinlock_t = switch (native_os) {
     .openbsd => openbsd.pthread_spinlock_t,
-    .freebsd => extern struct {
+    .freebsd, .dragonfly => extern struct {
         inner: ?*anyopaque = null,
     },
     .netbsd => extern struct {
@@ -8182,7 +8201,7 @@ pub const pthread_rwlock_t = switch (native_os) {
 };
 
 pub const pthread_attr_t = switch (native_os) {
-    .linux, .emscripten, .dragonfly => extern struct {
+    .linux, .emscripten => extern struct {
         __size: [56]u8,
         __align: c_long,
     },
@@ -8191,7 +8210,7 @@ pub const pthread_attr_t = switch (native_os) {
         __opaque: [56]u8,
     },
     // https://github.com/SerenityOS/serenity/blob/b98f537f117b341788023ab82e0c11ca9ae29a57/Kernel/API/POSIX/sys/types.h#L75
-    .freebsd, .openbsd, .serenity => extern struct {
+    .dragonfly, .freebsd, .haiku, .openbsd, .serenity => extern struct {
         inner: ?*anyopaque = null,
     },
     .illumos => extern struct {
@@ -8202,13 +8221,6 @@ pub const pthread_attr_t = switch (native_os) {
         flags: i32,
         private: ?*anyopaque,
     },
-    .haiku => extern struct {
-        detach_state: i32,
-        sched_priority: i32,
-        stack_size: i32,
-        guard_size: i32,
-        stack_address: ?*anyopaque,
-    },
     else => void,
 };
 
@@ -8216,7 +8228,7 @@ pub const pthread_key_t = switch (native_os) {
     .linux, .emscripten => c_uint,
     .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => c_ulong,
     // https://github.com/SerenityOS/serenity/blob/b98f537f117b341788023ab82e0c11ca9ae29a57/Kernel/API/POSIX/sys/types.h#L65
-    .openbsd, .illumos, .serenity => c_int,
+    .dragonfly, .freebsd, .openbsd, .haiku, .illumos, .serenity => c_int,
     else => void,
 };
 
@@ -9033,12 +9045,16 @@ pub const termios = switch (native_os) {
     },
     .haiku => extern struct {
         iflag: tc_iflag_t,
+        ispeed: u16,
         oflag: tc_oflag_t,
+        ospeed: u16,
         cflag: tc_cflag_t,
+        ispeed_high: u16,
         lflag: tc_lflag_t,
+        ospeed_high: u16,
         line: cc_t,
-        ispeed: speed_t,
-        ospeed: speed_t,
+        _pad1: u8 = 0,
+        _pad2: u8 = 0,
         cc: [NCCS]cc_t,
     },
     .illumos => extern struct {
@@ -9115,7 +9131,7 @@ pub const tc_iflag_t = switch (native_os) {
         IMAXBEL: bool = false,
         _: u18 = 0,
     },
-    .haiku => packed struct(u32) {
+    .haiku => packed struct(u16) {
         IGNBRK: bool = false,
         BRKINT: bool = false,
         IGNPAR: bool = false,
@@ -9129,7 +9145,7 @@ pub const tc_iflag_t = switch (native_os) {
         IXON: bool = false,
         IXANY: bool = false,
         IXOFF: bool = false,
-        _: u19 = 0,
+        _: u3 = 0,
     },
     .illumos => packed struct(u32) {
         IGNBRK: bool = false,
@@ -9243,8 +9259,24 @@ pub const tc_oflag_t = switch (native_os) {
         WRAP: bool = false,
         _: u14 = 0,
     },
+    .haiku => packed struct(u16) {
+        OPOST: bool = false,
+        OLCUC: bool = false,
+        ONLCR: bool = false,
+        OCRNL: bool = false,
+        ONOCR: bool = false,
+        ONLRET: bool = false,
+        OFILL: bool = false,
+        OFDEL: bool = false,
+        NLDLY: u1 = 0,
+        CRDLY: u2 = 0,
+        TABDLY: u2 = 0,
+        BSDLY: u1 = 0,
+        VTDLY: u1 = 0,
+        FFDLY: u1 = 0,
+    },
     // https://github.com/SerenityOS/serenity/blob/d277cdfd4c7ed21d5248a83217ae03b9f890c3c8/Kernel/API/POSIX/termios.h#L69-L97
-    .haiku, .emscripten, .serenity => packed struct(u32) {
+    .emscripten, .serenity => packed struct(u32) {
         OPOST: bool = false,
         OLCUC: bool = false,
         ONLCR: bool = false,
@@ -9357,7 +9389,7 @@ pub const tc_cflag_t = switch (native_os) {
         MDMBUF: bool = false,
         _: u11 = 0,
     },
-    .haiku => packed struct(u32) {
+    .haiku => packed struct(u16) {
         _0: u5 = 0,
         CSIZE: CSIZE = .CS7,
         CSTOPB: bool = false,
@@ -9369,7 +9401,7 @@ pub const tc_cflag_t = switch (native_os) {
         XLOBLK: bool = false,
         CTSFLOW: bool = false,
         RTSFLOW: bool = false,
-        _: u17 = 0,
+        _: u1 = 0,
     },
     .illumos => packed struct(u32) {
         _0: u4 = 0,
@@ -9491,7 +9523,7 @@ pub const tc_lflag_t = switch (native_os) {
         _30: u1 = 0,
         NOFLSH: bool = false,
     },
-    .haiku => packed struct(u32) {
+    .haiku => packed struct(u16) {
         ISIG: bool = false,
         ICANON: bool = false,
         XCASE: bool = false,
@@ -9507,7 +9539,7 @@ pub const tc_lflag_t = switch (native_os) {
         ECHOKE: bool = false,
         FLUSHO: bool = false,
         PENDIN: bool = false,
-        _: u17 = 0,
+        _: u1 = 0,
     },
     .illumos => packed struct(u32) {
         ISIG: bool = false,
@@ -9568,7 +9600,7 @@ pub const tc_lflag_t = switch (native_os) {
 
 pub const speed_t = switch (native_os) {
     .linux => linux.speed_t,
-    .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .openbsd => enum(u64) {
+    .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .openbsd => enum(if (native_os == .openbsd) c_uint else u64) {
         B0 = 0,
         B50 = 50,
         B75 = 75,
@@ -9780,7 +9812,7 @@ pub const MINSIGSTKSZ = switch (native_os) {
     },
     .illumos => 2048,
     .haiku, .netbsd => 8192,
-    .openbsd => 1 << openbsd.MAX_PAGE_SHIFT,
+    .openbsd => 3 << openbsd.MAX_PAGE_SHIFT,
     // https://github.com/SerenityOS/serenity/blob/ec492a1a0819e6239ea44156825c4ee7234ca3db/Kernel/API/POSIX/signal.h#L58
     .serenity => 4096,
     else => {},
@@ -9790,7 +9822,7 @@ pub const SIGSTKSZ = switch (native_os) {
     .netbsd, .freebsd => MINSIGSTKSZ + 32768,
     .illumos => 8192,
     .haiku => 16384,
-    .openbsd => MINSIGSTKSZ + (1 << openbsd.MAX_PAGE_SHIFT) * 4,
+    .openbsd => MINSIGSTKSZ + (1 << openbsd.MAX_PAGE_SHIFT) * (if (openbsd.MAX_PAGE_SHIFT < 14) 4 else 2),
     // https://github.com/SerenityOS/serenity/blob/ec492a1a0819e6239ea44156825c4ee7234ca3db/Kernel/API/POSIX/signal.h#L59
     .serenity => 32768,
     else => {},
@@ -10845,7 +10877,7 @@ pub const malloc_size = switch (native_os) {
     else => {},
 };
 pub const malloc_usable_size = switch (native_os) {
-    .freebsd, .linux, .serenity => private.malloc_usable_size,
+    .freebsd, .linux => private.malloc_usable_size,
     else => {},
 };
 pub const posix_memalign = switch (native_os) {
@@ -10906,7 +10938,10 @@ pub extern "c" fn write(fd: fd_t, buf: [*]const u8, nbyte: usize) isize;
 pub extern "c" fn pwrite(fd: fd_t, buf: [*]const u8, nbyte: usize, offset: off_t) isize;
 pub extern "c" fn mmap(addr: ?*align(page_size) anyopaque, len: usize, prot: PROT, flags: MAP, fd: fd_t, offset: off_t) *anyopaque;
 pub extern "c" fn munmap(addr: *align(page_size) const anyopaque, len: usize) c_int;
-pub extern "c" fn mremap(addr: ?*align(page_size) const anyopaque, old_len: usize, new_len: usize, flags: MREMAP, ...) *anyopaque;
+pub const mremap = switch (native_os) {
+    .serenity => serenity.mremap,
+    else => private.mremap,
+};
 pub extern "c" fn mprotect(addr: *align(page_size) anyopaque, len: usize, prot: PROT) c_int;
 pub extern "c" fn link(oldpath: [*:0]const u8, newpath: [*:0]const u8) c_int;
 pub extern "c" fn linkat(oldfd: fd_t, oldpath: [*:0]const u8, newfd: fd_t, newpath: [*:0]const u8, flags: c_uint) c_int;
@@ -10999,7 +11034,10 @@ pub extern "c" fn sendto(
     addrlen: socklen_t,
 ) isize;
 pub extern "c" fn sendmsg(sockfd: fd_t, msg: *const msghdr_const, flags: u32) isize;
-pub extern "c" fn sendmmsg(sockfd: fd_t, msgvec: [*]mmsghdr, n: c_uint, flags: u32) c_int;
+pub const sendmmsg = switch (native_os) {
+    .freebsd => freebsd.sendmmsg,
+    else => private.sendmmsg,
+};
 
 pub extern "c" fn recv(
     sockfd: fd_t,
@@ -11061,6 +11099,10 @@ pub const pthread_cancelstate = switch (native_os) {
         ENABLE = 1,
         DISABLE = 0,
     },
+    .dragonfly, .freebsd, .haiku, .openbsd => enum(c_int) {
+        ENABLE = 0,
+        DISABLE = 1,
+    },
     .linux => if (native_abi.isMusl()) enum(c_int) {
         ENABLE = 0,
         DISABLE = 1,
@@ -11068,6 +11110,10 @@ pub const pthread_cancelstate = switch (native_os) {
     } else if (native_abi.isGnu()) enum(c_int) {
         ENABLE = 0,
         DISABLE = 1,
+    },
+    .serenity => enum(c_int) {
+        ENABLE = 1,
+        DISABLE = 2,
     },
     else => void,
 };
@@ -11124,7 +11170,7 @@ pub const ptrace = switch (native_os) {
 
 pub extern "c" fn sem_init(sem: *sem_t, pshared: c_int, value: c_uint) c_int;
 pub extern "c" fn sem_destroy(sem: *sem_t) c_int;
-pub extern "c" fn sem_open(name: [*:0]const u8, flag: c_int, mode: mode_t, value: c_uint) *sem_t;
+pub extern "c" fn sem_open(name: [*:0]const u8, flag: c_int, ...) *sem_t;
 pub extern "c" fn sem_close(sem: *sem_t) c_int;
 pub extern "c" fn sem_post(sem: *sem_t) c_int;
 pub extern "c" fn sem_wait(sem: *sem_t) c_int;
@@ -11186,15 +11232,12 @@ pub extern "c" fn getaddrinfo(
 
 pub extern "c" fn freeaddrinfo(res: *addrinfo) void;
 
-pub extern "c" fn getnameinfo(
-    noalias addr: *const sockaddr,
-    addrlen: socklen_t,
-    noalias host: ?[*]u8,
-    hostlen: socklen_t,
-    noalias serv: ?[*]u8,
-    servlen: socklen_t,
-    flags: NI,
-) EAI;
+pub const getnameinfo = switch (native_os) {
+    .dragonfly => dragonfly.getnameinfo,
+    .freebsd => freebsd.getnameinfo,
+    .openbsd => openbsd.getnameinfo,
+    else => private.getnameinfo,
+};
 
 pub extern "c" fn gai_strerror(errcode: EAI) [*:0]const u8;
 
@@ -11283,21 +11326,44 @@ pub extern "c" fn setsid() pid_t;
 /// These are implementation defined but share identical values in at least musl and glibc:
 /// - https://git.musl-libc.org/cgit/musl/tree/include/locale.h?id=ab31e9d6a0fa7c5c408856c89df2dfb12c344039#n18
 /// - https://sourceware.org/git/?p=glibc.git;a=blob;f=locale/bits/locale.h;h=0fcbb66114be5fef0577dc9047256eb508c45919;hb=c90cfce849d010474e8cccf3e5bff49a2c8b141f#l26
-pub const LC = enum(c_int) {
-    CTYPE = 0,
-    NUMERIC = 1,
-    TIME = 2,
-    COLLATE = 3,
-    MONETARY = 4,
-    MESSAGES = 5,
-    ALL = 6,
-    PAPER = 7,
-    NAME = 8,
-    ADDRESS = 9,
-    TELEPHONE = 10,
-    MEASUREMENT = 11,
-    IDENTIFICATION = 12,
-    _,
+pub const LC = switch (native_os) {
+    // https://github.com/SerenityOS/serenity/blob/fe4f3879551f2fdd8a24de06b88f4450e2f3b93d/Userland/Libraries/LibC/locale.h#L14-L29
+    .serenity => enum(c_int) {
+        ALL = 0,
+        COLLATE = 1,
+        CTYPE = 2,
+        MONETARY = 3,
+        NUMERIC = 4,
+        TIME = 5,
+        MESSAGES = 6,
+        _,
+    },
+    .serenity => enum(c_int) {
+        ALL = 0,
+        NUMERIC = 1,
+        CTYPE = 2,
+        COLLATE = 3,
+        TIME = 4,
+        MONETARY = 5,
+        MESSAGES = 6,
+        _,
+    },
+    else => enum(c_int) {
+        CTYPE = 0,
+        NUMERIC = 1,
+        TIME = 2,
+        COLLATE = 3,
+        MONETARY = 4,
+        MESSAGES = 5,
+        ALL = 6,
+        PAPER = 7,
+        NAME = 8,
+        ADDRESS = 9,
+        TELEPHONE = 10,
+        MEASUREMENT = 11,
+        IDENTIFICATION = 12,
+        _,
+    },
 };
 
 pub extern "c" fn setlocale(category: LC, locale: ?[*:0]const u8) ?[*:0]const u8;
@@ -11364,6 +11430,9 @@ pub const clock_nanosleep = switch (native_os) {
 };
 
 pub const ioctl = switch (native_os) {
+    .dragonfly => dragonfly.ioctl,
+    .freebsd => freebsd.ioctl,
+    .openbsd => openbsd.ioctl,
     .windows => {},
     else => private.ioctl,
 };
@@ -11823,7 +11892,7 @@ const private = struct {
     extern "c" fn fork() c_int;
     extern "c" fn fstat(fd: fd_t, buf: *Stat) c_int;
     extern "c" fn fstatat(dirfd: fd_t, path: [*:0]const u8, buf: *Stat, flag: u32) c_int;
-    extern "c" fn getdirentries(fd: fd_t, buf_ptr: [*]u8, nbytes: usize, basep: *i64) isize;
+    extern "c" fn getdirentries(fd: fd_t, buf_ptr: [*]u8, nbytes: usize, basep: *i64) if (native_os == .dragonfly) c_int else isize;
     extern "c" fn getdents(fd: c_int, buf_ptr: [*]u8, nbytes: usize) switch (native_os) {
         else => c_int,
         .freebsd => isize,
@@ -11833,13 +11902,24 @@ const private = struct {
     extern "c" fn gettimeofday(noalias tv: ?*timeval, noalias tz: ?*timezone) c_int;
     extern "c" fn ioctl(fd: fd_t, request: c_int, ...) c_int;
     extern "c" fn msync(addr: *align(page_size) const anyopaque, len: usize, flags: c_int) c_int;
+    extern "c" fn mremap(addr: ?*align(page_size) const anyopaque, old_len: usize, new_len: usize, flags: MREMAP, ...) *anyopaque;
     extern "c" fn nanosleep(rqtp: *const timespec, rmtp: ?*timespec) c_int;
     extern "c" fn pipe2(fds: *[2]fd_t, flags: O) c_int;
     extern "c" fn readdir(dir: *DIR) ?*dirent;
     extern "c" fn realpath(noalias file_name: [*:0]const u8, noalias resolved_name: [*]u8) ?[*:0]u8;
     extern "c" fn recvmsg(sockfd: fd_t, msg: *msghdr, flags: u32) isize;
     extern "c" fn sched_yield() c_int;
+    extern "c" fn getnameinfo(
+        noalias addr: *const sockaddr,
+        addrlen: socklen_t,
+        noalias host: ?[*]u8,
+        hostlen: socklen_t,
+        noalias serv: ?[*]u8,
+        servlen: socklen_t,
+        flags: NI,
+    ) EAI;
     extern "c" fn sendfile(out_fd: fd_t, in_fd: fd_t, offset: ?*off_t, count: usize) isize;
+    extern "c" fn sendmmsg(sockfd: fd_t, msgvec: [*]mmsghdr, n: c_uint, flags: u32) c_int;
     extern "c" fn sigaction(sig: SIG, noalias act: ?*const Sigaction, noalias oact: ?*Sigaction) c_int;
     extern "c" fn sigdelset(set: ?*sigset_t, signo: SIG) c_int;
     extern "c" fn sigaddset(set: ?*sigset_t, signo: SIG) c_int;

@@ -9,10 +9,27 @@ const passwd = std.c.passwd;
 const timespec = std.c.timespec;
 const uid_t = std.c.uid_t;
 const pid_t = std.c.pid_t;
+const fd_t = std.c.fd_t;
+const sockaddr = std.c.sockaddr;
+const socklen_t = std.c.socklen_t;
+const NI = std.c.NI;
+const EAI = std.c.EAI;
 
 comptime {
     assert(builtin.os.tag == .openbsd); // Prevent access of std.c symbols on wrong OS.
 }
+
+pub extern "c" fn ioctl(fd: fd_t, request: c_ulong, ...) c_int;
+
+pub extern "c" fn getnameinfo(
+    noalias addr: *const sockaddr,
+    addrlen: socklen_t,
+    noalias host: ?[*]u8,
+    hostlen: usize,
+    noalias serv: ?[*]u8,
+    servlen: usize,
+    flags: NI,
+) EAI;
 
 pub extern "c" fn ptrace(request: c_int, pid: pid_t, addr: caddr_t, data: c_int) c_int;
 
@@ -268,16 +285,26 @@ pub const E = enum(u16) {
     _,
 };
 
-pub const MAX_PAGE_SHIFT = switch (builtin.cpu.arch) {
-    .x86 => 12,
-    .sparc64 => 13,
+pub const MAX_PAGE_SHIFT = switch (builtin.target.cpu.arch) {
+    .alpha,
+    .sparc64,
+    => 13,
+    .arm,
+    .aarch64,
+    .hppa,
+    .m88k,
+    .powerpc,
+    .powerpc64,
+    .riscv64,
+    .sh,
+    .x86,
+    .x86_64,
+    => 12,
+    .mips64,
+    => 14,
 };
 
-pub const PTHREAD_STACK_MIN = switch (builtin.cpu.arch) {
-    .sparc64 => 1 << 13,
-    .mips64 => 1 << 14,
-    else => 1 << 12,
-};
+pub const PTHREAD_STACK_MIN = 1 << MAX_PAGE_SHIFT;
 
 // https://github.com/openbsd/src/blob/718a31b40d39fc6064de6355eb144e74633133fc/sys/netinet/in.h#L283
 pub const IP = struct {

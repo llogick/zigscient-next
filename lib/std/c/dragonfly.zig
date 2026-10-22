@@ -5,13 +5,28 @@ const caddr_t = std.c.caddr_t;
 const gid_t = std.c.gid_t;
 const iovec = std.c.iovec;
 const pid_t = std.c.pid_t;
+const sockaddr = std.c.sockaddr;
 const socklen_t = std.c.socklen_t;
 const uid_t = std.c.uid_t;
+const fd_t = std.c.fd_t;
+const NI = std.c.NI;
+const EAI = std.c.EAI;
+
+pub extern "c" fn ioctl(fd: fd_t, request: c_ulong, ...) c_int;
 
 pub extern "c" fn lwp_gettid() c_int;
 pub extern "c" fn ptrace(request: c_int, pid: pid_t, addr: caddr_t, data: c_int) c_int;
 pub extern "c" fn umtx_sleep(ptr: *const volatile c_int, value: c_int, timeout: c_int) c_int;
 pub extern "c" fn umtx_wakeup(ptr: *const volatile c_int, count: c_int) c_int;
+pub extern "c" fn getnameinfo(
+    noalias addr: *const sockaddr,
+    addrlen: socklen_t,
+    noalias host: ?[*]u8,
+    hostlen: usize,
+    noalias serv: ?[*]u8,
+    servlen: usize,
+    flags: NI,
+) EAI;
 
 pub const E = enum(u16) {
     /// No error occurred.
