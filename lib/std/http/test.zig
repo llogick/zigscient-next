@@ -336,17 +336,17 @@ test "Server.Request.respondStreaming non-chunked, unknown content-length" {
     const response = try stream_reader.interface.allocRemaining(gpa, .unlimited);
     defer gpa.free(response);
 
-    var expected_response = std.array_list.Managed(u8).init(gpa);
-    defer expected_response.deinit();
+    var expected_response: std.ArrayList(u8) = .empty;
+    defer expected_response.deinit(gpa);
 
-    try expected_response.appendSlice("HTTP/1.1 200 OK\r\nconnection: close\r\n\r\n");
+    try expected_response.appendSlice(gpa, "HTTP/1.1 200 OK\r\nconnection: close\r\n\r\n");
 
     {
         var total: usize = 0;
         for (0..500) |i| {
             var buf: [30]u8 = undefined;
             const line = try std.mem.print(&buf, "{d}, ah ha ha!\n", .{i});
-            try expected_response.appendSlice(line);
+            try expected_response.appendSlice(gpa, line);
             total += line.len;
         }
         try expectEqual(7390, total);
@@ -411,12 +411,12 @@ test "receiving arbitrary http headers from the client" {
     const response = try stream_reader.interface.allocRemaining(gpa, .unlimited);
     defer gpa.free(response);
 
-    var expected_response = std.array_list.Managed(u8).init(gpa);
-    defer expected_response.deinit();
+    var expected_response: std.ArrayList(u8) = .empty;
+    defer expected_response.deinit(gpa);
 
-    try expected_response.appendSlice("HTTP/1.1 200 OK\r\n");
-    try expected_response.appendSlice("connection: close\r\n");
-    try expected_response.appendSlice("content-length: 0\r\n\r\n");
+    try expected_response.appendSlice(gpa, "HTTP/1.1 200 OK\r\n");
+    try expected_response.appendSlice(gpa, "connection: close\r\n");
+    try expected_response.appendSlice(gpa, "content-length: 0\r\n\r\n");
     try expectEqualStrings(expected_response.items, response);
 }
 
