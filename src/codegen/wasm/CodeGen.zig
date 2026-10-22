@@ -6661,6 +6661,9 @@ fn memset(cg: *CodeGen, elem_ty: Type, ptr: WValue, len: WValue, value: WValue) 
 
         try cg.emitWValue(ptr);
         try cg.emitWValue(value);
+        if (isByRef(elem_ty, zcu, cg.target)) {
+            _ = try cg.load(.stack, .u8, .{});
+        }
         try cg.emitWValue(len);
         try cg.addExtended(.memory_fill);
 
