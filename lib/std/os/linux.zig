@@ -2752,7 +2752,7 @@ pub fn sigaddset(set: *sigset_t, sig: SIG) void {
 
 pub fn sigdelset(set: *sigset_t, sig: SIG) void {
     const index = sigset_bit_index(sig);
-    (set.*)[index.word] ^= index.mask;
+    (set.*)[index.word] &= ~index.mask;
 }
 
 pub fn sigismember(set: *const sigset_t, sig: SIG) bool {

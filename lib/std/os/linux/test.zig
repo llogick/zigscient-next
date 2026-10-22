@@ -159,6 +159,14 @@ test "sigset_t" {
     }
 }
 
+test "sigdelset" {
+    var set = linux.sigemptyset();
+
+    // Deleting an absent signal must leave it absent.
+    linux.sigdelset(&set, linux.SIG.USR1);
+    try expectEqual(false, linux.sigismember(&set, linux.SIG.USR1));
+}
+
 test "sigfillset" {
     // unlike the C library, all the signals are set in the kernel-level fillset
     const sigset = linux.sigfillset();
