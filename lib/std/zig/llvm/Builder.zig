@@ -389,6 +389,8 @@ pub const DataLayout = struct {
     float_specs: PrimitiveSpec.Map,
     vector_specs: PrimitiveSpec.Map,
     pointer_specs: PointerSpec.Map,
+    struct_abi_align: Alignment,
+    struct_pref_align: Alignment,
     string_repr: String,
 
     const PrimitiveSpec = packed struct(u32) {
@@ -640,6 +642,8 @@ pub const DataLayout = struct {
         });
 
         var endian: ?std.lang.Endian = null;
+        var struct_abi_align: Alignment = .fromByteUnits(1);
+        var struct_pref_align: Alignment = .fromByteUnits(8);
         var spec_it = std.mem.splitScalar(u8, string_repr.slice(builder).?, '-');
         while (spec_it.next()) |spec| switch (spec[0]) {
             else => {},
@@ -733,6 +737,18 @@ pub const DataLayout = struct {
                 const gop = try specs.getOrPut(gpa, primitive_spec);
                 gop.key_ptr.* = primitive_spec;
             },
+            'a' => {
+                var field_it = std.mem.splitScalar(u8, spec[1..], ':');
+                assert(field_it.first().len == 0);
+                struct_abi_align = .fromByteUnits(@max(
+                    @divExact(std.fmt.parseInt(u64, field_it.next().?, 10) catch unreachable, 8),
+                    1,
+                ));
+                struct_pref_align = if (field_it.next()) |pref_align| .fromByteUnits(
+                    @divExact(std.fmt.parseInt(u64, pref_align, 10) catch unreachable, 8),
+                ) else struct_abi_align;
+                assert(field_it.peek() == null);
+            },
             'n' => {
                 var field_it = std.mem.splitScalar(u8, spec[1..], ':');
                 if (std.mem.eql(u8, field_it.first(), "i")) {
@@ -784,6 +800,8 @@ pub const DataLayout = struct {
             .float_specs = float_specs.move(),
             .vector_specs = vector_specs.move(),
             .pointer_specs = pointer_specs.move(),
+            .struct_abi_align = struct_abi_align,
+            .struct_pref_align = struct_pref_align,
             .string_repr = string_repr,
         };
     }
@@ -834,7 +852,7 @@ pub const DataLayout = struct {
         })) |entry| return entry.key_ptr.*;
         const default_align: Alignment = .fromByteUnits(std.math.ceilPowerOfTwoAssert(
             PrimitiveSpec.BitWidth,
-            std.mem.alignForward(PrimitiveSpec.BitWidth, known_min_bit_width, 8),
+            @divCeil(known_min_bit_width, 8),
         ));
         return .{
             .bit_width = known_min_bit_width,
@@ -1726,6 +1744,26 @@ pub const Type = enum(u32) {
                     .scalable_vector => .{ .scalable = min_bits },
                 };
             },
+            .small_array, .array => .{
+                .fixed = ty.aggregateLen(builder) * ty.childType(builder).allocSize(builder).fixed * 8,
+            },
+            .structure, .packed_structure => {
+                var extra = builder.typeExtraDataTrail(Type.Structure, item.data);
+                const fields = extra.trail.next(extra.data.fields_len, Type, builder);
+                var size: u64 = 0;
+                var struct_align: Alignment = .fromByteUnits(1);
+                for (fields) |field| {
+                    const field_align: Alignment = switch (item.tag) {
+                        else => unreachable,
+                        .structure => field.alignment(.abi, builder),
+                        .packed_structure => .fromByteUnits(1),
+                    };
+                    size = field_align.forward(size) + field.allocSize(builder).fixed;
+                    struct_align = struct_align.max(field_align);
+                }
+                return .{ .fixed = struct_align.forward(size) * 8 };
+            },
+            .named_structure => builder.typeExtraData(Type.NamedStructure, item.data).body.bits(builder),
         };
     }
 
@@ -1733,6 +1771,14 @@ pub const Type = enum(u32) {
         return switch (ty.bits(builder)) {
             .fixed => |fixed| .{ .fixed = @divCeil(fixed, 8) },
             .scalable => |known_min| .{ .scalable = @divCeil(known_min, 8) },
+        };
+    }
+
+    pub fn allocSize(ty: Type, builder: *const Builder) Size {
+        const abi_align = ty.alignment(.abi, builder);
+        return switch (ty.storeSize(builder)) {
+            .fixed => |fixed| .{ .fixed = abi_align.forward(fixed) },
+            .scalable => |known_min| .{ .scalable = abi_align.forward(known_min) },
         };
     }
 
@@ -1779,6 +1825,23 @@ pub const Type = enum(u32) {
                     .pref => spec.pref_align,
                 };
             },
+            .small_array, .array => return ty.childType(builder).alignment(kind, builder),
+            .structure => {
+                var extra = builder.typeExtraDataTrail(Type.Structure, item.data);
+                const fields = extra.trail.next(extra.data.fields_len, Type, builder);
+                var struct_align = switch (kind) {
+                    .abi => builder.data_layout.struct_abi_align,
+                    .pref => builder.data_layout.struct_pref_align,
+                };
+                for (fields) |field| struct_align = struct_align.max(field.alignment(.abi, builder));
+                return struct_align;
+            },
+            .packed_structure => return switch (kind) {
+                .abi => .fromByteUnits(1),
+                .pref => builder.data_layout.struct_pref_align,
+            },
+            .named_structure => return builder.typeExtraData(Type.NamedStructure, item.data).body
+                .alignment(kind, builder),
         }
     }
 };
@@ -3048,6 +3111,19 @@ pub const Alignment = enum(u6) {
             .default => null,
             else => @as(u64, 1) << @backingInt(self),
         };
+    }
+
+    /// Align an address forward to this alignment. Asserts that `a` is not `.default`.
+    pub fn forward(a: Alignment, addr: u64) u64 {
+        assert(a != .default);
+        const x = (@as(u64, 1) << @backingInt(a)) - 1;
+        return (addr + x) & ~x;
+    }
+
+    /// Check if an address is aligned to this amount. Asserts that `a` is not `.default`.
+    pub fn check(a: Alignment, addr: u64) bool {
+        assert(a != .default);
+        return @ctz(addr) >= @backingInt(a);
     }
 
     /// Asserts that neither `lhs` nor `rhs` is `.default`.
@@ -9906,6 +9982,8 @@ pub fn init(options: Options) Allocator.Error!Builder {
             .float_specs = .empty,
             .vector_specs = .empty,
             .pointer_specs = .empty,
+            .struct_abi_align = .fromByteUnits(1),
+            .struct_pref_align = .fromByteUnits(8),
             .string_repr = .none,
         },
         .target_triple = .none,

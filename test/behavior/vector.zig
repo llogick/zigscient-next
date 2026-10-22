@@ -1841,3 +1841,69 @@ test "bitcast vector to array of smaller vectors" {
     const input: u8x64 = @bitCast([2]u8x32{ @splat(1), @splat(2) });
     try S.doTheTest(input);
 }
+
+test "runtime index into comptime-known array of aggregates holding a vector" {
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
+    const V = @Vector(8, i32);
+    const S = struct {
+        const structs: [3]struct { v: V, b: bool } = .{
+            .{ .v = @splat(1), .b = true },
+            .{ .v = @splat(2), .b = false },
+            .{ .v = @splat(3), .b = true },
+        };
+        const tuples: [3]struct { V, bool } = .{
+            .{ @splat(1), true },
+            .{ @splat(2), false },
+            .{ @splat(3), true },
+        };
+        const optionals: [3]?V = .{ @splat(1), null, @splat(3) };
+        const error_unions: [3]anyerror!V = .{ @splat(1), error.Foo, @splat(3) };
+        const unions: [3]union(enum) { v: V, b: bool } = .{
+            .{ .v = @splat(1) },
+            .{ .b = false },
+            .{ .v = @splat(3) },
+        };
+        const unions_other_field: [3]union(enum) { v: V, w: @Vector(4, i32) } = .{
+            .{ .v = @splat(1) },
+            .{ .w = @splat(2) },
+            .{ .v = @splat(3) },
+        };
+        const nested: [3]struct { b: bool, s: struct { v: V, b: bool } } = .{
+            .{ .b = false, .s = .{ .v = @splat(1), .b = false } },
+            .{ .b = false, .s = .{ .v = @splat(2), .b = false } },
+            .{ .b = true, .s = .{ .v = @splat(3), .b = true } },
+        };
+        const arrays: [3]struct { a: [2]V, b: bool } = .{
+            .{ .a = .{ @splat(1), @splat(1) }, .b = false },
+            .{ .a = .{ @splat(2), @splat(2) }, .b = false },
+            .{ .a = .{ @splat(3), @splat(3) }, .b = true },
+        };
+
+        const three: V = @splat(3);
+
+        fn doTheTest() !void {
+            var i: usize = 2;
+            _ = &i;
+            try expect(@reduce(.And, structs[i].v == three));
+            try expect(structs[i].b);
+            try expect(@reduce(.And, tuples[i][0] == three));
+            try expect(tuples[i][1]);
+            try expect(@reduce(.And, optionals[i].? == three));
+            try expect(@reduce(.And, (try error_unions[i]) == three));
+            try expect(@reduce(.And, unions[i].v == three));
+            try expect(@reduce(.And, unions_other_field[i].v == three));
+            try expect(nested[i].b);
+            try expect(@reduce(.And, nested[i].s.v == three));
+            try expect(nested[i].s.b);
+            try expect(@reduce(.And, arrays[i].a[1] == three));
+            try expect(arrays[i].b);
+        }
+    };
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}

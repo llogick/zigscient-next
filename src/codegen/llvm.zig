@@ -2646,6 +2646,21 @@ pub const Object = struct {
         return layout;
     }
 
+    pub fn structType(o: *Object, fields: []const Builder.Type) Allocator.Error!Builder.Type {
+        const kind: Builder.Type.Structure.Kind = kind: {
+            var offset: u64 = 0;
+            var struct_align: Builder.Alignment = .fromByteUnits(1);
+            for (fields) |field| {
+                const field_align = field.alignment(.abi, &o.builder);
+                if (!field_align.check(offset)) break :kind .@"packed";
+                struct_align = struct_align.max(field_align);
+                offset += field.allocSize(&o.builder).fixed;
+            }
+            break :kind if (struct_align.check(offset)) .normal else .@"packed";
+        };
+        return o.builder.structType(kind, fields);
+    }
+
     pub fn lowerType(o: *Object, t: Type, repr: TypeRepr) Allocator.Error!Builder.Type {
         const zcu = o.zcu;
         const target = zcu.getTarget();
@@ -2826,7 +2841,7 @@ pub const Object = struct {
                         fields[2] = try o.builder.arrayType(padding_len, .i8);
                         fields_len = 3;
                     }
-                    return o.builder.structType(.normal, fields[0..fields_len]);
+                    return o.structType(fields[0..fields_len]);
                 },
                 .anyframe_type => @panic("TODO implement lowerType for AnyFrame types"),
                 .error_union_type => |error_union_type| {
@@ -2871,7 +2886,7 @@ pub const Object = struct {
                         fields[2] = try o.builder.arrayType(padding_len, .i8);
                         fields_len = 3;
                     }
-                    return o.builder.structType(.normal, fields[0..fields_len]);
+                    return o.structType(fields[0..fields_len]);
                 },
                 .simple_type => unreachable,
                 .struct_type => {
@@ -2894,20 +2909,13 @@ pub const Object = struct {
 
                     comptime assert(struct_layout_version == 2);
                     var offset: u64 = 0;
-                    var struct_kind: Builder.Type.Structure.Kind = .normal;
                     // When we encounter a zero-bit field, we place it here so we know to map it to the next non-zero-bit field (if any).
                     var it = struct_type.iterateRuntimeOrder(ip);
-                    var max_field_ty_align: InternPool.Alignment = .@"1";
                     while (it.next()) |field_index| {
                         const field_ty = Type.fromInterned(struct_type.field_types.get(ip)[field_index]);
-                        const field_ty_align = field_ty.abiAlignment(zcu);
-                        max_field_ty_align = max_field_ty_align.maxStrict(field_ty_align);
 
                         const prev_offset = offset;
                         offset = struct_type.field_offsets.get(ip)[field_index];
-                        if (@ctz(offset) < field_ty_align.toLog2Units()) {
-                            struct_kind = .@"packed"; // prevent unexpected padding before this field
-                        }
 
                         const padding_len = offset - prev_offset;
                         if (padding_len > 0) try llvm_field_types.append(
@@ -2933,9 +2941,6 @@ pub const Object = struct {
                             o.gpa,
                             try o.builder.arrayType(padding_len, .i8),
                         );
-                        if (struct_type.alignment.compareStrict(.lt, max_field_ty_align)) {
-                            struct_kind = .@"packed"; // prevent wrong alignment
-                        }
                     }
 
                     const ty = try o.builder.opaqueType(try o.builder.string(t.containerTypeName(ip).fqn.toSlice(ip)));
@@ -2943,7 +2948,7 @@ pub const Object = struct {
 
                     o.builder.namedTypeSetBody(
                         ty,
-                        try o.builder.structType(struct_kind, llvm_field_types.items),
+                        try o.structType(llvm_field_types.items),
                     );
                     return ty;
                 },
@@ -2991,7 +2996,7 @@ pub const Object = struct {
                         );
                     }
                     assert(offset > 0);
-                    return o.builder.structType(.normal, llvm_field_types.items);
+                    return o.structType(llvm_field_types.items);
                 },
                 .union_type => {
                     const union_obj = ip.loadUnionType(t.toIntern());
@@ -3013,14 +3018,6 @@ pub const Object = struct {
                     const aligned_field_ty = Type.fromInterned(union_obj.field_types.get(ip)[layout.most_aligned_field]);
                     const aligned_field_llvm_ty = try o.lowerType(aligned_field_ty, repr);
 
-                    const struct_kind: Builder.Type.Structure.Kind = for (union_obj.field_types.get(ip)) |field_ty_ip| {
-                        const field_ty = Type.fromInterned(field_ty_ip);
-                        if (!field_ty.hasRuntimeBits(zcu)) continue;
-                        if (layout.payload_align.compareStrict(.lt, field_ty.abiAlignment(zcu))) {
-                            break .@"packed"; // prevent wrong alignment
-                        }
-                    } else .normal;
-
                     const payload_ty = ty: {
                         const padding_len = if (layout.tag_size == 0)
                             layout.abi_size - layout.most_aligned_field_size
@@ -3041,7 +3038,7 @@ pub const Object = struct {
 
                         o.builder.namedTypeSetBody(
                             ty,
-                            try o.builder.structType(struct_kind, &.{payload_ty}),
+                            try o.structType(&.{payload_ty}),
                         );
                         return ty;
                     }
@@ -3069,7 +3066,7 @@ pub const Object = struct {
 
                     o.builder.namedTypeSetBody(
                         ty,
-                        try o.builder.structType(struct_kind, llvm_fields[0..llvm_fields_len]),
+                        try o.structType(llvm_fields[0..llvm_fields_len]),
                     );
                     return ty;
                 },
@@ -3365,10 +3362,10 @@ pub const Object = struct {
                     fields[2] = llvm_ty_fields[2];
                     vals[2] = try o.builder.undefConst(fields[2]);
                 }
-                return o.builder.structConst(try o.builder.structType(
-                    llvm_ty.structKind(&o.builder),
-                    fields[0..llvm_ty_fields.len],
-                ), vals[0..llvm_ty_fields.len]);
+                return o.builder.structConst(
+                    try o.structType(fields[0..llvm_ty_fields.len]),
+                    vals[0..llvm_ty_fields.len],
+                );
             },
             .enum_tag => |enum_tag| o.lowerValue(enum_tag.int, repr),
             .float => switch (ty.floatBits(target)) {
@@ -3420,10 +3417,10 @@ pub const Object = struct {
                     fields[2] = llvm_ty_fields[2];
                     vals[2] = try o.builder.undefConst(fields[2]);
                 }
-                return o.builder.structConst(try o.builder.structType(
-                    llvm_ty.structKind(&o.builder),
-                    fields[0..llvm_ty_fields.len],
-                ), vals[0..llvm_ty_fields.len]);
+                return o.builder.structConst(
+                    try o.structType(fields[0..llvm_ty_fields.len]),
+                    vals[0..llvm_ty_fields.len],
+                );
             },
             .bitpack => |bitpack| return o.lowerValue(bitpack.backing_int_val, repr),
             .aggregate => |aggregate| switch (ip.indexToKey(ty.toIntern())) {
@@ -3455,7 +3452,7 @@ pub const Object = struct {
                             if (result_field.* != elem_ty) need_unnamed = true;
                         }
                         return if (need_unnamed) try o.builder.structConst(
-                            try o.builder.structType(.normal, fields),
+                            try o.structType(fields),
                             vals,
                         ) else try o.builder.arrayConst(array_ty, vals);
                     },
@@ -3598,7 +3595,7 @@ pub const Object = struct {
                     assert(llvm_index == llvm_len);
 
                     return o.builder.structConst(if (need_unnamed)
-                        try o.builder.structType(struct_ty.structKind(&o.builder), fields)
+                        try o.structType(fields)
                     else
                         struct_ty, vals);
                 },
@@ -3672,7 +3669,7 @@ pub const Object = struct {
                     assert(llvm_index == llvm_len);
 
                     return o.builder.structConst(if (need_unnamed)
-                        try o.builder.structType(struct_ty.structKind(&o.builder), fields)
+                        try o.structType(fields)
                     else
                         struct_ty, vals);
                 },
@@ -3726,7 +3723,7 @@ pub const Object = struct {
 
                 const payload_ty = payload.typeOf(&o.builder);
                 if (layout.tag_size == 0) return o.builder.structConst(if (need_unnamed)
-                    try o.builder.structType(union_ty.structKind(&o.builder), &.{payload_ty})
+                    try o.structType(&.{payload_ty})
                 else
                     union_ty, &.{payload});
                 const tag = try o.lowerValue(un.tag, repr);
@@ -3747,7 +3744,7 @@ pub const Object = struct {
                     len = 3;
                 }
                 return o.builder.structConst(if (need_unnamed)
-                    try o.builder.structType(union_ty.structKind(&o.builder), fields[0..len])
+                    try o.structType(fields[0..len])
                 else
                     union_ty, vals[0..len]);
             },
