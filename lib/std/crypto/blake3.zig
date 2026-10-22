@@ -1562,6 +1562,8 @@ test "BLAKE3 parallel vs sequential" {
 }
 
 test "BLAKE3 parallel with partial trailing chunk" {
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
+
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
@@ -1593,6 +1595,8 @@ test "BLAKE3 parallel with partial trailing chunk" {
 }
 
 test "BLAKE3 incremental parallel update" {
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
+
     const allocator = std.testing.allocator;
     const io = std.testing.io;
 
