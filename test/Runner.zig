@@ -204,7 +204,7 @@ pub const Target = struct {
         var query: std.Target.Query = .{};
         query.cpu_arch = switch (target.cpu) {
             .native => null,
-            else => |_, arch| @fromBackingInt(@backingInt(arch)),
+            else => |arch| @fromBackingInt(@backingInt(arch)),
         };
         switch (target.cpu) {
             .native => |native| query.cpu_model = switch (native.model) {
@@ -215,7 +215,7 @@ pub const Target = struct {
         }
         query.os_tag = switch (target.os) {
             .native => null,
-            else => |_, os| @fromBackingInt(@backingInt(os)),
+            else => |os| @fromBackingInt(@backingInt(os)),
         };
         switch (target.os) {
             .native => {},
@@ -223,7 +223,7 @@ pub const Target = struct {
         }
         query.abi = switch (target.abi) {
             .default => null,
-            else => |_, abi| @fromBackingInt(@backingInt(abi)),
+            else => |abi| @fromBackingInt(@backingInt(abi)),
         };
         switch (target.abi) {
             .default => {},
