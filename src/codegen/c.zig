@@ -6875,6 +6875,7 @@ fn airReduce(f: *Function, inst: Air.Inst.Index) !CValue {
         },
         .big => .{ false, true },
     } else .{ false, false };
+    const operator_wraps = use_operator and scalar_ty.intInfo(zcu).bits == 8 * scalar_ty.abiSize(zcu);
     const op: union(enum) {
         const Func = struct { operation: []const u8, info: BuiltinInfo = .none };
         builtin: Func,
@@ -6895,12 +6896,12 @@ fn airReduce(f: *Function, inst: Air.Inst.Index) !CValue {
             else => unreachable,
         },
         .Add => switch (scalar_ty.zigTypeTag(zcu)) {
-            .int => if (use_operator) .{ .infix = " += " } else .{ .builtin = .{ .operation = "addw", .info = .bits } },
+            .int => if (operator_wraps) .{ .infix = " += " } else .{ .builtin = .{ .operation = "addw", .info = .bits } },
             .float => .{ .builtin = .{ .operation = "add" } },
             else => unreachable,
         },
         .Mul => switch (scalar_ty.zigTypeTag(zcu)) {
-            .int => if (use_operator) .{ .infix = " *= " } else .{ .builtin = .{ .operation = "mulw", .info = .bits } },
+            .int => if (operator_wraps) .{ .infix = " *= " } else .{ .builtin = .{ .operation = "mulw", .info = .bits } },
             .float => .{ .builtin = .{ .operation = "mul" } },
             else => unreachable,
         },

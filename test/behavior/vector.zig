@@ -969,6 +969,7 @@ test "vector reduce operation" {
             try testReduce(.Add, [4]u64{ 9, 99, 999, 9999 }, @as(u64, 11106));
             try testReduce(.Add, [4]i128{ -9, -99, -999, -9999 }, @as(i128, -11106));
             try testReduce(.Add, [4]u128{ 9, 99, 999, 9999 }, @as(u128, 11106));
+            try testReduce(.Add, [4]u7{ 100, 100, 0, 0 }, @as(u7, 72));
             try testReduce(.Add, [4]f16{ -1.9, 5.1, -60.3, 100.0 }, @as(f16, 42.9));
             try testReduce(.Add, [4]f32{ -1.9, 5.1, -60.3, 100.0 }, @as(f32, 42.9));
             try testReduce(.Add, [4]f64{ -1.9, 5.1, -60.3, 100.0 }, @as(f64, 42.9));
@@ -1017,6 +1018,7 @@ test "vector reduce operation" {
             try testReduce(.Mul, [4]u64{ 9, 99, 999, 9999 }, @as(u64, 8900199891));
             try testReduce(.Mul, [4]i128{ -9, -99, -999, 9999 }, @as(i128, -8900199891));
             try testReduce(.Mul, [4]u128{ 9, 99, 999, 9999 }, @as(u128, 8900199891));
+            try testReduce(.Mul, [4]i3{ 3, 2, 1, 1 }, @as(i3, -2));
             try testReduce(.Mul, [4]f16{ -1.9, 5.1, -60.3, 100.0 }, @as(f16, 58430.7));
             try testReduce(.Mul, [4]f32{ -1.9, 5.1, -60.3, 100.0 }, @as(f32, 58430.7));
             try testReduce(.Mul, [4]f64{ -1.9, 5.1, -60.3, 100.0 }, @as(f64, 58430.7));
