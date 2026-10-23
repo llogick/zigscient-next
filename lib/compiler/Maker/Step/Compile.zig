@@ -1342,7 +1342,7 @@ fn appendModuleFlags(
             if (query.dynamic_linker) |*dynamic_linker| {
                 if (dynamic_linker.get()) |dynamic_linker_path| {
                     zig_args.appendAssumeCapacity("--dynamic-linker");
-                    zig_args.appendAssumeCapacity(dynamic_linker_path);
+                    zig_args.appendAssumeCapacity(try arena.dupe(u8, dynamic_linker_path));
                 } else {
                     zig_args.appendAssumeCapacity("--no-dynamic-linker");
                 }
