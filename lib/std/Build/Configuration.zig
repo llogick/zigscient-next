@@ -2565,7 +2565,7 @@ pub const TargetQuery = struct {
             .cpu = .{
                 .arch = cpu_arch,
                 .model = cpu_arch.parseCpuModel(tq.cpu_name.value.?.slice(c)).?,
-                .features = tq.cpu_features_add.value.?,
+                .features = tq.cpu_features_add.value orelse .empty,
             },
             .os = .{
                 .tag = os_tag,

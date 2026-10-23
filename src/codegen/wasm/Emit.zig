@@ -27,7 +27,7 @@ pub fn lower(emit: *Emit) Error!void {
     const wasm = emit.wasm;
     const comp = wasm.base.comp;
     const gpa = comp.gpa;
-    const is_obj = comp.config.output_mode == .Obj;
+    const is_obj = wasm.base.isRelocatable();
     const target = &comp.root_mod.resolved_target.result;
     const is_wasm32 = target.cpu.arch == .wasm32;
 
@@ -1028,7 +1028,7 @@ fn navRefOff(wasm: *Wasm, code: *ArrayList(u8), data: Mir.NavRefOff, is_wasm32: 
     const zcu = comp.zcu.?;
     const ip = &zcu.intern_pool;
     const gpa = comp.gpa;
-    const is_obj = comp.config.output_mode == .Obj;
+    const is_obj = wasm.base.isRelocatable();
     const nav_ty = ip.getNav(data.nav_index).resolved.?.type;
     assert(!ip.isFunctionType(nav_ty));
 

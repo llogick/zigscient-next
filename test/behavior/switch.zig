@@ -47,34 +47,136 @@ test "switch arbitrary int size" {
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest; // TODO
 
-    try expect(testSwitchArbInt(u64, 0) == 0);
-    try expect(testSwitchArbInt(u64, 12) == 1);
-    try expect(testSwitchArbInt(u64, maxInt(u64)) == 2);
-    try expect(testSwitchArbInt(u64, 5555) == 3);
+    const S = struct {
+        fn testSwitchArbInt(comptime T: type, x: T) u32 {
+            return switch (x) {
+                minInt(T) => 0,
+                10...15 => 1,
+                maxInt(T) => 2,
+                else => 3,
+            };
+        }
 
-    try expect(testSwitchArbInt(i64, minInt(i64)) == 0);
-    try expect(testSwitchArbInt(i64, 12) == 1);
-    try expect(testSwitchArbInt(i64, maxInt(i64)) == 2);
-    try expect(testSwitchArbInt(i64, -1000) == 3);
+        fn doTheTest() !void {
+            try expect(testSwitchArbInt(u64, 0) == 0);
+            try expect(testSwitchArbInt(u64, 12) == 1);
+            try expect(testSwitchArbInt(u64, maxInt(u64)) == 2);
+            try expect(testSwitchArbInt(u64, 5555) == 3);
 
-    try expect(testSwitchArbInt(u128, 0) == 0);
-    try expect(testSwitchArbInt(u128, 12) == 1);
-    try expect(testSwitchArbInt(u128, maxInt(u128)) == 2);
-    try expect(testSwitchArbInt(u128, 5555) == 3);
+            try expect(testSwitchArbInt(i64, minInt(i64)) == 0);
+            try expect(testSwitchArbInt(i64, 12) == 1);
+            try expect(testSwitchArbInt(i64, maxInt(i64)) == 2);
+            try expect(testSwitchArbInt(i64, -1000) == 3);
 
-    try expect(testSwitchArbInt(i128, minInt(i128)) == 0);
-    try expect(testSwitchArbInt(i128, 12) == 1);
-    try expect(testSwitchArbInt(i128, maxInt(i128)) == 2);
-    try expect(testSwitchArbInt(i128, -1000) == 3);
+            try expect(testSwitchArbInt(u128, 0) == 0);
+            try expect(testSwitchArbInt(u128, 12) == 1);
+            try expect(testSwitchArbInt(u128, maxInt(u128)) == 2);
+            try expect(testSwitchArbInt(u128, 5555) == 3);
+
+            try expect(testSwitchArbInt(i128, minInt(i128)) == 0);
+            try expect(testSwitchArbInt(i128, 12) == 1);
+            try expect(testSwitchArbInt(i128, maxInt(i128)) == 2);
+            try expect(testSwitchArbInt(i128, -1000) == 3);
+        }
+    };
+
+    try S.doTheTest();
+    try comptime S.doTheTest();
 }
 
-fn testSwitchArbInt(comptime T: type, x: T) u32 {
-    return switch (x) {
-        minInt(T) => 0,
-        10...15 => 1,
-        maxInt(T) => 2,
-        else => 3,
+test "dense switch" {
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+
+    const S = struct {
+        fn unsigned(comptime T: type, x: T) u8 {
+            return switch (x) {
+                0 => 0,
+                1 => 1,
+                2 => 2,
+                3 => 3,
+                else => 4,
+            };
+        }
+
+        fn signed(comptime T: type, x: T) u8 {
+            return switch (x) {
+                -2 => 0,
+                -1 => 1,
+                0 => 2,
+                1 => 3,
+                else => 4,
+            };
+        }
+
+        fn doTheTest() !void {
+            try expect(unsigned(u32, 0) == 0);
+            try expect(unsigned(u32, 1) == 1);
+            try expect(unsigned(u32, 2) == 2);
+            try expect(unsigned(u32, 3) == 3);
+            try expect(unsigned(u32, maxInt(u32)) == 4);
+            try expect(unsigned(u32, (1 << 16) + 1) == 4);
+
+            try expect(signed(i32, -2) == 0);
+            try expect(signed(i32, -1) == 1);
+            try expect(signed(i32, 0) == 2);
+            try expect(signed(i32, 1) == 3);
+            try expect(signed(i32, minInt(i32)) == 4);
+            try expect(signed(i32, -(1 << 16) - 2) == 4);
+            try expect(signed(i32, (1 << 16) + 1) == 4);
+
+            try expect(unsigned(u64, 0) == 0);
+            try expect(unsigned(u64, 1) == 1);
+            try expect(unsigned(u64, 2) == 2);
+            try expect(unsigned(u64, 3) == 3);
+            try expect(unsigned(u64, maxInt(u64)) == 4);
+            try expect(unsigned(u64, (1 << 32) + 1) == 4);
+
+            try expect(signed(i64, -2) == 0);
+            try expect(signed(i64, -1) == 1);
+            try expect(signed(i64, 0) == 2);
+            try expect(signed(i64, 1) == 3);
+            try expect(signed(i64, minInt(i64)) == 4);
+            try expect(signed(i64, -(1 << 32) - 2) == 4);
+            try expect(signed(i64, (1 << 32) + 1) == 4);
+
+            try expect(unsigned(u128, 0) == 0);
+            try expect(unsigned(u128, 1) == 1);
+            try expect(unsigned(u128, 2) == 2);
+            try expect(unsigned(u128, 3) == 3);
+            try expect(unsigned(u128, maxInt(u128)) == 4);
+            try expect(unsigned(u128, (1 << 64) + 1) == 4);
+
+            try expect(signed(i128, -2) == 0);
+            try expect(signed(i128, -1) == 1);
+            try expect(signed(i128, 0) == 2);
+            try expect(signed(i128, 1) == 3);
+            try expect(signed(i128, minInt(i128)) == 4);
+            try expect(signed(i128, -(1 << 64) - 2) == 4);
+            try expect(signed(i128, (1 << 64) + 1) == 4);
+
+            try expect(unsigned(u999, 0) == 0);
+            try expect(unsigned(u999, 1) == 1);
+            try expect(unsigned(u999, 2) == 2);
+            try expect(unsigned(u999, 3) == 3);
+            try expect(unsigned(u999, maxInt(u999)) == 4);
+            try expect(unsigned(u999, (1 << 499) + 1) == 4);
+
+            try expect(signed(i999, -2) == 0);
+            try expect(signed(i999, -1) == 1);
+            try expect(signed(i999, 0) == 2);
+            try expect(signed(i999, 1) == 3);
+            try expect(signed(i999, minInt(i999)) == 4);
+            try expect(signed(i999, -(1 << 499) - 2) == 4);
+            try expect(signed(i999, (1 << 499) + 1) == 4);
+        }
     };
+
+    try S.doTheTest();
+    try comptime S.doTheTest();
 }
 
 test "implicit comptime switch" {

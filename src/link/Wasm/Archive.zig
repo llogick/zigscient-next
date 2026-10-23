@@ -68,6 +68,143 @@ const Header = extern struct {
     }
 };
 
+pub const Builder = struct {
+    file_names: std.ArrayList(u8) = .empty,
+    members: std.ArrayList(u8) = .empty,
+    symbol_names: std.ArrayList(u8) = .empty,
+    symbol_offsets: std.ArrayList(u32) = .empty,
+
+    pub fn deinit(b: *Builder, gpa: Allocator) void {
+        b.file_names.deinit(gpa);
+        b.members.deinit(gpa);
+        b.symbol_names.deinit(gpa);
+        b.symbol_offsets.deinit(gpa);
+        b.* = undefined;
+    }
+
+    pub fn append(b: *Builder, gpa: Allocator, name: []const u8, data: []const u8) !void {
+        const member_offset: u32 = @intCast(b.members.items.len);
+        const name_offset = b.file_names.items.len;
+
+        try b.file_names.appendSlice(gpa, name);
+        try b.file_names.appendSlice(gpa, "/\n");
+
+        var name_buf: [16]u8 = undefined;
+        const header_name = try std.mem.print(&name_buf, "/{d}", .{name_offset});
+        const member_size = @sizeOf(Header) + mem.alignForward(usize, data.len, 2);
+        var w: std.Io.Writer = .fixed(try b.members.addManyAsSlice(gpa, member_size));
+        try writeHeader(&w, header_name, data.len);
+        try w.writeAll(data);
+        if (data.len % 2 != 0) try w.writeByte('\n');
+
+        try b.collectSymbols(gpa, data, member_offset);
+    }
+
+    pub fn write(b: *Builder, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        const symtab_size = 4 + 4 * b.symbol_offsets.items.len + b.symbol_names.items.len;
+        const members_offset = ARMAG.len + @sizeOf(Header) + mem.alignForward(usize, symtab_size, 2) +
+            @sizeOf(Header) + mem.alignForward(usize, b.file_names.items.len, 2);
+
+        try w.writeAll(ARMAG);
+
+        try writeHeader(w, "/", symtab_size);
+        try w.writeInt(u32, @intCast(b.symbol_offsets.items.len), .big);
+        for (b.symbol_offsets.items) |offset| try w.writeInt(u32, @intCast(members_offset + offset), .big);
+        try w.writeAll(b.symbol_names.items);
+        if (symtab_size % 2 != 0) try w.writeByte('\n');
+
+        try writeHeader(w, "//", b.file_names.items.len);
+        try w.writeAll(b.file_names.items);
+        if (b.file_names.items.len % 2 != 0) try w.writeByte('\n');
+
+        try w.writeAll(b.members.items);
+    }
+
+    fn collectSymbols(b: *Builder, gpa: Allocator, data: []const u8, member_offset: u32) !void {
+        var reader: std.Io.Reader = .fixed(data);
+        if (!mem.eql(u8, try reader.take(4), &std.wasm.magic)) return error.BadObjectMagic;
+        if (!mem.eql(u8, try reader.take(4), &std.wasm.version)) return error.UnsupportedVersion;
+
+        while (reader.seek < data.len) {
+            const section_tag = try reader.takeEnum(std.wasm.Section, .little);
+            const section_len = try reader.takeLeb128(u32);
+            var section: std.Io.Reader = .fixed(try reader.take(section_len));
+            if (section_tag != .custom) continue;
+
+            const section_name = try readBytes(&section);
+            if (mem.eql(u8, section_name, "linking")) {
+                const section_version = try section.takeLeb128(u32);
+                if (section_version != 2) return error.UnsupportedVersion;
+
+                while (section.seek < section.buffer.len) {
+                    const sub_type = try section.takeLeb128(u8);
+                    const payload_len = try section.takeLeb128(u32);
+
+                    var symtab: std.Io.Reader = .fixed(try section.take(payload_len));
+                    if (sub_type != @backingInt(Object.SubsectionType.symbol_table)) continue;
+
+                    const count = try symtab.takeLeb128(u32);
+                    for (0..count) |_| {
+                        const tag = try symtab.takeEnum(Object.Symbol.Tag, .little);
+                        const flags = try symtab.takeLeb128(u32);
+                        const symbol_flags: Wasm.SymbolFlags = @bitCast(flags);
+
+                        var name: []const u8 = undefined;
+                        switch (tag) {
+                            .data => {
+                                name = try readBytes(&symtab);
+                                if (!symbol_flags.undefined) {
+                                    _ = try symtab.takeLeb128(u32);
+                                    _ = try symtab.takeLeb128(u64);
+                                    _ = try symtab.takeLeb128(u64);
+                                }
+                            },
+                            .section => {
+                                _ = try symtab.takeLeb128(u32);
+                                continue;
+                            },
+                            .function, .global, .event, .table => {
+                                _ = try symtab.takeLeb128(u32);
+                                if (!symbol_flags.undefined or symbol_flags.explicit_name) {
+                                    name = try readBytes(&symtab);
+                                }
+                            },
+                        }
+
+                        if (!symbol_flags.undefined and symbol_flags.binding != .local) {
+                            try b.symbol_names.appendSlice(gpa, name);
+                            try b.symbol_names.append(gpa, 0);
+                            try b.symbol_offsets.append(gpa, member_offset);
+                        }
+                    }
+                }
+                return;
+            }
+        }
+        return error.MissingLinkingSection;
+    }
+};
+
+fn writeHeader(w: *std.Io.Writer, name: []const u8, size: usize) std.Io.Writer.Error!void {
+    var header: Header = .{
+        .name = @splat(' '),
+        .date = "0           ".*,
+        .uid = "0     ".*,
+        .gid = "0     ".*,
+        .mode = "644     ".*,
+        .size = @splat(' '),
+        .fmag = ARFMAG.*,
+    };
+    @memcpy(header.name[0..name.len], name);
+    _ = std.mem.print(&header.size, "{d}", .{size}) catch unreachable;
+    try w.writeAll(mem.asBytes(&header));
+}
+
+fn readBytes(reader: *std.Io.Reader) ![]const u8 {
+    const len = try reader.takeLeb128(u32);
+    return reader.take(len);
+}
+
 pub fn deinit(archive: *Archive, gpa: Allocator) void {
     deinitToc(gpa, &archive.toc);
     archive.* = undefined;
@@ -102,6 +239,7 @@ pub fn parse(gpa: Allocator, file_contents: []const u8) !Archive {
 
     const sym_tab = file_contents[pos..][0 .. sym_tab_size - 4 - symbol_positions_size];
     pos += sym_tab.len;
+    pos = mem.alignForward(usize, pos, 2);
 
     var toc: Toc = .empty;
     errdefer deinitToc(gpa, &toc);

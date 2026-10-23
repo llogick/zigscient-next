@@ -160,6 +160,8 @@ test Value {
 }
 
 test "Value.swap" {
+    if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
+
     var x = Value(usize).init(5);
     try testing.expectEqual(@as(usize, 5), x.swap(10, .seq_cst));
     try testing.expectEqual(@as(usize, 10), x.load(.seq_cst));

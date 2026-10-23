@@ -58,6 +58,40 @@ fn testNullPtrsEql() !void {
     try expect(&number == x);
 }
 
+test "optional error equality" {
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
+    const S = struct {
+        fn testEql(comptime T: type, a: ?T, b: ?T, equal: bool) !void {
+            try expect((a == b) == equal);
+            try expect((a != b) == !equal);
+        }
+
+        fn doTheTest() !void {
+            try testEql(error{}, null, null, true);
+
+            try testEql(error{ A, B }, null, null, true);
+            try testEql(error{ A, B }, error.A, error.A, true);
+            try testEql(error{ A, B }, error.A, error.B, false);
+            try testEql(error{ A, B }, null, error.A, false);
+            try testEql(error{ A, B }, error.A, null, false);
+
+            try testEql(anyerror, null, null, true);
+            try testEql(anyerror, error.A, error.A, true);
+            try testEql(anyerror, error.A, error.B, false);
+            try testEql(anyerror, null, error.A, false);
+            try testEql(anyerror, error.A, null, false);
+        }
+    };
+
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}
+
 test "optional with zero-bit type" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;

@@ -247,7 +247,7 @@ pub fn finish(f: *Flush, wasm: *Wasm) !void {
         .wasm64 => true,
         else => unreachable,
     };
-    const is_obj = comp.config.output_mode == .Obj;
+    const is_obj = wasm.base.isRelocatable();
     const allow_undefined = is_obj or wasm.import_symbols;
     const zcu_references = if (comp.zcu) |zcu| try zcu.resolveReferences() else null;
 
@@ -1725,9 +1725,32 @@ pub fn finish(f: *Flush, wasm: *Wasm) !void {
 
     // Finally, write the entire binary into the file.
     var file_writer = wasm.base.file.?.writer(io, &.{});
-    file_writer.interface.writeAll(binary_bytes.items) catch |err| switch (err) {
-        error.WriteFailed => return file_writer.err.?,
-    };
+    if (wasm.base.isStaticLib()) {
+        const builder = &wasm.archive_builder;
+        // restore for incremental
+        const file_names_len = builder.file_names.items.len;
+        defer builder.file_names.shrinkRetainingCapacity(file_names_len);
+        const members_len = builder.members.items.len;
+        defer builder.members.shrinkRetainingCapacity(members_len);
+        const symbol_names_len = builder.symbol_names.items.len;
+        defer builder.symbol_names.shrinkRetainingCapacity(symbol_names_len);
+        const symbol_offsets_len = builder.symbol_offsets.items.len;
+        defer builder.symbol_offsets.shrinkRetainingCapacity(symbol_offsets_len);
+
+        // TODO: pass ZCU data and symbols to write, so reparsing not needed
+        if (comp.zcu != null) {
+            const name = try std.fmt.allocPrint(gpa, "{s}_zcu.o", .{comp.root_name});
+            defer gpa.free(name);
+            try builder.append(gpa, name, binary_bytes.items);
+        }
+        builder.write(&file_writer.interface) catch |err| switch (err) {
+            error.WriteFailed => return file_writer.err.?,
+        };
+    } else {
+        file_writer.interface.writeAll(binary_bytes.items) catch |err| switch (err) {
+            error.WriteFailed => return file_writer.err.?,
+        };
+    }
     file_writer.end() catch |err| switch (err) {
         error.WriteFailed => return file_writer.err.?,
         else => |e| return e,

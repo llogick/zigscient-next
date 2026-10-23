@@ -181803,17 +181803,15 @@ fn intInfo(cg: *CodeGen, ty: Type) ?std.lang.Type.Int {
             .one, .many, .c => .{ .signedness = .unsigned, .bits = cg.target.ptrBitWidth() },
             .slice => null,
         },
-        .opt_type => |opt_child| return if (!Type.fromInterned(opt_child).hasRuntimeBits(zcu))
-            .{ .signedness = .unsigned, .bits = 1 }
-        else switch (ip.indexToKey(opt_child)) {
-            .ptr_type => |ptr_type| switch (ptr_type.flags.size) {
-                .one, .many => switch (ptr_type.flags.is_allowzero) {
-                    false => .{ .signedness = .unsigned, .bits = cg.target.ptrBitWidth() },
-                    true => null,
-                },
-                .slice, .c => null,
-            },
-            else => null,
+        .opt_type => |opt_child| {
+            if (!Type.fromInterned(opt_child).hasRuntimeBits(zcu)) {
+                return .{ .signedness = .unsigned, .bits = 1 };
+            }
+            if (Type.fromInterned(ty_index).optionalReprIsPayload(zcu)) {
+                ty_index = opt_child;
+                continue;
+            }
+            return null;
         },
         .error_union_type => |error_union_type| return if (!Type.fromInterned(error_union_type.payload_type)
             .hasRuntimeBits(zcu)) .{ .signedness = .unsigned, .bits = zcu.errorSetBits() } else null,
