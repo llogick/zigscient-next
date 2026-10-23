@@ -135,6 +135,35 @@ test f16_floatCast_f64 {
     try test_f16_floatCast_f64(65536.0, 0x7c00);
 }
 
+fn test_f16_floatCast_f80(a: f80, expected: u16) !void {
+    const actual: u16 = @bitCast(f16_floatCast_f80(a));
+    try testing.expectEqual(expected, actual);
+}
+
+fn test_f32_floatCast_f80(a: f80, expected: u32) !void {
+    const actual: u32 = @bitCast(f32_floatCast_f80(a));
+    try testing.expectEqual(expected, actual);
+}
+
+fn test_f64_floatCast_f80(a: f80, expected: u64) !void {
+    const actual: u64 = @bitCast(f64_floatCast_f80(a));
+    try testing.expectEqual(expected, actual);
+}
+
+test "f80 conversions preserve destination subnormals" {
+    try test_f16_floatCast_f80(0x1p-24, 0x0001);
+    try test_f16_floatCast_f80(0x1.8p-24, 0x0002);
+    try test_f16_floatCast_f80(0x1.8p-20, 0x0018);
+    try test_f16_floatCast_f80(0x1p-17, 0x0080);
+    try test_f16_floatCast_f80(0x1.fep-15, 0x03fc);
+
+    try test_f32_floatCast_f80(0x1p-149, 0x00000001);
+    try test_f32_floatCast_f80(0x1p-147, 0x00000004);
+
+    try test_f64_floatCast_f80(0x1p-1074, 0x0000000000000001);
+    try test_f64_floatCast_f80(0x1.8p-1073, 0x0000000000000003);
+}
+
 fn test_f32_floatCast_f128(a: f128, expected: u32) !void {
     const x = f32_floatCast_f128(a);
 
@@ -284,9 +313,17 @@ fn test_f80_floatCast_f128(a: f128, expected: f80) !void {
     try testing.expect(x == expected);
 }
 
+fn test_f80_floatCast_f128_bits(a: u128, expected_exp: u16, expected_fraction: u64) !void {
+    const actual = std.math.F80.fromFloat(f80_floatCast_f128(@bitCast(a)));
+    try testing.expectEqual(expected_exp, actual.exp);
+    try testing.expectEqual(expected_fraction, actual.fraction);
+}
+
 test f80_floatCast_f128 {
     try test_f80_floatCast_f128(1.5, 1.5);
     try test_f80_floatCast_f128(2.5, 2.5);
     try test_f80_floatCast_f128(-2.5, -2.5);
     try test_f80_floatCast_f128(0.0, 0.0);
+
+    try test_f80_floatCast_f128_bits(0x7fff0000000000000000000000000001, 0x7fff, 0xc000000000000000);
 }

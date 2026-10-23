@@ -168,7 +168,7 @@ pub fn f80_floatCast_f128(a: f128) f80 {
         // Conjure the result by beginning with infinity, setting the qNaN
         // bit and inserting the (truncated) trailing NaN field.
         res.exp = 0x7fff;
-        res.fraction = 0x8000000000000000;
+        res.fraction = integer_bit | (integer_bit >> 1);
         res.fraction |= @as(u64, @truncate(a_abs >> (src_sig_bits - dst_sig_bits)));
     } else {
         // The exponent of a is within the range of normal numbers in the
@@ -322,6 +322,7 @@ inline fn trunc_f80(comptime dst_t: type, a: f80) dst_t {
     var a_rep = std.math.F80.fromFloat(a);
     const sign = a_rep.exp & 0x8000;
     a_rep.exp &= 0x7FFF;
+    const significand = a_rep.fraction;
     a_rep.fraction &= 0x7FFFFFFFFFFFFFFF;
     var abs_result: dst_rep_t = undefined;
 
@@ -355,14 +356,14 @@ inline fn trunc_f80(comptime dst_t: type, a: f80) dst_t {
         // a underflows on conversion to the destination type or is an exact
         // zero.  The result may be a denormal or zero.  Extract the exponent
         // to get the shift amount for the denormalization.
-        const shift = src_exp_bias - dst_exp_bias - a_rep.exp;
+        const shift = src_exp_bias - dst_exp_bias - a_rep.exp + 1;
 
         // Right shift by the denormalization amount with sticky.
         if (shift > src_sig_bits) {
             abs_result = 0;
         } else {
-            const sticky = @intFromBool(a_rep.fraction << @intCast(shift) != 0);
-            const denormalized_significand = (a_rep.fraction >> @intCast(shift)) | sticky;
+            const sticky = @intFromBool(significand << @intCast(src_sig_bits + 1 - shift) != 0);
+            const denormalized_significand = (significand >> @intCast(shift)) | sticky;
             abs_result = @intCast(denormalized_significand >> (src_sig_bits - dst_sig_bits));
             const round_bits = denormalized_significand & round_mask;
             if (round_bits > halfway) {
