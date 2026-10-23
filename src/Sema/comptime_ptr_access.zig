@@ -1031,13 +1031,12 @@ fn unflattenArray(
     }
 
     const elem_ty = ty.childType(zcu);
-    const buf = try arena.alloc(InternPool.Index, @intCast(ty.arrayLen(zcu)));
+    const buf = try arena.alloc(InternPool.Index, @intCast(ty.arrayLenIncludingSentinel(zcu)));
     for (buf) |*elem| {
         elem.* = (try unflattenArray(sema, elem_ty, elems, next_idx)).toIntern();
     }
-    if (ty.sentinel(zcu) != null) {
-        // TODO: validate sentinel
-        _ = try unflattenArray(sema, elem_ty, elems, next_idx);
+    if (ty.sentinel(zcu)) |sent| {
+        assert(sent.toIntern() == buf[buf.len - 1]);
     }
     return pt.aggregateValue(ty, buf);
 }

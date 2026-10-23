@@ -606,3 +606,25 @@ test "reinterpret pointer as optional pointer via double-pointer coercion" {
     comptime assert(@TypeOf(loaded) == ?*anyopaque);
     comptime assert(@intFromPtr(loaded) == 0x1000);
 }
+
+test "comptime store to sentinel-terminated array in an extern struct" {
+    comptime {
+        var x: extern struct {
+            a: [2:0]u8 = @splat(50),
+        } = .{};
+        x.a[0] = 100;
+        assert(x.a[0] == 100);
+        assert(x.a[1] == 50);
+        assert(x.a[2] == 0);
+    }
+}
+
+test "comptime store to repeated string bytes" {
+    comptime {
+        var x = "aa".*;
+        x[0] = 'b';
+        assert(x[0] == 'b');
+        assert(x[1] == 'a');
+        assert(x[2] == 0);
+    }
+}

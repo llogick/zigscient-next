@@ -591,6 +591,24 @@ test "tuple to array handles sentinel" {
         var b: [3:0]u8 = a;
     };
     try expect(S.b[0] == 1);
+    try expect(S.b[1] == 2);
+    try expect(S.b[2] == 3);
+    try expect(S.b[3] == 0);
+}
+
+test "array-like to array handles sentinel" {
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+
+    const S = struct {
+        const a: @Vector(3, u8) = .{ 1, 2, 3 };
+        var b: [3:0]u8 = a;
+    };
+    try expect(S.b[0] == 1);
+    try expect(S.b[1] == 2);
+    try expect(S.b[2] == 3);
+    try expect(S.b[3] == 0);
 }
 
 test "array init of container level array variable" {

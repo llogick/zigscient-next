@@ -13574,13 +13574,23 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
 
     const lhs_len = try sema.usizeCast(block, lhs_src, lhs_info.len);
     const rhs_len = try sema.usizeCast(block, rhs_src, rhs_info.len);
-    const result_len = std.math.add(usize, lhs_len, rhs_len) catch |err| switch (err) {
-        error.Overflow => return sema.fail(
+    const result_len, const result_len_with_sent = blk: {
+        if (std.math.add(usize, lhs_len, rhs_len)) |result_len| {
+            const sent_len = @intFromBool(res_sent_val != null);
+            if (std.math.add(usize, result_len, sent_len)) |with_sent| {
+                break :blk .{ result_len, with_sent };
+            } else |err| switch (err) {
+                error.Overflow => {},
+            }
+        } else |err| switch (err) {
+            error.Overflow => {},
+        }
+        return sema.fail(
             block,
             src,
             "concatenating arrays of length {d} and {d} produces an array too large for this compiler implementation to handle",
             .{ lhs_len, rhs_len },
-        ),
+        );
     };
 
     const result_ty = try pt.arrayType(.{
@@ -13618,7 +13628,7 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
             else
                 rhs_val;
 
-            const element_vals = try sema.arena.alloc(InternPool.Index, result_len);
+            const element_vals = try sema.arena.alloc(InternPool.Index, result_len_with_sent);
             var elem_i: u32 = 0;
             while (elem_i < lhs_len) : (elem_i += 1) {
                 const lhs_elem_i = elem_i;
@@ -13645,6 +13655,9 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                 const coerced_elem_val_inst = try sema.coerce(block, resolved_elem_ty, .fromValue(elem_val), operand_src);
                 const coerced_elem_val = sema.resolveValue(coerced_elem_val_inst).?;
                 element_vals[elem_i] = coerced_elem_val.toIntern();
+            }
+            if (res_sent_val) |v| {
+                element_vals[result_len] = v.toIntern();
             }
             return sema.addConstantMaybeRef(
                 try pt.aggregateValue(result_ty, element_vals),
@@ -30627,11 +30640,18 @@ fn coerceArrayLike(
         return block.addTyOp(.array_to_vector, dest_ty, inst);
     }
 
-    const element_vals = try sema.arena.alloc(InternPool.Index, dest_len);
-    const element_refs = try sema.arena.alloc(Air.Inst.Ref, dest_len);
+    const dest_len_including_sent = try sema.usizeCast(block, dest_ty_src, dest_ty.arrayLenIncludingSentinel(zcu));
+    const element_vals = try sema.arena.alloc(InternPool.Index, dest_len_including_sent);
+    const element_refs = try sema.arena.alloc(Air.Inst.Ref, dest_len_including_sent);
     var runtime_src: ?LazySrcLoc = null;
 
     for (element_vals, element_refs, 0..) |*val, *ref, i| {
+        if (i == dest_len) {
+            const sentinel_val = dest_ty.sentinel(zcu).?;
+            val.* = sentinel_val.toIntern();
+            ref.* = Air.internedToRef(sentinel_val.toIntern());
+            break;
+        }
         const index_ref = Air.internedToRef((try pt.intValue(.usize, i)).toIntern());
         const src = inst_src; // TODO better source location
         const elem_src = inst_src; // TODO better source location
@@ -30669,6 +30689,7 @@ fn coerceTupleToArray(
     const inst_ty = sema.typeOf(inst);
     const inst_len = inst_ty.arrayLen(zcu);
     const dest_len = dest_ty.arrayLen(zcu);
+    const dest_len_including_sent = dest_ty.arrayLenIncludingSentinel(zcu);
 
     if (dest_len != inst_len) {
         const msg = msg: {
@@ -30681,7 +30702,7 @@ fn coerceTupleToArray(
         return sema.failWithOwnedErrorMsg(block, msg);
     }
 
-    const dest_elems = try sema.usizeCast(block, dest_ty_src, dest_len);
+    const dest_elems = try sema.usizeCast(block, dest_ty_src, dest_len_including_sent);
     const element_vals = try sema.arena.alloc(InternPool.Index, dest_elems);
     const element_refs = try sema.arena.alloc(Air.Inst.Ref, dest_elems);
     const dest_elem_ty = dest_ty.childType(zcu);
