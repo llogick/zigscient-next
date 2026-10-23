@@ -145,3 +145,18 @@ test "p256 scalar parity" {
     try std.testing.expect(P256.scalar.Scalar.one.isOdd());
     try std.testing.expect(P256.scalar.Scalar.one.dbl().isOdd() == false);
 }
+
+test "p256 with x = 0 point" {
+    const yh = "66485c780e2f83d72433bd5d84a06bb6541c2af31dae871728bf856a174f93f4";
+    var ys: [32]u8 = undefined;
+    _ = try fmt.hexToBytes(&ys, yh);
+    const y = try P256.Fe.fromBytes(ys, .big);
+
+    const p = P256.basePoint.dbl();
+    const q = try P256.fromAffineCoordinates(.{ .x = .zero, .y = y });
+    const want = p.add(q);
+    const got = p.addMixed(.{ .x = .zero, .y = y });
+
+    try std.testing.expect(!got.equivalent(p));
+    try std.testing.expect(got.equivalent(want));
+}

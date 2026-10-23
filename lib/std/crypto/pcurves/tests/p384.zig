@@ -155,3 +155,18 @@ test "p384 scalar parity" {
     try std.testing.expect(P384.scalar.Scalar.one.isOdd());
     try std.testing.expect(P384.scalar.Scalar.one.dbl().isOdd() == false);
 }
+
+test "p384 with x = 0 point" {
+    const yh = "c306610fb0ae5a159cf45c06069f22a6c5eb3641c602d42dea2c4b4f75550793406d80d2b91ad54f9048bd487af1ade1";
+    var ys: [48]u8 = undefined;
+    _ = try fmt.hexToBytes(&ys, yh);
+    const y = try P384.Fe.fromBytes(ys, .big);
+
+    const p = P384.basePoint.dbl();
+    const q = try P384.fromAffineCoordinates(.{ .x = .zero, .y = y });
+    const want = p.add(q);
+    const got = p.addMixed(.{ .x = .zero, .y = y });
+
+    try std.testing.expect(!got.equivalent(p));
+    try std.testing.expect(got.equivalent(want));
+}

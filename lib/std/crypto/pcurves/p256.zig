@@ -215,7 +215,7 @@ pub const P256 = struct {
             .y = Y3,
             .z = Z3,
         };
-        ret.cMov(p, @intFromBool(q.x.isZero()));
+        ret.cMov(p, @intFromBool(q.x.isZero() and q.y.isZero()));
         return ret;
     }
 
