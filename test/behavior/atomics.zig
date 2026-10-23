@@ -133,6 +133,13 @@ fn test_u128_cmpxchg() !void {
 
     try expect(@cmpxchgStrong(u128, &x, 5678, 42, .seq_cst, .seq_cst) == null);
     try expect(x == 42);
+
+    var a: u128 align(16) = 40;
+    var b: u128 align(16) = 2;
+    _ = &a;
+    _ = &b;
+    try expect(@cmpxchgStrong(u128, &x, a | b, a & b, .seq_cst, .seq_cst) == null);
+    try expect(x == 0);
 }
 
 var a_global_variable = @as(u32, 1234);
