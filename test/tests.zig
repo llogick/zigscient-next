@@ -2508,6 +2508,7 @@ pub const ModuleTestOptions = struct {
     skip_darwin: bool,
     skip_linux: bool,
     skip_llvm: bool,
+    skip_cbe: bool,
     skip_libc: bool,
     max_rss: u64 = 0,
     no_builtin: bool = false,
@@ -2579,6 +2580,7 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
 
         const would_use_llvm = wouldUseLlvm(test_target.use_llvm, test_target.target, test_target.optimize_mode);
         if (options.skip_llvm and would_use_llvm) continue;
+        if (options.skip_cbe and target.ofmt == .c) continue;
 
         const triple_txt = resolved_target.query.zigTriple(b.allocator) catch @panic("OOM");
 
@@ -2854,6 +2856,7 @@ const CAbiTestOptions = struct {
     skip_darwin: bool,
     skip_linux: bool,
     skip_llvm: bool,
+    skip_cbe: bool,
     max_rss: u64 = 0,
 };
 
@@ -2886,6 +2889,7 @@ pub fn addCAbiTests(b: *std.Build, options: CAbiTestOptions) *Step {
         for (options.optimize_modes) |optimize_mode| {
             const would_use_llvm = wouldUseLlvm(c_abi_target.use_llvm, c_abi_target.target, optimize_mode);
             if (options.skip_llvm and would_use_llvm) continue;
+            if (options.skip_cbe and target.ofmt == .c) continue;
 
             const test_mod = b.createModule(.{
                 .root_source_file = b.path("test/c_abi/main.zig"),
@@ -3071,6 +3075,7 @@ pub const RunnerOptions = struct {
     skip_darwin: bool,
     skip_linux: bool,
     skip_llvm: bool,
+    skip_cbe: bool,
     llvm_has_m68k: bool,
     llvm_has_csky: bool,
     llvm_has_arc: bool,
@@ -3146,6 +3151,9 @@ pub fn addRunnerTests(
                     .arc => if (!options.llvm_has_arc) continue,
                     .xtensa => if (!options.llvm_has_xtensa) continue,
                 }
+            }
+            if (test_target.backend == .cbe) {
+                if (options.skip_cbe) continue;
             }
 
             const target_str = b.fmt("{f}", .{test_target});

@@ -129,6 +129,7 @@ pub fn build(b: *std.Build) !void {
     const skip_darwin = b.option(bool, "skip-darwin", "Main test suite skips targets with darwin OSs") orelse false;
     const skip_linux = b.option(bool, "skip-linux", "Main test suite skips targets with linux OS") orelse false;
     const skip_llvm = b.option(bool, "skip-llvm", "Main test suite skips targets that use LLVM backend") orelse false;
+    const skip_cbe = b.option(bool, "skip-cbe", "Main test suite skips targets that use C backend") orelse false;
 
     const only_install_lib_files = b.option(bool, "lib-files-only", "Only install library files") orelse false;
 
@@ -472,6 +473,7 @@ pub fn build(b: *std.Build) !void {
         .skip_darwin = skip_darwin,
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
+        .skip_cbe = skip_cbe,
         .skip_libc = skip_libc,
         .max_rss = 4_000_000_000,
     }));
@@ -498,6 +500,7 @@ pub fn build(b: *std.Build) !void {
         .skip_darwin = skip_darwin,
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
+        .skip_cbe = skip_cbe,
         .skip_libc = true,
         .no_builtin = true,
         .max_rss = 4_000_000_000,
@@ -525,6 +528,7 @@ pub fn build(b: *std.Build) !void {
         .skip_darwin = skip_darwin,
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
+        .skip_cbe = skip_cbe,
         .skip_libc = skip_libc,
         .max_rss = 9_600_000_000,
     }));
@@ -551,6 +555,7 @@ pub fn build(b: *std.Build) !void {
         .skip_darwin = skip_darwin,
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
+        .skip_cbe = skip_cbe,
         .skip_libc = skip_libc,
         .no_builtin = true,
         .max_rss = 4_000_000_000,
@@ -599,6 +604,7 @@ pub fn build(b: *std.Build) !void {
         .skip_darwin = skip_darwin,
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
+        .skip_cbe = skip_cbe,
         .max_rss = 4_300_000_000,
     }));
     test_step.dependOn(tests.addLinkTests(b, .{
@@ -739,6 +745,7 @@ pub fn build(b: *std.Build) !void {
         .skip_darwin = skip_darwin,
         .skip_linux = skip_linux,
         .skip_llvm = skip_llvm,
+        .skip_cbe = skip_cbe,
         .llvm_has_m68k = llvm_has_m68k,
         .llvm_has_csky = llvm_has_csky,
         .llvm_has_arc = llvm_has_arc,
