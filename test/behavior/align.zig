@@ -312,7 +312,7 @@ test "function alignment" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
-    // function alignment is a compile error on wasm
+    // function alignment greater than 1 is a compile error on wasm
     if (native_arch.isWasm()) return error.SkipZigTest;
 
     const S = struct {
@@ -341,7 +341,7 @@ test "implicitly decreasing fn alignment" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
-    // function alignment is a compile error on wasm
+    // function alignment greater than 1 is a compile error on wasm
     if (native_arch.isWasm()) return error.SkipZigTest;
 
     try testImplicitlyDecreaseFnAlign(alignedSmall, 1234);
@@ -364,7 +364,7 @@ test "@alignCast functions" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
 
-    // function alignment is a compile error on wasm
+    // function alignment greater than 1 is a compile error on wasm
     if (native_arch.isWasm()) return error.SkipZigTest;
 
     try expect(fnExpectsOnly1(simple4) == 0x19);
@@ -510,7 +510,7 @@ test "align(N) on functions" {
         return error.SkipZigTest;
     }
 
-    // function alignment is a compile error on wasm
+    // function alignment greater than 1 is a compile error on wasm
     if (native_arch.isWasm()) return error.SkipZigTest;
     if (native_arch.isThumb()) return error.SkipZigTest;
 

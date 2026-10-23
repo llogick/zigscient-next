@@ -1903,9 +1903,13 @@ fn analyzeNavVal(
     };
 
     if (is_owned_fn) {
-        // linksection etc are legal, except some targets do not support function alignment.
-        if (zir_decl.align_body != null and !target_util.supportsFunctionAlignment(zcu.getTarget())) {
-            return sema.fail(&block, align_src, "target does not support function alignment", .{});
+        // linksection etc are legal, except some targets do not support function alignment
+        // greater than 1. `align(1)` is a no-op, so it is allowed even on those targets.
+        if (zir_decl.align_body != null and
+            modifiers.@"align" != .@"1" and
+            !target_util.supportsFunctionAlignment(zcu.getTarget()))
+        {
+            return sema.fail(&block, align_src, "target does not support function alignment greater than 1", .{});
         }
     } else if (nav_ty.comptimeOnly(zcu)) {
         // alignment, linksection, addrspace annotations are not allowed for comptime-only types.
