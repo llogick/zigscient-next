@@ -1373,7 +1373,7 @@ fn getOutFileName(d: *Driver, source: Source, buf: *[std.fs.max_name_bytes]u8) !
             if (d.only_preprocess_and_compile) ".s" else d.comp.target.ofmt.fileExt(d.comp.target.cpu.arch),
         };
         return d.output_name orelse
-            mem.print(buf, fmt_template, fmt_args) catch return d.fatal("Filename too long for filesystem: " ++ fmt_template, fmt_args);
+            (mem.print(buf, fmt_template, fmt_args) catch return d.fatal("Filename too long for filesystem: " ++ fmt_template, fmt_args));
     }
 
     return d.getRandomFilename(buf, d.comp.target.ofmt.fileExt(d.comp.target.cpu.arch));

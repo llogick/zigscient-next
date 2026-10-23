@@ -228,7 +228,7 @@ pub fn generate(info: *UnwindInfo, macho_file: *MachO) !void {
                 if (next.getAtomAddress(macho_file) >= range_start_max) {
                     break;
                 } else if (info.getCommonEncoding(next.enc) != null or
-                    page.getPageEncoding(next.enc) != null and !is_dwarf)
+                    (page.getPageEncoding(next.enc) != null and !is_dwarf))
                 {
                     i += 1;
                     space_left -= 1;

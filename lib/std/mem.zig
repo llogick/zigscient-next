@@ -4354,7 +4354,7 @@ pub fn alignPointerOffset(ptr: anytype, align_to: usize) ?usize {
         @compileError("expected many item pointer, got " ++ @typeName(T));
 
     // Do nothing if the pointer is already well-aligned.
-    if (align_to <= info.pointer.attrs.@"align" orelse @alignOf(info.pointer.child))
+    if (align_to <= (info.pointer.attrs.@"align" orelse @alignOf(info.pointer.child)))
         return 0;
 
     // Calculate the aligned base address with an eye out for overflow.

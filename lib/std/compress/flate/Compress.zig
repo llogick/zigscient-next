@@ -1333,8 +1333,8 @@ const huffman = struct {
 
         const incomplete_allowed = smith.value(bool);
         while (nfreqs < @as(u8, @intFromBool(!incomplete_allowed)) + 1 or
-            nfreqs != freqs_buf.len and freqs_limit != 0 and
-                smith.eosWeightedSimple(15, 1))
+            (nfreqs != freqs_buf.len and freqs_limit != 0 and
+                smith.eosWeightedSimple(15, 1)))
         {
             const f = smith.valueWeighted(u16, &.{
                 .rangeAtMost(u16, 0, @min(31, freqs_limit), @max(freqs_limit, 1)),

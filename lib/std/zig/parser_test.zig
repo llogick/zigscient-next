@@ -3046,25 +3046,61 @@ test "zig fmt: precedence" {
         \\    !(a{});
         \\    a + b{};
         \\    (a + b){};
-        \\    a << b + c;
         \\    (a << b) + c;
-        \\    a & b << c;
         \\    (a & b) << c;
-        \\    a ^ b & c;
         \\    (a ^ b) & c;
-        \\    a | b ^ c;
         \\    (a | b) ^ c;
         \\    a == b | c;
         \\    (a == b) | c;
         \\    a and b == c;
         \\    (a and b) == c;
-        \\    a or b and c;
         \\    (a or b) and c;
         \\    (a or b) and c;
         \\    a == b and c == d;
         \\}
         \\
     );
+}
+
+test "zig fmt: ambiguous precedence" {
+    try testError(
+        \\test "ambiguous precedence" {
+        \\    a & b << c;
+        \\    a << b + c;
+        \\    a << b | c;
+        \\    a ^ b & c;
+        \\    a | b ^ c;
+        \\    a or b and c;
+        \\    a orelse b catch c;
+        \\    a % b % c;
+        \\}
+        \\
+    , &[_]Error{
+        .ambiguous_operator_precedence,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_right,
+        .ambiguous_operator_precedence,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_right,
+        .ambiguous_operator_precedence,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_left,
+        .ambiguous_operator_precedence,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_left,
+        .ambiguous_operator_precedence,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_left,
+        .ambiguous_operator_precedence,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_right,
+        .ambiguous_operator_precedence,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_left,
+        .illegal_chained_operators,
+        .previous_ambiguous_operator,
+        .hint_operator_precedence_left,
+    });
 }
 
 test "zig fmt: prefix operators" {
@@ -7205,7 +7241,7 @@ test "recovery: missing comma" {
         \\        2 => {}
         \\        3 => {}
         \\        else => {
-        \\            foo & bar +;
+        \\            foo & bar &;
         \\        }
         \\    }
         \\}

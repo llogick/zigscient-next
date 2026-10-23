@@ -3843,7 +3843,7 @@ pub fn buildOutputType(
     };
 
     const thread_limit = @min(
-        @max(cs.n_jobs orelse std.Thread.getCpuCount() catch 1, 1),
+        @max(cs.n_jobs orelse (std.Thread.getCpuCount() catch 1), 1),
         std.math.maxInt(Zcu.PerThread.IdBacking),
     );
     try setThreadLimit(arena, thread_limit, if (ds) |_| &cs.*.io_impl else globals.io_impl_ptr);

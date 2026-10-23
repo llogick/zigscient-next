@@ -1949,7 +1949,7 @@ pub const Memory = struct {
                 assert(mem.info.base == .reg);
                 return encoder.Instruction.Memory.initMoffs(
                     @fromBackingInt(@intCast(mem.base)),
-                    @as(u64, mem.extra) << 32 | mem.off,
+                    (@as(u64, mem.extra) << 32) | mem.off,
                 );
             },
         }

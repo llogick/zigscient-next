@@ -42,13 +42,22 @@ const Def = enum {
     defAssignExpr,
     defSingleAssignExpr,
     defExpr,
-    defBoolOrExpr,
+    defOrElseExpr,
+    defCatchExpr,
+    defRecoveryNonmixingOp,
+    defControlOp,
+    defBoolExpr,
     defBoolAndExpr,
+    defBoolOrExpr,
     defCompareExpr,
-    defBitwiseExpr,
-    defBitShiftExpr,
+    defCompareOperand,
+    defBitOp,
+    defBitwiseNonmixingOp,
     defAdditionExpr,
+    defMulOrModExpr,
+    defModExpr,
     defMultiplyExpr,
+    defMultiplyNonmixingOp,
     defPrefixExpr,
     defPrimaryExpr,
     defIfExpr,
@@ -103,14 +112,21 @@ const Def = enum {
     defAndOp,
     defCompareOp,
     defCompareOpTok,
-    defBitwiseOp,
-    defBitwiseOpTok,
+    defBitwiseAndOp,
+    defBitwiseAndOpTok,
+    defBitwiseOrOp,
+    defBitwiseOrOpTok,
+    defBitwiseXorOp,
+    defBitwiseXorOpTok,
+    defCatchOp,
+    defOrElseOp,
     defBitShiftOp,
     defBitShiftOpTok,
     defAdditionOp,
     defAdditionOpTok,
     defMultiplyOp,
     defMultiplyOpTok,
+    defModOp,
     defPrefixOp,
     defPrefixTypeOp,
     defPtrMods,
@@ -290,7 +306,7 @@ const Def = enum {
 const Parser = struct {
     source: []const u8,
     i: usize,
-    depths: [272]u8,
+    depths: [288]u8,
     pub fn parseRoot(p: *Parser) Error!bool {
         const def_index = @backingInt(Def.defRoot);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
@@ -964,35 +980,137 @@ const Parser = struct {
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parseBoolOrExpr()) break :blk_0 true;
+            if (try p.parsePrefixExpr() and blk_2: {
+                const pos_2 = p.i;
+                if (try p.parseOrElseExpr()) break :blk_2 true;
+                p.i = pos_2;
+                if (try p.parseCatchExpr()) break :blk_2 true;
+                p.i = pos_2;
+                if (try p.parseBoolExpr()) break :blk_2 true;
+                p.i = pos_2;
+                break :blk_2 false;
+            }) break :blk_0 true;
             p.i = pos_0;
             break :blk_0 false;
         };
     }
-    pub fn parseBoolOrExpr(p: *Parser) Error!bool {
-        const def_index = @backingInt(Def.defBoolOrExpr);
+    pub fn parseOrElseExpr(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defOrElseExpr);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
         p.depths[def_index] += 1;
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parseBoolAndExpr() and blk_1: {
+            if (blk_1: {
+                var match_1 = false;
                 var i_1: usize = 0;
                 while (blk_3: {
                     const pos_3 = p.i;
-                    if (try p.parseOrOp() and try p.parseBoolAndExpr()) break :blk_3 true;
+                    if (try p.parseOrElseOp() and try p.parsePrefixExpr()) break :blk_3 true;
                     p.i = pos_3;
                     break :blk_3 false;
                 }) {
+                    match_1 = true;
                     if (i_1 > max_depth) return error.MaxDepth;
                     i_1 += 1;
                 }
-                break :blk_1 true;
+                break :blk_1 match_1;
             } and blk_1: {
                 const pos_1 = p.i;
-                const match_1 = try p.parseOrOp();
+                const match_1 = try p.parseRecoveryNonmixingOp();
                 p.i = pos_1;
                 break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseCatchExpr(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defCatchExpr);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (blk_1: {
+                var match_1 = false;
+                var i_1: usize = 0;
+                while (blk_3: {
+                    const pos_3 = p.i;
+                    if (try p.parseCatchOp() and try p.parsePrefixExpr()) break :blk_3 true;
+                    p.i = pos_3;
+                    break :blk_3 false;
+                }) {
+                    match_1 = true;
+                    if (i_1 > max_depth) return error.MaxDepth;
+                    i_1 += 1;
+                }
+                break :blk_1 match_1;
+            } and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseRecoveryNonmixingOp();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseRecoveryNonmixingOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defRecoveryNonmixingOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseControlOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseCompareOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseBitwiseNonmixingOp()) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseControlOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defControlOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseOrElseOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseCatchOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseAndOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseOrOp()) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseBoolExpr(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBoolExpr);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseCompareExpr() and blk_2: {
+                const pos_2 = p.i;
+                if (try p.parseBoolAndExpr()) break :blk_2 true;
+                p.i = pos_2;
+                if (try p.parseBoolOrExpr()) break :blk_2 true;
+                p.i = pos_2;
+                if (blk_3: {
+                    const pos_3 = p.i;
+                    const match_3 = try p.parseControlOp();
+                    p.i = pos_3;
+                    break :blk_3 !match_3;
+                }) break :blk_2 true;
+                p.i = pos_2;
+                break :blk_2 false;
             }) break :blk_0 true;
             p.i = pos_0;
             break :blk_0 false;
@@ -1005,21 +1123,54 @@ const Parser = struct {
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parseCompareExpr() and blk_1: {
+            if (blk_1: {
+                var match_1 = false;
                 var i_1: usize = 0;
                 while (blk_3: {
                     const pos_3 = p.i;
-                    if (try p.parseAndOp() and try p.parseCompareExpr()) break :blk_3 true;
+                    if (try p.parseAndOp() and try p.parsePrefixExpr() and try p.parseCompareExpr()) break :blk_3 true;
                     p.i = pos_3;
                     break :blk_3 false;
                 }) {
+                    match_1 = true;
                     if (i_1 > max_depth) return error.MaxDepth;
                     i_1 += 1;
                 }
-                break :blk_1 true;
+                break :blk_1 match_1;
             } and blk_1: {
                 const pos_1 = p.i;
-                const match_1 = try p.parseAndOp();
+                const match_1 = try p.parseControlOp();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseBoolOrExpr(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBoolOrExpr);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (blk_1: {
+                var match_1 = false;
+                var i_1: usize = 0;
+                while (blk_3: {
+                    const pos_3 = p.i;
+                    if (try p.parseOrOp() and try p.parsePrefixExpr() and try p.parseCompareExpr()) break :blk_3 true;
+                    p.i = pos_3;
+                    break :blk_3 false;
+                }) {
+                    match_1 = true;
+                    if (i_1 > max_depth) return error.MaxDepth;
+                    i_1 += 1;
+                }
+                break :blk_1 match_1;
+            } and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseControlOp();
                 p.i = pos_1;
                 break :blk_1 !match_1;
             }) break :blk_0 true;
@@ -1034,14 +1185,23 @@ const Parser = struct {
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parseBitwiseExpr() and (blk_3: {
+            if (try p.parseCompareOperand() and (blk_3: {
                 const pos_3 = p.i;
-                if (try p.parseCompareOp() and try p.parseBitwiseExpr()) break :blk_3 true;
+                if (try p.parseCompareOp() and try p.parsePrefixExpr() and try p.parseCompareOperand()) break :blk_3 true;
                 p.i = pos_3;
                 break :blk_3 false;
             } or true) and blk_1: {
                 const pos_1 = p.i;
-                const match_1 = try p.parseCompareOp();
+                const match_1 = blk_3: {
+                    const pos_3 = p.i;
+                    if (try p.parseCompareOp()) break :blk_3 true;
+                    p.i = pos_3;
+                    if (try p.parseOrElseOp()) break :blk_3 true;
+                    p.i = pos_3;
+                    if (try p.parseCatchOp()) break :blk_3 true;
+                    p.i = pos_3;
+                    break :blk_3 false;
+                };
                 p.i = pos_1;
                 break :blk_1 !match_1;
             }) break :blk_0 true;
@@ -1049,60 +1209,121 @@ const Parser = struct {
             break :blk_0 false;
         };
     }
-    pub fn parseBitwiseExpr(p: *Parser) Error!bool {
-        const def_index = @backingInt(Def.defBitwiseExpr);
+    pub fn parseCompareOperand(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defCompareOperand);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
         p.depths[def_index] += 1;
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parseBitShiftExpr() and blk_1: {
+            if (blk_1: {
+                var match_1 = false;
                 var i_1: usize = 0;
                 while (blk_3: {
                     const pos_3 = p.i;
-                    if (try p.parseBitwiseOp() and try p.parseBitShiftExpr()) break :blk_3 true;
+                    if (try p.parseBitwiseOrOp() and try p.parsePrefixExpr()) break :blk_3 true;
                     p.i = pos_3;
                     break :blk_3 false;
                 }) {
+                    match_1 = true;
                     if (i_1 > max_depth) return error.MaxDepth;
                     i_1 += 1;
                 }
-                break :blk_1 true;
+                break :blk_1 match_1;
             } and blk_1: {
                 const pos_1 = p.i;
-                const match_1 = try p.parseBitwiseOp();
+                const match_1 = try p.parseBitwiseNonmixingOp();
                 p.i = pos_1;
                 break :blk_1 !match_1;
             }) break :blk_0 true;
             p.i = pos_0;
+            if (blk_1: {
+                var match_1 = false;
+                var i_1: usize = 0;
+                while (blk_3: {
+                    const pos_3 = p.i;
+                    if (try p.parseBitwiseAndOp() and try p.parsePrefixExpr()) break :blk_3 true;
+                    p.i = pos_3;
+                    break :blk_3 false;
+                }) {
+                    match_1 = true;
+                    if (i_1 > max_depth) return error.MaxDepth;
+                    i_1 += 1;
+                }
+                break :blk_1 match_1;
+            } and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseBitwiseNonmixingOp();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            if (blk_1: {
+                var match_1 = false;
+                var i_1: usize = 0;
+                while (blk_3: {
+                    const pos_3 = p.i;
+                    if (try p.parseBitwiseXorOp() and try p.parsePrefixExpr()) break :blk_3 true;
+                    p.i = pos_3;
+                    break :blk_3 false;
+                }) {
+                    match_1 = true;
+                    if (i_1 > max_depth) return error.MaxDepth;
+                    i_1 += 1;
+                }
+                break :blk_1 match_1;
+            } and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseBitwiseNonmixingOp();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseBitShiftOp() and try p.parsePrefixExpr() and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseBitwiseNonmixingOp();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            if (blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseBitOp();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and try p.parseAdditionExpr()) break :blk_0 true;
+            p.i = pos_0;
             break :blk_0 false;
         };
     }
-    pub fn parseBitShiftExpr(p: *Parser) Error!bool {
-        const def_index = @backingInt(Def.defBitShiftExpr);
+    pub fn parseBitOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitOp);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
         p.depths[def_index] += 1;
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parseAdditionExpr() and blk_1: {
-                var i_1: usize = 0;
-                while (blk_3: {
-                    const pos_3 = p.i;
-                    if (try p.parseBitShiftOp() and try p.parseAdditionExpr()) break :blk_3 true;
-                    p.i = pos_3;
-                    break :blk_3 false;
-                }) {
-                    if (i_1 > max_depth) return error.MaxDepth;
-                    i_1 += 1;
-                }
-                break :blk_1 true;
-            } and blk_1: {
-                const pos_1 = p.i;
-                const match_1 = try p.parseBitShiftOp();
-                p.i = pos_1;
-                break :blk_1 !match_1;
-            }) break :blk_0 true;
+            if (try p.parseBitwiseOrOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseBitwiseAndOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseBitwiseXorOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseBitShiftOp()) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseBitwiseNonmixingOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitwiseNonmixingOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseMultiplyNonmixingOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseAdditionOp()) break :blk_0 true;
             p.i = pos_0;
             break :blk_0 false;
         };
@@ -1114,11 +1335,11 @@ const Parser = struct {
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parseMultiplyExpr() and blk_1: {
+            if (try p.parseMulOrModExpr() and blk_1: {
                 var i_1: usize = 0;
                 while (blk_3: {
                     const pos_3 = p.i;
-                    if (try p.parseAdditionOp() and try p.parseMultiplyExpr()) break :blk_3 true;
+                    if (try p.parseAdditionOp() and try p.parsePrefixExpr() and try p.parseMulOrModExpr()) break :blk_3 true;
                     p.i = pos_3;
                     break :blk_3 false;
                 }) {
@@ -1128,7 +1349,54 @@ const Parser = struct {
                 break :blk_1 true;
             } and blk_1: {
                 const pos_1 = p.i;
-                const match_1 = try p.parseAdditionOp();
+                const match_1 = blk_3: {
+                    const pos_3 = p.i;
+                    if (try p.parseAdditionOp()) break :blk_3 true;
+                    p.i = pos_3;
+                    if (try p.parseBitOp()) break :blk_3 true;
+                    p.i = pos_3;
+                    if (try p.parseOrElseOp()) break :blk_3 true;
+                    p.i = pos_3;
+                    if (try p.parseCatchOp()) break :blk_3 true;
+                    p.i = pos_3;
+                    break :blk_3 false;
+                };
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseMulOrModExpr(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defMulOrModExpr);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseModExpr()) break :blk_0 true;
+            p.i = pos_0;
+            if (blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseModOp();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and try p.parseMultiplyExpr()) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseModExpr(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defModExpr);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseModOp() and try p.parsePrefixExpr() and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parseMultiplyNonmixingOp();
                 p.i = pos_1;
                 break :blk_1 !match_1;
             }) break :blk_0 true;
@@ -1143,7 +1411,7 @@ const Parser = struct {
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parsePrefixExpr() and blk_1: {
+            if (blk_1: {
                 var i_1: usize = 0;
                 while (blk_3: {
                     const pos_3 = p.i;
@@ -1157,10 +1425,30 @@ const Parser = struct {
                 break :blk_1 true;
             } and blk_1: {
                 const pos_1 = p.i;
-                const match_1 = try p.parseMultiplyOp();
+                const match_1 = try p.parseMultiplyNonmixingOp();
                 p.i = pos_1;
                 break :blk_1 !match_1;
             }) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseMultiplyNonmixingOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defMultiplyNonmixingOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseMultiplyOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseModOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseBitOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseOrElseOp()) break :blk_0 true;
+            p.i = pos_0;
+            if (try p.parseCatchOp()) break :blk_0 true;
             p.i = pos_0;
             break :blk_0 false;
         };
@@ -2259,46 +2547,32 @@ const Parser = struct {
             break :blk_0 false;
         };
     }
-    pub fn parseBitwiseOp(p: *Parser) Error!bool {
-        const def_index = @backingInt(Def.defBitwiseOp);
+    pub fn parseBitwiseAndOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitwiseAndOp);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
         p.depths[def_index] += 1;
         defer p.depths[def_index] -= 1;
         return blk_0: {
             const pos_0 = p.i;
-            if (try p.parsepre_op_white() and try p.parseBitwiseOpTok() and try p.parsepost_op_white()) break :blk_0 true;
+            if (try p.parsepre_op_white() and try p.parseBitwiseAndOpTok() and try p.parsepost_op_white()) break :blk_0 true;
             p.i = pos_0;
             if (blk_1: {
                 const pos_1 = p.i;
                 const match_1 = try p.parsepre_op_white();
                 p.i = pos_1;
                 break :blk_1 !match_1;
-            } and try p.parseBitwiseOpTok() and blk_1: {
+            } and try p.parseBitwiseAndOpTok() and blk_1: {
                 const pos_1 = p.i;
                 const match_1 = try p.parsepost_op_white();
                 p.i = pos_1;
                 break :blk_1 !match_1;
             }) break :blk_0 true;
             p.i = pos_0;
-            if (try p.parsepre_op_white() and try p.parseKEYWORD_catch() and try p.parsepost_op_white() and (try p.parsePayload() or true)) break :blk_0 true;
-            p.i = pos_0;
-            if (blk_1: {
-                const pos_1 = p.i;
-                const match_1 = try p.parsepre_op_white();
-                p.i = pos_1;
-                break :blk_1 !match_1;
-            } and try p.parseKEYWORD_catch() and blk_1: {
-                const pos_1 = p.i;
-                const match_1 = try p.parsepost_op_white();
-                p.i = pos_1;
-                break :blk_1 !match_1;
-            } and (try p.parsePayload() or true)) break :blk_0 true;
-            p.i = pos_0;
             break :blk_0 false;
         };
     }
-    pub fn parseBitwiseOpTok(p: *Parser) Error!bool {
-        const def_index = @backingInt(Def.defBitwiseOpTok);
+    pub fn parseBitwiseAndOpTok(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitwiseAndOpTok);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
         p.depths[def_index] += 1;
         defer p.depths[def_index] -= 1;
@@ -2318,11 +2592,125 @@ const Parser = struct {
                 break :blk_1 !match_1;
             }) break :blk_0 true;
             p.i = pos_0;
-            if (try p.parseCARET()) break :blk_0 true;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseBitwiseOrOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitwiseOrOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parsepre_op_white() and try p.parseBitwiseOrOpTok() and try p.parsepost_op_white()) break :blk_0 true;
             p.i = pos_0;
+            if (blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepre_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and try p.parseBitwiseOrOpTok() and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepost_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseBitwiseOrOpTok(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitwiseOrOpTok);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
             if (try p.parsePIPE()) break :blk_0 true;
             p.i = pos_0;
-            if (try p.parseKEYWORD_orelse()) break :blk_0 true;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseBitwiseXorOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitwiseXorOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parsepre_op_white() and try p.parseBitwiseXorOpTok() and try p.parsepost_op_white()) break :blk_0 true;
+            p.i = pos_0;
+            if (blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepre_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and try p.parseBitwiseXorOpTok() and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepost_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseBitwiseXorOpTok(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defBitwiseXorOpTok);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseCARET()) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseCatchOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defCatchOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parsepre_op_white() and try p.parseKEYWORD_catch() and try p.parsepost_op_white() and (try p.parsePayload() or true)) break :blk_0 true;
+            p.i = pos_0;
+            if (blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepre_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and try p.parseKEYWORD_catch() and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepost_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and (try p.parsePayload() or true)) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseOrElseOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defOrElseOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parsepre_op_white() and try p.parseKEYWORD_orelse() and try p.parsepost_op_white()) break :blk_0 true;
+            p.i = pos_0;
+            if (blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepre_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and try p.parseKEYWORD_orelse() and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepost_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
             p.i = pos_0;
             break :blk_0 false;
         };
@@ -2452,11 +2840,33 @@ const Parser = struct {
             p.i = pos_0;
             if (try p.parseSLASH()) break :blk_0 true;
             p.i = pos_0;
-            if (try p.parsePERCENT()) break :blk_0 true;
-            p.i = pos_0;
             if (try p.parseASTERISKPERCENT()) break :blk_0 true;
             p.i = pos_0;
             if (try p.parseASTERISKPIPE()) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
+    pub fn parseModOp(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defModOp);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parsepre_op_white() and try p.parsePERCENT() and try p.parsepost_op_white()) break :blk_0 true;
+            p.i = pos_0;
+            if (blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepre_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            } and try p.parsePERCENT() and blk_1: {
+                const pos_1 = p.i;
+                const match_1 = try p.parsepost_op_white();
+                p.i = pos_1;
+                break :blk_1 !match_1;
+            }) break :blk_0 true;
             p.i = pos_0;
             break :blk_0 false;
         };

@@ -2401,7 +2401,7 @@ pub const Const = struct {
             const shift: usize = @intCast(exponent - @bitSizeOf(Repr.Normalized.Fraction));
             mantissa.shiftRight(normalized_abs, shift);
             const final_limb_index = (shift - 1) / limb_bits;
-            const round_bits = normalized_abs.limbs[final_limb_index] << @truncate(-%shift) |
+            const round_bits = (normalized_abs.limbs[final_limb_index] << @truncate(-%shift)) |
                 @intFromBool(!std.mem.allEqual(Limb, normalized_abs.limbs[0..final_limb_index], 0));
             if (round_bits == 0) break :exactness .exact;
             round: switch (round) {
@@ -4902,10 +4902,10 @@ test "format" {
     try a.set(20000000000000000000); // > maxInt(u64)
     try testFormat(a, "20000000000000000000");
 
-    try a.set(1 << 64 * @sizeOf(usize) * 8);
+    try a.set(1 << (64 * @sizeOf(usize) * 8));
     try testFormat(a, "(BigInt)");
 
-    try a.set(-(1 << 64 * @sizeOf(usize) * 8));
+    try a.set(-(1 << (64 * @sizeOf(usize) * 8)));
     try testFormat(a, "(BigInt)");
 }
 

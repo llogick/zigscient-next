@@ -3475,11 +3475,11 @@ fn finishAirBookkeeping(self: *Self) void {
 fn finishAir(self: *Self, inst: Air.Inst.Index, result: MCValue, operands: [Air.Liveness.bpi - 1]Air.Inst.Ref) void {
     const tomb_bits = self.liveness.getTombBits(inst);
     for (0.., operands) |op_index, op| {
-        if (tomb_bits & @as(Air.Liveness.Bpi, 1) << @intCast(op_index) == 0) continue;
+        if (tomb_bits & (@as(Air.Liveness.Bpi, 1) << @intCast(op_index)) == 0) continue;
         if (self.reused_operands.isSet(op_index)) continue;
         self.processDeath(op.toIndexAllowNone() orelse continue);
     }
-    if (tomb_bits & 1 << (Air.Liveness.bpi - 1) == 0) {
+    if (tomb_bits & (1 << (Air.Liveness.bpi - 1)) == 0) {
         log.debug("%{d} => {}", .{ inst, result });
         const branch = &self.branch_stack.items[self.branch_stack.items.len - 1];
         branch.inst_table.putAssumeCapacityNoClobber(inst, result);

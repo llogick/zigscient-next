@@ -1764,7 +1764,7 @@ fn finishAir(
 ) !void {
     const tomb_bits = func.liveness.getTombBits(inst);
     for (0.., operands) |op_index, op| {
-        if (tomb_bits & @as(Air.Liveness.Bpi, 1) << @intCast(op_index) == 0) continue;
+        if (tomb_bits & (@as(Air.Liveness.Bpi, 1) << @intCast(op_index)) == 0) continue;
         if (func.reused_operands.isSet(op_index)) continue;
         try func.processDeath(op.toIndexAllowNone() orelse continue);
     }
@@ -6272,7 +6272,7 @@ fn airAsm(func: *Func, inst: Air.Inst.Index) !void {
                     "";
 
                 op.* = switch (args.items[
-                    arg_map.get(op_str["%[".len .. mod_index orelse op_str.len - "]".len]) orelse
+                    arg_map.get(op_str["%[".len .. mod_index orelse (op_str.len - "]".len)]) orelse
                         return func.fail("no matching constraint: '{s}'", .{op_str})
                 ]) {
                     .lea_symbol => |sym_off| if (mem.eql(u8, modifier, "plt")) blk: {

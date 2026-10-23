@@ -230,7 +230,7 @@ pub fn expand(noalias packet: []const u8, start_i: usize, noalias dest_buffer: [
             i += 1 + label_len;
         } else {
             return .{
-                len orelse i - start_i + 1,
+                len orelse (i - start_i + 1),
                 try .init(dest[0..dest_i]),
             };
         }

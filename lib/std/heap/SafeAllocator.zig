@@ -211,7 +211,7 @@ const Bucket = struct {
 
     fn of(s: *SafeAllocator, ptr: [*]u8) *Bucket {
         const size_log2 = s.bucket_size_log2;
-        return @ptrFromInt(@intFromPtr(ptr) >> @intCast(size_log2) << @intCast(size_log2));
+        return @ptrFromInt((@intFromPtr(ptr) >> @intCast(size_log2)) << @intCast(size_log2));
     }
 
     fn fillAt(s: *SafeAllocator, ptr: [*]const u8) u32 {

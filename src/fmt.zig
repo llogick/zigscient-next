@@ -41,6 +41,7 @@ const Fmt = struct {
     out_buffer: std.Io.Writer.Allocating,
     stdout_writer: *Io.File.Writer,
     stats: ?*Stats,
+    fix_precedence: bool,
 
     const SeenMap = std.AutoHashMap(Io.File.INode, void);
 };
@@ -66,6 +67,7 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
     var check_ast_flag = false;
     var force_zon = false;
     var enable_stats = false;
+    var fix_precedence = false;
 
     var input_files = std.array_list.Managed([]const u8).init(gpa);
     defer input_files.deinit();
@@ -107,6 +109,8 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
                     try excluded_files.append(next_arg);
                 } else if (mem.eql(u8, arg, "--zon")) {
                     force_zon = true;
+                } else if (mem.eql(u8, arg, "--upgrade")) {
+                    fix_precedence = true;
                 } else {
                     fatal("unrecognized parameter: {q}", .{arg});
                 }
@@ -198,6 +202,7 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
         .out_buffer = .init(gpa),
         .stdout_writer = &stdout_writer,
         .stats = null,
+        .fix_precedence = fix_precedence,
     };
     defer fmt.seen.deinit();
     defer fmt.out_buffer.deinit();
@@ -323,7 +328,8 @@ fn fmtPathDir(
 
         if (mem.startsWith(u8, entry.name, ".")) continue;
 
-        if (is_dir or entry.kind == .file and (mem.endsWith(u8, entry.name, ".zig") or mem.endsWith(u8, entry.name, ".zon"))) {
+        const is_zig_or_zon = entry.kind == .file and (mem.endsWith(u8, entry.name, ".zig") or mem.endsWith(u8, entry.name, ".zon"));
+        if (is_dir or is_zig_or_zon) {
             const full_path = try fs.path.join(fmt.gpa, &[_][]const u8{ file_path, entry.name });
             defer fmt.gpa.free(full_path);
 
@@ -383,6 +389,92 @@ fn fmtPathFile(
 
     var tree = try std.zig.Ast.parse(gpa, source_code, .{ .mode = mode });
     defer tree.deinit(gpa);
+
+    var fixups: std.zig.Ast.Render.Fixups = .{};
+    defer fixups.deinit(gpa);
+
+    fix: {
+        if (!fmt.fix_precedence) break :fix;
+
+        var operators_to_fix: std.AutoHashMapUnmanaged(std.zig.Ast.TokenIndex, void) = .empty;
+        defer operators_to_fix.deinit(gpa);
+
+        // Gather ambiguous operator precedence error tokens for quick lookup later
+        var remaining_errors: usize = tree.errors.len;
+        for (tree.errors) |err| {
+            switch (err.tag) {
+                .hint_operator_precedence_left => {
+                    try operators_to_fix.put(gpa, err.token - @as(u32, @intCast(err.extra.offset)), {});
+                    remaining_errors -= 1;
+                },
+                .hint_operator_precedence_right => {
+                    try operators_to_fix.put(gpa, err.token, {});
+                    remaining_errors -= 1;
+                },
+                .ambiguous_operator_precedence,
+                .illegal_chained_operators,
+                .previous_ambiguous_operator,
+                => remaining_errors -= 1,
+                else => continue,
+            }
+        }
+
+        if (operators_to_fix.count() == 0) break :fix;
+
+        // Build a new error list without the ambiguous operator precedence errors/notes
+        var fixed_errors: std.ArrayList(std.zig.Ast.Error) = try .initCapacity(gpa, remaining_errors);
+        for (tree.errors) |err| {
+            switch (err.tag) {
+                .ambiguous_operator_precedence,
+                .illegal_chained_operators,
+                .previous_ambiguous_operator,
+                .hint_operator_precedence_left,
+                .hint_operator_precedence_right,
+                => continue,
+                else => {
+                    fixed_errors.appendAssumeCapacity(err);
+                },
+            }
+        }
+        gpa.free(tree.errors);
+        tree.errors = fixed_errors.toOwnedSliceAssert();
+
+        // Find the nodes we need to add parens to and add them to the list
+        for (tree.nodes.items(.tag), 0..) |tag, i| {
+            switch (tag) {
+                .merge_error_sets,
+                .mul,
+                .div,
+                .mod,
+                .mul_wrap,
+                .mul_sat,
+                .add,
+                .sub,
+                .array_cat,
+                .add_wrap,
+                .sub_wrap,
+                .add_sat,
+                .sub_sat,
+                .shl,
+                .shl_sat,
+                .shr,
+                .bit_and,
+                .bit_xor,
+                .bit_or,
+                .@"orelse",
+                .@"catch",
+                .bool_and,
+                .bool_or,
+                => {
+                    const main_tok = tree.nodes.get(i).main_token;
+                    if (operators_to_fix.contains(main_tok)) {
+                        try fixups.insert_parentheses.put(gpa, @fromBackingInt(@intCast(i)), {});
+                    }
+                },
+                else => {},
+            }
+        }
+    }
 
     if (tree.errors.len != 0) {
         try std.zig.printAstErrorsToStderr(gpa, io, tree, file_path, fmt.color);
@@ -491,7 +583,7 @@ fn fmtPathFile(
     fmt.out_buffer.clearRetainingCapacity();
     try fmt.out_buffer.ensureTotalCapacity(source_code.len);
 
-    tree.render(gpa, &fmt.out_buffer.writer, .{}) catch |err| switch (err) {
+    tree.render(gpa, &fmt.out_buffer.writer, fixups) catch |err| switch (err) {
         error.WriteFailed, error.OutOfMemory => return error.OutOfMemory,
     };
     if (!mem.eql(u8, fmt.out_buffer.written(), source_code)) {

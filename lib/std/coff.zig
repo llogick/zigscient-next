@@ -2035,7 +2035,7 @@ pub const ArchiveMemberHeader = extern struct {
         if (trim.len == 0) return error.BadName;
         return if (trim[0] == '/') name: {
             if (trim.len == 1 or
-                trim.len == 2 and trim[1] == '/')
+                (trim.len == 2 and trim[1] == '/'))
                 break :name trim;
 
             const offset = std.fmt.parseUnsigned(u50, trim[1..], 10) catch

@@ -1894,20 +1894,77 @@ const B = error{Two};
       </div>
       {#header_close#}
       {#header_open|Precedence#}
+      <p>
+      Zig features partial operator precedence: not every operator has a defined precedence with
+      every other operator. Mixing operators with ambiguous precedence is prohibited and parentheses
+      are mandatory. Consequently, valid code is typically auto-descriptive; when reading and
+      writing Zig code, there are very few precedence rules you'll need to remember.
+      </p>
+
+      {#code|operator_precedence.zig#}
+
+      {#code|ambiguous_precedence_orelse.zig#}
+
+      <p>
+      There is a set of operators (prefix operators, suffix operators, etc) that have unambiguously
+      higher precedence than all other operators. That set of operators has the following precedence table:
+      </p>
+
       <pre>{#syntax#}x() x[] x.y x.* x.?
 a!b
 x{}
 !x -x -%x ~x &x ?x try
-* / % *% *| ||
-+ - ++ +% -% +| -|
-<< >> <<|
-& ^ | orelse catch
+// lower precedence operators omitted{#endsyntax#}</pre>
+
+      <p>
+      For the other operators, simplified operator precedence tables are provided below, each containing only
+      the information that you'll need to know when reading/writing code that uses that particular category of operators.
+      The operators that have ambiguous precedence or semantic errors with the relevant operators have been omitted,
+      as have the operators with higher precedence (those shown above).
+      </p>
+
+      <p>
+      For arithmetic operators:
+      </p>
+
+      <pre>{#syntax#}* / *% *| %
++ - +% -% +| -|
 == != < > <= >=
-and
-or
-= *= *%= *|= /= %= += +%= +|= -= -%= -|= <<= <<|= >>= &= ^= |={#endsyntax#}</pre>
+and or{#endsyntax#}</pre>
+
+      <p>
+      For bitwise operators:
+      </p>
+
+      <pre>{#syntax#}<< <<| >> & ^ |
+== != < > <= >=
+and or{#endsyntax#}</pre>
+
+      <p>
+      For null and error recovery operators:
+      </p>
+
+      <pre>{#syntax#}catch orelse{#endsyntax#}</pre>
+
+      <p>
+      For error set operators:
+      </p>
+
+      <pre>{#syntax#}||{#endsyntax#}</pre>
+
+      <p>
+      For array concatenation operators:
+      </p>
+
+      <pre>{#syntax#}++{#endsyntax#}</pre>
+
+      <p>
+      The full precedence rules can be found in the {#link|Grammar#}, which also includes an {#link|Operator Precedence Flowchart#}.
+      </p>
+
       {#header_close#}
       {#header_close#}
+
       {#header_open|Arrays#}
       {#code|test_arrays.zig#}
 
@@ -7879,6 +7936,42 @@ fn readU32Be() u32 {}
       {#header_open|Appendix#}
       {#header_open|Grammar#}
       {#grammar#}
+      {#header_open|Operator Precedence Flowchart#}
+      <p>
+      To help understand the grammar, this flowchart is provided for the operator precedence. 
+      The bottom represents any location where an expression may occur and the topmost row represents
+      a parenthesized expression. An operator will have a higher precedence (and therefore be the parent) to 
+      another node if it is strictly lower on the tree (having a directed path from one to another). This is inverted from classical precedence, but 
+      is closer to how a recursive descent parser views the grammar. 
+      </p>
+      <pre><code>
+                     ┏━━━━━━━━━━━━━━━━━━━┓   
+                     ┃(expr)             ┃                  
+                     ┃x() x[] x.y x.* x.?┃                  
+                     ┃E!T                ┃                  
+                     ┃x{}                ┃                  
+                     ┃!x -x -%x ~x &x ?x ┃                  
+                     ┗━━━━━━━━━▲━━━━━━━━━┛                  
+          ┌─────────────┬──────┴───────┬───────┬──┬──┬─┐         
+          │             │              │       │  │  │ │         
+   ┏━━━━━━┷━━━━━┓╭Non╌Chaining╮ ╭Non╌Chaining╮┏┷┓┏┷┓┏┷┓│         
+   ┃* *% *| / ||┃╎      %     ╎ ╎ &lt;&lt; &lt;&lt;|  >> ╎┃&┃┃^┃┃|┃│         
+   ┗━━━━━━▲━━━━━┛╰╌╌╌╌╌╌▲╌╌╌╌╌╯ ╰╌╌╌╌╌╌▲╌╌╌╌╌╯┗▲┛┗▲┛┗▲┛│         
+       ┏━━┷━━━━━━━━━━━━━┷━┓       ┌────┴───────┴──┴──┘ │         
+       ┃+ - +% -% +| -| ++┃       │                    │         
+       ┗━━━━━━━━━━━▲━━━━━━┛       │                    │         
+                  ╭┴╌Non-Chaining╌┴╮                   │         
+                  ╎== !=  &lt; &lt;= >= >╎                   │         
+                  ╰╌╌╌▲╌╌╌╌▲╌╌╌╌╌╌╌╯      ┌──────┬─────┘                
+                    ┏━┷━┓┏━┷━┓        ┏━━━┷━━┓┏━━┷━━┓                  
+                    ┃and┃┃or ┃        ┃orelse┃┃catch┃                  
+                    ┗━▲━┛┗━▲━┛        ┗━━━▲━━┛┗━━▲━━┛                  
+                   ╭╌╌┴╌╌╌╌┴╌╌╌╌╌╌╌╌╌╌╌╌╌╌┴╌╌╌╌╌╌┴╌╮ 
+                   ╎    Any expression location    ╎ 
+                   ╰╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╯ 
+                                                              
+      </code></pre>
+      {#header_close#}
       {#header_close#}
       {#header_open|Zen#}
       <ul>

@@ -11,11 +11,11 @@ pub fn deinit(si: *SelfInfo, io: Io) void {
     const gpa = std.debug.getDebugInfoAllocator();
     for (si.modules.keys()) |*module| {
         unwind: {
-            const u = &(module.unwind orelse break :unwind catch break :unwind);
+            const u = &((module.unwind orelse break :unwind) catch break :unwind);
             if (u.dwarf) |*dwarf| dwarf.deinit(gpa);
         }
         file: {
-            const f = &(module.file orelse break :file catch break :file);
+            const f = &((module.file orelse break :file) catch break :file);
             f.deinit(gpa);
         }
     }

@@ -176,7 +176,7 @@ fn acosBinary64(x: f64) f64 {
     // |x| >= 1 or nan
     if (ix >= 0x3ff0_0000) {
         const lx: u32 = @truncate(@as(u64, @bitCast(x)));
-        if ((ix - 0x3ff0_0000 | lx) == 0) {
+        if (((ix - 0x3ff0_0000) | lx) == 0) {
             if (hx >> 31 != 0) {
                 return 2.0 * pio2_hi + 0x1.0p-120;
             }

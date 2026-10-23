@@ -557,7 +557,7 @@ fn Sha2x64(comptime iv: Iv64, digest_bits: comptime_int) type {
             }
 
             if (digest_bits % 8 != 0) @compileError("impl doesn't support non-byte digest_len");
-            const bytes_left = digest_bits / 8 % 8;
+            const bytes_left = (digest_bits / 8) % 8;
             if (bytes_left > 0) {
                 const rest = d.s[(digest_bits / 64)];
                 var buf: [8]u8 = undefined;

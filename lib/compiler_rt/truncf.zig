@@ -279,7 +279,7 @@ inline fn truncf(comptime dst_t: type, comptime src_t: type, a: src_t) dst_t {
             absResult = 0;
         } else {
             const sticky: src_rep_t = @intFromBool(significand << @intCast(srcBits - shift) != 0);
-            const denormalizedSignificand: src_rep_t = significand >> @intCast(shift) | sticky;
+            const denormalizedSignificand: src_rep_t = (significand >> @intCast(shift)) | sticky;
             absResult = @intCast(denormalizedSignificand >> (srcSigBits - dstSigBits));
             const roundBits: src_rep_t = denormalizedSignificand & roundMask;
             if (roundBits > halfway) {
@@ -362,7 +362,7 @@ inline fn trunc_f80(comptime dst_t: type, a: f80) dst_t {
             abs_result = 0;
         } else {
             const sticky = @intFromBool(a_rep.fraction << @intCast(shift) != 0);
-            const denormalized_significand = a_rep.fraction >> @intCast(shift) | sticky;
+            const denormalized_significand = (a_rep.fraction >> @intCast(shift)) | sticky;
             abs_result = @intCast(denormalized_significand >> (src_sig_bits - dst_sig_bits));
             const round_bits = denormalized_significand & round_mask;
             if (round_bits > halfway) {
@@ -375,7 +375,7 @@ inline fn trunc_f80(comptime dst_t: type, a: f80) dst_t {
         }
     }
 
-    const result align(@alignOf(dst_t)) = abs_result | @as(dst_rep_t, sign) << dst_bits - 16;
+    const result align(@alignOf(dst_t)) = abs_result | (@as(dst_rep_t, sign) << (dst_bits - 16));
     return @bitCast(result);
 }
 

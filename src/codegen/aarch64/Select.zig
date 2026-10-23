@@ -8099,7 +8099,7 @@ fn movImmediate(isel: *Select, dst_reg: Register, src_imm: u64) !void {
                     .{ .immediate = .{
                         .N = @fromBackingInt(@intCast(elem_width >> 6)),
                         .immr = hi + mid_masked,
-                        .imms = ((((lo + hi) & smask) | mid_masked) - 1) | -%@as(u6, @truncate(elem_width)) << 1,
+                        .imms = ((((lo + hi) & smask) | mid_masked) - 1) | (-%@as(u6, @truncate(elem_width)) << 1),
                     } },
                 ));
             }
@@ -10831,7 +10831,7 @@ pub const Value = struct {
                                         if (feat_fp16) {
                                             const Repr = std.math.FloatRepr(f16);
                                             const repr: Repr = @bitCast(imm);
-                                            if (repr.mantissa & std.math.maxInt(Repr.Mantissa) >> 5 == 0 and switch (repr.exponent) {
+                                            if (repr.mantissa & (std.math.maxInt(Repr.Mantissa) >> 5) == 0 and switch (repr.exponent) {
                                                 .denormal, .infinite => false,
                                                 else => std.math.cast(i3, repr.exponent.unbias() - 1) != null,
                                             }) break :free try isel.emit(.fmov(mat.ra.h(), .{ .immediate = imm }));
@@ -10855,7 +10855,7 @@ pub const Value = struct {
                                         } };
                                         const Repr = std.math.FloatRepr(f32);
                                         const repr: Repr = @bitCast(imm);
-                                        if (repr.mantissa & std.math.maxInt(Repr.Mantissa) >> 5 == 0 and switch (repr.exponent) {
+                                        if (repr.mantissa & (std.math.maxInt(Repr.Mantissa) >> 5) == 0 and switch (repr.exponent) {
                                             .denormal, .infinite => false,
                                             else => std.math.cast(i3, repr.exponent.unbias() - 1) != null,
                                         }) break :free try isel.emit(.fmov(mat.ra.s(), .{ .immediate = @floatCast(imm) }));
@@ -10878,7 +10878,7 @@ pub const Value = struct {
                                         } };
                                         const Repr = std.math.FloatRepr(f64);
                                         const repr: Repr = @bitCast(imm);
-                                        if (repr.mantissa & std.math.maxInt(Repr.Mantissa) >> 5 == 0 and switch (repr.exponent) {
+                                        if (repr.mantissa & (std.math.maxInt(Repr.Mantissa) >> 5) == 0 and switch (repr.exponent) {
                                             .denormal, .infinite => false,
                                             else => std.math.cast(i3, repr.exponent.unbias() - 1) != null,
                                         }) break :free try isel.emit(.fmov(mat.ra.d(), .{ .immediate = @floatCast(imm) }));

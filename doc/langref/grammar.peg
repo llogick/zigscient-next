@@ -127,21 +127,34 @@ AssignExpr <- Expr (AssignOp Expr / (COMMA Expr)+ EQUAL Expr / !AssignOp !COMMA)
 
 SingleAssignExpr <- Expr (AssignOp Expr / !AssignOp)
 
-Expr <- BoolOrExpr
+Expr <- PrefixExpr (OrElseExpr / CatchExpr / BoolExpr)
 
-BoolOrExpr <- BoolAndExpr (OrOp BoolAndExpr)* !OrOp
+OrElseExpr <- (OrElseOp PrefixExpr)+ !RecoveryNonmixingOp
+CatchExpr <- (CatchOp PrefixExpr)+ !RecoveryNonmixingOp
+RecoveryNonmixingOp <- ControlOp / CompareOp / BitwiseNonmixingOp
+ControlOp <- OrElseOp / CatchOp / AndOp / OrOp
 
-BoolAndExpr <- CompareExpr (AndOp CompareExpr)* !AndOp
+BoolExpr <- CompareExpr (BoolAndExpr / BoolOrExpr / !ControlOp)
+BoolAndExpr <- (AndOp PrefixExpr CompareExpr)+ !ControlOp
+BoolOrExpr <- (OrOp PrefixExpr CompareExpr)+ !ControlOp
 
-CompareExpr <- BitwiseExpr (CompareOp BitwiseExpr)? !CompareOp
+CompareExpr <- CompareOperand (CompareOp PrefixExpr CompareOperand)? !(CompareOp / OrElseOp / CatchOp)
+CompareOperand
+    <- (BitwiseOrOp PrefixExpr)+ !BitwiseNonmixingOp
+     / (BitwiseAndOp PrefixExpr)+ !BitwiseNonmixingOp
+     / (BitwiseXorOp PrefixExpr)+ !BitwiseNonmixingOp
+     / BitShiftOp PrefixExpr !BitwiseNonmixingOp
+     / !BitOp AdditionExpr
 
-BitwiseExpr <- BitShiftExpr (BitwiseOp BitShiftExpr)* !BitwiseOp
+BitOp <- BitwiseOrOp / BitwiseAndOp / BitwiseXorOp / BitShiftOp
+BitwiseNonmixingOp <- MultiplyNonmixingOp / AdditionOp
 
-BitShiftExpr <- AdditionExpr (BitShiftOp AdditionExpr)* !BitShiftOp
+AdditionExpr <- MulOrModExpr (AdditionOp PrefixExpr MulOrModExpr)* !(AdditionOp / BitOp / OrElseOp / CatchOp)
 
-AdditionExpr <- MultiplyExpr (AdditionOp MultiplyExpr)* !AdditionOp
-
-MultiplyExpr <- PrefixExpr (MultiplyOp PrefixExpr)* !MultiplyOp
+MulOrModExpr <- ModExpr / !ModOp MultiplyExpr
+ModExpr <- ModOp PrefixExpr !MultiplyNonmixingOp
+MultiplyExpr <- (MultiplyOp PrefixExpr)* !MultiplyNonmixingOp
+MultiplyNonmixingOp <- MultiplyOp / ModOp / BitOp / OrElseOp / CatchOp
 
 PrefixExpr <- PrefixOp* !PrefixOp PrimaryExpr
 
@@ -323,15 +336,26 @@ CompareOpTok
      / LARROWEQUAL
      / RARROWEQUAL
 
-BitwiseOp <- pre_op_white BitwiseOpTok post_op_white
-           / !pre_op_white BitwiseOpTok !post_op_white
-           / pre_op_white KEYWORD_catch post_op_white Payload?
-           / !pre_op_white KEYWORD_catch !post_op_white Payload?
-BitwiseOpTok
+BitwiseAndOp <- pre_op_white BitwiseAndOpTok post_op_white
+           / !pre_op_white BitwiseAndOpTok !post_op_white
+BitwiseAndOpTok
     <- AMPERSAND ![&]
-     / CARET
-     / PIPE
-     / KEYWORD_orelse
+
+BitwiseOrOp <- pre_op_white BitwiseOrOpTok post_op_white
+           / !pre_op_white BitwiseOrOpTok !post_op_white
+BitwiseOrOpTok
+    <- PIPE
+
+BitwiseXorOp <- pre_op_white BitwiseXorOpTok post_op_white
+           / !pre_op_white BitwiseXorOpTok !post_op_white
+BitwiseXorOpTok
+    <- CARET
+
+CatchOp <- pre_op_white KEYWORD_catch post_op_white Payload?
+        / !pre_op_white KEYWORD_catch !post_op_white Payload?
+
+OrElseOp <- pre_op_white KEYWORD_orelse post_op_white
+         / !pre_op_white KEYWORD_orelse !post_op_white
 
 BitShiftOp <- pre_op_white BitShiftOpTok post_op_white
            / !pre_op_white BitShiftOpTok !post_op_white
@@ -357,9 +381,11 @@ MultiplyOpTok
     <- PIPE2
      / ASTERISK
      / SLASH
-     / PERCENT
      / ASTERISKPERCENT
      / ASTERISKPIPE
+
+ModOp <- pre_op_white PERCENT post_op_white
+      / !pre_op_white PERCENT !post_op_white
 
 PrefixOp
     <- EXCLAMATIONMARK

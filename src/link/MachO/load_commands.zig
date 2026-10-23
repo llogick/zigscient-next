@@ -266,8 +266,8 @@ pub fn writeDylibIdLC(macho_file: *MachO, writer: *Writer) !void {
     try writeDylibLC(.{
         .cmd = .ID_DYLIB,
         .name = install_name,
-        .current_version = @as(u32, @intCast(curr.major << 16 | curr.minor << 8 | curr.patch)),
-        .compatibility_version = @as(u32, @intCast(compat.major << 16 | compat.minor << 8 | compat.patch)),
+        .current_version = @as(u32, @intCast((curr.major << 16) | (curr.minor << 8) | curr.patch)),
+        .compatibility_version = @as(u32, @intCast((compat.major << 16) | (compat.minor << 8) | compat.patch)),
     }, writer);
 }
 

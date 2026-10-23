@@ -70,7 +70,7 @@ pub fn make(
 
     try lowerZigArgs(arena, compile_index, maker, progress_node, &argv, false, false);
 
-    const incremental = conf_comp.flags4.incremental.toBool() orelse graph.incremental == true;
+    const incremental = conf_comp.flags4.incremental.toBool() orelse graph.incremental orelse false;
 
     const opt_cache_digest = Step.evalZigProcess(
         compile_index,

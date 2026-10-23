@@ -1264,7 +1264,7 @@ const Poly = struct {
             const b1 = @as(i16, buf[3 * i + 1]);
             const b2 = @as(i16, buf[3 * i + 2]);
             ret.cs[2 * i] = b0 | ((b1 & 0xf) << 8);
-            ret.cs[2 * i + 1] = (b1 >> 4) | b2 << 4;
+            ret.cs[2 * i + 1] = (b1 >> 4) | (b2 << 4);
         }
         return ret;
     }

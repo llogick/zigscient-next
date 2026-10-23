@@ -31,7 +31,7 @@ pub fn printInstruction(dis: Disassemble, inst: aarch64.encoding.Instruction, wr
             .unallocated => break :unallocated,
             .pc_relative_addressing => |pc_relative_addressing| {
                 const group = pc_relative_addressing.group;
-                const imm = (@as(i33, group.immhi) << 2 | @as(i33, group.immlo) << 0) + @as(i33, switch (group.op) {
+                const imm = ((@as(i33, group.immhi) << 2) | (@as(i33, group.immlo) << 0)) + @as(i33, switch (group.op) {
                     .adr => aarch64.encoding.Instruction.size,
                     .adrp => 0,
                 });
@@ -311,7 +311,7 @@ pub fn printInstruction(dis: Disassemble, inst: aarch64.encoding.Instruction, wr
                 .hint => |hint| return writer.print("{f}{s}#0x{x}", .{
                     fmtCase(.hint, dis.case),
                     dis.mnemonic_operands_separator,
-                    @as(u7, hint.CRm) << 3 | @as(u7, hint.op2) << 0,
+                    (@as(u7, hint.CRm) << 3) | (@as(u7, hint.op2) << 0),
                 }),
                 else => |decoded| return writer.print("{f}", .{fmtCase(decoded, dis.case)}),
             },
@@ -365,8 +365,8 @@ pub fn printInstruction(dis: Disassemble, inst: aarch64.encoding.Instruction, wr
                     dis.mnemonic_operands_separator,
                     group.Rt.decode(.{}).general(@fromBackingInt(@intCast(group.b5))).fmtCase(dis.case),
                     dis.operands_separator,
-                    @as(u6, group.b5) << 5 |
-                        @as(u6, group.b40) << 0,
+                    (@as(u6, group.b5) << 5) |
+                        (@as(u6, group.b40) << 0),
                     dis.operands_separator,
                     @as(u8, if (imm < 0) '-' else '+'),
                     @abs(imm) << 2,

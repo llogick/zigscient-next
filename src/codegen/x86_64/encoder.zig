@@ -844,25 +844,25 @@ fn Encoder(comptime opts: Options) type {
                 try self.w.writeByte(0b1100_0100);
 
                 try self.w.writeByte(
-                    @as(u8, ~@intFromBool(fields.r)) << 7 |
-                        @as(u8, ~@intFromBool(fields.x)) << 6 |
-                        @as(u8, ~@intFromBool(fields.b)) << 5 |
-                        @as(u8, @backingInt(fields.m)) << 0,
+                    (@as(u8, ~@intFromBool(fields.r)) << 7) |
+                        (@as(u8, ~@intFromBool(fields.x)) << 6) |
+                        (@as(u8, ~@intFromBool(fields.b)) << 5) |
+                        (@as(u8, @backingInt(fields.m)) << 0),
                 );
 
                 try self.w.writeByte(
-                    @as(u8, @intFromBool(fields.w)) << 7 |
-                        @as(u8, ~@as(u4, @intCast(fields.v.enc()))) << 3 |
-                        @as(u8, @intFromBool(fields.l)) << 2 |
-                        @as(u8, @backingInt(fields.p)) << 0,
+                    (@as(u8, @intFromBool(fields.w)) << 7) |
+                        (@as(u8, ~@as(u4, @intCast(fields.v.enc()))) << 3) |
+                        (@as(u8, @intFromBool(fields.l)) << 2) |
+                        (@as(u8, @backingInt(fields.p)) << 0),
                 );
             } else {
                 try self.w.writeByte(0b1100_0101);
                 try self.w.writeByte(
-                    @as(u8, ~@intFromBool(fields.r)) << 7 |
-                        @as(u8, ~@as(u4, @intCast(fields.v.enc()))) << 3 |
-                        @as(u8, @intFromBool(fields.l)) << 2 |
-                        @as(u8, @backingInt(fields.p)) << 0,
+                    (@as(u8, ~@intFromBool(fields.r)) << 7) |
+                        (@as(u8, ~@as(u4, @intCast(fields.v.enc()))) << 3) |
+                        (@as(u8, @intFromBool(fields.l)) << 2) |
+                        (@as(u8, @backingInt(fields.p)) << 0),
                 );
             }
         }
@@ -910,7 +910,7 @@ fn Encoder(comptime opts: Options) type {
         ///
         /// Remember to add a REX prefix byte if reg or rm are extended!
         pub fn modRm(self: Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
-            try self.w.writeByte(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
+            try self.w.writeByte((@as(u8, mod) << 6) | (@as(u8, reg_or_opx) << 3) | rm);
         }
 
         /// Construct a ModR/M byte using direct r/m addressing
@@ -996,7 +996,7 @@ fn Encoder(comptime opts: Options) type {
         ///
         /// Remember to add a REX prefix byte if index or base are extended!
         pub fn sib(self: Self, scale: u2, index: u3, base: u3) !void {
-            try self.w.writeByte(@as(u8, scale) << 6 | @as(u8, index) << 3 | base);
+            try self.w.writeByte((@as(u8, scale) << 6) | (@as(u8, index) << 3) | base);
         }
 
         /// Construct a SIB byte with scale * index + base, no frills.

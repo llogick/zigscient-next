@@ -5503,7 +5503,7 @@ inline fn shrExact(comptime Type: type, lhs: Type, rhs: Type) Type {
     const bit_cast_rhs: AsSignedness(Type, .unsigned) = @bitCast(rhs);
     const truncate_rhs: Log2Int(Type) = @truncate(bit_cast_rhs);
     const final_rhs = if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % @as(Log2Int(Type), @splat(bits)) else truncate_rhs;
-    return @shrExact(lhs >> final_rhs << final_rhs, final_rhs);
+    return @shrExact((lhs >> final_rhs) << final_rhs, final_rhs);
 }
 test shrExact {
     const test_shr_exact = binary(shrExact, .{});
@@ -5527,7 +5527,7 @@ inline fn shlExactUnsafe(comptime Type: type, lhs: Type, rhs: Type) Type {
     const bit_cast_rhs: AsSignedness(Type, .unsigned) = @bitCast(rhs);
     const truncate_rhs: Log2Int(Type) = @truncate(bit_cast_rhs);
     const final_rhs = if (comptime cast(Log2Int(Scalar(Type)), @bitSizeOf(Scalar(Type)))) |bits| truncate_rhs % @as(Log2Int(Type), @splat(bits)) else truncate_rhs;
-    return @shlExact(lhs << final_rhs >> final_rhs, final_rhs);
+    return @shlExact((lhs << final_rhs) >> final_rhs, final_rhs);
 }
 test shlExactUnsafe {
     const test_shl_exact_unsafe = binary(shlExactUnsafe, .{});

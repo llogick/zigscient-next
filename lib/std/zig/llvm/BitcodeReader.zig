@@ -404,7 +404,7 @@ fn readFixed(bc: *BitcodeReader, comptime T: type, bits: u7) !T {
         if (bc.bit_offset == 0) bc.bit_buffer = try bc.read32Bits();
         const chunk_len = @min(@as(u6, 32) - bc.bit_offset, remaining);
         const chunk_mask = @as(u32, std.math.maxInt(u32)) >> @intCast(32 - chunk_len);
-        result |= @as(T, @intCast(bc.bit_buffer >> bc.bit_offset & chunk_mask)) << @intCast(shift);
+        result |= @as(T, @intCast((bc.bit_buffer >> bc.bit_offset) & chunk_mask)) << @intCast(shift);
         shift += @intCast(chunk_len);
         remaining -= chunk_len;
         bc.bit_offset = @truncate(bc.bit_offset + chunk_len);

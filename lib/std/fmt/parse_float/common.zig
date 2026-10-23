@@ -82,7 +82,7 @@ pub fn isDigit(c: u8, comptime base: u8) bool {
     return if (base == 10)
         '0' <= c and c <= '9'
     else
-        '0' <= c and c <= '9' or 'a' <= c and c <= 'f' or 'A' <= c and c <= 'F';
+        ('0' <= c and c <= '9') or ('a' <= c and c <= 'f') or ('A' <= c and c <= 'F');
 }
 
 /// Returns the underlying storage type used for the mantissa of floating-point type.

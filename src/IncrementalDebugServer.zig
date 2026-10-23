@@ -243,7 +243,7 @@ fn handleCommand(zcu: *Zcu, w: *Io.Writer, cmd_str: []const u8, arg_str: []const
         for (zcu.incremental_debug_state.types.keys()) |type_ip_index| {
             const ty: Type = .fromInterned(type_ip_index);
             const ty_name = ty.containerTypeName(ip).fqn.toSlice(ip);
-            const success = switch (@as(u2, @intFromBool(anchor_start)) << 1 | @intFromBool(anchor_end)) {
+            const success = switch ((@as(u2, @intFromBool(anchor_start)) << 1) | @intFromBool(anchor_end)) {
                 0b00 => std.mem.find(u8, ty_name, query) != null,
                 0b01 => std.mem.endsWith(u8, ty_name, query),
                 0b10 => std.mem.startsWith(u8, ty_name, query),
@@ -264,7 +264,7 @@ fn handleCommand(zcu: *Zcu, w: *Io.Writer, cmd_str: []const u8, arg_str: []const
         for (zcu.incremental_debug_state.navs.keys()) |nav_index| {
             const nav = ip.getNav(nav_index);
             const nav_fqn = nav.fqn.toSlice(ip);
-            const success = switch (@as(u2, @intFromBool(anchor_start)) << 1 | @intFromBool(anchor_end)) {
+            const success = switch ((@as(u2, @intFromBool(anchor_start)) << 1) | @intFromBool(anchor_end)) {
                 0b00 => std.mem.find(u8, nav_fqn, query) != null,
                 0b01 => std.mem.endsWith(u8, nav_fqn, query),
                 0b10 => std.mem.startsWith(u8, nav_fqn, query),

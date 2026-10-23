@@ -209,7 +209,7 @@ fn testErrorSetType() !void {
 
     const a: MyErrSet!i32 = 5678;
     const b: MyErrSet!i32 = MyErrSet.OutOfMemory;
-    try expect(b catch error.OutOfMemory == error.OutOfMemory);
+    try expect((b catch error.OutOfMemory) == error.OutOfMemory);
 
     if (a) |value| try expect(value == 5678) else |err| switch (err) {
         error.OutOfMemory => unreachable,

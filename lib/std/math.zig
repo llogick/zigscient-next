@@ -710,7 +710,7 @@ pub fn rotr(comptime T: type, x: T, r: anytype) T {
 
         if (comptime isPowerOfTwo(@typeInfo(T).int.bits)) {
             const ar: Log2Int(T) = @intCast(@mod(r, @typeInfo(T).int.bits));
-            return x >> ar | x << (1 +% ~ar);
+            return (x >> ar) | (x << (1 +% ~ar));
         } else {
             const ar = @mod(r, @typeInfo(T).int.bits);
             return shr(T, x, ar) | shl(T, x, @typeInfo(T).int.bits - ar);
@@ -753,7 +753,7 @@ pub fn rotl(comptime T: type, x: T, r: anytype) T {
 
         if (comptime isPowerOfTwo(@typeInfo(T).int.bits)) {
             const ar: Log2Int(T) = @intCast(@mod(r, @typeInfo(T).int.bits));
-            return x << ar | x >> 1 +% ~ar;
+            return (x << ar) | (x >> (1 +% ~ar));
         } else {
             const ar = @mod(r, @typeInfo(T).int.bits);
             return shl(T, x, ar) | shr(T, x, @typeInfo(T).int.bits - ar);
@@ -1542,21 +1542,21 @@ pub const Order = enum {
         const neg: i32 = -1;
         const zero: i32 = 0;
         const pos: i32 = 1;
-        try testing.expect(order(zero, neg).differ() orelse
-            order(pos, zero) == .gt);
-        try testing.expect(order(zero, zero).differ() orelse
-            order(zero, zero) == .eq);
-        try testing.expect(order(pos, pos).differ() orelse
-            order(neg, zero) == .lt);
-        try testing.expect(order(zero, zero).differ() orelse
+        try testing.expect((order(zero, neg).differ() orelse
+            order(pos, zero)) == .gt);
+        try testing.expect((order(zero, zero).differ() orelse
+            order(zero, zero)) == .eq);
+        try testing.expect((order(pos, pos).differ() orelse
+            order(neg, zero)) == .lt);
+        try testing.expect((order(zero, zero).differ() orelse
             order(pos, neg).differ() orelse
-            order(neg, zero) == .gt);
-        try testing.expect(order(pos, pos).differ() orelse
+            order(neg, zero)) == .gt);
+        try testing.expect((order(pos, pos).differ() orelse
             order(pos, pos).differ() orelse
-            order(neg, neg) == .eq);
-        try testing.expect(order(zero, pos).differ() orelse
+            order(neg, neg)) == .eq);
+        try testing.expect((order(zero, pos).differ() orelse
             order(neg, pos).differ() orelse
-            order(pos, neg) == .lt);
+            order(pos, neg)) == .lt);
     }
 
     pub fn compare(self: Order, op: CompareOperator) bool {

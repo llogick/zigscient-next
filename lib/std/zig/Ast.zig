@@ -555,6 +555,33 @@ pub fn renderError(tree: Ast, parse_error: Error, w: *Writer) Writer.Error!void 
         .var_const_decl => {
             return w.writeAll("use 'var' or 'const' to declare variable");
         },
+        .ambiguous_operator_precedence => {
+            return w.print("ambiguous operator precedence with operators ... {s} ... {s} ...; use parentheses to disambiguate", .{
+                tree.tokenTag(parse_error.token - @as(u32, @intCast(parse_error.extra.offset))).lexeme().?,
+                tree.tokenTag(parse_error.token).lexeme().?,
+            });
+        },
+        .previous_ambiguous_operator => {
+            return w.writeAll("previous ambiguous operator here");
+        },
+        .illegal_chained_operators => {
+            return w.print("repetition of non-chainable operators ... {s} ... {s} ...; use parentheses to disambiguate", .{
+                tree.tokenTag(parse_error.token - @as(u32, @intCast(parse_error.extra.offset))).lexeme().?,
+                tree.tokenTag(parse_error.token).lexeme().?,
+            });
+        },
+        .hint_operator_precedence_left => {
+            return w.print("in zig 0.17.x, this was evaluated as (... {s} ...) {s} ...", .{
+                tree.tokenTag(parse_error.token - @as(u32, @intCast(parse_error.extra.offset))).lexeme().?,
+                tree.tokenTag(parse_error.token).lexeme().?,
+            });
+        },
+        .hint_operator_precedence_right => {
+            return w.print("in zig 0.17.x, this was evaluated as ... {s} (... {s} ...)", .{
+                tree.tokenTag(parse_error.token - @as(u32, @intCast(parse_error.extra.offset))).lexeme().?,
+                tree.tokenTag(parse_error.token).lexeme().?,
+            });
+        },
 
         .invalid_byte => {
             const tok_slice = tree.source[tree.tokens.items(.start)[parse_error.token]..];
@@ -2893,6 +2920,11 @@ pub const Error = struct {
         expected_var_const,
         wrong_equal_var_decl,
         var_const_decl,
+        ambiguous_operator_precedence,
+        previous_ambiguous_operator,
+        hint_operator_precedence_left,
+        hint_operator_precedence_right,
+        illegal_chained_operators,
 
         zig_style_container,
         previous_field,

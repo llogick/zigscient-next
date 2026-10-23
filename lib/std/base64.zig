@@ -148,7 +148,7 @@ pub const Base64Encoder = struct {
         if (idx + 2 < source.len) {
             dest[out_idx] = encoder.alphabet_chars[source[idx] >> 2];
             dest[out_idx + 1] = encoder.alphabet_chars[((source[idx] & 0x3) << 4) | (source[idx + 1] >> 4)];
-            dest[out_idx + 2] = encoder.alphabet_chars[(source[idx + 1] & 0xf) << 2 | (source[idx + 2] >> 6)];
+            dest[out_idx + 2] = encoder.alphabet_chars[((source[idx + 1] & 0xf) << 2) | (source[idx + 2] >> 6)];
             dest[out_idx + 3] = encoder.alphabet_chars[source[idx + 2] & 0x3f];
             out_idx += 4;
         } else if (idx + 1 < source.len) {
@@ -282,7 +282,7 @@ pub const Base64Decoder = struct {
                 dest_idx += 1;
             }
         }
-        if (acc_len > 4 or (acc & (@as(u12, 1) << acc_len) - 1) != 0) {
+        if (acc_len > 4 or (acc & ((@as(u12, 1) << acc_len) - 1)) != 0) {
             return error.InvalidPadding;
         }
         if (leftover_idx == null) return;
@@ -357,7 +357,7 @@ pub const Base64DecoderWithIgnore = struct {
                 dest_idx += 1;
             }
         }
-        if (acc_len > 4 or (acc & (@as(u12, 1) << acc_len) - 1) != 0) {
+        if (acc_len > 4 or (acc & ((@as(u12, 1) << acc_len) - 1)) != 0) {
             return error.InvalidPadding;
         }
         const padding_len = acc_len / 2;

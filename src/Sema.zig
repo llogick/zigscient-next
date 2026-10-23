@@ -29939,10 +29939,10 @@ fn coerceVarArgParam(
             if (!uncasted_ty.validateExtern(.param_ty, zcu)) break :int inst;
             const target = zcu.getTarget();
             const uncasted_info = uncasted_ty.intInfo(zcu);
-            if (uncasted_info.bits <= target.cTypeBitSize(switch (uncasted_info.signedness) {
+            if (uncasted_info.bits <= (target.cTypeBitSize(switch (uncasted_info.signedness) {
                 .signed => .int,
                 .unsigned => .uint,
-            }) orelse break :int inst) break :int try sema.coerce(block, switch (uncasted_info.signedness) {
+            }) orelse break :int inst)) break :int try sema.coerce(block, switch (uncasted_info.signedness) {
                 .signed => .c_int,
                 .unsigned => .c_uint,
             }, inst, inst_src);

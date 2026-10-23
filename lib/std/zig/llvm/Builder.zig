@@ -1076,7 +1076,7 @@ pub const Type = enum(u32) {
         child: Type,
 
         fn length(self: Array) u64 {
-            return @as(u64, self.len_hi) << 32 | self.len_lo;
+            return (@as(u64, self.len_hi) << 32) | self.len_lo;
         }
     };
 
@@ -9520,7 +9520,7 @@ pub const Metadata = packed struct(u32) {
         size_in_bits_hi: u32,
 
         pub fn bitSize(self: BasicType) u64 {
-            return @as(u64, self.size_in_bits_hi) << 32 | self.size_in_bits_lo;
+            return (@as(u64, self.size_in_bits_hi) << 32) | self.size_in_bits_lo;
         }
     };
 
@@ -9537,10 +9537,10 @@ pub const Metadata = packed struct(u32) {
         fields_tuple: Metadata.Optional,
 
         pub fn bitSize(self: CompositeType) u64 {
-            return @as(u64, self.size_in_bits_hi) << 32 | self.size_in_bits_lo;
+            return (@as(u64, self.size_in_bits_hi) << 32) | self.size_in_bits_lo;
         }
         pub fn bitAlign(self: CompositeType) u64 {
-            return @as(u64, self.align_in_bits_hi) << 32 | self.align_in_bits_lo;
+            return (@as(u64, self.align_in_bits_hi) << 32) | self.align_in_bits_lo;
         }
     };
 
@@ -9558,13 +9558,13 @@ pub const Metadata = packed struct(u32) {
         offset_in_bits_hi: u32,
 
         pub fn bitSize(self: DerivedType) u64 {
-            return @as(u64, self.size_in_bits_hi) << 32 | self.size_in_bits_lo;
+            return (@as(u64, self.size_in_bits_hi) << 32) | self.size_in_bits_lo;
         }
         pub fn bitAlign(self: DerivedType) u64 {
-            return @as(u64, self.align_in_bits_hi) << 32 | self.align_in_bits_lo;
+            return (@as(u64, self.align_in_bits_hi) << 32) | self.align_in_bits_lo;
         }
         pub fn bitOffset(self: DerivedType) u64 {
-            return @as(u64, self.offset_in_bits_hi) << 32 | self.offset_in_bits_lo;
+            return (@as(u64, self.offset_in_bits_hi) << 32) | self.offset_in_bits_lo;
         }
     };
 
@@ -12457,7 +12457,7 @@ fn doubleConstAssumeCapacity(self: *Builder, val: f64) Constant {
             if (ctx.builder.constant_items.items(.tag)[rhs_index] != .double) return false;
             const rhs_data = ctx.builder.constant_items.items(.data)[rhs_index];
             const rhs_extra = ctx.builder.constantExtraData(Constant.Double, rhs_data);
-            return @as(u64, @bitCast(lhs_key)) == @as(u64, rhs_extra.hi) << 32 | rhs_extra.lo;
+            return @as(u64, @bitCast(lhs_key)) == (@as(u64, rhs_extra.hi) << 32) | rhs_extra.lo;
         }
     };
     const gop = self.constant_map.getOrPutAssumeCapacityAdapted(val, Adapter{ .builder = self });
@@ -12488,8 +12488,8 @@ fn fp128ConstAssumeCapacity(self: *Builder, val: f128) Constant {
             if (ctx.builder.constant_items.items(.tag)[rhs_index] != .fp128) return false;
             const rhs_data = ctx.builder.constant_items.items(.data)[rhs_index];
             const rhs_extra = ctx.builder.constantExtraData(Constant.Fp128, rhs_data);
-            return @as(u128, @bitCast(lhs_key)) == @as(u128, rhs_extra.hi_hi) << 96 |
-                @as(u128, rhs_extra.hi_lo) << 64 | @as(u128, rhs_extra.lo_hi) << 32 | rhs_extra.lo_lo;
+            return @as(u128, @bitCast(lhs_key)) == (@as(u128, rhs_extra.hi_hi) << 96) |
+                (@as(u128, rhs_extra.hi_lo) << 64) | (@as(u128, rhs_extra.lo_hi) << 32) | rhs_extra.lo_lo;
         }
     };
     const gop = self.constant_map.getOrPutAssumeCapacityAdapted(val, Adapter{ .builder = self });
@@ -12522,8 +12522,8 @@ fn x86_fp80ConstAssumeCapacity(self: *Builder, val: f80) Constant {
             if (ctx.builder.constant_items.items(.tag)[rhs_index] != .x86_fp80) return false;
             const rhs_data = ctx.builder.constant_items.items(.data)[rhs_index];
             const rhs_extra = ctx.builder.constantExtraData(Constant.Fp80, rhs_data);
-            return @as(u80, @bitCast(lhs_key)) == @as(u80, rhs_extra.hi) << 64 |
-                @as(u80, rhs_extra.lo_hi) << 32 | rhs_extra.lo_lo;
+            return @as(u80, @bitCast(lhs_key)) == (@as(u80, rhs_extra.hi) << 64) |
+                (@as(u80, rhs_extra.lo_hi) << 32) | rhs_extra.lo_lo;
         }
     };
     const gop = self.constant_map.getOrPutAssumeCapacityAdapted(val, Adapter{ .builder = self });
@@ -12555,8 +12555,8 @@ fn ppc_fp128ConstAssumeCapacity(self: *Builder, val: [2]f64) Constant {
             if (ctx.builder.constant_items.items(.tag)[rhs_index] != .ppc_fp128) return false;
             const rhs_data = ctx.builder.constant_items.items(.data)[rhs_index];
             const rhs_extra = ctx.builder.constantExtraData(Constant.Fp128, rhs_data);
-            return @as(u64, @bitCast(lhs_key[0])) == @as(u64, rhs_extra.lo_hi) << 32 | rhs_extra.lo_lo and
-                @as(u64, @bitCast(lhs_key[1])) == @as(u64, rhs_extra.hi_hi) << 32 | rhs_extra.hi_lo;
+            return @as(u64, @bitCast(lhs_key[0])) == (@as(u64, rhs_extra.lo_hi) << 32) | rhs_extra.lo_lo and
+                @as(u64, @bitCast(lhs_key[1])) == (@as(u64, rhs_extra.hi_hi) << 32) | rhs_extra.hi_lo;
         }
     };
     const gop = self.constant_map.getOrPutAssumeCapacityAdapted(val, Adapter{ .builder = self });
@@ -15225,18 +15225,18 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
                             for (limbs) |*limb| {
                                 const val = std.mem.littleToNative(i64, @bitCast(limb.*));
                                 limb.* = @bitCast(if (val >= 0)
-                                    val << 1 | 0
+                                    (val << 1) | 0
                                 else
-                                    -%val << 1 | 1);
+                                    (-%val << 1) | 1);
                             }
                             try constants_block.writeUnabbrev(5, record.items);
                             continue;
                         };
                         try constants_block.writeAbbrev(ConstantsBlock.Integer{
                             .value = @bitCast(if (val >= 0)
-                                val << 1 | 0
+                                (val << 1) | 0
                             else
-                                -%val << 1 | 1),
+                                (-%val << 1) | 1),
                         });
                     },
                     .half,
@@ -15252,8 +15252,8 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
                     .x86_fp80 => {
                         const extra = self.constantExtraData(Constant.Fp80, data);
                         try constants_block.writeAbbrev(ConstantsBlock.Fp80{
-                            .hi = @as(u64, extra.hi) << 48 | @as(u64, extra.lo_hi) << 16 |
-                                extra.lo_lo >> 16,
+                            .hi = (@as(u64, extra.hi) << 48) | (@as(u64, extra.lo_hi) << 16) |
+                                (extra.lo_lo >> 16),
                             .lo = @truncate(extra.lo_lo),
                         });
                     },
@@ -15262,8 +15262,8 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
                     => {
                         const extra = self.constantExtraData(Constant.Fp128, data);
                         try constants_block.writeAbbrev(ConstantsBlock.Fp128{
-                            .lo = @as(u64, extra.lo_hi) << 32 | @as(u64, extra.lo_lo),
-                            .hi = @as(u64, extra.hi_hi) << 32 | @as(u64, extra.hi_lo),
+                            .lo = (@as(u64, extra.lo_hi) << 32) | @as(u64, extra.lo_lo),
+                            .hi = (@as(u64, extra.hi_hi) << 32) | @as(u64, extra.hi_lo),
                         });
                     },
                     .array,
@@ -15724,9 +15724,9 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
                             for (limbs) |*limb| {
                                 const val = std.mem.littleToNative(i64, @bitCast(limb.*));
                                 limb.* = @bitCast(if (val >= 0)
-                                    val << 1 | 0
+                                    (val << 1) | 0
                                 else
-                                    -%val << 1 | 1);
+                                    (-%val << 1) | 1);
                             }
                             try metadata_block.writeUnabbrev(@backingInt(MetadataBlock.Code.ENUMERATOR), record.items);
                             continue;
@@ -15736,9 +15736,9 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
                             .bit_width = extra.bit_width,
                             .name = extra.name,
                             .value = @bitCast(if (val >= 0)
-                                val << 1 | 0
+                                (val << 1) | 0
                             else
-                                -%val << 1 | 1),
+                                (-%val << 1) | 1),
                         }, metadata_adapter);
                     },
                     .subrange => {

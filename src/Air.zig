@@ -1506,7 +1506,7 @@ pub const ShuffleTwoMask = enum(u32) {
         return @fromBackingInt(@intCast(idx << 1));
     }
     pub fn bElem(idx: u32) ShuffleTwoMask {
-        return @fromBackingInt(@intCast(idx << 1 | 1));
+        return @fromBackingInt(@intCast((idx << 1) | 1));
     }
     pub const Unwrapped = union(enum) {
         /// The resulting element is this index into the first runtime vector.

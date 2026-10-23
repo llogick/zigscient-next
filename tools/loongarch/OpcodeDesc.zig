@@ -95,10 +95,10 @@ pub const Format = struct {
                         const index: Slot.Index = try .parse(&reader);
                         const length = try takeInteger(u5, &reader);
                         const post_proc = post_proc: {
-                            if ('p' == reader.peekByte() catch |err| switch (err) {
+                            if ('p' == (reader.peekByte() catch |err| switch (err) {
                                 error.EndOfStream => ' ',
                                 else => return err,
-                            }) {
+                            })) {
                                 reader.toss(1);
                                 break :post_proc try Slot.PostProcess.parse(&reader);
                             } else break :post_proc Slot.PostProcess.none;

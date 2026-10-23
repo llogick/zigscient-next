@@ -164,7 +164,7 @@ pub const InitError = Allocator.Error || CreateFileDescriptorError;
 pub fn init(k: *Kqueue, gpa: Allocator, options: InitOptions) !void {
     assert(options.n_threads != 0);
 
-    const n_threads = @max(1, options.n_threads orelse std.Thread.getCpuCount() catch 1);
+    const n_threads = @max(1, options.n_threads orelse (std.Thread.getCpuCount() catch 1));
     const threads_size = n_threads * @sizeOf(Thread);
     const idle_stack_end_offset = std.mem.alignForward(usize, threads_size + idle_stack_size, std.heap.page_size_max);
     const allocated_slice = try gpa.alignedAlloc(u8, .of(Thread), idle_stack_end_offset);

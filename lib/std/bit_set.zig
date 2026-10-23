@@ -468,11 +468,11 @@ pub fn Array(comptime MaskIntType: type, comptime size: usize) type {
 
             if (start_mask_index == end_mask_index) {
                 var mask1 = std.math.boolMask(MaskInt, true) << start_bit;
-                var mask2 = std.math.boolMask(MaskInt, true) >> (mask_len - 1) - (end_bit - 1);
+                var mask2 = std.math.boolMask(MaskInt, true) >> ((mask_len - 1) - (end_bit - 1));
                 self.masks[start_mask_index] &= ~(mask1 & mask2);
 
                 mask1 = std.math.boolMask(MaskInt, value) << start_bit;
-                mask2 = std.math.boolMask(MaskInt, value) >> (mask_len - 1) - (end_bit - 1);
+                mask2 = std.math.boolMask(MaskInt, value) >> ((mask_len - 1) - (end_bit - 1));
                 self.masks[start_mask_index] |= mask1 & mask2;
             } else {
                 var bulk_mask_index: usize = undefined;
@@ -875,11 +875,11 @@ pub const Dynamic = struct {
 
         if (start_mask_index == end_mask_index) {
             var mask1 = std.math.boolMask(MaskInt, true) << start_bit;
-            var mask2 = std.math.boolMask(MaskInt, true) >> (@bitSizeOf(MaskInt) - 1) - (end_bit - 1);
+            var mask2 = std.math.boolMask(MaskInt, true) >> ((@bitSizeOf(MaskInt) - 1) - (end_bit - 1));
             self.masks[start_mask_index] &= ~(mask1 & mask2);
 
             mask1 = std.math.boolMask(MaskInt, value) << start_bit;
-            mask2 = std.math.boolMask(MaskInt, value) >> (@bitSizeOf(MaskInt) - 1) - (end_bit - 1);
+            mask2 = std.math.boolMask(MaskInt, value) >> ((@bitSizeOf(MaskInt) - 1) - (end_bit - 1));
             self.masks[start_mask_index] |= mask1 & mask2;
         } else {
             var bulk_mask_index: usize = undefined;

@@ -728,7 +728,7 @@ pub const Aes256 = struct {
 // constants
 
 // Rijndael's irreducible polynomial.
-const poly: u9 = 1 << 8 | 1 << 4 | 1 << 3 | 1 << 1 | 1 << 0; // x⁸ + x⁴ + x³ + x + 1
+const poly: u9 = (1 << 8) | (1 << 4) | (1 << 3) | (1 << 1) | (1 << 0); // x⁸ + x⁴ + x³ + x + 1
 
 // Powers of x mod poly in GF(2).
 const powx = init: {

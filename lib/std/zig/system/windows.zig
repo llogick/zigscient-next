@@ -25,7 +25,7 @@ pub fn detectRuntimeVersion() WindowsVersion {
     //   `---` `` ``--> Sub-version (Starting from Windows 10 onwards)
     //     \    `--> Service pack (Always zero in the constants defined)
     //      `--> OS version (Major & minor)
-    const os_ver: u16 = @as(u16, @intCast(version_info.dwMajorVersion & 0xff)) << 8 |
+    const os_ver: u16 = (@as(u16, @intCast(version_info.dwMajorVersion & 0xff)) << 8) |
         @as(u16, @intCast(version_info.dwMinorVersion & 0xff));
     const sp_ver: u8 = 0;
     const sub_ver: u8 = if (os_ver >= 0x0A00) subver: {
@@ -40,7 +40,7 @@ pub fn detectRuntimeVersion() WindowsVersion {
         break :subver @as(u8, @truncate(last_idx));
     } else 0;
 
-    const version: u32 = @as(u32, os_ver) << 16 | @as(u16, sp_ver) << 8 | sub_ver;
+    const version: u32 = (@as(u32, os_ver) << 16) | (@as(u16, sp_ver) << 8) | sub_ver;
 
     return @as(WindowsVersion, @fromBackingInt(@intCast(version)));
 }

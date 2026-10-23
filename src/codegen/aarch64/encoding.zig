@@ -11886,9 +11886,9 @@ pub const Instruction = packed union {
                             .cmode = switch (arrangement) {
                                 else => unreachable,
                                 .@"4h", .@"8h" => @as(u3, 0b100) |
-                                    @as(u3, @as(u1, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0,
+                                    (@as(u3, @as(u1, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0),
                                 .@"2s", .@"4s" => @as(u3, 0b000) |
-                                    @as(u3, @as(u2, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0,
+                                    (@as(u3, @as(u2, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0),
                             },
                             .imm3 = @intCast(shifted_immediate.immediate >> 5),
                             .Q = arrangement.size(),
@@ -12384,7 +12384,7 @@ pub const Instruction = packed union {
                     .dup = .{
                         .Rd = d.alias.encode(.{ .V = true }),
                         .Rn = n.alias.encode(.{ .V = true }),
-                        .imm5 = @shlExact(@as(u5, n.format.element.index) << 1 | @as(u5, 0b1), @backingInt(elem_size)),
+                        .imm5 = @shlExact((@as(u5, n.format.element.index) << 1) | @as(u5, 0b1), @backingInt(elem_size)),
                     },
                 } } };
             },
@@ -12400,7 +12400,7 @@ pub const Instruction = packed union {
                                 .Rd = d.alias.encode(.{ .V = true }),
                                 .Rn = n.alias.encode(.{ .V = true }),
                                 .imm4 = .element,
-                                .imm5 = @shlExact(@as(u5, element.index) << 1 | @as(u5, 0b1), @backingInt(elem_size)),
+                                .imm5 = @shlExact((@as(u5, element.index) << 1) | @as(u5, 0b1), @backingInt(elem_size)),
                                 .Q = arrangement.size(),
                             },
                         } } };
@@ -14195,7 +14195,7 @@ pub const Instruction = packed union {
                         .Rd = d.alias.encode(.{ .V = true }),
                         .Rn = n.alias.encode(.{ .V = true }),
                         .imm4 = .{ .element = element.index << @intCast(@backingInt(elem_size)) },
-                        .imm5 = (@as(u5, d.format.element.index) << 1 | @as(u5, 0b1) << 0) << @backingInt(elem_size),
+                        .imm5 = ((@as(u5, d.format.element.index) << 1) | (@as(u5, 0b1) << 0)) << @backingInt(elem_size),
                         .op = .element,
                     },
                 } } };
@@ -14211,7 +14211,7 @@ pub const Instruction = packed union {
                         .Rd = d.alias.encode(.{ .V = true }),
                         .Rn = n.alias.encode(.{}),
                         .imm4 = .{ .general = .general },
-                        .imm5 = (@as(u5, d.format.element.index) << 1 | @as(u5, 0b1) << 0) << @backingInt(elem_size),
+                        .imm5 = ((@as(u5, d.format.element.index) << 1) | (@as(u5, 0b1) << 0)) << @backingInt(elem_size),
                         .op = .general,
                     },
                 } } };
@@ -15072,16 +15072,16 @@ pub const Instruction = packed union {
                     .lsl => |amount| switch (arrangement) {
                         else => unreachable,
                         .@"8b", .@"16b" => @as(u4, 0b1110) |
-                            @as(u4, @as(u0, @intCast(@shrExact(amount, 3)))) << 1,
+                            (@as(u4, @as(u0, @intCast(@shrExact(amount, 3)))) << 1),
                         .@"4h", .@"8h" => @as(u4, 0b1000) |
-                            @as(u4, @as(u1, @intCast(@shrExact(amount, 3)))) << 1,
+                            (@as(u4, @as(u1, @intCast(@shrExact(amount, 3)))) << 1),
                         .@"2s", .@"4s" => @as(u4, 0b0000) |
-                            @as(u4, @as(u2, @intCast(@shrExact(amount, 3)))) << 1,
+                            (@as(u4, @as(u2, @intCast(@shrExact(amount, 3)))) << 1),
                     },
                     .msl => |amount| switch (arrangement) {
                         else => unreachable,
                         .@"2s", .@"4s" => @as(u4, 0b1100) |
-                            @as(u4, @as(u1, @intCast(@shrExact(amount, 3) - 1))) << 0,
+                            (@as(u4, @as(u1, @intCast(@shrExact(amount, 3) - 1))) << 0),
                     },
                     .replicate => switch (arrangement) {
                         else => unreachable,
@@ -15345,9 +15345,9 @@ pub const Instruction = packed union {
                             .cmode = switch (arrangement) {
                                 else => unreachable,
                                 .@"4h", .@"8h" => @as(u3, 0b100) |
-                                    @as(u3, @as(u1, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0,
+                                    (@as(u3, @as(u1, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0),
                                 .@"2s", .@"4s" => @as(u3, 0b000) |
-                                    @as(u3, @as(u2, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0,
+                                    (@as(u3, @as(u2, @intCast(@shrExact(shifted_immediate.lsl, 3)))) << 0),
                             },
                             .imm3 = @intCast(shifted_immediate.immediate >> 5),
                             .Q = arrangement.size(),
@@ -15660,9 +15660,9 @@ pub const Instruction = packed union {
                 .Rn = n.alias.encode(.{ .V = true }),
                 .imm5 = switch (vs) {
                     else => unreachable,
-                    .byte => @as(u5, @as(u4, @intCast(n.format.element.index))) << 1 | @as(u5, 0b1) << 0,
-                    .half => @as(u5, @as(u3, @intCast(n.format.element.index))) << 2 | @as(u5, 0b10) << 0,
-                    .single => @as(u5, @as(u2, @intCast(n.format.element.index))) << 3 | @as(u5, 0b100) << 0,
+                    .byte => (@as(u5, @as(u4, @intCast(n.format.element.index))) << 1) | (@as(u5, 0b1) << 0),
+                    .half => (@as(u5, @as(u3, @intCast(n.format.element.index))) << 2) | (@as(u5, 0b10) << 0),
+                    .single => (@as(u5, @as(u2, @intCast(n.format.element.index))) << 3) | (@as(u5, 0b100) << 0),
                 },
                 .Q = sf,
             },
@@ -16492,10 +16492,10 @@ pub const Instruction = packed union {
                 .Rn = n.alias.encode(.{ .V = true }),
                 .imm5 = switch (vs) {
                     else => unreachable,
-                    .byte => @as(u5, @as(u4, @intCast(n.format.element.index))) << 1 | @as(u5, 0b1) << 0,
-                    .half => @as(u5, @as(u3, @intCast(n.format.element.index))) << 2 | @as(u5, 0b10) << 0,
-                    .single => @as(u5, @as(u2, @intCast(n.format.element.index))) << 3 | @as(u5, 0b100) << 0,
-                    .double => @as(u5, @as(u1, @intCast(n.format.element.index))) << 4 | @as(u5, 0b1000) << 0,
+                    .byte => (@as(u5, @as(u4, @intCast(n.format.element.index))) << 1) | (@as(u5, 0b1) << 0),
+                    .half => (@as(u5, @as(u3, @intCast(n.format.element.index))) << 2) | (@as(u5, 0b10) << 0),
+                    .single => (@as(u5, @as(u2, @intCast(n.format.element.index))) << 3) | (@as(u5, 0b100) << 0),
+                    .double => (@as(u5, @as(u1, @intCast(n.format.element.index))) << 4) | (@as(u5, 0b1000) << 0),
                 },
                 .Q = sf,
             },

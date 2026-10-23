@@ -14502,15 +14502,15 @@ inline fn intCast(comptime Result: type, comptime Type: type, rhs: Type, comptim
         // TODO: if (bits == 0) rhs else rhs >> bits,
         .shift => |bits| if (bits == 0) rhs else switch (@typeInfo(Type)) {
             .int => if (ct_rhs < 0)
-                rhs | imin(Type) >> bits
+                rhs | (imin(Type) >> bits)
             else
-                rhs & imax(Type) >> bits,
-            .vector => rhs | @select(
+                rhs & (imax(Type) >> bits),
+            .vector => (rhs | @select(
                 Scalar(Type),
                 ct_rhs < @as(Type, @splat(0)),
                 @as(Type, @splat(imin(Scalar(Type)) >> bits)),
                 @as(Type, @splat(0)),
-            ) & ~@select(
+            )) & ~@select(
                 Scalar(Type),
                 ct_rhs >= @as(Type, @splat(0)),
                 @as(Type, @splat(imin(Scalar(Type)) >> bits)),

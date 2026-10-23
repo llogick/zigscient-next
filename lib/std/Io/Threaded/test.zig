@@ -36,7 +36,7 @@ fn put(io: Io, queue: *Io.Queue(u8)) void {
 }
 
 fn get(io: Io, queue: *Io.Queue(u8)) void {
-    assert(queue.getOneUncancelable(io) catch unreachable == 42);
+    assert((queue.getOneUncancelable(io) catch unreachable) == 42);
 }
 
 test "concurrent vs concurrent prevents deadlock via oversubscription" {

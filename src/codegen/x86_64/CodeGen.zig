@@ -173255,7 +173255,7 @@ fn finishAir(
 ) !void {
     const tomb_bits = self.liveness.getTombBits(inst);
     for (0.., operands) |op_index, op| {
-        if (tomb_bits & @as(Air.Liveness.Bpi, 1) << @intCast(op_index) == 0) continue;
+        if (tomb_bits & (@as(Air.Liveness.Bpi, 1) << @intCast(op_index)) == 0) continue;
         if (self.reused_operands.isSet(op_index)) continue;
         try self.processDeath(op.toIndexAllowNone() orelse continue, .{});
     }
@@ -176321,7 +176321,7 @@ fn lowerSwitchBr(
     const unsigned_condition_ty = try cg.pt.intType(.unsigned, cg.intInfo(condition_ty).?.bits);
 
     const ExpectedContents = extern struct {
-        liveness_deaths: [1 << 8 | 1]Air.Inst.Index,
+        liveness_deaths: [(1 << 8) | 1]Air.Inst.Index,
         bigint_limbs: [std.math.big.int.calcTwosCompLimbCount(1 << 10)]std.math.big.Limb,
         relocs: [1 << 6]Mir.Inst.Index,
     };
@@ -177310,7 +177310,7 @@ fn airAsm(self: *CodeGen, inst: Air.Inst.Index) !void {
                 else
                     "";
                 op.* = switch (args[
-                    arg_map.get(op_str["%[".len .. colon orelse op_str.len - "]".len]) orelse
+                    arg_map.get(op_str["%[".len .. colon orelse (op_str.len - "]".len)]) orelse
                         return self.fail("no matching constraint: '{s}'", .{op_str})
                 ]) {
                     .immediate => |imm| if (std.mem.eql(u8, modifier, "") or
@@ -177454,7 +177454,7 @@ fn airAsm(self: *CodeGen, inst: Air.Inst.Index) !void {
                             else
                                 "";
                             break :disp switch (args[
-                                arg_map.get(op_str["%[".len .. colon orelse open - "]".len]) orelse
+                                arg_map.get(op_str["%[".len .. colon orelse (open - "]".len)]) orelse
                                     return self.fail("no matching constraint: '{s}'", .{op_str})
                             ]) {
                                 .immediate => |imm| if (std.mem.eql(u8, modifier, "") or
@@ -179566,7 +179566,7 @@ fn atomicOp(
     };
     defer if (mem_lock) |lock| self.register_manager.unlockReg(lock);
 
-    const use_sse = rmw_op orelse .Xchg != .Xchg and val_ty.isRuntimeFloat();
+    const use_sse = (rmw_op orelse .Xchg) != .Xchg and val_ty.isRuntimeFloat();
     const strat: enum { lock, loop, libcall } = if (use_sse) .loop else switch (rmw_op orelse .Xchg) {
         .Xchg,
         .Add,
@@ -179626,7 +179626,7 @@ fn atomicOp(
 
             try self.asmRegisterMemory(.{ ._, .mov }, registerAlias(.rax, val_abi_size), ptr_mem);
             const loop: Mir.Inst.Index = @intCast(self.mir_instructions.len);
-            if (!use_sse and rmw_op orelse .Xchg != .Xchg) {
+            if (!use_sse and (rmw_op orelse .Xchg) != .Xchg) {
                 try self.genSetReg(tmp_reg, val_ty, .{ .register = .rax }, .{});
             }
             if (rmw_op) |op| if (use_sse) {
@@ -188852,7 +188852,7 @@ const Temp = struct {
         for (0.., op_refs, op_temps) |op_index, op_ref, op_temp| {
             if (op_temp.index == temp.index) continue;
             if (op_temp.tracking(cg).short != .dead) try op_temp.die(cg);
-            if (tomb_bits & @as(Air.Liveness.Bpi, 1) << @intCast(op_index) == 0) continue;
+            if (tomb_bits & (@as(Air.Liveness.Bpi, 1) << @intCast(op_index)) == 0) continue;
             if (cg.reused_operands.isSet(op_index)) continue;
             try cg.processDeath(op_ref.toIndexAllowNone() orelse continue, .{});
         }
@@ -188914,7 +188914,7 @@ const Temp = struct {
         }
         for (0.., op_refs, op_temps) |op_index, op_ref, op_temp| {
             if (op_temp.index != temp.index) continue;
-            if (tomb_bits & @as(Air.Liveness.Bpi, 1) << @intCast(op_index) == 0) continue;
+            if (tomb_bits & (@as(Air.Liveness.Bpi, 1) << @intCast(op_index)) == 0) continue;
             if (cg.reused_operands.isSet(op_index)) continue;
             try cg.processDeath(op_ref.toIndexAllowNone() orelse continue, .{});
         }
@@ -190115,9 +190115,9 @@ const Select = struct {
                                         (@as(u64, std.math.maxInt(u64)) >> @intCast(res_scalar_info.bits - scalar_info.bits))),
                                     .@"0x1p63_mem" => switch (res_scalar_info.bits) {
                                         else => unreachable,
-                                        16 => @as(i64, @as(i16, @bitCast(@as(f16, 0x1p63)))) << 64 - 16,
-                                        32 => @as(i64, @as(i32, @bitCast(@as(f32, 0x1p63)))) << 64 - 32,
-                                        64 => @as(i64, @as(i64, @bitCast(@as(f64, 0x1p63)))) << 64 - 64,
+                                        16 => @as(i64, @as(i16, @bitCast(@as(f16, 0x1p63)))) << (64 - 16),
+                                        32 => @as(i64, @as(i32, @bitCast(@as(f32, 0x1p63)))) << (64 - 32),
+                                        64 => @as(i64, @as(i64, @bitCast(@as(f64, 0x1p63)))) << (64 - 64),
                                     },
                                 };
                                 const shift: u6 = @intCast(64 - res_scalar_info.bits);
@@ -191516,8 +191516,8 @@ const Select = struct {
                     @as(SignedImm, @intCast(s.cg.nonBoolScalarBitSize(op.flags.base.ref.typeOf(s)))),
                 .log2_src0_elem_size => @intCast(std.math.log2(Select.Operand.Ref.src0.typeOf(s).indexableElem(s.cg.pt.zcu).abiSize(s.cg.pt.zcu))),
                 .elem_mask => @as(u8, std.math.maxInt(u8)) >> @intCast(
-                    8 - ((s.cg.unalignedSize(op.flags.base.ref.typeOf(s)) - 1) %
-                        @divExact(op.flags.base.size.bitSize(s.cg.target), 8) + 1 >>
+                    8 - (((s.cg.unalignedSize(op.flags.base.ref.typeOf(s)) - 1) %
+                        @divExact(op.flags.base.size.bitSize(s.cg.target), 8) + 1) >>
                         op.flags.index.scale.toLog2()),
                 ),
                 inline .smin, .smax, .umax, .smin_shr_src1, .smax_shr_src1, .umax_shr_src1 => |adjust| switch (op.flags.base.size) {
@@ -191546,7 +191546,7 @@ const Select = struct {
                 },
                 .repeat => switch (SignedImm) {
                     else => unreachable,
-                    i64 => return @as(i64, op.imm) << 32 | @as(u32, @bitCast(op.imm)),
+                    i64 => return (@as(i64, op.imm) << 32) | @as(u32, @bitCast(op.imm)),
                 },
             };
             const rhs = op.flags.adjust.rhs.toLog2();
@@ -191557,10 +191557,10 @@ const Select = struct {
                     break :op_res op_res[0];
                 },
                 .div => @shrExact(lhs, rhs),
-                .div_8_down => lhs >> 3 & @as(SignedImm, -1) << rhs,
+                .div_8_down => (lhs >> 3) & (@as(SignedImm, -1) << rhs),
                 .rem_8_mul => lhs & ((@as(SignedImm, 8) << rhs) - 1),
-                .up_2_mul => ((lhs - 1) & @as(SignedImm, -2) << rhs) + (@as(SignedImm, 2) << rhs),
-                .up_32_mul => ((lhs - 1) & @as(SignedImm, -32) << rhs) + (@as(SignedImm, 32) << rhs),
+                .up_2_mul => ((lhs - 1) & (@as(SignedImm, -2) << rhs)) + (@as(SignedImm, 2) << rhs),
+                .up_32_mul => ((lhs - 1) & (@as(SignedImm, -32) << rhs)) + (@as(SignedImm, 32) << rhs),
             };
             const disp: SignedImm = @bitCast(@as(UnsignedImm, @as(u32, @bitCast(op.imm))));
             return switch (op.flags.adjust.sign) {

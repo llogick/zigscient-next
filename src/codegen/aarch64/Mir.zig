@@ -208,7 +208,7 @@ fn emitReloc(
             };
             try atom.addReloc(gpa, .{
                 .r_offset = offset,
-                .r_info = @as(u64, @backingInt(sym_index)) << 32 | @backingInt(r_type),
+                .r_info = (@as(u64, @backingInt(sym_index)) << 32) | @backingInt(r_type),
                 .r_addend = @bitCast(addend),
             }, zo);
         } else if (lf.cast(.macho)) |mf| {
@@ -265,7 +265,7 @@ fn emitReloc(
             };
             try atom.addReloc(gpa, .{
                 .r_offset = offset,
-                .r_info = @as(u64, @backingInt(sym_index)) << 32 | @backingInt(r_type),
+                .r_info = (@as(u64, @backingInt(sym_index)) << 32) | @backingInt(r_type),
                 .r_addend = @bitCast(addend),
             }, zo);
         } else if (lf.cast(.macho)) |mf| {
@@ -328,7 +328,7 @@ fn emitReloc(
             };
             try atom.addReloc(gpa, .{
                 .r_offset = offset,
-                .r_info = @as(u64, @backingInt(sym_index)) << 32 | @backingInt(r_type),
+                .r_info = (@as(u64, @backingInt(sym_index)) << 32) | @backingInt(r_type),
                 .r_addend = @bitCast(addend),
             }, zo);
         } else if (lf.cast(.macho)) |mf| {

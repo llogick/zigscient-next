@@ -13,7 +13,7 @@ const posix = std.posix;
 /// Platform-specific functionality is available through the `inner` field.
 pub const DynLib = struct {
     const InnerType = switch (native_os) {
-        .linux => if (!builtin.link_libc or builtin.abi == .musl and builtin.link_mode == .static)
+        .linux => if (!builtin.link_libc or (builtin.abi == .musl and builtin.link_mode == .static))
             ElfDynLib
         else
             DlDynLib,
@@ -434,15 +434,15 @@ pub const ElfDynLib = struct {
     pub fn lookupAddress(self: *const ElfDynLib, vername: []const u8, name: []const u8) ?usize {
         const maybe_versym = if (self.verdef == null) null else self.versym;
 
-        const OK_TYPES = (1 << elf.STT_NOTYPE | 1 << elf.STT_OBJECT | 1 << elf.STT_FUNC | 1 << elf.STT_COMMON);
-        const OK_BINDS = (1 << elf.STB_GLOBAL | 1 << elf.STB_WEAK | 1 << elf.STB_GNU_UNIQUE);
+        const OK_TYPES = (1 << elf.STT_NOTYPE) | (1 << elf.STT_OBJECT) | (1 << elf.STT_FUNC) | (1 << elf.STT_COMMON);
+        const OK_BINDS = (1 << elf.STB_GLOBAL) | (1 << elf.STB_WEAK) | (1 << elf.STB_GNU_UNIQUE);
 
         switch (self.hash_table) {
             .dt_hash => |hashtab| {
                 var i: usize = 0;
                 while (i < hashtab[1]) : (i += 1) {
-                    if (0 == (@as(u32, 1) << @as(u5, @intCast(self.syms[i].st_info & 0xf)) & OK_TYPES)) continue;
-                    if (0 == (@as(u32, 1) << @as(u5, @intCast(self.syms[i].st_info >> 4)) & OK_BINDS)) continue;
+                    if (0 == (@as(u32, 1) << @as(u5, @intCast(self.syms[i].st_info & 0xf))) & OK_TYPES) continue;
+                    if (0 == (@as(u32, 1) << @as(u5, @intCast(self.syms[i].st_info >> 4))) & OK_BINDS) continue;
                     if (0 == self.syms[i].st_shndx) continue;
                     if (!mem.eql(u8, name, mem.sliceTo(self.strings + self.syms[i].st_name, 0))) continue;
                     if (maybe_versym) |versym| {
@@ -494,8 +494,8 @@ pub const ElfDynLib = struct {
                     const symbol_index = current_index + gnu_hash_header.symoffset;
                     const symbol = self.syms[symbol_index];
 
-                    if (0 == (@as(u32, 1) << @as(u5, @intCast(symbol.st_info & 0xf)) & OK_TYPES)) continue;
-                    if (0 == (@as(u32, 1) << @as(u5, @intCast(symbol.st_info >> 4)) & OK_BINDS)) continue;
+                    if (0 == (@as(u32, 1) << @as(u5, @intCast(symbol.st_info & 0xf))) & OK_TYPES) continue;
+                    if (0 == (@as(u32, 1) << @as(u5, @intCast(symbol.st_info >> 4))) & OK_BINDS) continue;
                     if (0 == symbol.st_shndx) continue;
 
                     const symbol_name = mem.sliceTo(self.strings + symbol.st_name, 0);

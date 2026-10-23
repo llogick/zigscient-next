@@ -1891,7 +1891,7 @@ pub fn genDebugInfoPadding(dwarf: *Dwarf, di_w: *std.Io.Writer, size: u64) std.I
             var block_len_size: u5 = 1;
             while (true) switch (std.math.order(
                 size - abbrev_code_size - block_len_size,
-                @as(u64, 1) << 7 * block_len_size,
+                @as(u64, 1) << (7 * block_len_size),
             )) {
                 .lt => break try di_w.writeUleb128(size - abbrev_code_size - block_len_size),
                 .eq => {
@@ -2023,7 +2023,7 @@ pub fn genDebugLinePadding(dl_w: *std.Io.Writer, size: u64) std.Io.Writer.Error!
             var op_len_size: u5 = 1;
             while (true) switch (std.math.order(
                 size - extended_op_size - op_len_size,
-                @as(u64, 1) << 7 * op_len_size,
+                @as(u64, 1) << (7 * op_len_size),
             )) {
                 .lt => break try dl_w.writeUleb128(size - extended_op_size - op_len_size),
                 .eq => {

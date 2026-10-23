@@ -45,6 +45,8 @@ pub const Fixups = struct {
     replace_nodes_with_node: std.AutoHashMapUnmanaged(Ast.Node.Index, Ast.Node.Index) = .empty,
     /// Change all identifier names matching the key to be value instead.
     rename_identifiers: std.array_hash_map.String([]const u8) = .empty,
+    /// Add parentheses surrounding the node.
+    insert_parentheses: std.AutoHashMapUnmanaged(Ast.Node.Index, void) = .empty,
 
     /// All `@import` builtin calls which refer to a file path will be prefixed
     /// with this path.
@@ -58,6 +60,7 @@ pub const Fixups = struct {
             f.append_string_after_node.count() +
             f.replace_nodes_with_node.count() +
             f.rename_identifiers.count() +
+            f.insert_parentheses.count() +
             @intFromBool(f.rebase_imported_paths != null);
     }
 
@@ -69,6 +72,7 @@ pub const Fixups = struct {
         f.append_string_after_node.clearRetainingCapacity();
         f.replace_nodes_with_node.clearRetainingCapacity();
         f.rename_identifiers.clearRetainingCapacity();
+        f.insert_parentheses.clearRetainingCapacity();
 
         f.rebase_imported_paths = null;
     }
@@ -81,6 +85,7 @@ pub const Fixups = struct {
         f.append_string_after_node.deinit(gpa);
         f.replace_nodes_with_node.deinit(gpa);
         f.rename_identifiers.deinit(gpa);
+        f.insert_parentheses.deinit(gpa);
         f.* = undefined;
     }
 };
@@ -420,6 +425,9 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
                 tree.tokenTag(fallback_first) == .multiline_string_literal_line;
             const after_op_space: Space = if (seperate_line) .newline else .space;
 
+            if (r.fixups.insert_parentheses.contains(node)) {
+                try ais.writeByte('(');
+            }
             try renderExpression(r, lhs, .space); // target
 
             try ais.pushIndent(.normal);
@@ -432,7 +440,16 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
                 assert(tree.tokenTag(fallback_first - 1) == .keyword_catch);
                 try renderToken(r, main_token, after_op_space); // catch keyword
             }
-            try renderExpression(r, rhs, space); // fallback
+            if (r.fixups.insert_parentheses.contains(node)) {
+                try renderExpression(r, rhs, .none);
+                try ais.writeByte(')');
+                const right_most_token = tree.lastToken(rhs);
+                const lexeme = tokenSliceForRender(tree, right_most_token);
+                // If our space is .none, then the above code functions is normal and below shouldn't run
+                if (space != .none) try renderSpace(r, right_most_token, lexeme.len, space);
+            } else {
+                try renderExpression(r, rhs, space); // fallback
+            }
             ais.popIndent();
         },
 
@@ -539,13 +556,25 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
         .@"orelse",
         => {
             const lhs, const rhs = tree.nodeData(node).node_and_node;
+            if (r.fixups.insert_parentheses.contains(node)) {
+                try ais.writeByte('(');
+            }
             try renderExpression(r, lhs, .space);
             const op_token = tree.nodeMainToken(node);
             try ais.pushIndent(.binop);
             const rhs_seperate_line = !tree.tokensOnSameLine(op_token, op_token + 1) or
                 tree.tokenTag(op_token + 1) == .multiline_string_literal_line;
             try renderToken(r, op_token, if (rhs_seperate_line) .newline else .space);
-            try renderExpression(r, rhs, space);
+            if (r.fixups.insert_parentheses.contains(node)) {
+                try renderExpression(r, rhs, .none);
+                try ais.writeByte(')');
+                const right_most_token = tree.lastToken(rhs);
+                const lexeme = tokenSliceForRender(tree, right_most_token);
+                // If our space was already .none, then the line below will be redundent as above handles it.
+                if (space != .none) try renderSpace(r, right_most_token, lexeme.len, space);
+            } else {
+                try renderExpression(r, rhs, space);
+            }
             ais.popIndent();
         },
 
@@ -1483,9 +1512,9 @@ fn renderThenElse(
             last_else_token = error_token + 1; // |
         }
 
-        const indent_else_expr = indent_then_expr and
+        const indent_else_expr = (indent_then_expr and
             !nodeIsBlock(tree.nodeTag(else_expr)) and
-            !nodeIsIfForWhileSwitch(tree.nodeTag(else_expr)) or
+            !nodeIsIfForWhileSwitch(tree.nodeTag(else_expr))) or
             tree.tokenTag(tree.firstToken(else_expr)) ==
                 .multiline_string_literal_line;
         if (indent_else_expr) {
@@ -3195,7 +3224,7 @@ fn renderComments(r: *Render, start: usize, end: usize) Error!bool {
             }
         }
 
-        index = 1 + (newline orelse end - 1);
+        index = 1 + (newline orelse (end - 1));
 
         const comment_content = mem.trimStart(u8, trimmed_comment["//".len..], &std.ascii.whitespace);
         if (ais.disabled_offset != null and mem.eql(u8, comment_content, "zig fmt: on")) {

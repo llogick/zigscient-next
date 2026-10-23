@@ -130,13 +130,13 @@ fn __aeabi_fcmplt(a: f32, b: f32) callconv(.{ .arm_aapcs = .{} }) i32 {
     return @intFromBool(cmp_f32(a, b) == .lt);
 }
 fn __aeabi_fcmple(a: f32, b: f32) callconv(.{ .arm_aapcs = .{} }) i32 {
-    return @intFromBool(cmp_f32(a, b) orelse .gt != .gt);
+    return @intFromBool((cmp_f32(a, b) orelse .gt) != .gt);
 }
 fn __gesf2(a: compiler_rt.f32.Abi, b: compiler_rt.f32.Abi) callconv(.c) Order {
     return cmp_f32(compiler_rt.f32.fromAbi(a), compiler_rt.f32.fromAbi(b)) orelse .lt;
 }
 fn __aeabi_fcmpge(a: f32, b: f32) callconv(.{ .arm_aapcs = .{} }) i32 {
-    return @intFromBool(cmp_f32(a, b) orelse .lt != .lt);
+    return @intFromBool((cmp_f32(a, b) orelse .lt) != .lt);
 }
 fn __aeabi_fcmpgt(a: f32, b: f32) callconv(.{ .arm_aapcs = .{} }) i32 {
     return @intFromBool(cmp_f32(a, b) == .gt);
@@ -164,13 +164,13 @@ fn __aeabi_dcmplt(a: f64, b: f64) callconv(.{ .arm_aapcs = .{} }) i32 {
     return @intFromBool(cmp_f64(a, b) == .lt);
 }
 fn __aeabi_dcmple(a: f64, b: f64) callconv(.{ .arm_aapcs = .{} }) i32 {
-    return @intFromBool(cmp_f64(a, b) orelse .gt != .gt);
+    return @intFromBool((cmp_f64(a, b) orelse .gt) != .gt);
 }
 fn __gedf2(a: compiler_rt.f64.Abi, b: compiler_rt.f64.Abi) callconv(.c) Order {
     return cmp_f64(compiler_rt.f64.fromAbi(a), compiler_rt.f64.fromAbi(b)) orelse .lt;
 }
 fn __aeabi_dcmpge(a: f64, b: f64) callconv(.{ .arm_aapcs = .{} }) i32 {
-    return @intFromBool(cmp_f64(a, b) orelse .lt != .lt);
+    return @intFromBool((cmp_f64(a, b) orelse .lt) != .lt);
 }
 fn __aeabi_dcmpgt(a: f64, b: f64) callconv(.{ .arm_aapcs = .{} }) i32 {
     return @intFromBool(cmp_f64(a, b) == .gt);

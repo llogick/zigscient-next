@@ -280,7 +280,7 @@ const Module = struct {
                     // we have no information to add to the address
                     break :pdb;
                 };
-                const module = pdb.getModule(mod_index) catch |err| switch (err) {
+                const module = (pdb.getModule(mod_index) catch |err| switch (err) {
                     error.InvalidDebugInfo,
                     error.MissingDebugInfo,
                     error.OutOfMemory,
@@ -289,7 +289,7 @@ const Module = struct {
                     error.ReadFailed,
                     error.EndOfStream,
                     => return error.InvalidDebugInfo,
-                } orelse {
+                }) orelse {
                     return error.InvalidDebugInfo; // bad module index
                 };
 
@@ -539,9 +539,9 @@ const Module = struct {
         }
 
         var opt_pdb: ?Pdb = pdb: {
-            const path = coff_obj.getPdbPath() catch {
+            const path = (coff_obj.getPdbPath() catch {
                 return error.InvalidDebugInfo;
-            } orelse {
+            }) orelse {
                 break :pdb null;
             };
             const pdb_file_open_result = if (fs.path.isAbsolute(path)) res: {

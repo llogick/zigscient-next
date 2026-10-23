@@ -156,7 +156,7 @@ fn asinBinary64(x: f64) f64 {
     if (ix >= 0x3ff0_0000) {
         const lx: u32 = @truncate(@as(u64, @bitCast(x)));
         // asin(1) = +-pi/2 with inexact
-        if ((ix - 0x3ff0_0000 | lx) == 0) {
+        if (((ix - 0x3ff0_0000) | lx) == 0) {
             return x * pio2_hi + 0x1.0p-120;
         }
         return 0.0 / (x - x);

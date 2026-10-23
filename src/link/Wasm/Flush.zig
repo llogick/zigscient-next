@@ -1128,7 +1128,7 @@ pub fn finish(f: *Flush, wasm: *Wasm) !void {
         // indirect function table elements
         const table_index: u32 = @intCast(
             wasm.table_imports.getIndex(wasm.preloaded_strings.__indirect_function_table) orelse
-                wasm.table_imports.entries.len + wasm.tables.getIndex(.__indirect_function_table).?,
+                (wasm.table_imports.entries.len + wasm.tables.getIndex(.__indirect_function_table).?),
         );
         // passive with implicit 0-index table or set table index manually
         const flags: u32 = if (table_index == 0) 0x0 else 0x02;

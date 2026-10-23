@@ -470,7 +470,7 @@ test "@bitCast of packed struct with void field and multiple integers" {
         fn doTheTest(x: u8, y: u8) !void {
             const foo = @as(@This(), .{ .x = x, .v = {}, .y = y });
             const as_int: u16 = @bitCast(foo);
-            try expect(as_int == @as(u16, y) << 8 | x);
+            try expect(as_int == (@as(u16, y) << 8) | x);
         }
     };
     try S.doTheTest(123, 45);

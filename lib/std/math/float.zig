@@ -281,7 +281,7 @@ pub inline fn nan(comptime Type: type) Type {
     return reconstructFloat(
         RuntimeType,
         floatExponentMax(RuntimeType) + 1,
-        mantissaOne(RuntimeType) | 1 << (floatFractionalBits(RuntimeType) - 1),
+        mantissaOne(RuntimeType) | (1 << (floatFractionalBits(RuntimeType) - 1)),
     );
 }
 
@@ -297,7 +297,7 @@ pub inline fn snan(comptime Type: type) Type {
     return reconstructFloat(
         RuntimeType,
         floatExponentMax(RuntimeType) + 1,
-        mantissaOne(RuntimeType) | 1 << (floatFractionalBits(RuntimeType) - 2),
+        mantissaOne(RuntimeType) | (1 << (floatFractionalBits(RuntimeType) - 2)),
     );
 }
 

@@ -204,8 +204,8 @@ pub fn fmod_f128(a: f128, b: f128) f128 {
     }
 
     // OR in extra non-stored mantissa digit
-    var highA: u64 = (aPtr_u64[high_index] & (std.math.maxInt(u64) >> 16)) | 1 << 48;
-    const highB: u64 = (bPtr_u64[high_index] & (std.math.maxInt(u64) >> 16)) | 1 << 48;
+    var highA: u64 = (aPtr_u64[high_index] & (std.math.maxInt(u64) >> 16)) | (1 << 48);
+    const highB: u64 = (bPtr_u64[high_index] & (std.math.maxInt(u64) >> 16)) | (1 << 48);
     var lowA: u64 = aPtr_u64[low_index];
     const lowB: u64 = bPtr_u64[low_index];
 

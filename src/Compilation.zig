@@ -1996,7 +1996,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 .path = try options.dirs.global_cache.join(arena, &.{zir_sub_dir}),
             };
 
-            const std_mod = options.std_mod orelse Module.create(arena, .{
+            const std_mod = options.std_mod orelse (Module.create(arena, .{
                 .paths = .{
                     .root = try .fromRoot(arena, options.dirs, .zig_lib, "std"),
                     .root_src_path = "std.zig",
@@ -2021,7 +2021,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 error.StackProtectorUnsupportedByTarget => unreachable,
                 error.StackProtectorUnavailableWithoutLibC => unreachable,
                 error.PatchableFunctionEntryUnsupportedByBackend => unreachable,
-            };
+            });
 
             const zcu = try arena.create(Zcu);
             zcu.* = .{

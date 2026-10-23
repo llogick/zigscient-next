@@ -62,13 +62,13 @@ pub fn lookup(vername: []const u8, name: []const u8) usize {
     const hashtab = maybe_hashtab orelse return 0;
     if (maybe_verdef == null) maybe_versym = null;
 
-    const OK_TYPES = (1 << elf.STT_NOTYPE | 1 << elf.STT_OBJECT | 1 << elf.STT_FUNC | 1 << elf.STT_COMMON);
-    const OK_BINDS = (1 << elf.STB_GLOBAL | 1 << elf.STB_WEAK | 1 << elf.STB_GNU_UNIQUE);
+    const OK_TYPES = (1 << elf.STT_NOTYPE) | (1 << elf.STT_OBJECT) | (1 << elf.STT_FUNC) | (1 << elf.STT_COMMON);
+    const OK_BINDS = (1 << elf.STB_GLOBAL) | (1 << elf.STB_WEAK) | (1 << elf.STB_GNU_UNIQUE);
 
     var i: usize = 0;
     while (i < hashtab[1]) : (i += 1) {
-        if (0 == (@as(u32, 1) << @as(u5, @intCast(syms[i].st_info & 0xf)) & OK_TYPES)) continue;
-        if (0 == (@as(u32, 1) << @as(u5, @intCast(syms[i].st_info >> 4)) & OK_BINDS)) continue;
+        if (0 == (@as(u32, 1) << @as(u5, @intCast(syms[i].st_info & 0xf))) & OK_TYPES) continue;
+        if (0 == (@as(u32, 1) << @as(u5, @intCast(syms[i].st_info >> 4))) & OK_BINDS) continue;
         if (0 == syms[i].st_shndx) continue;
         const sym_name = @as([*:0]u8, @ptrCast(strings + syms[i].st_name));
         if (!mem.eql(u8, name, mem.sliceTo(sym_name, 0))) continue;

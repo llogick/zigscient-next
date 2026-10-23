@@ -7694,11 +7694,11 @@ fn loadArchive(elf: *Elf, path: std.Build.Cache.Path, fr: *Io.File.Reader) (Load
             {
                 break :load_object;
             }
-            const member = header.name() orelse member: {
-                const strtab_offset = header.nameOffset() catch |err| switch (err) {
+            const member = header.name() orelse (member: {
+                const strtab_offset = (header.nameOffset() catch |err| switch (err) {
                     error.Overflow => break :member error.Overflow,
                     error.InvalidCharacter => break :load_object,
-                } orelse break :load_object;
+                }) orelse break :load_object;
                 const strtab_written = strtab.written();
                 if (strtab_offset > strtab_written.len) break :member error.Overflow;
                 const member = std.mem.sliceTo(strtab_written[strtab_offset..], '\n');
@@ -7708,7 +7708,7 @@ fn loadArchive(elf: *Elf, path: std.Build.Cache.Path, fr: *Io.File.Reader) (Load
                     member;
             } catch |err| switch (err) {
                 error.Overflow => return diags.failParse(path, "bad member name offset", .{}),
-            };
+            });
             try elf.loadObject(path, member, fr, .{ .offset = offset, .size = size });
         }
         try fr.seekTo(std.mem.alignForward(u64, offset + size, 2));

@@ -186,9 +186,9 @@ test "try ptr propagation mutate" {
             res1.* += 1;
             res2.* += 1;
 
-            try expect(f0 catch unreachable == 1);
-            try expect(f1 catch unreachable == 2);
-            try expect(f2 catch unreachable == 3);
+            try expect((f0 catch unreachable) == 1);
+            try expect((f1 catch unreachable) == 2);
+            try expect((f2 catch unreachable) == 3);
 
             try expect(res0.* == 1);
             try expect(res1.* == 2);

@@ -217,7 +217,7 @@ pub const TrackedInst = extern struct {
         };
         pub fn unwrap(tracked_inst_index: TrackedInst.Index, ip: *const InternPool) Unwrapped {
             return .{
-                .tid = @fromBackingInt(@intCast(@backingInt(tracked_inst_index) >> ip.tid_shift_32 & ip.getTidMask())),
+                .tid = @fromBackingInt(@intCast((@backingInt(tracked_inst_index) >> ip.tid_shift_32) & ip.getTidMask())),
                 .index = @backingInt(tracked_inst_index) & ip.getIndexMask(u32),
             };
         }
@@ -519,7 +519,7 @@ pub const ComptimeUnit = extern struct {
         };
         fn unwrap(id: Id, ip: *const InternPool) Unwrapped {
             return .{
-                .tid = @fromBackingInt(@intCast(@backingInt(id) >> ip.tid_shift_32 & ip.getTidMask())),
+                .tid = @fromBackingInt(@intCast((@backingInt(id) >> ip.tid_shift_32) & ip.getTidMask())),
                 .index = @backingInt(id) & ip.getIndexMask(u31),
             };
         }
@@ -657,7 +657,7 @@ pub const Nav = struct {
         };
         fn unwrap(nav_index: Nav.Index, ip: *const InternPool) Unwrapped {
             return .{
-                .tid = @fromBackingInt(@intCast(@backingInt(nav_index) >> ip.tid_shift_30 & ip.getTidMask())),
+                .tid = @fromBackingInt(@intCast((@backingInt(nav_index) >> ip.tid_shift_30) & ip.getTidMask())),
                 .index = @backingInt(nav_index) & ip.getIndexMask(u30),
             };
         }
@@ -1629,7 +1629,7 @@ pub const MapIndex = enum(u32) {
     };
     fn unwrap(map_index: MapIndex, ip: *const InternPool) Unwrapped {
         return .{
-            .tid = @fromBackingInt(@intCast(@backingInt(map_index) >> ip.tid_shift_32 & ip.getTidMask())),
+            .tid = @fromBackingInt(@intCast((@backingInt(map_index) >> ip.tid_shift_32) & ip.getTidMask())),
             .index = @backingInt(map_index) & ip.getIndexMask(u32),
         };
     }
@@ -1650,14 +1650,14 @@ pub const NamespaceIndex = enum(u32) {
             assert(unwrapped.bucket_index <= ip.getIndexMask(u32) >> Local.namespaces_bucket_width);
             assert(unwrapped.index <= Local.namespaces_bucket_mask);
             return @fromBackingInt(@intCast(@shlExact(@as(u32, @backingInt(unwrapped.tid)), ip.tid_shift_32) |
-                unwrapped.bucket_index << Local.namespaces_bucket_width |
+                (unwrapped.bucket_index << Local.namespaces_bucket_width) |
                 unwrapped.index));
         }
     };
     fn unwrap(namespace_index: NamespaceIndex, ip: *const InternPool) Unwrapped {
         const index = @backingInt(namespace_index) & ip.getIndexMask(u32);
         return .{
-            .tid = @fromBackingInt(@intCast(@backingInt(namespace_index) >> ip.tid_shift_32 & ip.getTidMask())),
+            .tid = @fromBackingInt(@intCast((@backingInt(namespace_index) >> ip.tid_shift_32) & ip.getTidMask())),
             .bucket_index = index >> Local.namespaces_bucket_width,
             .index = index & Local.namespaces_bucket_mask,
         };
@@ -1698,7 +1698,7 @@ pub const FileIndex = enum(u32) {
     };
     pub fn unwrap(file_index: FileIndex, ip: *const InternPool) Unwrapped {
         return .{
-            .tid = @fromBackingInt(@intCast(@backingInt(file_index) >> ip.tid_shift_32 & ip.getTidMask())),
+            .tid = @fromBackingInt(@intCast((@backingInt(file_index) >> ip.tid_shift_32) & ip.getTidMask())),
             .index = @backingInt(file_index) & ip.getIndexMask(u32),
         };
     }
@@ -1757,7 +1757,7 @@ pub const String = enum(u32) {
     };
     fn unwrap(string: String, ip: *const InternPool) Unwrapped {
         return .{
-            .tid = @fromBackingInt(@intCast(@backingInt(string) >> ip.tid_shift_32 & ip.getTidMask())),
+            .tid = @fromBackingInt(@intCast((@backingInt(string) >> ip.tid_shift_32) & ip.getTidMask())),
             .index = @backingInt(string) & ip.getIndexMask(u32),
         };
     }
@@ -4201,7 +4201,7 @@ pub const Index = enum(u32) {
     };
     pub fn unwrap(index: Index, ip: *const InternPool) Unwrapped {
         return .{
-            .tid = @fromBackingInt(@intCast(@backingInt(index) >> ip.tid_shift_30 & ip.getTidMask())),
+            .tid = @fromBackingInt(@intCast((@backingInt(index) >> ip.tid_shift_30) & ip.getTidMask())),
             .index = @backingInt(index) & ip.getIndexMask(u30),
         };
     }
@@ -6064,7 +6064,7 @@ pub const PtrNav = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -6082,7 +6082,7 @@ pub const PtrUav = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -6103,7 +6103,7 @@ pub const PtrUavAligned = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -6121,7 +6121,7 @@ pub const PtrComptimeAlloc = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -6139,7 +6139,7 @@ pub const PtrComptimeField = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -6157,7 +6157,7 @@ pub const PtrBase = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -6177,7 +6177,7 @@ pub const PtrBaseIndex = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -6193,7 +6193,7 @@ pub const PtrInt = struct {
         };
     }
     fn byteOffset(data: @This()) u64 {
-        return @as(u64, data.byte_offset_a) << 32 | data.byte_offset_b;
+        return (@as(u64, data.byte_offset_a) << 32) | data.byte_offset_b;
     }
 };
 
@@ -12636,7 +12636,7 @@ const PackedCallingConvention = packed struct(u18) {
                 std.lang.CallingConvention.SpirvFragmentOptions => .{
                     .tag = tag,
                     .incoming_stack_alignment = .none,
-                    .extra = @as(u4, @backingInt(pl.depth_assumption)) << 1 | @intFromBool(pl.pixel_centered_integer),
+                    .extra = (@as(u4, @backingInt(pl.depth_assumption)) << 1) | @intFromBool(pl.pixel_centered_integer),
                 },
                 std.lang.CallingConvention.SpirvMeshOptions => .{
                     .tag = tag,

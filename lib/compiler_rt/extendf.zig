@@ -165,7 +165,7 @@ pub fn f128_floatCast_f80(a: f80) f128 {
     }
 
     // Apply the signbit to (dst_t)abs(a).
-    const result: u128 = abs_result | @as(u128, sign) << (dst_bits - 16);
+    const result: u128 = abs_result | (@as(u128, sign) << (dst_bits - 16));
     return @bitCast(result);
 }
 
@@ -232,7 +232,7 @@ inline fn extendf(comptime dst_t: type, comptime src_t: type, f: src_t) dst_t {
     }
 
     // Apply the signbit to (dst_t)abs(a).
-    const result: dst_rep_t = absResult | @as(dst_rep_t, sign) << (dstBits - srcBits);
+    const result: dst_rep_t = absResult | (@as(dst_rep_t, sign) << (dstBits - srcBits));
     return @bitCast(result);
 }
 

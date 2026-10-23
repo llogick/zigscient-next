@@ -259,7 +259,7 @@ inline fn addf3(comptime T: type, a: T, b: T) T {
         // adjust the exponent:
         if (aSignificand & (integerBit << 4) != 0) {
             const sticky = aSignificand & 1;
-            aSignificand = aSignificand >> 1 | sticky;
+            aSignificand = (aSignificand >> 1) | sticky;
             aExponent += 1;
         }
     }

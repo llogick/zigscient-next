@@ -1931,10 +1931,10 @@ const BatchWaiter = struct {
 
 fn batchAwaitAsync(userdata: ?*anyopaque, batch: *Io.Batch) Io.Cancelable!void {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    const queue = ev.batchDrainSubmitted(batch, false) catch |err| switch (err) {
+    const queue = (ev.batchDrainSubmitted(batch, false) catch |err| switch (err) {
         error.ConcurrencyUnavailable => unreachable, // passed concurrency=false
         error.Canceled => |e| return e,
-    } orelse return;
+    }) orelse return;
     if (batch.pending.head == .none) return;
     var waiter: BatchWaiter = .{
         .sleeper = .init(ev.queue, Thread.current().currentFiber()),

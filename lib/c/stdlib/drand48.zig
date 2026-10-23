@@ -30,7 +30,7 @@ var lcg: Lcg = .init(0, default_multiplier, default_addend);
 var seed48_xi: [3]c_ushort = undefined;
 
 fn erand48(xsubi: *[3]c_ushort) callconv(.c) f64 {
-    const xi = @as(u48, @as(u16, @truncate(xsubi[0])) | (@as(u48, @as(u16, @truncate(xsubi[1])))) << 16) | (@as(u48, @as(u16, @truncate(xsubi[2]))) << 32);
+    const xi = @as(u48, @as(u16, @truncate(xsubi[0])) | ((@as(u48, @as(u16, @truncate(xsubi[1])))) << 16)) | (@as(u48, @as(u16, @truncate(xsubi[2]))) << 32);
 
     var separate_lcg: Lcg = .init(xi, lcg.a, lcg.c);
     const next_xi = separate_lcg.next();
@@ -40,7 +40,7 @@ fn erand48(xsubi: *[3]c_ushort) callconv(.c) f64 {
 }
 
 fn jrand48(xsubi: *[3]c_ushort) callconv(.c) c_long {
-    const xi = @as(u48, @as(u16, @truncate(xsubi[0])) | (@as(u48, @as(u16, @truncate(xsubi[1])))) << 16) | (@as(u48, @as(u16, @truncate(xsubi[2]))) << 32);
+    const xi = @as(u48, @as(u16, @truncate(xsubi[0])) | ((@as(u48, @as(u16, @truncate(xsubi[1])))) << 16)) | (@as(u48, @as(u16, @truncate(xsubi[2]))) << 32);
 
     var separate_lcg: Lcg = .init(xi, lcg.a, lcg.c);
     const next_xi = separate_lcg.next();
@@ -50,7 +50,7 @@ fn jrand48(xsubi: *[3]c_ushort) callconv(.c) c_long {
 }
 
 fn nrand48(xsubi: *[3]c_ushort) callconv(.c) c_long {
-    const xi = @as(u48, @as(u16, @truncate(xsubi[0])) | (@as(u48, @as(u16, @truncate(xsubi[1])))) << 16) | (@as(u48, @as(u16, @truncate(xsubi[2]))) << 32);
+    const xi = @as(u48, @as(u16, @truncate(xsubi[0])) | ((@as(u48, @as(u16, @truncate(xsubi[1])))) << 16)) | (@as(u48, @as(u16, @truncate(xsubi[2]))) << 32);
 
     var separate_lcg: Lcg = .init(xi, lcg.a, lcg.c);
     const next_xi = separate_lcg.next();
@@ -74,14 +74,14 @@ fn mrand48() callconv(.c) c_long {
 // 0..3 is `Xi`, 3..6 is `a`, 6 is `c`
 // first low 16-bits, then mid, then high.
 fn lcong48(param: *[7]c_ushort) callconv(.c) void {
-    lcg.xi = (@as(u48, @as(u16, @truncate(param[0]))) | (@as(u48, @as(u16, @truncate(param[1])))) << 16) | (@as(u48, @as(u16, @truncate(param[2]))) << 32);
-    lcg.a = (@as(u48, @as(u16, @truncate(param[3]))) | (@as(u48, @as(u16, @truncate(param[4])))) << 16) | (@as(u48, @as(u16, @truncate(param[5]))) << 32);
+    lcg.xi = (@as(u48, @as(u16, @truncate(param[0]))) | ((@as(u48, @as(u16, @truncate(param[1])))) << 16)) | (@as(u48, @as(u16, @truncate(param[2]))) << 32);
+    lcg.a = (@as(u48, @as(u16, @truncate(param[3]))) | ((@as(u48, @as(u16, @truncate(param[4])))) << 16)) | (@as(u48, @as(u16, @truncate(param[5]))) << 32);
     lcg.c = @as(u16, @truncate(param[6]));
 }
 
 fn seed48(seed16v: *[3]c_ushort) callconv(.c) *[3]c_ushort {
     seed48_xi = .{ @truncate(lcg.xi & 0xFFFF), @truncate((lcg.xi >> 16) & 0xFFFF), @truncate((lcg.xi >> 32) & 0xFFFF) };
-    const xi = (@as(u48, @as(u16, @truncate(seed16v[0]))) | (@as(u48, @as(u16, @truncate(seed16v[1])))) << 16) | (@as(u48, @as(u16, @truncate(seed16v[2]))) << 32);
+    const xi = (@as(u48, @as(u16, @truncate(seed16v[0]))) | ((@as(u48, @as(u16, @truncate(seed16v[1])))) << 16)) | (@as(u48, @as(u16, @truncate(seed16v[2]))) << 32);
     lcg = .init(xi, default_multiplier, default_addend);
     return &seed48_xi;
 }

@@ -1512,7 +1512,7 @@ fn expectAssignExpr(p: *Parse) !Node.Index {
 }
 
 fn parseExpr(p: *Parse) Error!?Node.Index {
-    return p.parseExprPrecedence(0);
+    return p.parseExprPrecedence(.start, p.tok_i);
 }
 
 fn expectExpr(p: *Parse) Error!Node.Index {
@@ -1524,67 +1524,335 @@ const Assoc = enum {
     none,
 };
 
-const OperInfo = struct {
-    prec: i8,
-    tag: Node.Tag,
+const PrecClass = struct {
+    group: Group,
     assoc: Assoc = Assoc.left,
+
+    const Group = enum {
+        const num_distinct = std.meta.fieldNames(Group).len;
+
+        top,
+
+        arithmetic_product_chainable,
+        arithmetic_mod_nonchainable,
+        arithmetic_sum,
+
+        bitwise_shift,
+        bitwise_and,
+        bitwise_xor,
+        bitwise_or,
+
+        comparison,
+
+        bool_and,
+        bool_or,
+
+        recovery_orelse,
+        recovery_catch,
+
+        root,
+
+        const Major = enum {
+            top,
+            arithmetic,
+            bitwise,
+            comparison,
+            bool,
+            recovery,
+            root,
+        };
+
+        fn getMajor(group: Group) Major {
+            return switch (group) {
+                .top,
+                => .top,
+
+                .arithmetic_product_chainable,
+                .arithmetic_mod_nonchainable,
+                .arithmetic_sum,
+                => .arithmetic,
+
+                .bitwise_shift,
+                .bitwise_and,
+                .bitwise_xor,
+                .bitwise_or,
+                => .bitwise,
+
+                .comparison,
+                => .comparison,
+
+                .bool_and,
+                .bool_or,
+                => .bool,
+
+                .recovery_orelse,
+                .recovery_catch,
+                => .recovery,
+
+                .root,
+                => .root,
+            };
+        }
+    };
+
+    pub const start: PrecClass = .{ .group = .root };
+
+    pub const Rel = enum(i2) {
+        lt = -1,
+        eq = 0,
+        gt = 1,
+
+        fn inverted(self: Rel) Rel {
+            return @fromBackingInt(@intCast(-@backingInt(self)));
+        }
+    };
+
+    const PrecedenceArray = [Group.num_distinct][Group.num_distinct]?Rel;
+
+    fn setMajorRelation(prec_array: *PrecedenceArray, major_a: Group.Major, rel: Rel, major_b: Group.Major) void {
+        for (std.meta.fieldNames(Group), 0..) |fieldname_i, i| {
+            if (@field(Group, fieldname_i).getMajor() != major_a) continue;
+
+            for (std.meta.fieldNames(Group), 0..) |fieldname_j, j| {
+                if (@field(Group, fieldname_j).getMajor() != major_b) continue;
+
+                prec_array[i][j] = rel;
+                prec_array[j][i] = rel.inverted();
+            }
+        }
+    }
+
+    fn setMinorRelation(prec_array: *PrecedenceArray, minor_a: Group, rel: Rel, minor_b: Group) void {
+        prec_array[@backingInt(minor_a)][@backingInt(minor_b)] = rel;
+        prec_array[@backingInt(minor_b)][@backingInt(minor_a)] = rel.inverted();
+    }
+
+    /// order[y][x] --> y cmp x
+    const precedence_ordering = b: {
+        @setEvalBranchQuota(20_000);
+        const major_greater_than_relations = [_][2]Group.Major{
+            // zig fmt: off
+            .{ .top,        .arithmetic },
+            .{ .top,        .bitwise },
+            .{ .top,        .recovery },
+            .{ .arithmetic, .comparison },
+            .{ .bitwise,    .comparison },
+            .{ .comparison, .bool },
+            .{ .bool,       .root },
+            .{ .recovery,   .root },
+            // zig fmt: on
+        };
+
+        var order: PrecedenceArray = @splat(@splat(null));
+
+        for (major_greater_than_relations) |relation| {
+            setMajorRelation(&order, relation[0], .gt, relation[1]);
+        }
+
+        setMinorRelation(&order, .arithmetic_mod_nonchainable, .gt, .arithmetic_sum);
+        setMinorRelation(&order, .arithmetic_product_chainable, .gt, .arithmetic_sum);
+
+        computeTransitiveOrdering(&order);
+        break :b order;
+    };
+
+    /// Uses the table from Zig-0.17.0
+    ///   * / % *% *| ||
+    ///   + - ++ +% -% +| -|
+    ///   << >> <<|
+    ///   & ^ | orelse catch
+    ///   == != < > <= >=
+    ///   and
+    ///   or
+    const v0_17_precedence_ordering = b: {
+        @setEvalBranchQuota(20_000);
+
+        var order: PrecedenceArray = @splat(@splat(null));
+
+        setMinorRelation(&order, .top, .gt, .arithmetic_product_chainable);
+
+        setMinorRelation(&order, .arithmetic_product_chainable, .eq, .arithmetic_mod_nonchainable);
+        setMinorRelation(&order, .arithmetic_mod_nonchainable, .gt, .arithmetic_sum);
+
+        setMinorRelation(&order, .arithmetic_sum, .gt, .bitwise_shift);
+
+        setMinorRelation(&order, .bitwise_shift, .gt, .bitwise_and);
+
+        setMinorRelation(&order, .bitwise_and, .eq, .bitwise_xor);
+        setMinorRelation(&order, .bitwise_and, .eq, .bitwise_or);
+        setMinorRelation(&order, .bitwise_and, .eq, .recovery_catch);
+        setMinorRelation(&order, .bitwise_and, .eq, .recovery_orelse);
+
+        setMinorRelation(&order, .bitwise_and, .gt, .comparison);
+
+        setMinorRelation(&order, .comparison, .gt, .bool_and);
+
+        setMinorRelation(&order, .bool_and, .gt, .bool_or);
+
+        setMinorRelation(&order, .bool_or, .gt, .root);
+
+        computeTransitiveOrdering(&order);
+        for (order) |row| {
+            for (row) |item| {
+                if (item == null) @compileError("Null entry in old precedence ordering which had none.");
+            }
+        }
+        break :b order;
+    };
+
+    pub fn cmp(lhs: PrecClass, rhs: PrecClass) ?Rel {
+        return PrecClass.precedence_ordering[@backingInt(lhs.group)][@backingInt(rhs.group)];
+    }
+
+    pub fn v0_17_cmp(lhs: PrecClass, rhs: PrecClass) Rel {
+        return PrecClass.v0_17_precedence_ordering[@backingInt(lhs.group)][@backingInt(rhs.group)].?;
+    }
+
+    fn computeTransitiveOrdering(order: *PrecedenceArray) void {
+        for (0..Group.num_distinct) |i| for (0..Group.num_distinct) |j| for (0..Group.num_distinct) |k| {
+            if (order[i][j] == null or order[j][k] == null) continue;
+            // X < Y < Z ==> X < Z         X > Y > Z ==> X > Z
+            if (order[i][j] == order[j][k]) order[i][k] = order[i][j];
+            // X = Y < Z ==> X < Z         X = Y > Z ==> X > Z
+            if (order[i][j] == .eq) order[i][k] = order[j][k];
+            // X < Y = Z ==> X < Z         X > Y = Z ==> X > Z
+            if (order[j][k] == .eq) order[i][k] = order[i][j];
+        };
+        for (0..Group.num_distinct) |i| for (0..Group.num_distinct) |j| {
+            if (i == j) order[i][j] = .eq;
+            if (order[i][j] == null and order[j][i] != null) order[i][j] = order[j][i].?.inverted();
+        };
+    }
 };
 
-// A table of binary operator information. Higher precedence numbers are
-// stickier. All operators at the same precedence level should have the same
-// associativity.
-const operTable = std.enums.directEnumArrayDefault(Token.Tag, OperInfo, .{ .prec = -1, .tag = Node.Tag.root }, 0, .{
-    .keyword_or = .{ .prec = 10, .tag = .bool_or },
+const OperInfo = struct {
+    prec: PrecClass,
+    tag: Node.Tag,
+};
 
-    .keyword_and = .{ .prec = 20, .tag = .bool_and },
+const operTable = std.enums.directEnumArrayDefault(Token.Tag, OperInfo, .{ .prec = .start, .tag = Node.Tag.root }, 0, .{
+    // zig fmt: off
+    .keyword_or =                            .{ .prec = .{ .group = .bool_or },                                          .tag = .bool_or },
 
-    .equal_equal = .{ .prec = 30, .tag = .equal_equal, .assoc = Assoc.none },
-    .bang_equal = .{ .prec = 30, .tag = .bang_equal, .assoc = Assoc.none },
-    .angle_bracket_left = .{ .prec = 30, .tag = .less_than, .assoc = Assoc.none },
-    .angle_bracket_right = .{ .prec = 30, .tag = .greater_than, .assoc = Assoc.none },
-    .angle_bracket_left_equal = .{ .prec = 30, .tag = .less_or_equal, .assoc = Assoc.none },
-    .angle_bracket_right_equal = .{ .prec = 30, .tag = .greater_or_equal, .assoc = Assoc.none },
+    .keyword_and =                           .{ .prec = .{ .group = .bool_and },                                         .tag = .bool_and },
 
-    .ampersand = .{ .prec = 40, .tag = .bit_and },
-    .caret = .{ .prec = 40, .tag = .bit_xor },
-    .pipe = .{ .prec = 40, .tag = .bit_or },
-    .keyword_orelse = .{ .prec = 40, .tag = .@"orelse" },
-    .keyword_catch = .{ .prec = 40, .tag = .@"catch" },
+    .equal_equal =                           .{ .prec = .{ .group = .comparison, .assoc = Assoc.none },                  .tag = .equal_equal },
+    .bang_equal =                            .{ .prec = .{ .group = .comparison, .assoc = Assoc.none },                  .tag = .bang_equal },
+    .angle_bracket_left =                    .{ .prec = .{ .group = .comparison, .assoc = Assoc.none },                  .tag = .less_than },
+    .angle_bracket_right =                   .{ .prec = .{ .group = .comparison, .assoc = Assoc.none },                  .tag = .greater_than },
+    .angle_bracket_left_equal =              .{ .prec = .{ .group = .comparison, .assoc = Assoc.none },                  .tag = .less_or_equal },
+    .angle_bracket_right_equal =             .{ .prec = .{ .group = .comparison, .assoc = Assoc.none },                  .tag = .greater_or_equal },
 
-    .angle_bracket_angle_bracket_left = .{ .prec = 50, .tag = .shl },
-    .angle_bracket_angle_bracket_left_pipe = .{ .prec = 50, .tag = .shl_sat },
-    .angle_bracket_angle_bracket_right = .{ .prec = 50, .tag = .shr },
+    .ampersand =                             .{ .prec = .{ .group = .bitwise_and },                                      .tag = .bit_and },
+    .caret =                                 .{ .prec = .{ .group = .bitwise_xor },                                      .tag = .bit_xor },
+    .pipe =                                  .{ .prec = .{ .group = .bitwise_or },                                       .tag = .bit_or },
 
-    .plus = .{ .prec = 60, .tag = .add },
-    .minus = .{ .prec = 60, .tag = .sub },
-    .plus_plus = .{ .prec = 60, .tag = .array_cat },
-    .plus_percent = .{ .prec = 60, .tag = .add_wrap },
-    .minus_percent = .{ .prec = 60, .tag = .sub_wrap },
-    .plus_pipe = .{ .prec = 60, .tag = .add_sat },
-    .minus_pipe = .{ .prec = 60, .tag = .sub_sat },
+    .keyword_orelse =                        .{ .prec = .{ .group = .recovery_orelse },                                  .tag = .@"orelse" },
+    .keyword_catch =                         .{ .prec = .{ .group = .recovery_catch },                                   .tag = .@"catch" },
 
-    .pipe_pipe = .{ .prec = 70, .tag = .merge_error_sets },
-    .asterisk = .{ .prec = 70, .tag = .mul },
-    .slash = .{ .prec = 70, .tag = .div },
-    .percent = .{ .prec = 70, .tag = .mod },
-    .asterisk_percent = .{ .prec = 70, .tag = .mul_wrap },
-    .asterisk_pipe = .{ .prec = 70, .tag = .mul_sat },
+    .angle_bracket_angle_bracket_left =      .{ .prec = .{ .group = .bitwise_shift, .assoc = Assoc.none },               .tag = .shl },
+    .angle_bracket_angle_bracket_left_pipe = .{ .prec = .{ .group = .bitwise_shift, .assoc = Assoc.none },               .tag = .shl_sat },
+    .angle_bracket_angle_bracket_right =     .{ .prec = .{ .group = .bitwise_shift, .assoc = Assoc.none },               .tag = .shr },
+
+    .plus =                                  .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .add },
+    .minus =                                 .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .sub },
+    .plus_plus =                             .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .array_cat },
+    .plus_percent =                          .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .add_wrap },
+    .minus_percent =                         .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .sub_wrap },
+    .plus_pipe =                             .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .add_sat },
+    .minus_pipe =                            .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .sub_sat },
+
+    .pipe_pipe =                             .{ .prec = .{ .group = .arithmetic_product_chainable },                     .tag = .merge_error_sets },
+    .asterisk =                              .{ .prec = .{ .group = .arithmetic_product_chainable },                     .tag = .mul },
+    .slash =                                 .{ .prec = .{ .group = .arithmetic_product_chainable },                     .tag = .div },
+    .asterisk_percent =                      .{ .prec = .{ .group = .arithmetic_product_chainable },                     .tag = .mul_wrap },
+    .asterisk_pipe =                         .{ .prec = .{ .group = .arithmetic_product_chainable },                     .tag = .mul_sat },
+
+    .percent =                               .{ .prec = .{ .group = .arithmetic_mod_nonchainable, .assoc = Assoc.none }, .tag = .mod },
+    // zig fmt: on
 });
 
-fn parseExprPrecedence(p: *Parse, min_prec: i32) Error!?Node.Index {
-    assert(min_prec >= 0);
+fn parseExprPrecedence(p: *Parse, min_exc_prec: PrecClass, prev_operator_token: u32) Error!?Node.Index {
     var node = try p.parsePrefixExpr() orelse return null;
-
-    var banned_prec: i8 = -1;
 
     while (true) {
         const tok_tag = p.tokenTag(p.tok_i);
-        const info = operTable[@as(usize, @intCast(@backingInt(tok_tag)))];
-        if (info.prec < min_prec) {
+        const info = operTable[@backingInt(tok_tag)];
+
+        const rel = info.prec.cmp(min_exc_prec) orelse b: {
+            const prev_op_tok_tag = p.tokenTag(prev_operator_token);
+            const prev_op_info = operTable[@backingInt(prev_op_tok_tag)];
+            const v0_17_rel = prev_op_info.prec.v0_17_cmp(info.prec);
+            try p.warnMsg(.{
+                .tag = .ambiguous_operator_precedence,
+                .is_note = false,
+                .token = p.tok_i,
+                .extra = .{
+                    .offset = p.tok_i - prev_operator_token,
+                },
+            });
+            try p.warnMsg(.{
+                .tag = .previous_ambiguous_operator,
+                .is_note = true,
+                .token = prev_operator_token,
+            });
+            if (v0_17_rel == .gt or v0_17_rel == .eq) {
+                try p.warnMsg(.{
+                    .tag = .hint_operator_precedence_left,
+                    .is_note = true,
+                    .token = p.tok_i,
+                    .extra = .{
+                        .offset = p.tok_i - prev_operator_token,
+                    },
+                });
+            } else {
+                try p.warnMsg(.{
+                    .tag = .hint_operator_precedence_right,
+                    .is_note = true,
+                    .token = p.tok_i,
+                    .extra = .{
+                        .offset = p.tok_i - prev_operator_token,
+                    },
+                });
+            }
+            // Use the old precedence rules to construct the tree to ease automatic fixups
+            break :b info.prec.v0_17_cmp(min_exc_prec);
+        };
+
+        if (rel == .lt) {
             break;
         }
-        if (info.prec == banned_prec) {
-            return p.fail(.chained_comparison_operators);
+
+        if (min_exc_prec.group == info.prec.group and min_exc_prec.assoc == .none and info.prec.assoc == .none) {
+            if (info.prec.group == .comparison) {
+                try p.warn(.chained_comparison_operators);
+            } else {
+                try p.warnMsg(.{
+                    .tag = .illegal_chained_operators,
+                    .is_note = false,
+                    .token = p.tok_i,
+                    .extra = .{
+                        .offset = p.tok_i - prev_operator_token,
+                    },
+                });
+                try p.warnMsg(.{
+                    .tag = .previous_ambiguous_operator,
+                    .is_note = true,
+                    .token = prev_operator_token,
+                });
+                try p.warnMsg(.{
+                    .tag = .hint_operator_precedence_left,
+                    .is_note = true,
+                    .token = p.tok_i,
+                    .extra = .{
+                        .offset = p.tok_i - prev_operator_token,
+                    },
+                });
+            }
+        }
+
+        if (rel == .eq) {
+            break;
         }
 
         const oper_token = p.nextToken();
@@ -1614,7 +1882,7 @@ fn parseExprPrecedence(p: *Parse, min_prec: i32) Error!?Node.Index {
             }
         }
 
-        const rhs = try p.parseExprPrecedence(info.prec + 1) orelse {
+        const rhs = try p.parseExprPrecedence(info.prec, oper_token) orelse {
             try p.warn(.expected_expr);
             return node;
         };
@@ -1624,10 +1892,6 @@ fn parseExprPrecedence(p: *Parse, min_prec: i32) Error!?Node.Index {
             .main_token = oper_token,
             .data = .{ .node_and_node = .{ node, rhs } },
         });
-
-        if (info.assoc == Assoc.none) {
-            banned_prec = info.prec;
-        }
     }
 
     return node;

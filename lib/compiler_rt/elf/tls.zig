@@ -251,7 +251,7 @@ fn setThreadPointer(addr: usize) void {
             // Update the %gs selector
             asm volatile ("movl %[gs_val], %%gs"
                 :
-                : [gs_val] "r" (gdt_entry_number << 3 | 3),
+                : [gs_val] "r" ((gdt_entry_number << 3) | 3),
             );
         },
         .x86_64 => {

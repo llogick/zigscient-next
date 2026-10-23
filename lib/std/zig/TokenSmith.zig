@@ -160,7 +160,7 @@ pub fn gen(smith: *Smith) TokenSmith {
                 var no_period = false;
                 var not_exponent = true;
                 for (t.source_buf[t.source_len..][0..len], 0..) |*c, i| {
-                    const invalid_period = no_period and c.* == '.' or i + 1 == len;
+                    const invalid_period = (no_period and c.* == '.') or i + 1 == len;
                     const is_exponent = c.* == '-' or c.* == '+';
                     const invalid_exponent = not_exponent and is_exponent;
                     const valid_exponent = !not_exponent and is_exponent;

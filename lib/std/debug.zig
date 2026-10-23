@@ -1306,7 +1306,7 @@ fn printLineInfo(
     try writer.print("0x{x} in {s} ({s})", .{
         address,
         symbol.name orelse "???",
-        symbol.compile_unit_name orelse debug_info.getModuleName(io, address) catch "???",
+        symbol.compile_unit_name orelse (debug_info.getModuleName(io, address) catch "???"),
     });
     t.setColor(.reset) catch {};
     try writer.writeAll("\n");

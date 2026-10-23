@@ -2019,7 +2019,7 @@ test "getOrPutAdapted" {
     const AdaptedContext = struct {
         fn eql(self: @This(), adapted_key: []const u8, test_key: u64) bool {
             _ = self;
-            return std.fmt.parseInt(u64, adapted_key, 10) catch unreachable == test_key;
+            return (std.fmt.parseInt(u64, adapted_key, 10) catch unreachable) == test_key;
         }
         fn hash(self: @This(), adapted_key: []const u8) u64 {
             _ = self;

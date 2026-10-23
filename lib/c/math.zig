@@ -355,7 +355,7 @@ fn pow10f(x: f32) callconv(.c) f32 {
 fn rint(x: f64) callconv(.c) f64 {
     const toint: f64 = 1.0 / math.floatEps(f64);
     const a: u64 = @bitCast(x);
-    const e = a >> 52 & 0x7ff;
+    const e = (a >> 52) & 0x7ff;
     const s = a >> 63;
     var y: f64 = undefined;
 
@@ -376,7 +376,7 @@ fn rint(x: f64) callconv(.c) f64 {
 fn rintf(x: f32) callconv(.c) f32 {
     const toint: f32 = 1.0 / math.floatEps(f32);
     const a: u32 = @bitCast(x);
-    const e = a >> 23 & 0xff;
+    const e = (a >> 23) & 0xff;
     const s = a >> 31;
     var y: f32 = undefined;
 

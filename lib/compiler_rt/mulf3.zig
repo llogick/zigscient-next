@@ -237,7 +237,7 @@ fn wideShrWithTruncation(comptime Z: type, hi: *Z, lo: *Z, count: u32) bool {
         lo.* = (hi.* << @intCast(typeWidth -% count)) | (lo.* >> @intCast(count));
         hi.* = hi.* >> @intCast(count);
     } else if (count < 2 * typeWidth) {
-        inexact = (hi.* << @intCast(2 * typeWidth -% count) | lo.*) != 0;
+        inexact = ((hi.* << @intCast(2 * typeWidth -% count)) | lo.*) != 0;
         lo.* = hi.* >> @intCast(count -% typeWidth);
         hi.* = 0;
     } else {

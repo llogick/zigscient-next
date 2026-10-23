@@ -37,7 +37,7 @@ pub fn rem_pio2l(comptime T: type, x: T, y: *[2]T) i32 {
                 const se = ld.signExponent(x_val);
                 const top = ld.mantissaTop(x_val);
                 const lhs = (@as(u32, se & 0x7fff) << 16) | top;
-                const rhs: u32 = ((0x3fff + 25) << 16) | 0x921f >> 1 | 0x8000;
+                const rhs: u32 = ((0x3fff + 25) << 16) | (0x921f >> 1) | 0x8000;
                 return lhs < rhs;
             }
 

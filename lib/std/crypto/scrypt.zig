@@ -82,7 +82,7 @@ fn blockMix(tmp: *align(16) [16]u32, in: []align(16) const u32, out: []align(16)
 
 fn integerify(b: []align(16) const u32, r: u30) u64 {
     const j = (2 * r - 1) * 16;
-    return @as(u64, b[j]) | @as(u64, b[j + 1]) << 32;
+    return @as(u64, b[j]) | (@as(u64, b[j + 1]) << 32);
 }
 
 fn smix(b: []align(16) u8, r: u30, n: usize, v: []align(16) u32, xy: []align(16) u32) void {

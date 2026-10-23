@@ -582,8 +582,8 @@ pub const Instruction = union(Lir.Format) {
 
                             .opcode = opcode,
                             .funct3 = @backingInt(amo.width),
-                            .funct7 = @as(u7, amo.funct5) << 2 |
-                                @as(u7, @intFromBool(ops[3].barrier == .rl)) << 1 |
+                            .funct7 = (@as(u7, amo.funct5) << 2) |
+                                (@as(u7, @intFromBool(ops[3].barrier == .rl)) << 1) |
                                 @as(u7, @intFromBool(ops[4].barrier == .aq)),
                         },
                         else => unreachable,
