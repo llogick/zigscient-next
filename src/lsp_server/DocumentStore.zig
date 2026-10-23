@@ -654,15 +654,19 @@ fn loadBuildConfiguration(
     const get_cfg_path_run_result = blk: {
         const tracy_zone2 = tracy.trace(@src());
         defer tracy_zone2.end();
-        break :blk try std.process.run(
+        break :blk std.process.run(
             arena,
             io,
             .{
                 .argv = args.items,
                 .cwd = .{ .path = cwd },
-                .reserve_amount = 1024 * 4,
+                .reserve_amount = 1024 * 4 * 4,
             },
-        );
+        ) catch |err| {
+            const jargs = try std.mem.join(arena, " ", args.items);
+            log.err("Failed to run the IntegratedMaker: {t}\nCMD: {s}", .{ err, jargs });
+            return error.RunFailed;
+        };
     };
 
     const is_ok = switch (get_cfg_path_run_result.term) {
