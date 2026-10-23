@@ -1985,8 +1985,12 @@ fn parseTypeExpr(p: *Parse) Error!?Node.Index {
                 _ = p.nextToken();
                 var sentinel: ?Node.Index = null;
                 if (p.eatToken(.identifier)) |ident| {
-                    const ident_slice = p.source[p.tokenStart(ident)..p.tokenStart(ident + 1)];
-                    if (!std.mem.eql(u8, std.mem.trimEnd(u8, ident_slice, &std.ascii.whitespace), "c")) {
+                    const ident_start: usize = p.tokenStart(ident);
+                    const next = ident_start + 1;
+                    const continues_identifier = next < p.source.len and
+                        (std.ascii.isAlphanumeric(p.source[next]) or p.source[next] == '_');
+                    const is_c = p.source[ident_start] == 'c' and !continues_identifier;
+                    if (!is_c) {
                         p.tok_i -= 1;
                     }
                 } else if (p.eatToken(.colon)) |_| {
@@ -2977,13 +2981,11 @@ fn parseAddrSpace(p: *Parse) !?Node.Index {
 /// such as in the case of anytype and `...`. Caller must look for rparen to find
 /// out when there are no more param decls left.
 fn expectParamDecl(p: *Parse) !?Node.Index {
+    // Unlike ordinary parameters, the variadic marker cannot have doc comments.
+    if (p.eatToken(.ellipsis3) != null) return null;
     _ = try p.eatDocComments();
     switch (p.tokenTag(p.tok_i)) {
         .keyword_noalias, .keyword_comptime => p.tok_i += 1,
-        .ellipsis3 => {
-            p.tok_i += 1;
-            return null;
-        },
         else => {},
     }
     _ = p.eatTokens(&.{ .identifier, .colon });

@@ -158,6 +158,14 @@ test "for multiassign" {
     try checkAgainstOracle("test{for(0)|t|0,const w=0;}");
 }
 
+test "comment after c-pointer" {
+    try checkAgainstOracle("const T = [*c//x\n]u8;");
+}
+
+test "comment before variadic" {
+    try checkAgainstOracle("fn f(\n/// x\n...) void;");
+}
+
 fn checkAgainstOracle(source: [:0]const u8) !void {
     var fba_buf: [1 << 18]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&fba_buf);
