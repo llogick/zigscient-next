@@ -578,7 +578,7 @@ fn lowerZigArgs(
                         if (curate) blk: {
                             var info = maker.compile_steps_info.getPtr(compile_index) orelse break :blk;
                             if (info.args.items.len == 0) {
-                                const cwd = maker.graph.build_root_directory.path orelse std.process.currentPathAlloc(maker.graph.io, arena) catch |err| switch (err) {
+                                const cwd = (maker.graph.build_root_directory.path orelse std.process.currentPathAlloc(maker.graph.io, arena)) catch |err| switch (err) {
                                     error.Canceled => |e| return e,
                                     else => break :blk,
                                 };

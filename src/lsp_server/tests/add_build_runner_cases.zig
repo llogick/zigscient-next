@@ -30,8 +30,8 @@ pub fn addCases(
     var it = dir.iterate();
 
     while (true) {
-        const entry = it.next(b.graph.io) catch |err|
-            std.debug.panic("failed to walk directory '{s}': {}", .{ cases_path_from_root, err }) orelse break;
+        const entry = (it.next(b.graph.io) catch |err|
+            std.debug.panic("failed to walk directory '{s}': {}", .{ cases_path_from_root, err })) orelse break;
 
         if (entry.kind != .file) continue;
         if (!std.mem.eql(u8, std.fs.path.extension(entry.name), ".zig")) continue;
