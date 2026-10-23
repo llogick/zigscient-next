@@ -1082,7 +1082,10 @@ pub fn generate(
         .x86_64_sysv => .{ .sysv = .{
             .gp_count = call_info.gp_count,
             .fp_count = call_info.fp_count,
-            .overflow_arg_area = .{ .index = .args_frame, .off = call_info.stack_byte_count },
+            .overflow_arg_area = .{
+                .index = .args_frame,
+                .off = std.mem.alignForward(u31, call_info.stack_byte_count, 8),
+            },
             .reg_save_area = undefined,
         } },
         .x86_64_win => .{ .win64 = .{} },
@@ -175686,7 +175689,7 @@ fn genCall(cg: *CodeGen, info: union(enum) {
     // We need a properly aligned and sized call frame to be able to call this function.
     {
         const needed_call_frame: FrameAlloc = .init(.{
-            .size = call_info.stack_byte_count,
+            .size = call_info.stack_align.forward(call_info.stack_byte_count),
             .alignment = call_info.stack_align,
         });
         const frame_allocs_slice = cg.frame_allocs.slice();
@@ -181546,7 +181549,6 @@ fn resolveCallingConventionValues(
         else => return cg.fail("TODO implement function parameters and return values for {} on x86_64", .{cc}),
     }
 
-    result.stack_byte_count = @intCast(result.stack_align.forward(result.stack_byte_count));
     return result;
 }
 

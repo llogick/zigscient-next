@@ -351,3 +351,32 @@ test "floating point VaList args" {
     try std.testing.expectEqualSlices(f32, expected_f32, &actual_f32);
     try std.testing.expectEqualSlices(f64, expected_f64, &actual_f64);
 }
+
+test "overflowed frame varargs" {
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_llvm and !builtin.os.tag.isDarwin() and builtin.cpu.arch.isAARCH64()) {
+        // https://github.com/ziglang/zig/issues/14096
+        return error.SkipZigTest;
+    }
+    if (builtin.cpu.arch == .x86_64 and builtin.os.tag == .windows and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // TODO
+    if (builtin.cpu.arch == .x86 and builtin.os.tag == .windows and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/37448
+    if (builtin.cpu.arch == .s390x and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/21350
+    if (builtin.cpu.arch.isSPARC() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/23718
+    if (builtin.cpu.arch.isRISCV() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/25064
+    if (builtin.cpu.arch.isPowerpc() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/37431
+
+    const S = struct {
+        fn foo(out: *[3]u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, ...) callconv(.c) void {
+            var va = @cVaStart();
+            defer @cVaEnd(&va);
+            for (out) |*value| value.* = @cVaArg(&va, u64);
+        }
+    };
+
+    var actual: [3]u64 = undefined;
+    S.foo(&actual, 2, 3, 4, 5, 6, 7, @as(u64, 100), @as(u64, 200), @as(u64, 300));
+    try std.testing.expectEqualSlices(u64, &.{ 100, 200, 300 }, &actual);
+}
