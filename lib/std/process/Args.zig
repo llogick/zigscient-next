@@ -372,7 +372,7 @@ pub const Iterator = struct {
         index: usize,
         args: [][:0]u8,
 
-        pub const InitError = error{OutOfMemory} || std.posix.UnexpectedError;
+        pub const InitError = error{OutOfMemory} || std.Io.UnexpectedError;
 
         /// You must call deinit to free the internal buffer of the
         /// iterator after you are done.

@@ -1614,7 +1614,7 @@ pub const default_PATH = "/usr/local/bin:/bin:/usr/bin";
 const max_windows_kernel_bug_retries = 13;
 
 comptime {
-    if (@TypeOf(posix.IOV_MAX) != void) assert(max_iovecs_len <= posix.IOV_MAX);
+    if (!is_windows and @TypeOf(posix.IOV_MAX) != void) assert(max_iovecs_len <= posix.IOV_MAX);
 }
 
 pub const InitOptions = struct {
@@ -1696,7 +1696,7 @@ pub fn init(
         .disable_memory_mapping = options.disable_memory_mapping,
     };
 
-    if (posix.Sigaction != void) {
+    if (!is_windows and posix.Sigaction != void) {
         // This causes sending `posix.SIG.IO` to thread to interrupt blocking
         // syscalls, returning `posix.E.INTR`.
         const act: posix.Sigaction = .{
@@ -1758,7 +1758,7 @@ pub fn setAsyncLimit(t: *Threaded, new_limit: Io.Limit) void {
 
 pub fn deinit(t: *Threaded) void {
     t.join();
-    if (posix.Sigaction != void and t.have_signal_handler) {
+    if (!is_windows and posix.Sigaction != void and t.have_signal_handler) {
         if (have_sig_io) posix.sigaction(.IO, &t.old_sig_io, null);
         if (have_sig_pipe) posix.sigaction(.PIPE, &t.old_sig_pipe, null);
     }
@@ -2009,8 +2009,8 @@ const have_preadv = switch (native_os) {
     .windows, .haiku => false,
     else => true,
 };
-const have_sig_io = posix.SIG != void and @hasField(posix.SIG, "IO");
-const have_sig_pipe = posix.SIG != void and @hasField(posix.SIG, "PIPE");
+const have_sig_io = !is_windows and posix.SIG != void and @hasField(posix.SIG, "IO");
+const have_sig_pipe = !is_windows and posix.SIG != void and @hasField(posix.SIG, "PIPE");
 const have_sendfile = if (builtin.link_libc) @TypeOf(std.c.sendfile) != void else native_os == .linux;
 const have_copy_file_range = switch (native_os) {
     .linux, .freebsd => true,
@@ -7283,6 +7283,8 @@ fn fileHardLink(
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
 
+    if (is_windows) return error.OperationUnsupported;
+
     var new_path_buffer: [posix.PATH_MAX]u8 = undefined;
     const new_sub_path_posix = try pathToPosix(new_sub_path, &new_path_buffer);
 
@@ -12229,7 +12231,7 @@ fn netListenUnixPosix(
     if (!net.has_unix_sockets) return error.AddressFamilyUnsupported;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    const socket_fd = openSocketPosix(posix.AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
+    const socket_fd = openSocketPosix(AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
         error.ProtocolUnsupportedBySystem => return error.AddressFamilyUnsupported,
         error.ProtocolUnsupportedByAddressFamily => return error.AddressFamilyUnsupported,
         error.SocketModeUnsupported => return error.AddressFamilyUnsupported,
@@ -12308,8 +12310,8 @@ fn netListenUnixWindows(
 
 fn posixBindUnix(
     fd: posix.socket_t,
-    addr: *const posix.sockaddr,
-    addr_len: posix.socklen_t,
+    addr: *const sockaddr,
+    addr_len: socklen_t,
 ) !void {
     const syscall: Syscall = try .start();
     while (true) {
@@ -12351,8 +12353,8 @@ fn posixBindUnix(
 
 fn posixBind(
     socket_fd: posix.socket_t,
-    addr: *const posix.sockaddr,
-    addr_len: posix.socklen_t,
+    addr: *const sockaddr,
+    addr_len: socklen_t,
 ) !void {
     const syscall: Syscall = try .start();
     while (true) {
@@ -12386,8 +12388,8 @@ fn posixBind(
 
 fn posixConnect(
     socket_fd: posix.socket_t,
-    addr: *const posix.sockaddr,
-    addr_len: posix.socklen_t,
+    addr: *const sockaddr,
+    addr_len: socklen_t,
 ) !void {
     const syscall: Syscall = try .start();
     while (true) switch (posix.errno(posix.system.connect(socket_fd, addr, addr_len))) {
@@ -12424,8 +12426,8 @@ fn posixConnect(
 
 fn posixConnectUnix(
     fd: posix.socket_t,
-    addr: *const posix.sockaddr,
-    addr_len: posix.socklen_t,
+    addr: *const sockaddr,
+    addr_len: socklen_t,
 ) !void {
     const syscall: Syscall = try .start();
     while (true) {
@@ -12468,8 +12470,8 @@ fn posixConnectUnix(
 
 fn posixGetSockName(
     socket_fd: posix.fd_t,
-    addr: *posix.sockaddr,
-    addr_len: *posix.socklen_t,
+    addr: *sockaddr,
+    addr_len: *socklen_t,
 ) !void {
     const syscall: Syscall = try .start();
     while (true) {
@@ -12610,7 +12612,7 @@ fn netConnectUnixPosix(
     if (!net.has_unix_sockets) return error.AddressFamilyUnsupported;
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
-    const socket_fd = openSocketPosix(posix.AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
+    const socket_fd = openSocketPosix(AF.UNIX, .{ .mode = .stream }) catch |err| switch (err) {
         error.ProtocolUnsupportedByAddressFamily => return error.AddressFamilyUnsupported,
         error.OptionUnsupported => return error.Unexpected,
         else => |e| return e,
@@ -12705,7 +12707,7 @@ fn netBindIpWindows(
 }
 
 fn openSocketPosix(
-    family: posix.sa_family_t,
+    family: sa_family_t,
     options: IpAddress.BindOptions,
 ) error{
     AddressFamilyUnsupported,
@@ -12720,7 +12722,7 @@ fn openSocketPosix(
     Canceled,
 }!posix.socket_t {
     const mode, const protocol = try posixSocketModeProtocol(family, options.mode, options.protocol);
-    const flags: u32 = mode | if (socket_flags_unsupported) 0 else posix.SOCK.CLOEXEC;
+    const flags: u32 = mode | if (socket_flags_unsupported) 0 else SOCK.CLOEXEC;
     const syscall: Syscall = try .start();
     const socket_fd = while (true) {
         const rc = posix.system.socket(family, flags, protocol);
@@ -12751,7 +12753,7 @@ fn openSocketPosix(
 
     if (options.ip6_only) |ip6_only| {
         if (posix.IPV6 == void) return error.OptionUnsupported;
-        try setSocketOptionPosix(socket_fd, posix.IPPROTO.IPV6, posix.IPV6.V6ONLY, @intFromBool(ip6_only));
+        try setSocketOptionPosix(socket_fd, IPPROTO.IPV6, posix.IPV6.V6ONLY, @intFromBool(ip6_only));
     }
 
     return socket_fd;
@@ -12776,15 +12778,15 @@ fn netSocketCreatePair(
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     _ = t;
     if (!have_networking) return error.OperationUnsupported;
-    if (@TypeOf(posix.system.socketpair) == void) return error.OperationUnsupported;
+    if (is_windows or @TypeOf(posix.system.socketpair) == void) return error.OperationUnsupported;
     if (native_os == .haiku) @panic("TODO");
 
-    const family: posix.sa_family_t = switch (options.family) {
-        .ip4 => posix.AF.INET,
-        .ip6 => posix.AF.INET6,
+    const family: sa_family_t = switch (options.family) {
+        .ip4 => AF.INET,
+        .ip6 => AF.INET6,
     };
     const mode, const protocol = try posixSocketModeProtocol(family, options.mode, options.protocol);
-    const flags: u32 = mode | if (socket_flags_unsupported) 0 else posix.SOCK.CLOEXEC;
+    const flags: u32 = mode | if (socket_flags_unsupported) 0 else SOCK.CLOEXEC;
 
     var sockets: [2]posix.socket_t = undefined;
     const syscall: Syscall = try .start();
@@ -12800,7 +12802,7 @@ fn netSocketCreatePair(
                 try setCloexec(sockets[1]);
             }
             var storages: [2]PosixAddress = undefined;
-            var addr_lens: [2]posix.socklen_t = .{ @sizeOf(PosixAddress), @sizeOf(PosixAddress) };
+            var addr_lens: [2]socklen_t = .{ @sizeOf(PosixAddress), @sizeOf(PosixAddress) };
             try posixGetSockName(sockets[0], &storages[0].any, &addr_lens[0]);
             try posixGetSockName(sockets[1], &storages[1].any, &addr_lens[1]);
             return .{
@@ -12926,11 +12928,11 @@ fn netAccept(t: *Threaded, listen_fd: net.Socket.Handle, options: net.Server.Acc
 
 fn netAcceptPosix(listen_fd: net.Socket.Handle) net.Server.AcceptError!net.Socket {
     var storage: PosixAddress = undefined;
-    var addr_len: posix.socklen_t = @sizeOf(PosixAddress);
+    var addr_len: socklen_t = @sizeOf(PosixAddress);
     const syscall: Syscall = try .start();
     const fd = while (true) {
         const rc = if (have_accept4)
-            posix.system.accept4(listen_fd, &storage.any, &addr_len, posix.SOCK.CLOEXEC)
+            posix.system.accept4(listen_fd, &storage.any, &addr_len, SOCK.CLOEXEC)
         else
             posix.system.accept(listen_fd, &storage.any, &addr_len);
         switch (posix.errno(rc)) {
@@ -13788,7 +13790,7 @@ fn netInterfaceNameResolve(
     const t: *Threaded = @ptrCast(@alignCast(userdata));
 
     if (native_os == .linux) {
-        const sock_fd = openSocketPosix(posix.AF.UNIX, .{ .mode = .dgram }) catch |err| switch (err) {
+        const sock_fd = openSocketPosix(AF.UNIX, .{ .mode = .dgram }) catch |err| switch (err) {
             error.ProcessFdQuotaExceeded => return error.SystemResources,
             error.SystemFdQuotaExceeded => return error.SystemResources,
             error.AddressFamilyUnsupported => return error.Unexpected,
@@ -13950,7 +13952,7 @@ fn netInterfaceName(userdata: ?*anyopaque, interface: net.Interface) net.Interfa
             else => |err| return windows.unexpectedError(err),
         }
         var name_w: [net.Interface.Name.max_len:0]windows.WCHAR = undefined;
-        switch (ConvertInterfaceLuidToNameW.?(&luid, &name_w, name_w.len)) {
+        switch (ConvertInterfaceLuidToNameW.?(&luid, &name_w, name_w.len + 1)) {
             .SUCCESS => {},
             .INVALID_PARAMETER => unreachable,
             .NOT_ENOUGH_MEMORY => return error.NameTooLong,
@@ -14227,15 +14229,15 @@ fn netLookupFallible(
         const port_c = std.mem.printSentinel(&port_buffer, "{d}", .{options.port}, 0) catch unreachable;
 
         const family: i32 = if (options.family) |f| switch (f) {
-            .ip4 => posix.AF.INET,
-            .ip6 => posix.AF.INET6,
-        } else posix.AF.UNSPEC;
+            .ip4 => AF.INET,
+            .ip6 => AF.INET6,
+        } else AF.UNSPEC;
 
         const hints: posix.addrinfo = .{
             .flags = .{ .CANONNAME = options.canonical_name_buffer != null, .NUMERICSERV = true },
             .family = family,
-            .socktype = posix.SOCK.STREAM,
-            .protocol = posix.IPPROTO.TCP,
+            .socktype = SOCK.STREAM,
+            .protocol = IPPROTO.TCP,
             .canonname = null,
             .addr = null,
             .addrlen = 0,
@@ -14489,47 +14491,54 @@ fn processSetCurrentPath(userdata: ?*anyopaque, path: []const u8) process.SetCur
     return chdir(path);
 }
 
+const sockaddr = if (is_windows) ws2_32.sockaddr else posix.sockaddr;
+const sa_family_t = if (is_windows) ws2_32.ADDRESS_FAMILY else posix.sa_family_t;
+const socklen_t = if (is_windows) ws2_32.socklen_t else posix.socklen_t;
+const AF = if (is_windows) ws2_32.AF else posix.AF;
+const SOCK = if (is_windows) ws2_32.SOCK else posix.SOCK;
+const IPPROTO = if (is_windows) ws2_32.IPPROTO else posix.IPPROTO;
+
 pub const PosixAddress = extern union {
-    any: posix.sockaddr,
-    in: posix.sockaddr.in,
-    in6: posix.sockaddr.in6,
+    any: sockaddr,
+    in: sockaddr.in,
+    in6: sockaddr.in6,
 };
 
 const UnixAddress = extern union {
-    any: posix.sockaddr,
-    un: posix.sockaddr.un,
+    any: sockaddr,
+    un: sockaddr.un,
 };
 
-pub fn posixAddressFamily(a: *const IpAddress) posix.sa_family_t {
+pub fn posixAddressFamily(a: *const IpAddress) sa_family_t {
     return switch (a.*) {
-        .ip4 => posix.AF.INET,
-        .ip6 => posix.AF.INET6,
+        .ip4 => AF.INET,
+        .ip6 => AF.INET6,
     };
 }
 
 pub fn addressFromPosix(posix_address: *const PosixAddress) IpAddress {
     return switch (posix_address.any.family) {
-        posix.AF.INET => .{ .ip4 = address4FromPosix(&posix_address.in) },
-        posix.AF.INET6 => .{ .ip6 = address6FromPosix(&posix_address.in6) },
+        AF.INET => .{ .ip4 = address4FromPosix(&posix_address.in) },
+        AF.INET6 => .{ .ip6 = address6FromPosix(&posix_address.in6) },
         else => .{ .ip4 = .loopback(0) },
     };
 }
 
-pub fn addressToPosix(a: *const IpAddress, storage: *PosixAddress) posix.socklen_t {
+pub fn addressToPosix(a: *const IpAddress, storage: *PosixAddress) socklen_t {
     return switch (a.*) {
         .ip4 => |ip4| {
             storage.in = address4ToPosix(ip4);
-            return @sizeOf(posix.sockaddr.in);
+            return @sizeOf(sockaddr.in);
         },
         .ip6 => |*ip6| {
             storage.in6 = address6ToPosix(ip6);
-            return @sizeOf(posix.sockaddr.in6);
+            return @sizeOf(sockaddr.in6);
         },
     };
 }
 
-fn addressUnixToPosix(a: *const net.UnixAddress, storage: *UnixAddress) posix.socklen_t {
-    storage.un.family = posix.AF.UNIX;
+fn addressUnixToPosix(a: *const net.UnixAddress, storage: *UnixAddress) socklen_t {
+    storage.un.family = AF.UNIX;
     var path_len = switch (native_os) {
         .windows => @min(a.path.len, storage.un.path.len),
         else => a.path.len,
@@ -14545,13 +14554,13 @@ fn addressUnixToPosix(a: *const net.UnixAddress, storage: *UnixAddress) posix.so
     switch (native_os) {
         .windows => {
             if (storage.un.path[0] == 0) @memset(storage.un.path[path_len..], 0);
-            return @sizeOf(posix.sockaddr.un);
+            return @sizeOf(sockaddr.un);
         },
-        else => return @intCast(@offsetOf(posix.sockaddr.un, "path") + path_len),
+        else => return @intCast(@offsetOf(sockaddr.un, "path") + path_len),
     }
 }
 
-fn address4FromPosix(in: *const posix.sockaddr.in) net.Ip4Address {
+fn address4FromPosix(in: *const sockaddr.in) net.Ip4Address {
     // The network byte order address in `in.addr` is already the byte order we want.
     const addr_bytes: *const [4]u8 = @ptrCast(&in.addr);
     return .{
@@ -14560,7 +14569,7 @@ fn address4FromPosix(in: *const posix.sockaddr.in) net.Ip4Address {
     };
 }
 
-fn address6FromPosix(in6: *const posix.sockaddr.in6) net.Ip6Address {
+fn address6FromPosix(in6: *const sockaddr.in6) net.Ip6Address {
     return .{
         .port = std.mem.bigToNative(u16, in6.port),
         .bytes = in6.addr,
@@ -14569,7 +14578,7 @@ fn address6FromPosix(in6: *const posix.sockaddr.in6) net.Ip6Address {
     };
 }
 
-fn address4ToPosix(a: net.Ip4Address) posix.sockaddr.in {
+fn address4ToPosix(a: net.Ip4Address) sockaddr.in {
     // The byte order of `a.bytes` is already equivalent to a network byte order address.
     const addr_raw: *align(1) const u32 = @ptrCast(&a.bytes);
     return .{
@@ -14578,7 +14587,7 @@ fn address4ToPosix(a: net.Ip4Address) posix.sockaddr.in {
     };
 }
 
-fn address6ToPosix(a: *const net.Ip6Address) posix.sockaddr.in6 {
+fn address6ToPosix(a: *const net.Ip6Address) sockaddr.in6 {
     return .{
         .port = std.mem.nativeToBig(u16, a.port),
         .flowinfo = a.flow,
@@ -14592,21 +14601,21 @@ pub fn errnoBug(err: posix.E) Io.UnexpectedError {
     return error.Unexpected;
 }
 
-pub fn posixSocketModeProtocol(family: posix.sa_family_t, mode: net.Socket.Mode, protocol: ?net.Protocol) !struct { u32, u32 } {
+pub fn posixSocketModeProtocol(family: sa_family_t, mode: net.Socket.Mode, protocol: ?net.Protocol) !struct { u32, u32 } {
     return .{
         switch (mode) {
-            .stream => posix.SOCK.STREAM,
-            .dgram => posix.SOCK.DGRAM,
-            .seqpacket => posix.SOCK.SEQPACKET,
-            .raw => posix.SOCK.RAW,
-            .rdm => if (@hasDecl(posix.SOCK, "RDM")) posix.SOCK.RDM else return error.OptionUnsupported,
+            .stream => SOCK.STREAM,
+            .dgram => SOCK.DGRAM,
+            .seqpacket => SOCK.SEQPACKET,
+            .raw => SOCK.RAW,
+            .rdm => if (@hasDecl(SOCK, "RDM")) SOCK.RDM else return error.OptionUnsupported,
         },
         if (protocol) |p| @backingInt(p) else if (is_windows) switch (family) {
-            posix.AF.UNIX => switch (mode) {
+            AF.UNIX => switch (mode) {
                 .stream => 0,
                 else => return error.ProtocolUnsupportedByAddressFamily,
             },
-            posix.AF.INET, posix.AF.INET6 => @backingInt(@as(net.Protocol, switch (mode) {
+            AF.INET, AF.INET6 => @backingInt(@as(net.Protocol, switch (mode) {
                 .stream => .tcp,
                 .dgram => .udp,
                 else => return error.ProtocolUnsupportedByAddressFamily,
@@ -17992,7 +18001,7 @@ fn progressParentFile(userdata: ?*anyopaque) std.Progress.ParentFileError!File {
     return t.environ.zig_progress_file;
 }
 
-fn inheritParentHandle(handle: posix.fd_t) Io.InheritParentHandleError!void {
+fn inheritParentHandle(handle: File.Handle) Io.InheritParentHandleError!void {
     switch (native_os) {
         .linux,
         .dragonfly,

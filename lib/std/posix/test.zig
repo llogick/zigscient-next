@@ -36,19 +36,19 @@ test "check WASI CWD" {
 }
 
 test "getuid" {
-    if (native_os == .windows or native_os == .wasi) return error.SkipZigTest;
+    if (native_os == .wasi) return error.SkipZigTest;
     _ = posix.system.getuid();
     _ = posix.system.geteuid();
 }
 
 test "getgid" {
-    if (native_os == .windows or native_os == .wasi) return error.SkipZigTest;
+    if (native_os == .wasi) return error.SkipZigTest;
     _ = posix.system.getgid();
     _ = posix.system.getegid();
 }
 
 test "sigaltstack" {
-    if (native_os == .windows or native_os == .wasi) return error.SkipZigTest;
+    if (native_os == .wasi) return error.SkipZigTest;
 
     var st: posix.stack_t = undefined;
     try posix.sigaltstack(null, &st);
@@ -102,7 +102,7 @@ test "dl_iterate_phdr" {
 }
 
 test "gethostname" {
-    if (native_os == .windows or native_os == .wasi)
+    if (native_os == .wasi)
         return error.SkipZigTest;
 
     var buf: [posix.HOST_NAME_MAX]u8 = undefined;
@@ -111,7 +111,7 @@ test "gethostname" {
 }
 
 test "pipe" {
-    if (native_os == .windows or native_os == .wasi)
+    if (native_os == .wasi)
         return error.SkipZigTest;
 
     const io = testing.io;
@@ -155,7 +155,7 @@ test "memfd_create" {
 }
 
 test "mmap" {
-    if (native_os == .windows or native_os == .wasi)
+    if (native_os == .wasi)
         return error.SkipZigTest;
 
     const io = testing.io;
@@ -252,7 +252,7 @@ test "mmap" {
 }
 
 test "fcntl" {
-    if (native_os == .windows or native_os == .wasi)
+    if (native_os == .wasi)
         return error.SkipZigTest;
 
     const io = testing.io;
@@ -351,7 +351,7 @@ test "getrlimit and setrlimit" {
 
 test "sigrtmin/max" {
     if (native_os.isDarwin() or switch (native_os) {
-        .wasi, .windows, .openbsd, .dragonfly => true,
+        .wasi, .openbsd, .dragonfly => true,
         else => false,
     }) return error.SkipZigTest;
 
@@ -361,7 +361,7 @@ test "sigrtmin/max" {
 }
 
 test "sigset empty/full" {
-    if (native_os == .wasi or native_os == .windows)
+    if (native_os == .wasi)
         return error.SkipZigTest;
 
     var set: posix.sigset_t = posix.sigemptyset();
@@ -389,7 +389,7 @@ fn reserved_signo(i: usize) bool {
 }
 
 test "sigset add/del" {
-    if (native_os == .wasi or native_os == .windows)
+    if (native_os == .wasi)
         return error.SkipZigTest;
 
     var sigset: posix.sigset_t = posix.sigemptyset();
@@ -426,21 +426,18 @@ test "sigset add/del" {
 
 test "getpid" {
     if (native_os == .wasi) return error.SkipZigTest;
-    if (native_os == .windows) return error.SkipZigTest;
 
     try expect(posix.system.getpid() != 0);
 }
 
 test "getppid" {
     if (native_os == .wasi) return error.SkipZigTest;
-    if (native_os == .windows) return error.SkipZigTest;
     if (native_os == .plan9 and !builtin.link_libc) return error.SkipZigTest;
 
     try expect(posix.getppid() >= 0);
 }
 
 test "rename smoke test" {
-    if (native_os == .windows) return error.SkipZigTest;
     if (!fstest.isRealPathSupported()) return error.SkipZigTest;
 
     const io = testing.io;
@@ -452,7 +449,7 @@ test "rename smoke test" {
     const base_path = try tmp.dir.realPathFileAlloc(io, ".", gpa);
     defer gpa.free(base_path);
 
-    const mode: posix.mode_t = if (native_os == .windows) 0 else 0o666;
+    const mode: posix.mode_t = 0o666;
 
     {
         // Create some file using `open`.

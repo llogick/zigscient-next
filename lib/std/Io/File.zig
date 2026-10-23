@@ -23,7 +23,7 @@ pub const Flags = struct {
     nonblocking: bool,
 };
 
-pub const Handle = std.posix.fd_t;
+pub const Handle = if (native_os == .windows) std.os.windows.HANDLE else std.posix.fd_t;
 
 pub const Reader = @import("File/Reader.zig");
 pub const Writer = @import("File/Writer.zig");
@@ -34,10 +34,10 @@ pub const MemoryMap = @import("File/MemoryMap.zig");
 /// deadlocking.
 pub const MultiReader = @import("File/MultiReader.zig");
 
-pub const INode = std.posix.ino_t;
-pub const NLink = std.posix.nlink_t;
-pub const Uid = std.posix.uid_t;
-pub const Gid = std.posix.gid_t;
+pub const INode = if (native_os == .windows) std.os.windows.LARGE_INTEGER else std.posix.ino_t;
+pub const NLink = if (native_os == .windows) std.os.windows.ULONG else std.posix.nlink_t;
+pub const Uid = if (native_os == .windows) void else std.posix.uid_t;
+pub const Gid = if (native_os == .windows) void else std.posix.gid_t;
 pub const BlockSize = u32;
 
 pub const Kind = enum {

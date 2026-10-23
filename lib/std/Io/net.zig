@@ -1016,7 +1016,12 @@ pub const Interface = struct {
     pub const Name = struct {
         bytes: [max_len:0]u8,
 
-        pub const max_len = if (@TypeOf(std.posix.IFNAMESIZE) == void) 0 else std.posix.IFNAMESIZE - 1;
+        pub const max_len = if (native_os == .windows)
+            std.os.windows.IF.MAX_STRING_SIZE
+        else if (@TypeOf(std.posix.IFNAMESIZE) == void)
+            0
+        else
+            std.posix.IFNAMESIZE - 1;
 
         pub fn toSlice(n: *const Name) []const u8 {
             return std.mem.sliceTo(&n.bytes, 0);
@@ -1094,7 +1099,7 @@ pub const Socket = struct {
 
     /// Underlying platform-defined type which may or may not be
     /// interchangeable with a file system file descriptor.
-    pub const Handle = std.posix.fd_t;
+    pub const Handle = if (native_os == .windows) std.os.windows.HANDLE else std.posix.fd_t;
 
     /// Leaves `address` in a valid state.
     pub fn close(s: *const Socket, io: Io) void {
@@ -1517,7 +1522,7 @@ pub const Stream = struct {
     }
 };
 
-pub const cmsg_align = if (@TypeOf(std.posix.cmsg_align) == void) 1 else std.posix.cmsg_align;
+pub const cmsg_align = if (native_os == .windows or @TypeOf(std.posix.cmsg_align) == void) 1 else std.posix.cmsg_align;
 /// Utility Functions for interacting with POSIX socket control messages.
 /// See also https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/sys_socket.h.html
 pub const cmsg = struct {

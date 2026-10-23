@@ -4438,7 +4438,7 @@ pub const MachError = error{
     /// Not enough permissions held to perform the requested kernel
     /// call.
     PermissionDenied,
-} || std.posix.UnexpectedError;
+} || std.Io.UnexpectedError;
 
 pub const MachTask = extern struct {
     port: std.c.mach_port_name_t,
@@ -4906,7 +4906,7 @@ pub fn getKernError(err: std.c.kern_return_t) KernE {
     return @as(KernE, @fromBackingInt(@intCast(@as(u32, @truncate(@as(usize, @intCast(err)))))));
 }
 
-pub fn unexpectedKernError(err: KernE) std.posix.UnexpectedError {
+pub fn unexpectedKernError(err: KernE) std.Io.UnexpectedError {
     if (std.options.unexpected_error_tracing) {
         std.debug.print("unexpected error: {d}\n", .{@backingInt(err)});
         std.debug.dumpCurrentStackTrace(.{});

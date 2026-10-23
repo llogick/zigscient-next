@@ -13,7 +13,7 @@ const mem = std.mem;
 const assert = std.debug.assert;
 const math = std.math;
 const maxInt = std.math.maxInt;
-const UnexpectedError = std.posix.UnexpectedError;
+const UnexpectedError = std.Io.UnexpectedError;
 
 pub const kernel32 = @import("windows/kernel32.zig");
 pub const ntdll = @import("windows/ntdll.zig");
@@ -1490,6 +1490,10 @@ pub const TDI = struct {
         AND_DISCONNECT: bool = false,
         Reserved10: u22 = 0,
     };
+};
+
+pub const IF = struct {
+    pub const MAX_STRING_SIZE = 256;
 };
 
 pub const NET = struct {

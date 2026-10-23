@@ -93,9 +93,12 @@ pub const ResourceUsageStatistics = struct {
 
 pub const Term = union(enum) {
     exited: u8,
-    signal: std.posix.SIG,
-    stopped: std.posix.SIG,
+    signal: Signal,
+    stopped: Signal,
     unknown: u32,
+
+    // This probably needs some more thought for Windows.
+    const Signal = if (native_os == .windows) std.c.SIG else std.posix.SIG;
 
     pub fn success(t: Term) bool {
         return switch (t) {

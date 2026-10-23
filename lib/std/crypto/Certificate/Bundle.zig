@@ -144,7 +144,7 @@ fn rescanWithPath(cb: *Bundle, gpa: Allocator, io: Io, now: Io.Timestamp, cert_f
     cb.bytes.shrinkAndFree(gpa, cb.bytes.items.len);
 }
 
-const RescanWindowsError = Allocator.Error || ParseCertError || std.posix.UnexpectedError || error{FileNotFound};
+const RescanWindowsError = Allocator.Error || ParseCertError || std.Io.UnexpectedError || error{FileNotFound};
 
 fn rescanWindows(cb: *Bundle, gpa: Allocator, io: Io, now: Io.Timestamp) RescanWindowsError!void {
     cb.bytes.clearRetainingCapacity();

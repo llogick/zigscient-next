@@ -415,12 +415,12 @@ pub const SpawnOptions = struct {
     /// On Linux and Darwin, this obtains rusage statistics from wait4().
     request_resource_usage_statistics: bool = false,
 
-    /// Set to change the user id when spawning the child process.
-    uid: ?posix.uid_t = null,
-    /// Set to change the group id when spawning the child process.
-    gid: ?posix.gid_t = null,
-    /// Set to change the process group id when spawning the child process.
-    pgid: ?posix.pid_t = null,
+    /// Set to change the user id when spawning the child process. Unsupported on Windows.
+    uid: ?File.Uid = null,
+    /// Set to change the group id when spawning the child process. Unsupported on Windows.
+    gid: ?File.Gid = null,
+    /// Set to change the process group id when spawning the child process. Unsupported on Windows.
+    pgid: ?Child.Id = null,
 
     /// Start child process in suspended state.
     /// For Posix systems it's started as if SIGSTOP was sent.
@@ -656,7 +656,7 @@ pub fn cleanExit(io: Io) void {
 /// On some systems, this raises the limit before seeing ProcessFdQuotaExceeded
 /// errors. On other systems, this does nothing.
 pub fn raiseFileDescriptorLimit() void {
-    const have_rlimit = posix.rlimit_resource != void;
+    const have_rlimit = native_os != .windows and posix.rlimit_resource != void;
     if (!have_rlimit) return;
 
     var lim = posix.getrlimit(.NOFILE) catch return; // Oh well; we tried.
@@ -964,6 +964,7 @@ pub const LockMemoryOptions = struct {
 pub fn lockMemory(memory: []align(std.heap.page_size_min) const u8, options: LockMemoryOptions) LockMemoryError!void {
     if (native_os == .windows) {
         // TODO call VirtualLock
+        return;
     }
     if (!options.on_fault and @TypeOf(posix.system.mlock) != void) {
         switch (posix.errno(posix.system.mlock(memory.ptr, memory.len))) {
@@ -1002,6 +1003,10 @@ pub const UnlockMemoryError = error{
 /// See also:
 /// * `lockMemory`
 pub fn unlockMemory(memory: []align(std.heap.page_size_min) const u8) UnlockMemoryError!void {
+    if (native_os == .windows) {
+        // TODO call VirtualUnlock
+        return;
+    }
     if (@TypeOf(posix.system.munlock) == void) return;
     switch (posix.errno(posix.system.munlock(memory.ptr, memory.len))) {
         .SUCCESS => return,
@@ -1021,6 +1026,7 @@ pub const LockMemoryAllOptions = struct {
 };
 
 pub fn lockMemoryAll(options: LockMemoryAllOptions) LockMemoryError!void {
+    if (native_os == .windows) return;
     if (@TypeOf(posix.system.mlockall) == void) return error.UnsupportedOperation;
     var flags: posix.MCL = .{
         .CURRENT = options.current,
@@ -1045,6 +1051,7 @@ pub fn lockMemoryAll(options: LockMemoryAllOptions) LockMemoryError!void {
 }
 
 pub fn unlockMemoryAll() UnlockMemoryError!void {
+    if (native_os == .windows) return;
     if (@TypeOf(posix.system.munlockall) == void) return;
     switch (posix.errno(posix.system.munlockall())) {
         .SUCCESS => return,
