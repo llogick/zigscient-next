@@ -1190,6 +1190,22 @@ test "extern union most-aligned field is smaller" {
     try expect(a != null);
 }
 
+test "union constant trailing padding" {
+    const S = struct {
+        fn doTheTest() !void {
+            const U = extern union { x: u32, y: [5]u8 };
+            var u = [2]U{ .{ .x = 0 }, .{ .y = @splat(0xff) } };
+            _ = &u;
+            try expect(u[0].x == 0);
+            try expect(u[1].y[0] == 0xff);
+            try expect(u[1].y[4] == 0xff);
+        }
+    };
+
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}
+
 test "return an extern union from C calling convention" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO

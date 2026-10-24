@@ -617,6 +617,7 @@ pub fn generateSymbol(
             else => unreachable,
         },
         .un => |un| {
+            const union_begin = w.end;
             const layout = ty.unionGetLayout(zcu);
 
             if (layout.payload_size == 0) {
@@ -648,11 +649,10 @@ pub fn generateSymbol(
 
             if (layout.tag_size > 0 and layout.tag_align.compare(.lt, layout.payload_align)) {
                 try generateSymbol(bin_file, pt, Value.fromInterned(un.tag), w, reloc_parent);
-
-                if (layout.padding > 0) {
-                    try w.splatByteAll(0, layout.padding);
-                }
             }
+
+            const padding: usize = @intCast(union_begin + layout.abi_size - w.end);
+            if (padding > 0) try w.splatByteAll(0, padding);
         },
         .bitpack => |bitpack| try generateSymbol(bin_file, pt, .fromInterned(bitpack.backing_int_val), w, reloc_parent),
         .memoized_call => unreachable,

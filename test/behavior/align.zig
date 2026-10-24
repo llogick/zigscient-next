@@ -499,6 +499,42 @@ test "struct field explicit alignment" {
     try expect(@intFromPtr(&node.massive_byte) % 64 == 0);
 }
 
+test "nested struct field alignment" {
+    const S = struct {
+        fn doTheTest() !void {
+            const T = struct {
+                a: u8,
+                b: struct { c: u16 align(1) },
+            };
+            const init: T = .{ .a = 0, .b = .{ .c = ~@as(u16, 0) } };
+            var t: T = init; // copy constant aggregate
+            _ = &t;
+            try expect(t.b.c == ~@as(u16, 0));
+        }
+    };
+
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}
+
+test "nested union field alignment" {
+    const S = struct {
+        fn doTheTest() !void {
+            const T = struct {
+                a: u8,
+                b: union { c: u16 align(1) },
+            };
+            const init: T = .{ .a = 0, .b = .{ .c = ~@as(u16, 0) } };
+            var t: T = init; // copy constant aggregate
+            _ = &t;
+            try expect(t.b.c == ~@as(u16, 0));
+        }
+    };
+
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}
+
 test "align(N) on functions" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
