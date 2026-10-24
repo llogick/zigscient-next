@@ -1533,6 +1533,10 @@ fn configure(graph: *Graph, options: ConfigureOptions) ConfigureError!ScannedCon
                         fatal("replacing {f}: {t}", .{ dependencies_zig_path, err });
 
                     deps_mod.root_path = try dependencies_zig_path.toString(arena);
+
+                    if (config_man) |man| {
+                        man.hash.addBytes(&hex_digest);
+                    }
                 }
 
                 {

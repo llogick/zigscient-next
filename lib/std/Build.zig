@@ -1959,6 +1959,8 @@ pub fn lazyDependency(b: *Build, name: []const u8, args: anytype) ?*Dependency {
 /// * `dependencyStep`
 pub fn declareDependency(b: *Build, name: []const u8) void {
     const pkg_hash = findPkgHashOrFatal(b, name);
+    const entry = package_map.get(pkg_hash).?;
+    if (entry.available) return;
     markNeededLazyDep(b, pkg_hash);
 }
 
@@ -1972,6 +1974,8 @@ pub fn declareDependency(b: *Build, name: []const u8) void {
 pub fn declareDependencyStep(b: *Build, s: *Step, name: []const u8) void {
     const graph = b.graph;
     const pkg_hash = findPkgHashOrFatal(b, name);
+    const entry = package_map.get(pkg_hash).?;
+    if (entry.available) return;
     const interned_hash = graph.wip_configuration.addString(pkg_hash) catch @panic("OOM");
     s.unlazy_deps.put(graph.arena, interned_hash, {}) catch @panic("OOM");
 }
