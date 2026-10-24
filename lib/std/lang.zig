@@ -1363,6 +1363,11 @@ pub const panic: type = p: {
         .stage2_powerpc,
         .stage2_riscv64,
         => std.debug.simple_panic,
+        .stage2_spirv => std.debug.no_panic,
+        .stage2_llvm => {
+            if (builtin.cpu.arch.isSpirv()) break :p std.debug.no_panic;
+            break :p std.debug.FullPanic(std.debug.defaultPanic);
+        },
         else => std.debug.FullPanic(std.debug.defaultPanic),
     };
 };

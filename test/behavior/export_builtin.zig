@@ -4,7 +4,7 @@ const expect = std.testing.expect;
 
 test "exporting enum value" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         const E = enum(c_int) { one, two };
@@ -18,7 +18,7 @@ test "exporting enum value" {
 
 test "exporting using namespace access" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         const Inner = struct {
@@ -35,7 +35,7 @@ test "exporting using namespace access" {
 test "exporting comptime-known value" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const x: u32 = 10;
     @export(&x, .{ .name = "exporting_comptime_known_value_foo" });

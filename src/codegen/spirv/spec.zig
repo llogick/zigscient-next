@@ -190,6 +190,13 @@ pub const OperandKind = enum {
     pair_id_ref_literal_integer,
     pair_id_ref_id_ref,
     tensor_operands,
+    non_semantic_shader_debug_info_100_debug_info_flags,
+    non_semantic_shader_debug_info_100_build_identifier_flags,
+    non_semantic_shader_debug_info_100_debug_base_type_attribute_encoding,
+    non_semantic_shader_debug_info_100_debug_composite_type,
+    non_semantic_shader_debug_info_100_debug_type_qualifier,
+    non_semantic_shader_debug_info_100_debug_operation,
+    non_semantic_shader_debug_info_100_debug_imported_entity,
 
     pub fn category(operand_kind: OperandKind) OperandCategory {
         return switch (operand_kind) {
@@ -265,6 +272,13 @@ pub const OperandKind = enum {
             .pair_id_ref_literal_integer => .composite,
             .pair_id_ref_id_ref => .composite,
             .tensor_operands => .bit_enum,
+            .non_semantic_shader_debug_info_100_debug_info_flags => .bit_enum,
+            .non_semantic_shader_debug_info_100_build_identifier_flags => .bit_enum,
+            .non_semantic_shader_debug_info_100_debug_base_type_attribute_encoding => .value_enum,
+            .non_semantic_shader_debug_info_100_debug_composite_type => .value_enum,
+            .non_semantic_shader_debug_info_100_debug_type_qualifier => .value_enum,
+            .non_semantic_shader_debug_info_100_debug_operation => .value_enum,
+            .non_semantic_shader_debug_info_100_debug_imported_entity => .value_enum,
         };
     }
     pub fn enumerants(operand_kind: OperandKind) []const Enumerant {
@@ -1112,6 +1126,67 @@ pub const OperandKind = enum {
             .pair_id_ref_literal_integer => unreachable,
             .pair_id_ref_id_ref => unreachable,
             .tensor_operands => &.{},
+            .non_semantic_shader_debug_info_100_debug_info_flags => &.{
+                .{ .name = "FlagIsProtected", .value = 0x01, .parameters = &.{} },
+                .{ .name = "FlagIsPrivate", .value = 0x02, .parameters = &.{} },
+                .{ .name = "FlagIsPublic", .value = 0x03, .parameters = &.{} },
+                .{ .name = "FlagIsLocal", .value = 0x04, .parameters = &.{} },
+                .{ .name = "FlagIsDefinition", .value = 0x08, .parameters = &.{} },
+                .{ .name = "FlagFwdDecl", .value = 0x10, .parameters = &.{} },
+                .{ .name = "FlagArtificial", .value = 0x20, .parameters = &.{} },
+                .{ .name = "FlagExplicit", .value = 0x40, .parameters = &.{} },
+                .{ .name = "FlagPrototyped", .value = 0x80, .parameters = &.{} },
+                .{ .name = "FlagObjectPointer", .value = 0x100, .parameters = &.{} },
+                .{ .name = "FlagStaticMember", .value = 0x200, .parameters = &.{} },
+                .{ .name = "FlagIndirectVariable", .value = 0x400, .parameters = &.{} },
+                .{ .name = "FlagLValueReference", .value = 0x800, .parameters = &.{} },
+                .{ .name = "FlagRValueReference", .value = 0x1000, .parameters = &.{} },
+                .{ .name = "FlagIsOptimized", .value = 0x2000, .parameters = &.{} },
+                .{ .name = "FlagIsEnumClass", .value = 0x4000, .parameters = &.{} },
+                .{ .name = "FlagTypePassByValue", .value = 0x8000, .parameters = &.{} },
+                .{ .name = "FlagTypePassByReference", .value = 0x10000, .parameters = &.{} },
+                .{ .name = "FlagUnknownPhysicalLayout", .value = 0x20000, .parameters = &.{} },
+            },
+            .non_semantic_shader_debug_info_100_build_identifier_flags => &.{
+                .{ .name = "IdentifierPossibleDuplicates", .value = 0x01, .parameters = &.{} },
+            },
+            .non_semantic_shader_debug_info_100_debug_base_type_attribute_encoding => &.{
+                .{ .name = "Unspecified", .value = 0, .parameters = &.{} },
+                .{ .name = "Address", .value = 1, .parameters = &.{} },
+                .{ .name = "Boolean", .value = 2, .parameters = &.{} },
+                .{ .name = "Float", .value = 3, .parameters = &.{} },
+                .{ .name = "Signed", .value = 4, .parameters = &.{} },
+                .{ .name = "SignedChar", .value = 5, .parameters = &.{} },
+                .{ .name = "Unsigned", .value = 6, .parameters = &.{} },
+                .{ .name = "UnsignedChar", .value = 7, .parameters = &.{} },
+            },
+            .non_semantic_shader_debug_info_100_debug_composite_type => &.{
+                .{ .name = "Class", .value = 0, .parameters = &.{} },
+                .{ .name = "Structure", .value = 1, .parameters = &.{} },
+                .{ .name = "Union", .value = 2, .parameters = &.{} },
+            },
+            .non_semantic_shader_debug_info_100_debug_type_qualifier => &.{
+                .{ .name = "ConstType", .value = 0, .parameters = &.{} },
+                .{ .name = "VolatileType", .value = 1, .parameters = &.{} },
+                .{ .name = "RestrictType", .value = 2, .parameters = &.{} },
+                .{ .name = "AtomicType", .value = 3, .parameters = &.{} },
+            },
+            .non_semantic_shader_debug_info_100_debug_operation => &.{
+                .{ .name = "Deref", .value = 0, .parameters = &.{} },
+                .{ .name = "Plus", .value = 1, .parameters = &.{} },
+                .{ .name = "Minus", .value = 2, .parameters = &.{} },
+                .{ .name = "PlusUconst", .value = 3, .parameters = &.{.{ .kind = .id_ref }} },
+                .{ .name = "BitPiece", .value = 4, .parameters = &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } } },
+                .{ .name = "Swap", .value = 5, .parameters = &.{} },
+                .{ .name = "Xderef", .value = 6, .parameters = &.{} },
+                .{ .name = "StackValue", .value = 7, .parameters = &.{} },
+                .{ .name = "Constu", .value = 8, .parameters = &.{.{ .kind = .id_ref }} },
+                .{ .name = "Fragment", .value = 9, .parameters = &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } } },
+            },
+            .non_semantic_shader_debug_info_100_debug_imported_entity => &.{
+                .{ .name = "ImportedModule", .value = 0, .parameters = &.{} },
+                .{ .name = "ImportedDeclaration", .value = 1, .parameters = &.{} },
+            },
         };
     }
 
@@ -3256,6 +3331,102 @@ pub const GlslOpcode = enum(u16) {
         };
     }
 };
+
+pub const ShaderDebugInfoOpCode = enum(u16) {
+    DebugInfoNone = 0,
+    DebugCompilationUnit = 1,
+    DebugTypeBasic = 2,
+    DebugTypePointer = 3,
+    DebugTypeQualifier = 4,
+    DebugTypeArray = 5,
+    DebugTypeVector = 6,
+    DebugTypedef = 7,
+    DebugTypeFunction = 8,
+    DebugTypeEnum = 9,
+    DebugTypeComposite = 10,
+    DebugTypeMember = 11,
+    DebugTypeInheritance = 12,
+    DebugTypePtrToMember = 13,
+    DebugTypeTemplate = 14,
+    DebugTypeTemplateParameter = 15,
+    DebugTypeTemplateTemplateParameter = 16,
+    DebugTypeTemplateParameterPack = 17,
+    DebugGlobalVariable = 18,
+    DebugFunctionDeclaration = 19,
+    DebugFunction = 20,
+    DebugLexicalBlock = 21,
+    DebugLexicalBlockDiscriminator = 22,
+    DebugScope = 23,
+    DebugNoScope = 24,
+    DebugInlinedAt = 25,
+    DebugLocalVariable = 26,
+    DebugInlinedVariable = 27,
+    DebugDeclare = 28,
+    DebugValue = 29,
+    DebugOperation = 30,
+    DebugExpression = 31,
+    DebugMacroDef = 32,
+    DebugMacroUndef = 33,
+    DebugImportedEntity = 34,
+    DebugSource = 35,
+    DebugFunctionDefinition = 101,
+    DebugSourceContinued = 102,
+    DebugLine = 103,
+    DebugNoLine = 104,
+    DebugBuildIdentifier = 105,
+    DebugStoragePath = 106,
+    DebugEntryPoint = 107,
+    DebugTypeMatrix = 108,
+
+    pub fn operands(opcode: ShaderDebugInfoOpCode) []const Operand {
+        return switch (opcode) {
+            .DebugInfoNone => &.{},
+            .DebugCompilationUnit => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeBasic => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypePointer => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeQualifier => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeArray => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugTypeVector => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypedef => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeFunction => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugTypeEnum => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .pair_id_ref_id_ref, .quantifier = .variadic } },
+            .DebugTypeComposite => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugTypeMember => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugTypeInheritance => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypePtrToMember => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeTemplate => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugTypeTemplateParameter => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeTemplateTemplateParameter => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeTemplateParameterPack => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugGlobalVariable => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugFunctionDeclaration => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugFunction => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugLexicalBlock => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugLexicalBlockDiscriminator => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugScope => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugNoScope => &.{},
+            .DebugInlinedAt => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugLocalVariable => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugInlinedVariable => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugDeclare => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugValue => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugOperation => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .variadic } },
+            .DebugExpression => &.{.{ .kind = .id_ref, .quantifier = .variadic }},
+            .DebugMacroDef => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugMacroUndef => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugImportedEntity => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugSource => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref, .quantifier = .optional } },
+            .DebugFunctionDefinition => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugSourceContinued => &.{.{ .kind = .id_ref }},
+            .DebugLine => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugNoLine => &.{},
+            .DebugBuildIdentifier => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugStoragePath => &.{.{ .kind = .id_ref }},
+            .DebugEntryPoint => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+            .DebugTypeMatrix => &.{ .{ .kind = .id_ref }, .{ .kind = .id_ref }, .{ .kind = .id_ref } },
+        };
+    }
+};
 pub const ImageOperands = packed struct(Word) {
     bias: bool = false,
     lod: bool = false,
@@ -4460,16 +4631,93 @@ pub const ComponentType = enum(u32) {
 pub const TensorOperands = packed struct(Word) {
     _reserved_bits_0_to_31: u32 = 0,
 };
+pub const @"NonSemantic.Shader.DebugInfo.100.DebugInfoFlags" = packed struct(Word) {
+    flag_is_protected: bool = false,
+    flag_is_private: bool = false,
+    flag_is_local: bool = false,
+    flag_is_definition: bool = false,
+    flag_fwd_decl: bool = false,
+    flag_artificial: bool = false,
+    flag_explicit: bool = false,
+    flag_prototyped: bool = false,
+    flag_object_pointer: bool = false,
+    flag_static_member: bool = false,
+    flag_indirect_variable: bool = false,
+    flag_l_value_reference: bool = false,
+    flag_r_value_reference: bool = false,
+    flag_is_optimized: bool = false,
+    flag_is_enum_class: bool = false,
+    flag_type_pass_by_value: bool = false,
+    flag_type_pass_by_reference: bool = false,
+    flag_unknown_physical_layout: bool = false,
+    _reserved_bits_18_to_31: u14 = 0,
+};
+pub const @"NonSemantic.Shader.DebugInfo.100.BuildIdentifierFlags" = packed struct(Word) {
+    identifier_possible_duplicates: bool = false,
+    _reserved_bits_1_to_31: u31 = 0,
+};
+pub const @"NonSemantic.Shader.DebugInfo.100.DebugBaseTypeAttributeEncoding" = enum(u32) {
+    unspecified = 0,
+    address = 1,
+    boolean = 2,
+    float = 3,
+    signed = 4,
+    signed_char = 5,
+    unsigned = 6,
+    unsigned_char = 7,
+};
+pub const @"NonSemantic.Shader.DebugInfo.100.DebugCompositeType" = enum(u32) {
+    class = 0,
+    structure = 1,
+    @"union" = 2,
+};
+pub const @"NonSemantic.Shader.DebugInfo.100.DebugTypeQualifier" = enum(u32) {
+    const_type = 0,
+    volatile_type = 1,
+    restrict_type = 2,
+    atomic_type = 3,
+};
+pub const @"NonSemantic.Shader.DebugInfo.100.DebugOperation" = enum(u32) {
+    deref = 0,
+    plus = 1,
+    minus = 2,
+    plus_uconst = 3,
+    bit_piece = 4,
+    swap = 5,
+    xderef = 6,
+    stack_value = 7,
+    constu = 8,
+    fragment = 9,
+
+    pub const Extended = union(@"NonSemantic.Shader.DebugInfo.100.DebugOperation") {
+        deref,
+        plus,
+        minus,
+        plus_uconst: struct { id_ref: Id },
+        bit_piece: struct { id_ref_0: Id, id_ref_1: Id },
+        swap,
+        xderef,
+        stack_value,
+        constu: struct { id_ref: Id },
+        fragment: struct { id_ref_0: Id, id_ref_1: Id },
+    };
+};
+pub const @"NonSemantic.Shader.DebugInfo.100.DebugImportedEntity" = enum(u32) {
+    imported_module = 0,
+    imported_declaration = 1,
+};
 pub const InstructionSet = enum {
     core,
     @"OpenCL.std",
     @"GLSL.std.450",
+    @"NonSemantic.Shader.DebugInfo.100",
 
     pub fn operands(inst_set: InstructionSet, opcode: Word) ?[]const Operand {
         return switch (inst_set) {
             .core => if (std.enums.fromInt(Opcode, opcode)) |op| op.operands() else null,
             .@"OpenCL.std" => if (std.enums.fromInt(OpenClOpcode, opcode)) |op| op.operands() else null,
             .@"GLSL.std.450" => if (std.enums.fromInt(GlslOpcode, opcode)) |op| op.operands() else null,
+            .@"NonSemantic.Shader.DebugInfo.100" => if (std.enums.fromInt(ShaderDebugInfoOpCode, opcode)) |op| op.operands() else null,
         };
     }
 };

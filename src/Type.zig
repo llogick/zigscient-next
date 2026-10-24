@@ -3148,7 +3148,7 @@ pub fn validateExtern(ty: Type, position: ExternPosition, zcu: *const Zcu) bool 
         => false,
 
         .vector => {
-            if (zcu.getTarget().cpu.arch.isSpirV()) return true;
+            if (zcu.getTarget().cpu.arch.isSpirv()) return true;
             return position == .param_ty or position == .ret_ty;
         },
 

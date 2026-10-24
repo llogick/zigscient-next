@@ -4,6 +4,8 @@ const assert = std.debug.assert;
 const expect = std.testing.expect;
 
 test "simple destructure" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest() !void {
             var x: u32 = undefined;
@@ -23,6 +25,8 @@ test "simple destructure" {
 }
 
 test "destructure with comptime syntax" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest() !void {
             {
@@ -78,6 +82,8 @@ test "destructure with comptime syntax" {
 }
 
 test "destructure from labeled block" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest(rt_true: bool) !void {
             const x: u32, const y: u8, const z: i64 = blk: {
@@ -96,6 +102,8 @@ test "destructure from labeled block" {
 }
 
 test "destructure tuple value" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const tup: struct { f32, u32, i64 } = .{ 10.0, 20, 30 };
     const x, const y, const z = tup;
 
@@ -109,6 +117,8 @@ test "destructure tuple value" {
 }
 
 test "destructure array value" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const arr: [3]u32 = .{ 10, 20, 30 };
     const x, const y, const z = arr;
 
@@ -122,6 +132,8 @@ test "destructure array value" {
 }
 
 test "destructure from struct init with named tuple fields" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const Tuple = struct { u8, u16, u32 };
     const x, const y, const z = Tuple{
         .@"0" = 100,
@@ -149,6 +161,8 @@ test "destructure of comptime-known tuple is comptime-known" {
 }
 
 test "destructure of comptime-known tuple where some destinations are runtime-known is comptime-known" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     var z: u32 = undefined;
     var x: u8, const y, z = .{ 1, 2, 3 };
     _ = &x;

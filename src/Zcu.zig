@@ -4143,7 +4143,7 @@ pub fn errorSetBits(zcu: *const Zcu) u16 {
     const target = zcu.getTarget();
 
     if (zcu.error_limit == 0) return 0;
-    if (target.cpu.arch.isSpirV()) {
+    if (target.cpu.arch.isSpirv()) {
         // As expected by https://github.com/Snektron/zig-spirv-test-executor
         if (zcu.comp.config.is_test) return 32;
     }

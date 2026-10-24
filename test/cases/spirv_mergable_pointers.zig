@@ -1,7 +1,7 @@
 export fn a() void {
-    var x: *addrspace(.global) i32 = undefined;
+    var x: *addrspace(.physical_storage_buffer) i32 = undefined;
     _ = &x;
-    var y: *addrspace(.global) i32 = undefined;
+    var y: *addrspace(.physical_storage_buffer) i32 = undefined;
     _ = &y;
     var rt_cond = false;
     _ = &rt_cond;
@@ -13,5 +13,5 @@ export fn a() void {
 // compile
 // output_mode=Obj
 // backend=selfhosted
-// target=spirv32-vulkan
+// target=spirv64-vulkan
 // emit_bin=true

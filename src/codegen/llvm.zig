@@ -455,6 +455,7 @@ pub const Object = struct {
 
                 switch (comp.config.debug_format) {
                     .strip => unreachable,
+                    .nsdi => {},
                     .dwarf => |f| {
                         module_flags.appendAssumeCapacity(try o.builder.metadataTuple(&.{
                             behavior_max,
@@ -994,6 +995,13 @@ pub const Object = struct {
         }
 
         try fg.wip.finish();
+
+        // We don't use `builtin.test_functions` for running the SPIR-V tests so here is
+        // a workaround to not optimize away test functions from the final module.
+        if (target.cpu.arch.isSpirv() and zcu.test_functions.contains(func.owner_nav)) {
+            try o.used.append(gpa, llvm_function.ptrConst(&o.builder).global.toConst());
+        }
+
         try o.flushTypePool(pt);
     }
 
@@ -1002,6 +1010,7 @@ pub const Object = struct {
         const ip = &zcu.intern_pool;
         const comp = zcu.comp;
         const gpa = comp.gpa;
+        const arch = comp.root_mod.resolved_target.result.cpu.arch;
 
         const nav = ip.getNav(nav_id);
         const resolved = nav.resolved.?;
@@ -1011,6 +1020,19 @@ pub const Object = struct {
             else => null,
         };
         const nav_ty: Type = .fromInterned(resolved.type);
+
+        // Workaround for SPIR-V not supporting references to global constants.
+        // Our choices here are only between bad (defaulting constant globals
+        // address space to .private) and ugly (this). I went with ugly since
+        // it's scoped and doesn't break anything for other targets.
+        if (arch.isSpirv() and resolved.@"const" and opt_extern == null and nav_ty.zigTypeTag(zcu) != .@"fn") {
+            if (o.nav_map.get(nav_id)) |llvm_global| {
+                const llvm_ref = try o.lowerNavRef(nav_id);
+                try llvm_global.replace(llvm_ref.unwrap().global, &o.builder);
+            }
+            return;
+        }
+
         const llvm_ty: Builder.Type = if (opt_extern != null) ty: {
             // We *must* lower this declaration no matter what. If it has a type we can't actually
             // represent (because it doesn't have runtime bits), we instead lower as the zero-size
@@ -1461,6 +1483,7 @@ pub const Object = struct {
             .undefined,
             .null,
             .enum_literal,
+            .spirv,
             => return o.builder.debugSignedType(name, 0),
 
             .float => return o.builder.debugFloatType(name, ty.floatBits(target)),
@@ -1822,7 +1845,13 @@ pub const Object = struct {
                         while (it.next()) |field_index| {
                             const field_ty: Type = .fromInterned(struct_type.field_types.get(ip)[field_index]);
                             if (!field_ty.hasRuntimeBits(zcu)) continue;
-                            const field_size = field_ty.abiSize(zcu);
+                            const field_size = field_size: {
+                                if (field_ty.isSpirvRuntimeArray(zcu)) {
+                                    assert(field_index == it.fields_len - 1);
+                                    break :field_size 0;
+                                }
+                                break :field_size field_ty.abiSize(zcu);
+                            };
                             const field_align = switch (ty.explicitFieldAlignment(field_index, zcu)) {
                                 .none => field_ty.abiAlignment(zcu),
                                 else => |a| a,
@@ -2097,7 +2126,6 @@ pub const Object = struct {
             },
             .frame => @panic("TODO implement lowerDebugType for Frame types"),
             .@"anyframe" => @panic("TODO implement lowerDebugType for AnyFrame types"),
-            .spirv => unreachable,
         }
     }
 
@@ -2855,7 +2883,8 @@ pub const Object = struct {
 
                     if (o.type_map.get(t.toIntern())) |value| return value;
 
-                    assert(struct_type.size > 0);
+                    // @SpirvType() can create opaque types which are zero-sized but cannot be ignored here.
+                    assert(struct_type.size > 0 or target.cpu.arch.isSpirv());
 
                     var llvm_field_types: std.ArrayList(Builder.Type) = .empty;
                     defer llvm_field_types.deinit(o.gpa);
@@ -2890,7 +2919,11 @@ pub const Object = struct {
 
                         try llvm_field_types.append(o.gpa, try o.lowerType(field_ty, repr));
 
-                        offset += field_ty.abiSize(zcu);
+                        if (field_ty.isSpirvRuntimeArray(zcu)) {
+                            assert(field_index == it.fields_len - 1);
+                        } else {
+                            offset += field_ty.abiSize(zcu);
+                        }
                     }
                     {
                         const prev_offset = offset;
@@ -3032,7 +3065,8 @@ pub const Object = struct {
                     );
                     return ty;
                 },
-                .opaque_type, .spirv_type => unreachable, // no runtime bits
+                .opaque_type => unreachable,
+                .spirv_type => try o.lowerSpirvType(t),
                 .enum_type => try o.intType(t.backingIntType(zcu).intInfo(zcu).bits, repr),
                 .func_type => |func_type| {
                     assert(t.fnHasRuntimeBits(zcu));
@@ -3061,6 +3095,74 @@ pub const Object = struct {
                 => unreachable,
             },
         };
+    }
+
+    fn lowerSpirvType(o: *Object, t: Type) Allocator.Error!Builder.Type {
+        const zcu = o.zcu;
+        const ip = &zcu.intern_pool;
+        const os_tag = zcu.comp.root_mod.resolved_target.result.os.tag;
+
+        const spirv_ty = ip.loadSpirvType(t.toIntern());
+        switch (spirv_ty.flags.tag) {
+            .sampler => return o.builder.targetType(try o.builder.string("spirv.Sampler"), &.{}, &.{}),
+            .image, .sampled_image => {
+                const image_ty = if (spirv_ty.flags.tag == .image) spirv_ty else ip.loadSpirvType(spirv_ty.ty);
+                const sampled_ty = sampled_ty: {
+                    if (image_ty.ty == .void_type) break :sampled_ty .void;
+                    break :sampled_ty try o.lowerType(.fromInterned(image_ty.ty), .in_memory);
+                };
+                const image_flags = image_ty.flags;
+                const ints = [_]u32{
+                    switch (image_flags.dim) {
+                        .@"1d" => 0,
+                        .@"2d" => 1,
+                        .@"3d" => 2,
+                        .cube => 3,
+                    },
+                    switch (image_flags.depth) {
+                        .not_depth => 0,
+                        .depth => 1,
+                        .unknown => 2,
+                    },
+                    @intFromBool(image_flags.is_arrayed),
+                    @intFromBool(image_flags.is_multisampled),
+                    switch (image_flags.usage) {
+                        .unknown => 0,
+                        .sampled => 1,
+                        .storage => 2,
+                    },
+                    switch (image_flags.format) {
+                        .unknown => 0,
+                        .rgba32f => 1,
+                        .rgba16f => 2,
+                        .r32f => 3,
+                        .rgba8unorm => 4,
+                        .rgba8snorm => 5,
+                        .rgba32i => 21,
+                        .rgba16i => 22,
+                        .rgba8i => 23,
+                        .r32i => 24,
+                        .rgba32u => 30,
+                        .rgba16u => 31,
+                        .rgba8u => 32,
+                        .r32u => 33,
+                    },
+                    switch (image_flags.access) {
+                        .unknown => 0,
+                        .read_only => 0,
+                        .write_only => 1,
+                        .read_write => 2,
+                    },
+                };
+                const name = if (spirv_ty.flags.tag == .image) "spirv.Image" else "spirv.SampledImage";
+                const ints_len: usize = if (os_tag == .opencl) 7 else 6;
+                return o.builder.targetType(try o.builder.string(name), &.{sampled_ty}, ints[0..ints_len]);
+            },
+            .runtime_array => {
+                const elem_ty = try o.lowerType(.fromInterned(spirv_ty.ty), .in_memory);
+                return o.builder.arrayType(0, elem_ty);
+            },
+        }
     }
 
     pub const FuncInfo = struct {
@@ -3890,6 +3992,7 @@ pub const Object = struct {
         const zcu = o.zcu;
         const ip = &zcu.intern_pool;
         const gpa = zcu.comp.gpa;
+        const target = &zcu.comp.root_mod.resolved_target.result;
 
         const nav = ip.getNav(nav_id);
         const nav_ty: Type = .fromInterned(nav.resolved.?.type);
@@ -3899,6 +4002,17 @@ pub const Object = struct {
                 else => |a| a,
             };
             return o.lowerPtrToVoid(nav_align.toLlvm(), nav.resolved.?.@"addrspace");
+        }
+
+        // Workaround for SPIR-V not supporting references to global constants.
+        if (target.cpu.arch.isSpirv() and nav.resolved.?.@"const" and nav.getExtern(ip) == null and
+            nav_ty.zigTypeTag(zcu) != .@"fn" and nav.resolved.?.value != .none)
+        {
+            const nav_align = switch (nav.resolved.?.@"align") {
+                .none => nav_ty.abiAlignment(zcu),
+                else => |a| a,
+            };
+            return o.lowerUavRef(nav.resolved.?.value, nav_align.toLlvm(), nav.resolved.?.@"addrspace");
         }
 
         const gop = try o.nav_map.getOrPut(gpa, nav_id);
@@ -3917,7 +4031,7 @@ pub const Object = struct {
         // We need to make sure the global's address space is up to date, because that affects the
         // type of a pointer to this global. But everything else about the global will be populated
         // by `updateNav` or `updateFunc`.
-        llvm_global.ptr(&o.builder).addr_space = toLlvmAddressSpace(nav.resolved.?.@"addrspace", zcu.getTarget());
+        llvm_global.ptr(&o.builder).addr_space = toLlvmAddressSpace(nav.resolved.?.@"addrspace", target);
         return llvm_global.toConst();
     }
 
@@ -4443,6 +4557,19 @@ pub fn toLlvmAddressSpace(address_space: std.lang.AddressSpace, target: *const s
             .param => Builder.AddrSpace.nvptx.entry_param,
             .shared => Builder.AddrSpace.nvptx.shared,
             .local => Builder.AddrSpace.nvptx.local,
+            else => unreachable,
+        },
+        .spirv32, .spirv64 => switch (address_space) {
+            .generic, .local => Builder.AddrSpace.spirv.function,
+            .global => Builder.AddrSpace.spirv.cross_workgroup,
+            .constant => Builder.AddrSpace.spirv.uniform_constant,
+            .shared => Builder.AddrSpace.spirv.workgroup,
+            .private => Builder.AddrSpace.spirv.private,
+            .input => Builder.AddrSpace.spirv.input,
+            .output => Builder.AddrSpace.spirv.output,
+            .storage_buffer => Builder.AddrSpace.spirv.storage_buffer,
+            .uniform => Builder.AddrSpace.spirv.uniform,
+            .push_constant => Builder.AddrSpace.spirv.push_constant,
             else => unreachable,
         },
         .x86, .x86_64 => switch (address_space) {

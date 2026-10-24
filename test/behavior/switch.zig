@@ -23,6 +23,7 @@ fn testSwitchWithNumbers(x: u32) !void {
 }
 
 test "switch with all ranges" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try expect(testSwitchWithAllRanges(50, 3) == 1);
@@ -44,7 +45,7 @@ test "switch arbitrary int size" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // TODO
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest; // TODO
 
     const S = struct {
@@ -258,6 +259,7 @@ fn trueIfBoolFalseOtherwise(comptime T: type) bool {
 }
 
 test "switching on booleans" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try testSwitchOnBools();
@@ -313,6 +315,7 @@ test "undefined.u0" {
 }
 
 test "switch with disjoint range" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     var q: u8 = 0;
     _ = &q;
@@ -324,6 +327,8 @@ test "switch with disjoint range" {
 }
 
 test "switch variable for range and multiple prongs" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest() !void {
             try doTheSwitch(16);
@@ -354,7 +359,7 @@ fn poll() void {
 }
 
 test "switch on global mutable var isn't constant-folded" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     while (state < 2) {
@@ -369,6 +374,7 @@ const SwitchProngWithVarEnum = union(enum) {
 };
 
 test "switch prong with variable" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -394,6 +400,7 @@ fn switchProngWithVarFn(a: SwitchProngWithVarEnum) !void {
 }
 
 test "switch on enum using pointer capture" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -414,6 +421,7 @@ fn testSwitchEnumPtrCapture() !void {
 }
 
 test "switch handles all cases of number" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try testSwitchHandleAllCases();
@@ -453,6 +461,7 @@ fn testSwitchHandleAllCasesRange(x: u8) u8 {
 }
 
 test "switch on union with some prongs capturing" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -490,6 +499,7 @@ test "switch on const enum with var" {
 }
 
 test "anon enum literal used in switch on union enum" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const Foo = union(enum) {
@@ -506,6 +516,7 @@ test "anon enum literal used in switch on union enum" {
 }
 
 test "switch all prongs unreachable" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try testAllProngsUnreachable();
@@ -529,6 +540,7 @@ fn switchWithUnreachable(x: i32) i32 {
 }
 
 test "capture value of switch with all unreachable prongs" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const x = return_a_number() catch |err| switch (err) {
@@ -562,7 +574,7 @@ test "switch on integer with else capturing expr" {
 test "else prong of switch on error set excludes other cases" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const S = struct {
@@ -597,7 +609,7 @@ test "else prong of switch on error set excludes other cases" {
 test "switch prongs with error set cases make a new error set type for capture value" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const S = struct {
@@ -632,6 +644,7 @@ test "switch prongs with error set cases make a new error set type for capture v
 }
 
 test "return result loc and then switch with range implicit casted to error union" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const S = struct {
@@ -650,6 +663,7 @@ test "return result loc and then switch with range implicit casted to error unio
 }
 
 test "switch with null and T peer types and inferred result location type" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -669,6 +683,7 @@ test "switch with null and T peer types and inferred result location type" {
 }
 
 test "switch prongs with cases with identical payload types" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -777,7 +792,7 @@ test "switch prong pointer capture alignment" {
 test "switch on pointer type" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest; // https://github.com/llvm/llvm-project/issues/176634
 
     const S = struct {
@@ -824,6 +839,7 @@ test "switch on error set with single else" {
 }
 
 test "switch capture copies its payload" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -915,6 +931,8 @@ test "comptime inline switch" {
 }
 
 test "switch capture peer type resolution" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const U = union(enum) {
         a: u32,
         b: u64,
@@ -930,6 +948,7 @@ test "switch capture peer type resolution" {
 }
 
 test "switch capture peer type resolution for in-memory coercible payloads" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
     const T1 = c_int;
@@ -954,7 +973,7 @@ test "switch capture peer type resolution for in-memory coercible payloads" {
 
 test "switch pointer capture peer type resolution" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const T1 = c_int;
     const t1_info = @typeInfo(T1).int;
@@ -983,6 +1002,8 @@ test "switch pointer capture peer type resolution" {
 }
 
 test "inline switch range that includes the maximum value of the switched type" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const inputs: [3]u8 = .{ 0, 254, 255 };
     for (inputs) |input| {
         switch (input) {
@@ -995,7 +1016,7 @@ test "inline switch range that includes the maximum value of the switched type" 
 test "nested break ignores switch conditions and breaks instead" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn register_to_address(ident: []const u8) !u8 {
@@ -1016,7 +1037,7 @@ test "nested break ignores switch conditions and breaks instead" {
 }
 
 test "peer type resolution on switch captures ignores unused payload bits" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const Foo = union(enum) {
@@ -1042,7 +1063,7 @@ test "peer type resolution on switch captures ignores unused payload bits" {
 
 test "switch prong captures range" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // TODO
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest; // TODO
 
     const S = struct {
         fn a(b: []u3, c: u3) void {
@@ -1060,6 +1081,8 @@ test "switch prong captures range" {
 }
 
 test "prong with inline call to unreachable" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const U = union(enum) {
         void: void,
         bool: bool,
@@ -1077,6 +1100,8 @@ test "prong with inline call to unreachable" {
 }
 
 test "block error return trace index is reset between prongs" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn returnError() error{TestFailed} {
             return error.TestFailed;
@@ -1105,6 +1130,8 @@ test "block error return trace index is reset between prongs" {
 }
 
 test "labeled switch with break" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     var six: u32 = undefined;
     six = 6;
 
@@ -1144,6 +1171,8 @@ test "unlabeled break ignores switch" {
 }
 
 test "switch on a signed value smaller than the smallest prong value" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     var v: i32 = undefined;
     v = -1;
     switch (v) {
@@ -1153,6 +1182,8 @@ test "switch on a signed value smaller than the smallest prong value" {
 }
 
 test "switch on 8-bit mod result" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     var x: u8 = undefined;
     x = 16;
     switch (x % 4) {
@@ -1261,6 +1292,8 @@ test "switch with uninstantiable union fields" {
 }
 
 test "switch with tag capture" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const U = union(enum) {
         a,
         b: i32,
@@ -1312,6 +1345,8 @@ test "switch with tag capture" {
 }
 
 test "switch with complex item expressions" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest() !void {
             try doTheSwitch(2000, 20);
@@ -1414,7 +1449,7 @@ test "single range switch prong capture" {
 }
 
 test "switch on packed struct" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const P = packed struct {
         a: u1,
@@ -1446,7 +1481,7 @@ test "switch on packed struct" {
 }
 
 test "switch on packed union" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const P = packed union(u2) {
         a: u2,
@@ -1495,7 +1530,7 @@ test "switch on packed union" {
 }
 
 test "switch on nested packed containers" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const P = packed struct {
         iu: u17,
@@ -1550,7 +1585,7 @@ test "switch on nested packed containers" {
 }
 
 test "switch on large types" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(a: u128, b: i500) !void {
@@ -1652,6 +1687,8 @@ test "repeated switch analysis overrides previous analysis results" {
 }
 
 test "union field pointer capture preserves alignment in inline prong" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const U = union(enum) {
         a: u32,
         b: u32,
@@ -1671,6 +1708,8 @@ test "union field pointer capture preserves alignment in inline prong" {
 }
 
 test "switch on expression" {
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     var a: []const []const u8 = &.{ "b", "b", "A", "A", "b" };
     _ = &a;
     var c: isize = 0;

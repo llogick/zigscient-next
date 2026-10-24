@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const expect = std.testing.expect;
 
 const Sampler = @SpirvType(.sampler);
@@ -50,6 +51,8 @@ test "@SpirvType" {
 }
 
 test "@ptrCast to first field type" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const Inner = extern struct { a: u32 };
     const Outer = extern struct { a: Inner, b: u32 };
     var outer: Outer = undefined;
@@ -58,6 +61,8 @@ test "@ptrCast to first field type" {
 }
 
 test "@SpirvType equality" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     try expect(@SpirvType(.sampler) == Sampler);
     try expect(@SpirvType(.{ .runtime_array = u32 }) == RuntimeArray);
     try expect(@SpirvType(.{ .sampled_image = Image }) == SampledImage);

@@ -6979,7 +6979,7 @@ fn analyzeCall(
     const is_inline_call = block.isComptime() or inline_requested;
 
     if (!is_inline_call) {
-        if (func_val == null and !func_is_extern and !block.is_typeof and zcu.getTarget().cpu.arch.isSpirV()) {
+        if (func_val == null and !func_is_extern and !block.is_typeof and zcu.getTarget().cpu.arch.isSpirv()) {
             return sema.fail(block, func_src, "SPIR-V does not support calling function pointers", .{});
         }
         if (sema.func_is_naked) return sema.failWithOwnedErrorMsg(block, msg: {
@@ -8697,19 +8697,17 @@ fn checkParamType(
     if (param_is_noalias and !param_ty.isGenericPoison() and !param_ty.isPtrAtRuntime(zcu) and !param_ty.isSliceAtRuntime(zcu)) {
         return sema.fail(block, param_src, "non-pointer parameter declared noalias", .{});
     }
-    switch (target.os.tag) {
-        .vulkan, .opengl => if (cc != .@"inline" and param_ty.isPtrAtRuntime(zcu)) {
-            switch (param_ty.ptrAddressSpace(zcu)) {
-                .input, .output => |as| return sema.failWithOwnedErrorMsg(block, msg: {
-                    const msg = try sema.errMsg(param_src, "function parameter cannot be a pointer in '{s}' address space", .{@tagName(as)});
-                    errdefer msg.destroy(sema.gpa);
-                    try sema.errNote(param_src, msg, "mark the function as 'inline' so the parameter is substituted at call sites", .{});
-                    break :msg msg;
-                }),
-                else => {},
-            }
-        },
-        else => {},
+    if (cc != .@"inline" and param_ty.isPtrAtRuntime(zcu)) {
+        const as = param_ty.ptrAddressSpace(zcu);
+        if (target_util.addrSpaceIsLogical(target, as)) switch (as) {
+            .input, .output => return sema.failWithOwnedErrorMsg(block, msg: {
+                const msg = try sema.errMsg(param_src, "function parameter cannot be a pointer in '{s}' address space", .{@tagName(as)});
+                errdefer msg.destroy(sema.gpa);
+                try sema.errNote(param_src, msg, "mark the function as 'inline' so the parameter is substituted at call sites", .{});
+                break :msg msg;
+            }),
+            else => {},
+        };
     }
 }
 
@@ -8948,9 +8946,7 @@ fn checkMergeAllowed(sema: *Sema, block: *Block, src: LazySrcLoc, peer_ty: Type)
     }
 
     const as = peer_ty.ptrAddressSpace(zcu);
-    if (!target_util.shouldBlockPointerOps(target, as)) {
-        return;
-    }
+    if (!target_util.addrSpaceIsLogical(target, as)) return;
 
     return sema.failWithOwnedErrorMsg(block, msg: {
         const msg = try sema.errMsg(src, "value with non-mergable pointer type '{f}' depends on runtime control flow", .{peer_ty.fmt(zcu)});
@@ -15539,7 +15535,7 @@ fn zirAsm(
         }
 
         const constraint = sema.code.nullTerminatedString(input.data.constraint);
-        if (zcu.getTarget().cpu.arch.isSpirV() and std.mem.eql(u8, constraint, "c")) {
+        if (zcu.getTarget().cpu.arch.isSpirv() and std.mem.eql(u8, constraint, "c")) {
             const val = sema.resolveValue(arg.*) orelse {
                 return sema.fail(block, input_src, "assembly input with 'c' constraint must be compile-time known", .{});
             };
@@ -20908,7 +20904,7 @@ fn zirReifySpirvType(
         } },
     };
 
-    if (!target.cpu.arch.isSpirV()) {
+    if (!target.cpu.arch.isSpirv()) {
         return sema.fail(
             block,
             src,
@@ -22228,7 +22224,7 @@ fn ptrCastFull(
     try sema.validateRuntimeValue(block, operand_src, operand);
     try sema.checkLogicalPtrCast(block, src, operand_ty, dest_ty);
 
-    const can_cast_to_int = !target_util.shouldBlockPointerOps(zcu.getTarget(), operand_ty.ptrAddressSpace(zcu));
+    const can_cast_to_int = !target_util.addrSpaceIsLogical(zcu.getTarget(), operand_ty.ptrAddressSpace(zcu));
     const need_null_check = can_cast_to_int and block.wantSafety() and operand_ty.ptrAllowsZero(zcu) and !dest_ty.ptrAllowsZero(zcu);
     const need_align_check = can_cast_to_int and block.wantSafety() and dest_align.compare(.gt, src_align);
 
@@ -22774,7 +22770,7 @@ fn checkLogicalPtrOperation(sema: *Sema, block: *Block, src: LazySrcLoc, ty: Typ
     if (zcu.intern_pool.indexToKey(ty.toIntern()) == .ptr_type) {
         const target = zcu.getTarget();
         const as = ty.ptrAddressSpace(zcu);
-        if (target_util.shouldBlockPointerOps(target, as)) {
+        if (target_util.addrSpaceIsLogical(target, as)) {
             return sema.failWithOwnedErrorMsg(block, msg: {
                 const msg = try sema.errMsg(src, "illegal operation on logical pointer of type '{f}'", .{ty.fmt(zcu)});
                 errdefer msg.destroy(sema.gpa);
@@ -22805,11 +22801,7 @@ fn checkLogicalPtrCast(
     const dest_child: Type = .fromInterned(dest_info.child);
 
     if (block.isComptime() or block.is_typeof) return;
-    switch (zcu.getTarget().os.tag) {
-        .vulkan, .opengl => {},
-        else => return,
-    }
-    if (src_info.flags.address_space == .physical_storage_buffer) return;
+    if (!target_util.addrSpaceIsLogical(zcu.getTarget(), src_info.flags.address_space)) return;
     if (!dest_child.hasRuntimeBits(zcu)) return;
 
     var cur = src_child;
@@ -30277,28 +30269,11 @@ fn checkSpirvSliceAllowed(
     const zcu = sema.pt.zcu;
     const target = zcu.getTarget();
 
-    if (!target.cpu.arch.isSpirV()) return;
+    if (!target.cpu.arch.isSpirv()) return;
     if (block.isComptime()) return;
 
-    // This probably lets some invalid OpPtrAccessChains slip through, but it's better than nothing
-    if (!target.cpu.has(.spirv, .variable_pointers) and !target.cpu.has(.spirv, .variable_pointers_storage_buffer)) {
-        return sema.failWithOwnedErrorMsg(
-            block,
-            try sema.errMsg(src, "cannot construct slices without the 'variable_pointers' or 'variable_pointers_storage_buffer' features", .{}),
-        );
-    }
-
-    switch (address_space) {
-        .shared, .storage_buffer => {},
-        else => {
-            return sema.failWithOwnedErrorMsg(block, msg: {
-                const msg = try sema.errMsg(src, "cannot construct slice from address space '{t}'", .{address_space});
-                errdefer msg.destroy(sema.gpa);
-                try sema.errNote(src, msg, "only 'shared' and 'storage_buffer' address spaces support slicing on SPIR-V", .{});
-                break :msg msg;
-            });
-        },
-    }
+    if (!target_util.addrSpaceIsLogical(target, address_space)) return;
+    return sema.fail(block, src, "cannot construct slice from logical address space '{t}'", .{address_space});
 }
 
 fn coerceArrayPtrToSlice(
@@ -35077,7 +35052,7 @@ pub fn resolveNavPtrModifiers(
         };
         const addrspace_body = zir_decl.addrspace_body orelse {
             if (zir_decl.linkage == .@"extern" and
-                target.cpu.arch.isSpirV() and
+                target.cpu.arch.isSpirv() and
                 nav_ty.zigTypeTag(zcu) != .@"fn")
             {
                 return sema.fail(
@@ -35098,7 +35073,7 @@ pub fn resolveNavPtrModifiers(
         break :as try sema.analyzeAsAddressSpace(block, addrspace_src, addrspace_ref, addrspace_ctx);
     };
 
-    if (target.cpu.arch.isSpirV()) {
+    if (target.cpu.arch.isSpirv()) {
         if (zir_decl.kind == .@"var" and zir_decl.linkage != .@"extern" and !zir_decl.is_threadlocal) {
             return sema.failWithOwnedErrorMsg(block, msg: {
                 const decl_src = block.nodeOffset(.zero);

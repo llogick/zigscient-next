@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 test "strlit to vector" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const strlit = "0123456789abcdef0123456789ABCDEF";
     const vec_from_strlit: @Vector(32, u8) = strlit.*;

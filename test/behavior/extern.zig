@@ -4,7 +4,7 @@ const expect = std.testing.expect;
 
 test "anyopaque extern symbol" {
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const a = @extern(*anyopaque, .{ .name = "a_mystery_symbol" });
     const b: *i32 = @ptrCast(@alignCast(a));
@@ -15,7 +15,7 @@ export var a_mystery_symbol: i32 = 1234;
 
 test "function extern symbol" {
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const a = @extern(*const fn () callconv(.c) i32, .{ .name = "a_mystery_function" });
     try expect(a() == 4567);
@@ -27,7 +27,7 @@ export fn a_mystery_function() i32 {
 
 test "function extern symbol matches extern decl" {
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         extern fn another_mystery_function() u32;

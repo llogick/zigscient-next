@@ -2568,7 +2568,7 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
             if (test_target.link_libc == null and !std.os.targetRequiresLibC(target)) continue;
         }
 
-        if (options.skip_spirv and target.cpu.arch.isSpirV()) continue;
+        if (options.skip_spirv and target.cpu.arch.isSpirv()) continue;
         if (options.skip_wasm and target.cpu.arch.isWasm()) continue;
 
         if (options.skip_freebsd and target.os.tag == .freebsd) continue;

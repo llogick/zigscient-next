@@ -62,7 +62,7 @@ pub fn init(self: *ZigObject, macho_file: *MachO) !void {
             self.debug_info_header_dirty = true;
             self.debug_line_header_dirty = true;
         },
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     }
 }
 

@@ -415,6 +415,8 @@ test "dereference undefined pointer to zero-bit type" {
 }
 
 test "type pun extern struct" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = extern struct { f: u8 };
     comptime var s = S{ .f = 123 };
     @as(*u8, @ptrCast(&s)).* = 72;
@@ -434,7 +436,7 @@ test "type pun null pointer-like optional" {
 }
 
 test "write empty array to end" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     comptime var array: [5]u8 = "hello".*;
     array[5..5].* = .{};
@@ -514,7 +516,8 @@ fn fieldPtrTest() u32 {
     return a.value;
 }
 test "pointer in aggregate field can mutate comptime state" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     try comptime std.testing.expect(fieldPtrTest() == 2);
 }
 
@@ -598,6 +601,8 @@ test "reinterpret sentinel-terminated array as packed struct" {
 }
 
 test "reinterpret pointer as optional pointer via double-pointer coercion" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const p0: *const *anyopaque = &@ptrFromInt(0x1000);
     const p1: *const ?*anyopaque = p0;
 

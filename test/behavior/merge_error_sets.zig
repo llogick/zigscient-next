@@ -12,6 +12,7 @@ fn foo() C!void {
 }
 
 test "merge error sets" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     if (foo()) {

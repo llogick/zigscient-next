@@ -5,6 +5,7 @@ const expectEqual = std.testing.expectEqual;
 const mem = std.mem;
 
 test "continue in for loop" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const array = [_]i32{ 1, 2, 3, 4, 5 };
@@ -67,7 +68,7 @@ test "ignore lval with underscore (for loop)" {
 test "basic for loop" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const expected_result: [24]u8 = .{
         9, 8, 7, 6, 0, 1, 2, 3,
@@ -114,7 +115,7 @@ test "basic for loop" {
 test "for with null and T peer types and inferred result location type" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(slice: []const u8) !void {
@@ -133,6 +134,7 @@ test "for with null and T peer types and inferred result location type" {
 }
 
 test "2 break statements and an else" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const S = struct {
@@ -154,7 +156,7 @@ test "2 break statements and an else" {
 test "for loop with pointer elem var" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const source = "abcdefg";
     var target: [source.len]u8 = undefined;
@@ -179,6 +181,7 @@ fn mangleString(s: []u8) void {
 }
 
 test "for copies its payload" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const S = struct {
@@ -198,7 +201,7 @@ test "for copies its payload" {
 test "for on slice with allowzero ptr" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(slice: []const u8) !void {
@@ -213,7 +216,7 @@ test "for on slice with allowzero ptr" {
 
 test "else continue outer for" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var i: usize = 6;
     var buf: [5]u8 = undefined;
@@ -226,6 +229,7 @@ test "else continue outer for" {
 }
 
 test "for loop with else branch" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     {
         var x = [_]u32{ 1, 2 };
         _ = &x;
@@ -272,6 +276,7 @@ test "two counters" {
 }
 
 test "1-based counter and ptr to array" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
 
@@ -306,7 +311,7 @@ test "1-based counter and ptr to array" {
 test "slice and two counters, one is offset and one is runtime" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const slice: []const u8 = "blah";
     var start: usize = 0;
@@ -335,7 +340,7 @@ test "slice and two counters, one is offset and one is runtime" {
 test "two slices, one captured by-ref" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var buf: [10]u8 = undefined;
     const slice1: []const u8 = "blah";
@@ -354,7 +359,7 @@ test "two slices, one captured by-ref" {
 test "raw pointer and slice" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var buf: [10]u8 = undefined;
     const slice: []const u8 = "blah";
@@ -373,7 +378,7 @@ test "raw pointer and slice" {
 test "raw pointer and counter" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var buf: [10]u8 = undefined;
     const ptr: [*]u8 = &buf;
@@ -391,7 +396,7 @@ test "raw pointer and counter" {
 test "inline for with slice as the comptime-known" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const comptime_slice = "hello";
     var runtime_i: usize = 3;
@@ -422,7 +427,7 @@ test "inline for with slice as the comptime-known" {
 test "inline for with counter as the comptime-known" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var runtime_slice = "hello";
     var runtime_i: usize = 3;
@@ -451,6 +456,7 @@ test "inline for with counter as the comptime-known" {
 }
 
 test "inline for on tuple pointer" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
 
@@ -465,6 +471,7 @@ test "inline for on tuple pointer" {
 }
 
 test "ref counter that starts at zero" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
 
@@ -479,6 +486,7 @@ test "ref counter that starts at zero" {
 }
 
 test "inferred alloc ptr of for loop" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
 
@@ -501,6 +509,7 @@ test "inferred alloc ptr of for loop" {
 }
 
 test "for loop results in a bool" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try std.testing.expect(for ([1]u8{0}) |x| {

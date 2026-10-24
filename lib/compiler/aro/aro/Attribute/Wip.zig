@@ -1303,7 +1303,7 @@ fn applyCallingConvention(wip: *Wip) !void {
         .default => unreachable,
         .cdecl => !(comp.target.cpu.arch.isArm() and comp.target.os.tag != .windows) and
             !comp.target.cpu.arch.isPowerPC64() and
-            !comp.target.cpu.arch.isSpirV(),
+            !comp.target.cpu.arch.isSpirv(),
         .aarch64_sve_pcs, .aarch64_vector_pcs => comp.target.cpu.arch.isAARCH64(),
         .arm_aapcs_vfp, .arm_aapcs => comp.target.cpu.arch.isArm(),
         .riscv_vector_cc, .riscv_vls_cc => comp.target.cpu.arch.isRISCV(),

@@ -500,6 +500,7 @@ const use_trap_panic = switch (builtin.zig_backend) {
     .stage2_spirv,
     .stage2_x86,
     => true,
+    .stage2_llvm => builtin.cpu.arch.isSpirv(),
     else => false,
 };
 

@@ -6,7 +6,7 @@ const native_endian = builtin.target.cpu.arch.endian();
 
 test "reinterpret bytes as integer with nonzero offset" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     try testReinterpretBytesAsInteger();
     try comptime testReinterpretBytesAsInteger();
@@ -22,6 +22,7 @@ fn testReinterpretBytesAsInteger() !void {
 }
 
 test "reinterpret an array over multiple elements, with no well-defined layout" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -39,7 +40,7 @@ fn testReinterpretWithOffsetAndNoWellDefinedLayout() !void {
 
 test "reinterpret bytes inside auto-layout struct as integer with nonzero offset" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     try testReinterpretStructWrappedBytesAsInteger();
     try comptime testReinterpretStructWrappedBytesAsInteger();
@@ -57,7 +58,7 @@ fn testReinterpretStructWrappedBytesAsInteger() !void {
 
 test "reinterpret bytes of an array into an extern struct" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     try testReinterpretBytesAsExternStruct();
     try comptime testReinterpretBytesAsExternStruct();
@@ -171,7 +172,7 @@ test "lower reinterpreted comptime field ptr" {
 
 test "reinterpret struct field at comptime" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const numNative = comptime Bytes.init(0x12345678);
     if (native_endian != .little) {
@@ -194,7 +195,7 @@ const Bytes = struct {
 
 test "ptrcast of const integer has the correct object size" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const is_value = ~@as(isize, @intCast(std.math.minInt(isize)));
     const is_bytes = @as([*]const u8, @ptrCast(&is_value))[0..@sizeOf(isize)];
@@ -229,7 +230,7 @@ test "ptrcast of const integer has the correct object size" {
 test "implicit optional pointer to optional anyopaque pointer" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var buf: [4]u8 = "aoeu".*;
     const x: ?[*]u8 = &buf;
@@ -241,7 +242,7 @@ test "implicit optional pointer to optional anyopaque pointer" {
 test "@ptrCast slice to slice" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn foo(slice: []u32) []i32 {
@@ -281,6 +282,8 @@ test "@ptrCast undefined value at comptime" {
 }
 
 test "comptime @ptrCast with packed struct leaves value unmodified" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = packed struct { three: u3 };
     const st: S = .{ .three = 6 };
     try expect(st.three == 6);
@@ -332,7 +335,7 @@ test "@ptrCast restructures comptime-only array" {
 }
 
 test "@ptrCast restructures sliced comptime-only array" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const a3a2: [4][2]comptime_int = .{
         .{ 1, 2 },
@@ -351,7 +354,7 @@ test "@ptrCast restructures sliced comptime-only array" {
 test "@ptrCast slice multiplying length" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(zero: u32) !void {
@@ -368,7 +371,7 @@ test "@ptrCast slice multiplying length" {
 test "@ptrCast array pointer to slice multiplying length" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(zero: u32) !void {
@@ -385,7 +388,7 @@ test "@ptrCast array pointer to slice multiplying length" {
 test "@ptrCast slice dividing length" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(zero: u8) !void {
@@ -402,7 +405,7 @@ test "@ptrCast slice dividing length" {
 test "@ptrCast array pointer to slice dividing length" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(zero: u8) !void {
@@ -419,7 +422,7 @@ test "@ptrCast array pointer to slice dividing length" {
 test "@ptrCast slice with complex length increase" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const TwoBytes = [2]u8;
     const ThreeBytes = [3]u8;
@@ -439,7 +442,7 @@ test "@ptrCast slice with complex length increase" {
 test "@ptrCast array pointer to slice with complex length increase" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const TwoBytes = [2]u8;
     const ThreeBytes = [3]u8;
@@ -459,7 +462,7 @@ test "@ptrCast array pointer to slice with complex length increase" {
 test "@ptrCast slice with complex length decrease" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const TwoBytes = [2]u8;
     const ThreeBytes = [3]u8;
@@ -479,7 +482,7 @@ test "@ptrCast slice with complex length decrease" {
 test "@ptrCast array pointer to slice with complex length decrease" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const TwoBytes = [2]u8;
     const ThreeBytes = [3]u8;
@@ -499,7 +502,7 @@ test "@ptrCast array pointer to slice with complex length decrease" {
 test "@ptrCast slice of zero-bit type to different slice" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(comptime T: type, zero_bits: []const T) !void {
@@ -518,7 +521,7 @@ test "@ptrCast slice of zero-bit type to different slice" {
 test "@ptrCast single-item pointer to slice with length 1" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(comptime T: type, ptr: *const T) !void {
@@ -538,7 +541,7 @@ test "@ptrCast single-item pointer to slice with length 1" {
 test "@ptrCast single-item pointer to slice of bytes" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(comptime T: type, ptr: *const T) !void {

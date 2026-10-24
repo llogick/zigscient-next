@@ -2,7 +2,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 
 test "@prefetch()" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var a: [2]u32 = .{ 42, 42 };
     var a_len = a.len;

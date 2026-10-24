@@ -26,6 +26,7 @@ fn dummy(a: bool, b: i32, c: f32) i32 {
 }
 
 test "reflection: @field" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     var f = Foo{

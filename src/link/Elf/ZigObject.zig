@@ -224,7 +224,7 @@ pub fn init(self: *ZigObject, elf_file: *Elf, options: InitOptions) !void {
             try dwarf.initMetadata();
             self.dwarf = dwarf;
         },
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     }
 }
 

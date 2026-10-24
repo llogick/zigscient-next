@@ -36,7 +36,7 @@ const need_simple = switch (builtin.zig_backend) {
 pub fn main(init: std.process.Init.Minimal) void {
     @disableInstrumentation();
 
-    if (builtin.cpu.arch.isSpirV()) {
+    if (builtin.cpu.arch.isSpirv()) {
         // SPIR-V needs an special test-runner
         return;
     }

@@ -4889,7 +4889,7 @@ pub fn doNotOptimizeAway(val: anytype) void {
             // tied to IDs that can be passed to valid instructions. Some
             // SPIR-V targets do not define c_long, so we just allow any sized
             // integer on these targets
-            const val_fits_in_gp_register = builtin.target.cpu.arch.isSpirV() or fits: {
+            const val_fits_in_gp_register = builtin.target.cpu.arch.isSpirv() or fits: {
                 const max_gp_register_bits = @bitSizeOf(c_long);
                 break :fits int.bits <= max_gp_register_bits;
             };

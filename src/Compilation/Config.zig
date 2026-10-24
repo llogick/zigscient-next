@@ -72,6 +72,8 @@ pub const DebugFormat = union(enum) {
     strip,
     dwarf: std.dwarf.Format,
     code_view,
+    /// Non-semantic Shader Debug Info
+    nsdi,
 };
 
 pub const Options = struct {
@@ -517,7 +519,8 @@ pub fn resolve(options: Options) ResolveError!Config {
                 .windows, .uefi => .code_view,
                 else => .{ .dwarf = .@"32" },
             },
-            .spirv, .hex, .raw, .plan9 => .strip,
+            .spirv => .nsdi,
+            .hex, .raw, .plan9 => .strip,
         };
     };
 

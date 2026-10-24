@@ -15,6 +15,7 @@ const allowed_vendors = [_][]const u8{ "KHR", "EXT" };
 const set_names = std.StaticStringMap(struct { []const u8, []const u8 }).initComptime(.{
     .{ "opencl.std.100", .{ "OpenCL.std", "OpenClOpcode" } },
     .{ "glsl.std.450", .{ "GLSL.std.450", "GlslOpcode" } },
+    .{ "nonsemantic.shader.debuginfo.100", .{ "NonSemantic.Shader.DebugInfo.100", "ShaderDebugInfoOpCode" } },
 });
 
 const Extension = struct {

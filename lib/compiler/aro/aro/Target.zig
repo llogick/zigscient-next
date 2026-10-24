@@ -113,7 +113,7 @@ pub const SubArch = enum {
             return @backingInt(std.Target.mips.Feature.mips32r6);
         } else if (arch.isMIPS64()) {
             return @backingInt(std.Target.mips.Feature.mips64r6);
-        } else if (arch.isSpirV()) {
+        } else if (arch.isSpirv()) {
             const spirv = std.Target.spirv.Feature;
             return @backingInt(switch (sub) {
                 .spirv_v10 => spirv.v1_0,

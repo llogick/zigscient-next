@@ -43,7 +43,7 @@ export fn testPackedStuff(a: *const PackedStruct, b: *const PackedUnion) void {
 }
 
 test "export function alias" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     _ = struct {
         fn foo_internal() callconv(.c) u32 {

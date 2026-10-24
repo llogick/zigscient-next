@@ -2,6 +2,8 @@ const expect = @import("std").testing.expect;
 const builtin = @import("builtin");
 
 test "@hasField" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const struc = struct {
         a: i32,
         b: []u8,

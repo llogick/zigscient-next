@@ -5,7 +5,7 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
 test "compile time recursion" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     try expect(some_data.len == 21);
 }
@@ -72,6 +72,7 @@ fn constExprEvalOnSingleExprBlocksFn(x: i32, b: bool) i32 {
 }
 
 test "constant expressions" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     var array: [array_size]u8 = undefined;
@@ -93,6 +94,7 @@ fn letsTryToCompareBools(a: bool, b: bool) bool {
     return max(bool, a, b);
 }
 test "inlined block and runtime block phi" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try expect(letsTryToCompareBools(true, true));
@@ -141,7 +143,7 @@ test "pointer to type" {
 test "a type constructed in a global expression" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var l: List = undefined;
     l.array[0] = 10;
@@ -234,6 +236,7 @@ const vertices = [_]Vertex{
 };
 
 test "statically initialized list" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try expect(static_point_list[0].x == 1);
@@ -303,6 +306,7 @@ fn performFn(comptime prefix_char: u8, start_value: i32) i32 {
 }
 
 test "comptime iterate over fn ptr list" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     try expect(performFn('t', 1) == 6);
     try expect(performFn('o', 0) == 1);
     try expect(performFn('w', 99) == 99);
@@ -339,6 +343,7 @@ fn doesAlotT(comptime T: type, value: usize) T {
 }
 
 test "@setEvalBranchQuota at same scope as generic function call" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     try expect(doesAlotT(u32, 2) == 2);
@@ -390,7 +395,7 @@ test "return 0 from function that has u0 return type" {
 }
 
 test "statically initialized struct" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     st_init_str_foo.x += 1;
@@ -406,6 +411,7 @@ var st_init_str_foo = StInitStrFoo{
 };
 
 test "inline for with same type but different values" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     var res: usize = 0;
     inline for ([_]type{ [2]u8, [1]u8, [2]u8 }) |T| {
         var a: T = undefined;
@@ -441,7 +447,7 @@ fn copyWithPartialInline(s: []u32, b: []u8) void {
 test "binary math operator in partially inlined function" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var s: [4]u32 = undefined;
     var b: [16]u8 = undefined;
@@ -484,6 +490,7 @@ test "comptime bitwise operators" {
 }
 
 test "comptime shlWithOverflow" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
@@ -498,7 +505,7 @@ test "comptime shlWithOverflow" {
 
 test "const ptr to variable data changes at runtime" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     try expect(foo_ref.name[0] == 'a');
     foo_ref.name = "b";
@@ -515,7 +522,7 @@ const foo_ref = &foo_contents;
 test "runtime 128 bit integer division" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     var a: u128 = 152313999999999991610955792383;
@@ -527,13 +534,14 @@ test "runtime 128 bit integer division" {
 
 test "@tagName of @typeInfo" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const str = @tagName(@typeInfo(u8));
     try expect(std.mem.eql(u8, str, "int"));
 }
 
 test "static eval list init" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -551,6 +559,7 @@ pub fn vec3(x: f32, y: f32, z: f32) Vec3 {
 }
 
 test "inlined loop has array literal with elided runtime scope on first iteration but not second iteration" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     var runtime = [1]i32{3};
@@ -603,7 +612,7 @@ const hi1 = "hi";
 const hi2 = hi1;
 test "const global shares pointer with other same one" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     try assertEqualPtrs(&hi1[0], &hi2[0]);
     comptime assert(&hi1[0] == &hi2[0]);
@@ -722,7 +731,7 @@ fn testVarInsideInlineLoop(args: anytype) !void {
 test "array concatenation of function calls" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var a = oneItem(3) ++ oneItem(4);
     try expect(std.mem.eql(i32, &a, &[_]i32{ 3, 4 }));
@@ -737,6 +746,7 @@ fn scalar(x: u32) u32 {
 }
 
 test "array concatenation peer resolves element types - value" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -755,7 +765,7 @@ test "array concatenation peer resolves element types - value" {
 test "array concatenation peer resolves element types - pointer" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var a = [2]u3{ 1, 7 };
     var b = [3]u8{ 200, 225, 255 };
@@ -772,7 +782,7 @@ test "array concatenation sets the sentinel - value" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var a = [2]u3{ 1, 7 };
     var b = [3:69]u8{ 200, 225, 255 };
@@ -791,7 +801,7 @@ test "array concatenation sets the sentinel - value" {
 test "array concatenation sets the sentinel - pointer" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var a = [2]u3{ 1, 7 };
     var b = [3:69]u8{ 200, 225, 255 };
@@ -926,7 +936,7 @@ test "closure capture type of runtime-known var" {
 }
 
 test "comptime break passing through runtime condition converted to runtime break" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const S = struct {
@@ -959,7 +969,7 @@ test "comptime break passing through runtime condition converted to runtime brea
 }
 
 test "comptime break to outer loop passing through runtime condition converted to runtime break" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -996,6 +1006,8 @@ test "comptime break to outer loop passing through runtime condition converted t
 }
 
 test "comptime break operand passing through runtime condition converted to runtime break" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest(runtime: u8) !void {
             const result = inline for ([3]u8{ 'a', 'b', 'c' }) |byte| {
@@ -1012,6 +1024,7 @@ test "comptime break operand passing through runtime condition converted to runt
 }
 
 test "comptime break operand passing through runtime switch converted to runtime break" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const S = struct {
@@ -1038,7 +1051,7 @@ test "equality of pointers to comptime const" {
 test "storing an array of type in a field" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest() void {
@@ -1066,7 +1079,7 @@ test "storing an array of type in a field" {
 
 test "pass pointer to field of comptime-only type as a runtime parameter" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         const Mixed = struct {
@@ -1192,7 +1205,8 @@ test "lazy value is resolved as slice operand" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     const A = struct { a: u32 };
     var a: [512]u64 = undefined;
 
@@ -1203,6 +1217,8 @@ test "lazy value is resolved as slice operand" {
 }
 
 test "break from inline loop depends on runtime condition" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn foo(a: u8) bool {
             return a == 4;
@@ -1249,6 +1265,7 @@ test "inline for inside a runtime condition" {
 }
 
 test "continue in inline for inside a comptime switch" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const arr = .{ 1, 2, 3 };
@@ -1267,7 +1284,7 @@ test "continue in inline for inside a comptime switch" {
 }
 
 test "length of global array is determinable at comptime" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         var bytes: [1024]u8 = undefined;
@@ -1316,7 +1333,7 @@ test "continue nested inline for loop in named block expr" {
 }
 
 test "x and false is comptime-known false" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const T = struct {
@@ -1344,7 +1361,7 @@ test "x and false is comptime-known false" {
 }
 
 test "x or true is comptime-known true" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const T = struct {
@@ -1372,6 +1389,7 @@ test "x or true is comptime-known true" {
 }
 
 test "non-optional and optional array elements concatenated" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -1391,6 +1409,8 @@ test "inline call in @TypeOf inherits is_inline property" {
 }
 
 test "comptime function turns function value to function pointer" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn fnPtr(function: anytype) *const @TypeOf(function) {
             return &function;
@@ -1406,7 +1426,7 @@ test "comptime function turns function value to function pointer" {
 }
 
 test "container level const and var have unique addresses" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         x: i32,
@@ -1451,6 +1471,8 @@ test "struct in comptime false branch is not evaluated" {
 }
 
 test "result of nested switch assigned to variable" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     var zds: u32 = 0;
     zds = switch (zds) {
         0 => switch (zds) {
@@ -1465,6 +1487,8 @@ test "result of nested switch assigned to variable" {
 }
 
 test "inline for loop of functions returning error unions" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const T1 = struct {
         fn v() error{}!usize {
             return 1;
@@ -1519,6 +1543,8 @@ test "early exit in container level const" {
 }
 
 test "@inComptime" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         fn inComptime() bool {
             return @inComptime();
@@ -1584,6 +1610,8 @@ test "comptime labeled block implicit exit" {
 }
 
 test "comptime block has intermediate runtime-known values" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const arr: [2]u8 = .{ 1, 2 };
 
     var idx: usize = undefined;

@@ -3901,6 +3901,35 @@ pub fn buildOutputType(
         @import("codegen/llvm/bindings.zig").ParseCommandLineOptions(argv.len, &argv);
     }
 
+    if (build_options.have_llvm and cs.create_module.resolved_options.use_llvm and target.cpu.arch.isSpirv()) {
+        // LLVM has no way to set this non-globally other
+        // than SPIRVTranslate() but it cannot emits assembly.
+        var extensions: std.ArrayList(u8) = .empty;
+        defer extensions.deinit(gpa);
+        try extensions.appendSlice(gpa, "--spirv-ext=");
+
+        var has_extension = false;
+        if (!root_mod.strip) {
+            try extensions.appendSlice(gpa, "+SPV_KHR_non_semantic_info");
+            has_extension = true;
+        }
+
+        for (std.enums.values(std.Target.spirv.Feature)) |feature| {
+            const name = @tagName(feature);
+            if (!mem.startsWith(u8, name, "SPV_")) continue;
+            if (!target.cpu.has(.spirv, feature)) continue;
+            if (mem.eql(u8, name, "SPV_KHR_variable_pointers") and target.cpu.has(.spirv, .v1_3)) continue;
+
+            if (has_extension) try extensions.append(gpa, ',');
+            try extensions.append(gpa, '+');
+            try extensions.appendSlice(gpa, name);
+            has_extension = true;
+        }
+
+        const argv = [_][*:0]const u8{ "zig (LLVM option parsing)", try extensions.toOwnedSliceSentinel(gpa, 0) };
+        @import("codegen/llvm/bindings.zig").ParseCommandLineOptions(argv.len, &argv);
+    }
+
     const clang_passthrough_mode = switch (arg_mode) {
         .cc, .cpp, .translate_c => true,
         else => false,

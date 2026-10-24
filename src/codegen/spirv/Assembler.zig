@@ -784,21 +784,17 @@ fn parseNumber(ass: *Assembler) !void {
     const result = try ass.resolveRef(ass.inst.operands.items[0].ref_id);
     const result_id = result.resultId();
 
-    const words = cg.module.instructions.items;
-    var offset: usize = 0;
-    while (offset < words.len) {
-        const header: spec.InstructionHeader = @bitCast(words[offset]);
-        const word_count = header.word_count;
-        defer offset += word_count;
-        if (word_count == 0) break;
-        switch (header.opcode) {
-            .OpTypeInt => if (word_count >= 4 and @as(Id, @fromBackingInt(@intCast(words[offset + 1]))) == result_id) {
-                const width: u16 = @intCast(words[offset + 2]);
-                const signedness: std.lang.Signedness = if (words[offset + 3] == 0) .unsigned else .signed;
+    var it = cg.module.iterate();
+    while (it.next()) |instruction| {
+        const words = instruction.words;
+        switch (instruction.opcode) {
+            .OpTypeInt => if (words.len >= 4 and @as(Id, @fromBackingInt(@intCast(words[1]))) == result_id) {
+                const width: u16 = @intCast(words[2]);
+                const signedness: std.lang.Signedness = if (words[3] == 0) .unsigned else .signed;
                 return ass.parseContextDependentInt(signedness, width);
             },
-            .OpTypeFloat => if (word_count >= 3 and @as(Id, @fromBackingInt(@intCast(words[offset + 1]))) == result_id) {
-                const bits = words[offset + 2];
+            .OpTypeFloat => if (words.len >= 3 and @as(Id, @fromBackingInt(@intCast(words[1]))) == result_id) {
+                const bits = words[2];
                 return switch (bits) {
                     16 => ass.parseContextDependentFloat(16),
                     32 => ass.parseContextDependentFloat(32),

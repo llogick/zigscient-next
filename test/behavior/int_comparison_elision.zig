@@ -4,6 +4,7 @@ const maxInt = std.math.maxInt;
 const builtin = @import("builtin");
 
 test "int comparison elision" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     testIntEdges(u0);
@@ -14,7 +15,7 @@ test "int comparison elision" {
 
     // TODO: support int types > 128 bits wide in other backends
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     // TODO: panic: integer overflow with int types > 65528 bits wide
     // TODO: LLVM generates too many parameters for wasmtime when splitting up int > 64000 bits wide

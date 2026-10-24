@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const expect = std.testing.expect;
 
 test "simple switch loop" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -27,6 +28,7 @@ test "simple switch loop" {
 }
 
 test "switch loop with ranges" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -47,6 +49,7 @@ test "switch loop with ranges" {
 }
 
 test "switch loop on enum" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -70,6 +73,7 @@ test "switch loop on enum" {
 }
 
 test "switch loop with error set" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -93,6 +97,7 @@ test "switch loop with error set" {
 }
 
 test "switch loop on tagged union" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -128,7 +133,7 @@ test "switch loop dispatching instructions" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // TODO
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest; // TODO
 
     const S = struct {
         const Inst = union(enum) {
@@ -175,6 +180,7 @@ test "switch loop dispatching instructions" {
 }
 
 test "switch loop with pointer capture" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -222,7 +228,7 @@ test "unanalyzed continue with operand" {
 
 test "switch loop on larger than pointer integer" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var entry: @Int(.unsigned, @bitSizeOf(usize) + 1) = undefined;
     entry = 0;
@@ -242,6 +248,7 @@ test "switch loop on larger than pointer integer" {
 }
 
 test "switch loop on non-exhaustive enum" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
@@ -290,6 +297,8 @@ test "switch loop with discarded tag capture" {
 }
 
 test "switch loop with single catch-all prong" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S = struct {
         const E = enum { a, b, c };
         const U = union(E) { a: u32, b: u16, c: u8 };
@@ -337,7 +346,7 @@ test "switch loop with single catch-all prong" {
 }
 
 test "switch loop on type with opv" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         const E = enum { opv };
@@ -385,7 +394,7 @@ test "switch loop on type with opv" {
 }
 
 test "switch loop with tag capture" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const U = union(enum) {
         a,
@@ -456,6 +465,8 @@ test "switch loop with tag capture" {
 }
 
 test "switch loop for error handling" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const Error = error{ MyError, MyOtherError };
     const S = struct {
         fn doTheTest() !void {
@@ -500,7 +511,8 @@ test "switch loop for error handling" {
 }
 
 test "switch loop with packed structs" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     const P = packed struct {
         a: u7,
         b: u20,
@@ -518,7 +530,7 @@ test "switch loop with packed structs" {
 }
 
 test "switch loop with packed unions" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const P = packed union {
         a: u7,
@@ -558,7 +570,7 @@ test "switch loop with packed unions with OPV" {
 }
 
 test "switch loop on large types" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest(a: u128, b: i500) !void {

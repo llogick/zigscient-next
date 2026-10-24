@@ -33,6 +33,7 @@ test "decl literal with pointer" {
 }
 
 test "call decl literal with optional" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
 
@@ -48,7 +49,7 @@ test "call decl literal with optional" {
 }
 
 test "call decl literal with pointer" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = struct {
         x: u32,
@@ -62,6 +63,7 @@ test "call decl literal with pointer" {
 }
 
 test "call decl literal" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     const S = struct {
         x: u32,
         fn init() @This() {
@@ -74,7 +76,7 @@ test "call decl literal" {
 }
 
 test "call decl literal with error union" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest; // TODO
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest; // TODO
 
     const S = struct {
         x: u32,

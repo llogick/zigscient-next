@@ -212,13 +212,27 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .powerpc => subArchName(target, .powerpc, .{
             .{ .spe, "spe" },
         }),
-        .spirv32, .spirv64 => subArchName(target, .spirv, .{
-            .{ .v1_6, "1.6" },
-            .{ .v1_5, "1.5" },
-            .{ .v1_4, "1.4" },
-            .{ .v1_3, "1.3" },
-            .{ .v1_2, "1.2" },
-            .{ .v1_1, "1.1" },
+        .spirv32 => switch (target.os.tag) {
+            .vulkan, .opengl => subArchName(target, .spirv, .{
+                .{ .v1_6, "1.6" },
+                .{ .v1_5, "1.5" },
+            }),
+            else => subArchName(target, .spirv, .{
+                .{ .v1_6, "v1.6" },
+                .{ .v1_5, "v1.5" },
+                .{ .v1_4, "v1.4" },
+                .{ .v1_3, "v1.3" },
+                .{ .v1_2, "v1.2" },
+                .{ .v1_1, "v1.1" },
+            }),
+        },
+        .spirv64 => subArchName(target, .spirv, .{
+            .{ .v1_6, "v1.6" },
+            .{ .v1_5, "v1.5" },
+            .{ .v1_4, "v1.4" },
+            .{ .v1_3, "v1.3" },
+            .{ .v1_2, "v1.2" },
+            .{ .v1_1, "v1.1" },
         }),
         else => null,
     };
@@ -10232,6 +10246,55 @@ pub fn opaqueType(self: *Builder, name: String) Allocator.Error!Type {
     try self.next_unique_type_id.ensureUnusedCapacity(self.gpa, 1);
     try self.ensureUnusedTypeCapacity(1, Type.NamedStructure, 0);
     return self.opaqueTypeAssumeCapacity(name);
+}
+
+pub fn targetType(
+    self: *Builder,
+    name: String,
+    types: []const Type,
+    ints: []const u32,
+) Allocator.Error!Type {
+    try self.ensureUnusedTypeCapacity(1, Type.Target, types.len + ints.len);
+    const Key = struct { name: String, types: []const Type, ints: []const u32 };
+    const Adapter = struct {
+        builder: *const Builder,
+        pub fn hash(_: @This(), key: Key) u32 {
+            var hasher: std.hash.Wyhash = .init(comptime std.hash.int(@backingInt(Type.Tag.target)));
+            hasher.update(std.mem.asBytes(&key.name));
+            hasher.update(std.mem.sliceAsBytes(key.types));
+            hasher.update(std.mem.sliceAsBytes(key.ints));
+            return @truncate(hasher.final());
+        }
+        pub fn eql(ctx: @This(), lhs_key: Key, _: void, rhs_index: usize) bool {
+            const rhs_data = ctx.builder.type_items.items[rhs_index];
+            if (rhs_data.tag != .target) return false;
+            var extra = ctx.builder.typeExtraDataTrail(Type.Target, rhs_data.data);
+            if (lhs_key.name != extra.data.name) return false;
+            const rhs_types = extra.trail.next(extra.data.types_len, Type, ctx.builder);
+            const rhs_ints = extra.trail.next(extra.data.ints_len, u32, ctx.builder);
+            return std.mem.eql(Type, lhs_key.types, rhs_types) and
+                std.mem.eql(u32, lhs_key.ints, rhs_ints);
+        }
+    };
+    const gop = self.type_map.getOrPutAssumeCapacityAdapted(
+        Key{ .name = name, .types = types, .ints = ints },
+        Adapter{ .builder = self },
+    );
+    if (!gop.found_existing) {
+        gop.key_ptr.* = {};
+        gop.value_ptr.* = {};
+        self.type_items.appendAssumeCapacity(.{
+            .tag = .target,
+            .data = self.addTypeExtraAssumeCapacity(Type.Target{
+                .name = name,
+                .types_len = @intCast(types.len),
+                .ints_len = @intCast(ints.len),
+            }),
+        });
+        self.type_extra.appendSliceAssumeCapacity(@ptrCast(types));
+        self.type_extra.appendSliceAssumeCapacity(ints);
+    }
+    return @fromBackingInt(@intCast(gop.index));
 }
 
 pub fn namedTypeSetBody(

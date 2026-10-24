@@ -12,6 +12,8 @@ const x: u16 = 13;
 const z: @TypeOf(x) = 19;
 
 test "@TypeOf() with multiple arguments" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     {
         var var_1: u32 = undefined;
         var var_2: u8 = undefined;
@@ -73,7 +75,7 @@ const P = packed struct {
 
 test "@offsetOf" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     // Packed structs have fixed memory layout
     try expect(@offsetOf(P, "a") == 0);
@@ -100,6 +102,7 @@ test "@offsetOf" {
 }
 
 test "@bitOffsetOf" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     // Packed structs have fixed memory layout
@@ -134,7 +137,7 @@ test "@TypeOf() has no runtime side effects" {
 }
 
 test "branching logic inside @TypeOf" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
 
     const S = struct {
@@ -150,6 +153,8 @@ test "branching logic inside @TypeOf" {
 }
 
 test "@bitSizeOf" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     try expect(@bitSizeOf(u2) == 2);
     try expect(@bitSizeOf(u8) == @sizeOf(u8) * 8);
     try expect(@bitSizeOf(packed struct {
@@ -158,6 +163,8 @@ test "@bitSizeOf" {
 }
 
 test "@sizeOf comparison against zero" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     const S0 = struct {
         f: *@This(),
     };
@@ -240,6 +247,7 @@ test "lazy size cast to float" {
 }
 
 test "runtime instructions inside typeof in comptime only scope" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -288,7 +296,8 @@ test "lazy abi size used in comparison" {
 
 test "peer type resolution with @TypeOf doesn't trigger dependency loop check" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     const T = struct {
         next: @TypeOf(null, @as(*const @This(), undefined)),
     };
@@ -327,11 +336,11 @@ const exp = struct {
     }
 };
 comptime {
-    if (builtin.zig_backend != .stage2_spirv) _ = exp;
+    if (!builtin.cpu.arch.isSpirv()) _ = exp;
 }
 
 test "Extern function calls in @TypeOf" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const S = extern struct {
         state: c_short,
@@ -382,6 +391,7 @@ test "Peer resolution of extern function calls in @TypeOf" {
 }
 
 test "Extern function calls, dereferences and field access in @TypeOf" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const Test = struct {
@@ -406,7 +416,7 @@ test "Extern function calls, dereferences and field access in @TypeOf" {
 }
 
 test "@sizeOf struct is resolved when used as operand of slicing" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const dummy = struct {};
     const S = struct {

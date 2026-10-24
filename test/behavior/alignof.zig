@@ -19,6 +19,7 @@ test "@alignOf(T) before referencing T" {
 }
 
 test "comparison of @alignOf(T) against zero" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     const T = struct { x: u32 };
     try expect(!(@alignOf(T) == 0));
     try expect(@alignOf(T) != 0);
@@ -29,7 +30,7 @@ test "comparison of @alignOf(T) against zero" {
 }
 
 test "correct alignment for elements and slices of aligned array" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var buf: [1024]u8 align(64) = undefined;
     var start: usize = 1;

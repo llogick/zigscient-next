@@ -2381,7 +2381,7 @@ pub fn supportsAddressSpace(
     const arch = target.cpu.arch;
 
     const is_nvptx = arch.isNvptx();
-    const is_spirv = arch.isSpirV();
+    const is_spirv = arch.isSpirv();
     const is_gpu = is_nvptx or is_spirv or arch == .amdgcn;
 
     return switch (address_space) {

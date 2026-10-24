@@ -19,7 +19,5 @@ export fn b() void {
 // target=spirv32-opengl,spirv32-vulkan
 // cpu_features=baseline+variable_pointers
 //
-// :3:16: error: cannot construct slice from address space 'generic'
-// :3:16: note: only 'shared' and 'storage_buffer' address spaces support slicing on SPIR-V
-// :14:11: error: cannot construct slice from address space 'generic'
-// :14:11: note: only 'shared' and 'storage_buffer' address spaces support slicing on SPIR-V
+// :3:16: error: cannot construct slice from logical address space 'generic'
+// :14:11: error: cannot construct slice from logical address space 'generic'

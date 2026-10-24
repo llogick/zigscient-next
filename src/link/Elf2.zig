@@ -5146,7 +5146,7 @@ fn create(
         .dwarf = .init(&elf.base, switch (comp.config.debug_format) {
             .strip => .@"32", // for .eh_frame
             .dwarf => |v| v,
-            .code_view => unreachable,
+            .code_view, .nsdi => unreachable,
         }),
         .dwarf_shared = comptime .initFill(.{
             .first_target_reloc = .none,
@@ -5261,7 +5261,7 @@ fn initHeaders(
     const have_debug_frame = machine == .X86_64 and switch (comp.config.debug_format) {
         .strip => false,
         .dwarf => !comp.config.any_unwind_tables,
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     };
     const addr_align: Alignment = switch (class) {
         .NONE, _ => unreachable,
@@ -5322,7 +5322,7 @@ fn initHeaders(
                 shnum += 1; // .debug_str
                 shnum += 1; // .debug_str_offsets
             },
-            .code_view => unreachable,
+            .code_view, .nsdi => unreachable,
         }
         if (@"type" != .REL) {
             shnum += 1; // .got
@@ -6548,7 +6548,7 @@ fn initHeaders(
                 .node_align = elf.mf.flags.block_size,
             });
         },
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     }
 
     // If we have an entry point symbol, create the undefined reference now.
@@ -10400,7 +10400,7 @@ fn updateContainerTypeInner(
             try elf.dwarf.const_pool.updateContainerType(pt, .{ .elf2 = elf }, ty, success);
             try elf.dwarf.const_pool.flushPending(pt, .{ .elf2 = elf });
         },
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     }
     if (!success) return;
     var lazy_it = elf.lazy.iterator();
@@ -10426,7 +10426,7 @@ pub fn addConst(
             try elf.dwarf_consts.ensureUnusedCapacity(gpa, 1);
             try elf.dwarf.addConst(cpi, val, &addConstNode);
         },
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     }
 }
 fn addConstNode(
@@ -10502,7 +10502,7 @@ fn updateConstInner(
             }
             try elf.genPending(pt);
         },
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     }
 }
 
@@ -11259,7 +11259,7 @@ fn genPending(elf: *Elf, pt: Zcu.PerThread) link.Error!void {
             elf.resetNodeRelocs(debug_info_ni);
             try elf.dwarf.genDecl(pt, &di_nw, pending.instance);
         },
-        .code_view => unreachable,
+        .code_view, .nsdi => unreachable,
     }
     try elf.genPendingDebug(gpa);
     assert(elf.pending_uavs.items.len == 0); // no UAVs added by lazy code/data or by debug info

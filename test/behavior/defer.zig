@@ -5,6 +5,8 @@ const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
 test "break and continue inside loop inside defer expression" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     testBreakContInDefer(10);
     comptime testBreakContInDefer(10);
 }
@@ -32,6 +34,7 @@ test "defer and labeled break" {
 }
 
 test "errdefer does not apply to fn inside fn" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     if (testNestedFnErrDefer()) |_| @panic("expected error") else |e| try expect(e == error.Bad);
@@ -49,6 +52,7 @@ fn testNestedFnErrDefer() anyerror!void {
 }
 
 test "return variable while defer expression in scope to modify it" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -89,7 +93,7 @@ fn runSomeErrorDefers(x: bool) !bool {
 }
 
 test "mixing normal and error defers" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -109,7 +113,8 @@ test "mixing normal and error defers" {
 
 test "simple else prong doesn't emit an error for unreachable else prong" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     const S = struct {
         fn foo() error{Foo}!void {
             return error.Foo;

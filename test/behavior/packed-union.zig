@@ -8,7 +8,7 @@ test "flags in packed union" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest; // TODO
 
     try testFlagsInPackedUnion();
@@ -51,7 +51,7 @@ test "flags in packed union at offset" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest; // TODO
 
     try testFlagsInPackedUnionAtOffset();
@@ -107,7 +107,7 @@ fn testFlagsInPackedUnionAtOffset() !void {
 test "packed union in packed struct" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     try testPackedUnionInPackedStruct();
     try comptime testPackedUnionInPackedStruct();
@@ -144,7 +144,7 @@ test "packed union initialized with a runtime value" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const Fields = packed struct {
         timestamp: u50,
@@ -182,7 +182,7 @@ test "assigning to non-active field at comptime" {
 test "packed union with explicit backing integer" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const U = packed union(i32) {
         raw: i32,
@@ -201,7 +201,7 @@ test "packed union with explicit backing integer" {
 }
 
 test "packed union equality" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const Foo = packed union {
         a: u4,
@@ -229,7 +229,7 @@ test "initialize packed union field to undefined at comptime" {
 }
 
 test "convert from/to backing int" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const U = packed union(u10) {
         a: i10,
@@ -246,7 +246,7 @@ test "convert from/to backing int" {
 
 test "equality with wide backing integer" {
     if (builtin.zig_backend == .stage2_x86_64) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/35982
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const U = packed union(i200) {
         x: u200,

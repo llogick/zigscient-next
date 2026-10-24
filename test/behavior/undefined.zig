@@ -14,6 +14,7 @@ fn initStaticArray() [10]i32 {
 }
 const static_array = initStaticArray();
 test "init static array to undefined" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     // This test causes `initStaticArray()` to be codegen'd, and the
     // C backend does not yet support returning arrays, so it fails
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
@@ -45,6 +46,7 @@ fn setFooX(foo: *Foo) void {
 }
 
 test "assign undefined to struct" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -61,6 +63,7 @@ test "assign undefined to struct" {
 }
 
 test "assign undefined to struct with method" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
@@ -77,7 +80,7 @@ test "assign undefined to struct with method" {
 }
 
 test "type name of undefined" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const x = undefined;
@@ -88,7 +91,7 @@ var buf: []u8 = undefined;
 
 test "reslice of undefined global var slice" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     var stack_buf: [100]u8 = @splat(0);
     buf = &stack_buf;
@@ -98,7 +101,7 @@ test "reslice of undefined global var slice" {
 
 test "returned undef is 0xaa bytes when runtime safety is enabled" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     const Rect = struct {

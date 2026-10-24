@@ -465,7 +465,7 @@ pub fn lowerToBuildSteps(
         if (options.skip_non_native and !std.zig.target.isNative(&case.target.query, &case.target.result, &b.graph.host.result))
             continue;
 
-        if (options.skip_spirv and case.target.query.cpu_arch != null and case.target.query.cpu_arch.?.isSpirV()) continue;
+        if (options.skip_spirv and case.target.query.cpu_arch != null and case.target.query.cpu_arch.?.isSpirv()) continue;
         if (options.skip_wasm and case.target.query.cpu_arch != null and case.target.query.cpu_arch.?.isWasm()) continue;
 
         if (options.skip_freebsd and case.target.query.os_tag == .freebsd) continue;

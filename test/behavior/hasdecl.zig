@@ -12,6 +12,7 @@ pub const Bar = struct {
 };
 
 test "@hasDecl" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     try expect(@hasDecl(Foo, "public_thing"));
@@ -24,6 +25,7 @@ test "@hasDecl" {
 }
 
 test "@hasDecl using a sliced string literal" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     try expect(@hasDecl(@This(), "Bar") == true);
