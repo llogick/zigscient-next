@@ -26,6 +26,7 @@ pub fn legalizeFeatures(_: *const std.Target) ?*const Air.Legalize.Features {
         .soft_f32,
         .soft_f64,
         .soft_f80,
+        .soft_f128,
     });
 }
 

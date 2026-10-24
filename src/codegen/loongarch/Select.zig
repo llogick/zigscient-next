@@ -895,7 +895,7 @@ pub const Value = struct {
             };
             const unused_bits = @max(new_unused_bits, old_unused_bits);
             if (dst_ext == src_ext and bit_size <= old_bits) return;
-            tracking_log.debug("{f}: {t} ({t}) -> {t} ({t}), {d}b -> {d}b", .{ vi, src_ext, new_ext, dst_ext, old_ext, old_bits, bit_size });
+            tracking_log.debug("{f}: in {t} ({t}) -> out {t} ({t}), {d}b -> {d}b", .{ vi, src_ext, new_ext, dst_ext, old_ext, old_bits, bit_size });
 
             // avoid setting extension to .garbage to reduce MIR for sequences like
             // zero_ext -> garbage -> zero_ext
@@ -913,33 +913,8 @@ pub const Value = struct {
                 );
                 try vi_mat.finish(isel);
             } else {
-                const unused_bytes = std.math.divCeil(u64, unused_bits, 8) catch unreachable;
-                assert(unused_bytes <= isel.gprSize()); // TODO larger extending
-                const used_bytes = vi.size(isel) - unused_bytes;
-
-                var hit = false;
-                var walker = vi.walk(isel, .{});
-                while (walker.next()) |part_vi| {
-                    const part_offset = part_vi.offsetIn(isel, vi);
-                    const part_size = part_vi.size(isel);
-                    const part_end = part_offset + part_size;
-                    if (part_end <= used_bytes) continue;
-                    if (part_size > isel.gprSize()) continue;
-
-                    walker.skipChildren(part_vi);
-
-                    const part_mat = try part_vi.mat(isel, .{ .pref = .only_reg });
-                    try isel.fillUnusedBits(
-                        part_mat.reg(),
-                        part_mat.reg(),
-                        dst_ext,
-                        src_ext,
-                        @intCast(unused_bits - ((vi.size(isel) - part_end) * 8)),
-                    );
-                    try part_mat.finish(isel);
-                    if (hit) unreachable; // TODO
-                    hit = true;
-                }
+                try isel.failUnimplemented("unimplemented sign-extend width > GPR", .{});
+                return;
             }
         }
 
@@ -1325,7 +1300,6 @@ pub const Value = struct {
 
         /// Materializes a value
         fn mat(vi: Value.Index, isel: *Select, opts: MatOptions) codegen.Error!Mat {
-            // try vi.split(isel, true);
             const mat_size = @min(opts.size, @as(u32, @intCast(vi.size(isel) - opts.offset)));
             const loc_pref = if (opts.extension == .garbage)
                 opts.pref
@@ -2124,13 +2098,6 @@ pub const Value = struct {
                             .large => value.location_payload.large.stack_slot = vi.allocStackSlot(isel),
                         }
                     }
-                    switch (value.flags.location_tag) {
-                        .extreme => unreachable,
-                        .small => {},
-                        .large => {
-                            try vi.reextendAdvanced(isel, vi.bitSize(isel), mat.extension, vi.extension(isel));
-                        },
-                    }
                     const vi_loc = vi.location(isel).?;
                     const maybe_loc_reg = vi_loc.asRegister();
                     if (maybe_loc_reg) |loc_reg| {
@@ -2151,6 +2118,13 @@ pub const Value = struct {
                         const loc_live = isel.live_registers.getPtr(loc_reg);
                         assert(loc_live.* == .allocating);
                         loc_live.* = vi;
+                    }
+                    switch (value.flags.location_tag) {
+                        .extreme => unreachable,
+                        .small => {},
+                        .large => {
+                            try vi.reextendAdvanced(isel, vi.bitSize(isel), mat.extension, vi.extension(isel));
+                        },
                     }
                 },
                 .value => unreachable,
@@ -2405,6 +2379,8 @@ pub fn analyze(isel: *Select, air_body: []const Air.Inst.Index) !void {
             .div_trunc_optimized,
             .div_floor,
             .div_floor_optimized,
+            .div_ceil,
+            .div_ceil_optimized,
             .div_exact,
             .div_exact_optimized,
             .rem,
@@ -2756,6 +2732,33 @@ pub fn analyze(isel: *Select, air_body: []const Air.Inst.Index) !void {
                     }
 
                     try isel.analyzeUse(arg);
+                }
+            },
+            .legalize_compiler_rt_call => {
+                const compiler_rt_call = isel.air.unwrapCompilerRtCall(air_inst_index);
+
+                for (compiler_rt_call.args) |arg|
+                    try isel.analyzeUse(arg);
+
+                var cc_it: CallAbiIterator = .{
+                    .isel = isel,
+                    .cc = &compiler_rt_call.func.@"callconv"(isel.target),
+                };
+                if (try cc_it.resolve(compiler_rt_call.func.returnType(), true)) |ret_vi| {
+                    tracking_log.debug("{f} <- %{d} (call return)", .{ ret_vi, @backingInt(air_inst_index) });
+                    switch (ret_vi.parent(isel)) {
+                        .none => {},
+                        .value, .constant => unreachable,
+                        .address => |address_vi| {
+                            defer address_vi.deref(isel);
+                            const ret_value = ret_vi.get(isel);
+                            ret_value.flags.parent_tag = .none;
+                            ret_value.parent_payload = .{ .none = {} };
+                        },
+                    }
+                    try isel.live_values.putNoClobber(gpa, air_inst_index, ret_vi);
+
+                    try isel.def_order.putNoClobber(gpa, air_inst_index, {});
                 }
             },
             .cond_br => {
@@ -3804,6 +3807,8 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) codegen.Error!void 
                         64 => .@"movfr2gr.d"(dst_reg, src_reg),
                     });
                     try src_mat.finish(isel);
+                } else if ((dst_ty.isAbiInt(zcu) and src_tag == .float) or ((dst_tag == .float and src_ty.isAbiInt(zcu)))) {
+                    try dst_vi.value.defMove(isel, ty_op.operand);
                 } else if (dst_ty.isAbiInt(zcu) and src_tag == .array and src_ty.childType(zcu).isAbiInt(zcu)) {
                     const dst_int_info = dst_ty.intInfo(zcu);
                     const src_child_int_info = src_ty.childType(zcu).intInfo(zcu);
@@ -4058,9 +4063,8 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) codegen.Error!void 
                     .{ 0, @as(u32, @intCast(payload_size)) };
 
                 const opt_vi = try isel.use(un_op);
-                const has_value_mat = try opt_vi.mat(isel, .{
-                    .offset = has_value_offset,
-                    .size = has_value_size,
+                const has_value_vi = try opt_vi.partExact(isel, has_value_offset, has_value_size);
+                const has_value_mat = try has_value_vi.mat(isel, .{
                     .pref = .only_reg,
                     .reg_mod = .integer,
                     .extension = .zero_ext,
@@ -4109,7 +4113,11 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) codegen.Error!void 
                 if (!ty.isRuntimeFloat()) {
                     if (!ty.isAbiInt(zcu)) return isel.fail("bad {t} {f}", .{ air_tag, isel.fmtType(ty) });
                     const int_info = ty.intInfo(zcu);
-                    if (int_info.bits > 64) return isel.fail("too big {t} {f}", .{ air_tag, isel.fmtType(ty) });
+                    if (int_info.bits > 64) {
+                        _ = res_vi.value.takeLocationMarkWritten(isel);
+                        try isel.failUnimplemented("too big {t} {f}", .{ air_tag, isel.fmtType(ty) });
+                        break :unused;
+                    }
 
                     try res_vi.value.reextendToGarbage(isel);
                     const res_reg = try res_vi.value.defRegMod(isel, .integer) orelse break :unused;
@@ -6534,7 +6542,28 @@ fn moveConstant(isel: *Select, dst: Value.Location, init_constant: Constant, ini
                 }
             },
             .enum_tag => |enum_tag| continue :constant_key .{ .int = ip.indexToKey(enum_tag.int).int },
-            .float => return isel.fail("float unimplemented", .{}),
+            .float => |float| {
+                if (isel.canUseFprForFloat(ZigType.fromInterned(float.ty).floatBits(isel.target))) {
+                    return isel.fail("float unimplemented", .{});
+                } else {
+                    switch (float.ty) {
+                        .f16_type => continue :constant_key .{ .int = .{
+                            .ty = .u16_type,
+                            .storage = .{ .u64 = @as(u16, @bitCast(float.storage.f16)) },
+                        } },
+                        .f32_type => continue :constant_key .{ .int = .{
+                            .ty = .u32_type,
+                            .storage = .{ .u64 = @as(u32, @bitCast(float.storage.f32)) },
+                        } },
+                        .f64_type => continue :constant_key .{ .int = .{
+                            .ty = .u64_type,
+                            .storage = .{ .u64 = @as(u64, @bitCast(float.storage.f64)) },
+                        } },
+                        .f80_type, .f128_type => {},
+                        else => unreachable,
+                    }
+                }
+            },
             .ptr => |ptr| {
                 assert(offset == 0 and size == isel.gprSize());
                 const dst_ra: Register.Alias, const use_tmp_reg = select_tmp: {
@@ -6615,8 +6644,23 @@ fn moveConstant(isel: *Select, dst: Value.Location, init_constant: Constant, ini
                     .field => |field_idx| {
                         var base_ptr = ip.indexToKey(field_idx.base).ptr;
                         const agg_ty: ZigType = .fromInterned(ip.indexToKey(base_ptr.ty).ptr_type.child);
-                        base_ptr.byte_offset += agg_ty.structFieldOffset(@intCast(field_idx.index), zcu) + ptr.byte_offset;
-                        continue :constant_key .{ .ptr = base_ptr };
+                        switch (ip.indexToKey(agg_ty.toIntern())) {
+                            .ptr_type => |ptr_ty| {
+                                assert(ptr_ty.flags.size == .slice);
+                                const field_offset = switch (field_idx.index) {
+                                    Constant.slice_ptr_index => 0,
+                                    Constant.slice_len_index => isel.gprSize(),
+                                    else => unreachable,
+                                };
+                                base_ptr.byte_offset += ptr.byte_offset + field_offset;
+                                continue :constant_key .{ .ptr = base_ptr };
+                            },
+                            .struct_type, .tuple_type, .union_type => {
+                                base_ptr.byte_offset += agg_ty.structFieldOffset(@intCast(field_idx.index), zcu) + ptr.byte_offset;
+                                continue :constant_key .{ .ptr = base_ptr };
+                            },
+                            else => unreachable,
+                        }
                     },
                     .comptime_alloc, .comptime_field, .arr_elem => unreachable,
                 };
@@ -7056,7 +7100,7 @@ pub const CallAbiIterator = struct {
                     .signedness = .unsigned,
                     .bits = zcu.errorSetBits(),
                 } },
-                .f16, .f32, .f64 => {
+                .f16, .f32, .f64, .c_longdouble => {
                     const bits = ty.floatBits(isel.target);
                     if (isel.canUseFprForFloat(bits)) {
                         if (it.allocReg(.fpr)) |reg| {
@@ -7071,7 +7115,6 @@ pub const CallAbiIterator = struct {
                         continue :type_key .{ .int_type = .{ .signedness = .unsigned, .bits = bits } };
                     }
                 },
-                .c_longdouble => return isel.fail("CallAbiIterator.resolve({t})", .{simple_type}),
                 else => return isel.fail("CallAbiIterator.resolve({t})", .{simple_type}),
             },
             .struct_type => {
@@ -7370,7 +7413,7 @@ fn gprAlignment(isel: *Select) std.mem.Alignment {
     };
 }
 
-fn fprBits(isel: *Select) u7 {
+fn targetFprBits(isel: *Select) u7 {
     const cpu = &isel.target.cpu;
     if (cpu.has(.loongarch, .d)) {
         return 64;
@@ -7388,12 +7431,12 @@ fn vectorBits(isel: *Select) u7 {
     } else if (cpu.has(.loongarch, .lsx)) {
         return 128;
     } else {
-        return isel.fprBits();
+        return isel.targetFprBits();
     }
 }
 
 fn canUseFprForFloat(isel: *Select, bits: u16) bool {
-    return bits <= isel.fprBits();
+    return bits <= isel.targetFprBits();
 }
 
 fn typeOfField(isel: *Select, ty: ZigType, offset: u64) ?ZigType {
