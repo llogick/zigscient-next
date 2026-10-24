@@ -1020,16 +1020,16 @@ fn fuzzTestMinMax(rng: std.Random, queue_size: usize) !void {
 }
 
 fn generateRandomSlice(allocator: std.mem.Allocator, rng: std.Random, size: usize) ![]u32 {
-    var array = std.array_list.Managed(u32).init(allocator);
-    try array.ensureTotalCapacity(size);
+    var array: std.ArrayList(u32) = .empty;
+    try array.ensureTotalCapacity(allocator, size);
 
     var i: usize = 0;
     while (i < size) : (i += 1) {
         const elem = rng.int(u32);
-        try array.append(elem);
+        try array.append(allocator, elem);
     }
 
-    return array.toOwnedSlice();
+    return array.toOwnedSlice(allocator);
 }
 
 fn contextLessThanComparison(context: []const u32, a: usize, b: usize) Order {

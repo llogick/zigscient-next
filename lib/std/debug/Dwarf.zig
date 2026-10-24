@@ -571,8 +571,8 @@ fn scanAllCompileUnits(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!voi
     var fr: Reader = .fixed(di.section(.debug_info).?);
     var this_unit_offset: u64 = 0;
 
-    var attrs_buf = std.array_list.Managed(Die.Attr).init(gpa);
-    defer attrs_buf.deinit();
+    var attrs_buf: std.ArrayList(Die.Attr) = .empty;
+    defer attrs_buf.deinit(gpa);
 
     while (this_unit_offset < fr.buffer.len) {
         fr.seek = @intCast(this_unit_offset);
@@ -603,7 +603,7 @@ fn scanAllCompileUnits(di: *Dwarf, gpa: Allocator, endian: Endian) ScanError!voi
         for (abbrev_table.abbrevs) |abbrev| {
             max_attrs = @max(max_attrs, abbrev.attrs.len);
         }
-        try attrs_buf.resize(max_attrs);
+        try attrs_buf.resize(gpa, max_attrs);
 
         var compile_unit_die = (try parseDie(
             &fr,

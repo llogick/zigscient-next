@@ -900,10 +900,10 @@ pub fn parseTargetQueryOrReportFatalError(
     return std.Target.Query.parse(opts_with_diags) catch |err| switch (err) {
         error.UnknownCpuModel => {
             help: {
-                var help_text = std.array_list.Managed(u8).init(allocator);
-                defer help_text.deinit();
+                var help_text: std.ArrayList(u8) = .empty;
+                defer help_text.deinit(allocator);
                 for (diags.arch.?.allCpuModels()) |cpu| {
-                    help_text.print(" {s}\n", .{cpu.name}) catch break :help;
+                    help_text.print(allocator, " {s}\n", .{cpu.name}) catch break :help;
                 }
                 log.info("available CPUs for architecture '{s}':\n{s}", .{
                     @tagName(diags.arch.?), help_text.items,
@@ -913,10 +913,10 @@ pub fn parseTargetQueryOrReportFatalError(
         },
         error.UnknownCpuFeature => {
             help: {
-                var help_text = std.array_list.Managed(u8).init(allocator);
-                defer help_text.deinit();
+                var help_text: std.ArrayList(u8) = .empty;
+                defer help_text.deinit(allocator);
                 for (diags.arch.?.allFeaturesList()) |feature| {
-                    help_text.print(" {s}: {s}\n", .{ feature.name, feature.description }) catch break :help;
+                    help_text.print(allocator, " {s}: {s}\n", .{ feature.name, feature.description }) catch break :help;
                 }
                 log.info("available CPU features for architecture '{s}':\n{s}", .{
                     @tagName(diags.arch.?), help_text.items,
@@ -926,10 +926,10 @@ pub fn parseTargetQueryOrReportFatalError(
         },
         error.UnknownObjectFormat => {
             help: {
-                var help_text = std.array_list.Managed(u8).init(allocator);
-                defer help_text.deinit();
+                var help_text: std.ArrayList(u8) = .empty;
+                defer help_text.deinit(allocator);
                 inline for (@typeInfo(std.Target.ObjectFormat).@"enum".field_names) |field_name| {
-                    help_text.print(" {s}\n", .{field_name}) catch break :help;
+                    help_text.print(allocator, " {s}\n", .{field_name}) catch break :help;
                 }
                 log.info("available object formats:\n{s}", .{help_text.items});
             }
@@ -937,10 +937,10 @@ pub fn parseTargetQueryOrReportFatalError(
         },
         error.UnknownArchitecture => {
             help: {
-                var help_text = std.array_list.Managed(u8).init(allocator);
-                defer help_text.deinit();
+                var help_text: std.ArrayList(u8) = .empty;
+                defer help_text.deinit(allocator);
                 inline for (@typeInfo(std.Target.Cpu.Arch).@"enum".field_names) |field_name| {
-                    help_text.print(" {s}\n", .{field_name}) catch break :help;
+                    help_text.print(allocator, " {s}\n", .{field_name}) catch break :help;
                 }
                 log.info("available architectures:\n{s} native\n", .{help_text.items});
             }

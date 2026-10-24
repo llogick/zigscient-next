@@ -95,8 +95,8 @@ fn subArchName(target: *const std.Target, comptime family: std.Target.Cpu.Arch.F
 }
 
 pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const u8 {
-    var llvm_triple = std.array_list.Managed(u8).init(allocator);
-    defer llvm_triple.deinit();
+    var llvm_triple: std.ArrayList(u8) = .empty;
+    defer llvm_triple.deinit(allocator);
 
     const llvm_arch = switch (target.cpu.arch) {
         .arm => "arm",
@@ -168,7 +168,7 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         => unreachable, // Gated by hasLlvmSupport().
     };
 
-    try llvm_triple.appendSlice(llvm_arch);
+    try llvm_triple.appendSlice(allocator, llvm_arch);
 
     const llvm_sub_arch: ?[]const u8 = switch (target.cpu.arch) {
         .arm, .armeb, .thumb, .thumbeb => subArchName(target, .arm, .{
@@ -237,10 +237,10 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         else => null,
     };
 
-    if (llvm_sub_arch) |sub| try llvm_triple.appendSlice(sub);
-    try llvm_triple.append('-');
+    if (llvm_sub_arch) |sub| try llvm_triple.appendSlice(allocator, sub);
+    try llvm_triple.append(allocator, '-');
 
-    try llvm_triple.appendSlice(switch (target.os.tag) {
+    try llvm_triple.appendSlice(allocator, switch (target.os.tag) {
         .driverkit,
         .ios,
         .maccatalyst,
@@ -262,7 +262,7 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         => "mesa",
         else => "unknown",
     });
-    try llvm_triple.append('-');
+    try llvm_triple.append(allocator, '-');
 
     const llvm_os = switch (target.os.tag) {
         .dragonfly => "dragonfly",
@@ -312,28 +312,28 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .ashetos,
         => "unknown",
     };
-    try llvm_triple.appendSlice(llvm_os);
+    try llvm_triple.appendSlice(allocator, llvm_os);
 
     switch (target.os.versionRange()) {
         .none,
         .windows,
         => {},
         .semver => |ver| if (target.os.tag == .wasi and ver.min.major == 0) {
-            try llvm_triple.print("p{d}", .{ver.min.minor});
+            try llvm_triple.print(allocator, "p{d}", .{ver.min.minor});
         } else if (target.os.tag != .amdhsa) {
-            try llvm_triple.print("{d}.{d}.{d}", .{
+            try llvm_triple.print(allocator, "{d}.{d}.{d}", .{
                 ver.min.major,
                 ver.min.minor,
                 ver.min.patch,
             });
         },
-        inline .linux, .hurd => |ver| try llvm_triple.print("{d}.{d}.{d}", .{
+        inline .linux, .hurd => |ver| try llvm_triple.print(allocator, "{d}.{d}.{d}", .{
             ver.range.min.major,
             ver.range.min.minor,
             ver.range.min.patch,
         }),
     }
-    try llvm_triple.append('-');
+    try llvm_triple.append(allocator, '-');
 
     const llvm_abi = switch (target.abi) {
         .none => if (target.os.tag == .maccatalyst) "macabi" else "unknown",
@@ -371,7 +371,7 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .ohos, .ohoseabi => "ohos",
         .call0 => "unknown",
     };
-    try llvm_triple.appendSlice(llvm_abi);
+    try llvm_triple.appendSlice(allocator, llvm_abi);
 
     switch (target.os.versionRange()) {
         .none,
@@ -379,17 +379,17 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .windows,
         => {},
         inline .hurd, .linux => |ver| if (target.abi.isGnu()) {
-            try llvm_triple.print("{d}.{d}.{d}", .{
+            try llvm_triple.print(allocator, "{d}.{d}.{d}", .{
                 ver.glibc.major,
                 ver.glibc.minor,
                 ver.glibc.patch,
             });
         } else if (@TypeOf(ver) == std.Target.Os.LinuxVersionRange and target.abi.isAndroid()) {
-            try llvm_triple.print("{d}", .{ver.android});
+            try llvm_triple.print(allocator, "{d}", .{ver.android});
         },
     }
 
-    return llvm_triple.toOwnedSlice();
+    return llvm_triple.toOwnedSlice(allocator);
 }
 
 pub const DataLayout = struct {
