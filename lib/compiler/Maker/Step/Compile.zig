@@ -906,7 +906,7 @@ fn lowerZigArgs(
             return step.fail(maker, "failed creating directory {f}: {t}", .{ args_path, err });
 
         const args_to_escape = zig_args.items[2..];
-        var escaped_args = try std.array_list.Managed([]const u8).initCapacity(arena, args_to_escape.len);
+        var escaped_args: std.ArrayList([]const u8) = try .initCapacity(arena, args_to_escape.len);
         arg_blk: for (args_to_escape) |arg| {
             for (arg, 0..) |c, arg_idx| {
                 if (c == '\\' or c == '"') {

@@ -4739,12 +4739,13 @@ test sanitizeExampleName {
 const Templates = struct {
     zig_lib_directory: Cache.Directory,
     dir: Io.Dir,
-    buffer: std.array_list.Managed(u8),
+    buffer: std.ArrayList(u8),
+    gpa: Allocator,
 
     fn deinit(templates: *Templates, io: Io) void {
         templates.zig_lib_directory.handle.close(io);
         templates.dir.close(io);
-        templates.buffer.deinit();
+        templates.buffer.deinit(templates.gpa);
         templates.* = undefined;
     }
 
@@ -4767,29 +4768,30 @@ const Templates = struct {
         const contents = templates.dir.readFileAlloc(io, template_path, arena, .limited(max_bytes)) catch |err| {
             fatal("unable to read template file {q}: {t}", .{ template_path, err });
         };
+        const gpa = templates.gpa;
         templates.buffer.clearRetainingCapacity();
-        try templates.buffer.ensureUnusedCapacity(contents.len);
+        try templates.buffer.ensureUnusedCapacity(gpa, contents.len);
         var i: usize = 0;
         while (i < contents.len) {
             if (contents[i] == '_' or contents[i] == '.') {
                 // Both '_' and '.' are allowed because depending on the context
                 // one prefix will be valid, while the other might not.
                 if (std.mem.startsWith(u8, contents[i + 1 ..], "NAME")) {
-                    try templates.buffer.appendSlice(root_name);
+                    try templates.buffer.appendSlice(gpa, root_name);
                     i += "_NAME".len;
                     continue;
                 } else if (std.mem.startsWith(u8, contents[i + 1 ..], "FINGERPRINT")) {
-                    try templates.buffer.print("0x{x}", .{fingerprint.int()});
+                    try templates.buffer.print(gpa, "0x{x}", .{fingerprint.int()});
                     i += "_FINGERPRINT".len;
                     continue;
                 } else if (std.mem.startsWith(u8, contents[i + 1 ..], "ZIGVER")) {
-                    try templates.buffer.appendSlice(builtin.zig_version_string);
+                    try templates.buffer.appendSlice(gpa, builtin.zig_version_string);
                     i += "_ZIGVER".len;
                     continue;
                 }
             }
 
-            try templates.buffer.append(contents[i]);
+            try templates.buffer.append(gpa, contents[i]);
             i += 1;
         }
 
@@ -4810,7 +4812,8 @@ const Templates = struct {
         return .{
             .zig_lib_directory = zig_lib_directory,
             .dir = template_dir,
-            .buffer = std.array_list.Managed(u8).init(gpa),
+            .buffer = .empty,
+            .gpa = gpa,
         };
     }
 

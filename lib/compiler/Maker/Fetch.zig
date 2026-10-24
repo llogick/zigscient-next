@@ -1756,11 +1756,11 @@ fn computeHash(f: *Fetch, pkg_path: Path, filter: Filter) RunError!ComputedHash 
     const root_dir = pkg_path.root_dir.handle;
 
     // Collect all files, recursively, then sort.
-    var all_files = std.array_list.Managed(*HashedFile).init(gpa);
-    defer all_files.deinit();
+    var all_files: std.ArrayList(*HashedFile) = .empty;
+    defer all_files.deinit(gpa);
 
-    var deleted_files = std.array_list.Managed(*DeletedFile).init(gpa);
-    defer deleted_files.deinit();
+    var deleted_files: std.ArrayList(*DeletedFile) = .empty;
+    defer deleted_files.deinit(gpa);
 
     // Track directories which had any files deleted from them so that empty directories
     // can be deleted.
@@ -1803,7 +1803,7 @@ fn computeHash(f: *Fetch, pkg_path: Path, filter: Filter) RunError!ComputedHash 
                     .failure = undefined, // to be populated by the worker
                 };
                 group.async(io, workerDeleteFile, .{ io, root_dir, deleted_file });
-                try deleted_files.append(deleted_file);
+                try deleted_files.append(gpa, deleted_file);
                 continue;
             }
 
@@ -1831,7 +1831,7 @@ fn computeHash(f: *Fetch, pkg_path: Path, filter: Filter) RunError!ComputedHash 
                 .size = undefined, // to be populated by the worker
             };
             group.async(io, workerHashFile, .{ io, root_dir, hashed_file });
-            try all_files.append(hashed_file);
+            try all_files.append(gpa, hashed_file);
         }
 
         try group.await(io);

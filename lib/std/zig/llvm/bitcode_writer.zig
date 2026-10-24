@@ -19,7 +19,8 @@ pub fn BitcodeWriter(comptime types: []const type) type {
     return struct {
         const BcWriter = @This();
 
-        buffer: std.array_list.Managed(u32),
+        buffer: std.ArrayList(u32),
+        allocator: std.mem.Allocator,
         bit_buffer: u32 = 0,
         bit_count: u5 = 0,
 
@@ -31,18 +32,19 @@ pub fn BitcodeWriter(comptime types: []const type) type {
 
         pub fn init(allocator: std.mem.Allocator, widths: [types.len]u16) BcWriter {
             return .{
-                .buffer = std.array_list.Managed(u32).init(allocator),
+                .buffer = .empty,
+                .allocator = allocator,
                 .widths = widths,
             };
         }
 
-        pub fn deinit(self: BcWriter) void {
-            self.buffer.deinit();
+        pub fn deinit(self: *BcWriter) void {
+            self.buffer.deinit(self.allocator);
         }
 
         pub fn toOwnedSlice(self: *BcWriter) Error![]const u32 {
             std.debug.assert(self.bit_count == 0);
-            return self.buffer.toOwnedSlice();
+            return self.buffer.toOwnedSlice(self.allocator);
         }
 
         pub fn length(self: BcWriter) usize {
@@ -52,6 +54,8 @@ pub fn BitcodeWriter(comptime types: []const type) type {
 
         pub fn writeBits(self: *BcWriter, value: anytype, bits: u16) Error!void {
             if (bits == 0) return;
+
+            const allocator = self.allocator;
 
             var in_buffer = bufValue(value, 32);
             var in_bits = bits;
@@ -68,13 +72,13 @@ pub fn BitcodeWriter(comptime types: []const type) type {
                 in_bits -= n;
 
                 if (self.bit_count != 0) return;
-                try self.buffer.append(std.mem.nativeToLittle(u32, self.bit_buffer));
+                try self.buffer.append(allocator, std.mem.nativeToLittle(u32, self.bit_buffer));
                 self.bit_buffer = 0;
             }
 
             // Write 32-bit chunks of input bits
             while (in_bits >= 32) {
-                try self.buffer.append(std.mem.nativeToLittle(u32, @truncate(in_buffer)));
+                try self.buffer.append(allocator, std.mem.nativeToLittle(u32, @truncate(in_buffer)));
 
                 in_buffer >>= 31;
                 in_buffer >>= 1;
@@ -141,7 +145,7 @@ pub fn BitcodeWriter(comptime types: []const type) type {
 
         pub fn writeBlob(self: *BcWriter, blob: []const u8) Error!void {
             const blob_word_size = std.mem.alignForward(usize, blob.len, 4);
-            try self.buffer.ensureUnusedCapacity(blob_word_size + 1);
+            try self.buffer.ensureUnusedCapacity(self.allocator, blob_word_size + 1);
             self.alignTo32() catch unreachable;
 
             const slice = self.buffer.addManyAsSliceAssumeCapacity(blob_word_size / 4);
@@ -153,7 +157,7 @@ pub fn BitcodeWriter(comptime types: []const type) type {
         pub fn alignTo32(self: *BcWriter) Error!void {
             if (self.bit_count == 0) return;
 
-            try self.buffer.append(std.mem.nativeToLittle(u32, self.bit_buffer));
+            try self.buffer.append(self.allocator, std.mem.nativeToLittle(u32, self.bit_buffer));
             self.bit_buffer = 0;
             self.bit_count = 0;
         }

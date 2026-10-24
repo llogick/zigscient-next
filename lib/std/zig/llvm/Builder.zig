@@ -10505,24 +10505,24 @@ pub fn getIntrinsic(
 
     var attributes: struct {
         builder: *Builder,
-        list: std.array_list.Managed(Attribute.Index),
+        list: std.ArrayList(Attribute.Index),
 
-        fn deinit(state: *@This()) void {
-            state.list.deinit();
+        fn deinit(state: *@This(), gpa: Allocator) void {
+            state.list.deinit(gpa);
             state.* = undefined;
         }
 
-        fn get(state: *@This(), attributes: []const Attribute) Allocator.Error!Attributes {
-            try state.list.resize(attributes.len);
+        fn get(state: *@This(), gpa: Allocator, attributes: []const Attribute) Allocator.Error!Attributes {
+            try state.list.resize(gpa, attributes.len);
             for (state.list.items, attributes) |*item, attribute|
                 item.* = try state.builder.attr(attribute);
             return state.builder.attrs(state.list.items);
         }
-    } = .{ .builder = self, .list = std.array_list.Managed(Attribute.Index).init(allocator) };
-    defer attributes.deinit();
+    } = .{ .builder = self, .list = .empty };
+    defer attributes.deinit(allocator);
 
     var overload_index: usize = 0;
-    function_attributes[FunctionAttributes.function_index] = try attributes.get(signature.attrs);
+    function_attributes[FunctionAttributes.function_index] = try attributes.get(allocator, signature.attrs);
     function_attributes[FunctionAttributes.return_index] = .none; // needed for void return
     for (0.., param_types, signature.params) |param_index, *param_type, signature_param| {
         switch (signature_param.kind) {
@@ -10538,7 +10538,7 @@ pub fn getIntrinsic(
                 FunctionAttributes.return_index
             else
                 FunctionAttributes.params_index + (param_index - signature.ret_len)
-        ] = try attributes.get(signature_param.attrs);
+        ] = try attributes.get(allocator, signature_param.attrs);
     }
     assert(overload_index == overload.len);
     for (param_types, signature.params) |*param_type, signature_param| {
