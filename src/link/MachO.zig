@@ -400,6 +400,8 @@ pub fn flush(
 
     if (diags.hasErrors()) return error.AlreadyReported;
 
+    try self.removeDuplicateDylibs();
+
     {
         const index = @as(File.Index, @intCast(try self.files.addOne(gpa)));
         self.files.set(index, .{ .internal = .{ .index = index } });
@@ -1344,6 +1346,28 @@ fn markImportsAndExports(self: *MachO) void {
     }
     if (self.getInternalObject()) |obj| {
         obj.asFile().markImportsExports(self);
+    }
+}
+
+fn removeDuplicateDylibs(self: *MachO) Allocator.Error!void {
+    const gpa = self.base.comp.gpa;
+
+    var dylib_names: std.array_hash_map.String(void) = .empty;
+    defer dylib_names.deinit(gpa);
+    try dylib_names.ensureUnusedCapacity(gpa, self.dylibs.items.len);
+
+    var i: usize = 0;
+    while (i < self.dylibs.items.len) {
+        const file_index = self.dylibs.items[i];
+        const dylib = self.getFile(file_index).?.dylib;
+        const gop = dylib_names.getOrPutAssumeCapacity(dylib.id.?.name);
+        if (gop.found_existing) {
+            _ = self.dylibs.orderedRemove(i);
+            dylib.deinit(gpa);
+            self.files.set(file_index, .null);
+        } else {
+            i += 1;
+        }
     }
 }
 
