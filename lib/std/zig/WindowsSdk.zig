@@ -601,13 +601,13 @@ pub const Installation = struct {
                 return error.VersionTooLong;
             }
 
-            var version: std.array_list.Managed(u8) = try .initCapacity(gpa, version_without_0.len + 2);
-            errdefer version.deinit();
+            var version: std.ArrayList(u8) = try .initCapacity(gpa, version_without_0.len + 2);
+            errdefer version.deinit(gpa);
 
-            try std.unicode.wtf16LeToWtf8ArrayList(&version, version_without_0);
-            try version.appendSlice(".0");
+            try std.unicode.wtf16LeToWtf8ArrayList(gpa, &version, version_without_0);
+            try version.appendSlice(gpa, ".0");
 
-            break :version try version.toOwnedSlice();
+            break :version try version.toOwnedSlice(gpa);
         };
         errdefer gpa.free(version);
 

@@ -17143,8 +17143,8 @@ fn argvToScriptCommandLineWindows(
     /// Arguments, not including the script name itself. Expected to be encoded as WTF-8.
     script_args: []const []const u8,
 ) ArgvToScriptCommandLineError![:0]u16 {
-    var buf = try std.array_list.Managed(u8).initCapacity(allocator, 64);
-    defer buf.deinit();
+    var buf: std.ArrayList(u8) = try .initCapacity(allocator, 64);
+    defer buf.deinit(allocator);
 
     // `/d` disables execution of AutoRun commands.
     // `/e:ON` and `/v:OFF` are needed for BatBadBut mitigation:
@@ -17167,12 +17167,12 @@ fn argvToScriptCommandLineWindows(
     if (std.mem.findAny(u16, script_path, &[_]u16{
         std.mem.nativeToLittle(u16, '\\'), std.mem.nativeToLittle(u16, '/'),
     }) == null) {
-        try buf.appendSlice(".\\");
+        try buf.appendSlice(allocator, ".\\");
     }
     // Note that we don't do any escaping/mitigations for this argument, since the relevant
     // characters (", %, etc) are illegal in file paths and this function should only be called
     // with script paths that have been verified to exist.
-    try std.unicode.wtf16LeToWtf8ArrayList(&buf, script_path);
+    try std.unicode.wtf16LeToWtf8ArrayList(allocator, &buf, script_path);
     buf.appendAssumeCapacity('"');
 
     for (script_args) |arg| {
@@ -17186,7 +17186,7 @@ fn argvToScriptCommandLineWindows(
         }
 
         // Separate args with a space.
-        try buf.append(' ');
+        try buf.append(allocator, ' ');
 
         // Need to quote if the argument is empty (otherwise the arg would just be lost)
         // or if the last character is a `\`, since then something like "%~2" in a .bat
@@ -17206,7 +17206,7 @@ fn argvToScriptCommandLineWindows(
             }
         }
         if (needs_quotes) {
-            try buf.append('"');
+            try buf.append(allocator, '"');
         }
         var backslashes: usize = 0;
         for (arg) |c| {
@@ -17215,8 +17215,8 @@ fn argvToScriptCommandLineWindows(
                     backslashes += 1;
                 },
                 '"' => {
-                    try buf.appendNTimes('\\', backslashes);
-                    try buf.append('"');
+                    try buf.appendNTimes(allocator, '\\', backslashes);
+                    try buf.append(allocator, '"');
                     backslashes = 0;
                 },
                 // Replace `%` with `%%cd:~,%`.
@@ -17233,22 +17233,22 @@ fn argvToScriptCommandLineWindows(
                 // we'll still be left with `%foo%` (the literal string).
                 '%' => {
                     // the trailing `%` is appended outside the switch
-                    try buf.appendSlice("%%cd:~,");
+                    try buf.appendSlice(allocator, "%%cd:~,");
                     backslashes = 0;
                 },
                 else => {
                     backslashes = 0;
                 },
             }
-            try buf.append(c);
+            try buf.append(allocator, c);
         }
         if (needs_quotes) {
-            try buf.appendNTimes('\\', backslashes);
-            try buf.append('"');
+            try buf.appendNTimes(allocator, '\\', backslashes);
+            try buf.append(allocator, '"');
         }
     }
 
-    try buf.append('"');
+    try buf.append(allocator, '"');
 
     return try std.unicode.wtf8ToWtf16LeAllocZ(allocator, buf.items);
 }
@@ -17266,8 +17266,8 @@ fn argvToCommandLineWindows(
     allocator: Allocator,
     argv: []const []const u8,
 ) ArgvToCommandLineError![:0]u16 {
-    var buf = std.array_list.Managed(u8).init(allocator);
-    defer buf.deinit();
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
 
     if (argv.len != 0) {
         const arg0 = argv[0];
@@ -17293,15 +17293,15 @@ fn argvToCommandLineWindows(
             }
         }
         if (needs_quotes) {
-            try buf.append('"');
-            try buf.appendSlice(arg0);
-            try buf.append('"');
+            try buf.append(allocator, '"');
+            try buf.appendSlice(allocator, arg0);
+            try buf.append(allocator, '"');
         } else {
-            try buf.appendSlice(arg0);
+            try buf.appendSlice(allocator, arg0);
         }
 
         for (argv[1..]) |arg| {
-            try buf.append(' ');
+            try buf.append(allocator, ' ');
 
             // Subsequent arguments must be quoted if they contain spaces, tabs or double quotes,
             // or if they are empty. For simplicity and for maximum compatibility with different
@@ -17313,11 +17313,11 @@ fn argvToCommandLineWindows(
                 }
             } else arg.len == 0;
             if (!needs_quotes) {
-                try buf.appendSlice(arg);
+                try buf.appendSlice(allocator, arg);
                 continue;
             }
 
-            try buf.append('"');
+            try buf.append(allocator, '"');
             var backslash_count: usize = 0;
             for (arg) |byte| {
                 switch (byte) {
@@ -17325,19 +17325,19 @@ fn argvToCommandLineWindows(
                         backslash_count += 1;
                     },
                     '"' => {
-                        try buf.appendNTimes('\\', backslash_count * 2 + 1);
-                        try buf.append('"');
+                        try buf.appendNTimes(allocator, '\\', backslash_count * 2 + 1);
+                        try buf.append(allocator, '"');
                         backslash_count = 0;
                     },
                     else => {
-                        try buf.appendNTimes('\\', backslash_count);
-                        try buf.append(byte);
+                        try buf.appendNTimes(allocator, '\\', backslash_count);
+                        try buf.append(allocator, byte);
                         backslash_count = 0;
                     },
                 }
             }
-            try buf.appendNTimes('\\', backslash_count * 2);
-            try buf.append('"');
+            try buf.appendNTimes(allocator, '\\', backslash_count * 2);
+            try buf.append(allocator, '"');
         }
     }
 
