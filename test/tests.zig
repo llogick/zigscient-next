@@ -2484,6 +2484,51 @@ pub fn addCliTests(b: *std.Build) *Step {
         step.dependOn(&run_test.step);
     }
 
+    {
+        // Test (cross-)compiling for Linux using `-l` syntax. The build system only uses `-l` for
+        // system libraries (and therefore only for native builds), but it is possible and legal to
+        // use it when cross-compiling.
+        const tmp_path = b.tmpPath();
+
+        const build_libfoo = b.addSystemCommand(&.{
+            b.graph.zig_exe,
+            "build-lib",
+            "-target",
+            "x86_64-linux",
+            "-dynamic",
+        });
+        const libfoo = build_libfoo.addOutputFileArg2("libfoo.so", .{ .prefix = "-femit-bin=" });
+
+        build_libfoo.setCwd(tmp_path);
+        build_libfoo.setName("zig build-lib libfoo.so");
+        build_libfoo.expectStdOutEqual("");
+        build_libfoo.expectStdErrEqual("");
+
+        const build_libbar = b.addSystemCommand(&.{
+            b.graph.zig_exe,
+            "build-lib",
+            "-target",
+            "x86_64-linux",
+            "-dynamic",
+        });
+        build_libbar.addDirectoryArg2(libfoo.dirname(), .{ .prefix = "-L" });
+        build_libbar.addArg("-lfoo");
+        const libbar = build_libbar.addOutputFileArg2("libbar.so", .{ .prefix = "-femit-bin=" });
+
+        build_libbar.setCwd(tmp_path);
+        build_libbar.setName("zig build-lib libbar.so");
+        build_libbar.expectStdOutEqual("");
+        build_libbar.expectStdErrEqual("");
+
+        // We mainly just want to make sure the build commands complete successfully, but we may as
+        // well double-check that the output is a valid ELF file.
+        const check_libbar = b.addCheckFile(libbar, .{
+            .expected_matches = &.{"\x7fELF"},
+        });
+
+        step.dependOn(&check_libbar.step);
+    }
+
     return step;
 }
 

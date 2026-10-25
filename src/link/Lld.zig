@@ -1163,7 +1163,10 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
             // object, we pass it on the CLI as "-l:/absolute/path/to/libfoo.so". This will treat
             // the given path not actually as an absolute path, but as relative to the library
             // search path, so the root directory must therefore be the only library search path.
-            try argv.append("-L/");
+            switch (builtin.os.tag) {
+                .windows => try argv.appendSlice(&.{ "-L", "" }),
+                else => try argv.append("-L/"),
+            }
 
             for (base.comp.link_inputs) |link_input| switch (link_input) {
                 .res => unreachable, // Windows-only
