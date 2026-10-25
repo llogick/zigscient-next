@@ -11,6 +11,8 @@ const assert = std.debug.assert;
 const linux = std.os.linux;
 const windows = std.os.windows;
 
+const tracy = @import("../tracy.zig");
+
 io: Io,
 flags: packed struct {
     block_size: Alignment,
@@ -892,6 +894,9 @@ fn addNode(mf: *MappedFile, gpa: Allocator, opts: struct {
 }) Error!Node.Index {
     mf.nodes_lock.assertUnlocked();
 
+    const trace = tracy.trace(@src());
+    defer trace.end();
+
     try mf.nodes.ensureUnusedCapacity(gpa, 1);
     try mf.large.ensureUnusedCapacity(gpa, 2);
 
@@ -1013,6 +1018,9 @@ fn shrinkLeafNode(
     new_size: u64,
 ) Error!void {
     mf.nodes_lock.assertUnlocked();
+
+    const trace = tracy.trace(@src());
+    defer trace.end();
 
     const old_offset, const old_size = ni.location(mf).resolve(mf);
 
@@ -1151,6 +1159,9 @@ fn growNode(
     grow_options: GrowOptions,
 ) Error!void {
     mf.nodes_lock.assertUnlocked();
+
+    const trace = tracy.trace(@src());
+    defer trace.end();
 
     const node = ni.get(mf);
 
@@ -1569,6 +1580,9 @@ fn growFloatingNodeWithAlignment(
 ) Error!void {
     mf.nodes_lock.assertUnlocked();
 
+    const trace = tracy.trace(@src());
+    defer trace.end();
+
     const parent_ni = ni.parent(mf).unwrap().?; // `ni` cannot be `.root`
     const old_offset, const old_size = ni.location(mf).resolve(mf);
 
@@ -1791,6 +1805,9 @@ fn growNodeViaInsertRange(
     new_size: u64,
     grow_options: GrowOptions,
 ) Error!bool {
+    const trace = tracy.trace(@src());
+    defer trace.end();
+
     if (!is_linux or mf.flags.fallocate_insert_range_unsupported) {
         return false;
     }
@@ -1999,6 +2016,9 @@ fn ensureAdditionalHeaderCapacity(
     parent_ni: Node.Index,
     extra_capacity: u64,
 ) Error!void {
+    const trace = tracy.trace(@src());
+    defer trace.end();
+
     _, const parent_size = parent_ni.location(mf).resolve(mf);
 
     const last_header_oni = parent_ni.lastHeader(mf);
@@ -2274,6 +2294,9 @@ fn realignNode(
 ) Error!void {
     mf.nodes_lock.assertUnlocked();
 
+    const trace = tracy.trace(@src());
+    defer trace.end();
+
     const old_offset, const old_size = ni.location(mf).resolve(mf);
 
     if (ni == .root or ni.position(mf) != .floating) {
@@ -2309,6 +2332,10 @@ fn updateWriters(mf: *MappedFile) void {
 
 fn moveRange(mf: *MappedFile, old_file_offset: u64, new_file_offset: u64, size: u64) Error!void {
     if (old_file_offset == new_file_offset) return;
+
+    const trace = tracy.trace(@src());
+    defer trace.end();
+    trace.addTextFmt("{Bi} (0x{X} -> 0x{X})", .{ size, old_file_offset, new_file_offset });
 
     if (old_file_offset >= new_file_offset + size or
         new_file_offset >= old_file_offset + size)
@@ -2348,6 +2375,10 @@ fn moveRange(mf: *MappedFile, old_file_offset: u64, new_file_offset: u64, size: 
     }
 }
 fn zeroRange(mf: *MappedFile, file_offset: u64, size: u64) Error!void {
+    const trace = tracy.trace(@src());
+    defer trace.end();
+    trace.addTextFmt("{Bi} (at 0x{X})", .{ size, file_offset });
+
     if (is_linux and
         !mf.flags.fallocate_punch_hole_unsupported and
         size >= mf.flags.block_size.toByteUnits() * 2 - 1)
@@ -2394,6 +2425,9 @@ fn copyFileRange(
     if (!is_linux or mf.flags.copy_file_range_unsupported) {
         return 0;
     }
+
+    const trace = tracy.trace(@src());
+    defer trace.end();
 
     const min_size = mf.flags.block_size.toByteUnits() * 2 - 1;
     if (size < min_size) return 0;
