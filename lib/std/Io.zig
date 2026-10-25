@@ -3265,8 +3265,8 @@ pub fn unreachableFileClose(userdata: ?*anyopaque, files: []const File) void {
 pub fn failingFileWritePositional(userdata: ?*anyopaque, file: File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) File.WritePositionalError!usize {
     _ = userdata;
     _ = file;
-    _ = header;
     _ = offset;
+    if (header.len != 0) return error.BrokenPipe;
     for (data[0 .. data.len - 1]) |item| {
         if (item.len > 0) return error.BrokenPipe;
     }

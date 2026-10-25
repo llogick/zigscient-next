@@ -259,3 +259,10 @@ pub fn flush(w: *Writer) Error!void {
         error.WriteFailed => return w.err.?,
     };
 }
+
+test "failing io fails to flush in positional mode" {
+    var buffer: [128]u8 = undefined;
+    var file_writer: File.Writer = .init(.stdout(), .failing, &buffer);
+    try file_writer.interface.writeAll("hello");
+    try std.testing.expectError(error.WriteFailed, file_writer.interface.flush());
+}
