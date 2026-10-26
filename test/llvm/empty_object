@@ -1,6 +1,3 @@
-#skip amdgcn-amdpal-none-baseline-whole-llvm-lld-pic
-#skip amdgcn-mesa3d-none-baseline-whole-llvm-lld-pic
-
 #skip arc-freestanding-none-baseline-whole-llvm-lld-pic
 #skip arc-linux-gnu-baseline-whole-llvm-lld-pic
 #skip arc-linux-none-baseline-whole-llvm-lld-pic

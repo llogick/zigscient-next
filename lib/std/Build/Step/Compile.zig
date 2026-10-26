@@ -109,11 +109,11 @@ link_emit_relocs: bool = false,
 
 /// Place every function in its own section so that unused ones may be
 /// safely garbage-collected during the linking phase.
-link_function_sections: bool = false,
+function_sections: ?bool = null,
 
-/// Place every data in its own section so that unused ones may be
+/// Place every datum in its own section so that unused ones may be
 /// safely garbage-collected during the linking phase.
-link_data_sections: bool = false,
+data_sections: ?bool = null,
 
 /// Remove functions and data that are unreachable by the entry point or
 /// exported symbols.

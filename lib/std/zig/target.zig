@@ -520,12 +520,12 @@ pub fn intAlignment(target: *const std.Target, bits: u16) u16 {
 }
 
 pub fn compilerRtFloatAbi(target: *const std.Target, bits: u16) std.Target.Abi.Float {
-    if (target.cpu.has(.x86, .soft_float)) return .soft;
+    if (target.cpu.arch.isX86() and target.abi.float() == .soft) return .soft;
     // Marks targets where clang does not even provide a usable C type.
     const no_c_type_available = .soft;
     switch (bits) {
         else => unreachable,
-        16 => if (target.cpu.arch.isMIPS() or target.cpu.arch.isPowerPC()) return no_c_type_available,
+        16 => if (target.cpu.arch.isMips() or target.cpu.arch.isPowerpc()) return no_c_type_available,
         32, 64 => {},
         80 => if (target.cTypeBitSize(.longdouble) != 80) return no_c_type_available,
         128 => {
@@ -659,9 +659,7 @@ pub fn isNative(query: *const std.Target.Query, target: *const std.Target, host:
             .alu_lsl_fast,
             .avoid_ldapur,
             .disable_fast_inc_vl,
-            .exynos_cheap_as_move,
             .fast_ld1_single,
-            .fixed_load_latency_4,
             .fuse_address,
             .fuse_addsub_2reg_const1,
             .fuse_adrp_add,
@@ -677,10 +675,6 @@ pub fn isNative(query: *const std.Target.Query, target: *const std.Target, host:
             .slow_misaligned_128store,
             .slow_paired_128,
             .slow_strqro_store,
-            .use_experimental_zeroing_pseudos,
-            .use_fixed_over_scalable_if_equal_cost,
-            .use_postra_scheduler,
-            .use_reciprocal_square_root,
             .use_wzr_to_vec_move,
         }),
         else => .empty,

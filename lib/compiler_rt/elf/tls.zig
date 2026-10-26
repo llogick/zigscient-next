@@ -44,8 +44,9 @@ comptime {
 
 /// Represents an ELF TLS variant.
 ///
-/// In all variants, the TP and the TLS blocks must be aligned to the `p_align` value in the
-/// `PT.TLS` ELF program header. Everything else has natural alignment.
+/// In all variants, TLS blocks must be aligned to the `p_align` value in the `PT.TLS` ELF program
+/// header. The TP is usually similarly aligned, with one particular exception for the modified
+/// Variant I noted below. Everything else has natural alignment.
 ///
 /// The location of the DTV does not actually matter. For simplicity, we put it in the TLS area, but
 /// there is no actual ABI requirement that it reside there.
@@ -71,7 +72,8 @@ const Variant = enum {
     ///                               `-- The TP register points here (*inside* the TLS blocks).
     ///
     /// The offset from the start of the TLS blocks to the TP register is `current_tp_offset`. It
-    /// may be zero, in which case the TP register points to the start of the TLS blocks.
+    /// may be zero, in which case the TP register points to the end of the ABI TCB, which is
+    /// usually the start of the TLS blocks, but see `blocksGap`.
     ///
     /// The first (and only) word in the ABI TCB points to the DTV.
     I_modified,
@@ -144,6 +146,20 @@ const current_tp_offset = switch (native_arch) {
     => 0x7000,
     else => 0,
 };
+
+/// Only used by the modified Variant I. Calculates the number of padding bytes between the end of
+/// the ABI TCB and the start of the TLS blocks.
+///
+/// Inline because TLS is not set up yet.
+inline fn blocksGap(alignment: usize) usize {
+    return switch (native_arch) {
+        // https://git.musl-libc.org/cgit/musl/commit/?id=de5536d827114ebc6b6db7800216610385663ad2
+        //
+        // This is arguably a binutils bug, but I guess we all just have to live with it now.
+        .or1k => alignForward(16, alignment) - 16,
+        else => 0,
+    };
+}
 
 /// Usually only used by the modified Variant I.
 const current_dtv_offset = switch (native_arch) {
@@ -548,16 +564,18 @@ fn computeAreaDesc(phdrs: []elf.ElfN.Phdr) void {
             var l: usize = 0;
             dtv_offset = l;
             l += @sizeOf(Dtv);
-            // In this variant, the TLS blocks must begin immediately after the end of the ABI TCB,
-            // with the TP pointing to the beginning of the TLS blocks. Add padding so that the TP
-            // (`abi_tcb_offset`) is aligned to `align_factor` and the `ZigTcb` structure can be
-            // found by subtracting `@sizeOf(AbiTcb) + @sizeOf(ZigTcb)` from the TP.
-            const delta = (l + @sizeOf(ZigTcb) + @sizeOf(AbiTcb)) & (align_factor - 1);
+            // In this variant, the TLS blocks begin `blocksGap()` bytes (usually zero) after the
+            // end of the ABI TCB. Add padding so that the TLS blocks are aligned to `align_factor`
+            // and the `ZigTcb` structure can be found by subtracting
+            // `@sizeOf(AbiTcb) + @sizeOf(ZigTcb)` from the end of the ABI TCB.
+            const gap = blocksGap(align_factor);
+            const delta = (l + @sizeOf(ZigTcb) + @sizeOf(AbiTcb) + gap) & (align_factor - 1);
             if (delta > 0)
                 l += align_factor - delta;
             l += @sizeOf(ZigTcb);
             abi_tcb_offset = l;
             l += @sizeOf(AbiTcb);
+            l += gap;
             block_offset = l;
             l += block_size;
             break :blk l;
@@ -648,7 +666,8 @@ fn __zig_elf_static_tls_fill(area: [*]u8) callconv(.c) usize {
     // the pointer arithmetic involving the TP is done with wrapping semantics.
     return @intFromPtr(area) +% switch (current_variant) {
         .I_original, .II => area_info.abi_tcb.offset,
-        .I_modified => area_info.block.offset +% current_tp_offset,
+        // This expression must account for the `blocksGap() != 0` possibility.
+        .I_modified => area_info.abi_tcb.offset +% @sizeOf(AbiTcb) +% current_tp_offset,
     };
 }
 
@@ -745,6 +764,9 @@ fn __tls_get_addr(ti: *const TlsIndex) callconv(.c) *anyopaque {
     const tp = getThreadPointer();
     const block = switch (current_variant) {
         .I_original => tp -% area_info.abi_tcb.offset +% area_info.block.offset,
+        // For `blocksGap() != 0`, this intentionally computes the end of the ABI TCB rather than
+        // the beginning of the TLS blocks. The linker will include the `blocksGap()` in the offset
+        // written into `ti.offset`.
         .I_modified => tp -% current_tp_offset,
         // The `.I_original` approach would also work for `.II`, but there is an
         // alternative strategy which is one less operation:

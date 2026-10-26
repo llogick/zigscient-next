@@ -223,7 +223,9 @@ pub const CType = union(enum) {
                 .x86_64_interrupt,
                 => .interrupt,
 
-                .ez80_tiflags => .tiflags,
+                .z80_tiflags,
+                .ez80_tiflags,
+                => .tiflags,
 
                 else => unreachable, // `Zcu.callconvSupported`
             };

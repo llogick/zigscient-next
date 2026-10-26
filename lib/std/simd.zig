@@ -35,6 +35,8 @@ pub fn suggestVectorLengthForCpu(comptime T: type, comptime cpu: std.Target.Cpu)
         } else if (cpu.arch.isLoongArch()) {
             if (cpu.has(.loongarch, .lasx)) break :blk 256;
             if (cpu.has(.loongarch, .lsx)) break :blk 128;
+        } else if (cpu.arch == .m88k) {
+            if (cpu.has(.m88k, .sfu2)) break :blk 64;
         } else if (cpu.arch.isMIPS()) {
             if (cpu.has(.mips, .msa)) break :blk 128;
             if (cpu.has(.mips, .mips3d)) break :blk 64;
@@ -65,7 +67,7 @@ pub fn suggestVectorLengthForCpu(comptime T: type, comptime cpu: std.Target.Cpu)
                 break :blk 256;
             }
         } else if (cpu.arch == .s390x) {
-            if (cpu.has(.s390x, .vector)) break :blk 128;
+            if (cpu.has(.s390x, .vx)) break :blk 128;
         } else if (cpu.arch.isSPARC()) {
             if (cpu.hasAny(.sparc, &.{ .vis, .vis2, .vis3 })) break :blk 64;
         } else if (cpu.arch == .kvx) {

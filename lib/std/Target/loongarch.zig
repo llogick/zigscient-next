@@ -12,9 +12,6 @@ pub const Feature = enum {
     div32,
     f,
     frecipe,
-    la_global_with_abs,
-    la_global_with_pcrel,
-    la_local_with_abs,
     lam_bh,
     lamcas,
     lasx,
@@ -22,10 +19,8 @@ pub const Feature = enum {
     ld_seq_sa,
     lsx,
     lvz,
-    prefer_w_inst,
-    relax,
     scq,
-    ual,
+    unaligned_access,
 };
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
@@ -76,21 +71,6 @@ pub const all_features = blk: {
         .description = "Support frecipe.{s/d} and frsqrte.{s/d} instructions",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.la_global_with_abs)] = .{
-        .llvm_name = "la-global-with-abs",
-        .description = "Expand la.global as la.abs",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.la_global_with_pcrel)] = .{
-        .llvm_name = "la-global-with-pcrel",
-        .description = "Expand la.global as la.pcrel",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.la_local_with_abs)] = .{
-        .llvm_name = "la-local-with-abs",
-        .description = "Expand la.local as la.abs",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     result[@backingInt(Feature.lam_bh)] = .{
         .llvm_name = "lam-bh",
         .description = "Support amswap[_db].{b/h} and amadd[_db].{b/h} instructions",
@@ -130,22 +110,12 @@ pub const all_features = blk: {
         .description = "'LVZ' (Loongson Virtualization Extension)",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.prefer_w_inst)] = .{
-        .llvm_name = "prefer-w-inst",
-        .description = "Prefer instructions with W suffix",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.relax)] = .{
-        .llvm_name = "relax",
-        .description = "Enable Linker relaxation",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     result[@backingInt(Feature.scq)] = .{
         .llvm_name = "scq",
         .description = "Support sc.q instruction",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.ual)] = .{
+    result[@backingInt(Feature.unaligned_access)] = .{
         .llvm_name = "ual",
         .description = "Allow memory accesses to be unaligned",
         .dependencies = featureSet(&[_]Feature{}),
@@ -161,7 +131,7 @@ pub const all_features = blk: {
 pub const cpu = struct {
     pub const generic_la32: CpuModel = .{
         .name = "generic_la32",
-        .llvm_name = "generic-la32",
+        .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .@"32bit",
         }),
@@ -173,12 +143,20 @@ pub const cpu = struct {
             .@"64bit",
         }),
     };
+    pub const la132: CpuModel = .{
+        .name = "la132",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .@"32bit",
+            .@"32s",
+        }),
+    };
     pub const la32rv1_0: CpuModel = .{
         .name = "la32rv1_0",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .@"32bit",
-            .ual,
+            .unaligned_access,
         }),
     };
     pub const la32v1_0: CpuModel = .{
@@ -188,7 +166,7 @@ pub const cpu = struct {
             .@"32bit",
             .@"32s",
             .d,
-            .ual,
+            .unaligned_access,
         }),
     };
     pub const la464: CpuModel = .{
@@ -199,7 +177,7 @@ pub const cpu = struct {
             .lasx,
             .lbt,
             .lvz,
-            .ual,
+            .unaligned_access,
         }),
     };
     pub const la64v1_0: CpuModel = .{
@@ -208,7 +186,7 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .lsx,
-            .ual,
+            .unaligned_access,
         }),
     };
     pub const la64v1_1: CpuModel = .{
@@ -223,7 +201,7 @@ pub const cpu = struct {
             .ld_seq_sa,
             .lsx,
             .scq,
-            .ual,
+            .unaligned_access,
         }),
     };
     pub const la664: CpuModel = .{
@@ -240,7 +218,7 @@ pub const cpu = struct {
             .ld_seq_sa,
             .lvz,
             .scq,
-            .ual,
+            .unaligned_access,
         }),
     };
 };

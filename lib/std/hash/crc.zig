@@ -786,7 +786,7 @@ pub const @"CRC-32/CKSUM" = Generic(u32, .{
     .xor_output = 0xffffffff,
 });
 
-pub const @"CRC-32/ISCSI" = if (builtin.cpu.hasAll(.x86, &.{ .@"64bit", .crc32 }))
+pub const @"CRC-32/ISCSI" = if (builtin.target.cpu.arch == .x86_64 and builtin.target.cpu.has(.x86, .crc32))
     @import("crc/Crc32c.zig")
 else
     Generic(u32, .{

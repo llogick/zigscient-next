@@ -123,14 +123,14 @@ pub fn classifyWindows(init_ty: Type, zcu: *Zcu, target: *const std.Target, ctx:
             else => switch (ty.zigTypeTag(zcu)) {
                 .int => .win_i128,
                 .@"struct", .@"union" => if (ty.containerLayout(zcu) != .@"packed" or
-                    target.cpu.has(.x86, .soft_float)) .memory else .win_i128,
+                    target.abi.float() == .soft) .memory else .win_i128,
                 else => .memory,
             },
         },
         .noreturn => unreachable,
         .float => switch (ty.floatBits(target)) {
             else => unreachable,
-            16, 32, 64 => if (target.cpu.has(.x86, .soft_float)) .integer else .sse,
+            16, 32, 64 => if (target.abi.float() == .soft) .integer else .sse,
             80, 128 => .memory,
         },
         .vector => {
@@ -193,7 +193,7 @@ pub fn classifySystemV(ty: Type, zcu: *Zcu, target: *const std.Target, ctx: Cont
             if (bits <= 64 * 4) return Class.four_integers;
             return Class.stack;
         },
-        .float => if (target.cpu.has(.x86, .soft_float)) switch (ty.floatBits(target)) {
+        .float => if (target.abi.float() == .soft) switch (ty.floatBits(target)) {
             else => unreachable,
             16, 32, 64 => return Class.one_integer,
             80, 128 => return Class.two_integers,

@@ -1,6 +1,23 @@
 const builtin = @import("builtin");
 const std = @import("std");
 
+const Prid = packed struct(u32) {
+    product: u12,
+    series: enum(u4) {
+        la132 = 0x8,
+        la264 = 0xa,
+        la364 = 0xb,
+        la464 = 0xc,
+        la664 = 0xd,
+        _,
+    },
+    company: enum(u8) {
+        loongson = 0x14,
+        _,
+    },
+    reserved: u8,
+};
+
 const Variant = enum(u2) {
     la32r = 0b00,
     la32 = 0b01,
@@ -19,25 +36,44 @@ fn setFeature(cpu: *std.Target.Cpu, feature: std.Target.loongarch.Feature, enabl
 }
 
 pub fn detectNativeCpuAndFeatures(arch: std.Target.Cpu.Arch) ?std.Target.Cpu {
-    const variant: Variant = @fromBackingInt(@intCast(cpucfg(1) & 0b11));
+    const prid: Prid = @bitCast(cpucfg(0));
 
     var cpu: std.Target.Cpu = .{
         .arch = arch,
-        .model = switch (cpucfg(0) & 0b1111000000000000) {
-            else => switch (variant) {
-                .la32r, .la32 => &std.Target.loongarch.cpu.generic_la32,
-                .la64 => &std.Target.loongarch.cpu.generic_la64,
-                .reserved => unreachable,
+        .model = switch (arch) {
+            .loongarch32 => m: {
+                switch (prid.company) {
+                    .loongson => switch (prid.series) {
+                        .la132 => break :m &std.Target.loongarch.cpu.la132,
+                        else => {},
+                    },
+                    else => {},
+                }
+
+                break :m &std.Target.loongarch.cpu.generic_la32;
             },
-            0xc000 => &std.Target.loongarch.cpu.la464,
-            0xd000 => &std.Target.loongarch.cpu.la664,
+            .loongarch64 => m: {
+                switch (prid.company) {
+                    .loongson => switch (prid.series) {
+                        .la464 => break :m &std.Target.loongarch.cpu.la464,
+                        .la664 => break :m &std.Target.loongarch.cpu.la664,
+                        else => {},
+                    },
+                    else => {},
+                }
+
+                break :m &std.Target.loongarch.cpu.generic_la64;
+            },
+            else => unreachable,
         },
         .features = .empty,
     };
 
     cpu.features.addFeatureSet(cpu.model.features);
 
-    setFeature(&cpu, .@"32s", variant != .la32r);
+    const variant: Variant = @fromBackingInt(@intCast(cpucfg(1) & 0b11));
+
+    setFeature(&cpu, .@"32s", variant == .la32 or variant == .la64);
 
     const cfg2 = cpucfg(2);
     const cfg3 = cpucfg(3);
@@ -49,7 +85,7 @@ pub fn detectNativeCpuAndFeatures(arch: std.Target.Cpu.Arch) ?std.Target.Cpu {
         else
             std.os.linux.getauxval(std.elf.AT.HWCAP);
 
-        setFeature(&cpu, .ual, (hwcap_bits & HWCAP.UAL) != 0);
+        setFeature(&cpu, .unaligned_access, (hwcap_bits & HWCAP.UAL) != 0);
 
         const has_fpu = (hwcap_bits & HWCAP.FPU) != 0;
         setFeature(&cpu, .f, has_fpu and bit(cfg2, 1));
@@ -62,7 +98,7 @@ pub fn detectNativeCpuAndFeatures(arch: std.Target.Cpu.Arch) ?std.Target.Cpu {
 
         setFeature(&cpu, .lam_bh, (hwcap_bits & HWCAP.LAM_BH) != 0);
     } else {
-        setFeature(&cpu, .ual, false);
+        setFeature(&cpu, .unaligned_access, false);
 
         setFeature(&cpu, .f, false);
         setFeature(&cpu, .d, false);

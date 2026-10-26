@@ -49,12 +49,11 @@ const Classifier = struct {
                 .loongarch32 => 32,
                 .loongarch64 => 64,
             },
-            .frlen = if (target.cpu.has(.loongarch, .d))
-                64
-            else if (target.cpu.has(.loongarch, .f))
-                32
-            else
-                0,
+            .frlen = switch (target.abi) {
+                .gnusf, .muslsf => 0,
+                .gnuf32, .muslf32 => 32,
+                else => 64,
+            },
         };
     }
 

@@ -669,7 +669,7 @@ test parse {
     {
         const query = try Query.parse(.{
             .arch_os_abi = "aarch64-linux.3.10...4.4.1-gnu.2.27",
-            .cpu_features = "generic+v8a",
+            .cpu_features = "armv8a",
         });
         const target = try std.zig.system.resolveTargetQuery(io, query);
 

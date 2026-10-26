@@ -84,10 +84,6 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 "-w", // Disable all warnings.
             });
 
-            if (target.cpu.arch.isPowerPC64()) {
-                try cflags.append("-mlongcall");
-            }
-
             var acflags = std.array_list.Managed([]const u8).init(arena);
             try acflags.appendSlice(&.{
                 "-DLOCORE",

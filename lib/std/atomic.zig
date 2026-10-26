@@ -415,7 +415,7 @@ pub inline fn spinLoopHint() void {
 
         .sparc,
         .sparc64,
-        => if (comptime builtin.cpu.hasAny(.sparc, &.{ .v8plus, .v9 })) {
+        => if (comptime builtin.cpu.has(.sparc, .v9)) {
             asm volatile ("rd %%ccr, %%g0");
         },
 

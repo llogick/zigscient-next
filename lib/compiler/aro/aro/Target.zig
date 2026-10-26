@@ -116,7 +116,6 @@ pub const SubArch = enum {
         } else if (arch.isSpirv()) {
             const spirv = std.Target.spirv.Feature;
             return @backingInt(switch (sub) {
-                .spirv_v10 => spirv.v1_0,
                 .spirv_v11 => spirv.v1_1,
                 .spirv_v12 => spirv.v1_2,
                 .spirv_v13 => spirv.v1_3,
@@ -1085,6 +1084,7 @@ pub fn get32BitArchVariant(target: *const Target) ?Target {
         .s390x,
         .spork8,
         .ve,
+        .z80,
         => return null,
 
         .arc,
@@ -1094,7 +1094,6 @@ pub fn get32BitArchVariant(target: *const Target) ?Target {
         .csky,
         .hexagon,
         .hppa,
-        .kalimba,
         .lanai,
         .loongarch32,
         .m68k,
@@ -1152,7 +1151,6 @@ pub fn get64BitArchVariant(target: *const Target) ?Target {
         .csky,
         .ez80,
         .hexagon,
-        .kalimba,
         .lanai,
         .m68k,
         .m88k,
@@ -1167,6 +1165,7 @@ pub fn get64BitArchVariant(target: *const Target) ?Target {
         .xcore,
         .xtensa,
         .xtensaeb,
+        .z80,
         => return null,
 
         .aarch64_be,
@@ -1274,7 +1273,6 @@ pub fn toLLVMTriple(target: *const Target, buf: []u8) []const u8 {
         .ez80 => "ez80",
         .hppa => "hppa",
         .hppa64 => "hppa64",
-        .kalimba => "kalimba",
         .kvx => "kvx",
         .microblaze => "microblaze",
         .microblazeel => "microblazeel",
@@ -1286,13 +1284,13 @@ pub fn toLLVMTriple(target: *const Target, buf: []u8) []const u8 {
         .spork8 => "spork8",
         .x86_16 => "i86",
         .xtensaeb => "xtensaeb",
+        .z80 => "z80",
     };
     writer.writeAll(llvm_arch) catch unreachable;
     writer.writeByte('-') catch unreachable;
 
     const llvm_os = switch (target.os.tag) {
         .amdhsa => "amdhsa",
-        .amdpal => "amdpal",
         .cuda => "cuda",
         .dragonfly => "dragonfly",
         .driverkit => "driverkit",
@@ -1307,7 +1305,6 @@ pub fn toLLVMTriple(target: *const Target, buf: []u8) []const u8 {
         .linux => "linux",
         .macos => "macosx",
         .managarm => "managarm",
-        .mesa3d => "mesa3d",
         .netbsd => "netbsd",
         .nvcl => "nvcl",
         .openbsd => "openbsd",
@@ -1410,8 +1407,6 @@ pub fn isPIEDefault(target: *const Target) DefaultPIStatus {
 
         .cuda,
         .amdhsa,
-        .amdpal,
-        .mesa3d,
 
         .ps4,
         .ps5,
@@ -1484,8 +1479,6 @@ pub fn isPICdefault(target: *const Target) DefaultPIStatus {
         .driverkit,
 
         .amdhsa,
-        .amdpal,
-        .mesa3d,
 
         .ps4,
         .ps5,
@@ -1551,7 +1544,7 @@ pub fn isPICdefault(target: *const Target) DefaultPIStatus {
 
 pub fn isPICDefaultForced(target: *const Target) DefaultPIStatus {
     return switch (target.os.tag) {
-        .amdhsa, .amdpal, .mesa3d => .yes,
+        .amdhsa => .yes,
 
         .haiku,
         .dragonfly,

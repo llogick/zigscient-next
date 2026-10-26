@@ -4265,6 +4265,7 @@ pub fn atomicPtrAlignment(
     const max_atomic_bits: u16 = switch (target.cpu.arch) {
         .ez80,
         .spork8,
+        .z80,
         => 8,
 
         .aarch64,
@@ -4849,6 +4850,7 @@ pub fn callconvSupported(zcu: *Zcu, cc: std.lang.CallingConvention) union(enum) 
                 .avr_interrupt,
                 .avr_signal,
                 .ez80_tiflags,
+                .z80_tiflags,
                 .loongarch32_preserve_none,
                 .loongarch64_preserve_none,
                 .riscv32_preserve_most,

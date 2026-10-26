@@ -1538,8 +1538,6 @@ pub fn writeElfHeader(self: *Elf) !void {
     hdr_buf[index] = @backingInt(@as(elf.OSABI, switch (target.cpu.arch) {
         .amdgcn => switch (target.os.tag) {
             .amdhsa => .AMDGPU_HSA,
-            .amdpal => .AMDGPU_PAL,
-            .mesa3d => .AMDGPU_MESA3D,
             else => .NONE,
         },
         .msp430 => .STANDALONE,

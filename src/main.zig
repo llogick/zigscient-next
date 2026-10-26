@@ -936,8 +936,6 @@ pub const CompilationState = struct {
     version: std.SemanticVersion = .{ .major = 0, .minor = 0, .patch = 0 },
     have_version: bool = false,
     compatibility_version: ?std.SemanticVersion = null,
-    function_sections: bool = false,
-    data_sections: bool = false,
     listen: Listen = .none,
     debug_compile_errors: bool = false,
     debug_incremental: bool = false,
@@ -1159,8 +1157,6 @@ pub fn buildOutputType(
     cs.version = .{ .major = 0, .minor = 0, .patch = 0 };
     cs.have_version = false;
     cs.compatibility_version = null;
-    cs.function_sections = false;
-    cs.data_sections = false;
     cs.listen = .none;
     cs.debug_compile_errors = false;
     cs.debug_incremental = false;
@@ -1920,13 +1916,13 @@ pub fn buildOutputType(
                     } else if (mem.eql(u8, arg, "-fno-single-threaded")) {
                         cs.mod_opts.single_threaded = false;
                     } else if (mem.eql(u8, arg, "-ffunction-sections")) {
-                        cs.function_sections = true;
+                        cs.create_module.opts.function_sections = true;
                     } else if (mem.eql(u8, arg, "-fno-function-sections")) {
-                        cs.function_sections = false;
+                        cs.create_module.opts.function_sections = false;
                     } else if (mem.eql(u8, arg, "-fdata-sections")) {
-                        cs.data_sections = true;
+                        cs.create_module.opts.data_sections = true;
                     } else if (mem.eql(u8, arg, "-fno-data-sections")) {
-                        cs.data_sections = false;
+                        cs.create_module.opts.data_sections = false;
                     } else if (mem.eql(u8, arg, "-fbuiltin")) {
                         cs.mod_opts.no_builtin = false;
                     } else if (mem.eql(u8, arg, "-fno-builtin")) {
@@ -2373,10 +2369,10 @@ pub fn buildOutputType(
                     .no_red_zone => cs.mod_opts.red_zone = false,
                     .omit_frame_pointer => cs.mod_opts.omit_frame_pointer = true,
                     .no_omit_frame_pointer => cs.mod_opts.omit_frame_pointer = false,
-                    .function_sections => cs.function_sections = true,
-                    .no_function_sections => cs.function_sections = false,
-                    .data_sections => cs.data_sections = true,
-                    .no_data_sections => cs.data_sections = false,
+                    .function_sections => cs.create_module.opts.function_sections = true,
+                    .no_function_sections => cs.create_module.opts.function_sections = false,
+                    .data_sections => cs.create_module.opts.data_sections = true,
+                    .no_data_sections => cs.create_module.opts.data_sections = false,
                     .builtin => cs.mod_opts.no_builtin = false,
                     .no_builtin => cs.mod_opts.no_builtin = true,
                     .color_diagnostics => cs.color = .on,
@@ -4038,8 +4034,6 @@ pub fn buildOutputType(
         .force_undefined_symbols = cs.force_undefined_symbols,
         .stack_size = cs.stack_size,
         .image_base = cs.image_base,
-        .function_sections = cs.function_sections,
-        .data_sections = cs.data_sections,
         .clang_passthrough_mode = clang_passthrough_mode,
         .clang_preprocessor_mode = cs.clang_preprocessor_mode,
         .version = optional_version,

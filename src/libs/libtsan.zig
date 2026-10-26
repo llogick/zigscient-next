@@ -69,6 +69,8 @@ pub fn buildTsan(comp: *Compilation, prog_node: std.Progress.Node) BuildError!vo
         .any_unwind_tables = unwind_tables != .none,
         // LLVM disables LTO for its libtsan.
         .lto = .none,
+        .function_sections = true,
+        .data_sections = true,
     }) catch |err| {
         comp.lockAndSetMiscFailure(
             .libtsan,
@@ -290,8 +292,6 @@ pub fn buildTsan(comp: *Compilation, prog_node: std.Progress.Node) BuildError!vo
         .root_name = root_name,
         .libc_installation = comp.libc_installation,
         .emit_bin = .yes_cache,
-        .function_sections = true,
-        .data_sections = true,
         .c_source_files = c_source_files.items,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,

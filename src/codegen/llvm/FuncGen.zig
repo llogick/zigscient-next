@@ -5299,25 +5299,7 @@ fn airLoad(fg: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Value {
 
 fn airTrap(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!void {
     _ = inst;
-    const target = self.object.zcu.getTarget();
-    if ((target.cpu.arch == .mips or target.cpu.arch == .mipsel) and
-        target.cpu.has(.mips, .notraps))
-    {
-        // Emit a MIPS `break` instruction followed by an infinite loop (to fulfil the noreturn)
-        // since this CPU does not support trap instructions.
-        const o = self.object;
-        _ = try self.wip.callAsm(
-            .none,
-            try o.builder.fnType(.void, &.{}, .normal),
-            .{ .sideeffect = true },
-            try o.builder.string("break\n0:\nj 0b\nnop"),
-            try o.builder.string("~{memory}"),
-            &.{},
-            "",
-        );
-    } else {
-        _ = try self.wip.callIntrinsic(.normal, .none, .trap, &.{}, &.{}, "");
-    }
+    _ = try self.wip.callIntrinsic(.normal, .none, .trap, &.{}, &.{}, "");
     _ = try self.wip.@"unreachable"();
 }
 

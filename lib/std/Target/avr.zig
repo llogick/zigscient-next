@@ -33,7 +33,6 @@ pub const Feature = enum {
     mul,
     rmw,
     smallstack,
-    special,
     spm,
     spmx,
     sram,
@@ -248,29 +247,6 @@ pub const all_features = blk: {
         .llvm_name = "smallstack",
         .description = "The device has an 8-bit stack pointer",
         .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.special)] = .{
-        .llvm_name = "special",
-        .description = "Enable use of the entire instruction set - used for debugging",
-        .dependencies = featureSet(&[_]Feature{
-            .addsubiw,
-            .@"break",
-            .des,
-            .eijmpcall,
-            .elpm,
-            .elpmx,
-            .ijmpcall,
-            .jmpcall,
-            .lpm,
-            .lpmx,
-            .memmappedregs,
-            .movw,
-            .mul,
-            .rmw,
-            .spm,
-            .spmx,
-            .sram,
-        }),
     };
     result[@backingInt(Feature.spm)] = .{
         .llvm_name = "spm",

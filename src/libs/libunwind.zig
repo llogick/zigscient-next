@@ -42,6 +42,8 @@ pub fn buildStaticLib(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         .link_libc = true,
         .any_unwind_tables = unwind_tables != .none,
         .lto = comp.config.lto,
+        .function_sections = true,
+        .data_sections = true,
     }) catch |err| {
         comp.lockAndSetMiscFailure(
             .libunwind,
@@ -152,8 +154,6 @@ pub fn buildStaticLib(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         .main_mod = null,
         .libc_installation = comp.libc_installation,
         .emit_bin = .yes_cache,
-        .function_sections = true,
-        .data_sections = true,
         .c_source_files = &c_source_files,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,

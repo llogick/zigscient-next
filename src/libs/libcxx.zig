@@ -147,6 +147,8 @@ pub fn buildLibCxx(comp: *Compilation, prog_node: std.Progress.Node) BuildError!
         .link_libc = true,
         .lto = comp.config.lto,
         .any_sanitize_thread = comp.config.any_sanitize_thread,
+        .function_sections = true,
+        .data_sections = true,
     }) catch |err| {
         comp.lockAndSetMiscFailure(
             .libcxx,
@@ -255,8 +257,6 @@ pub fn buildLibCxx(comp: *Compilation, prog_node: std.Progress.Node) BuildError!
         .root_name = root_name,
         .libc_installation = comp.libc_installation,
         .emit_bin = .yes_cache,
-        .function_sections = true,
-        .data_sections = true,
         .c_source_files = c_source_files.items,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,
@@ -328,6 +328,8 @@ pub fn buildLibCxxAbi(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         .any_unwind_tables = unwind_tables != .none,
         .lto = comp.config.lto,
         .any_sanitize_thread = comp.config.any_sanitize_thread,
+        .function_sections = true,
+        .data_sections = true,
     }) catch |err| {
         comp.lockAndSetMiscFailure(
             .libcxxabi,
@@ -436,8 +438,6 @@ pub fn buildLibCxxAbi(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         .root_name = root_name,
         .libc_installation = comp.libc_installation,
         .emit_bin = .yes_cache,
-        .function_sections = true,
-        .data_sections = true,
         .c_source_files = c_source_files.items,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,

@@ -99,6 +99,8 @@
 #define zig_x86
 #elif defined(__xtensa__)
 #define zig_xtensa
+#elif defined (__z80)
+#define zig_z80
 #elif defined (__ez80)
 #define zig_ez80
 #define zig_z80

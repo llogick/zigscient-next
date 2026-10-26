@@ -16,7 +16,6 @@ pub const Feature = enum {
     esp32s2ops,
     exception,
     extendedl32r,
-    forced_atomics,
     fp,
     highpriinterrupts,
     highpriinterrupts_level3,
@@ -107,11 +106,6 @@ pub const all_features = blk: {
     result[@backingInt(Feature.extendedl32r)] = .{
         .llvm_name = "extendedl32r",
         .description = "Enable Xtensa Extended L32R option",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.forced_atomics)] = .{
-        .llvm_name = "forced-atomics",
-        .description = "Assume that lock-free native-width atomics are available",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.fp)] = .{
@@ -345,8 +339,8 @@ pub const cpu = struct {
             .timers1,
         }),
     };
-    pub const generic: CpuModel = .{
-        .name = "generic",
+    pub const xtensa: CpuModel = .{
+        .name = "xtensa",
         .llvm_name = "generic",
         .features = featureSet(&[_]Feature{}),
     };

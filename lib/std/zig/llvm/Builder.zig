@@ -153,7 +153,6 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .ez80,
         .hppa,
         .hppa64,
-        .kalimba,
         .kvx,
         .m88k,
         .microblaze,
@@ -165,6 +164,7 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .spork8,
         .x86_16,
         .xtensaeb,
+        .z80,
         => unreachable, // Gated by hasLlvmSupport().
     };
 
@@ -253,13 +253,10 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .ps5,
         => "scei",
         .amdhsa,
-        .amdpal,
         => "amd",
         .cuda,
         .nvcl,
         => "nvidia",
-        .mesa3d,
-        => "mesa",
         else => "unknown",
     });
     try llvm_triple.append(allocator, '-');
@@ -281,8 +278,6 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .ps3 => "lv2",
         .ps4 => "ps4",
         .ps5 => "ps5",
-        .mesa3d => "mesa3d",
-        .amdpal => "amdpal",
         .hurd => "hurd",
         .wasi => "wasi",
         .emscripten => "emscripten",
@@ -582,7 +577,6 @@ pub const DataLayout = struct {
             .ez80,
             .hppa,
             .hppa64,
-            .kalimba,
             .kvx,
             .m88k,
             .microblaze,
@@ -591,9 +585,10 @@ pub const DataLayout = struct {
             .propeller,
             .sh,
             .sheb,
+            .spork8,
             .x86_16,
             .xtensaeb,
-            .spork8,
+            .z80,
             => unreachable,
         };
     }

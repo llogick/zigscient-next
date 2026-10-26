@@ -93,8 +93,6 @@ windows_libs_num_done: u32,
 version: ?std.SemanticVersion,
 libc_installation: ?*const LibCInstallation,
 skip_linker_dependencies: bool,
-function_sections: bool,
-data_sections: bool,
 link_eh_frame_hdr: bool,
 native_system_include_paths: []const []const u8,
 /// List of symbols forced as undefined in the symbol table
@@ -1489,8 +1487,6 @@ pub const CreateOptions = struct {
     /// executable this field is ignored.
     want_compiler_rt: ?bool = null,
     want_ubsan_rt: ?bool = null,
-    function_sections: bool = false,
-    data_sections: bool = false,
     time_report: bool = false,
     stack_report: bool = false,
     link_eh_frame_hdr: bool = false,
@@ -1951,8 +1947,8 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
         cache.hash.add(options.config.any_sanitize_thread);
         cache.hash.add(options.config.any_sanitize_c);
         cache.hash.add(options.config.any_fuzz);
-        cache.hash.add(options.function_sections);
-        cache.hash.add(options.data_sections);
+        cache.hash.add(options.config.function_sections);
+        cache.hash.add(options.config.data_sections);
         cache.hash.add(link_libc);
         cache.hash.add(options.config.link_libcpp);
         cache.hash.add(options.config.link_libunwind);
@@ -2172,8 +2168,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
             .llvm_opt_bisect_limit = options.llvm_opt_bisect_limit,
             .skip_linker_dependencies = options.skip_linker_dependencies,
             .queued_jobs = .{},
-            .function_sections = options.function_sections,
-            .data_sections = options.data_sections,
             .native_system_include_paths = options.native_system_include_paths,
             .force_undefined_symbols = options.force_undefined_symbols,
             .link_eh_frame_hdr = link_eh_frame_hdr,
@@ -6685,15 +6679,36 @@ pub fn addCCArgs(
         });
     }
 
+    if (target.cpu.arch == .hexagon) {
+        try argv.append("-G0"); // Unsupported by LLD.
+    }
+
     // We might want to support -mfloat-abi=softfp for Arm and CSKY here in the future.
     if (target_util.clangSupportsFloatAbiArg(target)) {
-        const fabi = @tagName(target.abi.float());
+        const fabi = target.abi.float();
 
         try argv.append(switch (target.cpu.arch) {
             // For whatever reason, Clang doesn't support `-mfloat-abi` for s390x.
-            .s390x => try std.fmt.allocPrint(arena, "-m{s}-float", .{fabi}),
-            else => try std.fmt.allocPrint(arena, "-mfloat-abi={s}", .{fabi}),
+            .s390x => try std.fmt.allocPrint(arena, "-m{s}-float", .{@tagName(fabi)}),
+            else => try std.fmt.allocPrint(arena, "-mfloat-abi={s}", .{@tagName(fabi)}),
         });
+
+        if (target.cpu.arch.isMips() and fabi == .hard) {
+            try argv.appendSlice(if (target.cpu.has(.mips, .single_float))
+                &.{ "-msingle-float", "-mno-odd-spreg" }
+            else if (target.cpu.arch.isMips64() or target.cpu.hasAny(.mips, &.{ .mips32r6, .msa }))
+                &.{ "-mfp64", "-modd-spreg" }
+            else if (target.cpu.has(.mips, .mips2))
+                &.{ "-mfpxx", "-mno-odd-spreg" }
+            else
+                &.{ "-mfp32", "-mno-odd-spreg" });
+        }
+    }
+
+    if (target.cpu.arch.isX86() and target.abi.float() == .soft) {
+        // This is necessary to get the effects of the `soft-float` backend
+        // subtarget feature in the frontend as well.
+        try argv.append("-mgeneral-regs-only");
     }
 
     if (mod.patchable_function_entry > 0) {
@@ -6701,12 +6716,25 @@ pub fn addCCArgs(
         try argv.append(try std.fmt.allocPrint(arena, "-fpatchable-function-entry={}", .{pf}));
     }
 
+    if (target.cpu.arch.isMips()) {
+        try argv.append(if (mod.pic) "-mabicalls" else "-mno-abicalls");
+    }
+
     try comp.addCommonCCArgs(arena, argv, ext, out_dep_path, mod, comp.config.c_frontend);
 
     // Non-preprocessed assembly files don't support these flags.
     if (ext != .assembly) {
-        if (target_util.clangSupportsNoImplicitFloatArg(target) and target.abi.float() == .soft) {
-            try argv.append("-mno-implicit-float");
+        if (target.abi.float() == .soft) {
+            if (target_util.clangSupportsNoImplicitFloatArg(target)) {
+                try argv.append("-mno-implicit-float");
+            }
+
+            // Ensure that Clang emits the `use-soft-float` function attribute.
+            try argv.appendSlice(&.{ "-Xclang", "-msoft-float" });
+        }
+
+        if (target.cpu.arch.isMips() and !mod.pic) {
+            try argv.append("-mno-gpopt");
         }
 
         if (target_util.hasRedZone(target)) {
@@ -6731,8 +6759,8 @@ pub fn addCCArgs(
 
         try argv.append(if (mod.no_builtin) "-fno-builtin" else "-fbuiltin");
 
-        try argv.append(if (comp.function_sections) "-ffunction-sections" else "-fno-function-sections");
-        try argv.append(if (comp.data_sections) "-fdata-sections" else "-fno-data-sections");
+        try argv.append(if (comp.config.function_sections) "-ffunction-sections" else "-fno-function-sections");
+        try argv.append(if (comp.config.data_sections) "-fdata-sections" else "-fno-data-sections");
 
         switch (mod.unwind_tables) {
             .none => {
@@ -6788,16 +6816,8 @@ pub fn addCCArgs(
 
                 if (feature.llvm_name) |llvm_name| {
                     // We communicate these to Clang through the dedicated options.
-                    if (std.mem.startsWith(u8, llvm_name, "soft-float") or
-                        std.mem.startsWith(u8, llvm_name, "hard-float") or
-                        (target.cpu.arch.isPowerPC() and std.mem.startsWith(u8, llvm_name, "64bit")) or
-                        (target.cpu.arch.isX86() and std.mem.startsWith(u8, llvm_name, "x32")) or
-                        (target.cpu.arch == .s390x and std.mem.eql(u8, llvm_name, "backchain")))
+                    if (std.mem.startsWith(u8, llvm_name, "soft-float") or std.mem.startsWith(u8, llvm_name, "hard-float"))
                         continue;
-
-                    // Ignore these until we figure out how to handle the concept of omitting features.
-                    // See https://github.com/ziglang/zig/issues/23539
-                    if (target_util.isDynamicAMDGCNFeature(target, feature)) continue;
 
                     const plus_or_minus = "-+"[@intFromBool(is_enabled)];
                     const arg = try std.fmt.allocPrint(arena, "{c}{s}", .{ plus_or_minus, llvm_name });
@@ -6805,6 +6825,28 @@ pub fn addCCArgs(
                         argv.appendSliceAssumeCapacity(&[_][]const u8{ xclang, "-target-feature", xclang, arg });
                     }
                 }
+            }
+
+            if (target.cpu.arch.isPowerpc32()) {
+                // https://github.com/llvm/llvm-project/issues/235393
+                for (xclang_flags) |xclang| try argv.appendSlice(&.{
+                    xclang,
+                    "-target-feature",
+                    xclang,
+                    "-crbits",
+                });
+            }
+
+            if (target.cpu.arch.isXtensa()) {
+                // LLVM does not currently support specifying windowed vs call0 ABI any other way than
+                // disabling all windowed instructions altogether. That's kind of silly because a
+                // windowed core can do call0 just fine.
+                if (target.abi == .call0) for (xclang_flags) |xclang| try argv.appendSlice(&.{
+                    xclang,
+                    "-target-feature",
+                    xclang,
+                    "-windowed",
+                });
             }
         },
         else => {},
@@ -7358,6 +7400,8 @@ fn buildOutputFromZig(
         .any_error_tracing = false,
         .root_error_tracing = false,
         .lto = if (options.allow_lto) comp.config.lto else .none,
+        .function_sections = true,
+        .data_sections = true,
     }) catch |err| {
         comp.lockAndSetMiscFailure(misc_task_tag, "sub-compilation of {t} failed: failed to resolve compilation config: {t}", .{ misc_task_tag, err });
         return error.AlreadyReported;
@@ -7419,8 +7463,6 @@ fn buildOutputFromZig(
         .root_name = root_name,
         .libc_installation = comp.libc_installation,
         .emit_bin = .yes_cache,
-        .function_sections = true,
-        .data_sections = true,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,
         .clang_passthrough_mode = comp.clang_passthrough_mode,
@@ -7498,6 +7540,8 @@ pub fn build_crt_file(
             .Lib => if (options.allow_lto) comp.config.lto else .none,
             .Obj, .Exe => .none,
         },
+        .function_sections = options.function_sections,
+        .data_sections = options.data_sections,
     }) catch |err| {
         comp.lockAndSetMiscFailure(misc_task_tag, "sub-compilation of {t} failed: failed to resolve compilation config: {t}", .{ misc_task_tag, err });
         return error.AlreadyReported;
@@ -7549,8 +7593,6 @@ pub fn build_crt_file(
         .root_name = root_name,
         .libc_installation = comp.libc_installation,
         .emit_bin = .yes_cache,
-        .function_sections = options.function_sections,
-        .data_sections = options.data_sections,
         .c_source_files = c_source_files,
         .verbose_cc = comp.verbose_cc,
         .verbose_link = comp.verbose_link,

@@ -24,11 +24,6 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
-        .features = featureSet(&[_]Feature{}),
-    };
     pub const v11: CpuModel = .{
         .name = "v11",
         .llvm_name = "v11",

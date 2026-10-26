@@ -669,8 +669,8 @@ fn lowerZigArgs(
 
     try addBool(gpa, zig_args, "--eh-frame-hdr", conf_comp.flags.link_eh_frame_hdr);
     try addBool(gpa, zig_args, "--emit-relocs", conf_comp.flags.link_emit_relocs);
-    try addBool(gpa, zig_args, "-ffunction-sections", conf_comp.flags.link_function_sections);
-    try addBool(gpa, zig_args, "-fdata-sections", conf_comp.flags.link_data_sections);
+    try addFlag(gpa, zig_args, "function-sections", conf_comp.flags4.function_sections.toBool());
+    try addFlag(gpa, zig_args, "data-sections", conf_comp.flags4.data_sections.toBool());
 
     if (conf_comp.flags2.link_gc_sections.toBool()) |x|
         try zig_args.append(gpa, if (x) "--gc-sections" else "--no-gc-sections");

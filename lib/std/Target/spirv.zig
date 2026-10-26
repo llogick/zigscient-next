@@ -19,11 +19,16 @@ pub const Feature = enum {
     b_float16dot_product_khr,
     b_float16type_khr,
     bit_instructions,
+    bitcast_extract_ext,
     clip_distance,
     compute_derivative_group_linear_khr,
     compute_derivative_group_quads_khr,
     constant_data_khr,
+    cooperative_matrix_conversions_ext,
+    cooperative_matrix_get_coordinate_ext,
     cooperative_matrix_khr,
+    cooperative_matrix_per_element_operations_ext,
+    cooperative_matrix_reductions_ext,
     cull_distance,
     demote_to_helper_invocation,
     denorm_flush_to_zero,
@@ -40,9 +45,12 @@ pub const Feature = enum {
     expect_assume_khr,
     float16,
     float16buffer,
+    float4ext,
     float64,
+    float6ext,
     float8cooperative_matrix_ext,
     float8ext,
+    float8unsigned_e8m0ext,
     float_controls2,
     fmakhr,
     fragment_barycentric_khr,
@@ -68,6 +76,7 @@ pub const Feature = enum {
     group_non_uniform_vote,
     group_uniform_arithmetic_khr,
     groups,
+    image1d,
     image_basic,
     image_buffer,
     image_cube_array,
@@ -88,30 +97,31 @@ pub const Feature = enum {
     interpolation_function,
     literal_sampler,
     long_vector_ext,
-    matrix,
     mesh_shading_ext,
     min_lod,
     multi_view,
     multi_viewport,
+    mx_int8ext,
     named_barrier,
     opt_none_ext,
     pipe_storage,
     pipes,
-    poison_freeze_khr,
     quad_control_khr,
     ray_cull_mask_khr,
     ray_query_khr,
     ray_query_position_fetch_khr,
-    ray_query_provisional_khr,
     ray_tracing_khr,
-    ray_tracing_opacity_micromap_ext,
+    ray_tracing_opacity_micromap_execution_mode_khr,
+    ray_tracing_opacity_micromap_khr,
     ray_tracing_position_fetch_khr,
-    ray_tracing_provisional_khr,
     ray_traversal_primitive_culling_khr,
     replicated_composites_ext,
+    rounding_mode_rte,
+    rounding_mode_rtz,
     runtime_descriptor_array,
     sample_mask_post_depth_coverage,
     sample_rate_shading,
+    sampled1d,
     sampled_buffer,
     sampled_cube_array,
     sampled_image_array_dynamic_indexing,
@@ -126,7 +136,9 @@ pub const Feature = enum {
     shader_viewport_index_layer_ext,
     signed_zero_inf_nan_preserve,
     sparse_residency,
+    split_barrier_ext,
     SPV_EXT_arithmetic_fence,
+    SPV_EXT_cooperative_matrix_maintenance1,
     SPV_EXT_demote_to_helper_invocation,
     SPV_EXT_descriptor_heap,
     SPV_EXT_descriptor_indexing,
@@ -136,9 +148,9 @@ pub const Feature = enum {
     SPV_EXT_fragment_shader_interlock,
     SPV_EXT_long_vector,
     SPV_EXT_mesh_shader,
+    SPV_EXT_ocp_microscaling_types,
     SPV_EXT_opacity_micromap,
     SPV_EXT_optnone,
-    SPV_EXT_physical_storage_buffer,
     SPV_EXT_replicated_composites,
     SPV_EXT_shader_64bit_indexing,
     SPV_EXT_shader_atomic_float16_add,
@@ -150,6 +162,7 @@ pub const Feature = enum {
     SPV_EXT_shader_subgroup_partitioned,
     SPV_EXT_shader_tile_image,
     SPV_EXT_shader_viewport_index_layer,
+    SPV_EXT_split_barrier,
     SPV_KHR_16bit_storage,
     SPV_KHR_8bit_storage,
     SPV_KHR_abort,
@@ -167,7 +180,7 @@ pub const Feature = enum {
     SPV_KHR_fragment_shading_rate,
     SPV_KHR_integer_dot_product,
     SPV_KHR_multiview,
-    SPV_KHR_poison_freeze,
+    SPV_KHR_opacity_micromap,
     SPV_KHR_post_depth_coverage,
     SPV_KHR_quad_control,
     SPV_KHR_ray_cull_mask,
@@ -218,7 +231,6 @@ pub const Feature = enum {
     uniform_texel_buffer_array_dynamic_indexing,
     uniform_texel_buffer_array_non_uniform_indexing,
     untyped_pointers_khr,
-    v1_0,
     v1_1,
     v1_2,
     v1_3,
@@ -250,7 +262,6 @@ pub const all_features = blk: {
         .description = "Enable abort_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_abort,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.arithmetic_fence_ext)] = .{
@@ -258,7 +269,6 @@ pub const all_features = blk: {
         .description = "Enable arithmetic_fence_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_arithmetic_fence,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.atomic_float16add_ext)] = .{
@@ -266,7 +276,6 @@ pub const all_features = blk: {
         .description = "Enable atomic_float16add_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_atomic_float16_add,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.atomic_float16min_max_ext)] = .{
@@ -274,7 +283,6 @@ pub const all_features = blk: {
         .description = "Enable atomic_float16min_max_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_atomic_float_min_max,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.atomic_float32add_ext)] = .{
@@ -282,7 +290,6 @@ pub const all_features = blk: {
         .description = "Enable atomic_float32add_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_atomic_float_add,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.atomic_float32min_max_ext)] = .{
@@ -290,7 +297,6 @@ pub const all_features = blk: {
         .description = "Enable atomic_float32min_max_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_atomic_float_min_max,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.atomic_float64add_ext)] = .{
@@ -298,7 +304,6 @@ pub const all_features = blk: {
         .description = "Enable atomic_float64add_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_atomic_float_add,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.atomic_float64min_max_ext)] = .{
@@ -306,38 +311,34 @@ pub const all_features = blk: {
         .description = "Enable atomic_float64min_max_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_atomic_float_min_max,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.atomic_storage)] = .{
         .llvm_name = null,
         .description = "Enable atomic_storage capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.atomic_storage_ops)] = .{
         .llvm_name = null,
         .description = "Enable atomic_storage_ops capability",
         .dependencies = featureSet(&[_]Feature{
+            .atomic_storage,
             .SPV_KHR_shader_atomic_counter_ops,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.b_float16cooperative_matrix_khr)] = .{
         .llvm_name = null,
         .description = "Enable b_float16cooperative_matrix_khr capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_bfloat16,
-            .v1_0,
+            .b_float16type_khr,
+            .cooperative_matrix_khr,
         }),
     };
     result[@backingInt(Feature.b_float16dot_product_khr)] = .{
         .llvm_name = null,
         .description = "Enable b_float16dot_product_khr capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_bfloat16,
-            .v1_0,
+            .b_float16type_khr,
         }),
     };
     result[@backingInt(Feature.b_float16type_khr)] = .{
@@ -345,7 +346,6 @@ pub const all_features = blk: {
         .description = "Enable b_float16type_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_bfloat16,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.bit_instructions)] = .{
@@ -353,22 +353,25 @@ pub const all_features = blk: {
         .description = "Enable bit_instructions capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_bit_instructions,
-            .v1_0,
+        }),
+    };
+    result[@backingInt(Feature.bitcast_extract_ext)] = .{
+        .llvm_name = null,
+        .description = "Enable bitcast_extract_ext capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_EXT_ocp_microscaling_types,
         }),
     };
     result[@backingInt(Feature.clip_distance)] = .{
         .llvm_name = null,
         .description = "Enable clip_distance capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.compute_derivative_group_linear_khr)] = .{
         .llvm_name = null,
         .description = "Enable compute_derivative_group_linear_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_compute_shader_derivatives,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.compute_derivative_group_quads_khr)] = .{
@@ -376,7 +379,6 @@ pub const all_features = blk: {
         .description = "Enable compute_derivative_group_quads_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_compute_shader_derivatives,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.constant_data_khr)] = .{
@@ -384,7 +386,20 @@ pub const all_features = blk: {
         .description = "Enable constant_data_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_constant_data,
-            .v1_0,
+        }),
+    };
+    result[@backingInt(Feature.cooperative_matrix_conversions_ext)] = .{
+        .llvm_name = null,
+        .description = "Enable cooperative_matrix_conversions_ext capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_EXT_cooperative_matrix_maintenance1,
+        }),
+    };
+    result[@backingInt(Feature.cooperative_matrix_get_coordinate_ext)] = .{
+        .llvm_name = null,
+        .description = "Enable cooperative_matrix_get_coordinate_ext capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_EXT_cooperative_matrix_maintenance1,
         }),
     };
     result[@backingInt(Feature.cooperative_matrix_khr)] = .{
@@ -392,15 +407,26 @@ pub const all_features = blk: {
         .description = "Enable cooperative_matrix_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_cooperative_matrix,
-            .v1_0,
+        }),
+    };
+    result[@backingInt(Feature.cooperative_matrix_per_element_operations_ext)] = .{
+        .llvm_name = null,
+        .description = "Enable cooperative_matrix_per_element_operations_ext capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_EXT_cooperative_matrix_maintenance1,
+        }),
+    };
+    result[@backingInt(Feature.cooperative_matrix_reductions_ext)] = .{
+        .llvm_name = null,
+        .description = "Enable cooperative_matrix_reductions_ext capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_EXT_cooperative_matrix_maintenance1,
         }),
     };
     result[@backingInt(Feature.cull_distance)] = .{
         .llvm_name = null,
         .description = "Enable cull_distance capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.demote_to_helper_invocation)] = .{
         .llvm_name = null,
@@ -429,24 +455,20 @@ pub const all_features = blk: {
     result[@backingInt(Feature.derivative_control)] = .{
         .llvm_name = null,
         .description = "Enable derivative_control capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.descriptor_heap_ext)] = .{
         .llvm_name = null,
         .description = "Enable descriptor_heap_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_descriptor_heap,
-            .v1_0,
+            .untyped_pointers_khr,
         }),
     };
     result[@backingInt(Feature.device_enqueue)] = .{
         .llvm_name = null,
         .description = "Enable device_enqueue capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.device_group)] = .{
         .llvm_name = null,
@@ -468,6 +490,7 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable dot_product_input4x8bit capability",
         .dependencies = featureSet(&[_]Feature{
+            .int8,
             .SPV_KHR_integer_dot_product,
             .v1_6,
         }),
@@ -501,36 +524,43 @@ pub const all_features = blk: {
         .description = "Enable expect_assume_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_expect_assume,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.float16)] = .{
         .llvm_name = null,
         .description = "Enable float16 capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.float16buffer)] = .{
         .llvm_name = null,
         .description = "Enable float16buffer capability",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.float4ext)] = .{
+        .llvm_name = null,
+        .description = "Enable float4ext capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .SPV_EXT_ocp_microscaling_types,
         }),
     };
     result[@backingInt(Feature.float64)] = .{
         .llvm_name = null,
         .description = "Enable float64 capability",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.float6ext)] = .{
+        .llvm_name = null,
+        .description = "Enable float6ext capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .SPV_EXT_ocp_microscaling_types,
         }),
     };
     result[@backingInt(Feature.float8cooperative_matrix_ext)] = .{
         .llvm_name = null,
         .description = "Enable float8cooperative_matrix_ext capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_float8,
-            .v1_0,
+            .cooperative_matrix_khr,
+            .float8ext,
         }),
     };
     result[@backingInt(Feature.float8ext)] = .{
@@ -538,7 +568,13 @@ pub const all_features = blk: {
         .description = "Enable float8ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_float8,
-            .v1_0,
+        }),
+    };
+    result[@backingInt(Feature.float8unsigned_e8m0ext)] = .{
+        .llvm_name = null,
+        .description = "Enable float8unsigned_e8m0ext capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_EXT_ocp_microscaling_types,
         }),
     };
     result[@backingInt(Feature.float_controls2)] = .{
@@ -546,7 +582,6 @@ pub const all_features = blk: {
         .description = "Enable float_controls2 capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_float_controls2,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fmakhr)] = .{
@@ -554,7 +589,6 @@ pub const all_features = blk: {
         .description = "Enable fmakhr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_fma,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fragment_barycentric_khr)] = .{
@@ -562,7 +596,6 @@ pub const all_features = blk: {
         .description = "Enable fragment_barycentric_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_fragment_shader_barycentric,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fragment_density_ext)] = .{
@@ -570,7 +603,6 @@ pub const all_features = blk: {
         .description = "Enable fragment_density_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_fragment_invocation_density,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fragment_fully_covered_ext)] = .{
@@ -578,7 +610,6 @@ pub const all_features = blk: {
         .description = "Enable fragment_fully_covered_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_fragment_fully_covered,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fragment_shader_pixel_interlock_ext)] = .{
@@ -586,7 +617,6 @@ pub const all_features = blk: {
         .description = "Enable fragment_shader_pixel_interlock_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_fragment_shader_interlock,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fragment_shader_sample_interlock_ext)] = .{
@@ -594,7 +624,6 @@ pub const all_features = blk: {
         .description = "Enable fragment_shader_sample_interlock_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_fragment_shader_interlock,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fragment_shader_shading_rate_interlock_ext)] = .{
@@ -602,7 +631,6 @@ pub const all_features = blk: {
         .description = "Enable fragment_shader_shading_rate_interlock_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_fragment_shader_interlock,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.fragment_shading_rate_khr)] = .{
@@ -610,35 +638,30 @@ pub const all_features = blk: {
         .description = "Enable fragment_shading_rate_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_fragment_shading_rate,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.generic_pointer)] = .{
         .llvm_name = null,
         .description = "Enable generic_pointer capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.geometry)] = .{
         .llvm_name = null,
         .description = "Enable geometry capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.geometry_point_size)] = .{
         .llvm_name = null,
         .description = "Enable geometry_point_size capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .geometry,
         }),
     };
     result[@backingInt(Feature.geometry_streams)] = .{
         .llvm_name = null,
         .description = "Enable geometry_streams capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .geometry,
         }),
     };
     result[@backingInt(Feature.group_non_uniform)] = .{
@@ -652,21 +675,21 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable group_non_uniform_arithmetic capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_3,
+            .group_non_uniform,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_ballot)] = .{
         .llvm_name = null,
         .description = "Enable group_non_uniform_ballot capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_3,
+            .group_non_uniform,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_clustered)] = .{
         .llvm_name = null,
         .description = "Enable group_non_uniform_clustered capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_3,
+            .group_non_uniform,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_partitioned_ext)] = .{
@@ -674,43 +697,42 @@ pub const all_features = blk: {
         .description = "Enable group_non_uniform_partitioned_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_subgroup_partitioned,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_quad)] = .{
         .llvm_name = null,
         .description = "Enable group_non_uniform_quad capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_3,
+            .group_non_uniform,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_rotate_khr)] = .{
         .llvm_name = null,
         .description = "Enable group_non_uniform_rotate_khr capability",
         .dependencies = featureSet(&[_]Feature{
+            .group_non_uniform,
             .SPV_KHR_subgroup_rotate,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_shuffle)] = .{
         .llvm_name = null,
         .description = "Enable group_non_uniform_shuffle capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_3,
+            .group_non_uniform,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_shuffle_relative)] = .{
         .llvm_name = null,
         .description = "Enable group_non_uniform_shuffle_relative capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_3,
+            .group_non_uniform,
         }),
     };
     result[@backingInt(Feature.group_non_uniform_vote)] = .{
         .llvm_name = null,
         .description = "Enable group_non_uniform_vote capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_3,
+            .group_non_uniform,
         }),
     };
     result[@backingInt(Feature.group_uniform_arithmetic_khr)] = .{
@@ -718,90 +740,85 @@ pub const all_features = blk: {
         .description = "Enable group_uniform_arithmetic_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_uniform_group_instructions,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.groups)] = .{
         .llvm_name = null,
         .description = "Enable groups capability",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.image1d)] = .{
+        .llvm_name = null,
+        .description = "Enable image1d capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .sampled1d,
         }),
     };
     result[@backingInt(Feature.image_basic)] = .{
         .llvm_name = null,
         .description = "Enable image_basic capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.image_buffer)] = .{
         .llvm_name = null,
         .description = "Enable image_buffer capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .sampled_buffer,
         }),
     };
     result[@backingInt(Feature.image_cube_array)] = .{
         .llvm_name = null,
         .description = "Enable image_cube_array capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .sampled_cube_array,
         }),
     };
     result[@backingInt(Feature.image_gather_extended)] = .{
         .llvm_name = null,
         .description = "Enable image_gather_extended capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.image_mipmap)] = .{
         .llvm_name = null,
         .description = "Enable image_mipmap capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .image_basic,
         }),
     };
     result[@backingInt(Feature.image_ms_array)] = .{
         .llvm_name = null,
         .description = "Enable image_ms_array capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.image_query)] = .{
         .llvm_name = null,
         .description = "Enable image_query capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.image_read_write)] = .{
         .llvm_name = null,
         .description = "Enable image_read_write capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .image_basic,
         }),
     };
     result[@backingInt(Feature.image_rect)] = .{
         .llvm_name = null,
         .description = "Enable image_rect capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .sampled_rect,
         }),
     };
     result[@backingInt(Feature.input_attachment)] = .{
         .llvm_name = null,
         .description = "Enable input_attachment capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.input_attachment_array_dynamic_indexing)] = .{
         .llvm_name = null,
         .description = "Enable input_attachment_array_dynamic_indexing capability",
         .dependencies = featureSet(&[_]Feature{
+            .input_attachment,
             .SPV_EXT_descriptor_indexing,
             .v1_5,
         }),
@@ -810,73 +827,55 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable input_attachment_array_non_uniform_indexing capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_descriptor_indexing,
-            .v1_5,
+            .input_attachment,
+            .shader_non_uniform,
         }),
     };
     result[@backingInt(Feature.int16)] = .{
         .llvm_name = null,
         .description = "Enable int16 capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.int64)] = .{
         .llvm_name = null,
         .description = "Enable int64 capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.int64atomics)] = .{
         .llvm_name = null,
         .description = "Enable int64atomics capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .int64,
         }),
     };
     result[@backingInt(Feature.int64image_ext)] = .{
         .llvm_name = null,
         .description = "Enable int64image_ext capability",
         .dependencies = featureSet(&[_]Feature{
+            .int64,
             .SPV_EXT_shader_image_int64,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.int8)] = .{
         .llvm_name = null,
         .description = "Enable int8 capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.interpolation_function)] = .{
         .llvm_name = null,
         .description = "Enable interpolation_function capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.literal_sampler)] = .{
         .llvm_name = null,
         .description = "Enable literal_sampler capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.long_vector_ext)] = .{
         .llvm_name = null,
         .description = "Enable long_vector_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_long_vector,
-            .v1_0,
-        }),
-    };
-    result[@backingInt(Feature.matrix)] = .{
-        .llvm_name = null,
-        .description = "Enable matrix capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.mesh_shading_ext)] = .{
@@ -884,15 +883,12 @@ pub const all_features = blk: {
         .description = "Enable mesh_shading_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_mesh_shader,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.min_lod)] = .{
         .llvm_name = null,
         .description = "Enable min_lod capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.multi_view)] = .{
         .llvm_name = null,
@@ -906,7 +902,14 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable multi_viewport capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .geometry,
+        }),
+    };
+    result[@backingInt(Feature.mx_int8ext)] = .{
+        .llvm_name = null,
+        .description = "Enable mx_int8ext capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_EXT_ocp_microscaling_types,
         }),
     };
     result[@backingInt(Feature.named_barrier)] = .{
@@ -921,37 +924,26 @@ pub const all_features = blk: {
         .description = "Enable opt_none_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_optnone,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.pipe_storage)] = .{
         .llvm_name = null,
         .description = "Enable pipe_storage capability",
         .dependencies = featureSet(&[_]Feature{
+            .pipes,
             .v1_1,
         }),
     };
     result[@backingInt(Feature.pipes)] = .{
         .llvm_name = null,
         .description = "Enable pipes capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
-    };
-    result[@backingInt(Feature.poison_freeze_khr)] = .{
-        .llvm_name = null,
-        .description = "Enable poison_freeze_khr capability",
-        .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_poison_freeze,
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.quad_control_khr)] = .{
         .llvm_name = null,
         .description = "Enable quad_control_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_quad_control,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.ray_cull_mask_khr)] = .{
@@ -959,7 +951,6 @@ pub const all_features = blk: {
         .description = "Enable ray_cull_mask_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_ray_cull_mask,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.ray_query_khr)] = .{
@@ -967,7 +958,6 @@ pub const all_features = blk: {
         .description = "Enable ray_query_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_ray_query,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.ray_query_position_fetch_khr)] = .{
@@ -975,15 +965,6 @@ pub const all_features = blk: {
         .description = "Enable ray_query_position_fetch_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_ray_tracing_position_fetch,
-            .v1_0,
-        }),
-    };
-    result[@backingInt(Feature.ray_query_provisional_khr)] = .{
-        .llvm_name = null,
-        .description = "Enable ray_query_provisional_khr capability",
-        .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_ray_query,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.ray_tracing_khr)] = .{
@@ -991,15 +972,21 @@ pub const all_features = blk: {
         .description = "Enable ray_tracing_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_ray_tracing,
-            .v1_0,
         }),
     };
-    result[@backingInt(Feature.ray_tracing_opacity_micromap_ext)] = .{
+    result[@backingInt(Feature.ray_tracing_opacity_micromap_execution_mode_khr)] = .{
         .llvm_name = null,
-        .description = "Enable ray_tracing_opacity_micromap_ext capability",
+        .description = "Enable ray_tracing_opacity_micromap_execution_mode_khr capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_KHR_opacity_micromap,
+        }),
+    };
+    result[@backingInt(Feature.ray_tracing_opacity_micromap_khr)] = .{
+        .llvm_name = null,
+        .description = "Enable ray_tracing_opacity_micromap_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_opacity_micromap,
-            .v1_0,
+            .SPV_KHR_opacity_micromap,
         }),
     };
     result[@backingInt(Feature.ray_tracing_position_fetch_khr)] = .{
@@ -1007,15 +994,6 @@ pub const all_features = blk: {
         .description = "Enable ray_tracing_position_fetch_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_ray_tracing_position_fetch,
-            .v1_0,
-        }),
-    };
-    result[@backingInt(Feature.ray_tracing_provisional_khr)] = .{
-        .llvm_name = null,
-        .description = "Enable ray_tracing_provisional_khr capability",
-        .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_ray_tracing,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.ray_traversal_primitive_culling_khr)] = .{
@@ -1024,7 +1002,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_ray_query,
             .SPV_KHR_ray_tracing,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.replicated_composites_ext)] = .{
@@ -1032,7 +1009,22 @@ pub const all_features = blk: {
         .description = "Enable replicated_composites_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_replicated_composites,
-            .v1_0,
+        }),
+    };
+    result[@backingInt(Feature.rounding_mode_rte)] = .{
+        .llvm_name = null,
+        .description = "Enable rounding_mode_rte capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_KHR_float_controls,
+            .v1_4,
+        }),
+    };
+    result[@backingInt(Feature.rounding_mode_rtz)] = .{
+        .llvm_name = null,
+        .description = "Enable rounding_mode_rtz capability",
+        .dependencies = featureSet(&[_]Feature{
+            .SPV_KHR_float_controls,
+            .v1_4,
         }),
     };
     result[@backingInt(Feature.runtime_descriptor_array)] = .{
@@ -1048,58 +1040,50 @@ pub const all_features = blk: {
         .description = "Enable sample_mask_post_depth_coverage capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_post_depth_coverage,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.sample_rate_shading)] = .{
         .llvm_name = null,
         .description = "Enable sample_rate_shading capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.sampled1d)] = .{
+        .llvm_name = null,
+        .description = "Enable sampled1d capability",
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.sampled_buffer)] = .{
         .llvm_name = null,
         .description = "Enable sampled_buffer capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.sampled_cube_array)] = .{
         .llvm_name = null,
         .description = "Enable sampled_cube_array capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.sampled_image_array_dynamic_indexing)] = .{
         .llvm_name = null,
         .description = "Enable sampled_image_array_dynamic_indexing capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.sampled_image_array_non_uniform_indexing)] = .{
         .llvm_name = null,
         .description = "Enable sampled_image_array_non_uniform_indexing capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_descriptor_indexing,
-            .v1_5,
+            .shader_non_uniform,
         }),
     };
     result[@backingInt(Feature.sampled_rect)] = .{
         .llvm_name = null,
         .description = "Enable sampled_rect capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.shader64bit_indexing_ext)] = .{
         .llvm_name = null,
         .description = "Enable shader64bit_indexing_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_64bit_indexing,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.shader_clock_khr)] = .{
@@ -1107,15 +1091,14 @@ pub const all_features = blk: {
         .description = "Enable shader_clock_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_shader_clock,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.shader_invocation_reorder_ext)] = .{
         .llvm_name = null,
         .description = "Enable shader_invocation_reorder_ext capability",
         .dependencies = featureSet(&[_]Feature{
+            .ray_tracing_khr,
             .SPV_EXT_shader_invocation_reorder,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.shader_layer)] = .{
@@ -1144,8 +1127,8 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable shader_viewport_index_layer_ext capability",
         .dependencies = featureSet(&[_]Feature{
+            .multi_viewport,
             .SPV_EXT_shader_viewport_index_layer,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.signed_zero_inf_nan_preserve)] = .{
@@ -1159,13 +1142,23 @@ pub const all_features = blk: {
     result[@backingInt(Feature.sparse_residency)] = .{
         .llvm_name = null,
         .description = "Enable sparse_residency capability",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.split_barrier_ext)] = .{
+        .llvm_name = null,
+        .description = "Enable split_barrier_ext capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .SPV_EXT_split_barrier,
         }),
     };
     result[@backingInt(Feature.SPV_EXT_arithmetic_fence)] = .{
         .llvm_name = null,
         .description = "Enable SPV_EXT_arithmetic_fence extension",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.SPV_EXT_cooperative_matrix_maintenance1)] = .{
+        .llvm_name = null,
+        .description = "Enable SPV_EXT_cooperative_matrix_maintenance1 extension",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.SPV_EXT_demote_to_helper_invocation)] = .{
@@ -1213,6 +1206,11 @@ pub const all_features = blk: {
         .description = "Enable SPV_EXT_mesh_shader extension",
         .dependencies = featureSet(&[_]Feature{}),
     };
+    result[@backingInt(Feature.SPV_EXT_ocp_microscaling_types)] = .{
+        .llvm_name = null,
+        .description = "Enable SPV_EXT_ocp_microscaling_types extension",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
     result[@backingInt(Feature.SPV_EXT_opacity_micromap)] = .{
         .llvm_name = null,
         .description = "Enable SPV_EXT_opacity_micromap extension",
@@ -1221,11 +1219,6 @@ pub const all_features = blk: {
     result[@backingInt(Feature.SPV_EXT_optnone)] = .{
         .llvm_name = null,
         .description = "Enable SPV_EXT_optnone extension",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.SPV_EXT_physical_storage_buffer)] = .{
-        .llvm_name = null,
-        .description = "Enable SPV_EXT_physical_storage_buffer extension",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.SPV_EXT_replicated_composites)] = .{
@@ -1281,6 +1274,11 @@ pub const all_features = blk: {
     result[@backingInt(Feature.SPV_EXT_shader_viewport_index_layer)] = .{
         .llvm_name = null,
         .description = "Enable SPV_EXT_shader_viewport_index_layer extension",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.SPV_EXT_split_barrier)] = .{
+        .llvm_name = null,
+        .description = "Enable SPV_EXT_split_barrier extension",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.SPV_KHR_16bit_storage)] = .{
@@ -1368,9 +1366,9 @@ pub const all_features = blk: {
         .description = "Enable SPV_KHR_multiview extension",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.SPV_KHR_poison_freeze)] = .{
+    result[@backingInt(Feature.SPV_KHR_opacity_micromap)] = .{
         .llvm_name = null,
-        .description = "Enable SPV_KHR_poison_freeze extension",
+        .description = "Enable SPV_KHR_opacity_micromap extension",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.SPV_KHR_post_depth_coverage)] = .{
@@ -1463,7 +1461,6 @@ pub const all_features = blk: {
         .description = "Enable stencil_export_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_stencil_export,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.storage_buffer16bit_access)] = .{
@@ -1485,60 +1482,46 @@ pub const all_features = blk: {
     result[@backingInt(Feature.storage_buffer_array_dynamic_indexing)] = .{
         .llvm_name = null,
         .description = "Enable storage_buffer_array_dynamic_indexing capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.storage_buffer_array_non_uniform_indexing)] = .{
         .llvm_name = null,
         .description = "Enable storage_buffer_array_non_uniform_indexing capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_descriptor_indexing,
-            .v1_5,
+            .shader_non_uniform,
         }),
     };
     result[@backingInt(Feature.storage_image_array_dynamic_indexing)] = .{
         .llvm_name = null,
         .description = "Enable storage_image_array_dynamic_indexing capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.storage_image_array_non_uniform_indexing)] = .{
         .llvm_name = null,
         .description = "Enable storage_image_array_non_uniform_indexing capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_descriptor_indexing,
-            .v1_5,
+            .shader_non_uniform,
         }),
     };
     result[@backingInt(Feature.storage_image_extended_formats)] = .{
         .llvm_name = null,
         .description = "Enable storage_image_extended_formats capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.storage_image_multisample)] = .{
         .llvm_name = null,
         .description = "Enable storage_image_multisample capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.storage_image_read_without_format)] = .{
         .llvm_name = null,
         .description = "Enable storage_image_read_without_format capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.storage_image_write_without_format)] = .{
         .llvm_name = null,
         .description = "Enable storage_image_write_without_format capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.storage_input_output16)] = .{
         .llvm_name = null,
@@ -1568,6 +1551,7 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable storage_texel_buffer_array_dynamic_indexing capability",
         .dependencies = featureSet(&[_]Feature{
+            .image_buffer,
             .SPV_EXT_descriptor_indexing,
             .v1_5,
         }),
@@ -1576,8 +1560,8 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable storage_texel_buffer_array_non_uniform_indexing capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_descriptor_indexing,
-            .v1_5,
+            .image_buffer,
+            .shader_non_uniform,
         }),
     };
     result[@backingInt(Feature.subgroup_ballot_khr)] = .{
@@ -1585,13 +1569,13 @@ pub const all_features = blk: {
         .description = "Enable subgroup_ballot_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_shader_ballot,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.subgroup_dispatch)] = .{
         .llvm_name = null,
         .description = "Enable subgroup_dispatch capability",
         .dependencies = featureSet(&[_]Feature{
+            .device_enqueue,
             .v1_1,
         }),
     };
@@ -1600,21 +1584,18 @@ pub const all_features = blk: {
         .description = "Enable subgroup_vote_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_subgroup_vote,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.tessellation)] = .{
         .llvm_name = null,
         .description = "Enable tessellation capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.tessellation_point_size)] = .{
         .llvm_name = null,
         .description = "Enable tessellation_point_size capability",
         .dependencies = featureSet(&[_]Feature{
-            .v1_0,
+            .tessellation,
         }),
     };
     result[@backingInt(Feature.tile_image_color_read_access_ext)] = .{
@@ -1622,7 +1603,6 @@ pub const all_features = blk: {
         .description = "Enable tile_image_color_read_access_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_tile_image,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.tile_image_depth_read_access_ext)] = .{
@@ -1630,7 +1610,6 @@ pub const all_features = blk: {
         .description = "Enable tile_image_depth_read_access_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_tile_image,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.tile_image_stencil_read_access_ext)] = .{
@@ -1638,45 +1617,37 @@ pub const all_features = blk: {
         .description = "Enable tile_image_stencil_read_access_ext capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_EXT_shader_tile_image,
-            .v1_0,
         }),
     };
     result[@backingInt(Feature.transform_feedback)] = .{
         .llvm_name = null,
         .description = "Enable transform_feedback capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.uniform_and_storage_buffer16bit_access)] = .{
         .llvm_name = null,
         .description = "Enable uniform_and_storage_buffer16bit_access capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_16bit_storage,
-            .v1_3,
+            .storage_buffer16bit_access,
         }),
     };
     result[@backingInt(Feature.uniform_and_storage_buffer8bit_access)] = .{
         .llvm_name = null,
         .description = "Enable uniform_and_storage_buffer8bit_access capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_8bit_storage,
-            .v1_5,
+            .storage_buffer8bit_access,
         }),
     };
     result[@backingInt(Feature.uniform_buffer_array_dynamic_indexing)] = .{
         .llvm_name = null,
         .description = "Enable uniform_buffer_array_dynamic_indexing capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.uniform_buffer_array_non_uniform_indexing)] = .{
         .llvm_name = null,
         .description = "Enable uniform_buffer_array_non_uniform_indexing capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_descriptor_indexing,
-            .v1_5,
+            .shader_non_uniform,
         }),
     };
     result[@backingInt(Feature.uniform_decoration)] = .{
@@ -1690,6 +1661,7 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable uniform_texel_buffer_array_dynamic_indexing capability",
         .dependencies = featureSet(&[_]Feature{
+            .sampled_buffer,
             .SPV_EXT_descriptor_indexing,
             .v1_5,
         }),
@@ -1698,8 +1670,8 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable uniform_texel_buffer_array_non_uniform_indexing capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_EXT_descriptor_indexing,
-            .v1_5,
+            .sampled_buffer,
+            .shader_non_uniform,
         }),
     };
     result[@backingInt(Feature.untyped_pointers_khr)] = .{
@@ -1707,20 +1679,12 @@ pub const all_features = blk: {
         .description = "Enable untyped_pointers_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_untyped_pointers,
-            .v1_0,
         }),
-    };
-    result[@backingInt(Feature.v1_0)] = .{
-        .llvm_name = null,
-        .description = "Enable v1_0 extension",
-        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.v1_1)] = .{
         .llvm_name = null,
         .description = "Enable v1_1 extension",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.v1_2)] = .{
         .llvm_name = null,
@@ -1761,8 +1725,7 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable variable_pointers capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_variable_pointers,
-            .v1_3,
+            .variable_pointers_storage_buffer,
         }),
     };
     result[@backingInt(Feature.variable_pointers_storage_buffer)] = .{
@@ -1776,9 +1739,7 @@ pub const all_features = blk: {
     result[@backingInt(Feature.vector16)] = .{
         .llvm_name = null,
         .description = "Enable vector16 capability",
-        .dependencies = featureSet(&[_]Feature{
-            .v1_0,
-        }),
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.vulkan_memory_model)] = .{
         .llvm_name = null,
@@ -1800,16 +1761,14 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable workgroup_memory_explicit_layout16bit_access_khr capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_workgroup_memory_explicit_layout,
-            .v1_0,
+            .workgroup_memory_explicit_layout_khr,
         }),
     };
     result[@backingInt(Feature.workgroup_memory_explicit_layout8bit_access_khr)] = .{
         .llvm_name = null,
         .description = "Enable workgroup_memory_explicit_layout8bit_access_khr capability",
         .dependencies = featureSet(&[_]Feature{
-            .SPV_KHR_workgroup_memory_explicit_layout,
-            .v1_0,
+            .workgroup_memory_explicit_layout_khr,
         }),
     };
     result[@backingInt(Feature.workgroup_memory_explicit_layout_khr)] = .{
@@ -1817,7 +1776,6 @@ pub const all_features = blk: {
         .description = "Enable workgroup_memory_explicit_layout_khr capability",
         .dependencies = featureSet(&[_]Feature{
             .SPV_KHR_workgroup_memory_explicit_layout,
-            .v1_0,
         }),
     };
     const ti = @typeInfo(Feature);
@@ -1829,16 +1787,89 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
+    pub const opencl_v2_1: CpuModel = .{
+        .name = "opencl_v2_1",
+        .llvm_name = null,
         .features = featureSet(&[_]Feature{}),
     };
-    pub const opencl_v2: CpuModel = .{
-        .name = "opencl_v2",
+    pub const opencl_v2_2: CpuModel = .{
+        .name = "opencl_v2_2",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .v1_2,
+        }),
+    };
+    pub const opencl_v3_1: CpuModel = .{
+        .name = "opencl_v3_1",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_4,
+        }),
+    };
+    pub const opengl_v4_6: CpuModel = .{
+        .name = "opengl_v4_6",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_4,
+        }),
+    };
+    pub const v1_0: CpuModel = .{
+        .name = "v1_0",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{}),
+    };
+    pub const v1_1: CpuModel = .{
+        .name = "v1_1",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_1,
+        }),
+    };
+    pub const v1_2: CpuModel = .{
+        .name = "v1_2",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_2,
+        }),
+    };
+    pub const v1_3: CpuModel = .{
+        .name = "v1_3",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_3,
+        }),
+    };
+    pub const v1_4: CpuModel = .{
+        .name = "v1_4",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_4,
+        }),
+    };
+    pub const v1_5: CpuModel = .{
+        .name = "v1_5",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_5,
+        }),
+    };
+    pub const v1_6: CpuModel = .{
+        .name = "v1_6",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_6,
+        }),
+    };
+    pub const vulkan_v1_0: CpuModel = .{
+        .name = "vulkan_v1_0",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{}),
+    };
+    pub const vulkan_v1_1: CpuModel = .{
+        .name = "vulkan_v1_1",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_3,
         }),
     };
     pub const vulkan_v1_2: CpuModel = .{
@@ -1846,6 +1877,20 @@ pub const cpu = struct {
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .v1_5,
+        }),
+    };
+    pub const vulkan_v1_3: CpuModel = .{
+        .name = "vulkan_v1_3",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_6,
+        }),
+    };
+    pub const vulkan_v1_4: CpuModel = .{
+        .name = "vulkan_v1_4",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .v1_6,
         }),
     };
 };

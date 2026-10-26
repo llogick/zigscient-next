@@ -393,6 +393,10 @@ pub const CallingConvention = union(enum(u8)) {
     spirv_task: SpirvKernelOptions,
     spirv_mesh: SpirvMeshOptions,
 
+    // Calling conventions for the `z80` architecture.
+    z80_cet,
+    z80_tiflags,
+
     // Calling conventions for the `ez80` architecture.
     ez80_cet,
     ez80_tiflags,

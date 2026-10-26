@@ -57,7 +57,7 @@ pub const all_features = blk: {
 pub const cpu = struct {
     pub const xs1b: CpuModel = .{
         .name = "xs1b",
-        .llvm_name = null,
+        .llvm_name = "xs1b-generic",
         .features = featureSet(&[_]Feature{}),
     };
     pub const xs2a: CpuModel = .{

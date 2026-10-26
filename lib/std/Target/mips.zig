@@ -14,16 +14,8 @@ pub const Feature = enum {
     dspr3,
     eva,
     fix_r5900,
-    fp64,
-    fpxx,
     ginv,
-    gp64,
-    i6400,
-    i6500,
-    long_calls,
-    micromips,
     mips1,
-    mips16,
     mips2,
     mips3,
     mips32,
@@ -47,23 +39,12 @@ pub const Feature = enum {
     msa,
     mt,
     nan2008,
-    noabicalls,
+    no_unaligned_access,
     nomadd4,
-    nooddspreg,
-    notraps,
-    p5600,
-    ptr64,
     r5900,
     single_float,
-    soft_float,
-    strict_align,
-    sym32,
-    use_compact_branches,
-    use_indirect_jump_hazard,
-    use_tcc_in_div,
     vfpu,
     virt,
-    xgot,
 };
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
@@ -128,75 +109,27 @@ pub const all_features = blk: {
         .description = "Enable R5900 short loop erratum fix",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.fp64)] = .{
-        .llvm_name = "fp64",
-        .description = "Support 64-bit FP registers",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.fpxx)] = .{
-        .llvm_name = "fpxx",
-        .description = "Support for FPXX",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     result[@backingInt(Feature.ginv)] = .{
         .llvm_name = "ginv",
         .description = "Mips Global Invalidate ASE",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.gp64)] = .{
-        .llvm_name = "gp64",
-        .description = "General Purpose Registers are 64-bit wide",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.i6400)] = .{
-        .llvm_name = "i6400",
-        .description = "MIPS I6400 Processor",
-        .dependencies = featureSet(&[_]Feature{
-            .mips64r6,
-            .msa,
-        }),
-    };
-    result[@backingInt(Feature.i6500)] = .{
-        .llvm_name = "i6500",
-        .description = "MIPS I6500 Processor",
-        .dependencies = featureSet(&[_]Feature{
-            .mips64r6,
-            .msa,
-        }),
-    };
-    result[@backingInt(Feature.long_calls)] = .{
-        .llvm_name = "long-calls",
-        .description = "Disable use of the jal instruction",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.micromips)] = .{
-        .llvm_name = "micromips",
-        .description = "microMips mode",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     result[@backingInt(Feature.mips1)] = .{
         .llvm_name = "mips1",
-        .description = "Mips I ISA Support [highly experimental]",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.mips16)] = .{
-        .llvm_name = "mips16",
-        .description = "Mips16 mode",
+        .description = "Mips I ISA Support",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.mips2)] = .{
         .llvm_name = "mips2",
-        .description = "Mips II ISA Support [highly experimental]",
+        .description = "Mips II ISA Support",
         .dependencies = featureSet(&[_]Feature{
             .mips1,
         }),
     };
     result[@backingInt(Feature.mips3)] = .{
         .llvm_name = "mips3",
-        .description = "MIPS III ISA Support [highly experimental]",
+        .description = "MIPS III ISA Support",
         .dependencies = featureSet(&[_]Feature{
-            .fp64,
-            .gp64,
             .mips2,
             .mips3_32,
             .mips3_32r2,
@@ -240,7 +173,6 @@ pub const all_features = blk: {
         .description = "Mips32r6 ISA Support [experimental]",
         .dependencies = featureSet(&[_]Feature{
             .abs2008,
-            .fp64,
             .mips32r5,
             .nan2008,
         }),
@@ -347,36 +279,14 @@ pub const all_features = blk: {
         .description = "IEEE 754-2008 NaN encoding",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.noabicalls)] = .{
-        .llvm_name = "noabicalls",
-        .description = "Disable SVR4-style position-independent code",
+    result[@backingInt(Feature.no_unaligned_access)] = .{
+        .llvm_name = "strict-align",
+        .description = "Disable unaligned load store for r6",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.nomadd4)] = .{
         .llvm_name = "nomadd4",
         .description = "Disable 4-operand madd.fmt and related instructions",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.nooddspreg)] = .{
-        .llvm_name = "nooddspreg",
-        .description = "Disable odd numbered single-precision registers",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.notraps)] = .{
-        .llvm_name = null,
-        .description = "Disable trap instructions",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.p5600)] = .{
-        .llvm_name = "p5600",
-        .description = "The P5600 Processor",
-        .dependencies = featureSet(&[_]Feature{
-            .mips32r5,
-        }),
-    };
-    result[@backingInt(Feature.ptr64)] = .{
-        .llvm_name = "ptr64",
-        .description = "Pointers are 64-bit wide",
         .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.r5900)] = .{
@@ -393,36 +303,6 @@ pub const all_features = blk: {
         .description = "Only supports single precision float",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.soft_float)] = .{
-        .llvm_name = "soft-float",
-        .description = "Does not support floating point instructions",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.strict_align)] = .{
-        .llvm_name = "strict-align",
-        .description = "Disable unaligned load store for r6",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.sym32)] = .{
-        .llvm_name = "sym32",
-        .description = "Symbols are 32 bit on Mips64",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.use_compact_branches)] = .{
-        .llvm_name = "use-compact-branches",
-        .description = "Use compact branch instructions for MIPS32R6/MIPS64R6",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.use_indirect_jump_hazard)] = .{
-        .llvm_name = "use-indirect-jump-hazard",
-        .description = "Use indirect jump guards to prevent certain speculation based attacks",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.use_tcc_in_div)] = .{
-        .llvm_name = "use-tcc-in-div",
-        .description = "Force the assembler to use trapping",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     result[@backingInt(Feature.vfpu)] = .{
         .llvm_name = "vfpu",
         .description = "Enable vector FPU instructions",
@@ -431,11 +311,6 @@ pub const all_features = blk: {
     result[@backingInt(Feature.virt)] = .{
         .llvm_name = "virt",
         .description = "Mips Virtualization ASE",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.xgot)] = .{
-        .llvm_name = "xgot",
-        .description = "Assume 32-bit GOT",
         .dependencies = featureSet(&[_]Feature{}),
     };
     const ti = @typeInfo(Feature);
@@ -449,32 +324,27 @@ pub const all_features = blk: {
 pub const cpu = struct {
     pub const allegrex: CpuModel = .{
         .name = "allegrex",
-        .llvm_name = null,
+        .llvm_name = "mips2",
         .features = featureSet(&[_]Feature{
             .mips2,
-            .notraps,
             .single_float,
-        }),
-    };
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
-        .features = featureSet(&[_]Feature{
-            .mips32,
+            .vfpu,
         }),
     };
     pub const @"i6400": CpuModel = .{
         .name = "i6400",
         .llvm_name = "i6400",
         .features = featureSet(&[_]Feature{
-            .i6400,
+            .mips64r6,
+            .msa,
         }),
     };
     pub const @"i6500": CpuModel = .{
         .name = "i6500",
         .llvm_name = "i6500",
         .features = featureSet(&[_]Feature{
-            .i6500,
+            .mips64r6,
+            .msa,
         }),
     };
     pub const mips1: CpuModel = .{
@@ -540,13 +410,6 @@ pub const cpu = struct {
             .mips4,
         }),
     };
-    pub const mips5: CpuModel = .{
-        .name = "mips5",
-        .llvm_name = "mips5",
-        .features = featureSet(&[_]Feature{
-            .mips5,
-        }),
-    };
     pub const mips64: CpuModel = .{
         .name = "mips64",
         .llvm_name = "mips64",
@@ -600,16 +463,14 @@ pub const cpu = struct {
         .name = "p5600",
         .llvm_name = "p5600",
         .features = featureSet(&[_]Feature{
-            .p5600,
+            .mips32r5,
         }),
     };
     pub const r3000a: CpuModel = .{
         .name = "r3000a",
-        .llvm_name = null,
+        .llvm_name = "mips1",
         .features = featureSet(&[_]Feature{
             .mips1,
-            .notraps,
-            .soft_float,
         }),
     };
     pub const r5900: CpuModel = .{

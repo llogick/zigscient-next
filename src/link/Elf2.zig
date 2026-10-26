@@ -5076,8 +5076,6 @@ fn create(
         .openbsd => .OPENBSD,
         .cuda => .CUDA,
         .amdhsa => .AMDGPU_HSA,
-        .amdpal => .AMDGPU_PAL,
-        .mesa3d => .AMDGPU_MESA3D,
     };
     const @"type": EhdrType = switch (comp.config.output_mode) {
         .Exe => if (comp.config.pie or target.os.tag == .haiku) .DYN else .EXEC,
@@ -5704,11 +5702,10 @@ fn initHeaders(
             ehdr.shoff = 0;
             ehdr.flags = switch (machine) {
                 .LOONGARCH => .{ .loongarch = .{
-                    .base_abi_modifier = mod: {
-                        const cpu = comp.getTarget().cpu;
-                        if (cpu.has(.loongarch, .d)) break :mod .d;
-                        if (cpu.has(.loongarch, .f)) break :mod .f;
-                        break :mod .s;
+                    .base_abi_modifier = switch (comp.getTarget().abi) {
+                        .gnusf, .muslsf => .s,
+                        .gnuf32, .muslf32 => .f,
+                        else => .d,
                     },
                     .abi_extension = .base,
                     .abi_version = 1,

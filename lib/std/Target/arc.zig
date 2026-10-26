@@ -31,8 +31,8 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic: CpuModel = .{
-        .name = "generic",
+    pub const arcv2: CpuModel = .{
+        .name = "arcv2",
         .llvm_name = "generic",
         .features = featureSet(&[_]Feature{}),
     };

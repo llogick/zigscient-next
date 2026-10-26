@@ -62,9 +62,7 @@ pub const Os = struct {
         wasi,
 
         amdhsa,
-        amdpal,
         cuda,
-        mesa3d,
         nvcl,
         opencl,
         opengl,
@@ -171,8 +169,6 @@ pub const Os = struct {
 
                 .emscripten,
 
-                .mesa3d,
-
                 .ashetos,
                 => .none,
 
@@ -205,7 +201,6 @@ pub const Os = struct {
                 .wasi,
 
                 .amdhsa,
-                .amdpal,
                 .cuda,
                 .nvcl,
                 .opencl,
@@ -409,8 +404,6 @@ pub const Os = struct {
                 .gba,
 
                 .emscripten,
-
-                .mesa3d,
 
                 .ashetos,
                 => .{ .none = {} },
@@ -668,12 +661,6 @@ pub const Os = struct {
                         .max = .{ .major = 7, .minor = 2, .patch = 3 },
                     },
                 },
-                .amdpal => .{
-                    .semver = .{
-                        .min = .{ .major = 1, .minor = 1, .patch = 0 },
-                        .max = .{ .major = 3, .minor = 5, .patch = 0 },
-                    },
-                },
                 .cuda => .{
                     .semver = .{
                         .min = .{ .major = 12, .minor = 5, .patch = 0 },
@@ -684,26 +671,32 @@ pub const Os = struct {
                 .opencl,
                 => .{
                     .semver = .{
-                        .min = .{ .major = 2, .minor = 2, .patch = 0 },
-                        .max = .{ .major = 3, .minor = 0, .patch = 19 },
+                        .min = .{ .major = 2, .minor = 1, .patch = 0 },
+                        .max = .{ .major = 3, .minor = 1, .patch = 19 },
                     },
                 },
                 .opengl => .{
                     .semver = .{
-                        .min = .{ .major = 4, .minor = 5, .patch = 0 },
+                        .min = .{ .major = 4, .minor = 6, .patch = 0 },
                         .max = .{ .major = 4, .minor = 6, .patch = 0 },
                     },
                 },
                 .tios => .{
-                    .semver = .{
-                        .min = .{ .major = 5, .minor = 0, .patch = 0 },
-                        .max = .{ .major = 5, .minor = 8, .patch = 4 },
+                    .semver = switch (arch) {
+                        .z80 => .{
+                            .min = .{ .major = 1, .minor = 3, .patch = 0 },
+                            .max = .{ .major = 4, .minor = 2, .patch = 0 },
+                        },
+                        else => .{
+                            .min = .{ .major = 5, .minor = 0, .patch = 0 },
+                            .max = .{ .major = 5, .minor = 8, .patch = 4 },
+                        },
                     },
                 },
                 .vulkan => .{
                     .semver = .{
-                        .min = .{ .major = 1, .minor = 2, .patch = 0 },
-                        .max = .{ .major = 1, .minor = 4, .patch = 352 },
+                        .min = .{ .major = 1, .minor = 0, .patch = 0 },
+                        .max = .{ .major = 1, .minor = 4, .patch = 366 },
                     },
                 },
             };
@@ -766,22 +759,21 @@ pub const bpf = @import("Target/bpf.zig");
 pub const csky = @import("Target/csky.zig");
 pub const hexagon = @import("Target/hexagon.zig");
 pub const hppa = @import("Target/hppa.zig");
-pub const kalimba = @import("Target/generic.zig");
 pub const kvx = @import("Target/kvx.zig");
 pub const lanai = @import("Target/lanai.zig");
 pub const loongarch = @import("Target/loongarch.zig");
 pub const m68k = @import("Target/m68k.zig");
-pub const m88k = @import("Target/generic.zig");
-pub const microblaze = @import("Target/generic.zig");
+pub const m88k = @import("Target/m88k.zig");
+pub const microblaze = @import("Target/microblaze.zig");
 pub const mips = @import("Target/mips.zig");
 pub const msp430 = @import("Target/msp430.zig");
 pub const nvptx = @import("Target/nvptx.zig");
-pub const or1k = @import("Target/generic.zig");
+pub const or1k = @import("Target/or1k.zig");
 pub const powerpc = @import("Target/powerpc.zig");
 pub const propeller = @import("Target/propeller.zig");
 pub const riscv = @import("Target/riscv.zig");
 pub const s390x = @import("Target/s390x.zig");
-pub const sh = @import("Target/generic.zig");
+pub const sh = @import("Target/sh.zig");
 pub const sparc = @import("Target/sparc.zig");
 pub const spirv = @import("Target/spirv.zig");
 pub const spork8 = @import("Target/generic.zig");
@@ -790,7 +782,7 @@ pub const wasm = @import("Target/wasm.zig");
 pub const x86 = @import("Target/x86.zig");
 pub const xcore = @import("Target/xcore.zig");
 pub const xtensa = @import("Target/xtensa.zig");
-pub const z80 = @import("Target/generic.zig");
+pub const z80 = @import("Target/z80.zig");
 
 pub const Abi = enum {
     none,
@@ -918,6 +910,8 @@ pub const Abi = enum {
                 // Soft float tends to be more common for MIPS.
                 .mips,
                 .mipsel,
+                .sh,
+                .sheb,
                 => .eabi,
                 else => .none,
             },
@@ -925,14 +919,19 @@ pub const Abi = enum {
                 .arm,
                 => .eabi,
                 .powerpc,
+                .sh,
                 => .eabihf,
                 else => .none,
             },
             .windows => .gnu,
             .uefi => .msvc,
+            .gba => .eabi,
             .@"3ds" => .eabihf,
             .wiiu => .eabihf,
-            .gba => .eabi,
+            .@"switch" => switch (arch) {
+                .arm => .eabihf,
+                else => .none,
+            },
             .psx => .eabi,
             .ps3 => .ilp32,
             .psp => .eabihf,
@@ -953,13 +952,10 @@ pub const Abi = enum {
             .tvos,
             .visionos,
             .watchos,
-            .@"switch",
             .ps4,
             .ps5,
             .amdhsa,
-            .amdpal,
             .cuda,
-            .mesa3d,
             .nvcl,
             .opencl,
             .opengl,
@@ -1097,10 +1093,8 @@ pub fn toElfMachine(target: *const Target) std.elf.EM {
         .avr => .AVR,
         .bpfeb, .bpfel => .BPF,
         .csky => .CSKY,
-        .ez80 => .Z80,
         .hexagon => .QDSP6,
         .hppa, .hppa64 => .PARISC,
-        .kalimba => .CSR_KALIMBA,
         .kvx => .KVX,
         .lanai => .LANAI,
         .loongarch32, .loongarch64 => .LOONGARCH,
@@ -1116,13 +1110,14 @@ pub fn toElfMachine(target: *const Target) std.elf.EM {
         .riscv32, .riscv32be, .riscv64, .riscv64be => .RISCV,
         .s390x => .S390,
         .sh, .sheb => .SH,
-        .sparc => if (target.cpu.hasAny(.sparc, &.{ .v8plus, .v9 })) .SPARC32PLUS else .SPARC,
+        .sparc => if (target.cpu.has(.sparc, .v9)) .SPARC32PLUS else .SPARC,
         .sparc64 => .SPARCV9,
         .ve => .VE,
         .x86_16, .x86 => .@"386",
         .x86_64 => .X86_64,
         .xcore => .XCORE,
         .xtensa, .xtensaeb => .XTENSA,
+        .z80, .ez80 => .Z80,
 
         .nvptx,
         .nvptx64,
@@ -1166,7 +1161,6 @@ pub fn toCoffMachine(target: *const Target) std.coff.IMAGE.FILE.MACHINE {
         .hexagon,
         .hppa,
         .hppa64,
-        .kalimba,
         .kvx,
         .lanai,
         .m88k,
@@ -1190,6 +1184,7 @@ pub fn toCoffMachine(target: *const Target) std.coff.IMAGE.FILE.MACHINE {
         .sparc64,
         .spirv32,
         .spirv64,
+        .spork8,
         .thumbeb,
         .ve,
         .wasm32,
@@ -1198,7 +1193,7 @@ pub fn toCoffMachine(target: *const Target) std.coff.IMAGE.FILE.MACHINE {
         .xcore,
         .xtensa,
         .xtensaeb,
-        .spork8,
+        .z80,
         => .UNKNOWN,
     };
 }
@@ -1375,7 +1370,6 @@ pub const Cpu = struct {
         hexagon,
         hppa,
         hppa64,
-        kalimba,
         kvx,
         lanai,
         loongarch32,
@@ -1420,6 +1414,7 @@ pub const Cpu = struct {
         xcore,
         xtensa,
         xtensaeb,
+        z80,
 
         /// An architecture family can encompass multiple architectures as represented by `Arch`.
         /// For a given family tag, it is guaranteed that an `std.Target.<tag>` namespace exists
@@ -1435,7 +1430,6 @@ pub const Cpu = struct {
             csky,
             hexagon,
             hppa,
-            kalimba,
             kvx,
             lanai,
             loongarch,
@@ -1472,10 +1466,8 @@ pub const Cpu = struct {
                 .avr => .avr,
                 .bpfeb, .bpfel => .bpf,
                 .csky => .csky,
-                .ez80 => .z80,
                 .hexagon => .hexagon,
                 .hppa, .hppa64 => .hppa,
-                .kalimba => .kalimba,
                 .kvx => .kvx,
                 .lanai => .lanai,
                 .loongarch32, .loongarch64 => .loongarch,
@@ -1493,12 +1485,13 @@ pub const Cpu = struct {
                 .sh, .sheb => .sh,
                 .sparc, .sparc64 => .sparc,
                 .spirv32, .spirv64 => .spirv,
+                .spork8 => .spork8,
                 .ve => .ve,
                 .wasm32, .wasm64 => .wasm,
                 .x86_16, .x86, .x86_64 => .x86,
                 .xcore => .xcore,
                 .xtensa, .xtensaeb => .xtensa,
-                .spork8 => .spork8,
+                .z80, .ez80 => .z80,
             };
         }
 
@@ -1695,6 +1688,13 @@ pub const Cpu = struct {
             };
         }
 
+        pub inline fn isZ80(arch: Arch) bool {
+            return switch (arch) {
+                .z80, .ez80 => true,
+                else => false,
+            };
+        }
+
         pub fn parseCpuModel(arch: Arch, cpu_name: []const u8) ?*const Cpu.Model {
             for (arch.allCpuModels()) |cpu| {
                 if (std.mem.eql(u8, cpu_name, cpu.name)) {
@@ -1713,8 +1713,8 @@ pub const Cpu = struct {
                 .avr,
                 .bpfel,
                 .csky,
+                .ez80,
                 .hexagon,
-                .kalimba,
                 .kvx,
                 .loongarch32,
                 .loongarch64,
@@ -1737,7 +1737,7 @@ pub const Cpu = struct {
                 .x86_64,
                 .xcore,
                 .xtensa,
-                .ez80,
+                .z80,
                 => .little,
 
                 .aarch64_be,
@@ -2027,12 +2027,16 @@ pub const Cpu = struct {
                 .spirv_mesh,
                 => &.{ .spirv32, .spirv64 },
 
+                .spork8,
+                => &.{.spork8},
+
+                .z80_cet,
+                .z80_tiflags,
+                => &.{.z80},
+
                 .ez80_cet,
                 .ez80_tiflags,
                 => &.{.ez80},
-
-                .spork8,
-                => &.{.spork8},
             };
         }
     };
@@ -2057,30 +2061,47 @@ pub const Cpu = struct {
         /// Clang compatibility is important, consider using `baseline` instead.
         pub fn generic(arch: Arch) *const Model {
             return switch (arch) {
+                .aarch64, .aarch64_be => &aarch64.cpu.armv8a,
                 .alpha => &alpha.cpu.ev4,
                 .amdgcn => &amdgcn.cpu.gfx600,
+                .arc, .arceb => &arc.cpu.arcv2,
                 .avr => &avr.cpu.avr1,
+                .bpfel, .bpfeb => &bpf.cpu.v1,
+                .csky => &csky.cpu.e2,
+                .hexagon => &hexagon.cpu.hexagonv60,
                 .hppa => &hppa.cpu.ts_1,
                 .hppa64 => &hppa.cpu.pa_8000,
                 .kvx => &kvx.cpu.coolidge_v1,
+                .lanai => &lanai.cpu.v11,
                 .loongarch32 => &loongarch.cpu.generic_la32,
                 .loongarch64 => &loongarch.cpu.generic_la64,
+                .m68k => &m68k.cpu.m68000,
+                .m88k => &m88k.cpu.m88000,
+                .microblaze, .microblazeel => &microblaze.cpu.v2_00,
                 .mips, .mipsel => &mips.cpu.mips32,
                 .mips64, .mips64el => &mips.cpu.mips64,
+                .msp430 => &msp430.cpu.msp430,
                 .nvptx, .nvptx64 => &nvptx.cpu.sm_20,
-                .powerpc, .powerpcle => &powerpc.cpu.ppc,
+                .or1k => &or1k.cpu.orbis32,
+                .powerpc, .powerpcle => &powerpc.cpu.ppc32,
                 .powerpc64, .powerpc64le => &powerpc.cpu.ppc64,
                 .propeller => &propeller.cpu.p1,
-                .riscv32, .riscv32be => &riscv.cpu.generic_rv32,
-                .riscv64, .riscv64be => &riscv.cpu.generic_rv64,
+                .riscv32, .riscv32be => &riscv.cpu.rv32i,
+                .riscv64, .riscv64be => &riscv.cpu.rv64i,
+                .s390x => &s390x.cpu.arch8,
+                .sh, .sheb => &sh.cpu.sh1,
                 .sparc => &sparc.cpu.v7,
                 .sparc64 => &sparc.cpu.v9, // SPARC can only be 64-bit from v9 and up.
+                .spirv32, .spirv64 => &spirv.cpu.v1_0,
                 .ve => &ve.cpu.ve10,
                 .wasm32, .wasm64 => &wasm.cpu.mvp,
                 .x86_16 => &x86.cpu.i86,
                 .x86 => &x86.cpu.i386,
                 .x86_64 => &x86.cpu.x86_64,
                 .xcore => &xcore.cpu.xs1b,
+                .xtensa, .xtensaeb => &xtensa.cpu.xtensa,
+                .z80 => &z80.cpu.z80,
+                .ez80 => &z80.cpu.ez80,
                 inline else => |a| &@field(Target, @tagName(a.family())).cpu.generic,
             };
         }
@@ -2101,6 +2122,7 @@ pub const Cpu = struct {
                     .@"3ds" => &arm.cpu.mpcore,
                     .vita => &arm.cpu.kermit,
                     .gba => &arm.cpu.arm7tdmi,
+                    .@"switch" => &arm.cpu.cortex_a57,
                     else => &arm.cpu.baseline,
                 },
                 .thumb => switch (os.tag) {
@@ -2110,23 +2132,24 @@ pub const Cpu = struct {
                 },
                 .armeb, .thumbeb => &arm.cpu.baseline,
                 .aarch64 => switch (os.tag) {
-                    .haiku => &aarch64.cpu.cortex_a55,
+                    .haiku => &aarch64.cpu.armv8a,
                     .driverkit, .maccatalyst, .macos => &aarch64.cpu.apple_m1,
-                    .ios, .tvos => &aarch64.cpu.apple_a7,
+                    .ios => &aarch64.cpu.apple_a10,
+                    .tvos => &aarch64.cpu.apple_a7,
                     .visionos => &aarch64.cpu.apple_m2,
-                    .watchos => &aarch64.cpu.apple_s4,
+                    .watchos => &aarch64.cpu.apple_s6,
                     .@"switch" => &aarch64.cpu.cortex_a57,
                     else => generic(arch),
                 },
                 .avr => &avr.cpu.avr2,
                 .bpfel, .bpfeb => &bpf.cpu.v3,
-                .csky => &csky.cpu.ck810, // gcc/clang do not have a generic csky model.
-                .hexagon => &hexagon.cpu.hexagonv68, // gcc/clang do not have a generic hexagon model.
+                .csky => &csky.cpu.ck810,
+                .hexagon => &hexagon.cpu.hexagonv68,
                 .hppa => &hppa.cpu.pa_7000,
-                .lanai => &lanai.cpu.v11, // clang does not have a generic lanai model.
                 .loongarch32 => &loongarch.cpu.la32v1_0,
                 .loongarch64 => &loongarch.cpu.la64v1_0,
-                .m68k => &m68k.cpu.M68030,
+                .m68k => &m68k.cpu.m68030,
+                .microblaze, .microblazeel => &microblaze.cpu.v7_20,
                 .mips => &mips.cpu.mips32r2,
                 .mipsel => switch (os.tag) {
                     .psx => &mips.cpu.r3000a,
@@ -2138,8 +2161,8 @@ pub const Cpu = struct {
                     else => &mips.cpu.mips64r2,
                 },
                 .mips64el => &mips.cpu.mips64r2,
-                .msp430 => &msp430.cpu.msp430,
                 .nvptx, .nvptx64 => &nvptx.cpu.sm_52,
+                .or1k => &or1k.cpu.mor1kx,
                 .powerpc => switch (os.tag) {
                     .openbsd, .wiiu => &powerpc.cpu.@"750",
                     else => generic(arch),
@@ -2151,18 +2174,32 @@ pub const Cpu = struct {
                     else => generic(arch),
                 },
                 .powerpc64le => &powerpc.cpu.ppc64le,
-                .riscv32, .riscv32be => &riscv.cpu.baseline_rv32,
-                .riscv64, .riscv64be => &riscv.cpu.baseline_rv64,
+                .riscv32, .riscv32be => &riscv.cpu.rv32gc,
+                .riscv64, .riscv64be => &riscv.cpu.rv64gc,
                 .s390x => &s390x.cpu.arch11,
+                .sh, .sheb => switch (os.tag) {
+                    .netbsd => &sh.cpu.sh3,
+                    else => &sh.cpu.sh4,
+                },
                 .sparc => switch (os.tag) {
                     .linux => &sparc.cpu.v9, // glibc does not work with 'plain' v8.
                     else => &sparc.cpu.v8,
                 },
                 .sparc64 => &sparc.cpu.ultrasparc,
+                .spirv32 => switch (os.tag) {
+                    .opencl => &spirv.cpu.opencl_v2_1,
+                    .opengl => &spirv.cpu.opengl_v4_6,
+                    .vulkan => &spirv.cpu.vulkan_v1_0,
+                    else => generic(arch),
+                },
+                .spirv64 => switch (os.tag) {
+                    .opencl => &spirv.cpu.opencl_v2_1,
+                    .vulkan => &spirv.cpu.vulkan_v1_0,
+                    else => generic(arch),
+                },
                 .x86 => &x86.cpu.pentium4,
                 .x86_64 => switch (os.tag) {
-                    .driverkit, .maccatalyst => &x86.cpu.nehalem,
-                    .macos => &x86.cpu.core2,
+                    .driverkit, .maccatalyst, .macos => &x86.cpu.nehalem,
                     .ps4 => &x86.cpu.btver2,
                     .ps5 => &x86.cpu.znver2,
                     else => generic(arch),
@@ -2335,8 +2372,6 @@ pub fn requiresLibC(target: *const Target) bool {
         .gba,
         .psp,
         .vita,
-        .mesa3d,
-        .amdpal,
         .hurd,
         .wasi,
         .uefi,
@@ -2512,9 +2547,7 @@ pub const DynamicLinker = struct {
             .wasi,
 
             .amdhsa,
-            .amdpal,
             .cuda,
-            .mesa3d,
             .nvcl,
             .opencl,
             .opengl,
@@ -2959,9 +2992,7 @@ pub const DynamicLinker = struct {
             .wasi,
 
             .amdhsa,
-            .amdpal,
             .cuda,
-            .mesa3d,
             .nvcl,
             .opencl,
             .opengl,
@@ -2998,8 +3029,9 @@ pub fn ptrBitWidth_arch_abi(cpu_arch: Cpu.Arch, abi: Abi) u16 {
     return switch (cpu_arch) {
         .avr,
         .msp430,
-        .x86_16,
         .spork8,
+        .x86_16,
+        .z80,
         => 16,
 
         .ez80,
@@ -3012,7 +3044,6 @@ pub fn ptrBitWidth_arch_abi(cpu_arch: Cpu.Arch, abi: Abi) u16 {
         .csky,
         .hexagon,
         .hppa,
-        .kalimba,
         .lanai,
         .loongarch32,
         .m68k,
@@ -3076,6 +3107,7 @@ pub fn stackAlignment(target: *const Target) u16 {
     switch (target.cpu.arch) {
         .avr,
         .ez80,
+        .z80,
         => return 1,
 
         .m68k => if (target.os.tag != .netbsd) return 2,
@@ -3178,7 +3210,6 @@ pub fn cCharSignedness(target: *const Target) ?std.builtin.Signedness {
             .arc,
             .arceb,
             .csky,
-            .ez80,
             .hexagon,
             .msp430,
             .powerpc,
@@ -3271,6 +3302,12 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 .short, .ushort, .int, .uint => 16,
                 .long, .ulong, .float => 32,
                 .double, .longdouble, .longlong, .ulonglong => 64,
+            },
+            .z80 => switch (c_type) {
+                .char => 8,
+                .short, .ushort, .int, .uint => 16,
+                .long, .ulong, .float, .double => 32,
+                .longlong, .ulonglong, .longdouble => 64,
             },
             .ez80 => switch (c_type) {
                 .char => 8,
@@ -3464,7 +3501,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             },
         },
 
-        .cuda, .amdhsa, .amdpal, .mesa3d, .nvcl, .opencl, .vulkan => switch (c_type) {
+        .cuda, .amdhsa, .nvcl, .opencl, .vulkan => switch (c_type) {
             .char => 8,
             .short, .ushort => 16,
             .int, .uint, .float => 32,
@@ -3482,8 +3519,12 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             .char => 8,
             .short, .ushort => 16,
             .int, .uint, .float => 32,
-            .long, .ulong, .longlong, .ulonglong, .double => 64,
-            .longdouble => 128,
+            .long, .ulong => target.ptrBitWidth(),
+            .longlong, .ulonglong, .double => 64,
+            .longdouble => switch (target.cpu.arch) {
+                .aarch64 => 128,
+                else => 64,
+            },
         },
 
         .psx, .ps3, .psp, .vita => switch (c_type) {
@@ -3511,6 +3552,7 @@ pub fn cTypeAlignment(target: *const Target, c_type: CType) ?u16 {
         .avr,
         .ez80,
         .spork8,
+        .z80,
         => return 1,
         .x86 => switch (target.os.tag) {
             .windows, .uefi => switch (c_type) {
@@ -3548,7 +3590,6 @@ pub fn cTypeAlignment(target: *const Target, c_type: CType) ?u16 {
             .arc,
             .arceb,
             .csky,
-            .kalimba,
             .microblaze,
             .microblazeel,
             .or1k,
@@ -3610,6 +3651,7 @@ pub fn cTypeAlignment(target: *const Target, c_type: CType) ?u16 {
             .avr,
             .ez80,
             .spork8,
+            .z80,
             => unreachable, // Handled above.
         }),
     );
@@ -3620,6 +3662,7 @@ pub fn cMaxIntAlignment(target: *const Target) u16 {
         .avr,
         .ez80,
         .spork8,
+        .z80,
         => 1,
 
         .msp430,
@@ -3629,7 +3672,6 @@ pub fn cMaxIntAlignment(target: *const Target) u16 {
         .arc,
         .arceb,
         .csky,
-        .kalimba,
         .microblaze,
         .microblazeel,
         .or1k,
@@ -3742,7 +3784,6 @@ pub fn cCallingConvention(target: *const Target) ?std.builtin.CallingConvention 
         .hexagon => .{ .hexagon_sysv = .{} },
         .hppa => .{ .hppa_elf = .{} },
         .hppa64 => .{ .hppa64_elf = .{} },
-        .kalimba => null,
         .kvx => switch (target.abi) {
             .ilp32 => .{ .kvx_ilp32 = .{} },
             else => .{ .kvx_lp64 = .{} },
@@ -3770,8 +3811,9 @@ pub fn cCallingConvention(target: *const Target) ?std.builtin.CallingConvention 
         .amdgcn => .{ .amdgcn_device = .{} },
         .nvptx, .nvptx64 => .nvptx_device,
         .spirv32, .spirv64 => .spirv_device,
-        .ez80 => .ez80_cet,
         .spork8 => .spork8,
+        .z80 => .z80_cet,
+        .ez80 => .ez80_cet,
     };
 }
 

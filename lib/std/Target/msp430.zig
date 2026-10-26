@@ -33,7 +33,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.hwmult32)] = .{
         .llvm_name = "hwmult32",
         .description = "Enable 32-bit hardware multiplier",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .hwmult16,
+        }),
     };
     result[@backingInt(Feature.hwmultf5)] = .{
         .llvm_name = "hwmultf5",
@@ -49,11 +51,6 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
-        .features = featureSet(&[_]Feature{}),
-    };
     pub const msp430: CpuModel = .{
         .name = "msp430",
         .llvm_name = "msp430",

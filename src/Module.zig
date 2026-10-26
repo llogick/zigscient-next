@@ -184,9 +184,8 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
                 return error.PieRequiresPic;
             break :b true;
         }
-        if (options.global.output_mode == .Lib and
-            options.global.link_mode == .dynamic and
-            target_util.requiresPicForDynamicLink(target))
+        if (options.global.link_mode == .dynamic and
+            target_util.requiresPicForDynamicLink(target, options.global.output_mode))
         {
             if (options.inherited.pic == false)
                 return error.DynamicLinkingRequiresPic;
@@ -371,19 +370,7 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         var disabled_features = std.array_list.Managed(u8).init(arena);
         for (target.cpu.arch.allFeaturesList()) |feature| {
             if (feature.llvm_name) |llvm_name| {
-                // Ignore these until we figure out how to handle the concept of omitting features.
-                // See https://github.com/ziglang/zig/issues/23539
-                if (target_util.isDynamicAMDGCNFeature(target, feature)) continue;
-
-                if (target.cpu.arch.isPowerPC() and @as(std.Target.powerpc.Feature, @fromBackingInt(@intCast(feature.index))) == .@"64bit") continue;
-                if (target.cpu.arch.isX86() and @as(std.Target.x86.Feature, @fromBackingInt(@intCast(feature.index))) == .x32) continue;
-
-                var is_enabled = target.cpu.features.isEnabled(feature.index);
-                if (target.cpu.arch == .s390x and @as(std.Target.s390x.Feature, @fromBackingInt(@intCast(feature.index))) == .backchain) {
-                    is_enabled = !omit_frame_pointer;
-                }
-
-                if (is_enabled) {
+                if (target.cpu.features.isEnabled(feature.index)) {
                     try buf.ensureUnusedCapacity(2 + llvm_name.len);
                     buf.appendAssumeCapacity('+');
                     buf.appendSliceAssumeCapacity(llvm_name);
@@ -396,8 +383,47 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
                 }
             }
         }
-
         try buf.appendSlice(disabled_features.items);
+
+        if (target.cpu.arch.isArm()) {
+            try buf.append(if (target.cpu.arch.isThumb()) '+' else '-');
+            try buf.appendSlice("thumb-mode,");
+        }
+
+        if (target.cpu.arch == .hexagon) {
+            try buf.appendSlice("-small-data,"); // Unsupported by LLD.
+        }
+
+        if (target.cpu.arch.isMips()) {
+            try buf.append(if (pic) '-' else '+');
+            try buf.appendSlice("noabicalls,");
+            try buf.appendSlice(if (target.cpu.has(.mips, .single_float))
+                "-fpxx,+nooddspreg,"
+            else if (target.cpu.arch.isMips64() or target.cpu.hasAny(.mips, &.{ .mips32r6, .msa }))
+                "-fpxx,-nooddspreg,+fp64,"
+            else if (target.cpu.has(.mips, .mips2))
+                "+fpxx,+nooddspreg,"
+            else
+                "-fpxx,+nooddspreg,");
+        }
+
+        if (target.cpu.arch.isPowerpc32()) {
+            // https://github.com/llvm/llvm-project/issues/235393
+            try buf.appendSlice("-crbits,");
+        }
+
+        if (target.cpu.arch == .s390x) {
+            try buf.append(if (omit_frame_pointer) '-' else '+');
+            try buf.appendSlice("backchain,");
+        }
+
+        if (target.cpu.arch.isXtensa()) {
+            // LLVM does not currently support specifying windowed vs call0 ABI any other way than
+            // disabling all windowed instructions altogether. That's kind of silly because a
+            // windowed core can do call0 just fine.
+            if (target.abi == .call0) try buf.appendSlice("-windowed,");
+        }
+
         if (buf.items.len == 0) break :b "";
         assert(buf.items[buf.items.len - 1] == ',');
         buf.items[buf.items.len - 1] = 0;

@@ -3998,7 +3998,7 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) codegen.Error!void 
                     defer dst_vi.value.deref(isel);
 
                     // TODO unaligned loads
-                    assert(isel.target.cpu.has(.loongarch, .ual));
+                    assert(isel.target.cpu.has(.loongarch, .unaligned_access));
                     const ptr_vi = try isel.use(ty_op.operand);
                     const ptr_mat = try ptr_vi.matIntRegZeroExt(isel);
                     _ = try dst_vi.value.defLoad(isel, ptr_mat.reg(), 0, .{

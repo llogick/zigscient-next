@@ -13,21 +13,6 @@ pub const Feature = enum {
     isa_68060,
     isa_68881,
     isa_68882,
-    reserve_a0,
-    reserve_a1,
-    reserve_a2,
-    reserve_a3,
-    reserve_a4,
-    reserve_a5,
-    reserve_a6,
-    reserve_d0,
-    reserve_d1,
-    reserve_d2,
-    reserve_d3,
-    reserve_d4,
-    reserve_d5,
-    reserve_d6,
-    reserve_d7,
 };
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
@@ -92,81 +77,6 @@ pub const all_features = blk: {
             .isa_68881,
         }),
     };
-    result[@backingInt(Feature.reserve_a0)] = .{
-        .llvm_name = "reserve-a0",
-        .description = "Reserve A0 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_a1)] = .{
-        .llvm_name = "reserve-a1",
-        .description = "Reserve A1 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_a2)] = .{
-        .llvm_name = "reserve-a2",
-        .description = "Reserve A2 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_a3)] = .{
-        .llvm_name = "reserve-a3",
-        .description = "Reserve A3 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_a4)] = .{
-        .llvm_name = "reserve-a4",
-        .description = "Reserve A4 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_a5)] = .{
-        .llvm_name = "reserve-a5",
-        .description = "Reserve A5 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_a6)] = .{
-        .llvm_name = "reserve-a6",
-        .description = "Reserve A6 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d0)] = .{
-        .llvm_name = "reserve-d0",
-        .description = "Reserve D0 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d1)] = .{
-        .llvm_name = "reserve-d1",
-        .description = "Reserve D1 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d2)] = .{
-        .llvm_name = "reserve-d2",
-        .description = "Reserve D2 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d3)] = .{
-        .llvm_name = "reserve-d3",
-        .description = "Reserve D3 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d4)] = .{
-        .llvm_name = "reserve-d4",
-        .description = "Reserve D4 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d5)] = .{
-        .llvm_name = "reserve-d5",
-        .description = "Reserve D5 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d6)] = .{
-        .llvm_name = "reserve-d6",
-        .description = "Reserve D6 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.reserve_d7)] = .{
-        .llvm_name = "reserve-d7",
-        .description = "Reserve D7 register",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     const ti = @typeInfo(Feature);
     for (&result, 0..) |*elem, i| {
         elem.index = i;
@@ -176,50 +86,45 @@ pub const all_features = blk: {
 };
 
 pub const cpu = struct {
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
-        .features = featureSet(&[_]Feature{
-            .isa_68000,
-        }),
-    };
-    pub const M68000: CpuModel = .{
-        .name = "M68000",
+    pub const m68000: CpuModel = .{
+        .name = "m68000",
         .llvm_name = "M68000",
         .features = featureSet(&[_]Feature{
             .isa_68000,
         }),
     };
-    pub const M68010: CpuModel = .{
-        .name = "M68010",
+    pub const m68010: CpuModel = .{
+        .name = "m68010",
         .llvm_name = "M68010",
         .features = featureSet(&[_]Feature{
             .isa_68010,
         }),
     };
-    pub const M68020: CpuModel = .{
-        .name = "M68020",
+    pub const m68020: CpuModel = .{
+        .name = "m68020",
         .llvm_name = "M68020",
         .features = featureSet(&[_]Feature{
             .isa_68020,
+            .isa_68881,
         }),
     };
-    pub const M68030: CpuModel = .{
-        .name = "M68030",
+    pub const m68030: CpuModel = .{
+        .name = "m68030",
         .llvm_name = "M68030",
         .features = featureSet(&[_]Feature{
             .isa_68030,
+            .isa_68881,
         }),
     };
-    pub const M68040: CpuModel = .{
-        .name = "M68040",
+    pub const m68040: CpuModel = .{
+        .name = "m68040",
         .llvm_name = "M68040",
         .features = featureSet(&[_]Feature{
             .isa_68040,
         }),
     };
-    pub const M68060: CpuModel = .{
-        .name = "M68060",
+    pub const m68060: CpuModel = .{
+        .name = "m68060",
         .llvm_name = "M68060",
         .features = featureSet(&[_]Feature{
             .isa_68060,

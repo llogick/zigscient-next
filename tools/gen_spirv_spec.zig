@@ -268,13 +268,10 @@ fn render(
     );
 
     try writer.print(
-        \\pub const version: Version = .{{ .major = {}, .minor = {}, .patch = {} }};
         \\pub const magic_number: Word = {s};
         \\
         \\
-    ,
-        .{ registry.major_version, registry.minor_version, registry.revision, registry.magic_number },
-    );
+    , .{registry.magic_number});
 
     var all_operand_kinds: OperandKindMap = .empty;
     for (registry.operand_kinds) |kind| {
@@ -311,7 +308,6 @@ fn renderExtension(
 ) !void {
     try writer.writeAll(
         \\pub const Extension = enum {
-        \\v1_0,
         \\v1_1,
         \\v1_2,
         \\v1_3,
@@ -808,17 +804,50 @@ fn renderValueEnum(
     if (std.mem.eql(u8, "Capability", enumeration.kind)) {
         try writer.writeAll(
             \\
-            \\pub fn dependencies(self: Capability) []const Extension {
+            \\pub fn dependencyExtensions(self: Capability) []const Extension {
             \\ return switch (self) {
         );
         for (enum_indices) |i| {
             const enumerant = enumerants[i];
             const enum_version = enumerant.version.?;
             const minor = if (enum_version[0] == 'N') '0' else enum_version[2];
-            try writer.print("\n.{f} => &.{{.v1_{c}", .{ formatId(enumerant.enumerant), minor });
+            try writer.print("\n.{f} => &.{{", .{formatId(enumerant.enumerant)});
+            var comma = if (minor != '0') b: {
+                try writer.print(".v1_{c}", .{minor});
+                break :b true;
+            } else false;
             for (enumerant.extensions) |extension| {
                 if (!isAllowedExtension(extension)) continue;
-                try writer.print(", .{s}", .{extension});
+                if (comma) try writer.writeAll(", ");
+                try writer.print(".{s}", .{extension});
+                comma = true;
+            }
+            try writer.writeAll("},");
+        }
+        try writer.writeAll(
+            \\};
+            \\}
+            \\
+            \\pub fn dependencyCapabilities(self: Capability) []const Capability {
+            \\ return switch (self) {
+        );
+        var by_name: std.StringHashMapUnmanaged(u31) = .empty;
+        for (enumerants) |enumerant| {
+            const value: u31 = switch (enumerant.value) {
+                .int => |value| value,
+                .bitflag => |value| try std.fmt.parseInt(u31, value, 10),
+            };
+            try by_name.putNoClobber(arena, enumerant.enumerant, value);
+            for (enumerant.aliases) |alias| try by_name.putNoClobber(arena, alias, value);
+        }
+        for (enum_indices) |i| {
+            const enumerant = enumerants[i];
+            try writer.print("\n.{f} => &.{{", .{formatId(enumerant.enumerant)});
+            var comma = false;
+            for (enumerant.capabilities) |name| {
+                if (comma) try writer.writeAll(", ");
+                try writer.print(".{f}", .{formatId(enumerants[enum_map.get(by_name.get(name).?).?].enumerant)});
+                comma = true;
             }
             try writer.writeAll("},");
         }
@@ -1057,6 +1086,7 @@ fn renderFieldName(writer: *std.Io.Writer, operands: []const Operand, field_inde
 }
 
 fn isAllowedCapability(name: []const u8) bool {
+    if (std.mem.find(u8, name, "Provisional") != null) return false;
     const last = name[name.len - 1];
     if (std.ascii.isLower(last) or std.ascii.isDigit(last)) return true;
     for (allowed_vendors) |vendor| {
@@ -1091,6 +1121,7 @@ fn isEnabled(version: ?[]const u8, capabilities: []const []const u8, extensions:
 fn keepEnabled(instructions: *[]Instruction, kinds: []OperandKind) void {
     var kept: usize = 0;
     for (instructions.*) |inst| {
+        if (inst.provisional) continue;
         if (!isEnabled(inst.version, inst.capabilities, inst.extensions)) continue;
         instructions.*[kept] = inst;
         kept += 1;
@@ -1100,8 +1131,9 @@ fn keepEnabled(instructions: *[]Instruction, kinds: []OperandKind) void {
         const enumerants = kind.enumerants orelse continue;
         var kept_enumerants: usize = 0;
         for (enumerants) |enumerant| {
+            if (enumerant.provisional) continue;
             const enabled = if (std.mem.eql(u8, kind.kind, "Capability"))
-                isAllowedCapability(enumerant.enumerant)
+                isEnabled(enumerant.version, &.{}, enumerant.extensions) and std.mem.find(u8, enumerant.enumerant, "Provisional") == null
             else
                 isEnabled(enumerant.version, enumerant.capabilities, enumerant.extensions);
             if (!enabled) continue;

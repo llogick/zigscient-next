@@ -1000,8 +1000,6 @@ pub const Step = extern struct {
             shared_memory: bool,
             link_eh_frame_hdr: bool,
             link_emit_relocs: bool,
-            link_function_sections: bool,
-            link_data_sections: bool,
             linker_dynamicbase: bool,
             link_z_notext: bool,
             link_z_relro: bool,
@@ -1012,6 +1010,7 @@ pub const Step = extern struct {
             force_load_objc: bool,
             discard_local_symbols: bool,
             mingw_unicode_entry_point: bool,
+            _: u2 = 0,
         };
 
         pub const Flags2 = packed struct(u32) {
@@ -1077,7 +1076,9 @@ pub const Step = extern struct {
             generated_llvm_ir: bool,
             generated_h: bool,
             incremental: DefaultingBool,
-            _: u7 = 0,
+            function_sections: DefaultingBool,
+            data_sections: DefaultingBool,
+            _: u3 = 0,
         };
 
         pub fn isDynamicLibrary(compile: *const Compile) bool {
@@ -2388,7 +2389,6 @@ pub const TargetQuery = struct {
         hexagon,
         hppa,
         hppa64,
-        kalimba,
         kvx,
         lanai,
         loongarch32,
@@ -2433,6 +2433,7 @@ pub const TargetQuery = struct {
         xcore,
         xtensa,
         xtensaeb,
+        z80,
 
         default,
 
@@ -2488,9 +2489,7 @@ pub const TargetQuery = struct {
         emscripten,
         wasi,
         amdhsa,
-        amdpal,
         cuda,
-        mesa3d,
         nvcl,
         opencl,
         opengl,

@@ -1,6 +1,3 @@
-#skip amdgcn-amdpal-none-baseline-whole-llvm-lld-pic
-#skip amdgcn-mesa3d-none-baseline-whole-llvm-lld-pic
-
 #skip arm-uefi-eabi-baseline-whole-llvm-lld-pic
 #skip arm-uefi-eabihf-baseline-whole-llvm-lld-pic
 
