@@ -2542,34 +2542,34 @@ pub const CompilerRtFunc = enum(u32) {
     __divhf3, __divsf3, __divdf3, __divxf3, __divtf3,
 
     // float minmax
-    __fminh, fminf, fmin, __fminx, fminq,
-    __fmaxh, fmaxf, fmax, __fmaxx, fmaxq,
+    __fminh, fminf, fmin, __fminx, fminf128,
+    __fmaxh, fmaxf, fmax, __fmaxx, fmaxf128,
 
     // float round
-    __ceilh,  ceilf,  ceil,  __ceilx,  ceilq,
-    __floorh, floorf, floor, __floorx, floorq,
-    __trunch, truncf, trunc, __truncx, truncq,
-    __roundh, roundf, round, __roundx, roundq,
+    __ceilh,  ceilf,  ceil,  __ceilx,  ceilf128,
+    __floorh, floorf, floor, __floorx, floorf128,
+    __trunch, truncf, trunc, __truncx, truncf128,
+    __roundh, roundf, round, __roundx, roundf128,
 
     // float log
-    __logh,   logf,   log,   __logx,   logq,
-    __log2h,  log2f,  log2,  __log2x,  log2q,
-    __log10h, log10f, log10, __log10x, log10q,
+    __logh,   logf,   log,   __logx,   logf128,
+    __log2h,  log2f,  log2,  __log2x,  log2f128,
+    __log10h, log10f, log10, __log10x, log10f128,
 
     // float exp
-    __exph,  expf,  exp,  __expx,  expq,
-    __exp2h, exp2f, exp2, __exp2x, exp2q,
+    __exph,  expf,  exp,  __expx,  expf128,
+    __exp2h, exp2f, exp2, __exp2x, exp2f128,
 
     // float trigonometry
-    __sinh, sinf, sin, __sinx, sinq,
-    __cosh, cosf, cos, __cosx, cosq,
-    __tanh, tanf, tan, __tanx, tanq,
+    __sinh, sinf, sin, __sinx, sinf128,
+    __cosh, cosf, cos, __cosx, cosf128,
+    __tanh, tanf, tan, __tanx, tanf128,
 
     // float misc ops
-    __fabsh, fabsf, fabs, __fabsx, fabsq,
-    __sqrth, sqrtf, sqrt, __sqrtx, sqrtq,
-    __fmodh, fmodf, fmod, __fmodx, fmodq,
-    __fmah,  fmaf,  fma,  __fmax,  fmaq,
+    __fabsh, fabsf, fabs, __fabsx, fabsf128,
+    __sqrth, sqrtf, sqrt, __sqrtx, sqrtf128,
+    __fmodh, fmodf, fmod, __fmodx, fmodf128,
+    __fmah,  fmaf,  fma,  __fmax,  fmaf128,
 
     // float comparison
     __eqhf2, __eqsf2, __eqdf2, __eqxf2, __eqtf2, // == iff return == 0
@@ -2812,12 +2812,12 @@ pub const CompilerRtFunc = enum(u32) {
             .__sinx, .__cosx, .__tanx,
             .__fabsx, .__sqrtx, .__fmodx, .__fmax,
             => .f80,
-            .fminq, .fmaxq,
-            .ceilq, .floorq, .truncq, .roundq,
-            .logq, .log2q, .log10q,
-            .expq, .exp2q,
-            .sinq, .cosq, .tanq,
-            .fabsq, .sqrtq, .fmodq, .fmaq,
+            .fminf128, .fmaxf128,
+            .ceilf128, .floorf128, .truncf128, .roundf128,
+            .logf128, .log2f128, .log10f128,
+            .expf128, .exp2f128,
+            .sinf128, .cosf128, .tanf128,
+            .fabsf128, .sqrtf128, .fmodf128, .fmaf128,
             => .f128,
             // zig fmt: on
 

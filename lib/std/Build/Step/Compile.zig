@@ -241,6 +241,11 @@ sanitize_coverage_trace_pc_guard: ?bool = null,
 /// incremental compilation is slower but preserves previous build artifacts.
 incremental: ?bool = null,
 
+/// Corresponds to the `-flegalize-all` CLI flag.
+///
+/// This is a debug feature intended solely for Zig compiler development.
+legalize_all: bool = false,
+
 emit_directory: Configuration.OptionalGeneratedFileIndex = .none,
 generated_docs: Configuration.OptionalGeneratedFileIndex = .none,
 generated_asm: Configuration.OptionalGeneratedFileIndex = .none,

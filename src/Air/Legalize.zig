@@ -325,6 +325,23 @@ pub const Feature = enum {
 
 pub const Features = std.enums.EnumSet(Feature);
 
+/// The maximal set of `Features` which may be simultaneously enabled.
+pub const all_features: Features = .complement(.initMany(&.{
+    // There are a few features that conflict with others, so we need to enable the more useful one.
+    .scalarize_add_safe, // conflicts with `.expand_add_safe`
+    .scalarize_sub_safe, // conflicts with `.expand_sub_safe`
+    .scalarize_mul_safe, // conflicts with `.expand_mul_safe`
+    .scalarize_int_cast_safe, // conflicts with `.expand_int_cast_safe`
+    .scalarize_div_ceil, // conflicts with `.expand_div_ceil`
+    .scalarize_div_ceil_optimized, // conflicts with `.expand_div_ceil_optimized`
+    .scalarize_int_from_float_safe, // conflicts with `.expand_int_from_float_safe`
+    .scalarize_int_from_float_optimized_safe, // conflicts with `.expand_int_from_float_optimized_safe`
+
+    // This feature introduces a new AIR form, and acts solely as an optimization (I'm not actually
+    // sure if it should be here at all), so is excluded from `-flegalize-all`.
+    .unsplat_shift_rhs,
+}));
+
 pub const Error = std.mem.Allocator.Error;
 
 pub fn legalize(air: *Air, pt: Zcu.PerThread, features: *const Features) Error!void {

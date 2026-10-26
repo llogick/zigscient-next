@@ -889,6 +889,8 @@ fn lowerZigArgs(
 
     try addFlag(gpa, zig_args, "incremental", conf_comp.flags4.incremental.toBool() orelse graph.incremental);
 
+    try addBool(gpa, zig_args, "-flegalize-all", conf_comp.flags3.legalize_all);
+
     try zig_args.append(gpa, "--listen=-");
 
     // Windows has an argument length limit of 32,766 characters, macOS 262,144 and Linux

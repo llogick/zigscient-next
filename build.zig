@@ -110,6 +110,7 @@ pub fn build(b: *std.Build) !void {
     update_cpu_features_step.dependOn(&run_update_cpu_features.step);
 
     const no_matrix = b.option(bool, "no-matrix", "Limit test matrix to exactly one target configuration") orelse false;
+    const legalize_only = b.option(bool, "legalize-only", "Limit test matrix to target configurations where all legalizations are enabled") orelse false;
     const fuzz_only = b.option(bool, "fuzz-only", "Limit test matrix to one target suitable for fuzzing") orelse false;
     const skip_debug = b.option(bool, "skip-debug", "Main test suite skips debug builds") orelse false;
     const skip_release = b.option(bool, "skip-release", "Main test suite skips release builds") orelse no_matrix;
@@ -408,6 +409,8 @@ pub fn build(b: *std.Build) !void {
 
     const test_only: ?tests.ModuleTestOptions.TestOnly = if (no_matrix)
         .default
+    else if (legalize_only)
+        .legalize
     else if (fuzz_only)
         .{ .fuzz = optimize }
     else

@@ -187,6 +187,7 @@ pub fn write(b: *std.Build, wc: *Configuration.Wip, writer: *std.Io.Writer) !voi
                             },
                             .lto = .init(c.lto),
                             .subsystem = .init(c.subsystem),
+                            .legalize_all = c.legalize_all,
                         },
                         .flags4 = .{
                             .libc_file = c.libc_file != null,

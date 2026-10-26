@@ -29,6 +29,10 @@ const ModuleTestTarget = struct {
     function_sections: ?bool = null,
     data_sections: ?bool = null,
     skip_modules: []const []const u8 = &.{},
+    /// When this is set, module tests with `.no_builtin = true` are skipped, because `-fno-builtin`
+    /// is likely to conflict with some IR legalizations (e.g. those which convert operations to
+    /// compiler_rt calls).
+    legalize_all: bool = false,
 
     // This is intended for targets that, for any reason, shouldn't be run as part of a normal test
     // invocation. This could be because of a slow backend, requiring a newer LLVM version, being
@@ -1760,6 +1764,30 @@ const module_test_targets = blk: {
             },
             .link_libc = true,
         },
+
+        // Targets with `.legalize_all = true`, to test the compiler's IR legalization passes
+        //
+        // Running these tests is likely to be significantly slower than the corresponding target
+        // without `-flegalize-all`, so avoid adding entries here without good reason. It's useful
+        // to have coverage for both big-endian and little-endian though.
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .use_llvm = true,
+            .legalize_all = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .s390x,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .use_llvm = true,
+            .legalize_all = true,
+        },
     };
 };
 
@@ -2560,7 +2588,8 @@ pub const ModuleTestOptions = struct {
     build_options: ?*Step.Options = null,
 
     pub const TestOnly = union(enum) {
-        default: void,
+        default,
+        legalize,
         fuzz: OptimizeMode,
     };
 };
@@ -2568,11 +2597,12 @@ pub const ModuleTestOptions = struct {
 pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
     const step = b.step(b.fmt("test-{s}", .{options.name}), options.desc);
 
-    if (options.test_only) |test_only| {
+    const only_legalize: bool = if (options.test_only) |test_only| only_legalize: {
         const test_target: ModuleTestTarget = switch (test_only) {
             .default => .{
                 .link_libc = if (std.mem.eql(u8, options.name, "libc")) true else null,
             },
+            .legalize => break :only_legalize true,
             .fuzz => |optimize| .{
                 .optimize_mode = optimize,
                 .use_llvm = true,
@@ -2583,7 +2613,7 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
         addOneModuleTest(b, step, test_target, &resolved_target, triple_txt, options);
 
         return step;
-    }
+    } else false;
 
     for_targets: for (module_test_targets) |test_target| {
         if (test_target.skip_modules.len > 0) {
@@ -2644,6 +2674,16 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
         if (options.skip_single_threaded and test_target.single_threaded == true)
             continue;
 
+        if (options.no_builtin and test_target.legalize_all) {
+            // `-flegalize-all` is likely to conflict with `-fno-builtin`, due to e.g. legalization
+            // passes which convert arithmetic operations to compiler_rt calls.
+            continue;
+        }
+
+        if (only_legalize and !test_target.legalize_all) {
+            continue;
+        }
+
         const want_this_mode = for (options.optimize_modes) |m| {
             if (m == test_target.optimize_mode) break true;
         } else false;
@@ -2694,6 +2734,7 @@ fn addOneModuleTest(
     }
     if (test_target.function_sections) |fs| these_tests.function_sections = fs;
     if (test_target.data_sections) |ds| these_tests.data_sections = ds;
+    these_tests.legalize_all = test_target.legalize_all;
     const single_threaded_suffix = if (test_target.single_threaded == true) "-single" else "";
     const backend_suffix = if (test_target.use_llvm == true)
         "-llvm"

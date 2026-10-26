@@ -58,6 +58,7 @@ import_memory: bool,
 export_memory: bool,
 shared_memory: bool,
 is_test: bool,
+legalize_all: bool,
 debug_format: DebugFormat,
 root_optimize_mode: std.lang.Optimize,
 root_strip: bool,
@@ -111,6 +112,7 @@ pub const Options = struct {
     use_new_linker: ?bool = null,
     pie: ?bool = null,
     lto: ?std.zig.LtoMode = null,
+    legalize_all: bool = false,
     incremental: bool = false,
     /// WASI-only. Type of WASI execution model ("command" or "reactor").
     wasi_exec_model: ?std.lang.WasiExecModel = null,
@@ -161,6 +163,7 @@ pub const ResolveError = error{
     DllExportFnsRequiresWindows,
     NewLinkerIncompatibleWithLld,
     NewLinkerIncompatibleObjectFormat,
+    LegalizeAllRequiresLlvm,
 };
 
 pub fn resolve(options: Options) ResolveError!Config {
@@ -395,6 +398,10 @@ pub fn resolve(options: Options) ResolveError!Config {
             // There is no compiler backend available for this target.
             return error.ZigLacksTargetSupport;
         }
+
+        if (options.legalize_all and !use_llvm) {
+            return error.LegalizeAllRequiresLlvm;
+        }
     }
 
     // Make a decision on whether to use LLD or our own linker.
@@ -613,6 +620,7 @@ pub fn resolve(options: Options) ResolveError!Config {
         .output_mode = options.output_mode,
         .have_zcu = options.have_zcu,
         .is_test = options.is_test,
+        .legalize_all = options.legalize_all,
         .link_mode = link_mode,
         .link_libc = link_libc,
         .link_libcpp = link_libcpp,

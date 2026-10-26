@@ -1050,7 +1050,8 @@ pub const Step = extern struct {
             entry: Entry,
             lto: Lto,
             subsystem: Subsystem,
-            _: u2 = 0,
+            legalize_all: bool,
+            _: u1 = 0,
         };
 
         pub const Flags4 = packed struct(u32) {

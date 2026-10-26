@@ -68,6 +68,9 @@ fn importBackend(comptime backend: std.lang.CompilerBackend) type {
 
 pub fn legalizeFeatures(pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) ?*const Air.Legalize.Features {
     const zcu = pt.zcu;
+    if (zcu.comp.config.legalize_all) {
+        return &Air.Legalize.all_features;
+    }
     const target = &zcu.navFileScope(nav_index).mod.?.resolved_target.result;
     switch (target_util.zigBackend(target, zcu.comp.config.use_llvm)) {
         else => unreachable,

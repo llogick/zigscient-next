@@ -812,6 +812,7 @@ const compile_usage =
     \\Debug Options (Zig Compiler Development):
     \\  -fopt-bisect-limit=[limit]   Only run [limit] first LLVM optimization passes
     \\  -fstack-report               Print stack size diagnostics
+    \\  -flegalize-all               Force-enable all codegen legalizations for testing
     \\  --debug-log [scope]          Enable printing debug/info log messages for scope
     \\  --debug-compile-errors       Crash with helpful diagnostics at the first compile error
     \\  --debug-link-snapshot        Dump linker state and output file information for troubleshooting
@@ -1732,6 +1733,8 @@ pub fn buildOutputType(
                         cs.test_execve = true;
                     } else if (mem.eql(u8, arg, "-fstack-report")) {
                         cs.stack_report = true;
+                    } else if (mem.eql(u8, arg, "-flegalize-all")) {
+                        cs.create_module.opts.legalize_all = true;
                     } else if (mem.eql(u8, arg, "-fPIC")) {
                         cs.mod_opts.pic = true;
                     } else if (mem.eql(u8, arg, "-fno-PIC")) {
@@ -4650,6 +4653,7 @@ fn createModule(
             error.DllExportFnsRequiresWindows => fatal("only Windows OS targets support DLLs", .{}),
             error.NewLinkerIncompatibleWithLld => fatal("using the new linker is incompatible with using lld", .{}),
             error.NewLinkerIncompatibleObjectFormat => fatal("no new linker available for '{t}' files", .{target.ofmt}),
+            error.LegalizeAllRequiresLlvm => fatal("'-flegalize-all' requires the LLVM backend", .{}),
         };
     }
 
