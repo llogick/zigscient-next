@@ -1446,6 +1446,11 @@ const FuzzTestRunner = struct {
                 cache_root, crash_name, out_w.err.?,
             }),
         };
+        out_w.interface.flush() catch |err| switch (err) {
+            error.WriteFailed => return step.fail(maker, "failed to write file '{f}{s}': {t}", .{
+                cache_root, crash_name, out_w.err.?,
+            }),
+        };
 
         return step.fail(maker, "test '{s}' {f}; input saved to '{f}{s}'", .{
             run.fuzz_tests.items[header.test_i],
