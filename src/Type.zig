@@ -2858,7 +2858,7 @@ pub fn elemPtrType(ptr_ty: Type, index: ?u64, pt: Zcu.PerThread) Allocator.Error
             .size = .one,
             .is_const = ptr_info.flags.is_const,
             .is_volatile = ptr_info.flags.is_volatile,
-            .is_allowzero = ptr_info.flags.is_allowzero and (index == null or index == 0),
+            .is_allowzero = ptr_info.flags.is_allowzero,
             .address_space = ptr_info.flags.address_space,
             .alignment = elem_align,
         },

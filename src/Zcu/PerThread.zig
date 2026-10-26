@@ -4599,14 +4599,19 @@ fn runCodegenInner(pt: Zcu.PerThread, func_index: InternPool.Index, air: *Air) e
     };
     std.log.scoped(.@"illegal-air").debug("{f}", .{&ap});
 
-    if (codegen.legalizeFeatures(pt, nav)) |features| {
-        // Verify the AIR again pre-legalization.
-        Air.Verify.run(pt, func_index, air);
+    const skip_verify: bool = if (codegen.legalizeFeatures(pt, nav)) |features| skip_verify: {
+        // Verify the AIR pre-legalization, and we will do it again post-legalization.
+        const verify_ok: bool = switch (Air.Verify.run(pt, func_index, air)) {
+            .success => true,
+            .fail => false,
+        };
         try air.legalize(pt, features);
-    }
+        // If the first verify failed, don't run it again; it'll probably just fail again.
+        break :skip_verify !verify_ok;
+    } else false;
 
     std.log.scoped(.@"legal-air").debug("{f}", .{&ap});
-    Air.Verify.run(pt, func_index, air);
+    if (!skip_verify) _ = Air.Verify.run(pt, func_index, air);
 
     if (codegen.wantsLiveness(pt, nav)) liveness = try .analyze(zcu, air.*, ip);
     std.log.scoped(.air).debug("{f}", .{&ap});

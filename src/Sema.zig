@@ -13686,7 +13686,9 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
         // if both the source and destination are arrays
         // we can hotpath via a memcpy.
         if (lhs_ty.zigTypeTag(zcu) == .pointer and
-            rhs_ty.zigTypeTag(zcu) == .pointer)
+            rhs_ty.zigTypeTag(zcu) == .pointer and
+            lhs_info.elem_type.toIntern() == resolved_elem_ty.toIntern() and
+            rhs_info.elem_type.toIntern() == resolved_elem_ty.toIntern())
         {
             const slice_ty = try pt.ptrType(.{
                 .child = resolved_elem_ty.toIntern(),
@@ -13701,22 +13703,36 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
 
             // lhs_dest_slice = dest[0..lhs.len]
             if (lhs_len > 0) {
-                const lhs_dest_slice = try block.addInst(.{
-                    .tag = .slice,
-                    .data = .{ .ty_pl = .{
-                        .ty = slice_ty,
-                        .payload = try sema.addExtra(Air.Bin{
-                            .lhs = many_alloc,
-                            .rhs = try pt.intRef(.usize, lhs_len),
-                        }),
-                    } },
+                const lhs_dest_ptr_ty = try pt.ptrType(.{
+                    .child = (try pt.arrayType(.{
+                        .len = lhs_len,
+                        .child = resolved_elem_ty.toIntern(),
+                    })).toIntern(),
+                    .flags = .{
+                        .size = .one,
+                        .address_space = ptr_as,
+                    },
                 });
-                _ = try block.addBinOp(.memcpy, lhs_dest_slice, lhs);
+                const lhs_dest_ptr = try block.addTyOp(.ptr_cast, lhs_dest_ptr_ty, many_alloc);
+                const lhs_src_ptr = if (lhs_ty.isSlice(zcu)) ptr: {
+                    break :ptr try sema.analyzeSlicePtr(block, src, lhs, lhs_ty);
+                } else lhs;
+                _ = try block.addBinOp(.memcpy, lhs_dest_ptr, lhs_src_ptr);
             }
 
             // rhs_dest_slice = dest[lhs.len..][0..rhs.len]
             if (rhs_len > 0) {
-                const rhs_dest_offset = try block.addInst(.{
+                const rhs_dest_ptr_ty = try pt.ptrType(.{
+                    .child = (try pt.arrayType(.{
+                        .len = rhs_len,
+                        .child = resolved_elem_ty.toIntern(),
+                    })).toIntern(),
+                    .flags = .{
+                        .size = .one,
+                        .address_space = ptr_as,
+                    },
+                });
+                const rhs_dest_many_ptr = try block.addInst(.{
                     .tag = .ptr_add,
                     .data = .{ .ty_pl = .{
                         .ty = many_ty,
@@ -13726,17 +13742,11 @@ fn zirArrayCat(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Ai
                         }),
                     } },
                 });
-                const rhs_dest_slice = try block.addInst(.{
-                    .tag = .slice,
-                    .data = .{ .ty_pl = .{
-                        .ty = slice_ty,
-                        .payload = try sema.addExtra(Air.Bin{
-                            .lhs = rhs_dest_offset,
-                            .rhs = try pt.intRef(.usize, rhs_len),
-                        }),
-                    } },
-                });
-                _ = try block.addBinOp(.memcpy, rhs_dest_slice, rhs);
+                const rhs_dest_ptr = try block.addTyOp(.ptr_cast, rhs_dest_ptr_ty, rhs_dest_many_ptr);
+                const rhs_src_ptr = if (rhs_ty.isSlice(zcu)) ptr: {
+                    break :ptr try sema.analyzeSlicePtr(block, src, rhs, rhs_ty);
+                } else rhs;
+                _ = try block.addBinOp(.memcpy, rhs_dest_ptr, rhs_src_ptr);
             }
 
             if (res_sent_val) |sent_val| {
@@ -24813,6 +24823,22 @@ fn zirMemcpy(
         }
     }
 
+    if (dest_elem_ty.toIntern() != src_elem_ty.toIntern()) {
+        // Need an intermediate `ptr_cast` on the src to make the element type match.
+        const cur_src_ptr_info = sema.typeOf(new_src_ptr).ptrInfo(zcu);
+        const new_src_ptr_ty = try pt.ptrType(.{
+            .flags = cur_src_ptr_info.flags,
+            .child = switch (cur_src_ptr_info.flags.size) {
+                .slice, .many, .c => dest_elem_ty.toIntern(),
+                .one => (try pt.arrayType(.{
+                    .len = Type.fromInterned(cur_src_ptr_info.child).arrayLen(zcu),
+                    .child = dest_elem_ty.toIntern(),
+                })).toIntern(),
+            },
+        });
+        new_src_ptr = try block.addTyOp(.ptr_cast, new_src_ptr_ty, new_src_ptr);
+    }
+
     try sema.requireRuntimeBlock(block, src, runtime_src);
     try sema.validateRuntimeValue(block, dest_src, dest_ptr);
     try sema.validateRuntimeValue(block, src_src, src_ptr);
@@ -24886,18 +24912,18 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
     const uncoerced_elem = sema.resolveInst(extra.rhs);
     const dest_ptr_ty = sema.typeOf(dest_ptr);
     try checkMemOperand(sema, block, dest_src, dest_ptr_ty);
+    const dest_ptr_info = dest_ptr_ty.ptrInfo(zcu);
 
-    if (dest_ptr_ty.isConstPtr(zcu)) {
+    if (dest_ptr_info.flags.is_const) {
         return sema.fail(block, dest_src, "cannot memset constant pointer", .{});
     }
 
     const dest_elem_ty: Type = dest_elem_ty: {
-        const ptr_info = dest_ptr_ty.ptrInfo(zcu);
-        switch (ptr_info.flags.size) {
-            .slice => break :dest_elem_ty .fromInterned(ptr_info.child),
+        switch (dest_ptr_info.flags.size) {
+            .slice => break :dest_elem_ty .fromInterned(dest_ptr_info.child),
             .one => {
-                if (Type.fromInterned(ptr_info.child).zigTypeTag(zcu) == .array) {
-                    break :dest_elem_ty Type.fromInterned(ptr_info.child).childType(zcu);
+                if (Type.fromInterned(dest_ptr_info.child).zigTypeTag(zcu) == .array) {
+                    break :dest_elem_ty Type.fromInterned(dest_ptr_info.child).childType(zcu);
                 }
             },
             .many, .c => {},
@@ -24921,24 +24947,21 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
         .partially_comptime, .fully_comptime => true,
     };
 
-    const runtime_src = rs: {
+    const coerced_dest_ptr: Air.Inst.Ref = dest_ptr: {
         const len_air_ref = try sema.fieldVal(block, src, dest_ptr, try ip.getOrPutString(gpa, io, pt.tid, "len", .no_embedded_nulls), dest_src);
-        const len_val = (try sema.resolveDefinedValue(block, dest_src, len_air_ref)) orelse break :rs dest_src;
+        const len_val = (try sema.resolveDefinedValue(block, dest_src, len_air_ref)) orelse break :dest_ptr dest_ptr;
         const len_u64 = len_val.toUnsignedInt(zcu);
         const len = try sema.usizeCast(block, dest_src, len_u64);
         if (len == 0) {
             // This AIR instruction guarantees length > 0 if it is comptime-known.
             return;
         }
+        const ptr_val = try sema.resolveDefinedValue(block, dest_src, dest_ptr) orelse break :dest_ptr dest_ptr;
 
-        const ptr_val = try sema.resolveDefinedValue(block, dest_src, dest_ptr) orelse break :rs dest_src;
-        if (!sema.isComptimeMutablePtr(ptr_val)) break :rs dest_src;
-        const elem_val = sema.resolveValue(elem) orelse break :rs value_src;
         const array_ty = try pt.arrayType(.{
             .child = dest_elem_ty.toIntern(),
             .len = len_u64,
         });
-        const array_val = try pt.aggregateSplatValue(array_ty, elem_val);
         const array_ptr_ty = ty: {
             var info = dest_ptr_ty.ptrInfo(zcu);
             info.flags.size = .one;
@@ -24947,6 +24970,10 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
         };
         const raw_ptr_val = if (dest_ptr_ty.isSlice(zcu)) ptr_val.slicePtr(zcu) else ptr_val;
         const array_ptr_val = try pt.getCoerced(raw_ptr_val, array_ptr_ty);
+
+        if (!sema.isComptimeMutablePtr(ptr_val)) break :dest_ptr .fromValue(array_ptr_val);
+        const elem_val = sema.resolveValue(elem) orelse break :dest_ptr .fromValue(array_ptr_val);
+        const array_val = try pt.aggregateSplatValue(array_ty, elem_val);
         return sema.storePtrVal(block, src, array_ptr_val, array_val, array_ty);
     };
 
@@ -24959,14 +24986,13 @@ fn zirMemset(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!void
         });
     }
 
-    try sema.requireRuntimeBlock(block, src, runtime_src);
     try sema.validateRuntimeValue(block, dest_src, dest_ptr);
     try sema.validateRuntimeValue(block, value_src, elem);
 
     _ = try block.addInst(.{
         .tag = if (block.wantSafety()) .memset_safe else .memset,
         .data = .{ .bin_op = .{
-            .lhs = dest_ptr,
+            .lhs = coerced_dest_ptr,
             .rhs = elem,
         } },
     });
@@ -30282,6 +30308,10 @@ fn coerceArrayPtrToSlice(
 ) CompileError!Air.Inst.Ref {
     const pt = sema.pt;
     const zcu = pt.zcu;
+    const inst_ty = sema.typeOf(inst);
+    assert(inst_ty.isSinglePointer(zcu));
+    assert(inst_ty.childType(zcu).zigTypeTag(zcu) == .array);
+    assert(dest_ty.isSlice(zcu));
     if (sema.resolveValue(inst)) |val| {
         const ptr_array_ty = sema.typeOf(inst);
         const array_ty = ptr_array_ty.childType(zcu);
@@ -30296,7 +30326,32 @@ fn coerceArrayPtrToSlice(
     }
     try sema.checkSpirvSliceAllowed(block, inst_src, dest_ty.ptrInfo(zcu).flags.address_space);
     try sema.requireRuntimeBlock(block, inst_src, null);
-    return block.addTyOp(.array_to_slice, dest_ty, inst);
+    const src_array_ty = inst_ty.childType(zcu);
+    const src_elem_ty = src_array_ty.childType(zcu);
+    const dest_elem_ty = dest_ty.childType(zcu);
+    if (src_elem_ty.toIntern() != dest_elem_ty.toIntern() or
+        (inst_ty.ptrInfo(zcu).flags.is_const and !dest_ty.ptrInfo(zcu).flags.is_const))
+    {
+        // Need an intermediate `ptr_cast`.
+        const array_ptr_ty = try pt.ptrType(.{
+            .flags = flags: {
+                var flags = inst_ty.ptrInfo(zcu).flags;
+                flags.is_const = dest_ty.ptrInfo(zcu).flags.is_const;
+                break :flags flags;
+            },
+            .child = (try pt.arrayType(.{
+                .len = src_array_ty.arrayLen(zcu),
+                .child = dest_elem_ty.toIntern(),
+                .sentinel = if (src_array_ty.sentinel(zcu)) |s| s: {
+                    break :s (try pt.getCoerced(s, dest_elem_ty)).toIntern();
+                } else .none,
+            })).toIntern(),
+        });
+        const casted_array_ptr = try block.addTyOp(.ptr_cast, array_ptr_ty, inst);
+        return block.addTyOp(.array_to_slice, dest_ty, casted_array_ptr);
+    } else {
+        return block.addTyOp(.array_to_slice, dest_ty, inst);
+    }
 }
 
 fn checkPtrAttributes(sema: *Sema, dest_ty: Type, inst_ty: Type, in_memory_result: *InMemoryCoercionResult) bool {
