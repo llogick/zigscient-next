@@ -25,6 +25,8 @@ const usage_fmt =
     \\  --exclude [file]       Exclude file or directory from formatting
     \\  --zon                  Treat all input files as ZON, regardless of file extension
     \\  --stats                Print aggregated statistics in ZON format to stdout
+    \\  --upgrade              Fix any ambiguous operator precedence errors by adding
+    \\                         parentheses maintaining the order from 0.17.x
     \\
     \\
 ;
