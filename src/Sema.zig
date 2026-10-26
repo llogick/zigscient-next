@@ -19685,9 +19685,6 @@ fn zirAlignOf(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
     const operand_src = block.builtinCallArgSrc(inst_data.src_node, 0);
     const ty = try sema.resolveType(block, operand_src, inst_data.operand);
     try sema.ensureLayoutResolved(ty, operand_src, .align_of);
-    if (ty.isNoReturn(zcu)) {
-        return sema.fail(block, operand_src, "no align available for uninstantiable type '{f}'", .{ty.fmt(zcu)});
-    }
     return .fromValue(try pt.intValue(.comptime_int, ty.abiAlignment(zcu).toByteUnits().?));
 }
 
