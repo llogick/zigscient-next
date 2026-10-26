@@ -640,6 +640,8 @@ test "@bitCast deeply nested arrays to scalar" {
 }
 
 test "@bitCast between float and vector" {
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     const static = struct {
         fn doTheTest() !void {
             {

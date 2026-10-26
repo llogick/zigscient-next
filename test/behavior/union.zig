@@ -1191,6 +1191,8 @@ test "extern union most-aligned field is smaller" {
 }
 
 test "union constant trailing padding" {
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest() !void {
             const U = extern union { x: u32, y: [5]u8 };

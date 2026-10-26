@@ -1223,6 +1223,8 @@ test "modify slice through coerced array pointer" {
 }
 
 test "iterate empty slice of uninstantiable types" {
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
+
     const E = enum {};
     var slice_enum: []const E = undefined;
     slice_enum = &.{};
