@@ -68,7 +68,7 @@ pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);
 
-    var argv = std.array_list.Managed([]const u8).init(arena);
+    var argv: std.ArrayList([]const u8) = .empty;
     var sysroot: ?[]const u8 = null;
 
     var args_iter = ArgsIterator{ .args = args[1..] };
@@ -77,7 +77,7 @@ pub fn main(init: std.process.Init) !void {
             return info(usage, .{});
         } else if (mem.eql(u8, arg, "--sysroot")) {
             sysroot = args_iter.nextOrFatal();
-        } else try argv.append(arg);
+        } else try argv.append(arena, arg);
     }
 
     const sysroot_path = sysroot orelse blk: {
@@ -132,8 +132,8 @@ fn fetchTarget(
         ver.minor,
     });
 
-    var cc_argv = std.array_list.Managed([]const u8).init(arena);
-    try cc_argv.appendSlice(&[_][]const u8{
+    var cc_argv: std.ArrayList([]const u8) = .empty;
+    try cc_argv.appendSlice(arena, &[_][]const u8{
         "cc",
         "-arch",
         switch (target.arch) {
@@ -153,7 +153,7 @@ fn fetchTarget(
         "-MF",
         headers_list_path,
     });
-    try cc_argv.appendSlice(args);
+    try cc_argv.appendSlice(arena, args);
 
     const res = try std.process.run(arena, io, .{ .argv = cc_argv.items });
 

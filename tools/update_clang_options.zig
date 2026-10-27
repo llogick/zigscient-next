@@ -709,7 +709,7 @@ pub fn main(init: std.process.Init) !void {
     defer parsed.deinit();
     const root_map = &parsed.value.object;
 
-    var all_objects = std.array_list.Managed(*json.ObjectMap).init(arena);
+    var all_objects: std.ArrayList(*json.ObjectMap) = .empty;
     {
         var it = root_map.iterator();
         it_map: while (it.next()) |kv| {
@@ -722,7 +722,7 @@ pub fn main(init: std.process.Init) !void {
                 if (std.mem.eql(u8, blacklisted_key, kv.key_ptr.*)) continue :it_map;
             }
             if (kv.value_ptr.object.get("Name").?.string.len == 0) continue;
-            try all_objects.append(&kv.value_ptr.object);
+            try all_objects.append(arena, &kv.value_ptr.object);
         }
     }
     // Some options have multiple matches. As an example, "-Wl,foo" matches both

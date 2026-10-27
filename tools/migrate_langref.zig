@@ -320,12 +320,12 @@ fn walk(arena: Allocator, io: Io, tokenizer: *Tokenizer, out_dir: Dir, w: anytyp
                     }
 
                     var mode: std.builtin.Optimize = .debug;
-                    var link_objects = std.array_list.Managed([]const u8).init(arena);
+                    var link_objects: std.ArrayList([]const u8) = .empty;
                     var target_str: ?[]const u8 = null;
                     var link_libc = false;
                     var link_mode: ?std.builtin.LinkMode = null;
                     var disable_cache = false;
-                    var additional_options = std.array_list.Managed([]const u8).init(arena);
+                    var additional_options: std.ArrayList([]const u8) = .empty;
 
                     const source_token = while (true) {
                         const content_tok = try eatToken(tokenizer, .content);
@@ -341,7 +341,7 @@ fn walk(arena: Allocator, io: Io, tokenizer: *Tokenizer, out_dir: Dir, w: anytyp
                         } else if (mem.eql(u8, end_tag_name, "code_link_object")) {
                             _ = try eatToken(tokenizer, .separator);
                             const obj_tok = try eatToken(tokenizer, .tag_content);
-                            try link_objects.append(tokenizer.buffer[obj_tok.start..obj_tok.end]);
+                            try link_objects.append(arena, tokenizer.buffer[obj_tok.start..obj_tok.end]);
                         } else if (mem.eql(u8, end_tag_name, "target_windows")) {
                             target_str = "x86_64-windows";
                         } else if (mem.eql(u8, end_tag_name, "target_linux_x86_64")) {
@@ -359,7 +359,7 @@ fn walk(arena: Allocator, io: Io, tokenizer: *Tokenizer, out_dir: Dir, w: anytyp
                         } else if (mem.eql(u8, end_tag_name, "additonal_option")) {
                             _ = try eatToken(tokenizer, .separator);
                             const option = try eatToken(tokenizer, .tag_content);
-                            try additional_options.append(tokenizer.buffer[option.start..option.end]);
+                            try additional_options.append(arena, tokenizer.buffer[option.start..option.end]);
                         } else if (mem.eql(u8, end_tag_name, "code_end")) {
                             _ = try eatToken(tokenizer, .bracket_close);
                             break content_tok;
@@ -438,10 +438,10 @@ fn walk(arena: Allocator, io: Io, tokenizer: *Tokenizer, out_dir: Dir, w: anytyp
 }
 
 fn urlize(allocator: Allocator, input: []const u8) ![]u8 {
-    var buf = std.array_list.Managed(u8).init(allocator);
+    var buf: std.Io.Writer.Allocating = .init(allocator);
     defer buf.deinit();
 
-    const out = buf.writer();
+    const out = &buf.writer;
     for (input) |c| {
         switch (c) {
             'a'...'z', 'A'...'Z', '_', '-', '0'...'9' => {

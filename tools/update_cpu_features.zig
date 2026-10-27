@@ -5924,8 +5924,8 @@ fn processOneTargetInner(io: Io, job: Job) !void {
     defer progress_node.end();
 
     var features_table = std.StringHashMap(Feature).init(arena);
-    var all_features = std.array_list.Managed(Feature).init(arena);
-    var all_models = std.array_list.Managed(Model).init(arena);
+    var all_features: std.ArrayList(Feature) = .empty;
+    var all_models: std.ArrayList(Model) = .empty;
 
     if (target.llvm) |llvm| {
         const tblgen_progress = progress_node.start("running llvm-tblgen", 0);
@@ -6027,7 +6027,7 @@ fn processOneTargetInner(io: Io, job: Job) !void {
 
                     var zig_name = try llvmNameToZigName(arena, llvm_name);
                     var desc = kv.value_ptr.object.get("Desc").?.string;
-                    var deps = std.array_list.Managed([]const u8).init(arena);
+                    var deps: std.ArrayList([]const u8) = .empty;
                     var omit = false;
                     var flatten = false;
                     var omit_deps: []const []const u8 = &.{};
@@ -6066,7 +6066,7 @@ fn processOneTargetInner(io: Io, job: Job) !void {
                         for (omit_deps) |omit_dep| {
                             if (mem.eql(u8, other_zig_name, omit_dep)) break;
                         } else {
-                            try deps.append(other_zig_name);
+                            try deps.append(arena, other_zig_name);
                         }
                     }
                     // This is used by AArch64.
@@ -6083,12 +6083,12 @@ fn processOneTargetInner(io: Io, job: Job) !void {
                             for (omit_deps) |omit_dep| {
                                 if (mem.eql(u8, other_zig_name, omit_dep)) break;
                             } else {
-                                try deps.append(other_zig_name);
+                                try deps.append(arena, other_zig_name);
                             }
                         }
                     }
                     for (extra_deps) |extra_dep| {
-                        try deps.append(extra_dep);
+                        try deps.append(arena, extra_dep);
                     }
                     const feature: Feature = .{
                         .llvm_name = llvm_name,
@@ -6099,7 +6099,7 @@ fn processOneTargetInner(io: Io, job: Job) !void {
                     };
                     try features_table.put(zig_name, feature);
                     if (!omit and !flatten) {
-                        try all_features.append(feature);
+                        try all_features.append(arena, feature);
                     }
                 }
                 if (hasSuperclass(&kv.value_ptr.object, "Processor")) {
@@ -6107,7 +6107,7 @@ fn processOneTargetInner(io: Io, job: Job) !void {
                     if (llvm_name.len == 0) continue;
 
                     var zig_name = try llvmNameToZigName(arena, llvm_name);
-                    var deps = std.array_list.Managed([]const u8).init(arena);
+                    var deps: std.ArrayList([]const u8) = .empty;
                     var omit_deps: []const []const u8 = &.{};
                     var extra_deps: []const []const u8 = &.{};
                     const omitted = for (target.model_overrides) |model_override| {
@@ -6138,11 +6138,11 @@ fn processOneTargetInner(io: Io, job: Job) !void {
                         for (omit_deps) |omit_dep| {
                             if (mem.eql(u8, feature_zig_name, omit_dep)) break;
                         } else {
-                            try deps.append(feature_zig_name);
+                            try deps.append(arena, feature_zig_name);
                         }
                     }
                     for (extra_deps) |extra_dep| {
-                        try deps.append(extra_dep);
+                        try deps.append(arena, extra_dep);
                     }
                     const tune_features = kv.value_ptr.object.get("TuneFeatures").?.array;
                     for (tune_features.items) |feature| {
@@ -6155,9 +6155,9 @@ fn processOneTargetInner(io: Io, job: Job) !void {
                             target,
                             feature_llvm_name,
                         )) orelse continue;
-                        try deps.append(feature_zig_name);
+                        try deps.append(arena, feature_zig_name);
                     }
-                    try all_models.append(.{
+                    try all_models.append(arena, .{
                         .llvm_name = llvm_name,
                         .zig_name = zig_name,
                         .features = deps.items,
@@ -6169,7 +6169,7 @@ fn processOneTargetInner(io: Io, job: Job) !void {
                                 if (mem.eql(u8, alias.llvm, model_override.llvm_name) and model_override.omit) continue :alias_it;
                             }
 
-                            try all_models.append(.{
+                            try all_models.append(arena, .{
                                 .llvm_name = alias.llvm,
                                 .zig_name = alias.zig,
                                 .features = deps.items,
@@ -6185,10 +6185,10 @@ fn processOneTargetInner(io: Io, job: Job) !void {
 
     for (target.extra_features) |extra_feature| {
         try features_table.put(extra_feature.zig_name, extra_feature);
-        try all_features.append(extra_feature);
+        try all_features.append(arena, extra_feature);
     }
     for (target.extra_models) |extra_model| {
-        try all_models.append(extra_model);
+        try all_models.append(arena, extra_model);
     }
     mem.sort(Feature, all_features.items, {}, featureLessThan);
     mem.sort(Model, all_models.items, {}, modelLessThan);
@@ -6275,11 +6275,11 @@ fn processOneTargetInner(io: Io, job: Job) !void {
             try putDep(&deps_set, features_table, dep);
         }
         try pruneFeatures(arena, features_table, &deps_set);
-        var dependencies = std.array_list.Managed([]const u8).init(arena);
+        var dependencies: std.ArrayList([]const u8) = .empty;
         {
             var it = deps_set.keyIterator();
             while (it.next()) |key| {
-                try dependencies.append(key.*);
+                try dependencies.append(arena, key.*);
             }
         }
         mem.sort([]const u8, dependencies.items, {}, asciiLessThan);
@@ -6320,11 +6320,11 @@ fn processOneTargetInner(io: Io, job: Job) !void {
             try putDep(&deps_set, features_table, feature_zig_name);
         }
         try pruneFeatures(arena, features_table, &deps_set);
-        var model_features = std.array_list.Managed([]const u8).init(arena);
+        var model_features: std.ArrayList([]const u8) = .empty;
         {
             var it = deps_set.keyIterator();
             while (it.next()) |key| {
-                try model_features.append(key.*);
+                try model_features.append(arena, key.*);
             }
         }
         mem.sort([]const u8, model_features.items, {}, asciiLessThan);

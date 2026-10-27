@@ -20,19 +20,19 @@ pub fn main(init: std.process.Init) !void {
 
     if (args.len == 1) fatal("no command or option specified", .{});
 
-    var positionals = std.array_list.Managed([]const u8).init(arena);
+    var positionals: std.ArrayList([]const u8) = .empty;
 
     for (args[1..]) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             return info(usage, .{});
-        } else try positionals.append(arg);
+        } else try positionals.append(arena, arg);
     }
 
     if (positionals.items.len != 1) fatal("expected one positional argument: [dir]", .{});
 
     var dir = try Io.Dir.cwd().openDir(io, positionals.items[0], .{ .follow_symlinks = false });
     defer dir.close(io);
-    var paths = std.array_list.Managed([]const u8).init(arena);
+    var paths: std.ArrayList([]const u8) = .empty;
     try findHeaders(arena, io, dir, "", &paths);
 
     const SortFn = struct {
@@ -64,7 +64,7 @@ fn findHeaders(
     io: Io,
     dir: Dir,
     prefix: []const u8,
-    paths: *std.array_list.Managed([]const u8),
+    paths: *std.ArrayList([]const u8),
 ) anyerror!void {
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
@@ -79,7 +79,7 @@ fn findHeaders(
                 const ext = Io.Dir.path.extension(entry.name);
                 if (!std.mem.eql(u8, ext, ".h")) continue;
                 const path = try Io.Dir.path.join(arena, &.{ prefix, entry.name });
-                try paths.append(path);
+                try paths.append(arena, path);
             },
             else => {},
         }

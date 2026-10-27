@@ -141,16 +141,16 @@ fn printOutput(
 
     switch (code.id) {
         .exe => |expected_outcome| code_block: {
-            var build_args = std.array_list.Managed([]const u8).init(arena);
-            defer build_args.deinit();
-            try build_args.appendSlice(&[_][]const u8{
+            var build_args: std.ArrayList([]const u8) = .empty;
+            defer build_args.deinit(arena);
+            try build_args.appendSlice(arena, &[_][]const u8{
                 zig_exe,    "build-exe",
                 "--name",   code_name,
                 "--color",  "on",
                 input_path,
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
-                try build_args.appendSlice(&.{ "--zig-lib-dir", zig_lib_dir });
+                try build_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });
             }
 
             try shell_out.print("$ zig build-exe {s}.zig ", .{code_name});
@@ -158,35 +158,35 @@ fn printOutput(
             switch (code.mode) {
                 .debug => {},
                 else => {
-                    try build_args.appendSlice(&[_][]const u8{ "-O", @tagName(code.mode) });
+                    try build_args.appendSlice(arena, &[_][]const u8{ "-O", @tagName(code.mode) });
                     try shell_out.print("-O {s} ", .{@tagName(code.mode)});
                 },
             }
             for (code.link_objects) |link_object| {
                 const name_with_ext = try std.fmt.allocPrint(arena, "{s}{s}", .{ link_object, obj_ext });
-                try build_args.append(name_with_ext);
+                try build_args.append(arena, name_with_ext);
                 try shell_out.print("{s} ", .{name_with_ext});
             }
             if (code.link_libc) {
-                try build_args.append("-lc");
+                try build_args.append(arena, "-lc");
                 try shell_out.print("-lc ", .{});
             }
 
             if (code.target_str) |triple| {
-                try build_args.appendSlice(&[_][]const u8{ "-target", triple });
+                try build_args.appendSlice(arena, &[_][]const u8{ "-target", triple });
                 try shell_out.print("-target {s} ", .{triple});
             }
             if (code.use_llvm) |use_llvm| {
                 if (use_llvm) {
-                    try build_args.append("-fllvm");
+                    try build_args.append(arena, "-fllvm");
                     try shell_out.print("-fllvm", .{});
                 } else {
-                    try build_args.append("-fno-llvm");
+                    try build_args.append(arena, "-fno-llvm");
                     try shell_out.print("-fno-llvm", .{});
                 }
             }
             for (code.additional_options) |option| {
-                try build_args.append(option);
+                try build_args.append(arena, option);
                 try shell_out.print("{s} ", .{option});
             }
 
@@ -279,32 +279,32 @@ fn printOutput(
             try shell_out.writeAll("\n");
         },
         .@"test" => {
-            var test_args = std.array_list.Managed([]const u8).init(arena);
-            defer test_args.deinit();
+            var test_args: std.ArrayList([]const u8) = .empty;
+            defer test_args.deinit(arena);
 
-            try test_args.appendSlice(&[_][]const u8{
+            try test_args.appendSlice(arena, &[_][]const u8{
                 zig_exe, "test", input_path,
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
-                try test_args.appendSlice(&.{ "--zig-lib-dir", zig_lib_dir });
+                try test_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });
             }
             try shell_out.print("$ zig test {s}.zig ", .{code_name});
 
             switch (code.mode) {
                 .debug => {},
                 else => {
-                    try test_args.appendSlice(&[_][]const u8{
+                    try test_args.appendSlice(arena, &[_][]const u8{
                         "-O", @tagName(code.mode),
                     });
                     try shell_out.print("-O {s} ", .{@tagName(code.mode)});
                 },
             }
             if (code.link_libc) {
-                try test_args.append("-lc");
+                try test_args.append(arena, "-lc");
                 try shell_out.print("-lc ", .{});
             }
             if (code.target_str) |triple| {
-                try test_args.appendSlice(&[_][]const u8{ "-target", triple });
+                try test_args.appendSlice(arena, &[_][]const u8{ "-target", triple });
                 try shell_out.print("-target {s} ", .{triple});
 
                 const target_query = try std.Target.Query.parse(.{
@@ -319,17 +319,17 @@ fn printOutput(
                 })) {
                     .native => {},
                     else => {
-                        try test_args.appendSlice(&[_][]const u8{"--test-no-exec"});
+                        try test_args.appendSlice(arena, &[_][]const u8{"--test-no-exec"});
                         try shell_out.writeAll("--test-no-exec");
                     },
                 }
             }
             if (code.use_llvm) |use_llvm| {
                 if (use_llvm) {
-                    try test_args.append("-fllvm");
+                    try test_args.append(arena, "-fllvm");
                     try shell_out.print("-fllvm", .{});
                 } else {
-                    try test_args.append("-fno-llvm");
+                    try test_args.append(arena, "-fno-llvm");
                     try shell_out.print("-fno-llvm", .{});
                 }
             }
@@ -341,28 +341,28 @@ fn printOutput(
             try shell_out.print("\n{s}{s}\n", .{ escaped_stderr, escaped_stdout });
         },
         .test_error => |error_match| {
-            var test_args = std.array_list.Managed([]const u8).init(arena);
-            defer test_args.deinit();
+            var test_args: std.ArrayList([]const u8) = .empty;
+            defer test_args.deinit(arena);
 
-            try test_args.appendSlice(&[_][]const u8{
+            try test_args.appendSlice(arena, &[_][]const u8{
                 zig_exe,    "test",
                 "--color",  "on",
                 input_path,
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
-                try test_args.appendSlice(&.{ "--zig-lib-dir", zig_lib_dir });
+                try test_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });
             }
             try shell_out.print("$ zig test {s}.zig ", .{code_name});
 
             switch (code.mode) {
                 .debug => {},
                 else => {
-                    try test_args.appendSlice(&[_][]const u8{ "-O", @tagName(code.mode) });
+                    try test_args.appendSlice(arena, &[_][]const u8{ "-O", @tagName(code.mode) });
                     try shell_out.print("-O {s} ", .{@tagName(code.mode)});
                 },
             }
             if (code.link_libc) {
-                try test_args.append("-lc");
+                try test_args.append(arena, "-lc");
                 try shell_out.print("-lc ", .{});
             }
             const result = try process.run(arena, io, .{
@@ -393,29 +393,29 @@ fn printOutput(
             try shell_out.print("\n{s}\n", .{colored_stderr});
         },
         .test_safety => |error_match| {
-            var test_args = std.array_list.Managed([]const u8).init(arena);
-            defer test_args.deinit();
+            var test_args: std.ArrayList([]const u8) = .empty;
+            defer test_args.deinit(arena);
 
-            try test_args.appendSlice(&[_][]const u8{
+            try test_args.appendSlice(arena, &[_][]const u8{
                 zig_exe,    "test",
                 input_path,
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
-                try test_args.appendSlice(&.{ "--zig-lib-dir", zig_lib_dir });
+                try test_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });
             }
             var mode_arg: []const u8 = "";
             switch (code.mode) {
                 .debug => {},
                 .safe => {
-                    try test_args.append("-Osafe");
+                    try test_args.append(arena, "-Osafe");
                     mode_arg = "-Osafe";
                 },
                 .fast => {
-                    try test_args.append("-Ofast");
+                    try test_args.append(arena, "-Ofast");
                     mode_arg = "-Ofast";
                 },
                 .small => {
-                    try test_args.append("-Osmall");
+                    try test_args.append(arena, "-Osmall");
                     mode_arg = "-Osmall";
                 },
             }
@@ -453,17 +453,17 @@ fn printOutput(
         },
         .obj => |maybe_error_match| {
             const name_plus_obj_ext = try std.fmt.allocPrint(arena, "{s}{s}", .{ code_name, obj_ext });
-            var build_args = std.array_list.Managed([]const u8).init(arena);
-            defer build_args.deinit();
+            var build_args: std.ArrayList([]const u8) = .empty;
+            defer build_args.deinit(arena);
 
-            try build_args.appendSlice(&[_][]const u8{
+            try build_args.appendSlice(arena, &[_][]const u8{
                 zig_exe,    "build-obj",
                 "--color",  "on",
                 "--name",   code_name,
                 input_path, try std.fmt.allocPrint(arena, "-femit-bin={s}", .{name_plus_obj_ext}),
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
-                try build_args.appendSlice(&.{ "--zig-lib-dir", zig_lib_dir });
+                try build_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });
             }
 
             try shell_out.print("$ zig build-obj {s}.zig ", .{code_name});
@@ -471,26 +471,26 @@ fn printOutput(
             switch (code.mode) {
                 .debug => {},
                 else => {
-                    try build_args.appendSlice(&[_][]const u8{ "-O", @tagName(code.mode) });
+                    try build_args.appendSlice(arena, &[_][]const u8{ "-O", @tagName(code.mode) });
                     try shell_out.print("-O {s} ", .{@tagName(code.mode)});
                 },
             }
 
             if (code.target_str) |triple| {
-                try build_args.appendSlice(&[_][]const u8{ "-target", triple });
+                try build_args.appendSlice(arena, &[_][]const u8{ "-target", triple });
                 try shell_out.print("-target {s} ", .{triple});
             }
             if (code.use_llvm) |use_llvm| {
                 if (use_llvm) {
-                    try build_args.append("-fllvm");
+                    try build_args.append(arena, "-fllvm");
                     try shell_out.print("-fllvm", .{});
                 } else {
-                    try build_args.append("-fno-llvm");
+                    try build_args.append(arena, "-fno-llvm");
                     try shell_out.print("-fno-llvm", .{});
                 }
             }
             for (code.additional_options) |option| {
-                try build_args.append(option);
+                try build_args.append(arena, option);
                 try shell_out.print("{s} ", .{option});
             }
 
@@ -536,52 +536,52 @@ fn printOutput(
                 .output_mode = .Lib,
             });
 
-            var test_args = std.array_list.Managed([]const u8).init(arena);
-            defer test_args.deinit();
+            var test_args: std.ArrayList([]const u8) = .empty;
+            defer test_args.deinit(arena);
 
-            try test_args.appendSlice(&[_][]const u8{
+            try test_args.appendSlice(arena, &[_][]const u8{
                 zig_exe,    "build-lib",
                 input_path, try std.fmt.allocPrint(arena, "-femit-bin={s}", .{bin_basename}),
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
-                try test_args.appendSlice(&.{ "--zig-lib-dir", zig_lib_dir });
+                try test_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });
             }
             try shell_out.print("$ zig build-lib {s}.zig ", .{code_name});
 
             switch (code.mode) {
                 .debug => {},
                 else => {
-                    try test_args.appendSlice(&[_][]const u8{ "-O", @tagName(code.mode) });
+                    try test_args.appendSlice(arena, &[_][]const u8{ "-O", @tagName(code.mode) });
                     try shell_out.print("-O {s} ", .{@tagName(code.mode)});
                 },
             }
             if (code.target_str) |triple| {
-                try test_args.appendSlice(&[_][]const u8{ "-target", triple });
+                try test_args.appendSlice(arena, &[_][]const u8{ "-target", triple });
                 try shell_out.print("-target {s} ", .{triple});
             }
             if (code.use_llvm) |use_llvm| {
                 if (use_llvm) {
-                    try test_args.append("-fllvm");
+                    try test_args.append(arena, "-fllvm");
                     try shell_out.print("-fllvm", .{});
                 } else {
-                    try test_args.append("-fno-llvm");
+                    try test_args.append(arena, "-fno-llvm");
                     try shell_out.print("-fno-llvm", .{});
                 }
             }
             if (code.link_mode) |link_mode| {
                 switch (link_mode) {
                     .static => {
-                        try test_args.append("-static");
+                        try test_args.append(arena, "-static");
                         try shell_out.print("-static ", .{});
                     },
                     .dynamic => {
-                        try test_args.append("-dynamic");
+                        try test_args.append(arena, "-dynamic");
                         try shell_out.print("-dynamic ", .{});
                     },
                 }
             }
             for (code.additional_options) |option| {
-                try test_args.append(option);
+                try test_args.append(arena, option);
                 try shell_out.print("{s} ", .{option});
             }
             const result = run(arena, io, environ_map, tmp_dir_path, test_args.items) catch fatal("test failed", .{});
@@ -994,8 +994,8 @@ fn termColor(allocator: Allocator, input: []const u8) ![]u8 {
     const supported_sgr_colors = [_]u8{ 31, 32, 36 };
     const supported_sgr_numbers = [_]u8{ 0, 1, 2 };
 
-    var buf = std.array_list.Managed(u8).init(allocator);
-    defer buf.deinit();
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
 
     var sgr_param_start_index: usize = undefined;
     var sgr_num: u8 = undefined;
@@ -1019,10 +1019,10 @@ fn termColor(allocator: Allocator, input: []const u8) ![]u8 {
             .start => switch (c) {
                 '\x1b' => state = .escape,
                 '\n' => {
-                    try buf.append(c);
+                    try buf.append(allocator, c);
                     last_new_line = buf.items.len;
                 },
-                else => try buf.append(c),
+                else => try buf.append(allocator, c),
             },
             .escape => switch (c) {
                 '[' => state = .lbracket,
@@ -1083,16 +1083,16 @@ fn termColor(allocator: Allocator, input: []const u8) ![]u8 {
                 'm' => {
                     state = .start;
                     while (open_span_count != 0) : (open_span_count -= 1) {
-                        try buf.appendSlice("</span>");
+                        try buf.appendSlice(allocator, "</span>");
                     }
                     if (sgr_num == 0) {
                         if (sgr_color != 0) return error.UnsupportedColor;
                         continue;
                     }
                     if (sgr_color != 0) {
-                        try buf.print("<span class=\"sgr-{d}_{d}m\">", .{ sgr_color, sgr_num });
+                        try buf.print(allocator, "<span class=\"sgr-{d}_{d}m\">", .{ sgr_color, sgr_num });
                     } else {
-                        try buf.print("<span class=\"sgr-{d}m\">", .{sgr_num});
+                        try buf.print(allocator, "<span class=\"sgr-{d}m\">", .{sgr_num});
                     }
                     open_span_count += 1;
                 },
@@ -1100,7 +1100,7 @@ fn termColor(allocator: Allocator, input: []const u8) ![]u8 {
             },
         }
     }
-    return try buf.toOwnedSlice();
+    return try buf.toOwnedSlice(allocator);
 }
 
 // Returns true if number is in slice.

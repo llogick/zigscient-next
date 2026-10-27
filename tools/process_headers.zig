@@ -147,7 +147,7 @@ pub fn main(init: std.process.Init) !void {
     const cwd_path = try std.process.currentPathAlloc(io, arena);
     const environ_map = init.environ_map;
 
-    var search_paths = std.array_list.Managed([]const u8).init(arena);
+    var search_paths: std.ArrayList([]const u8) = .empty;
     var opt_out_dir: ?[]const u8 = null;
     var opt_abi: ?[]const u8 = null;
 
@@ -161,7 +161,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         if (std.mem.eql(u8, args[arg_i], "--search-path")) {
-            try search_paths.append(args[arg_i + 1]);
+            try search_paths.append(arena, args[arg_i + 1]);
         } else if (std.mem.eql(u8, args[arg_i], "--out")) {
             assert(opt_out_dir == null);
             opt_out_dir = args[arg_i + 1];
@@ -271,8 +271,8 @@ pub fn main(init: std.process.Init) !void {
                 .musl => &[_][]const u8{ search_path, libc_dir, "usr", "local", "musl", "include" },
             };
             const target_include_dir = try Dir.path.join(arena, sub_path);
-            var dir_stack = std.array_list.Managed([]const u8).init(arena);
-            try dir_stack.append(target_include_dir);
+            var dir_stack: std.ArrayList([]const u8) = .empty;
+            try dir_stack.append(arena, target_include_dir);
 
             while (dir_stack.pop()) |full_dir_name| {
                 var dir = Dir.cwd().openDir(io, full_dir_name, .{ .iterate = true }) catch |err| switch (err) {
@@ -287,7 +287,7 @@ pub fn main(init: std.process.Init) !void {
                 while (try dir_it.next(io)) |entry| {
                     const full_path = try Dir.path.join(arena, &[_][]const u8{ full_dir_name, entry.name });
                     switch (entry.kind) {
-                        .directory => try dir_stack.append(full_path),
+                        .directory => try dir_stack.append(arena, full_path),
                         .file, .sym_link => {
                             const rel_path = try Dir.path.relative(arena, cwd_path, environ_map, target_include_dir, full_path);
                             const max_size = 2 * 1024 * 1024 * 1024;
@@ -358,12 +358,12 @@ pub fn main(init: std.process.Init) !void {
     // gets their header in a separate arch directory.
     var path_it = path_table.iterator();
     while (path_it.next()) |path_kv| {
-        var contents_list = std.array_list.Managed(*Contents).init(arena);
+        var contents_list: std.ArrayList(*Contents) = .empty;
         {
             var hash_it = path_kv.value_ptr.*.iterator();
             while (hash_it.next()) |hash_kv| {
                 const contents = hash_to_contents.getPtr(hash_kv.value_ptr.*).?;
-                try contents_list.append(contents);
+                try contents_list.append(arena, contents);
             }
         }
         std.mem.sort(*Contents, contents_list.items, {}, Contents.hitCountLessThan);

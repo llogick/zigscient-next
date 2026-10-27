@@ -20,11 +20,11 @@ pub fn main(init: std.process.Init) !void {
         \\
     );
 
-    var names = std.array_list.Managed([]const u8).init(allocator);
+    var names: std.ArrayList([]const u8) = .empty;
     var cwd = try Io.Dir.cwd().openDir(io, ".", .{ .iterate = true });
     var it = cwd.iterate();
     while (try it.next(io)) |entry| {
-        try names.append(try allocator.dupe(u8, entry.name));
+        try names.append(allocator, try allocator.dupe(u8, entry.name));
     }
     std.mem.sort([]const u8, names.items, {}, (struct {
         fn lessThan(_: void, a: []const u8, b: []const u8) bool {

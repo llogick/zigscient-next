@@ -369,8 +369,8 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
 
     const toc = &toc_buf.writer;
 
-    var nodes = std.array_list.Managed(Node).init(gpa);
-    defer nodes.deinit();
+    var nodes: std.ArrayList(Node) = .empty;
+    defer nodes.deinit(gpa);
 
     try toc.writeByte('\n');
 
@@ -385,7 +385,7 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                 break;
             },
             .content => {
-                try nodes.append(Node{ .Content = tokenizer.buffer[token.start..token.end] });
+                try nodes.append(gpa, .{ .Content = tokenizer.buffer[token.start..token.end] });
             },
             .bracket_open => {
                 const tag_token = try eatToken(tokenizer, .tag_content);
@@ -394,10 +394,10 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                 if (mem.eql(u8, tag_name, "nav")) {
                     _ = try eatToken(tokenizer, .bracket_close);
 
-                    try nodes.append(Node.Nav);
+                    try nodes.append(gpa, .Nav);
                 } else if (mem.eql(u8, tag_name, "builtin")) {
                     _ = try eatToken(tokenizer, .bracket_close);
-                    try nodes.append(Node{ .Builtin = tag_token });
+                    try nodes.append(gpa, .{ .Builtin = tag_token });
                 } else if (mem.eql(u8, tag_name, "header_open")) {
                     _ = try eatToken(tokenizer, .separator);
                     const content_token = try eatToken(tokenizer, .tag_content);
@@ -428,8 +428,8 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                     header_stack_size += 1;
 
                     const urlized = try urlize(gpa, content);
-                    try nodes.append(Node{
-                        .HeaderOpen = HeaderOpen{
+                    try nodes.append(gpa, .{
+                        .HeaderOpen = .{
                             .name = content,
                             .url = urlized,
                             .n = header_stack_size + 1, // highest-level section headers start at h2
@@ -469,23 +469,23 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                         last_action = .close;
                     }
                 } else if (mem.eql(u8, tag_name, "see_also")) {
-                    var list = std.array_list.Managed(SeeAlsoItem).init(gpa);
-                    errdefer list.deinit();
+                    var list: std.ArrayList(SeeAlsoItem) = .empty;
+                    errdefer list.deinit(gpa);
 
                     while (true) {
                         const see_also_tok = tokenizer.next();
                         switch (see_also_tok.id) {
                             .tag_content => {
                                 const content = tokenizer.buffer[see_also_tok.start..see_also_tok.end];
-                                try list.append(SeeAlsoItem{
+                                try list.append(gpa, .{
                                     .name = content,
                                     .token = see_also_tok,
                                 });
                             },
                             .separator => {},
                             .bracket_close => {
-                                try nodes.ensureUnusedCapacity(1);
-                                nodes.appendAssumeCapacity(.{ .SeeAlso = try list.toOwnedSlice() });
+                                try nodes.ensureUnusedCapacity(gpa, 1);
+                                nodes.appendAssumeCapacity(.{ .SeeAlso = try list.toOwnedSlice(gpa) });
                                 break;
                             },
                             else => return parseError(tokenizer, see_also_tok, "invalid see_also token", .{}),
@@ -509,8 +509,8 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                         }
                     };
 
-                    try nodes.append(Node{
-                        .Link = Link{
+                    try nodes.append(gpa, .{
+                        .Link = .{
                             .url = try urlize(gpa, url_name),
                             .name = name,
                             .token = name_tok,
@@ -520,7 +520,7 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                     _ = try eatToken(tokenizer, .separator);
                     const name_tok = try eatToken(tokenizer, .tag_content);
                     _ = try eatToken(tokenizer, .bracket_close);
-                    try nodes.append(.{
+                    try nodes.append(gpa, .{
                         .Code = .{
                             .name = tokenizer.buffer[name_tok.start..name_tok.end],
                             .token = name_tok,
@@ -528,7 +528,7 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                     });
                 } else if (mem.eql(u8, tag_name, "grammar")) {
                     _ = try eatToken(tokenizer, .bracket_close);
-                    try nodes.append(.Grammar);
+                    try nodes.append(gpa, .Grammar);
                 } else if (mem.eql(u8, tag_name, "syntax")) {
                     _ = try eatToken(tokenizer, .bracket_close);
                     const content_tok = try eatToken(tokenizer, .content);
@@ -544,7 +544,7 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                         );
                     }
                     _ = try eatToken(tokenizer, .bracket_close);
-                    try nodes.append(Node{ .InlineSyntax = content_tok });
+                    try nodes.append(gpa, .{ .InlineSyntax = content_tok });
                 } else if (mem.eql(u8, tag_name, "shell_samp")) {
                     _ = try eatToken(tokenizer, .bracket_close);
                     const content_tok = try eatToken(tokenizer, .content);
@@ -560,7 +560,7 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                         );
                     }
                     _ = try eatToken(tokenizer, .bracket_close);
-                    try nodes.append(Node{ .Shell = content_tok });
+                    try nodes.append(gpa, .{ .Shell = content_tok });
                 } else if (mem.eql(u8, tag_name, "syntax_block")) {
                     _ = try eatToken(tokenizer, .separator);
                     const source_type_tok = try eatToken(tokenizer, .tag_content);
@@ -606,7 +606,7 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
                         }
                         _ = try eatToken(tokenizer, .bracket_close);
                     };
-                    try nodes.append(Node{ .SyntaxBlock = SyntaxBlock{ .source_type = source_type, .name = name, .source_token = source_token } });
+                    try nodes.append(gpa, .{ .SyntaxBlock = SyntaxBlock{ .source_type = source_type, .name = name, .source_token = source_token } });
                 } else {
                     return parseError(tokenizer, tag_token, "unrecognized tag name: {s}", .{tag_name});
                 }
@@ -615,7 +615,7 @@ fn genToc(gpa: Allocator, tokenizer: *Tokenizer) !Toc {
         }
     }
 
-    const nodes_slice = try nodes.toOwnedSlice();
+    const nodes_slice = try nodes.toOwnedSlice(gpa);
     errdefer gpa.free(nodes_slice);
     const toc_slice = try toc_buf.toOwnedSlice();
     errdefer gpa.free(toc_slice);
