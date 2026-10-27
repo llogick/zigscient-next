@@ -1517,21 +1517,21 @@ pub const Mutable = struct {
     ///
     /// `limbs_buffer` is used for temporary storage during the operation. When this function returns,
     /// it will have the same length as it had when the function was called.
-    pub fn gcd(rma: *Mutable, x: Const, y: Const, limbs_buffer: *std.array_list.Managed(Limb)) !void {
+    pub fn gcd(rma: *Mutable, allocator: Allocator, x: Const, y: Const, limbs_buffer: *std.ArrayList(Limb)) !void {
         const prev_len = limbs_buffer.items.len;
         defer limbs_buffer.shrinkRetainingCapacity(prev_len);
         const x_copy = if (rma.limbs.ptr == x.limbs.ptr) blk: {
             const start = limbs_buffer.items.len;
-            try limbs_buffer.appendSlice(x.limbs);
+            try limbs_buffer.appendSlice(allocator, x.limbs);
             break :blk x.toMutable(limbs_buffer.items[start..]).toConst();
         } else x;
         const y_copy = if (rma.limbs.ptr == y.limbs.ptr) blk: {
             const start = limbs_buffer.items.len;
-            try limbs_buffer.appendSlice(y.limbs);
+            try limbs_buffer.appendSlice(allocator, y.limbs);
             break :blk y.toMutable(limbs_buffer.items[start..]).toConst();
         } else y;
 
-        return gcdLehmer(rma, x_copy, y_copy, limbs_buffer);
+        return gcdLehmer(rma, allocator, x_copy, y_copy);
     }
 
     /// q = a ^ b
@@ -1641,20 +1641,18 @@ pub const Mutable = struct {
     /// rma may not alias x or y.
     /// x and y may alias each other.
     /// Asserts that `rma` has enough limbs to store the result. Upper bound is given by `calcGcdNoAliasLimbLen`.
-    ///
-    /// `limbs_buffer` is used for temporary storage during the operation.
-    pub fn gcdNoAlias(rma: *Mutable, x: Const, y: Const, limbs_buffer: *std.array_list.Managed(Limb)) !void {
+    pub fn gcdNoAlias(rma: *Mutable, allocator: Allocator, x: Const, y: Const) !void {
         assert(rma.limbs.ptr != x.limbs.ptr); // illegal aliasing
         assert(rma.limbs.ptr != y.limbs.ptr); // illegal aliasing
-        return gcdLehmer(rma, x, y, limbs_buffer);
+        return gcdLehmer(rma, allocator, x, y);
     }
 
-    fn gcdLehmer(result: *Mutable, xa: Const, ya: Const, limbs_buffer: *std.array_list.Managed(Limb)) !void {
-        var x = try xa.toManaged(limbs_buffer.allocator);
+    fn gcdLehmer(result: *Mutable, allocator: Allocator, xa: Const, ya: Const) !void {
+        var x = try xa.toManaged(allocator);
         defer x.deinit();
         x.abs();
 
-        var y = try ya.toManaged(limbs_buffer.allocator);
+        var y = try ya.toManaged(allocator);
         defer y.deinit();
         y.abs();
 
@@ -1662,13 +1660,13 @@ pub const Mutable = struct {
             x.swap(&y);
         }
 
-        var t_big = try Managed.init(limbs_buffer.allocator);
+        var t_big = try Managed.init(allocator);
         defer t_big.deinit();
 
-        var r = try Managed.init(limbs_buffer.allocator);
+        var r = try Managed.init(allocator);
         defer r.deinit();
 
-        var tmp_x = try Managed.init(limbs_buffer.allocator);
+        var tmp_x = try Managed.init(allocator);
         defer tmp_x.deinit();
 
         while (y.len() > 1 and !y.eqlZero()) {
@@ -1711,10 +1709,10 @@ pub const Mutable = struct {
                 y.swap(&t_big);
             } else {
                 var storage: [8]Limb = undefined;
-                const Ap = fixedIntFromSignedDoubleLimb(A, storage[0..2]).toManaged(limbs_buffer.allocator);
-                const Bp = fixedIntFromSignedDoubleLimb(B, storage[2..4]).toManaged(limbs_buffer.allocator);
-                const Cp = fixedIntFromSignedDoubleLimb(C, storage[4..6]).toManaged(limbs_buffer.allocator);
-                const Dp = fixedIntFromSignedDoubleLimb(D, storage[6..8]).toManaged(limbs_buffer.allocator);
+                const Ap = fixedIntFromSignedDoubleLimb(A, storage[0..2]).toManaged(allocator);
+                const Bp = fixedIntFromSignedDoubleLimb(B, storage[2..4]).toManaged(allocator);
+                const Cp = fixedIntFromSignedDoubleLimb(C, storage[4..6]).toManaged(allocator);
+                const Dp = fixedIntFromSignedDoubleLimb(D, storage[6..8]).toManaged(allocator);
 
                 // t_big = Ax + By
                 try r.mul(&x, &Ap);
@@ -3510,9 +3508,9 @@ pub const Managed = struct {
         const needed = @min(x.len(), y.len());
         try rma.ensureAliasAwareCapacity(needed, aliased);
         var m = rma.toMutable();
-        var limbs_buffer = std.array_list.Managed(Limb).init(rma.allocator);
-        defer limbs_buffer.deinit();
-        try m.gcd(x.toConst(), y.toConst(), &limbs_buffer);
+        var limbs_buffer: std.ArrayList(Limb) = .empty;
+        defer limbs_buffer.deinit(rma.allocator);
+        try m.gcd(rma.allocator, x.toConst(), y.toConst(), &limbs_buffer);
         rma.setMetadata(m.positive, m.len);
     }
 
