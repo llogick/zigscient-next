@@ -406,12 +406,12 @@ pub const RcIncludes = enum(u2) {
 /// Renders a `std.Target.Cpu` value into a textual representation that can be parsed
 /// via the `-mcpu` flag passed to the Zig compiler.
 /// Appends the result to `buffer`.
-pub fn serializeCpu(buffer: *std.array_list.Managed(u8), cpu: std.Target.Cpu) Allocator.Error!void {
+pub fn serializeCpu(gpa: Allocator, buffer: *std.ArrayList(u8), cpu: std.Target.Cpu) Allocator.Error!void {
     const all_features = cpu.arch.allFeaturesList();
     var populated_cpu_features = cpu.model.features;
     populated_cpu_features.populateDependencies(all_features);
 
-    try buffer.appendSlice(cpu.model.name);
+    try buffer.appendSlice(gpa, cpu.model.name);
 
     if (populated_cpu_features.eql(cpu.features)) {
         // The CPU name alone is sufficient.
@@ -422,7 +422,7 @@ pub fn serializeCpu(buffer: *std.array_list.Managed(u8), cpu: std.Target.Cpu) Al
         const i: std.Target.Cpu.Feature.Set.Index = @intCast(i_usize);
         const in_cpu_set = populated_cpu_features.isEnabled(i);
         const in_actual_set = cpu.features.isEnabled(i);
-        try buffer.ensureUnusedCapacity(feature.name.len + 1);
+        try buffer.ensureUnusedCapacity(gpa, feature.name.len + 1);
         if (in_cpu_set and !in_actual_set) {
             buffer.appendAssumeCapacity('-');
             buffer.appendSliceAssumeCapacity(feature.name);
@@ -433,10 +433,10 @@ pub fn serializeCpu(buffer: *std.array_list.Managed(u8), cpu: std.Target.Cpu) Al
     }
 }
 
-pub fn serializeCpuAlloc(ally: Allocator, cpu: std.Target.Cpu) Allocator.Error![]u8 {
-    var buffer = std.array_list.Managed(u8).init(ally);
-    try serializeCpu(&buffer, cpu);
-    return buffer.toOwnedSlice();
+pub fn serializeCpuAlloc(gpa: Allocator, cpu: std.Target.Cpu) Allocator.Error![]u8 {
+    var buffer: std.ArrayList(u8) = .empty;
+    try serializeCpu(gpa, &buffer, cpu);
+    return buffer.toOwnedSlice(gpa);
 }
 
 /// Return a Formatter for a Zig identifier, escaping it with `@""` syntax if needed.

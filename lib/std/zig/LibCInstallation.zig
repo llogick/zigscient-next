@@ -267,11 +267,11 @@ fn findNativeIncludeDirPosix(self: *LibCInstallation, gpa: Allocator, io: Io, ar
 
     const dev_null = if (is_windows) "nul" else "/dev/null";
 
-    var argv = std.array_list.Managed([]const u8).init(gpa);
-    defer argv.deinit();
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(gpa);
 
-    try appendCcExe(&argv, skip_cc_env_var, &environ_map);
-    try argv.appendSlice(&.{
+    try appendCcExe(gpa, &argv, skip_cc_env_var, &environ_map);
+    try argv.appendSlice(gpa, &.{
         "-E",
         "-Wp,-v",
         "-xc",
@@ -311,11 +311,11 @@ fn findNativeIncludeDirPosix(self: *LibCInstallation, gpa: Allocator, io: Io, ar
     }
 
     var it = std.mem.tokenizeAny(u8, run_res.stderr, "\n\r");
-    var search_paths = std.array_list.Managed([]const u8).init(gpa);
-    defer search_paths.deinit();
+    var search_paths: std.ArrayList([]const u8) = .empty;
+    defer search_paths.deinit(gpa);
     while (it.next()) |line| {
         if (line.len != 0 and line[0] == ' ') {
-            try search_paths.append(line);
+            try search_paths.append(gpa, line);
         }
     }
     if (search_paths.items.len == 0) {
@@ -381,12 +381,12 @@ fn findNativeIncludeDirWindows(
     var install_buf: [2]std.zig.WindowsSdk.Installation = undefined;
     const installs = fillInstallations(&install_buf, sdk);
 
-    var result_buf = std.array_list.Managed(u8).init(gpa);
-    defer result_buf.deinit();
+    var result_buf: std.ArrayList(u8) = .empty;
+    defer result_buf.deinit(gpa);
 
     for (installs) |install| {
-        result_buf.shrinkAndFree(0);
-        try result_buf.print("{s}\\Include\\{s}\\ucrt", .{ install.path, install.version });
+        result_buf.shrinkAndFree(gpa, 0);
+        try result_buf.print(gpa, "{s}\\Include\\{s}\\ucrt", .{ install.path, install.version });
 
         var dir = Io.Dir.cwd().openDir(io, result_buf.items, .{}) catch |err| switch (err) {
             error.FileNotFound,
@@ -403,7 +403,7 @@ fn findNativeIncludeDirWindows(
             else => return error.FileSystem,
         };
 
-        self.include_dir = try result_buf.toOwnedSlice();
+        self.include_dir = try result_buf.toOwnedSlice(gpa);
         return;
     }
 
@@ -420,8 +420,8 @@ fn findNativeCrtDirWindows(
     var install_buf: [2]std.zig.WindowsSdk.Installation = undefined;
     const installs = fillInstallations(&install_buf, sdk);
 
-    var result_buf = std.array_list.Managed(u8).init(gpa);
-    defer result_buf.deinit();
+    var result_buf: std.ArrayList(u8) = .empty;
+    defer result_buf.deinit(gpa);
 
     const arch_sub_dir = switch (target.cpu.arch) {
         .x86 => "x86",
@@ -432,8 +432,8 @@ fn findNativeCrtDirWindows(
     };
 
     for (installs) |install| {
-        result_buf.shrinkAndFree(0);
-        try result_buf.print("{s}\\Lib\\{s}\\ucrt\\{s}", .{ install.path, install.version, arch_sub_dir });
+        result_buf.shrinkAndFree(gpa, 0);
+        try result_buf.print(gpa, "{s}\\Lib\\{s}\\ucrt\\{s}", .{ install.path, install.version, arch_sub_dir });
 
         var dir = Io.Dir.cwd().openDir(io, result_buf.items, .{}) catch |err| switch (err) {
             error.FileNotFound,
@@ -450,7 +450,7 @@ fn findNativeCrtDirWindows(
             else => return error.FileSystem,
         };
 
-        self.crt_dir = try result_buf.toOwnedSlice();
+        self.crt_dir = try result_buf.toOwnedSlice(gpa);
         return;
     }
     return error.LibCRuntimeNotFound;
@@ -487,8 +487,8 @@ fn findNativeKernel32LibDir(
     var install_buf: [2]std.zig.WindowsSdk.Installation = undefined;
     const installs = fillInstallations(&install_buf, sdk);
 
-    var result_buf = std.array_list.Managed(u8).init(gpa);
-    defer result_buf.deinit();
+    var result_buf: std.ArrayList(u8) = .empty;
+    defer result_buf.deinit(gpa);
 
     const arch_sub_dir = switch (args.target.cpu.arch) {
         .x86 => "x86",
@@ -499,8 +499,8 @@ fn findNativeKernel32LibDir(
     };
 
     for (installs) |install| {
-        result_buf.shrinkAndFree(0);
-        try result_buf.print("{s}\\Lib\\{s}\\um\\{s}", .{ install.path, install.version, arch_sub_dir });
+        result_buf.shrinkAndFree(gpa, 0);
+        try result_buf.print(gpa, "{s}\\Lib\\{s}\\um\\{s}", .{ install.path, install.version, arch_sub_dir });
 
         var dir = Io.Dir.cwd().openDir(io, result_buf.items, .{}) catch |err| switch (err) {
             error.FileNotFound,
@@ -517,7 +517,7 @@ fn findNativeKernel32LibDir(
             else => return error.FileSystem,
         };
 
-        self.kernel32_lib_dir = try result_buf.toOwnedSlice();
+        self.kernel32_lib_dir = try result_buf.toOwnedSlice(gpa);
         return;
     }
     return error.LibCKernel32LibNotFound;
@@ -587,14 +587,14 @@ fn ccPrintFileName(gpa: Allocator, io: Io, args: CCPrintFileNameOptions) ![]u8 {
         break :blk false;
     };
 
-    var argv = std.array_list.Managed([]const u8).init(gpa);
-    defer argv.deinit();
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(gpa);
 
     const arg1 = try std.fmt.allocPrint(gpa, "-print-file-name={s}", .{args.search_basename});
     defer gpa.free(arg1);
 
-    try appendCcExe(&argv, skip_cc_env_var, &environ_map);
-    try argv.append(arg1);
+    try appendCcExe(gpa, &argv, skip_cc_env_var, &environ_map);
+    try argv.append(gpa, arg1);
 
     const run_res = std.process.run(gpa, io, .{
         .stdout_limit = .limited(1024 * 1024),
@@ -681,12 +681,13 @@ fn fillInstallations(
 const inf_loop_env_key = "ZIG_IS_DETECTING_LIBC_PATHS";
 
 fn appendCcExe(
-    args: *std.array_list.Managed([]const u8),
+    gpa: Allocator,
+    args: *std.ArrayList([]const u8),
     skip_cc_env_var: bool,
     environ_map: *const Environ.Map,
 ) !void {
     const default_cc_exe = if (is_windows) "cc.exe" else "cc";
-    try args.ensureUnusedCapacity(1);
+    try args.ensureUnusedCapacity(gpa, 1);
     if (skip_cc_env_var) {
         args.appendAssumeCapacity(default_cc_exe);
         return;
@@ -698,7 +699,7 @@ fn appendCcExe(
     // Respect space-separated flags to the C compiler.
     var it = std.mem.tokenizeScalar(u8, cc_env_var, ' ');
     while (it.next()) |arg| {
-        try args.append(arg);
+        try args.append(gpa, arg);
     }
 }
 

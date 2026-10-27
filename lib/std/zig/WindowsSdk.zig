@@ -107,12 +107,12 @@ fn iterateAndFilterByVersion(
                 std.mem.order(u8, lhs.build, rhs.build);
         }
     };
-    var versions = std.array_list.Managed(Version).init(gpa);
-    var dirs = std.array_list.Managed([]const u8).init(gpa);
+    var versions: std.ArrayList(Version) = .empty;
+    var dirs: std.ArrayList([]const u8) = .empty;
     defer {
-        versions.deinit();
+        versions.deinit(gpa);
         for (dirs.items) |filtered_dir| gpa.free(filtered_dir);
-        dirs.deinit();
+        dirs.deinit(gpa);
     }
 
     iterate: while (iterator.next(io) catch null) |entry| {
@@ -135,8 +135,8 @@ fn iterateAndFilterByVersion(
         errdefer gpa.free(name);
         if (underscore) |pos| version.build = name[pos + 1 ..];
 
-        try versions.append(version);
-        try dirs.append(name);
+        try versions.append(gpa, version);
+        try dirs.append(gpa, name);
     }
 
     std.mem.sortUnstableContext(0, dirs.items.len, struct {
@@ -150,7 +150,7 @@ fn iterateAndFilterByVersion(
             std.mem.swap([]const u8, &context.dirs[lhs], &context.dirs[rhs]);
         }
     }{ .versions = versions.items, .dirs = dirs.items });
-    return dirs.toOwnedSlice();
+    return dirs.toOwnedSlice(gpa);
 }
 
 /// Not a general purpose implementation of an ntdll-based Registry API.
@@ -886,17 +886,17 @@ const MsvcLibDir = struct {
         installation_path: []const u8,
         arch: std.Target.Cpu.Arch,
     ) error{ OutOfMemory, PathNotFound }![]const u8 {
-        var lib_dir_buf = try std.array_list.Managed(u8).initCapacity(gpa, installation_path.len + 64);
-        errdefer lib_dir_buf.deinit();
+        var lib_dir_buf: std.ArrayList(u8) = try .initCapacity(gpa, installation_path.len + 64);
+        errdefer lib_dir_buf.deinit(gpa);
 
         lib_dir_buf.appendSliceAssumeCapacity(installation_path);
 
         if (!Dir.path.isSep(lib_dir_buf.last().?)) {
-            try lib_dir_buf.append('\\');
+            try lib_dir_buf.append(gpa, '\\');
         }
         const installation_path_with_trailing_sep_len = lib_dir_buf.items.len;
 
-        try lib_dir_buf.appendSlice("VC\\Auxiliary\\Build\\Microsoft.VCToolsVersion.default.txt");
+        try lib_dir_buf.appendSlice(gpa, "VC\\Auxiliary\\Build\\Microsoft.VCToolsVersion.default.txt");
         var default_tools_version_buf: [512]u8 = undefined;
         const default_tools_version_contents = Dir.cwd().readFile(io, lib_dir_buf.items, &default_tools_version_buf) catch {
             return error.PathNotFound;
@@ -905,10 +905,10 @@ const MsvcLibDir = struct {
         const default_tools_version = tokenizer.next() orelse return error.PathNotFound;
 
         lib_dir_buf.shrinkRetainingCapacity(installation_path_with_trailing_sep_len);
-        try lib_dir_buf.appendSlice("VC\\Tools\\MSVC\\");
-        try lib_dir_buf.appendSlice(default_tools_version);
-        try lib_dir_buf.appendSlice("\\Lib\\");
-        try lib_dir_buf.appendSlice(switch (arch) {
+        try lib_dir_buf.appendSlice(gpa, "VC\\Tools\\MSVC\\");
+        try lib_dir_buf.appendSlice(gpa, default_tools_version);
+        try lib_dir_buf.appendSlice(gpa, "\\Lib\\");
+        try lib_dir_buf.appendSlice(gpa, switch (arch) {
             .thumb => "arm",
             .aarch64 => "arm64",
             .x86 => "x86",
@@ -920,7 +920,7 @@ const MsvcLibDir = struct {
             return error.PathNotFound;
         }
 
-        return lib_dir_buf.toOwnedSlice();
+        return lib_dir_buf.toOwnedSlice(gpa);
     }
 
     // https://learn.microsoft.com/en-us/visualstudio/install/tools-for-managing-visual-studio-instances?view=vs-2022#editing-the-registry-for-a-visual-studio-instance
@@ -1060,8 +1060,8 @@ const MsvcLibDir = struct {
                 return error.PathNotFound;
             }
 
-            var msvc_dir = std.array_list.Managed(u8).fromOwnedSlice(gpa, msvc_include_dir_maybe_with_trailing_slash);
-            errdefer msvc_dir.deinit();
+            var msvc_dir: std.ArrayList(u8) = .fromOwnedSlice(msvc_include_dir_maybe_with_trailing_slash);
+            errdefer msvc_dir.deinit(gpa);
 
             // String might contain trailing slash, so trim it here
             if (msvc_dir.items.len > "C:\\".len and msvc_dir.last().? == '\\') _ = msvc_dir.pop();
@@ -1071,15 +1071,15 @@ const MsvcLibDir = struct {
                 msvc_dir.shrinkRetainingCapacity(msvc_dir.items.len - "\\include".len);
             }
 
-            try msvc_dir.appendSlice("\\Lib\\");
-            try msvc_dir.appendSlice(switch (arch) {
+            try msvc_dir.appendSlice(gpa, "\\Lib\\");
+            try msvc_dir.appendSlice(gpa, switch (arch) {
                 .thumb => "arm",
                 .aarch64 => "arm64",
                 .x86 => "x86",
                 .x86_64 => "x64",
                 else => unreachable,
             });
-            const msvc_dir_with_arch = try msvc_dir.toOwnedSlice();
+            const msvc_dir_with_arch = try msvc_dir.toOwnedSlice(gpa);
             break :msvc_dir msvc_dir_with_arch;
         };
         errdefer gpa.free(msvc_dir);
@@ -1098,15 +1098,15 @@ const MsvcLibDir = struct {
         arch: std.Target.Cpu.Arch,
         environ_map: *const Environ.Map,
     ) error{ OutOfMemory, PathNotFound }![]const u8 {
-        var base_path: std.array_list.Managed(u8) = base_path: {
+        var base_path: std.ArrayList(u8) = base_path: {
             try_env: {
                 if (environ_map.get("VS140COMNTOOLS")) |VS140COMNTOOLS| {
                     if (VS140COMNTOOLS.len < "C:\\Common7\\Tools".len) break :try_env;
                     if (!Dir.path.isAbsolute(VS140COMNTOOLS)) break :try_env;
-                    var list = std.array_list.Managed(u8).init(gpa);
-                    errdefer list.deinit();
+                    var list: std.ArrayList(u8) = .empty;
+                    errdefer list.deinit(gpa);
 
-                    try list.appendSlice(VS140COMNTOOLS); // C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\Tools
+                    try list.appendSlice(gpa, VS140COMNTOOLS); // C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\Tools
                     // String might contain trailing slash, so trim it here
                     if (list.items.len > "C:\\".len and list.last().? == '\\') _ = list.pop();
                     list.shrinkRetainingCapacity(list.items.len - "\\Common7\\Tools".len); // C:\Program Files (x86)\Microsoft Visual Studio 14.0
@@ -1127,8 +1127,8 @@ const MsvcLibDir = struct {
                     break :try_vs7_key;
                 }
 
-                var path = std.array_list.Managed(u8).fromOwnedSlice(gpa, path_maybe_with_trailing_slash);
-                errdefer path.deinit();
+                var path: std.ArrayList(u8) = .fromOwnedSlice(path_maybe_with_trailing_slash);
+                errdefer path.deinit(gpa);
 
                 // String might contain trailing slash, so trim it here
                 if (path.items.len > "C:\\".len and path.last().? == '\\') _ = path.pop();
@@ -1136,10 +1136,10 @@ const MsvcLibDir = struct {
             }
             return error.PathNotFound;
         };
-        errdefer base_path.deinit();
+        errdefer base_path.deinit(gpa);
 
-        try base_path.appendSlice("\\VC\\lib\\");
-        try base_path.appendSlice(switch (arch) {
+        try base_path.appendSlice(gpa, "\\VC\\lib\\");
+        try base_path.appendSlice(gpa, switch (arch) {
             .thumb => "arm",
             .aarch64 => "arm64",
             .x86 => "", //x86 is in the root of the Lib folder
@@ -1151,7 +1151,7 @@ const MsvcLibDir = struct {
             return error.PathNotFound;
         }
 
-        const full_path = try base_path.toOwnedSlice();
+        const full_path = try base_path.toOwnedSlice(gpa);
         return full_path;
     }
 

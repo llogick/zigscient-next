@@ -92,8 +92,8 @@ pub const Fixups = struct {
 
 pub fn renderTree(gpa: Allocator, w: *Writer, tree: Ast, fixups: Fixups) Error!void {
     assert(tree.errors.len == 0); // Cannot render an invalid tree.
-    var auto_indenting_stream: AutoIndentingStream = .init(gpa, w, indent_delta);
-    defer auto_indenting_stream.deinit();
+    var auto_indenting_stream: AutoIndentingStream = .init(w, indent_delta);
+    defer auto_indenting_stream.deinit(gpa);
     var r: Render = .{
         .gpa = gpa,
         .ais = &auto_indenting_stream,
@@ -156,6 +156,8 @@ fn renderMember(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     if (r.fixups.omit_nodes.contains(decl)) return;
     try renderDocComments(r, tree.firstToken(decl));
     switch (tree.nodeTag(decl)) {
@@ -210,7 +212,7 @@ fn renderMember(
             }
             try renderExpression(r, fn_proto, .space);
             if (r.fixups.gut_functions.contains(decl)) {
-                try ais.pushIndent(.normal);
+                try ais.pushIndent(gpa, .normal);
                 const lbrace = tree.nodeMainToken(body_node);
                 try renderToken(r, lbrace, .newline);
                 try discardAllParams(r, fn_proto);
@@ -219,7 +221,7 @@ fn renderMember(
                 try ais.insertNewline();
                 try renderToken(r, tree.lastToken(body_node), space); // rbrace
             } else if (r.fixups.unused_var_decls.count() != 0) {
-                try ais.pushIndent(.normal);
+                try ais.pushIndent(gpa, .normal);
                 const lbrace = tree.nodeMainToken(body_node);
                 try renderToken(r, lbrace, .newline);
 
@@ -280,7 +282,7 @@ fn renderMember(
         .simple_var_decl,
         .aligned_var_decl,
         => {
-            try ais.pushSpace(.semicolon);
+            try ais.pushSpace(gpa, .semicolon);
             try renderVarDecl(r, tree.fullVarDecl(decl).?, false, .semicolon);
             ais.popSpace();
         },
@@ -324,6 +326,8 @@ fn renderExpressions(r: *Render, expressions: []const Ast.Node.Index, space: Spa
 fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     if (r.fixups.replace_nodes_with_string.get(node)) |replacement| {
         try ais.writeAll(replacement);
         try renderOnlySpace(r, space);
@@ -430,7 +434,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
             }
             try renderExpression(r, lhs, .space); // target
 
-            try ais.pushIndent(.normal);
+            try ais.pushIndent(gpa, .normal);
             if (tree.tokenTag(fallback_first - 1) == .pipe) {
                 try renderToken(r, main_token, .space); // catch keyword
                 try renderToken(r, main_token + 1, .none); // pipe
@@ -457,7 +461,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
             const lhs, const name_token = tree.nodeData(node).node_and_token;
             const dot_token = name_token - 1;
 
-            try ais.pushIndent(.field_access);
+            try ais.pushIndent(gpa, .field_access);
 
             const lhs_last_token = tree.lastToken(lhs);
             const same_line = tree.tokensOnSameLine(lhs_last_token, name_token);
@@ -518,7 +522,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
             const lhs, const rhs = tree.nodeData(node).node_and_node;
             try renderExpression(r, lhs, .space);
             const op_token = tree.nodeMainToken(node);
-            try ais.pushIndent(.after_equals);
+            try ais.pushIndent(gpa, .after_equals);
             const rhs_seperate_line = !tree.tokensOnSameLine(op_token, op_token + 1) or
                 tree.tokenTag(op_token + 1) == .multiline_string_literal_line;
             try renderToken(r, op_token, if (rhs_seperate_line) .newline else .space);
@@ -561,7 +565,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
             }
             try renderExpression(r, lhs, .space);
             const op_token = tree.nodeMainToken(node);
-            try ais.pushIndent(.binop);
+            try ais.pushIndent(gpa, .binop);
             const rhs_seperate_line = !tree.tokensOnSameLine(op_token, op_token + 1) or
                 tree.tokenTag(op_token + 1) == .multiline_string_literal_line;
             try renderToken(r, op_token, if (rhs_seperate_line) .newline else .space);
@@ -597,7 +601,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
                     else => try renderExpression(r, variable_node, variable_space),
                 }
             }
-            try ais.pushIndent(.after_equals);
+            try ais.pushIndent(gpa, .after_equals);
             const expr_seperate_line =
                 !tree.tokensOnSameLine(full.ast.equal_token, full.ast.equal_token + 1) or
                 tree.tokenTag(full.ast.equal_token + 1) == .multiline_string_literal_line;
@@ -679,7 +683,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
             const one_line = tree.tokensOnSameLine(lbracket, rbracket) and
                 !try rendersMultiline(r, rhs);
             const inner_space = if (one_line) Space.none else Space.newline;
-            try ais.pushIndent(.normal);
+            try ais.pushIndent(gpa, .normal);
             try renderToken(r, lbracket, inner_space); // [
             try renderExpression(r, rhs, inner_space);
             ais.popIndent();
@@ -732,7 +736,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
 
         .grouped_expression => {
             const expr, const rparen = tree.nodeData(node).node_and_token;
-            try ais.pushIndent(.normal);
+            try ais.pushIndent(gpa, .normal);
             try renderToken(r, tree.nodeMainToken(node), .none); // lparen
             try renderExpression(r, expr, .none);
             ais.popIndent();
@@ -764,7 +768,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
 
             if (!isOneLineErrorSetDecl(tree, lbrace, rbrace)) {
                 // Render each member on a new line.
-                try ais.pushIndent(.normal);
+                try ais.pushIndent(gpa, .normal);
                 try renderToken(r, lbrace, .newline);
                 var i = lbrace + 1;
                 while (i < rbrace) : (i += 1) {
@@ -777,7 +781,7 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
                     switch (tag) {
                         .doc_comment => try renderToken(r, i, .newline),
                         .identifier => {
-                            try ais.pushSpace(.comma);
+                            try ais.pushSpace(gpa, .comma);
                             try renderIdentifier(r, i, .comma, .eagerly_unquote);
                             ais.popSpace();
                         },
@@ -908,12 +912,12 @@ fn renderExpression(r: *Render, node: Ast.Node.Index, space: Space) Error!void {
             try renderExpression(r, full.ast.condition, .none); // condition expression
             try renderToken(r, rparen, .space); // )
 
-            try ais.pushIndent(.normal);
+            try ais.pushIndent(gpa, .normal);
             if (full.ast.cases.len == 0) {
                 try renderToken(r, rparen + 1, .none); // {
             } else {
                 try renderToken(r, rparen + 1, .newline); // {
-                try ais.pushSpace(.comma);
+                try ais.pushSpace(gpa, .comma);
                 try renderExpressions(r, full.ast.cases, .comma);
                 ais.popSpace();
             }
@@ -1005,8 +1009,8 @@ fn rendersMultiline(r: *const Render, node: Ast.Node.Index) error{OutOfMemory}!b
     };
 
     if (r.ais.disabled_offset != null) return true;
-    var sub_ais: AutoIndentingStream = .init(r.gpa, &no_nl_w, r.ais.indent_delta);
-    defer sub_ais.deinit();
+    var sub_ais: AutoIndentingStream = .init(&no_nl_w, r.ais.indent_delta);
+    defer sub_ais.deinit(r.gpa);
     // The following are needed to make sure isLineOverIndented is correct
     sub_ais.indent_count = r.ais.indent_count;
     sub_ais.applied_indent = r.ais.applied_indent;
@@ -1040,12 +1044,14 @@ fn renderArrayType(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     const rbracket = tree.firstToken(array_type.ast.elem_type) - 1;
     const one_line = tree.tokensOnSameLine(array_type.ast.lbracket, rbracket) and
         !try rendersMultiline(r, array_type.ast.elem_count) and
         (if (array_type.ast.sentinel.unwrap()) |s| !try rendersMultiline(r, s) else true);
     const inner_space = if (one_line) Space.none else Space.newline;
-    try ais.pushIndent(.normal);
+    try ais.pushIndent(gpa, .normal);
     try renderToken(r, array_type.ast.lbracket, inner_space); // lbracket
     try renderExpression(r, array_type.ast.elem_count, inner_space);
     if (array_type.ast.sentinel.unwrap()) |sentinel| {
@@ -1273,6 +1279,7 @@ fn renderVarDeclWithoutFixups(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
 
     if (var_decl.visib_token) |visib_token| {
         try renderToken(r, visib_token, Space.space); // pub
@@ -1378,7 +1385,7 @@ fn renderVarDeclWithoutFixups(
     const rhs_seperate_line = !tree.tokensOnSameLine(eq_token, eq_token + 1) or
         tree.tokenTag(eq_token + 1) == .multiline_string_literal_line;
     const eq_space: Space = if (rhs_seperate_line) .newline else .space;
-    try ais.pushIndent(.after_equals);
+    try ais.pushIndent(gpa, .after_equals);
     try renderToken(r, eq_token, eq_space); // =
     try renderExpression(r, init_node, space); // ;
     ais.popIndent();
@@ -1476,13 +1483,15 @@ fn renderThenElse(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     const then_expr_is_block = nodeIsBlock(tree.nodeTag(then_expr));
     const then_expr_first_token = tree.firstToken(then_expr);
     const indent_then_expr = !then_expr_is_block and
         (!tree.tokensOnSameLine(last_prefix_token, then_expr_first_token) or
             tree.tokenTag(then_expr_first_token) == .multiline_string_literal_line);
 
-    if (indent_then_expr) try ais.pushIndent(.normal);
+    if (indent_then_expr) try ais.pushIndent(gpa, .normal);
 
     if (then_expr_is_block and ais.isLineOverIndented()) {
         ais.disableIndentCommitting();
@@ -1518,7 +1527,7 @@ fn renderThenElse(
             tree.tokenTag(tree.firstToken(else_expr)) ==
                 .multiline_string_literal_line;
         if (indent_else_expr) {
-            try ais.pushIndent(.normal);
+            try ais.pushIndent(gpa, .normal);
             try renderToken(r, last_else_token, .newline);
             try renderExpression(r, else_expr, space);
             ais.popIndent();
@@ -1535,6 +1544,8 @@ fn renderThenElse(
 fn renderFor(r: *Render, for_node: Ast.full.For, space: Space) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     const token_tags = tree.tokens.items(.tag);
 
     if (for_node.label_token) |label| {
@@ -1556,7 +1567,7 @@ fn renderFor(r: *Render, for_node: Ast.full.For, space: Space) Error!void {
     const capture_trailing_comma = token_tags[@intCast(pipe - 1)] == .comma;
 
     if (capture_trailing_comma)
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
     try renderToken(r, cur - 1, if (capture_trailing_comma) .newline else .none); // |
     while (true) {
         if (token_tags[cur] == .asterisk) {
@@ -1595,6 +1606,8 @@ fn renderContainerField(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     var field = field_param;
     if (container != .tuple) field.convertToNonTupleLike(&tree);
     const quote: QuoteBehavior = switch (container) {
@@ -1660,7 +1673,7 @@ fn renderContainerField(
             tree.tokenTag(eq_token + 1) == .multiline_string_literal_line;
         const eq_space: Space = if (seperate_line) .newline else .space;
 
-        try ais.pushIndent(.after_equals);
+        try ais.pushIndent(gpa, .after_equals);
         try renderToken(r, eq_token, eq_space); // =
         if (eq_space == .space) {
             ais.popIndent();
@@ -1796,6 +1809,7 @@ fn isOneLineFnProto(
 fn renderFnProto(r: *Render, fn_proto: Ast.full.FnProto, space: Space) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
 
     const after_fn_token = fn_proto.ast.fn_token + 1;
     const lparen = if (tree.tokenTag(after_fn_token) == .identifier) blk: {
@@ -1863,7 +1877,7 @@ fn renderFnProto(r: *Render, fn_proto: Ast.full.FnProto, space: Space) Error!voi
         }
     } else {
         // One param per line.
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
         try renderToken(r, lparen, .newline); // (
 
         var param_i: usize = 0;
@@ -1909,7 +1923,7 @@ fn renderFnProto(r: *Render, fn_proto: Ast.full.FnProto, space: Space) Error!voi
             }
             const param = fn_proto.ast.params[param_i];
             param_i += 1;
-            try ais.pushSpace(.comma);
+            try ais.pushSpace(gpa, .comma);
             try renderExpression(r, param, .comma);
             ais.popSpace();
             last_param_token = tree.lastToken(param);
@@ -1978,6 +1992,8 @@ fn renderSwitchCase(
 ) Error!void {
     const ais = r.ais;
     const tree = r.tree;
+    const gpa = r.gpa;
+
     const trailing_comma = tree.tokenTag(switch_case.ast.arrow_token - 1) == .comma;
     const has_comment_before_arrow = blk: {
         if (switch_case.ast.values.len == 0) break :blk false;
@@ -1994,7 +2010,7 @@ fn renderSwitchCase(
         try renderToken(r, switch_case.ast.arrow_token - 1, .space); // else keyword
     } else if (trailing_comma or has_comment_before_arrow) {
         // Render each value on a new line
-        try ais.pushSpace(.comma);
+        try ais.pushSpace(gpa, .comma);
         try renderExpressions(r, switch_case.ast.values, .comma);
         ais.popSpace();
     } else {
@@ -2033,13 +2049,15 @@ fn renderBlock(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     const lbrace = tree.nodeMainToken(block_node);
 
     if (tree.isTokenPrecededByTags(lbrace, &.{ .identifier, .colon })) {
         try renderIdentifier(r, lbrace - 2, .none, .eagerly_unquote); // identifier
         try renderToken(r, lbrace - 1, .space); // :
     }
-    try ais.pushIndent(.normal);
+    try ais.pushIndent(gpa, .normal);
     if (statements.len == 0) {
         try renderToken(r, lbrace, .none);
         ais.popIndent();
@@ -2058,10 +2076,12 @@ fn finishRenderBlock(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
+
     for (statements, 0..) |stmt, i| {
         if (i != 0) try renderExtraNewline(r, stmt);
         if (r.fixups.omit_nodes.contains(stmt)) continue;
-        try ais.pushSpace(.semicolon);
+        try ais.pushSpace(gpa, .semicolon);
         switch (tree.nodeTag(stmt)) {
             .global_var_decl,
             .local_var_decl,
@@ -2086,6 +2106,7 @@ fn renderStructInit(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
 
     if (struct_init.ast.type_expr.unwrap()) |type_expr| {
         try renderExpression(r, type_expr, .none); // T
@@ -2094,7 +2115,7 @@ fn renderStructInit(
     }
 
     if (struct_init.ast.fields.len == 0) {
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
         try renderToken(r, struct_init.ast.lbrace, .none); // lbrace
         ais.popIndent();
         return renderToken(r, struct_init.ast.lbrace + 1, space); // rbrace
@@ -2104,7 +2125,7 @@ fn renderStructInit(
     const trailing_comma = tree.tokenTag(rbrace - 1) == .comma;
     if (trailing_comma or hasComment(tree, struct_init.ast.lbrace, rbrace)) {
         // Render one field init per line.
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
         try renderToken(r, struct_init.ast.lbrace, .newline);
 
         for (0.., struct_init.ast.fields) |i, field_init| {
@@ -2115,7 +2136,7 @@ fn renderStructInit(
             try renderIdentifier(r, init_token - 2, .space, .eagerly_unquote); // name
             try renderToken(r, init_token - 1, .maybe_space); // =
 
-            try ais.pushSpace(.comma);
+            try ais.pushSpace(gpa, .comma);
             try renderExpressionFixup(r, field_init, .comma);
             ais.popSpace();
         }
@@ -2168,7 +2189,7 @@ fn renderArrayInit(
     }
 
     if (array_init.ast.elements.len == 0) {
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
         try renderToken(r, array_init.ast.lbrace, .none); // lbrace
         ais.popIndent();
         return renderToken(r, array_init.ast.lbrace + 1, space); // rbrace
@@ -2216,9 +2237,9 @@ fn renderArrayInit(
         return r.ais.insertNewline();
     }
 
-    try ais.pushIndent(.normal);
+    try ais.pushIndent(gpa, .normal);
     try renderToken(r, array_init.ast.lbrace, .newline);
-    try ais.pushSpace(.comma);
+    try ais.pushSpace(gpa, .comma);
 
     const scratch = &r.scratch_array_init;
     const scratch_start = scratch.items.len;
@@ -2226,8 +2247,8 @@ fn renderArrayInit(
 
     var sub_buf: Writer.Allocating = .init(gpa);
     defer sub_buf.deinit();
-    var sub_ais: AutoIndentingStream = .init(gpa, &sub_buf.writer, indent_delta);
-    defer sub_ais.deinit();
+    var sub_ais: AutoIndentingStream = .init(&sub_buf.writer, indent_delta);
+    defer sub_ais.deinit(gpa);
     var sub_r: Render = .{
         .gpa = r.gpa,
         .ais = &sub_ais,
@@ -2533,6 +2554,7 @@ fn renderContainerDecl(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
 
     if (container_decl.layout_token) |layout_token| {
         try renderToken(r, layout_token, .space);
@@ -2577,7 +2599,7 @@ fn renderContainerDecl(
     const rbrace = tree.lastToken(container_decl_node);
 
     if (container_decl.ast.members.len == 0) {
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
         if (tree.tokenTag(lbrace + 1) == .container_doc_comment) {
             try renderToken(r, lbrace, .newline); // lbrace
             try renderContainerDocComments(r, lbrace + 1);
@@ -2599,7 +2621,7 @@ fn renderContainerDecl(
     }
 
     // One member per line.
-    try ais.pushIndent(.normal);
+    try ais.pushIndent(gpa, .normal);
     try renderToken(r, lbrace, .newline); // lbrace
     if (tree.tokenTag(lbrace + 1) == .container_doc_comment) {
         try renderContainerDocComments(r, lbrace + 1);
@@ -2612,7 +2634,7 @@ fn renderContainerDecl(
             .container_field_align,
             .container_field,
             => {
-                try ais.pushSpace(.comma);
+                try ais.pushSpace(gpa, .comma);
                 try renderMember(r, container, member, .comma);
                 ais.popSpace();
             },
@@ -2632,6 +2654,7 @@ fn renderAsm(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
 
     try renderToken(r, asm_node.ast.asm_token, .space); // asm
 
@@ -2680,7 +2703,7 @@ fn renderAsm(
         break :colons opt_colons;
     };
 
-    try ais.forcePushIndent(.normal);
+    try ais.forcePushIndent(gpa, .normal);
 
     if (asm_node.ast.items.len == 0) {
         if (asm_node.ast.clobbers.unwrap()) |clobbers| {
@@ -2716,7 +2739,7 @@ fn renderAsm(
         if (render_colons[0]) |colon1| {
             if (asm_node.outputs.len != 0) {
                 try renderToken(r, colon1, .space);
-                try ais.forcePushIndent(.normal);
+                try ais.forcePushIndent(gpa, .normal);
 
                 const final = asm_node.outputs.len - 1;
                 for (asm_node.outputs[0..final], 0..) |asm_output, i| {
@@ -2727,7 +2750,7 @@ fn renderAsm(
                     try renderExtraNewlineToken(r, next_start);
                 }
 
-                try ais.pushSpace(.comma);
+                try ais.pushSpace(gpa, .comma);
                 try renderAsmOutput(r, asm_node.outputs[final], .comma);
                 ais.popSpace();
                 ais.popIndent();
@@ -2739,7 +2762,7 @@ fn renderAsm(
         if (render_colons[1]) |colon2| {
             if (asm_node.inputs.len != 0) {
                 try renderToken(r, colon2, .space);
-                try ais.forcePushIndent(.normal);
+                try ais.forcePushIndent(gpa, .normal);
 
                 const final = asm_node.inputs.len - 1;
                 for (asm_node.inputs[0..final], 0..) |asm_input, i| {
@@ -2750,7 +2773,7 @@ fn renderAsm(
                     try renderExtraNewlineToken(r, next_start);
                 }
 
-                try ais.pushSpace(.comma);
+                try ais.pushSpace(gpa, .comma);
                 try renderAsmInput(r, asm_node.inputs[final], .comma);
                 ais.popSpace();
                 ais.popIndent();
@@ -2789,9 +2812,10 @@ fn renderParamList(
 ) Error!void {
     const tree = r.tree;
     const ais = r.ais;
+    const gpa = r.gpa;
 
     if (params.len == 0) {
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
         try renderToken(r, lparen, .none); // (
         ais.popIndent();
         return renderToken(r, lparen + 1, space); // )
@@ -2800,7 +2824,7 @@ fn renderParamList(
     const last_param = params[params.len - 1];
     const after_last_param_tok = tree.lastToken(last_param) + 1;
     if (tree.tokenTag(after_last_param_tok) == .comma) {
-        try ais.pushIndent(.normal);
+        try ais.pushIndent(gpa, .normal);
         try renderToken(r, lparen, .newline); // (
         for (params, 0..) |param_node, i| {
             if (i + 1 < params.len) {
@@ -2811,7 +2835,7 @@ fn renderParamList(
 
                 try renderExtraNewline(r, params[i + 1]);
             } else {
-                try ais.pushSpace(.comma);
+                try ais.pushSpace(gpa, .comma);
                 try renderExpression(r, param_node, .comma);
                 ais.popSpace();
             }
@@ -2820,7 +2844,7 @@ fn renderParamList(
         return renderToken(r, after_last_param_tok + 1, space); // )
     }
 
-    try ais.pushIndent(.normal);
+    try ais.pushIndent(gpa, .normal);
     try renderToken(r, lparen, .none); // (
     for (params, 0..) |param_node, i| {
         try renderExpression(r, param_node, .none);
@@ -3496,8 +3520,8 @@ const AutoIndentingStream = struct {
 
     indent_count: usize = 0,
     indent_delta: usize,
-    indent_stack: std.array_list.Managed(StackElem),
-    space_stack: std.array_list.Managed(SpaceElem),
+    indent_stack: std.ArrayList(StackElem),
+    space_stack: std.ArrayList(SpaceElem),
     space_mode: ?usize = null,
     disable_indent_committing: usize = 0,
     current_line_empty: bool = true,
@@ -3519,18 +3543,18 @@ const AutoIndentingStream = struct {
         indent_count: usize,
     };
 
-    pub fn init(gpa: Allocator, w: *Writer, starting_indent_delta: usize) AutoIndentingStream {
+    pub fn init(w: *Writer, starting_indent_delta: usize) AutoIndentingStream {
         return .{
             .underlying_writer = w,
             .indent_delta = starting_indent_delta,
-            .indent_stack = .init(gpa),
-            .space_stack = .init(gpa),
+            .indent_stack = .empty,
+            .space_stack = .empty,
         };
     }
 
-    pub fn deinit(self: *AutoIndentingStream) void {
-        self.indent_stack.deinit();
-        self.space_stack.deinit();
+    pub fn deinit(self: *AutoIndentingStream, gpa: Allocator) void {
+        self.indent_stack.deinit(gpa);
+        self.space_stack.deinit(gpa);
     }
 
     pub fn writeAll(ais: *AutoIndentingStream, bytes: []const u8) Error!void {
@@ -3638,8 +3662,8 @@ const AutoIndentingStream = struct {
         ais.disable_indent_committing -= 1;
     }
 
-    pub fn pushSpace(ais: *AutoIndentingStream, space: Space) !void {
-        try ais.space_stack.append(.{ .space = space, .indent_count = ais.indent_count });
+    pub fn pushSpace(ais: *AutoIndentingStream, gpa: Allocator, space: Space) !void {
+        try ais.space_stack.append(gpa, .{ .space = space, .indent_count = ais.indent_count });
     }
 
     pub fn popSpace(ais: *AutoIndentingStream) void {
@@ -3666,13 +3690,13 @@ const AutoIndentingStream = struct {
     /// Push default indentation
     /// Doesn't actually write any indentation.
     /// Just primes the stream to be able to write the correct indentation if it needs to.
-    pub fn pushIndent(ais: *AutoIndentingStream, indent_type: IndentType) !void {
-        try ais.indent_stack.append(.{ .indent_type = indent_type, .realized = false });
+    pub fn pushIndent(ais: *AutoIndentingStream, gpa: Allocator, indent_type: IndentType) !void {
+        try ais.indent_stack.append(gpa, .{ .indent_type = indent_type, .realized = false });
     }
 
     /// Forces an indentation level to be realized.
-    pub fn forcePushIndent(ais: *AutoIndentingStream, indent_type: IndentType) !void {
-        try ais.indent_stack.append(.{ .indent_type = indent_type, .realized = true });
+    pub fn forcePushIndent(ais: *AutoIndentingStream, gpa: Allocator, indent_type: IndentType) !void {
+        try ais.indent_stack.append(gpa, .{ .indent_type = indent_type, .realized = true });
         ais.indent_count += 1;
     }
 
