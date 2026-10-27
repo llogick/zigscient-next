@@ -170380,12 +170380,1932 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                     try res[0].withOverflow(&res[1], ty_pl.ty, cg);
                 try res[0].finish(inst, &.{ extra.ptr, extra.expected_value, extra.new_value }, &ops, cg);
             },
-            .atomic_load => try cg.airAtomicLoad(inst),
-            .atomic_store_unordered => try cg.airAtomicStore(inst, .unordered),
-            .atomic_store_monotonic => try cg.airAtomicStore(inst, .monotonic),
-            .atomic_store_release => try cg.airAtomicStore(inst, .release),
-            .atomic_store_seq_cst => try cg.airAtomicStore(inst, .seq_cst),
-            .atomic_rmw => try cg.airAtomicRmw(inst),
+            .atomic_load => |air_tag| {
+                const atomic_load = air_datas[@backingInt(inst)].atomic_load;
+                const ptr_ty = cg.typeOf(atomic_load.ptr);
+                const elem_ty = ptr_ty.childType(zcu);
+                var ops = try cg.tempsFromOperands(inst, .{atomic_load.ptr});
+                var res: [1]Temp = undefined;
+                cg.select(&res, &.{elem_ty}, &ops, comptime &.{ .{
+                    .dst_constraints = .{ .{ .int = .byte }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .none, .none } },
+                    },
+                    .dst_temps = .{ .{ .ref = .src0 }, .unused },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .movzx, .dst0d, .lea(.src0b), ._, ._ },
+                    } },
+                }, .{
+                    .dst_constraints = .{ .{ .int_or_float = .word }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .none, .none } },
+                    },
+                    .dst_temps = .{ .{ .ref = .src0 }, .unused },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .movzx, .dst0d, .lea(.src0w), ._, ._ },
+                    } },
+                }, .{
+                    .dst_constraints = .{ .{ .int_or_float = .dword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .none, .none } },
+                    },
+                    .dst_temps = .{ .{ .ref = .src0 }, .unused },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .@"64bit", null, null, null },
+                    .dst_constraints = .{ .{ .int_or_float = .qword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .none, .none } },
+                    },
+                    .dst_temps = .{ .{ .ref = .src0 }, .unused },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .avx, null, null, null },
+                    .dst_constraints = .{ .{ .int_or_float = .xword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .none, .none } },
+                    },
+                    .dst_temps = .{ .{ .rc = .sse }, .unused },
+                    .each = .{ .once = &.{
+                        .{ ._, .v_dqa, .mov, .dst0x, .lea(.src0x), ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .@"64bit", .cx16, null, null },
+                    .dst_constraints = .{ .{ .int_or_float = .xword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .none, .none } },
+                    },
+                    .extra_temps = .{
+                        .{ .type = .u128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                    },
+                    .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                    .clobbers = .{ .eflags = true },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .xor, .dst0d0, .dst0d0, ._, ._ },
+                        .{ ._, ._, .xor, .dst0d1, .dst0d1, ._, ._ },
+                        .{ ._, ._, .xor, .tmp0d0, .tmp0d0, ._, ._ },
+                        .{ ._, ._, .xor, .tmp0d1, .tmp0d1, ._, ._ },
+                        .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                    } },
+                } }) catch |err| switch (err) {
+                    error.SelectFailed => return cg.fail("failed to select {s} {f} {f}", .{
+                        @tagName(air_tag),
+                        ptr_ty.fmt(zcu),
+                        ops[0].tracking(cg),
+                    }),
+                    else => |e| return e,
+                };
+                try res[0].finish(inst, &.{atomic_load.ptr}, &ops, cg);
+            },
+            .atomic_store_unordered,
+            .atomic_store_monotonic,
+            .atomic_store_release,
+            => |air_tag| {
+                const bin_op = air_datas[@backingInt(inst)].bin_op;
+                const ptr_ty = cg.typeOf(bin_op.lhs);
+                var ops = try cg.tempsFromOperands(inst, .{ bin_op.lhs, bin_op.rhs });
+                cg.select(&.{}, &.{}, &ops, comptime &.{ .{
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int = .byte }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .lea(.src0b), .src1b, ._, ._ },
+                    } },
+                }, .{
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .word }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .lea(.src0w), .src1w, ._, ._ },
+                    } },
+                }, .{
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .dword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .lea(.src0d), .src1d, ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .@"64bit", null, null, null },
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .qword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .lea(.src0q), .src1q, ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .avx, null, null, null },
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .xword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_sse, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, .v_dqa, .mov, .lea(.src0x), .src1x, ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .@"64bit", .cx16, null, null },
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .xword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .{ .to_reg_pair = .{ .rbx, .rcx } }, .none } },
+                    },
+                    .extra_temps = .{
+                        .{ .type = .u128, .kind = .{ .reg_pair = .{ .rax, .rdx } } },
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                    },
+                    .clobbers = .{ .eflags = true },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .tmp0q0, .lea(.src0q), ._, ._ },
+                        .{ ._, ._, .mov, .tmp0q1, .lead(.src0q, 8), ._, ._ },
+                        .{ .@"0:", .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                        .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                    } },
+                } }) catch |err| switch (err) {
+                    error.SelectFailed => return cg.fail("failed to select {s} {f} {f} {f}", .{
+                        @tagName(air_tag),
+                        ptr_ty.fmt(zcu),
+                        ops[0].tracking(cg),
+                        ops[1].tracking(cg),
+                    }),
+                    else => |e| return e,
+                };
+                for (ops) |op| try op.die(cg);
+            },
+            .atomic_store_seq_cst => |air_tag| {
+                const bin_op = air_datas[@backingInt(inst)].bin_op;
+                const ptr_ty = cg.typeOf(bin_op.lhs);
+                var ops = try cg.tempsFromOperands(inst, .{ bin_op.lhs, bin_op.rhs });
+                cg.select(&.{}, &.{}, &ops, comptime &.{ .{
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int = .byte }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._g, .xch, .lea(.src0b), .src1b, ._, ._ },
+                    } },
+                }, .{
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .word }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._g, .xch, .lea(.src0w), .src1w, ._, ._ },
+                    } },
+                }, .{
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .dword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._g, .xch, .lea(.src0d), .src1d, ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .@"64bit", null, null, null },
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .qword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                    },
+                    .each = .{ .once = &.{
+                        .{ ._, ._g, .xch, .lea(.src0q), .src1q, ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .avx, null, null, null },
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .xword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .to_sse, .none } },
+                    },
+                    .extra_temps = .{
+                        .{ .type = .u32, .kind = .mem },
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                    },
+                    .clobbers = .{ .eflags = true },
+                    .each = .{ .once = &.{
+                        .{ ._, .v_dqa, .mov, .lea(.src0x), .src1x, ._, ._ },
+                        .{ ._, .@"lock _", .@"or", .tmp0d, .si(0), ._, ._ },
+                    } },
+                }, .{
+                    .required_features = .{ .@"64bit", .cx16, null, null },
+                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .xword }, .any },
+                    .patterns = &.{
+                        .{ .src = .{ .to_gpr, .{ .to_reg_pair = .{ .rbx, .rcx } }, .none } },
+                    },
+                    .extra_temps = .{
+                        .{ .type = .u128, .kind = .{ .reg_pair = .{ .rax, .rdx } } },
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                        .unused,
+                    },
+                    .clobbers = .{ .eflags = true },
+                    .each = .{ .once = &.{
+                        .{ ._, ._, .mov, .tmp0q0, .lea(.src0q), ._, ._ },
+                        .{ ._, ._, .mov, .tmp0q1, .lead(.src0q, 8), ._, ._ },
+                        .{ .@"0:", .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                        .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                    } },
+                } }) catch |err| switch (err) {
+                    error.SelectFailed => return cg.fail("failed to select {s} {f} {f} {f}", .{
+                        @tagName(air_tag),
+                        ptr_ty.fmt(zcu),
+                        ops[0].tracking(cg),
+                        ops[1].tracking(cg),
+                    }),
+                    else => |e| return e,
+                };
+                for (ops) |op| try op.die(cg);
+            },
+            .atomic_rmw => |air_tag| {
+                const pl_op = air_datas[@backingInt(inst)].pl_op;
+                const extra = cg.air.extraData(Air.AtomicRmw, pl_op.payload).data;
+                const elem_ty = cg.typeOf(extra.operand);
+                var ops = try cg.tempsFromOperands(inst, .{ pl_op.operand, extra.operand });
+
+                const unused_direct = cg.liveness.isUnused(inst) and elem_ty.abiSize(zcu) <= 8 and switch (extra.op()) {
+                    .Xchg, .And, .Or, .Xor => true,
+                    .Add, .Sub => !elem_ty.isRuntimeFloat(),
+                    .Nand, .Min, .Max => false,
+                };
+                if (unused_direct) {
+                    cg.select(&.{}, &.{}, &ops, switch (extra.op()) {
+                        .Nand, .Min, .Max => unreachable,
+                        .Xchg => switch (extra.ordering()) {
+                            inline else => |ordering| comptime b: {
+                                const mnem: Mir.Inst.Tag, const fix: Mir.Inst.Fixes = switch (ordering) {
+                                    .seq_cst, .acq_rel => .{ .xch, ._g },
+                                    else => .{ .mov, ._ },
+                                };
+                                break :b &.{ .{
+                                    .src_constraints = .{ .{ .int = .ptr }, .{ .int = .byte }, .any },
+                                    .patterns = &.{
+                                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                    },
+                                    .each = .{ .once = &.{
+                                        .{ ._, fix, mnem, .lea(.src0b), .src1b, ._, ._ },
+                                    } },
+                                }, .{
+                                    .src_constraints = .{ .{ .int = .ptr }, .{ .int = .word }, .any },
+                                    .patterns = &.{
+                                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                    },
+                                    .each = .{ .once = &.{
+                                        .{ ._, fix, mnem, .lea(.src0w), .src1w, ._, ._ },
+                                    } },
+                                }, .{
+                                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .dword }, .any },
+                                    .patterns = &.{
+                                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                    },
+                                    .each = .{ .once = &.{
+                                        .{ ._, fix, mnem, .lea(.src0d), .src1d, ._, ._ },
+                                    } },
+                                }, .{
+                                    .required_features = .{ .@"64bit", null, null, null },
+                                    .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .qword }, .any },
+                                    .patterns = &.{
+                                        .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                    },
+                                    .each = .{ .once = &.{
+                                        .{ ._, fix, mnem, .lea(.src0q), .src1q, ._, ._ },
+                                    } },
+                                } };
+                            },
+                        },
+                        inline .Add, .Sub, .And, .Or, .Xor => |op| comptime b: {
+                            const mnem: Mir.Inst.Tag = switch (op) {
+                                .Add => .add,
+                                .Sub => .sub,
+                                .And => .@"and",
+                                .Or => .@"or",
+                                .Xor => .xor,
+                                else => unreachable,
+                            };
+                            break :b &.{ .{
+                                .src_constraints = .{ .{ .int = .ptr }, .{ .int = .byte }, .any },
+                                .patterns = &.{
+                                    .{ .src = .{ .to_gpr, .imm8, .none } },
+                                    .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                },
+                                .clobbers = .{ .eflags = true },
+                                .each = .{ .once = &.{
+                                    .{ ._, .@"lock _", mnem, .lea(.src0b), .src1b, ._, ._ },
+                                } },
+                            }, .{
+                                .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .word }, .any },
+                                .patterns = &.{
+                                    .{ .src = .{ .to_gpr, .imm16, .none } },
+                                    .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                },
+                                .clobbers = .{ .eflags = true },
+                                .each = .{ .once = &.{
+                                    .{ ._, .@"lock _", mnem, .lea(.src0w), .src1w, ._, ._ },
+                                } },
+                            }, .{
+                                .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .dword }, .any },
+                                .patterns = &.{
+                                    .{ .src = .{ .to_gpr, .imm32, .none } },
+                                    .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                },
+                                .clobbers = .{ .eflags = true },
+                                .each = .{ .once = &.{
+                                    .{ ._, .@"lock _", mnem, .lea(.src0d), .src1d, ._, ._ },
+                                } },
+                            }, .{
+                                .required_features = .{ .@"64bit", null, null, null },
+                                .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .qword }, .any },
+                                .patterns = &.{
+                                    .{ .src = .{ .to_gpr, .simm32, .none } },
+                                    .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                                },
+                                .clobbers = .{ .eflags = true },
+                                .each = .{ .once = &.{
+                                    .{ ._, .@"lock _", mnem, .lea(.src0q), .src1q, ._, ._ },
+                                } },
+                            } };
+                        },
+                    }) catch |err| switch (err) {
+                        error.SelectFailed => return cg.fail("failed to select {s} {t} {t} {f} {f} {f}", .{
+                            @tagName(air_tag),
+                            extra.op(),
+                            extra.ordering(),
+                            elem_ty.fmt(zcu),
+                            ops[0].tracking(cg),
+                            ops[1].tracking(cg),
+                        }),
+                        else => |e| return e,
+                    };
+                    for (ops) |op| try op.die(cg);
+                } else {
+                    var res: [1]Temp = undefined;
+                    cg.select(&res, &.{elem_ty}, &ops, switch (extra.op()) {
+                        .Xchg => comptime &.{ .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .byte }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .each = .{ .once = &.{
+                                .{ ._, ._g, .xch, .lea(.src0b), .src1b, ._, ._ },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .each = .{ .once = &.{
+                                .{ ._, ._g, .xch, .lea(.src0w), .src1w, ._, ._ },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .each = .{ .once = &.{
+                                .{ ._, ._g, .xch, .lea(.src0d), .src1d, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .each = .{ .once = &.{
+                                .{ ._, ._g, .xch, .lea(.src0q), .src1q, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", .cx16, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int_or_float = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .{ .to_reg_pair = .{ .rbx, .rcx } }, .none } },
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        } },
+                        inline .Add, .Sub => |op| comptime &.{ .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .byte }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                else => unreachable,
+                                .Add => &.{
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0b), .src1b, ._, ._ },
+                                },
+                                .Sub => &.{
+                                    .{ ._, ._, .neg, .src1b, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0b), .src1b, ._, ._ },
+                                },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                else => unreachable,
+                                .Add => &.{
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0w), .src1w, ._, ._ },
+                                },
+                                .Sub => &.{
+                                    .{ ._, ._, .neg, .src1d, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0w), .src1w, ._, ._ },
+                                },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                else => unreachable,
+                                .Add => &.{
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0d), .src1d, ._, ._ },
+                                },
+                                .Sub => &.{
+                                    .{ ._, ._, .neg, .src1d, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0d), .src1d, ._, ._ },
+                                },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mut_gpr, .none } },
+                            },
+                            .dst_temps = .{ .{ .ref = .src1 }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                else => unreachable,
+                                .Add => &.{
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0q), .src1q, ._, ._ },
+                                },
+                                .Sub => &.{
+                                    .{ ._, ._, .neg, .src1q, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .xadd, .lea(.src0q), .src1q, ._, ._ },
+                                },
+                            } },
+                        }, .{
+                            .required_features = .{ .f16c, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .movzx, .dst0d, .lea(.src0w), ._, ._ },
+                                .{ ._, .v_ps, .cvtph2, .tmp1x, .src1q, ._, ._ },
+                                .{ .@"0:", .v_d, .mov, .tmp0x, .dst0d, ._, ._ },
+                                .{ ._, .v_ps, .cvtph2, .tmp0x, .tmp0q, ._, ._ },
+                                .{ ._, .v_ss, switch (op) {
+                                    .Add => .add,
+                                    .Sub => .sub,
+                                    else => unreachable,
+                                }, .tmp0x, .tmp0x, .tmp1d, ._ },
+                                .{ ._, .v_, .cvtps2ph, .tmp0q, .tmp0x, .rm(.{}), ._ },
+                                .{ ._, .v_d, .mov, .tmp2d, .tmp0x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp2w, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .avx, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                .{ .@"0:", .v_d, .mov, .tmp0x, .dst0d, ._, ._ },
+                                .{ ._, .v_ss, switch (op) {
+                                    .Add => .add,
+                                    .Sub => .sub,
+                                    else => unreachable,
+                                }, .tmp0x, .tmp0x, .src1d, ._ },
+                                .{ ._, .v_d, .mov, .tmp1d, .tmp0x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp1d, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .sse2, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                .{ .@"0:", ._d, .mov, .tmp0x, .dst0d, ._, ._ },
+                                .{ ._, ._ss, switch (op) {
+                                    .Add => .add,
+                                    .Sub => .sub,
+                                    else => unreachable,
+                                }, .tmp0x, .src1d, ._, ._ },
+                                .{ ._, ._d, .mov, .tmp1d, .tmp0x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp1d, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .avx, .@"64bit", null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f64, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                .{ .@"0:", .v_q, .mov, .tmp0x, .dst0q, ._, ._ },
+                                .{ ._, .v_sd, switch (op) {
+                                    .Add => .add,
+                                    .Sub => .sub,
+                                    else => unreachable,
+                                }, .tmp0x, .tmp0x, .src1q, ._ },
+                                .{ ._, .v_q, .mov, .tmp1q, .tmp0x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp1q, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .sse2, .@"64bit", null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f64, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                .{ .@"0:", ._q, .mov, .tmp0x, .dst0q, ._, ._ },
+                                .{ ._, ._sd, switch (op) {
+                                    .Add => .add,
+                                    .Sub => .sub,
+                                    else => unreachable,
+                                }, .tmp0x, .src1q, ._, ._ },
+                                .{ ._, ._q, .mov, .tmp1q, .tmp0x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp1q, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", .cx16, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .u128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0q0, .dst0q0, ._, ._ },
+                                .{ ._, ._, switch (op) {
+                                    .Add => .add,
+                                    .Sub => .sub,
+                                    else => unreachable,
+                                }, .tmp0q0, .src1q0, ._, ._ },
+                                .{ ._, ._, .mov, .tmp0q1, .dst0q1, ._, ._ },
+                                .{ ._, ._, switch (op) {
+                                    .Add => .adc,
+                                    .Sub => .sbb,
+                                    else => unreachable,
+                                }, .tmp0q1, .src1q1, ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_cc_abi = .sysv64,
+                            .required_features = .{ .@"64bit", .cx16, .avx, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Add => "__addtf3",
+                                    .Sub => "__subtf3",
+                                    else => unreachable,
+                                } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .mem(.tmp2q), .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .memd(.tmp2q, 8), .dst0q1, ._, ._ },
+                                .{ ._, .v_dqa, .mov, .tmp0x, .mem(.tmp2x), ._, ._ },
+                                .{ ._, .v_dqa, .mov, .tmp1x, .mem(.src1x), ._, ._ },
+                                .{ ._, ._, .call, .tmp5d, ._, ._, ._ },
+                                .{ ._, .v_dqa, .mov, .mem(.tmp3x), .tmp0x, ._, ._ },
+                                .{ ._, ._, .mov, .dst0q0, .mem(.tmp2q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .memd(.tmp2q, 8), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q0, .mem(.tmp3q), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q1, .memd(.tmp3q, 8), ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_cc_abi = .sysv64,
+                            .required_features = .{ .@"64bit", .cx16, .sse2, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Add => "__addtf3",
+                                    .Sub => "__subtf3",
+                                    else => unreachable,
+                                } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .mem(.tmp2q), .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .memd(.tmp2q, 8), .dst0q1, ._, ._ },
+                                .{ ._, ._dqa, .mov, .tmp0x, .mem(.tmp2x), ._, ._ },
+                                .{ ._, ._dqa, .mov, .tmp1x, .mem(.src1x), ._, ._ },
+                                .{ ._, ._, .call, .tmp5d, ._, ._, ._ },
+                                .{ ._, ._dqa, .mov, .mem(.tmp3x), .tmp0x, ._, ._ },
+                                .{ ._, ._, .mov, .dst0q0, .mem(.tmp2q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .memd(.tmp2q, 8), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q0, .mem(.tmp3q), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q1, .memd(.tmp3q, 8), ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_cc_abi = .win64,
+                            .required_features = .{ .@"64bit", .cx16, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .usize, .kind = .{ .param_gpr = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .usize, .kind = .{ .param_gpr = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .usize, .kind = .{ .param_gpr = .{ .cc = .ccc, .after = 2, .at = 2 } } },
+                                .{ .type = .u64, .kind = .{ .reg = .rbx } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Add => "__addtf3",
+                                    .Sub => "__subtf3",
+                                    else => unreachable,
+                                } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .mem(.tmp0q), .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .memd(.tmp0q, 8), .dst0q1, ._, ._ },
+                                .{ ._, ._, .lea, .tmp2p, .mem(.tmp1), ._, ._ },
+                                .{ ._, ._, .lea, .tmp3p, .mem(.tmp0), ._, ._ },
+                                .{ ._, ._, .lea, .tmp4p, .mem(.src1), ._, ._ },
+                                .{ ._, ._, .call, .tmp6d, ._, ._, ._ },
+                                .{ ._, ._, .mov, .dst0q0, .mem(.tmp0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .memd(.tmp0q, 8), ._, ._ },
+                                .{ ._, ._, .mov, .tmp5q, .mem(.tmp1q), ._, ._ },
+                                .{ ._, ._, .mov, .tmp2q, .memd(.tmp1q, 8), ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        } },
+                        inline .And, .Nand, .Or, .Xor => |op| comptime &.{ .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .byte }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .imm8, .none } },
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                else => unreachable,
+                                .And => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0b), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0b, .src1b, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0b), .tmp0b, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Nand => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0b), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0b, .src1b, ._, ._ },
+                                    .{ ._, ._, .not, .tmp0b, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0b), .tmp0b, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Or => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0b), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"or", .tmp0b, .src1b, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0b), .tmp0b, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Xor => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0b), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .xor, .tmp0b, .src1b, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0b), .tmp0b, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .imm16, .none } },
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                else => unreachable,
+                                .And => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0w), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp0w, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Nand => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0w), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, ._, .not, .tmp0d, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp0w, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Or => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0w), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"or", .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp0w, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Xor => &.{
+                                    .{ ._, ._, .movzx, .dst0d, .lea(.src0w), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .xor, .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp0w, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .imm32, .none } },
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                .And => &.{
+                                    .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp0d, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Nand => &.{
+                                    .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, ._, .not, .tmp0d, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp0d, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Or => &.{
+                                    .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .@"or", .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp0d, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Xor => &.{
+                                    .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                    .{ ._, ._, .xor, .tmp0d, .src1d, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp0d, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                else => unreachable,
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .simm32, .none } },
+                                .{ .src = .{ .to_gpr, .mem, .none } },
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                .And => &.{
+                                    .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q, .dst0q, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0q, .src1q, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp0q, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Nand => &.{
+                                    .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q, .dst0q, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0q, .src1q, ._, ._ },
+                                    .{ ._, ._, .not, .tmp0q, ._, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp0q, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Or => &.{
+                                    .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q, .dst0q, ._, ._ },
+                                    .{ ._, ._, .@"or", .tmp0q, .src1q, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp0q, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Xor => &.{
+                                    .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q, .dst0q, ._, ._ },
+                                    .{ ._, ._, .xor, .tmp0q, .src1q, ._, ._ },
+                                    .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp0q, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                else => unreachable,
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", .cx16, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .int = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .u128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = switch (op) {
+                                .And => &.{
+                                    .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                    .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q0, .dst0q0, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0q0, .src1q0, ._, ._ },
+                                    .{ ._, ._, .mov, .tmp0q1, .dst0q1, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0q1, .src1q1, ._, ._ },
+                                    .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Nand => &.{
+                                    .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                    .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q0, .dst0q0, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0q0, .src1q0, ._, ._ },
+                                    .{ ._, ._, .mov, .tmp0q1, .dst0q1, ._, ._ },
+                                    .{ ._, ._, .@"and", .tmp0q1, .src1q1, ._, ._ },
+                                    .{ ._, ._, .not, .tmp0q0, ._, ._, ._ },
+                                    .{ ._, ._, .not, .tmp0q1, ._, ._, ._ },
+                                    .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Or => &.{
+                                    .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                    .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q0, .dst0q0, ._, ._ },
+                                    .{ ._, ._, .@"or", .tmp0q0, .src1q0, ._, ._ },
+                                    .{ ._, ._, .mov, .tmp0q1, .dst0q1, ._, ._ },
+                                    .{ ._, ._, .@"or", .tmp0q1, .src1q1, ._, ._ },
+                                    .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                .Xor => &.{
+                                    .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                    .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                    .{ .@"0:", ._, .mov, .tmp0q0, .dst0q0, ._, ._ },
+                                    .{ ._, ._, .xor, .tmp0q0, .src1q0, ._, ._ },
+                                    .{ ._, ._, .mov, .tmp0q1, .dst0q1, ._, ._ },
+                                    .{ ._, ._, .xor, .tmp0q1, .src1q1, ._, ._ },
+                                    .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                    .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                                },
+                                else => unreachable,
+                            } },
+                        } },
+                        inline .Min, .Max => |op| comptime &.{ .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .signed_int = .byte }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0b, .lea(.src0b), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0b, .dst0b, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0b, .src1b, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._g,
+                                    .Max => ._l,
+                                    else => unreachable,
+                                }, .cmov, .tmp0w, .src1w, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0b), .tmp0b, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .unsigned_int = .byte }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0b, .lea(.src0b), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0b, .dst0b, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0b, .src1b, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._a,
+                                    .Max => ._b,
+                                    else => unreachable,
+                                }, .cmov, .tmp0w, .src1w, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0b), .tmp0b, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .signed_int = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0w, .lea(.src0w), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0w, .dst0w, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0w, .src1w, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._g,
+                                    .Max => ._l,
+                                    else => unreachable,
+                                }, .cmov, .tmp0w, .src1w, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp0w, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .unsigned_int = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0w, .lea(.src0w), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0w, .dst0w, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0w, .src1w, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._a,
+                                    .Max => ._b,
+                                    else => unreachable,
+                                }, .cmov, .tmp0w, .src1w, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp0w, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .signed_int = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0d, .src1d, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._g,
+                                    .Max => ._l,
+                                    else => unreachable,
+                                }, .cmov, .tmp0d, .src1d, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp0d, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .unsigned_int = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0d, .dst0d, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0d, .src1d, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._a,
+                                    .Max => ._b,
+                                    else => unreachable,
+                                }, .cmov, .tmp0d, .src1d, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp0d, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .signed_int = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0q, .dst0q, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0q, .src1q, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._g,
+                                    .Max => ._l,
+                                    else => unreachable,
+                                }, .cmov, .tmp0q, .src1q, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp0q, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .unsigned_int = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_gpr, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0q, .dst0q, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0q, .src1q, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._a,
+                                    .Max => ._b,
+                                    else => unreachable,
+                                }, .cmov, .tmp0q, .src1q, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp0q, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .avx, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f16, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .f16, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .f16, .kind = .{ .rc = .general_purpose } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Min => "__fminh",
+                                    .Max => "__fmaxh",
+                                    else => unreachable,
+                                } } },
+                                .{ .type = .f16, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0w, .lea(.src0w), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp2w, .dst0w, ._, ._ },
+                                .{ ._, .vp_, .xor, .tmp0x, .tmp0x, .tmp0x, ._ },
+                                .{ ._, .vp_, .xor, .tmp1x, .tmp1x, .tmp1x, ._ },
+                                .{ ._, .vp_w, .insr, .tmp0x, .tmp0x, .dst0d, .ui(0) },
+                                .{ ._, .vp_w, .insr, .tmp1x, .tmp1x, .src1w, .ui(0) },
+                                .{ ._, ._, .call, .tmp3d, ._, ._, ._ },
+                                .{ ._, .vp_w, .extr, .tmp4d, .tmp0x, .ui(0), ._ },
+                                .{ ._, ._, .mov, .dst0w, .tmp2w, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp4w, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .sse2, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .word }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f16, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .f16, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .f16, .kind = .{ .rc = .general_purpose } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Min => "__fminh",
+                                    .Max => "__fmaxh",
+                                    else => unreachable,
+                                } } },
+                                .{ .type = .f16, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0w, .lea(.src0w), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp2w, .dst0w, ._, ._ },
+                                .{ ._, .p_, .xor, .tmp0x, .tmp0x, ._, ._ },
+                                .{ ._, .p_, .xor, .tmp1x, .tmp1x, ._, ._ },
+                                .{ ._, .p_w, .insr, .tmp0x, .dst0d, .ui(0), ._ },
+                                .{ ._, .p_w, .insr, .tmp1x, .src1w, .ui(0), ._ },
+                                .{ ._, ._, .call, .tmp3d, ._, ._, ._ },
+                                .{ ._, .p_w, .extr, .tmp4d, .tmp0x, .ui(0), ._ },
+                                .{ ._, ._, .mov, .dst0w, .tmp2w, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0w), .tmp4w, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .avx, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                .{ .@"0:", .v_d, .mov, .tmp0x, .dst0d, ._, ._ },
+                                .{ ._, .v_ss, switch (op) {
+                                    .Min => .min,
+                                    .Max => .max,
+                                    else => unreachable,
+                                }, .tmp1x, .src1x, .tmp0d, ._ },
+                                .{ ._, .v_ss, .cmp, .tmp0x, .tmp0x, .tmp0d, .vp(.unord) },
+                                .{ ._, .v_ps, .blendv, .tmp1x, .tmp1x, .src1x, .tmp0x },
+                                .{ ._, .v_d, .mov, .tmp2d, .tmp1x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp2d, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .sse4_1, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f32, .kind = .{ .reg = .xmm0 } },
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                .{ .@"0:", ._d, .mov, .tmp0x, .dst0d, ._, ._ },
+                                .{ ._, ._ps, .mova, .tmp1x, .src1x, ._, ._ },
+                                .{ ._, ._ss, switch (op) {
+                                    .Min => .min,
+                                    .Max => .max,
+                                    else => unreachable,
+                                }, .tmp1x, .tmp0d, ._, ._ },
+                                .{ ._, ._ss, .cmp, .tmp0x, .tmp0d, .sp(.unord), ._ },
+                                .{ ._, ._ps, .blendv, .tmp1x, .src1x, .tmp0x, ._ },
+                                .{ ._, ._d, .mov, .tmp2d, .tmp1x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp2d, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .sse2, null, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .dword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .f32, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0d, .lea(.src0d), ._, ._ },
+                                .{ .@"0:", ._d, .mov, .tmp0x, .dst0d, ._, ._ },
+                                .{ ._, ._ps, .mova, .tmp1x, .src1x, ._, ._ },
+                                .{ ._, ._ss, switch (op) {
+                                    .Min => .min,
+                                    .Max => .max,
+                                    else => unreachable,
+                                }, .tmp1x, .tmp0d, ._, ._ },
+                                .{ ._, ._ss, .cmp, .tmp0x, .tmp0d, .sp(.ord), ._ },
+                                .{ ._, ._ps, .@"and", .tmp1x, .tmp0x, ._, ._ },
+                                .{ ._, ._ps, .andn, .tmp0x, .src1x, ._, ._ },
+                                .{ ._, ._ps, .@"or", .tmp0x, .tmp1x, ._, ._ },
+                                .{ ._, ._d, .mov, .tmp2d, .tmp0x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0d), .tmp2d, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .avx, .@"64bit", null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f64, .kind = .{ .rc = .sse } },
+                                .{ .type = .f64, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                .{ .@"0:", .v_q, .mov, .tmp0x, .dst0q, ._, ._ },
+                                .{ ._, .v_sd, switch (op) {
+                                    .Min => .min,
+                                    .Max => .max,
+                                    else => unreachable,
+                                }, .tmp1x, .src1x, .tmp0q, ._ },
+                                .{ ._, .v_sd, .cmp, .tmp0x, .tmp0x, .tmp0q, .vp(.unord) },
+                                .{ ._, .v_pd, .blendv, .tmp1x, .tmp1x, .src1x, .tmp0x },
+                                .{ ._, .v_q, .mov, .tmp2q, .tmp1x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp2q, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .sse4_1, .@"64bit", null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f64, .kind = .{ .reg = .xmm0 } },
+                                .{ .type = .f64, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                .{ .@"0:", ._q, .mov, .tmp0x, .dst0q, ._, ._ },
+                                .{ ._, ._pd, .mova, .tmp1x, .src1x, ._, ._ },
+                                .{ ._, ._sd, switch (op) {
+                                    .Min => .min,
+                                    .Max => .max,
+                                    else => unreachable,
+                                }, .tmp1x, .tmp0q, ._, ._ },
+                                .{ ._, ._sd, .cmp, .tmp0x, .tmp0q, .sp(.unord), ._ },
+                                .{ ._, ._pd, .blendv, .tmp1x, .src1x, .tmp0x, ._ },
+                                .{ ._, ._q, .mov, .tmp2q, .tmp1x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp2q, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .sse2, .@"64bit", null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .qword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_sse, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .f64, .kind = .{ .rc = .sse } },
+                                .{ .type = .f64, .kind = .{ .rc = .sse } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg = .rax }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q, .lea(.src0q), ._, ._ },
+                                .{ .@"0:", ._q, .mov, .tmp0x, .dst0q, ._, ._ },
+                                .{ ._, ._pd, .mova, .tmp1x, .src1x, ._, ._ },
+                                .{ ._, ._sd, switch (op) {
+                                    .Min => .min,
+                                    .Max => .max,
+                                    else => unreachable,
+                                }, .tmp1x, .tmp0q, ._, ._ },
+                                .{ ._, ._sd, .cmp, .tmp0x, .tmp0q, .sp(.ord), ._ },
+                                .{ ._, ._pd, .@"and", .tmp1x, .tmp0x, ._, ._ },
+                                .{ ._, ._pd, .andn, .tmp0x, .src1x, ._, ._ },
+                                .{ ._, ._pd, .@"or", .tmp0x, .tmp1x, ._, ._ },
+                                .{ ._, ._q, .mov, .tmp2q, .tmp0x, ._, ._ },
+                                .{ ._, .@"lock _", .cmpxchg, .lea(.src0q), .tmp2q, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", .cx16, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .signed_int = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .u128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0q0, .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .tmp0q1, .dst0q1, ._, ._ },
+                                .{ ._, ._, .mov, .tmp1q, .tmp0q1, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0q0, .src1q0, ._, ._ },
+                                .{ ._, ._, .sbb, .tmp1q, .src1q1, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._ge,
+                                    .Max => ._l,
+                                    else => unreachable,
+                                }, .cmov, .tmp0q0, .src1q0, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._ge,
+                                    .Max => ._l,
+                                    else => unreachable,
+                                }, .cmov, .tmp0q1, .src1q1, ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_features = .{ .@"64bit", .cx16, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .unsigned_int = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .extra_temps = .{
+                                .{ .type = .u128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .{ .type = .usize, .kind = .{ .rc = .general_purpose } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .tmp0q0, .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .tmp0q1, .dst0q1, ._, ._ },
+                                .{ ._, ._, .mov, .tmp1q, .tmp0q1, ._, ._ },
+                                .{ ._, ._, .cmp, .tmp0q0, .src1q0, ._, ._ },
+                                .{ ._, ._, .sbb, .tmp1q, .src1q1, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._ae,
+                                    .Max => ._b,
+                                    else => unreachable,
+                                }, .cmov, .tmp0q0, .src1q0, ._, ._ },
+                                .{ ._, switch (op) {
+                                    .Min => ._ae,
+                                    .Max => ._b,
+                                    else => unreachable,
+                                }, .cmov, .tmp0q1, .src1q1, ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_cc_abi = .sysv64,
+                            .required_features = .{ .@"64bit", .cx16, .avx, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Min => "fminf128",
+                                    .Max => "fmaxf128",
+                                    else => unreachable,
+                                } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .mem(.tmp2q), .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .memd(.tmp2q, 8), .dst0q1, ._, ._ },
+                                .{ ._, .v_dqa, .mov, .tmp0x, .mem(.tmp2x), ._, ._ },
+                                .{ ._, .v_dqa, .mov, .tmp1x, .mem(.src1x), ._, ._ },
+                                .{ ._, ._, .call, .tmp5d, ._, ._, ._ },
+                                .{ ._, .v_dqa, .mov, .mem(.tmp3x), .tmp0x, ._, ._ },
+                                .{ ._, ._, .mov, .dst0q0, .mem(.tmp2q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .memd(.tmp2q, 8), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q0, .mem(.tmp3q), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q1, .memd(.tmp3q, 8), ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_cc_abi = .sysv64,
+                            .required_features = .{ .@"64bit", .cx16, .sse2, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .f128, .kind = .{ .param_sse = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .{ .reg_pair = .{ .rbx, .rcx } } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Min => "fminf128",
+                                    .Max => "fmaxf128",
+                                    else => unreachable,
+                                } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .mem(.tmp2q), .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .memd(.tmp2q, 8), .dst0q1, ._, ._ },
+                                .{ ._, ._dqa, .mov, .tmp0x, .mem(.tmp2x), ._, ._ },
+                                .{ ._, ._dqa, .mov, .tmp1x, .mem(.src1x), ._, ._ },
+                                .{ ._, ._, .call, .tmp5d, ._, ._, ._ },
+                                .{ ._, ._dqa, .mov, .mem(.tmp3x), .tmp0x, ._, ._ },
+                                .{ ._, ._, .mov, .dst0q0, .mem(.tmp2q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .memd(.tmp2q, 8), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q0, .mem(.tmp3q), ._, ._ },
+                                .{ ._, ._, .mov, .tmp4q1, .memd(.tmp3q, 8), ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        }, .{
+                            .required_cc_abi = .win64,
+                            .required_features = .{ .@"64bit", .cx16, null, null },
+                            .src_constraints = .{ .{ .int = .ptr }, .{ .float = .xword }, .any },
+                            .patterns = &.{
+                                .{ .src = .{ .to_gpr, .to_mem, .none } },
+                            },
+                            .call_frame = .{ .alignment = .@"16" },
+                            .extra_temps = .{
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .f128, .kind = .mem },
+                                .{ .type = .usize, .kind = .{ .param_gpr = .{ .cc = .ccc, .after = 0, .at = 0 } } },
+                                .{ .type = .usize, .kind = .{ .param_gpr = .{ .cc = .ccc, .after = 1, .at = 1 } } },
+                                .{ .type = .usize, .kind = .{ .param_gpr = .{ .cc = .ccc, .after = 2, .at = 2 } } },
+                                .{ .type = .u64, .kind = .{ .reg = .rbx } },
+                                .{ .type = .usize, .kind = .{ .extern_func = switch (op) {
+                                    .Min => "fminf128",
+                                    .Max => "fmaxf128",
+                                    else => unreachable,
+                                } } },
+                                .unused,
+                                .unused,
+                                .unused,
+                                .unused,
+                            },
+                            .dst_temps = .{ .{ .reg_pair = .{ .rax, .rdx } }, .unused },
+                            .clobbers = .{ .eflags = true, .caller_preserved = .ccc },
+                            .each = .{ .once = &.{
+                                .{ ._, ._, .mov, .dst0q0, .lea(.src0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .lead(.src0q, 8), ._, ._ },
+                                .{ .@"0:", ._, .mov, .mem(.tmp0q), .dst0q0, ._, ._ },
+                                .{ ._, ._, .mov, .memd(.tmp0q, 8), .dst0q1, ._, ._ },
+                                .{ ._, ._, .lea, .tmp2p, .mem(.tmp1), ._, ._ },
+                                .{ ._, ._, .lea, .tmp3p, .mem(.tmp0), ._, ._ },
+                                .{ ._, ._, .lea, .tmp4p, .mem(.src1), ._, ._ },
+                                .{ ._, ._, .call, .tmp6d, ._, ._, ._ },
+                                .{ ._, ._, .mov, .dst0q0, .mem(.tmp0q), ._, ._ },
+                                .{ ._, ._, .mov, .dst0q1, .memd(.tmp0q, 8), ._, ._ },
+                                .{ ._, ._, .mov, .tmp5q, .mem(.tmp1q), ._, ._ },
+                                .{ ._, ._, .mov, .tmp3q, .memd(.tmp1q, 8), ._, ._ },
+                                .{ ._, .@"lock _16b", .cmpxchg, .lea(.src0x), ._, ._, ._ },
+                                .{ ._, ._nz, .j, .@"0b", ._, ._, ._ },
+                            } },
+                        } },
+                    }) catch |err| switch (err) {
+                        error.SelectFailed => return cg.fail("failed to select {s} {t} {t}, {f} {f} {f}", .{
+                            @tagName(air_tag),
+                            extra.op(),
+                            extra.ordering(),
+                            elem_ty.fmt(zcu),
+                            ops[0].tracking(cg),
+                            ops[1].tracking(cg),
+                        }),
+                        else => |e| return e,
+                    };
+                    try res[0].finish(inst, &.{ pl_op.operand, extra.operand }, &ops, cg);
+                }
+            },
             .is_named_enum_value => |air_tag| {
                 const un_op = air_datas[@backingInt(inst)].un_op;
                 var ops = try cg.tempsFromOperands(inst, .{un_op});
@@ -179627,419 +181547,6 @@ fn airBitCast(self: *CodeGen, inst: Air.Inst.Index) !void {
     return self.finishAir(inst, result, .{ ty_op.operand, .none, .none });
 }
 
-fn atomicOp(
-    self: *CodeGen,
-    ptr_mcv: MCValue,
-    val_mcv: MCValue,
-    ptr_ty: Type,
-    val_ty: Type,
-    unused: bool,
-    rmw_op: ?std.lang.AtomicRmwOp,
-    order: std.lang.AtomicOrder,
-) InnerError!MCValue {
-    const pt = self.pt;
-    const zcu = pt.zcu;
-    const ptr_lock = switch (ptr_mcv) {
-        .register => |reg| self.register_manager.lockReg(reg),
-        else => null,
-    };
-    defer if (ptr_lock) |lock| self.register_manager.unlockReg(lock);
-
-    const val_lock = switch (val_mcv) {
-        .register => |reg| self.register_manager.lockReg(reg),
-        else => null,
-    };
-    defer if (val_lock) |lock| self.register_manager.unlockReg(lock);
-
-    const val_abi_size: u32 = @intCast(val_ty.abiSize(zcu));
-    const mem_size: Memory.Size = .fromSize(val_abi_size);
-    const ptr_mem: Memory = switch (ptr_mcv) {
-        .immediate, .register, .register_offset, .lea_frame => try ptr_mcv.deref().mem(self, .{ .size = mem_size }),
-        else => .{
-            .base = .{ .reg = try self.copyToTmpRegister(ptr_ty, ptr_mcv) },
-            .mod = .{ .rm = .{ .size = mem_size } },
-        },
-    };
-    switch (ptr_mem.mod) {
-        .rm => {},
-        .off => return self.fail("TODO atomicOp with {s}", .{@tagName(ptr_mcv)}),
-    }
-    const mem_lock = switch (ptr_mem.base) {
-        .none, .frame, .nav, .uav => null,
-        .reg => |reg| self.register_manager.lockReg(reg),
-        .table, .rip_inst, .lazy_sym, .extern_func => unreachable,
-    };
-    defer if (mem_lock) |lock| self.register_manager.unlockReg(lock);
-
-    const use_sse = (rmw_op orelse .Xchg) != .Xchg and val_ty.isRuntimeFloat();
-    const strat: enum { lock, loop, libcall } = if (use_sse) .loop else switch (rmw_op orelse .Xchg) {
-        .Xchg,
-        .Add,
-        .Sub,
-        => if (val_abi_size <= 8) .lock else if (val_abi_size <= 16) .loop else .libcall,
-        .And,
-        .Or,
-        .Xor,
-        => if (val_abi_size <= 8 and unused) .lock else if (val_abi_size <= 16) .loop else .libcall,
-        .Nand,
-        .Max,
-        .Min,
-        => if (val_abi_size <= 16) .loop else .libcall,
-    };
-    switch (strat) {
-        .lock => {
-            const mir_tag: Mir.Inst.FixedTag = if (rmw_op) |op| switch (op) {
-                .Xchg => if (unused) .{ ._, .mov } else .{ ._g, .xch },
-                .Add => .{ .@"lock _", if (unused) .add else .xadd },
-                .Sub => .{ .@"lock _", if (unused) .sub else .xadd },
-                .And => .{ .@"lock _", .@"and" },
-                .Or => .{ .@"lock _", .@"or" },
-                .Xor => .{ .@"lock _", .xor },
-                else => unreachable,
-            } else switch (order) {
-                .unordered, .monotonic, .release, .acq_rel => .{ ._, .mov },
-                .acquire => unreachable,
-                .seq_cst => .{ ._g, .xch },
-            };
-
-            const dst_reg = try self.register_manager.allocReg(null, abi.RegisterClass.gp);
-            const dst_mcv = MCValue{ .register = dst_reg };
-            const dst_lock = self.register_manager.lockRegAssumeUnused(dst_reg);
-            defer self.register_manager.unlockReg(dst_lock);
-
-            try self.genSetReg(dst_reg, val_ty, val_mcv, .{});
-            if (rmw_op == std.lang.AtomicRmwOp.Sub and mir_tag[1] == .xadd) {
-                try self.genUnOpMir(.{ ._, .neg }, val_ty, dst_mcv);
-            }
-            try self.asmMemoryRegister(mir_tag, ptr_mem, registerAlias(dst_reg, val_abi_size));
-
-            return if (unused) .unreach else dst_mcv;
-        },
-        .loop => _ = if (val_abi_size <= 8) {
-            const sse_reg: Register = if (use_sse)
-                try self.register_manager.allocReg(null, abi.RegisterClass.sse)
-            else
-                undefined;
-            const sse_lock =
-                if (use_sse) self.register_manager.lockRegAssumeUnused(sse_reg) else undefined;
-            defer if (use_sse) self.register_manager.unlockReg(sse_lock);
-
-            const tmp_reg = try self.register_manager.allocReg(null, abi.RegisterClass.gp);
-            const tmp_mcv = MCValue{ .register = tmp_reg };
-            const tmp_lock = self.register_manager.lockRegAssumeUnused(tmp_reg);
-            defer self.register_manager.unlockReg(tmp_lock);
-
-            try self.asmRegisterMemory(.{ ._, .mov }, registerAlias(.rax, val_abi_size), ptr_mem);
-            const loop: Mir.Inst.Index = @intCast(self.mir_instructions.len);
-            if (!use_sse and (rmw_op orelse .Xchg) != .Xchg) {
-                try self.genSetReg(tmp_reg, val_ty, .{ .register = .rax }, .{});
-            }
-            if (rmw_op) |op| if (use_sse) {
-                const mir_tag = @as(?Mir.Inst.FixedTag, switch (op) {
-                    .Add => switch (val_ty.floatBits(self.target)) {
-                        32 => if (self.hasFeature(.avx)) .{ .v_ss, .add } else .{ ._ss, .add },
-                        64 => if (self.hasFeature(.avx)) .{ .v_sd, .add } else .{ ._sd, .add },
-                        else => null,
-                    },
-                    .Sub => switch (val_ty.floatBits(self.target)) {
-                        32 => if (self.hasFeature(.avx)) .{ .v_ss, .sub } else .{ ._ss, .sub },
-                        64 => if (self.hasFeature(.avx)) .{ .v_sd, .sub } else .{ ._sd, .sub },
-                        else => null,
-                    },
-                    .Min => switch (val_ty.floatBits(self.target)) {
-                        32 => if (self.hasFeature(.avx)) .{ .v_ss, .min } else .{ ._ss, .min },
-                        64 => if (self.hasFeature(.avx)) .{ .v_sd, .min } else .{ ._sd, .min },
-                        else => null,
-                    },
-                    .Max => switch (val_ty.floatBits(self.target)) {
-                        32 => if (self.hasFeature(.avx)) .{ .v_ss, .max } else .{ ._ss, .max },
-                        64 => if (self.hasFeature(.avx)) .{ .v_sd, .max } else .{ ._sd, .max },
-                        else => null,
-                    },
-                    else => unreachable,
-                }) orelse return self.fail("TODO implement atomicOp of {s} for {f}", .{
-                    @tagName(op), val_ty.fmt(zcu),
-                });
-                try self.genSetReg(sse_reg, val_ty, .{ .register = .rax }, .{});
-                switch (mir_tag[0]) {
-                    .v_ss, .v_sd => if (val_mcv.isBase()) try self.asmRegisterRegisterMemory(
-                        mir_tag,
-                        sse_reg.to128(),
-                        sse_reg.to128(),
-                        try val_mcv.mem(self, .{ .size = self.memSize(val_ty, sse_reg.class()) }),
-                    ) else try self.asmRegisterRegisterRegister(
-                        mir_tag,
-                        sse_reg.to128(),
-                        sse_reg.to128(),
-                        (if (val_mcv.isRegister())
-                            val_mcv.getReg().?
-                        else
-                            try self.copyToTmpRegister(val_ty, val_mcv)).to128(),
-                    ),
-                    ._ss, ._sd => if (val_mcv.isBase()) try self.asmRegisterMemory(
-                        mir_tag,
-                        sse_reg.to128(),
-                        try val_mcv.mem(self, .{ .size = self.memSize(val_ty, sse_reg.class()) }),
-                    ) else try self.asmRegisterRegister(
-                        mir_tag,
-                        sse_reg.to128(),
-                        (if (val_mcv.isRegister())
-                            val_mcv.getReg().?
-                        else
-                            try self.copyToTmpRegister(val_ty, val_mcv)).to128(),
-                    ),
-                    else => unreachable,
-                }
-                try self.genSetReg(tmp_reg, val_ty, .{ .register = sse_reg }, .{});
-            } else switch (op) {
-                .Xchg => try self.genSetReg(tmp_reg, val_ty, val_mcv, .{}),
-                .Add => try self.genBinOpMir(.{ ._, .add }, val_ty, tmp_mcv, val_mcv),
-                .Sub => try self.genBinOpMir(.{ ._, .sub }, val_ty, tmp_mcv, val_mcv),
-                .And => try self.genBinOpMir(.{ ._, .@"and" }, val_ty, tmp_mcv, val_mcv),
-                .Nand => {
-                    try self.genBinOpMir(.{ ._, .@"and" }, val_ty, tmp_mcv, val_mcv);
-                    try self.genUnOpMir(.{ ._, .not }, val_ty, tmp_mcv);
-                },
-                .Or => try self.genBinOpMir(.{ ._, .@"or" }, val_ty, tmp_mcv, val_mcv),
-                .Xor => try self.genBinOpMir(.{ ._, .xor }, val_ty, tmp_mcv, val_mcv),
-                .Min, .Max => {
-                    const cc: Condition = switch (if (val_ty.isAbiInt(zcu))
-                        val_ty.intInfo(zcu).signedness
-                    else
-                        .unsigned) {
-                        .unsigned => switch (op) {
-                            .Min => .a,
-                            .Max => .b,
-                            else => unreachable,
-                        },
-                        .signed => switch (op) {
-                            .Min => .g,
-                            .Max => .l,
-                            else => unreachable,
-                        },
-                    };
-
-                    const cmov_abi_size = @max(val_abi_size, 2);
-                    switch (val_mcv) {
-                        .register => |val_reg| {
-                            try self.genBinOpMir(.{ ._, .cmp }, val_ty, tmp_mcv, val_mcv);
-                            try self.asmCmovccRegisterRegister(
-                                cc,
-                                registerAlias(tmp_reg, cmov_abi_size),
-                                registerAlias(val_reg, cmov_abi_size),
-                            );
-                        },
-                        .memory, .indirect, .load_frame => {
-                            try self.genBinOpMir(.{ ._, .cmp }, val_ty, tmp_mcv, val_mcv);
-                            try self.asmCmovccRegisterMemory(
-                                cc,
-                                registerAlias(tmp_reg, cmov_abi_size),
-                                try val_mcv.mem(self, .{ .size = .fromSize(cmov_abi_size) }),
-                            );
-                        },
-                        else => {
-                            const mat_reg = try self.copyToTmpRegister(val_ty, val_mcv);
-                            const mat_lock = self.register_manager.lockRegAssumeUnused(mat_reg);
-                            defer self.register_manager.unlockReg(mat_lock);
-
-                            try self.genBinOpMir(
-                                .{ ._, .cmp },
-                                val_ty,
-                                tmp_mcv,
-                                .{ .register = mat_reg },
-                            );
-                            try self.asmCmovccRegisterRegister(
-                                cc,
-                                registerAlias(tmp_reg, cmov_abi_size),
-                                registerAlias(mat_reg, cmov_abi_size),
-                            );
-                        },
-                    }
-                },
-            };
-            try self.asmMemoryRegister(
-                .{ .@"lock _", .cmpxchg },
-                ptr_mem,
-                registerAlias(tmp_reg, val_abi_size),
-            );
-            _ = try self.asmJccReloc(.ne, loop);
-            return if (unused) .unreach else .{ .register = .rax };
-        } else {
-            try self.asmRegisterMemory(.{ ._, .mov }, .rax, .{
-                .base = ptr_mem.base,
-                .mod = .{ .rm = .{
-                    .size = .qword,
-                    .index = ptr_mem.mod.rm.index,
-                    .scale = ptr_mem.mod.rm.scale,
-                    .disp = ptr_mem.mod.rm.disp + 0,
-                } },
-            });
-            try self.asmRegisterMemory(.{ ._, .mov }, .rdx, .{
-                .base = ptr_mem.base,
-                .mod = .{ .rm = .{
-                    .size = .qword,
-                    .index = ptr_mem.mod.rm.index,
-                    .scale = ptr_mem.mod.rm.scale,
-                    .disp = ptr_mem.mod.rm.disp + 8,
-                } },
-            });
-            const loop: Mir.Inst.Index = @intCast(self.mir_instructions.len);
-            const val_mem_mcv: MCValue = switch (val_mcv) {
-                .memory, .indirect, .load_frame => val_mcv,
-                else => .{ .indirect = .{
-                    .reg = try self.copyToTmpRegister(.usize, val_mcv.address()),
-                } },
-            };
-            const val_lo_mem = try val_mem_mcv.mem(self, .{ .size = .qword });
-            const val_hi_mem = try val_mem_mcv.address().offset(8).deref().mem(self, .{ .size = .qword });
-            if (rmw_op != std.lang.AtomicRmwOp.Xchg) {
-                try self.asmRegisterRegister(.{ ._, .mov }, .rbx, .rax);
-                try self.asmRegisterRegister(.{ ._, .mov }, .rcx, .rdx);
-            }
-            if (rmw_op) |op| switch (op) {
-                .Xchg => {
-                    try self.asmRegisterMemory(.{ ._, .mov }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .mov }, .rcx, val_hi_mem);
-                },
-                .Add => {
-                    try self.asmRegisterMemory(.{ ._, .add }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .adc }, .rcx, val_hi_mem);
-                },
-                .Sub => {
-                    try self.asmRegisterMemory(.{ ._, .sub }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .sbb }, .rcx, val_hi_mem);
-                },
-                .And => {
-                    try self.asmRegisterMemory(.{ ._, .@"and" }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .@"and" }, .rcx, val_hi_mem);
-                },
-                .Nand => {
-                    try self.asmRegisterMemory(.{ ._, .@"and" }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .@"and" }, .rcx, val_hi_mem);
-                    try self.asmRegister(.{ ._, .not }, .rbx);
-                    try self.asmRegister(.{ ._, .not }, .rcx);
-                },
-                .Or => {
-                    try self.asmRegisterMemory(.{ ._, .@"or" }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .@"or" }, .rcx, val_hi_mem);
-                },
-                .Xor => {
-                    try self.asmRegisterMemory(.{ ._, .xor }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .xor }, .rcx, val_hi_mem);
-                },
-                .Min, .Max => {
-                    const cc: Condition = switch (if (val_ty.isAbiInt(zcu))
-                        val_ty.intInfo(zcu).signedness
-                    else
-                        .unsigned) {
-                        .unsigned => switch (op) {
-                            .Min => .a,
-                            .Max => .b,
-                            else => unreachable,
-                        },
-                        .signed => switch (op) {
-                            .Min => .g,
-                            .Max => .l,
-                            else => unreachable,
-                        },
-                    };
-
-                    const tmp_reg = try self.copyToTmpRegister(.usize, .{ .register = .rcx });
-                    const tmp_lock = self.register_manager.lockRegAssumeUnused(tmp_reg);
-                    defer self.register_manager.unlockReg(tmp_lock);
-
-                    try self.asmRegisterMemory(.{ ._, .cmp }, .rbx, val_lo_mem);
-                    try self.asmRegisterMemory(.{ ._, .sbb }, tmp_reg, val_hi_mem);
-                    try self.asmCmovccRegisterMemory(cc, .rbx, val_lo_mem);
-                    try self.asmCmovccRegisterMemory(cc, .rcx, val_hi_mem);
-                },
-            };
-            try self.asmMemory(.{ .@"lock _16b", .cmpxchg }, ptr_mem);
-            _ = try self.asmJccReloc(.ne, loop);
-
-            if (unused) return .unreach;
-            const dst_mcv = try self.allocTempRegOrMem(val_ty, false);
-            try self.asmMemoryRegister(.{ ._, .mov }, .{
-                .base = .{ .frame = dst_mcv.load_frame.index },
-                .mod = .{ .rm = .{
-                    .size = .qword,
-                    .disp = dst_mcv.load_frame.off + 0,
-                } },
-            }, .rax);
-            try self.asmMemoryRegister(.{ ._, .mov }, .{
-                .base = .{ .frame = dst_mcv.load_frame.index },
-                .mod = .{ .rm = .{
-                    .size = .qword,
-                    .disp = dst_mcv.load_frame.off + 8,
-                } },
-            }, .rdx);
-            return dst_mcv;
-        },
-        .libcall => return self.fail("TODO implement x86 atomic libcall", .{}),
-    }
-}
-
-fn airAtomicRmw(self: *CodeGen, inst: Air.Inst.Index) !void {
-    const pl_op = self.air.instructions.items(.data)[@backingInt(inst)].pl_op;
-    const extra = self.air.extraData(Air.AtomicRmw, pl_op.payload).data;
-
-    try self.spillRegisters(&.{ .rax, .rdx, .rbx, .rcx });
-    const regs_lock = self.register_manager.lockRegsAssumeUnused(4, .{ .rax, .rdx, .rbx, .rcx });
-    defer for (regs_lock) |lock| self.register_manager.unlockReg(lock);
-
-    const unused = self.liveness.isUnused(inst);
-
-    const ptr_ty = self.typeOf(pl_op.operand);
-    const ptr_mcv = try self.resolveInst(pl_op.operand);
-
-    const val_ty = self.typeOf(extra.operand);
-    const val_mcv = try self.resolveInst(extra.operand);
-
-    const result =
-        try self.atomicOp(ptr_mcv, val_mcv, ptr_ty, val_ty, unused, extra.op(), extra.ordering());
-    return self.finishAir(inst, result, .{ pl_op.operand, extra.operand, .none });
-}
-
-fn airAtomicLoad(self: *CodeGen, inst: Air.Inst.Index) !void {
-    const atomic_load = self.air.instructions.items(.data)[@backingInt(inst)].atomic_load;
-    const result: MCValue = result: {
-        const ptr_ty = self.typeOf(atomic_load.ptr);
-        const ptr_mcv = try self.resolveInst(atomic_load.ptr);
-        const ptr_lock = switch (ptr_mcv) {
-            .register => |reg| self.register_manager.lockRegAssumeUnused(reg),
-            else => null,
-        };
-        defer if (ptr_lock) |lock| self.register_manager.unlockReg(lock);
-
-        const unused = self.liveness.isUnused(inst);
-
-        const dst_mcv: MCValue = if (unused)
-            .{ .register = try self.register_manager.allocReg(null, self.regSetForType(ptr_ty.childType(self.pt.zcu))) }
-        else if (self.reuseOperand(inst, atomic_load.ptr, 0, ptr_mcv))
-            ptr_mcv
-        else
-            try self.allocRegOrMem(inst, true);
-
-        try self.load(dst_mcv, ptr_ty, ptr_mcv);
-
-        break :result if (unused) .unreach else dst_mcv;
-    };
-    return self.finishAir(inst, result, .{ atomic_load.ptr, .none, .none });
-}
-
-fn airAtomicStore(self: *CodeGen, inst: Air.Inst.Index, order: std.lang.AtomicOrder) !void {
-    const bin_op = self.air.instructions.items(.data)[@backingInt(inst)].bin_op;
-
-    const ptr_ty = self.typeOf(bin_op.lhs);
-    const ptr_mcv = try self.resolveInst(bin_op.lhs);
-
-    const val_ty = self.typeOf(bin_op.rhs);
-    const val_mcv = try self.resolveInst(bin_op.rhs);
-
-    const result = try self.atomicOp(ptr_mcv, val_mcv, ptr_ty, val_ty, true, null, order);
-    return self.finishAir(inst, result, .{ bin_op.lhs, bin_op.rhs, .none });
-}
-
 fn airMemset(self: *CodeGen, inst: Air.Inst.Index, safety: bool) !void {
     const pt = self.pt;
     const zcu = pt.zcu;
@@ -181717,7 +183224,7 @@ fn splitType(self: *CodeGen, comptime parts_len: usize, ty: Type) ![parts_len]Ty
             },
             .float => .f32,
             .float_combine => try pt.arrayType(.{ .len = 2, .child = .f32_type }),
-            .sse => .f64,
+            .sse, .sseup => .f64,
             else => break,
         };
     } else {
