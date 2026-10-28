@@ -176569,21 +176569,8 @@ fn lowerSwitchBr(
             condition_index,
             .{ .air_ref = Air.internedToRef(min.?.toIntern()) },
         );
-        const else_reloc = if (switch_br.else_body_len > 0) else_reloc: {
-            var cond_temp = try cg.tempInit(unsigned_condition_ty, condition_index);
-            var table_max_temp = try cg.tempFromValue(try cg.pt.intValue(unsigned_condition_ty, table_len - 1));
-            const cc_temp = cond_temp.cmpInts(.gt, &table_max_temp, cg) catch |err| switch (err) {
-                error.SelectFailed => unreachable,
-                else => |e| return e,
-            };
-            try cond_temp.die(cg);
-            try table_max_temp.die(cg);
-            const else_reloc = try cg.asmJccReloc(cc_temp.tracking(cg).short.eflags, undefined);
-            try cc_temp.die(cg);
-            break :else_reloc else_reloc;
-        } else undefined;
         const table_start: u31 = @intCast(cg.mir_table.items.len);
-        {
+        const else_reloc = dispatch: {
             const condition_index_reg = condition_index_reg: {
                 if (condition_index.isRegister()) {
                     const condition_index_reg = condition_index.getReg().?;
@@ -176594,6 +176581,19 @@ fn lowerSwitchBr(
             const condition_index_lock = cg.register_manager.lockReg(condition_index_reg);
             defer if (condition_index_lock) |lock| cg.register_manager.unlockReg(lock);
             try cg.truncateRegister(unsigned_condition_ty, condition_index_reg);
+            const else_reloc = if (switch_br.else_body_len > 0) else_reloc: {
+                var cond_temp = try cg.tempInit(unsigned_condition_ty, condition_index);
+                var table_max_temp = try cg.tempFromValue(try cg.pt.intValue(unsigned_condition_ty, table_len - 1));
+                const cc_temp = cond_temp.cmpInts(.gt, &table_max_temp, cg) catch |err| switch (err) {
+                    error.SelectFailed => unreachable,
+                    else => |e| return e,
+                };
+                try cond_temp.die(cg);
+                try table_max_temp.die(cg);
+                const reloc = try cg.asmJccReloc(cc_temp.tracking(cg).short.eflags, undefined);
+                try cc_temp.die(cg);
+                break :else_reloc reloc;
+            } else undefined;
             const ptr_size = @divExact(cg.target.ptrBitWidth(), 8);
             try cg.asmMemory(.{ ._mp, .j }, .{
                 .base = .table,
@@ -176604,7 +176604,8 @@ fn lowerSwitchBr(
                     .disp = table_start * ptr_size,
                 } },
             });
-        }
+            break :dispatch else_reloc;
+        };
         const else_reloc_marker: u32 = 0;
         assert(cg.mir_instructions.len > else_reloc_marker);
         try cg.mir_table.appendNTimes(cg.gpa, else_reloc_marker, table_len);

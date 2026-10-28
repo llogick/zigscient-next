@@ -1721,3 +1721,44 @@ test "switch on expression" {
     }
     try expect(c == 0);
 }
+
+test "dense switch else prong" {
+    const S = struct {
+        const E = enum {
+            e1,
+            e7,
+            e9,
+            e11,
+            e13,
+        };
+
+        const R = struct {
+            odd: bool,
+            slices: [11][]const u32,
+        };
+
+        noinline fn make(e: E, x: []const u32) R {
+            const s0 = x[0..1];
+            const s1 = x[0..1];
+            const s2 = x[0..1];
+            const s3 = x[0..1];
+            const s4 = x[0..1];
+            const s5 = x[0..1];
+            const s6 = x[0..1];
+            const s7 = x[0..1];
+            const s8 = x[0..1];
+            const s9 = x[0..1];
+            const s10 = x[0..1];
+            return .{
+                .odd = switch (e) {
+                    .e7, .e9, .e11, .e13 => true,
+                    else => false,
+                },
+                .slices = .{ s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10 },
+            };
+        }
+    };
+
+    const x: [1]u32 = undefined;
+    _ = S.make(.e1, &x);
+}
