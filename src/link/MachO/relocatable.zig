@@ -724,10 +724,11 @@ fn writeHeader(macho_file: *MachO, ncmds: usize, sizeofcmds: usize) !void {
     var header: macho.mach_header_64 = .{};
     header.filetype = macho.MH_OBJECT;
 
+    // Only mark the output as having subsections if *every* input object does.
     const subsections_via_symbols = for (macho_file.objects.items) |index| {
         const object = macho_file.getFile(index).?.object;
-        if (object.hasSubsections()) break true;
-    } else false;
+        if (!object.hasSubsections()) break false;
+    } else true;
     if (subsections_via_symbols) {
         header.flags |= macho.MH_SUBSECTIONS_VIA_SYMBOLS;
     }
