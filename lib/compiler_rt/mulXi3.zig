@@ -5,6 +5,8 @@ const compiler_rt = @import("../compiler_rt.zig");
 const symbol = compiler_rt.symbol;
 const native_endian = builtin.target.cpu.arch.endian();
 
+const has_mul = builtin.cpu.has(.riscv, .m);
+
 comptime {
     symbol(&__mulsi3, "__mulsi3");
     if (compiler_rt.want_aeabi) {
@@ -21,9 +23,19 @@ comptime {
 }
 
 pub fn __mulsi3(a: i32, b: i32) callconv(.c) i32 {
-    var ua: u32 = @bitCast(a);
-    var ub: u32 = @bitCast(b);
-    var r: u32 = 0;
+    return mulShift(i32, a, b);
+}
+
+pub fn __muldi3(a: i64, b: i64) callconv(.c) i64 {
+    if (!has_mul) return mulShift(i64, a, b);
+    return mulX(i64, a, b);
+}
+
+inline fn mulShift(comptime T: type, a: T, b: T) T {
+    const U = @Int(.unsigned, @bitSizeOf(T));
+    var ua: U = @bitCast(a);
+    var ub: U = @bitCast(b);
+    var r: U = 0;
 
     while (ua > 0) {
         if ((ua & 1) != 0) r +%= ub;
@@ -32,10 +44,6 @@ pub fn __mulsi3(a: i32, b: i32) callconv(.c) i32 {
     }
 
     return @bitCast(r);
-}
-
-pub fn __muldi3(a: i64, b: i64) callconv(.c) i64 {
-    return mulX(i64, a, b);
 }
 
 fn __aeabi_lmul(a: i64, b: i64) callconv(.{ .arm_aapcs = .{} }) i64 {
