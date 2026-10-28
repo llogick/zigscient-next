@@ -3042,6 +3042,19 @@ test "bitwise or negative-positive multi-limb" {
     try testing.expectEqual(-maxInt(Limb), try a.toInt(SignedDoubleLimb));
 }
 
+test "bitwise or negative-positive multi-limb non-aliased" {
+    var a = try Managed.initSet(testing.allocator, -maxInt(Limb) - 2);
+    defer a.deinit();
+    var b = try Managed.initSet(testing.allocator, 1);
+    defer b.deinit();
+    var r = try Managed.init(testing.allocator);
+    defer r.deinit();
+
+    try r.bitOr(&a, &b);
+
+    try testing.expectEqual(-maxInt(Limb) - 2, try r.toInt(SignedDoubleLimb));
+}
+
 test "bitwise or positive-negative simple" {
     var a = try Managed.initSet(testing.allocator, 0xffffffff11111111);
     defer a.deinit();
