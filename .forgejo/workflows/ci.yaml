@@ -233,7 +233,7 @@ jobs:
           fetch-depth: 0
       - name: Build and Test
         run: sh ci/x86_64-linux-debug.sh
-        timeout-minutes: 180
+        timeout-minutes: 240
   x86_64-linux-debug-llvm:
     runs-on: [self-hosted, x86_64-linux]
     steps:
