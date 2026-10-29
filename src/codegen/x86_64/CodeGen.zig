@@ -176082,32 +176082,50 @@ fn genCall(cg: *CodeGen, info: union(enum) {
         else => unreachable,
     };
 
+    const CallTarget = union(enum) {
+        nav: InternPool.Nav.Index,
+        reg: Register,
+        extern_func: Mir.NullTerminatedString,
+    };
+    const call_target: CallTarget = target: switch (info) {
+        .air => |callee| {
+            if (callee.toInterned()) |known_callee| known: {
+                const callee_key = ip.indexToKey(known_callee);
+                const nav = switch (switch (callee_key) {
+                    else => callee_key,
+                    .ptr => |ptr| if (ptr.byte_offset == 0) switch (ptr.base_addr) {
+                        .nav => |nav| ip.indexToKey(zcu.navValue(nav).toIntern()),
+                        else => callee_key,
+                    } else callee_key,
+                }) {
+                    .func => |func| func.owner_nav,
+                    .@"extern" => |@"extern"| @"extern".owner_nav,
+                    else => break :known,
+                };
+                break :target .{ .nav = nav };
+            }
+
+            assert(cg.typeOf(callee).zigTypeTag(zcu) == .pointer);
+            const scratch_reg = if (fn_info.is_var_args and fn_info.cc == .x86_64_sysv) scratch: {
+                const param_regs = abi.getCAbiIntParamRegs(fn_info.cc);
+                break :scratch if (call_info.gp_count < param_regs.len)
+                    param_regs[call_info.gp_count]
+                else
+                    .r10;
+            } else abi.getCAbiLinkerScratchReg(fn_info.cc);
+            try cg.genSetReg(scratch_reg, .usize, .{ .air_ref = callee }, opts);
+            break :target .{ .reg = scratch_reg };
+        },
+        .extern_func => |extern_func| .{ .extern_func = try cg.addString(extern_func.sym) },
+    };
+
     if (fn_info.is_var_args and fn_info.cc == .x86_64_sysv)
         try cg.asmRegisterImmediate(.{ ._, .mov }, .al, .u(call_info.fp_count));
 
-    // Due to incremental compilation, how function calls are generated depends
-    // on linking.
-    switch (info) {
-        .air => |callee| if (callee.toInterned()) |func_ip_index| {
-            const func_key = ip.indexToKey(func_ip_index);
-            switch (switch (func_key) {
-                else => func_key,
-                .ptr => |ptr| if (ptr.byte_offset == 0) switch (ptr.base_addr) {
-                    .nav => |nav| ip.indexToKey(zcu.navValue(nav).toIntern()),
-                    else => func_key,
-                } else func_key,
-            }) {
-                else => unreachable,
-                .func => |func| try cg.asmImmediate(.{ ._, .call }, .{ .nav = .{ .index = func.owner_nav } }),
-                .@"extern" => |@"extern"| try cg.asmImmediate(.{ ._, .call }, .{ .nav = .{ .index = @"extern".owner_nav } }),
-            }
-        } else {
-            assert(cg.typeOf(callee).zigTypeTag(zcu) == .pointer);
-            const scratch_reg = abi.getCAbiLinkerScratchReg(fn_info.cc);
-            try cg.genSetReg(scratch_reg, .usize, .{ .air_ref = callee }, opts);
-            try cg.asmRegister(.{ ._, .call }, scratch_reg);
-        },
-        .extern_func => |extern_func| try cg.asmImmediate(.{ ._, .call }, .{ .extern_func = try cg.addString(extern_func.sym) }),
+    switch (call_target) {
+        .nav => |nav| try cg.asmImmediate(.{ ._, .call }, .{ .nav = .{ .index = nav } }),
+        .reg => |reg| try cg.asmRegister(.{ ._, .call }, reg),
+        .extern_func => |extern_func| try cg.asmImmediate(.{ ._, .call }, .{ .extern_func = extern_func }),
     }
     return call_info.return_value.short;
 }

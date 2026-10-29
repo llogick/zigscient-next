@@ -1,0 +1,16 @@
+#skip wasm32-wasi-none-baseline-whole-selfhosted-debug
+
+#zig build-obj {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const foo: *const fn () callconv(.c) u8 = @ptrFromInt(0x8000);
+
+export fn bar() void {
+    _ = foo();
+}
+#}
+#update
+#check errors
