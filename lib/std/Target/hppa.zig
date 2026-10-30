@@ -5,8 +5,10 @@ const CpuFeature = std.Target.Cpu.Feature;
 const CpuModel = std.Target.Cpu.Model;
 
 pub const Feature = enum {
+    fpu,
     max_1,
     max_2,
+    perfmon,
     v1_1,
     v2_0,
 };
@@ -20,6 +22,11 @@ pub const all_features = blk: {
     const len = @typeInfo(Feature).@"enum".field_names.len;
     std.debug.assert(len <= CpuFeature.Set.needed_bit_count);
     var result: [len]CpuFeature = undefined;
+    result[@backingInt(Feature.fpu)] = .{
+        .llvm_name = null,
+        .description = "Enable floating-point coprocessor",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
     result[@backingInt(Feature.max_1)] = .{
         .llvm_name = null,
         .description = "Enable MAX-1 multimedia acceleration extensions",
@@ -31,6 +38,11 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .max_1,
         }),
+    };
+    result[@backingInt(Feature.perfmon)] = .{
+        .llvm_name = null,
+        .description = "Enable performance monitor coprocessor",
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.v1_1)] = .{
         .llvm_name = null,
@@ -57,17 +69,22 @@ pub const cpu = struct {
     pub const ns_1: CpuModel = .{
         .name = "ns_1",
         .llvm_name = null,
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu,
+        }),
     };
     pub const ns_2: CpuModel = .{
         .name = "ns_2",
         .llvm_name = null,
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu,
+        }),
     };
     pub const pa_7000: CpuModel = .{
         .name = "pa_7000",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
             .v1_1,
         }),
     };
@@ -75,6 +92,7 @@ pub const cpu = struct {
         .name = "pa_7100",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
             .v1_1,
         }),
     };
@@ -82,6 +100,7 @@ pub const cpu = struct {
         .name = "pa_7100lc",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
             .max_1,
             .v1_1,
         }),
@@ -90,6 +109,7 @@ pub const cpu = struct {
         .name = "pa_7150",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
             .v1_1,
         }),
     };
@@ -97,6 +117,7 @@ pub const cpu = struct {
         .name = "pa_7200",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
             .v1_1,
         }),
     };
@@ -104,6 +125,7 @@ pub const cpu = struct {
         .name = "pa_7300lc",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
             .max_1,
             .v1_1,
         }),
@@ -112,6 +134,8 @@ pub const cpu = struct {
         .name = "pa_8000",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
+            .perfmon,
             .v2_0,
         }),
     };
@@ -119,6 +143,8 @@ pub const cpu = struct {
         .name = "pa_8200",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
+            .perfmon,
             .v2_0,
         }),
     };
@@ -126,6 +152,8 @@ pub const cpu = struct {
         .name = "pa_8500",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
+            .perfmon,
             .v2_0,
         }),
     };
@@ -133,6 +161,8 @@ pub const cpu = struct {
         .name = "pa_8600",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
+            .perfmon,
             .v2_0,
         }),
     };
@@ -140,6 +170,8 @@ pub const cpu = struct {
         .name = "pa_8700",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
+            .perfmon,
             .v2_0,
         }),
     };
@@ -147,6 +179,8 @@ pub const cpu = struct {
         .name = "pa_8800",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
+            .perfmon,
             .v2_0,
         }),
     };
@@ -154,17 +188,23 @@ pub const cpu = struct {
         .name = "pa_8900",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .fpu,
+            .perfmon,
             .v2_0,
         }),
     };
     pub const pcx: CpuModel = .{
         .name = "pcx",
         .llvm_name = null,
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu,
+        }),
     };
     pub const ts_1: CpuModel = .{
         .name = "ts_1",
         .llvm_name = null,
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu,
+        }),
     };
 };

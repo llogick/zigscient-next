@@ -22,7 +22,7 @@ pub const Target = struct {
     pic: enum { nopic, pic, pie },
 
     pub const Cpu = Cpu: {
-        @setEvalBranchQuota(3_000);
+        @setEvalBranchQuota(4_000);
         const Arch = std.Target.Cpu.Arch;
         const arch_info = @typeInfo(Arch).@"enum";
         const field_names = .{"native"} ++ arch_info.field_names;

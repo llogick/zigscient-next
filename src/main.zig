@@ -4569,9 +4569,7 @@ fn createModule(
                 fatal("unable to parse libc paths file at path {s}: {t}", .{ paths_file, err });
         }
 
-        if (target.os.tag == .windows and (target.abi == .msvc or target.abi == .itanium) and
-            any_named_library_queries)
-        {
+        if (target.os.tag == .windows and target.abi == .msvc and any_named_library_queries) {
             if (create_module.libc_installation == null) {
                 create_module.libc_installation = LibCInstallation.findNative(arena, io, .{
                     .verbose = true,

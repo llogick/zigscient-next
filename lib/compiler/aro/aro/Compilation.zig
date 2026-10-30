@@ -796,7 +796,7 @@ fn generateSystemDefines(comp: *Compilation, w: *Io.Writer) !void {
                 try w.print("#define _MIPS_ARCH_{s} 1\n", .{upper});
             }
 
-            if (target.cpu.has(.mips, .single_float)) {
+            if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d)) {
                 try define(w, "__mips_single_float");
             }
             {
@@ -807,7 +807,7 @@ fn generateSystemDefines(comp: *Compilation, w: *Io.Writer) !void {
                 };
                 try w.print("#define __mips_fpr {d}\n", .{fpr});
                 const fpset: u8 = if (target.defaultMipsFpMode() == .fp64 or
-                    target.cpu.has(.mips, .single_float)) 32 else 16;
+                    (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))) 32 else 16;
                 try w.print("#define _MIPS_FPSET {d}\n", .{fpset});
                 const spfpset: u8 = if (target.defaultMipsFpMode() == .fpxx) 16 else 32;
                 try w.print("#define _MIPS_SPFPSET {d}\n", .{spfpset});

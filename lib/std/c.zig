@@ -11374,7 +11374,7 @@ pub const LC = switch (native_os) {
 
 pub extern "c" fn setlocale(category: LC, locale: ?[*:0]const u8) ?[*:0]const u8;
 
-pub const max_align_t = if (native_abi == .msvc or native_abi == .itanium)
+pub const max_align_t = if (native_abi == .msvc)
     f64
 else if (native_os.isDarwin())
     c_longdouble

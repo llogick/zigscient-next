@@ -130,4 +130,32 @@ pub const cpu = struct {
             .isa_68060,
         }),
     };
+    pub const m68ec040: CpuModel = .{
+        .name = "m68ec040",
+        .llvm_name = "M68040",
+        .features = featureSet(&[_]Feature{
+            .isa_68040,
+        }),
+    };
+    pub const m68ec060: CpuModel = .{
+        .name = "m68ec060",
+        .llvm_name = "M68060",
+        .features = featureSet(&[_]Feature{
+            .isa_68060,
+        }),
+    };
+    pub const m68lc040: CpuModel = .{
+        .name = "m68lc040",
+        .llvm_name = "M68040",
+        .features = featureSet(&[_]Feature{
+            .isa_68040,
+        }),
+    };
+    pub const m68lc060: CpuModel = .{
+        .name = "m68lc060",
+        .llvm_name = "M68060",
+        .features = featureSet(&[_]Feature{
+            .isa_68060,
+        }),
+    };
 };

@@ -108,14 +108,14 @@ pub fn parse(allocator: Allocator, io: Io, libc_file: []const u8, target: *const
         log.err("cc_dir may not be empty for {s}", .{@tagName(os_tag)});
         return error.ParseError;
     }
-    if (self.msvc_lib_dir == null and os_tag == .windows and (target.abi == .msvc or target.abi == .itanium)) {
+    if (self.msvc_lib_dir == null and os_tag == .windows and target.abi == .msvc) {
         log.err("msvc_lib_dir may not be empty for {s}-{s}", .{
             @tagName(os_tag),
             @tagName(target.abi),
         });
         return error.ParseError;
     }
-    if (self.kernel32_lib_dir == null and os_tag == .windows and (target.abi == .msvc or target.abi == .itanium)) {
+    if (self.kernel32_lib_dir == null and os_tag == .windows and target.abi == .msvc) {
         log.err("kernel32_lib_dir may not be empty for {s}-{s}", .{
             @tagName(os_tag),
             @tagName(target.abi),
@@ -1062,7 +1062,7 @@ pub fn addToHash(opt_lci: ?*const LibCInstallation, hh: *Cache.HashHelper, abi: 
     hh.add(true);
     hh.addOptionalBytes(lci.crt_dir);
     switch (abi) {
-        .msvc, .itanium => {
+        .msvc => {
             hh.addOptionalBytes(lci.msvc_lib_dir);
             hh.addOptionalBytes(lci.kernel32_lib_dir);
         },

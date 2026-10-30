@@ -18,7 +18,7 @@ comptime {
 
 fn clear_cache(start: usize, end: usize) callconv(.c) void {
     const x86 = switch (arch) {
-        .x86, .x86_64 => true,
+        .x86, .x86c16, .x86_64 => true,
         else => false,
     };
     const arm32 = switch (arch) {

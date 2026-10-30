@@ -300,8 +300,8 @@ const mips = struct {
             model: ?*const Target.Cpu.Model = null,
 
             const cpu_names = .{
-                .{ "Cavium Octeon III", &Target.mips.cpu.@"octeon+" },
-                .{ "Cavium Octeon II", &Target.mips.cpu.@"octeon+" },
+                .{ "Cavium Octeon III", &Target.mips.cpu.octeon3 },
+                .{ "Cavium Octeon II", &Target.mips.cpu.octeon2 },
                 .{ "Cavium Octeon+", &Target.mips.cpu.@"octeon+" },
                 .{ "Cavium Octeon", &Target.mips.cpu.octeon },
                 .{ "MIPS I6400", &Target.mips.cpu.i6400 },
@@ -364,7 +364,7 @@ const mips = struct {
     };
 
     test cpuinfo {
-        try testParser(cpuinfo.Parser, .mips64, &Target.mips.cpu.@"octeon+",
+        try testParser(cpuinfo.Parser, .mips64, &Target.mips.cpu.octeon3,
             \\system type             : UBNT_E300
             \\machine                 : Unknown
             \\processor               : 0
@@ -448,6 +448,7 @@ const powerpc = struct {
                 .{ "e300c4", &Target.powerpc.cpu.@"603e" },
                 .{ "e500mc", &Target.powerpc.cpu.e500mc },
                 .{ "e500v2", &Target.powerpc.cpu.e500 },
+                .{ "e500", &Target.powerpc.cpu.e500 },
                 .{ "e5500", &Target.powerpc.cpu.e5500 },
                 .{ "e6500", &Target.powerpc.cpu.e6500 },
                 .{ "G2_LE", &Target.powerpc.cpu.@"603e" },

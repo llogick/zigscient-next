@@ -5419,7 +5419,7 @@ pub fn prelink(coff: *Coff, prog_node: std.Progress.Node) link.Error!void {
             libc_installation.msvc_lib_dir,
             libc_installation.kernel32_lib_dir,
         };
-        const search_paths = all_paths[0..if (target.abi == .msvc or target.abi == .itanium) 3 else 1];
+        const search_paths = all_paths[0..if (target.abi == .msvc) 3 else 1];
         lib: for (coff.pending_default_libs.items) |lib| {
             if (!std.ascii.endsWithIgnoreCase(std.fs.path.extension(lib.path), ".lib"))
                 return comp.link_diags.failParse(

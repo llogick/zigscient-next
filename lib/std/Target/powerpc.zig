@@ -12,11 +12,9 @@ pub const Feature = enum {
     cmpb,
     crypto,
     direct_move,
-    efpu2,
     extdiv,
     fast_mflr,
     fcpsgn,
-    float128,
     fpcvt,
     fprnd,
     fpu,
@@ -64,7 +62,6 @@ pub const Feature = enum {
     quadword_atomics,
     recipprec,
     slow_popcntd,
-    spe,
     stfiwx,
     two_const_nr,
     unaligned_fp_access,
@@ -124,13 +121,6 @@ pub const all_features = blk: {
             .vsx,
         }),
     };
-    result[@backingInt(Feature.efpu2)] = .{
-        .llvm_name = "efpu2",
-        .description = "Enable Embedded Floating-Point APU 2 instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .spe,
-        }),
-    };
     result[@backingInt(Feature.extdiv)] = .{
         .llvm_name = "extdiv",
         .description = "Enable extended divide instructions",
@@ -146,13 +136,6 @@ pub const all_features = blk: {
         .description = "Enable the fcpsgn instruction",
         .dependencies = featureSet(&[_]Feature{
             .fpu,
-        }),
-    };
-    result[@backingInt(Feature.float128)] = .{
-        .llvm_name = "float128",
-        .description = "Enable the __float128 data type for IEEE-754R Binary128.",
-        .dependencies = featureSet(&[_]Feature{
-            .vsx,
         }),
     };
     result[@backingInt(Feature.fpcvt)] = .{
@@ -461,11 +444,6 @@ pub const all_features = blk: {
         .description = "Has slow popcnt[dw] instructions",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.spe)] = .{
-        .llvm_name = "spe",
-        .description = "Enable SPE instructions",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     result[@backingInt(Feature.stfiwx)] = .{
         .llvm_name = "stfiwx",
         .description = "Enable the stfiwx instruction",
@@ -534,9 +512,7 @@ pub const cpu = struct {
     pub const @"602": CpuModel = .{
         .name = "602",
         .llvm_name = "602",
-        .features = featureSet(&[_]Feature{
-            .fpu,
-        }),
+        .features = featureSet(&[_]Feature{}),
     };
     pub const @"603": CpuModel = .{
         .name = "603",
@@ -665,11 +641,10 @@ pub const cpu = struct {
     };
     pub const e500: CpuModel = .{
         .name = "e500",
-        .llvm_name = "e500",
+        .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .isel,
             .msync,
-            .spe,
         }),
     };
     pub const e500mc: CpuModel = .{
@@ -752,7 +727,9 @@ pub const cpu = struct {
     pub const ppc32: CpuModel = .{
         .name = "ppc32",
         .llvm_name = "ppc32",
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu,
+        }),
     };
     pub const ppc64: CpuModel = .{
         .name = "ppc64",

@@ -41,7 +41,7 @@ fn Hash(comptime endian: std.builtin.Endian, comptime shift_key: bool) type {
         // This is no longer the case -- Modern CPUs, including ARM-based ones, have a fast
         // carryless multiplication instruction; using 4 multiplications is now faster than
         // 3 multiplications with extra shifts and additions.
-        const mul_algorithm = if (builtin.cpu.arch == .x86) .karatsuba else .schoolbook;
+        const mul_algorithm = if (builtin.cpu.arch.isX86_32()) .karatsuba else .schoolbook;
 
         hx: [pc_count]Precomp,
         acc: u128 = 0,

@@ -8,7 +8,13 @@ pub const Feature = enum {
     bwx,
     cix,
     fix,
-    max,
+    fpu,
+    fpu_ieee,
+    fpu_ieee_infr,
+    fpu_vax,
+    lock_prefetch,
+    mvi,
+    precise_traps,
 };
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
@@ -33,11 +39,49 @@ pub const all_features = blk: {
     result[@backingInt(Feature.fix)] = .{
         .llvm_name = null,
         .description = "Enable FPR-to-GPR move and square root extensions",
+        .dependencies = featureSet(&[_]Feature{
+            .fpu,
+        }),
+    };
+    result[@backingInt(Feature.fpu)] = .{
+        .llvm_name = null,
+        .description = "Enable floating point registers and common floating point instructions",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.max)] = .{
+    result[@backingInt(Feature.fpu_ieee)] = .{
+        .llvm_name = null,
+        .description = "Enable IEEE floating point instructions",
+        .dependencies = featureSet(&[_]Feature{
+            .fpu,
+        }),
+    };
+    result[@backingInt(Feature.fpu_ieee_infr)] = .{
+        .llvm_name = null,
+        .description = "Enable IEEE rounding towards plus and minus infinity",
+        .dependencies = featureSet(&[_]Feature{
+            .fpu_ieee,
+        }),
+    };
+    result[@backingInt(Feature.fpu_vax)] = .{
+        .llvm_name = null,
+        .description = "Enable VAX floating point instructions",
+        .dependencies = featureSet(&[_]Feature{
+            .fpu,
+        }),
+    };
+    result[@backingInt(Feature.lock_prefetch)] = .{
+        .llvm_name = null,
+        .description = "Prefetch with modify intent speeds up lock acquisition",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.mvi)] = .{
         .llvm_name = null,
         .description = "Enable motion video extensions",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.precise_traps)] = .{
+        .llvm_name = null,
+        .description = "Enable precise arithmetic trap reporting",
         .dependencies = featureSet(&[_]Feature{}),
     };
     const ti = @typeInfo(Feature);
@@ -52,23 +96,34 @@ pub const cpu = struct {
     pub const ev4: CpuModel = .{
         .name = "ev4",
         .llvm_name = null,
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu_ieee_infr,
+            .fpu_vax,
+        }),
     };
     pub const ev45: CpuModel = .{
         .name = "ev45",
         .llvm_name = null,
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu_ieee_infr,
+            .fpu_vax,
+        }),
     };
     pub const ev5: CpuModel = .{
         .name = "ev5",
         .llvm_name = null,
-        .features = featureSet(&[_]Feature{}),
+        .features = featureSet(&[_]Feature{
+            .fpu_ieee_infr,
+            .fpu_vax,
+        }),
     };
     pub const ev56: CpuModel = .{
         .name = "ev56",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .bwx,
+            .fpu_ieee_infr,
+            .fpu_vax,
         }),
     };
     pub const ev6: CpuModel = .{
@@ -77,7 +132,10 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .bwx,
             .fix,
-            .max,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .mvi,
+            .precise_traps,
         }),
     };
     pub const ev67: CpuModel = .{
@@ -87,7 +145,83 @@ pub const cpu = struct {
             .bwx,
             .cix,
             .fix,
-            .max,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .lock_prefetch,
+            .mvi,
+            .precise_traps,
+        }),
+    };
+    pub const ev68: CpuModel = .{
+        .name = "ev68",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .bwx,
+            .cix,
+            .fix,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .lock_prefetch,
+            .mvi,
+            .precise_traps,
+        }),
+    };
+    pub const ev69: CpuModel = .{
+        .name = "ev69",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .bwx,
+            .cix,
+            .fix,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .lock_prefetch,
+            .mvi,
+            .precise_traps,
+        }),
+    };
+    pub const ev7: CpuModel = .{
+        .name = "ev7",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .bwx,
+            .cix,
+            .fix,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .lock_prefetch,
+            .mvi,
+            .precise_traps,
+        }),
+    };
+    pub const ev79: CpuModel = .{
+        .name = "ev79",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .bwx,
+            .cix,
+            .fix,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .lock_prefetch,
+            .mvi,
+            .precise_traps,
+        }),
+    };
+    pub const lca4: CpuModel = .{
+        .name = "lca4",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .fpu_ieee_infr,
+            .fpu_vax,
+        }),
+    };
+    pub const lca45: CpuModel = .{
+        .name = "lca45",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .fpu_ieee_infr,
+            .fpu_vax,
         }),
     };
     pub const pca56: CpuModel = .{
@@ -95,7 +229,19 @@ pub const cpu = struct {
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .bwx,
-            .max,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .mvi,
+        }),
+    };
+    pub const pca57: CpuModel = .{
+        .name = "pca57",
+        .llvm_name = null,
+        .features = featureSet(&[_]Feature{
+            .bwx,
+            .fpu_ieee_infr,
+            .fpu_vax,
+            .mvi,
         }),
     };
 };

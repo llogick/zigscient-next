@@ -79,6 +79,7 @@ const arm = struct {
 
 const powerpc = struct {
     const models = .{
+        .{ "Freescale e500v1 core", &std.Target.powerpc.cpu.e500 },
         .{ "Freescale e500v2 core", &std.Target.powerpc.cpu.e500 },
         .{ "Freescale e500mc core", &std.Target.powerpc.cpu.e500mc },
         .{ "Freescale e5500 core", &std.Target.powerpc.cpu.e5500 },

@@ -211,7 +211,7 @@ pub const CallingConvention = union(enum(u8)) {
     x86_64_preserve_none: CommonOptions,
     x86_64_preserve_most: CommonOptions,
 
-    // Calling conventions for the `x86` architecture.
+    // Calling conventions for the `x86` and `x86c16` architectures.
     x86_sysv: X86RegparmOptions,
     x86_win: X86RegparmOptions,
     x86_mingw: X86RegparmOptions,
@@ -1121,6 +1121,7 @@ pub const VaList = switch (builtin.cpu.arch) {
     .powerpc64,
     .powerpc64le,
     .x86,
+    .x86c16,
     => *u8,
     .arc,
     .arceb,

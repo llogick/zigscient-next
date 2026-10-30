@@ -2850,7 +2850,7 @@ fn airAssembly(self: *FuncGen, inst: Air.Inst.Index) TodoError!Builder.Value {
     // here then we may risk tripping LLVM bugs since anything not used by Clang tends
     // to be buggy and regress often.
     switch (target.cpu.arch) {
-        .x86_64, .x86 => {
+        .x86_64, .x86, .x86c16 => {
             try llvm_constraints.appendSlice(gpa, "~{dirflag},~{fpsr},~{flags},");
             total_i += 3;
         },
@@ -6590,6 +6590,7 @@ fn airPrefetch(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Val
             // https://github.com/llvm/llvm-project/issues/218236
             .x86_64,
             .x86,
+            .x86c16,
             // https://github.com/llvm/llvm-project/issues/218239
             .powerpc,
             .powerpcle,

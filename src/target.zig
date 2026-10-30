@@ -139,7 +139,7 @@ pub fn useEmulatedTls(target: *const std.Target) bool {
 pub fn hasValgrindSupport(target: *const std.Target, backend: std.lang.CompilerBackend) bool {
     // We can't currently output the necessary Valgrind client request assembly when using the C
     // backend and compiling with an MSVC-like compiler.
-    const ofmt_c_msvc = (target.abi == .msvc or target.abi == .itanium) and target.ofmt == .c;
+    const ofmt_c_msvc = target.abi == .msvc and target.ofmt == .c;
 
     return switch (target.cpu.arch) {
         .arm, .armeb, .thumb, .thumbeb => switch (target.os.tag) {
@@ -241,6 +241,7 @@ pub fn hasLlvmSupport(target: *const std.Target, ofmt: std.Target.ObjectFormat) 
         .thumb,
         .thumbeb,
         .x86,
+        .x86c16,
         .x86_64,
         .xcore,
         .nvptx,
@@ -341,8 +342,7 @@ pub fn selfHostedBackendIsAsRobustAsLlvm(target: *const std.Target) bool {
 pub fn supportsStackProbing(target: *const std.Target, backend: std.lang.CompilerBackend) bool {
     return switch (backend) {
         .stage2_aarch64, .stage2_x86_64 => true,
-        .stage2_llvm => target.os.tag != .windows and target.os.tag != .uefi and
-            (target.cpu.arch == .x86 or target.cpu.arch == .x86_64),
+        .stage2_llvm => target.os.tag != .windows and target.os.tag != .uefi and (target.cpu.arch.isX86()),
         else => false,
     };
 }
@@ -494,6 +494,7 @@ pub fn hasRedZone(target: *const std.Target) bool {
         .powerpc64le,
         .x86_64,
         .x86,
+        .x86c16,
         => true,
 
         else => false,
@@ -586,6 +587,7 @@ pub fn clangSupportsNoImplicitFloatArg(target: *const std.Target) bool {
         .riscv64,
         .riscv64be,
         .x86,
+        .x86c16,
         .x86_64,
         => true,
         else => false,
@@ -631,7 +633,7 @@ pub fn addrSpaceCastIsValid(
     to: AddressSpace,
 ) bool {
     switch (target.cpu.arch) {
-        .x86_64, .x86 => return target.supportsAddressSpace(from, null) and target.supportsAddressSpace(to, null),
+        .x86_64, .x86, .x86c16 => return target.supportsAddressSpace(from, null) and target.supportsAddressSpace(to, null),
         .nvptx64, .nvptx, .amdgcn => {
             const to_generic = target.supportsAddressSpace(from, null) and to == .generic;
             const from_generic = target.supportsAddressSpace(to, null) and from == .generic;
@@ -730,6 +732,7 @@ pub fn defaultFunctionAlignment(target: *const std.Target) Alignment {
         .powerpc64le,
         .s390x,
         .x86,
+        .x86c16,
         .x86_64,
         => .@"16",
         .loongarch32,
@@ -902,7 +905,7 @@ pub fn zigBackend(target: *const std.Target, use_llvm: bool) std.lang.CompilerBa
         .sparc64 => .stage2_sparc64,
         .spirv32, .spirv64 => .stage2_spirv,
         .wasm32, .wasm64 => .stage2_wasm,
-        .x86 => .stage2_x86,
+        .x86, .x86c16 => .stage2_x86,
         .x86_64 => .stage2_x86_64,
         .spork8 => .zsf_spork8,
         else => .other,

@@ -2082,7 +2082,7 @@ pub fn genHeader(zcu: *Zcu, w: *Writer) !void {
 
     const target = zcu.getTarget();
     switch (target.abi) {
-        .msvc, .itanium => try w.writeAll("#define ZIG_TARGET_ABI_MSVC\n"),
+        .msvc => try w.writeAll("#define ZIG_TARGET_ABI_MSVC\n"),
         else => {},
     }
     for ([_]u16{ 16, 32, 64, 80, 128 }) |bits| switch (std.zig.target.compilerRtFloatAbi(target, bits)) {

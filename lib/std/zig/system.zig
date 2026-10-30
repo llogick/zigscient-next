@@ -371,25 +371,6 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         .explicit => |model| model.toCpu(query_cpu_arch),
     } orelse Target.Cpu.baseline(query_cpu_arch, os);
 
-    // For x86, we need to populate some CPU feature flags depending on architecture
-    // and mode:
-    //  * 16bit_mode => if the arch is x86_16
-    //  * 32bit_mode => if the arch is x86
-    // However, the "mode" flags can be used as overrides, so if the user explicitly
-    // sets one of them, that takes precedence.
-    switch (query_cpu_arch) {
-        .x86_16 => {
-            cpu.features.addFeature(@backingInt(Target.x86.Feature.@"16bit_mode"));
-        },
-        .x86 => {
-            if (!Target.x86.featureSetHasAny(query.cpu_features_add, .{
-                .@"16bit_mode", .@"32bit_mode",
-            })) {
-                cpu.features.addFeature(@backingInt(Target.x86.Feature.@"32bit_mode"));
-            }
-        },
-        else => {},
-    }
     updateCpuFeatures(
         &cpu.features,
         cpu.arch.allFeaturesList(),

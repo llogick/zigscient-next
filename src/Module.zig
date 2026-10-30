@@ -397,8 +397,8 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         if (target.cpu.arch.isMips()) {
             try buf.append(if (pic) '-' else '+');
             try buf.appendSlice("noabicalls,");
-            try buf.appendSlice(if (target.cpu.has(.mips, .single_float))
-                "-fpxx,+nooddspreg,"
+            try buf.appendSlice(if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))
+                "-fpxx,+nooddspreg,+single-float,"
             else if (target.cpu.arch.isMips64() or target.cpu.hasAny(.mips, &.{ .mips32r6, .msa }))
                 "-fpxx,-nooddspreg,+fp64,"
             else if (target.cpu.has(.mips, .mips2))
@@ -415,6 +415,10 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         if (target.cpu.arch == .s390x) {
             try buf.append(if (omit_frame_pointer) '-' else '+');
             try buf.appendSlice("backchain,");
+        }
+
+        if (target.cpu.arch == .x86c16) {
+            try buf.appendSlice("+16bit-mode,-32bit-mode,");
         }
 
         if (target.cpu.arch.isXtensa()) {

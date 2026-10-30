@@ -642,8 +642,8 @@ test parse {
 
         try std.testing.expect(target.cpu.hasAny(.x86, &.{ .sse, .avx, .cmov }));
         try std.testing.expect(!target.cpu.hasAny(.x86, &.{ .sse, .avx }));
-        try std.testing.expect(target.cpu.hasAll(.x86, &.{ .mmx, .x87 }));
-        try std.testing.expect(!target.cpu.hasAll(.x86, &.{ .mmx, .x87, .sse }));
+        try std.testing.expect(target.cpu.hasAll(.x86, &.{ .mmx, .@"387" }));
+        try std.testing.expect(!target.cpu.hasAll(.x86, &.{ .mmx, .@"387", .sse }));
 
         const text = try query.zigTriple(std.testing.allocator);
         defer std.testing.allocator.free(text);

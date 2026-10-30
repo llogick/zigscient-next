@@ -1,7 +1,7 @@
 //! Builtin functions that operate on integer types
 
 const builtin = @import("builtin");
-const arch = builtin.cpu.arch;
+const arch = builtin.target.cpu.arch;
 
 const std = @import("std");
 const testing = std.testing;
@@ -32,6 +32,14 @@ comptime {
     symbol(&__umoddi3, "__umoddi3");
     symbol(&__divmodsi4, "__divmodsi4");
     symbol(&__udivmodsi4, "__udivmodsi4");
+
+    if (arch == .sparc) {
+        // SPARC v7 millicode aliases:
+        symbol(&__divsi3, ".div");
+        symbol(&__udivsi3, ".udiv");
+        symbol(&__modsi3, ".rem");
+        symbol(&__umodsi3, ".urem");
+    }
 }
 
 pub fn __divmodti4(a: i128, b: i128, rem: *i128) callconv(.c) i128 {

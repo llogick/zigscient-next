@@ -55,7 +55,7 @@ comptime {
         symbol(&__floattitf, "__floattikf");
         symbol(&__floateitf, "__floateikf");
     } else {
-        if (builtin.cpu.arch == .x86) {
+        if (builtin.cpu.arch.isX86_32()) {
             symbol(&__floattitf_x86, "__floattitf");
         } else {
             symbol(&__floattitf, "__floattitf");
@@ -285,7 +285,7 @@ comptime {
         symbol(&__floatuntitf, "__floatuntikf");
         symbol(&__floatuneitf, "__floatuneikf");
     } else {
-        if (builtin.cpu.arch == .x86) {
+        if (builtin.cpu.arch.isX86_32()) {
             symbol(&__floatuntitf_x86, "__floatuntitf");
         } else {
             symbol(&__floatuntitf, "__floatuntitf");

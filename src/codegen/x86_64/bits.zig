@@ -555,7 +555,7 @@ pub const Register = enum(u8) {
             .ptr => reg.toBitSize(target.ptrBitWidth()),
             .gpr => switch (target.cpu.arch) {
                 else => unreachable,
-                .x86 => reg.to32(),
+                .x86, .x86c16 => reg.to32(),
                 .x86_64 => reg.to64(),
             },
             .low_byte => reg.toLo8(),
@@ -821,7 +821,7 @@ pub const Memory = struct {
                 .ptr => target.ptrBitWidth(),
                 .gpr => switch (target.cpu.arch) {
                     else => unreachable,
-                    .x86 => 32,
+                    .x86, .x86c16 => 32,
                     .x86_64 => 64,
                 },
                 .low_byte, .high_byte, .byte => 8,

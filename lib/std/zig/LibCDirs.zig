@@ -73,7 +73,7 @@ pub fn detect(
     // On windows, instead of the native (mingw) abi, we want to check
     // for the MSVC abi as a fallback.
     const use_system_abi = if (builtin.os.tag == .windows)
-        target.abi == .msvc or target.abi == .itanium
+        target.abi == .msvc
     else
         is_native_abi;
 
@@ -253,7 +253,6 @@ fn libCGenericName(target: *const std.Target) [:0]const u8 {
         .android,
         .androideabi,
         .msvc,
-        .itanium,
         .simulator,
         .call0,
         => unreachable,

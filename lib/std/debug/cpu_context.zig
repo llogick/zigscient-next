@@ -23,7 +23,7 @@ else switch (native_arch) {
     .ve => Ve,
     .s390x => S390x,
     .x86_16 => X86_16,
-    .x86 => X86,
+    .x86, .x86c16 => X86,
     .x86_64 => X86_64,
     else => noreturn,
 };
@@ -170,7 +170,7 @@ pub fn fromPosixSignalContext(ctx_ptr: ?*const anyopaque) ?Native {
                 .addr = uc.mcontext.psw.addr,
             },
         },
-        .x86 => .{ .gprs = .init(.{
+        .x86, .x86c16 => .{ .gprs = .init(.{
             .eax = uc.mcontext.eax,
             .ecx = uc.mcontext.ecx,
             .edx = uc.mcontext.edx,

@@ -1624,7 +1624,7 @@ const module_test_targets = blk: {
         .{
             .target = .{
                 .cpu_arch = .wasm32,
-                .cpu_model = .{ .explicit = &std.Target.wasm.cpu.wasm_v3_0 },
+                .cpu_model = .{ .explicit = &std.Target.wasm.cpu.v3_0 },
                 .os_tag = .wasi,
                 .abi = .none,
             },

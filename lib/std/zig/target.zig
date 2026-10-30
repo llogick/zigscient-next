@@ -597,8 +597,6 @@ pub fn isNative(query: *const std.Target.Query, target: *const std.Target, host:
     // Remove features that don't actually affect compatibility.
     const irrelevant: std.Target.Cpu.Feature.Set = switch (host.cpu.arch) {
         .x86_64 => std.Target.x86.featureSet(&.{
-            .@"16bit_mode",
-            .@"32bit_mode",
             .@"64bit",
             .false_deps_bls,
             .false_deps_compress,

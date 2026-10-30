@@ -371,7 +371,7 @@ pub fn emitMir(emit: *Emit) Error!void {
                     } else if (emit.bin_file.cast(.coff)) |coff| {
                         switch (emit.lower.target.cpu.arch) {
                             else => unreachable,
-                            .x86 => {
+                            .x86, .x86c16 => {
                                 try emit.encodeInst(try .new(.none, .mov, &.{
                                     .{ .reg = .eax },
                                     .{ .mem = .initSib(.qword, .{

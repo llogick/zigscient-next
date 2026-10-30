@@ -553,7 +553,7 @@ pub fn getCAbiSseParamRegs(cc: std.lang.CallingConvention.Tag, target: *const st
     return switch (cc) {
         .auto => switch (target.cpu.arch) {
             else => unreachable,
-            .x86 => zigcc.sse_param_regs[0 .. zigcc.sse_param_regs.len / 2],
+            .x86, .x86c16 => zigcc.sse_param_regs[0 .. zigcc.sse_param_regs.len / 2],
             .x86_64 => zigcc.sse_param_regs,
         },
         .x86_64_sysv => SysV.c_abi_sse_param_regs,

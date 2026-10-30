@@ -1807,7 +1807,7 @@ pub const RegisterList = struct {
     pub fn size(self: Self, target: *const std.Target) i32 {
         return @intCast(self.bitset.count() * @as(u4, switch (target.cpu.arch) {
             else => unreachable,
-            .x86 => 4,
+            .x86, .x86c16 => 4,
             .x86_64 => 8,
         }));
     }

@@ -181,15 +181,15 @@ pub const cpu = struct {
         .llvm_name = "mvp",
         .features = featureSet(&[_]Feature{}),
     };
-    pub const wasm_v1_0: CpuModel = .{
-        .name = "wasm_v1_0",
+    pub const v1_0: CpuModel = .{
+        .name = "v1_0",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .mutable_globals,
         }),
     };
-    pub const wasm_v2_0: CpuModel = .{
-        .name = "wasm_v2_0",
+    pub const v2_0: CpuModel = .{
+        .name = "v2_0",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .multivalue,
@@ -200,8 +200,8 @@ pub const cpu = struct {
             .simd128,
         }),
     };
-    pub const wasm_v3_0: CpuModel = .{
-        .name = "wasm_v3_0",
+    pub const v3_0: CpuModel = .{
+        .name = "v3_0",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .exception_handling,

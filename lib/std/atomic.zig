@@ -360,6 +360,7 @@ pub inline fn spinLoopHint() void {
         // pipelining/power resources
         // https://software.intel.com/content/www/us/en/develop/articles/benefitting-power-and-performance-sleep-loops.html
         .x86,
+        .x86c16,
         .x86_64,
         => asm volatile ("pause"),
 

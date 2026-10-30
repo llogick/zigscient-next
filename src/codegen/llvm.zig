@@ -4419,11 +4419,11 @@ pub fn toLlvmCallConvTag(cc_tag: std.lang.CallingConvention.Tag, target: *const 
         .x86_stdcall => .x86_stdcallcc,
         .x86_fastcall => .x86_fastcallcc,
         .x86_thiscall => .x86_thiscallcc,
-        .x86_regcall_v3 => if (target.cpu.arch == .x86 and target.os.tag != .windows)
+        .x86_regcall_v3 => if (target.cpu.arch.isX86_32() and target.os.tag != .windows)
             .x86_regcallcc
         else
             null,
-        .x86_regcall_v4_win => if (target.cpu.arch == .x86 and target.os.tag == .windows)
+        .x86_regcall_v4_win => if (target.cpu.arch.isX86_32() and target.os.tag == .windows)
             .x86_regcallcc // we use the "RegCallv4" module flag to make this correct
         else
             null,
@@ -4584,7 +4584,7 @@ pub fn toLlvmAddressSpace(address_space: std.lang.AddressSpace, target: *const s
             .push_constant => Builder.AddrSpace.spirv.push_constant,
             else => unreachable,
         },
-        .x86, .x86_64 => switch (address_space) {
+        .x86, .x86c16, .x86_64 => switch (address_space) {
             .generic => .default,
             .gs => Builder.AddrSpace.x86.gs,
             .fs => Builder.AddrSpace.x86.fs,
@@ -4725,7 +4725,7 @@ pub fn initializeLLVMTarget(io: Io, arch: std.Target.Cpu.Arch) void {
             bindings.LLVMInitializeWebAssemblyAsmPrinter();
             bindings.LLVMInitializeWebAssemblyAsmParser();
         },
-        .x86, .x86_64 => {
+        .x86, .x86c16, .x86_64 => {
             bindings.LLVMInitializeX86Target();
             bindings.LLVMInitializeX86TargetInfo();
             bindings.LLVMInitializeX86TargetMC();

@@ -25,6 +25,7 @@ comptime {
 
     switch (arch) {
         .x86,
+        .x86c16,
         .x86_64,
         => {
             symbol(&zig_probe_stack, "__zig_probe_stack");
@@ -63,7 +64,7 @@ pub fn zig_probe_stack() callconv(.naked) void {
                 \\        ret
             );
         },
-        .x86 => {
+        .x86, .x86c16 => {
             // %eax = probe length, %esp = stack pointer
             asm volatile (
                 \\        push   %%ecx
@@ -81,7 +82,7 @@ pub fn zig_probe_stack() callconv(.naked) void {
                 \\        orl    $0,8(%%esp)
                 \\        add    %%eax,%%esp
                 \\        pop    %%ecx
-                \\        ret
+                \\        retl
             );
         },
         else => {},

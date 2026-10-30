@@ -107,9 +107,7 @@ pub const SubArch = enum {
     spirv_v16,
 
     pub fn toFeature(sub: SubArch, arch: Cpu.Arch) ?std.Target.Cpu.Feature.Set.Index {
-        if (arch.isPowerPC()) {
-            if (sub == .powerpc_spe) return @backingInt(std.Target.powerpc.Feature.spe);
-        } else if (arch.isMIPS32()) {
+        if (arch.isMIPS32()) {
             return @backingInt(std.Target.mips.Feature.mips32r6);
         } else if (arch.isMIPS64()) {
             return @backingInt(std.Target.mips.Feature.mips64r6);
@@ -1117,6 +1115,7 @@ pub fn get32BitArchVariant(target: *const Target) ?Target {
         .thumbeb,
         .wasm32,
         .x86,
+        .x86c16,
         .xcore,
         .xtensa,
         .xtensaeb,
@@ -1208,7 +1207,7 @@ pub fn get64BitArchVariant(target: *const Target) ?Target {
         .thumb => copy.cpu.arch = .aarch64,
         .thumbeb => copy.cpu.arch = .aarch64_be,
         .wasm32 => copy.cpu.arch = .wasm64,
-        .x86 => copy.cpu.arch = .x86_64,
+        .x86, .x86c16 => copy.cpu.arch = .x86_64,
         .x86_16 => copy.cpu.arch = .x86_64,
     }
     return copy;
@@ -1262,7 +1261,7 @@ pub fn toLLVMTriple(target: *const Target, buf: []u8) []const u8 {
         .ve => "ve",
         .wasm32 => "wasm32",
         .wasm64 => "wasm64",
-        .x86 => "i386",
+        .x86, .x86c16 => "i386",
         .x86_64 => "x86_64",
         .xcore => "xcore",
         .xtensa => "xtensa",
@@ -1368,7 +1367,6 @@ pub fn toLLVMTriple(target: *const Target, buf: []u8) []const u8 {
         .gnuf32 => "gnuf32",
         .gnusf => "gnusf",
         .gnux32 => "gnux32",
-        .itanium => "itanium",
         .msvc => "msvc",
         .musl => "musl",
         .muslabi64 => "muslabi64",
@@ -1431,9 +1429,6 @@ pub fn isPIEDefault(target: *const Target) DefaultPIStatus {
         .windows => {
             if (target.isMinGW())
                 return .no;
-
-            if (target.abi == .itanium)
-                return if (target.cpu.arch == .x86_64) .yes else .no;
 
             if (target.abi == .msvc or target.abi == .none)
                 return .depends_on_linker;
@@ -1515,9 +1510,6 @@ pub fn isPICdefault(target: *const Target) DefaultPIStatus {
             if (target.isMinGW())
                 return if (target.cpu.arch == .x86_64 or target.cpu.arch == .aarch64) .yes else .no;
 
-            if (target.abi == .itanium)
-                return if (target.cpu.arch == .x86_64) .yes else .no;
-
             if (target.abi == .msvc or target.abi == .none)
                 return .depends_on_linker;
 
@@ -1563,9 +1555,6 @@ pub fn isPICDefaultForced(target: *const Target) DefaultPIStatus {
         .windows => {
             if (target.isMinGW())
                 return .yes;
-
-            if (target.abi == .itanium)
-                return if (target.cpu.arch == .x86_64) .yes else .no;
 
             // if (bfd) return target.cpu.arch == .x86_64 else target.cpu.arch == .x86_64 or target.cpu.arch == .aarch64;
             if (target.abi == .msvc or target.abi == .none)

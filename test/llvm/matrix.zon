@@ -28,7 +28,6 @@
     .{ .cpu = .{ .aarch64 = .{} }, .os = .{ .watchos = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .old, .pic = .pic },
     .{ .cpu = .{ .aarch64 = .{} }, .os = .{ .watchos = .{} }, .abi = .{ .simulator = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .old, .pic = .pic },
     .{ .cpu = .{ .aarch64 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .gnu = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
-    .{ .cpu = .{ .aarch64 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .itanium = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .aarch64 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .msvc = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
 
     .{ .cpu = .{ .aarch64_be = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
@@ -278,7 +277,6 @@
     .{ .cpu = .{ .thumb = .{} }, .os = .{ .rtems = .{} }, .abi = .{ .eabihf = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .thumb = .{} }, .os = .{ .vita = .{} }, .abi = .{ .eabihf = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .thumb = .{} }, .os = .{ .windows = .{} }, .abi = .{ .gnu = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
-    .{ .cpu = .{ .thumb = .{} }, .os = .{ .windows = .{} }, .abi = .{ .itanium = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .thumb = .{} }, .os = .{ .windows = .{} }, .abi = .{ .msvc = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
 
     .{ .cpu = .{ .thumbeb = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .eabi = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
@@ -315,8 +313,10 @@
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .rtems = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .uefi = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .gnu = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
-    .{ .cpu = .{ .x86 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .itanium = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .msvc = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
+
+    .{ .cpu = .{ .x86c16 = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .eabi = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
+    .{ .cpu = .{ .x86c16 = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .eabihf = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
 
     .{ .cpu = .{ .x86_64 = .{} }, .os = .{ .freebsd = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .new, .pic = .pic },
     .{ .cpu = .{ .x86_64 = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .eabi = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .new, .pic = .pic },
@@ -345,7 +345,6 @@
     .{ .cpu = .{ .x86_64 = .{} }, .os = .{ .serenity = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .new, .pic = .pic },
     .{ .cpu = .{ .x86_64 = .{} }, .os = .{ .uefi = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86_64 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .gnu = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
-    .{ .cpu = .{ .x86_64 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .itanium = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86_64 = .{} }, .os = .{ .windows = .{} }, .abi = .{ .msvc = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
 
     .{ .cpu = .{ .xcore = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },

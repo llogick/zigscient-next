@@ -3,7 +3,7 @@ const std = @import("std");
 const testing = std.testing;
 const compiler_rt = @import("../compiler_rt.zig");
 const symbol = compiler_rt.symbol;
-const native_endian = builtin.cpu.arch.endian();
+const native_endian = builtin.target.cpu.arch.endian();
 
 comptime {
     symbol(&__mulsi3, "__mulsi3");
@@ -13,6 +13,11 @@ comptime {
         symbol(&__muldi3, "__muldi3");
     }
     symbol(&__multi3, "__multi3");
+
+    if (builtin.target.cpu.arch == .sparc) {
+        // SPARC v7 millicode alias:
+        symbol(&__mulsi3, ".umul");
+    }
 }
 
 pub fn __mulsi3(a: i32, b: i32) callconv(.c) i32 {

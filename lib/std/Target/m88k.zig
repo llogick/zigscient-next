@@ -76,6 +76,7 @@ pub const cpu = struct {
         .name = "m88110",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
+            .isa_88110,
             .sfu2,
             .xrf,
         }),
