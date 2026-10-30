@@ -5,6 +5,7 @@ target: std.Build.ResolvedTarget,
 target_desc: []const u8,
 use_llvm: bool,
 use_lld: bool,
+use_new_linker: bool,
 link_libc: bool,
 test_filters: []const []const u8,
 update_step: ?*Step.UpdateSourceFiles,
@@ -31,15 +32,8 @@ pub const Case = struct {
     prefix: []const u8,
 
     fn resolveName(self: *const Case, overlay: *const OverlayOptions) []const u8 {
-        if (!overlay.name_prefix and !overlay.name_target)
-            return overlay.name;
-
-        if (overlay.name_prefix == overlay.name_target)
-            return self.ctx.b.fmt("{s}-{s}-{s}", .{ self.prefix, overlay.name, self.ctx.target_desc })
-        else if (overlay.name_prefix)
-            return self.ctx.b.fmt("{s}-{s}", .{ self.prefix, overlay.name })
-        else
-            return self.ctx.b.fmt("{s}-{s}", .{ overlay.name, self.ctx.target_desc });
+        if (!overlay.name_prefix) return overlay.name;
+        return self.ctx.b.fmt("{s}-{s}", .{ self.prefix, overlay.name });
     }
 
     pub fn addLibrary(
@@ -47,25 +41,29 @@ pub const Case = struct {
         linkage: std.builtin.LinkMode,
         overlay: OverlayOptions,
     ) *Step.Compile {
-        return self.ctx.b.addLibrary(.{
+        const lib = self.ctx.b.addLibrary(.{
             .linkage = linkage,
             .name = self.resolveName(&overlay),
             .root_module = self.ctx.createModule(overlay),
             .use_llvm = overlay.use_llvm orelse self.ctx.use_llvm,
             .use_lld = overlay.use_lld orelse self.ctx.use_lld,
         });
+        lib.use_new_linker = overlay.use_new_linker orelse self.ctx.use_new_linker;
+        return lib;
     }
 
     pub fn addExecutable(
         self: *const Case,
         overlay: OverlayOptions,
     ) *Step.Compile {
-        return self.ctx.b.addExecutable(.{
+        const exe = self.ctx.b.addExecutable(.{
             .name = self.resolveName(&overlay),
             .root_module = self.ctx.createModule(overlay),
             .use_llvm = overlay.use_llvm orelse self.ctx.use_llvm,
             .use_lld = overlay.use_lld orelse self.ctx.use_lld,
         });
+        exe.use_new_linker = overlay.use_new_linker orelse self.ctx.use_new_linker;
+        return exe;
     }
 
     pub fn addRunArtifact(
@@ -82,12 +80,14 @@ pub const Case = struct {
         self: *const Case,
         overlay: OverlayOptions,
     ) *Step.Compile {
-        return self.ctx.b.addObject(.{
+        const obj = self.ctx.b.addObject(.{
             .name = self.resolveName(&overlay),
             .root_module = self.ctx.createModule(overlay),
             .use_llvm = overlay.use_llvm orelse self.ctx.use_llvm,
             .use_lld = overlay.use_lld orelse self.ctx.use_lld,
         });
+        obj.use_new_linker = overlay.use_new_linker orelse self.ctx.use_new_linker;
+        return obj;
     }
 
     pub fn expectLinkErrors(
@@ -110,6 +110,7 @@ pub const Case = struct {
         optimize: bool = false,
         use_llvm: bool = false,
         use_lld: bool = false,
+        use_new_linker: bool = false,
         link_libc: bool = false,
     };
 
@@ -181,6 +182,8 @@ pub const Case = struct {
             try w.writeAll(if (ctx.use_llvm) "llvm" else "no-llvm");
         if (try snapshotNameInner(w, scope.use_lld, &sep))
             try w.writeAll(if (ctx.use_lld) "lld" else "no-lld");
+        if (try snapshotNameInner(w, scope.use_new_linker, &sep))
+            try w.writeAll(if (ctx.use_new_linker) "new-linker" else "no-new-linker");
         if (try snapshotNameInner(w, scope.link_libc, &sep))
             try w.writeAll(if (ctx.link_libc) "libc" else "no-libc");
 
@@ -253,10 +256,6 @@ const OverlayOptions = struct {
     /// Prefix the name with the test case prefix.
     /// Unset if names with specific lengths are needed.
     name_prefix: bool = true,
-    /// Prefix the name with `target_desc`.
-    /// Can be unset when the snapshot needs to contain the name,
-    /// so that snapshots can alias between targets.
-    name_target: bool = true,
     asm_source_bytes: ?[]const u8 = null,
     c_source_bytes: ?[]const u8 = null,
     c_source_flags: []const []const u8 = &.{},
@@ -272,6 +271,7 @@ const OverlayOptions = struct {
     strip: ?bool = null,
     use_llvm: ?bool = null,
     use_lld: ?bool = null,
+    use_new_linker: ?bool = null,
 };
 
 const std = @import("std");

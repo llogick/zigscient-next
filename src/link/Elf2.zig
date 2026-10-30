@@ -8050,12 +8050,7 @@ fn loadObject(
                                     else => comptime unreachable,
                                 };
                                 const shndx: *Section.Index = &@field(elf.shndx, init_fini_section_name);
-                                const need_addralign: u8 = switch (class) {
-                                    .NONE, _ => unreachable,
-                                    .@"32" => 4,
-                                    .@"64" => 8,
-                                };
-                                if (section.shdr.addralign != need_addralign) {
+                                if (section.shdr.addralign != class.size()) {
                                     return diags.failParse(path, "bad addralign on {t} shdr", .{@"type"});
                                 }
                                 if (shndx.* == .UNDEF) {
@@ -8913,18 +8908,17 @@ fn createInitFiniArraySection(
 ) Error!void {
     assert(shndx.* == .UNDEF);
     const gpa = elf.base.comp.gpa;
-    const addr_align: Alignment = switch (elf.identClass()) {
-        .NONE, _ => unreachable,
-        .@"32" => .@"4",
-        .@"64" => .@"8",
-    };
     assert(elf.section_by_name.count() == elf.shdrs.items.len);
     try elf.section_by_name.ensureUnusedCapacity(gpa, 1);
     shndx.* = try elf.addSection(elf.ni.data_rel_ro, .{
         .name = "." ++ name,
         .type = @"type",
         .flags = .{ .WRITE = true, .ALLOC = true },
-        .node_align = addr_align,
+        .addralign = switch (elf.identClass()) {
+            .NONE, _ => unreachable,
+            .@"32" => .@"4",
+            .@"64" => .@"8",
+        },
         .manual_size = true,
     });
     elf.section_by_name.putAssumeCapacityNoClobber(shndx.name(elf), {});

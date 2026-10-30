@@ -420,7 +420,7 @@ pub fn mainArgs(
         .objdump => {
             return jitCmd(gpa, arena, io, cmd_args, environ_map, .{
                 .cmd_name = "objdump",
-                .root_src_path = "objdump.zig",
+                .root_src_path = "Objdump.zig",
             });
         },
         .std => {

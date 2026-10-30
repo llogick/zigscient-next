@@ -1,1 +1,6 @@
+abs-symbol-abs_reloc.obj: COFF object
+
+Relocs for section 2 '.data' in abs-symbol-abs_reloc.obj:
+  Offset Type                Symbol -> Sect   Name
 xxxxxxxx ADDR32            xxxxxxxx   UNDEF | foo
+

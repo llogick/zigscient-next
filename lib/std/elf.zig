@@ -234,103 +234,442 @@ pub const AT = switch (native_os) {
     },
 };
 
+pub const DT = enum(u32) {
+    NULL = 0,
+    NEEDED = 1,
+    PLTRELSZ = 2,
+    PLTGOT = 3,
+    HASH = 4,
+    STRTAB = 5,
+    SYMTAB = 6,
+    RELA = 7,
+    RELASZ = 8,
+    RELAENT = 9,
+    STRSZ = 10,
+    SYMENT = 11,
+    INIT = 12,
+    FINI = 13,
+    SONAME = 14,
+    RPATH = 15,
+    SYMBOLIC = 16,
+    REL = 17,
+    RELSZ = 18,
+    RELENT = 19,
+    PLTREL = 20,
+    DEBUG = 21,
+    TEXTREL = 22,
+    JMPREL = 23,
+    BIND_NOW = 24,
+    INIT_ARRAY = 25,
+    FINI_ARRAY = 26,
+    INIT_ARRAYSZ = 27,
+    FINI_ARRAYSZ = 28,
+    RUNPATH = 29,
+    FLAGS = 30,
+    PREINIT_ARRAY = 32,
+    PREINIT_ARRAYSZ = 33,
+    SYMTAB_SHNDX = 34,
+    RELRSZ = 35,
+    RELR = 36,
+    RELRENT = 37,
+
+    // In theory the following tags are OS-specific and their interpretation could vary, but in
+    // practice I don't think there are any conflicts.
+    GNU_PRELINKED = 0x6fff_fdf5,
+    GNU_CONFLICTSZ = 0x6fff_fdf6,
+    GNU_LIBLISTSZ = 0x6fff_fdf7,
+    CHECKSUM = 0x6fff_fdf8,
+    PLTPADSZ = 0x6fff_fdf9,
+    MOVEENT = 0x6fff_fdfa,
+    MOVESZ = 0x6fff_fdfb,
+    FEATURE_1 = 0x6fff_fdfc,
+    POSFLAG_1 = 0x6fff_fdfd,
+    SYMINSZ = 0x6fff_fdfe,
+    SYMINENT = 0x6fff_fdff,
+    GNU_HASH = 0x6fff_fef5,
+    TLSDESC_PLT = 0x6fff_fef6,
+    TLSDESC_GOT = 0x6fff_fef7,
+    GNU_CONFLICT = 0x6fff_fef8,
+    GNU_LIBLIST = 0x6fff_fef9,
+    CONFIG = 0x6fff_fefa,
+    DEPAUDIT = 0x6fff_fefb,
+    AUDIT = 0x6fff_fefc,
+    PLTPAD = 0x6fff_fefd,
+    MOVETAB = 0x6fff_fefe,
+    SYMINFO = 0x6fff_feff,
+    VERSYM = 0x6fff_fff0,
+    RELACOUNT = 0x6fff_fff9,
+    RELCOUNT = 0x6fff_fffa,
+    FLAGS_1 = 0x6fff_fffb,
+    VERDEF = 0x6fff_fffc,
+    VERDEFNUM = 0x6fff_fffd,
+    VERNEED = 0x6fff_fffe,
+    VERNEEDNUM = 0x6fff_ffff,
+
+    _,
+
+    pub const ENCODING: u32 = 32;
+
+    /// Beginning of OS-specific tags
+    pub const LOOS: u32 = 0x6000_000d;
+    /// End of OS-specific tags
+    pub const HIOS: u32 = 0x6fff_f000;
+
+    /// Beginning of processor-specific tags
+    pub const LOPROC: u32 = 0x7000_0000;
+    /// End of processor-specific tags
+    pub const HIPROC: u32 = 0x7fff_ffff;
+
+    /// Beginning of tags whose value is *not* an address
+    pub const VALRNGLO: u32 = 0x6fff_fd00;
+    /// End of tags whose value is *not* an address
+    pub const VALRNGHI: u32 = 0x6fff_fdff;
+
+    /// Beginning of tags whose value is an address
+    pub const ADDRRNGLO: u32 = 0x6fff_fe00;
+    /// End of tags whose value is an address
+    pub const ADDRRNGHI: u32 = 0x6fff_feff;
+
+    /// The value type of a dynamic entry with tag `.PLTREL`.
+    pub const RelocType = enum(u32) {
+        RELA = 7,
+        REL = 17,
+        _,
+    };
+
+    /// The value type of a dynamic entry with tag `.FLAGS`.
+    pub const Flags = packed struct(u32) {
+        ORIGIN: bool = false,
+        SYMBOLIC: bool = false,
+        TEXTREL: bool = false,
+        BIND_NOW: bool = false,
+        STATIC_TLS: bool = false,
+        unused: u27 = 0,
+    };
+
+    /// The value type of a dynamic entry with tag `.FLAGS1`.
+    pub const Flags1 = packed struct(u32) {
+        NOW: bool = false,
+        GLOBAL: bool = false,
+        GROUP: bool = false,
+        NODELETE: bool = false,
+        LOADFLTR: bool = false,
+        INITFIRST: bool = false,
+        NOOPEN: bool = false,
+        ORIGIN: bool = false,
+        DIRECT: bool = false,
+        TRANS: bool = false,
+        INTERPOSE: bool = false,
+        NODEFLIB: bool = false,
+        NODUMP: bool = false,
+        CONFALT: bool = false,
+        ENDFILTEE: bool = false,
+        DISPRELDNE: bool = false,
+        DISPRELPND: bool = false,
+        NODIRECT: bool = false,
+        IGNMULDEF: bool = false,
+        NOKSYMS: bool = false,
+        NOHDR: bool = false,
+        EDITED: bool = false,
+        NORELOC: bool = false,
+        SYMINTPOSE: bool = false,
+        GLOBAUDIT: bool = false,
+        SINGLETON: bool = false,
+        STUB: bool = false,
+        PIE: bool = false,
+        unused: u4 = 0,
+    };
+
+    /// Returns the type of the dynamic entry's value based on its tag.
+    pub fn valueType(tag: DT) enum {
+        /// The associated value is meaningless. Instead, the mere existence of a dynamic entry with
+        /// this tag conveys information, regardless of the entry's value.
+        none,
+        /// The associated value is an address.
+        address,
+        /// The associated value is an offset into the dynamic string table.
+        string,
+        /// The associated value is a size or length.
+        size,
+        /// The associated value has type `DT.Flags`.
+        flags,
+        /// The associated value has type `DT.Flags1`.
+        flags_1,
+        /// The associated value has type `DT.RelocType`.
+        reloc_type,
+        unknown,
+    } {
+        return switch (tag) {
+            .NULL => .none,
+            .NEEDED => .string,
+            .PLTRELSZ => .size,
+            .PLTGOT => .address,
+            .HASH => .address,
+            .STRTAB => .address,
+            .SYMTAB => .address,
+            .RELA => .address,
+            .RELASZ => .size,
+            .RELAENT => .size,
+            .STRSZ => .size,
+            .SYMENT => .size,
+            .INIT => .address,
+            .FINI => .address,
+            .SONAME => .string,
+            .RPATH => .string,
+            .SYMBOLIC => .none,
+            .REL => .address,
+            .RELSZ => .size,
+            .RELENT => .size,
+            .PLTREL => .reloc_type,
+            .DEBUG => .none, // typically an address at runtime, but the stored value is meaningless
+            .TEXTREL => .none,
+            .JMPREL => .address,
+            .BIND_NOW => .none,
+            .INIT_ARRAY => .address,
+            .FINI_ARRAY => .address,
+            .INIT_ARRAYSZ => .size,
+            .FINI_ARRAYSZ => .size,
+            .RUNPATH => .string,
+            .FLAGS => .flags,
+            .PREINIT_ARRAY => .address,
+            .PREINIT_ARRAYSZ => .size,
+            .SYMTAB_SHNDX => .unknown, // TODO
+            .RELRSZ => .size,
+            .RELR => .address,
+            .RELRENT => .size,
+            .GNU_PRELINKED => .unknown, // TODO
+            .GNU_CONFLICTSZ => .size,
+            .GNU_LIBLISTSZ => .size,
+            .CHECKSUM => .unknown, // TODO
+            .PLTPADSZ => .size,
+            .MOVEENT => .size,
+            .MOVESZ => .size,
+            .FEATURE_1 => .unknown, // TODO
+            .POSFLAG_1 => .unknown, // TODO
+            .SYMINSZ => .size,
+            .SYMINENT => .size,
+            .GNU_HASH => .address,
+            .TLSDESC_PLT => .address,
+            .TLSDESC_GOT => .address,
+            .GNU_CONFLICT => .address,
+            .GNU_LIBLIST => .address,
+
+            // These values are apparently string table offsets despite being in the
+            // `ADDRRNGLO...ADDRRNGHI` range? No idea.
+            .CONFIG => .string,
+            .DEPAUDIT => .string,
+            .AUDIT => .string,
+
+            .PLTPAD => .address,
+            .MOVETAB => .address,
+            .SYMINFO => .address,
+            .VERSYM => .address,
+            .RELACOUNT => .size,
+            .RELCOUNT => .size,
+            .FLAGS_1 => .flags_1,
+            .VERDEF => .address,
+            .VERDEFNUM => .size,
+            .VERNEED => .address,
+            .VERNEEDNUM => .size,
+
+            _ => switch (@backingInt(tag)) {
+                // Tags below `ENCODING` do not have a fixed rule for their type.
+                0...ENCODING - 1 => .unknown,
+
+                // Tags above `HIOS` but below `LOPROC` do not have a fixed rule for their type.
+                HIOS + 1...VALRNGLO - 1 => .unknown,
+                VALRNGLO...VALRNGHI => .unknown,
+                // VALRNGHI + 1 == ADDRRNGLO
+                ADDRRNGLO...ADDRRNGHI => .address,
+                ADDRRNGHI + 1...LOPROC - 1 => .unknown,
+
+                // For all other tags, the value is an address iff the tag is an even number.
+                ENCODING...LOOS - 1,
+                LOOS...HIOS,
+                LOPROC...HIPROC,
+                HIPROC + 1...std.math.maxInt(u32),
+                => switch (@as(u1, @truncate(@backingInt(tag)))) {
+                    0 => .unknown,
+                    1 => .address,
+                },
+            },
+        };
+    }
+};
+
+/// Deprecated; use `DT.NULL`.
 pub const DT_NULL = 0;
+/// Deprecated; use `DT.NEEDED`.
 pub const DT_NEEDED = 1;
+/// Deprecated; use `DT.PLTRELSZ`.
 pub const DT_PLTRELSZ = 2;
+/// Deprecated; use `DT.PLTGOT`.
 pub const DT_PLTGOT = 3;
+/// Deprecated; use `DT.HASH`.
 pub const DT_HASH = 4;
+/// Deprecated; use `DT.STRTAB`.
 pub const DT_STRTAB = 5;
+/// Deprecated; use `DT.SYMTAB`.
 pub const DT_SYMTAB = 6;
+/// Deprecated; use `DT.RELA`.
 pub const DT_RELA = 7;
+/// Deprecated; use `DT.RELASZ`.
 pub const DT_RELASZ = 8;
+/// Deprecated; use `DT.RELAENT`.
 pub const DT_RELAENT = 9;
+/// Deprecated; use `DT.STRSZ`.
 pub const DT_STRSZ = 10;
+/// Deprecated; use `DT.SYMENT`.
 pub const DT_SYMENT = 11;
+/// Deprecated; use `DT.INIT`.
 pub const DT_INIT = 12;
+/// Deprecated; use `DT.FINI`.
 pub const DT_FINI = 13;
+/// Deprecated; use `DT.SONAME`.
 pub const DT_SONAME = 14;
+/// Deprecated; use `DT.RPATH`.
 pub const DT_RPATH = 15;
+/// Deprecated; use `DT.SYMBOLIC`.
 pub const DT_SYMBOLIC = 16;
+/// Deprecated; use `DT.REL`.
 pub const DT_REL = 17;
+/// Deprecated; use `DT.RELSZ`.
 pub const DT_RELSZ = 18;
+/// Deprecated; use `DT.RELENT`.
 pub const DT_RELENT = 19;
+/// Deprecated; use `DT.PLTREL`.
 pub const DT_PLTREL = 20;
+/// Deprecated; use `DT.DEBUG`.
 pub const DT_DEBUG = 21;
+/// Deprecated; use `DT.TEXTREL`.
 pub const DT_TEXTREL = 22;
+/// Deprecated; use `DT.JMPREL`.
 pub const DT_JMPREL = 23;
+/// Deprecated; use `DT.BIND_NOW`.
 pub const DT_BIND_NOW = 24;
+/// Deprecated; use `DT.INIT_ARRAY`.
 pub const DT_INIT_ARRAY = 25;
+/// Deprecated; use `DT.FINI_ARRAY`.
 pub const DT_FINI_ARRAY = 26;
+/// Deprecated; use `DT.INIT_ARRAYSZ`.
 pub const DT_INIT_ARRAYSZ = 27;
+/// Deprecated; use `DT.FINI_ARRAYSZ`.
 pub const DT_FINI_ARRAYSZ = 28;
+/// Deprecated; use `DT.RUNPATH`.
 pub const DT_RUNPATH = 29;
+/// Deprecated; use `DT.FLAGS`.
 pub const DT_FLAGS = 30;
+/// Deprecated; use `DT.ENCODING`.
 pub const DT_ENCODING = 32;
+/// Deprecated; use `DT.PREINIT_ARRAY`.
 pub const DT_PREINIT_ARRAY = 32;
+/// Deprecated; use `DT.PREINIT_ARRAYSZ`.
 pub const DT_PREINIT_ARRAYSZ = 33;
+/// Deprecated; use `DT.SYMTAB_SHNDX`.
 pub const DT_SYMTAB_SHNDX = 34;
+/// Deprecated; use `DT.RELRSZ`.
 pub const DT_RELRSZ = 35;
+/// Deprecated; use `DT.RELR`.
 pub const DT_RELR = 36;
+/// Deprecated; use `DT.RELRENT`.
 pub const DT_RELRENT = 37;
-pub const DT_NUM = 38;
+/// Deprecated; use `DT.LOOS`.
 pub const DT_LOOS = 0x6000000d;
+/// Deprecated; use `DT.HIOS`.
 pub const DT_HIOS = 0x6ffff000;
+/// Deprecated; use `DT.LOPROC`.
 pub const DT_LOPROC = 0x70000000;
+/// Deprecated; use `DT.HIPROC`.
 pub const DT_HIPROC = 0x7fffffff;
+
+pub const DT_NUM = 38;
 pub const DT_PROCNUM = DT_MIPS_NUM;
 
+/// Deprecated; use `DT.VALRNGLO`.
 pub const DT_VALRNGLO = 0x6ffffd00;
-pub const DT_GNU_PRELINKED = 0x6ffffdf5;
-pub const DT_GNU_CONFLICTSZ = 0x6ffffdf6;
-pub const DT_GNU_LIBLISTSZ = 0x6ffffdf7;
-pub const DT_CHECKSUM = 0x6ffffdf8;
-pub const DT_PLTPADSZ = 0x6ffffdf9;
-pub const DT_MOVEENT = 0x6ffffdfa;
-pub const DT_MOVESZ = 0x6ffffdfb;
-pub const DT_FEATURE_1 = 0x6ffffdfc;
-pub const DT_POSFLAG_1 = 0x6ffffdfd;
 
+/// Deprecated; use `DT.GNU_PRELINKED`.
+pub const DT_GNU_PRELINKED = 0x6ffffdf5;
+/// Deprecated; use `DT.GNU_CONFLICTSZ`.
+pub const DT_GNU_CONFLICTSZ = 0x6ffffdf6;
+/// Deprecated; use `DT.GNU_LIBLISTSZ`.
+pub const DT_GNU_LIBLISTSZ = 0x6ffffdf7;
+/// Deprecated; use `DT.CHECKSUM`.
+pub const DT_CHECKSUM = 0x6ffffdf8;
+/// Deprecated; use `DT.PLTPADSZ`.
+pub const DT_PLTPADSZ = 0x6ffffdf9;
+/// Deprecated; use `DT.MOVEENT`.
+pub const DT_MOVEENT = 0x6ffffdfa;
+/// Deprecated; use `DT.MOVESZ`.
+pub const DT_MOVESZ = 0x6ffffdfb;
+/// Deprecated; use `DT.FEATURE_1`.
+pub const DT_FEATURE_1 = 0x6ffffdfc;
+/// Deprecated; use `DT.POSFLAG_1`.
+pub const DT_POSFLAG_1 = 0x6ffffdfd;
+/// Deprecated; use `DT.SYMINSZ`.
 pub const DT_SYMINSZ = 0x6ffffdfe;
+/// Deprecated; use `DT.SYMINENT`.
 pub const DT_SYMINENT = 0x6ffffdff;
+/// Deprecated; use `DT.VALRNGHI`.
 pub const DT_VALRNGHI = 0x6ffffdff;
 pub const DT_VALNUM = 12;
 
+/// Deprecated; use `DT.ADDRRNGLO`.
 pub const DT_ADDRRNGLO = 0x6ffffe00;
+/// Deprecated; use `DT.GNU_HASH`.
 pub const DT_GNU_HASH = 0x6ffffef5;
+/// Deprecated; use `DT.TLSDESC_PLT`.
 pub const DT_TLSDESC_PLT = 0x6ffffef6;
+/// Deprecated; use `DT.TLSDESC_GOT`.
 pub const DT_TLSDESC_GOT = 0x6ffffef7;
+/// Deprecated; use `DT.GNU_CONFLICT`.
 pub const DT_GNU_CONFLICT = 0x6ffffef8;
+/// Deprecated; use `DT.GNU_LIBLIST`.
 pub const DT_GNU_LIBLIST = 0x6ffffef9;
+/// Deprecated; use `DT.CONFIG`.
 pub const DT_CONFIG = 0x6ffffefa;
+/// Deprecated; use `DT.DEPAUDIT`.
 pub const DT_DEPAUDIT = 0x6ffffefb;
+/// Deprecated; use `DT.AUDIT`.
 pub const DT_AUDIT = 0x6ffffefc;
+/// Deprecated; use `DT.PLTPAD`.
 pub const DT_PLTPAD = 0x6ffffefd;
+/// Deprecated; use `DT.MOVETAB`.
 pub const DT_MOVETAB = 0x6ffffefe;
+/// Deprecated; use `DT.SYMINFO`.
 pub const DT_SYMINFO = 0x6ffffeff;
+/// Deprecated; use `DT.ADDRRNGHI`.
 pub const DT_ADDRRNGHI = 0x6ffffeff;
 pub const DT_ADDRNUM = 11;
 
+/// Deprecated; use `DT.VERSYM`.
 pub const DT_VERSYM = 0x6ffffff0;
 
+/// Deprecated; use `DT.RELACOUNT`.
 pub const DT_RELACOUNT = 0x6ffffff9;
+/// Deprecated; use `DT.RELCOUNT`.
 pub const DT_RELCOUNT = 0x6ffffffa;
 
+/// Deprecated; use `DT.FLAGS_1`.
 pub const DT_FLAGS_1 = 0x6ffffffb;
+/// Deprecated; use `DT.VERDEF`.
 pub const DT_VERDEF = 0x6ffffffc;
 
+/// Deprecated; use `DT.VERDEFNUM`.
 pub const DT_VERDEFNUM = 0x6ffffffd;
+/// Deprecated; use `DT.VERNEED`.
 pub const DT_VERNEED = 0x6ffffffe;
 
+/// Deprecated; use `DT.VERNEEDNUM`.
 pub const DT_VERNEEDNUM = 0x6fffffff;
 pub const DT_VERSIONTAGNUM = 16;
 
+// TODO: move these processor-specific `DT_*` values into `DT`
 pub const DT_AUXILIARY = 0x7ffffffd;
 pub const DT_FILTER = 0x7fffffff;
 pub const DT_EXTRANUM = 3;
-
 pub const DT_SPARC_REGISTER = 0x70000001;
 pub const DT_SPARC_NUM = 2;
-
 pub const DT_MIPS_RLD_VERSION = 0x70000001;
 pub const DT_MIPS_TIME_STAMP = 0x70000002;
 pub const DT_MIPS_ICHECKSUM = 0x70000003;
@@ -350,21 +689,14 @@ pub const DT_MIPS_HIPAGENO = 0x70000014;
 pub const DT_MIPS_RLD_MAP = 0x70000016;
 pub const DT_MIPS_DELTA_CLASS = 0x70000017;
 pub const DT_MIPS_DELTA_CLASS_NO = 0x70000018;
-
 pub const DT_MIPS_DELTA_INSTANCE = 0x70000019;
 pub const DT_MIPS_DELTA_INSTANCE_NO = 0x7000001a;
-
 pub const DT_MIPS_DELTA_RELOC = 0x7000001b;
 pub const DT_MIPS_DELTA_RELOC_NO = 0x7000001c;
-
 pub const DT_MIPS_DELTA_SYM = 0x7000001d;
-
 pub const DT_MIPS_DELTA_SYM_NO = 0x7000001e;
-
 pub const DT_MIPS_DELTA_CLASSSYM = 0x70000020;
-
 pub const DT_MIPS_DELTA_CLASSSYM_NO = 0x70000021;
-
 pub const DT_MIPS_CXX_FLAGS = 0x70000022;
 pub const DT_MIPS_PIXIE_INIT = 0x70000023;
 pub const DT_MIPS_SYMBOL_LIB = 0x70000024;
@@ -377,73 +709,96 @@ pub const DT_MIPS_INTERFACE = 0x7000002a;
 pub const DT_MIPS_DYNSTR_ALIGN = 0x7000002b;
 pub const DT_MIPS_INTERFACE_SIZE = 0x7000002c;
 pub const DT_MIPS_RLD_TEXT_RESOLVE_ADDR = 0x7000002d;
-
 pub const DT_MIPS_PERF_SUFFIX = 0x7000002e;
-
 pub const DT_MIPS_COMPACT_SIZE = 0x7000002f;
 pub const DT_MIPS_GP_VALUE = 0x70000030;
 pub const DT_MIPS_AUX_DYNAMIC = 0x70000031;
-
 pub const DT_MIPS_PLTGOT = 0x70000032;
-
 pub const DT_MIPS_RWPLT = 0x70000034;
 pub const DT_MIPS_RLD_MAP_REL = 0x70000035;
 pub const DT_MIPS_NUM = 0x36;
-
 pub const DT_ALPHA_PLTRO = (DT_LOPROC + 0);
 pub const DT_ALPHA_NUM = 1;
-
 pub const DT_PPC_GOT = (DT_LOPROC + 0);
 pub const DT_PPC_OPT = (DT_LOPROC + 1);
 pub const DT_PPC_NUM = 2;
-
 pub const DT_PPC64_GLINK = (DT_LOPROC + 0);
 pub const DT_PPC64_OPD = (DT_LOPROC + 1);
 pub const DT_PPC64_OPDSZ = (DT_LOPROC + 2);
 pub const DT_PPC64_OPT = (DT_LOPROC + 3);
 pub const DT_PPC64_NUM = 4;
-
 pub const DT_IA_64_PLT_RESERVE = (DT_LOPROC + 0);
 pub const DT_IA_64_NUM = 1;
-
 pub const DT_XTENSA_GOT_LOC_OFF = 0x70000000;
 pub const DT_XTENSA_GOT_LOC_SZ = 0x70000001;
-
 pub const DT_NIOS2_GP = 0x70000002;
 
+/// Deprecated; use `DT.Flags`.
 pub const DF_ORIGIN = 0x00000001;
+/// Deprecated; use `DT.Flags`.
 pub const DF_SYMBOLIC = 0x00000002;
+/// Deprecated; use `DT.Flags`.
 pub const DF_TEXTREL = 0x00000004;
+/// Deprecated; use `DT.Flags`.
 pub const DF_BIND_NOW = 0x00000008;
+/// Deprecated; use `DT.Flags`.
 pub const DF_STATIC_TLS = 0x00000010;
 
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NOW = 0x00000001;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_GLOBAL = 0x00000002;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_GROUP = 0x00000004;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NODELETE = 0x00000008;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_LOADFLTR = 0x00000010;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_INITFIRST = 0x00000020;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NOOPEN = 0x00000040;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_ORIGIN = 0x00000080;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_DIRECT = 0x00000100;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_TRANS = 0x00000200;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_INTERPOSE = 0x00000400;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NODEFLIB = 0x00000800;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NODUMP = 0x00001000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_CONFALT = 0x00002000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_ENDFILTEE = 0x00004000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_DISPRELDNE = 0x00008000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_DISPRELPND = 0x00010000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NODIRECT = 0x00020000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_IGNMULDEF = 0x00040000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NOKSYMS = 0x00080000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NOHDR = 0x00100000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_EDITED = 0x00200000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_NORELOC = 0x00400000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_SYMINTPOSE = 0x00800000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_GLOBAUDIT = 0x01000000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_SINGLETON = 0x02000000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_STUB = 0x04000000;
+/// Deprecated; use `DT.Flags1`.
 pub const DF_1_PIE = 0x08000000;
 
 pub const Versym = packed struct(u16) {
@@ -638,6 +993,8 @@ pub const PT = enum(Word) {
     pub const GNU_STACK: PT = @fromBackingInt(@intCast(0x6474e551));
     /// Read-only after relocation
     pub const GNU_RELRO: PT = @fromBackingInt(@intCast(0x6474e552));
+    /// Contains the `.note.gnu.property` section
+    pub const GNU_PROPERTY: PT = @fromBackingInt(@intCast(0x6474e553));
 
     pub const LOSUNW: PT = @fromBackingInt(@intCast(0x6ffffffa));
     pub const HISUNW: PT = @fromBackingInt(@intCast(0x6fffffff));
@@ -1264,6 +1621,19 @@ pub const Elf32 = struct {
 
         pub const Info = Elf32.Rel.Info;
     };
+    pub const Relr = packed union(Word) {
+        info: packed struct {
+            tag: enum(u1) { address = 0, chain = 1 },
+            /// Only valid if `info.tag == .chain`.
+            chain: u31,
+        },
+        /// Only valid if `info.tag == .address`.
+        address: u32,
+    };
+    pub const Dyn = extern struct {
+        tag: packed struct(Sword) { dt: DT },
+        val: u32,
+    };
     comptime {
         assert(@sizeOf(Elf32.Ehdr) == 52);
         assert(@sizeOf(Elf32.Phdr) == 32);
@@ -1271,6 +1641,7 @@ pub const Elf32 = struct {
         assert(@sizeOf(Elf32.Sym) == 16);
         assert(@sizeOf(Elf32.Rel) == 8);
         assert(@sizeOf(Elf32.Rela) == 12);
+        assert(@sizeOf(Elf32.Dyn) == 8);
     }
 };
 pub const Elf64 = struct {
@@ -1348,6 +1719,19 @@ pub const Elf64 = struct {
 
         pub const Info = Elf64.Rel.Info;
     };
+    pub const Relr = packed union(Xword) {
+        info: packed struct {
+            tag: enum(u1) { address = 0, chain = 1 },
+            /// Only valid if `info.tag == .chain`.
+            chain: u63,
+        },
+        /// Only valid if `info.tag == .address`.
+        address: u64,
+    };
+    pub const Dyn = extern struct {
+        tag: packed struct(Sxword) { dt: DT, unused: u32 = 0 },
+        val: u64,
+    };
     comptime {
         assert(@sizeOf(Elf64.Ehdr) == 64);
         assert(@sizeOf(Elf64.Phdr) == 56);
@@ -1355,6 +1739,7 @@ pub const Elf64 = struct {
         assert(@sizeOf(Elf64.Sym) == 24);
         assert(@sizeOf(Elf64.Rel) == 16);
         assert(@sizeOf(Elf64.Rela) == 24);
+        assert(@sizeOf(Elf64.Dyn) == 16);
     }
 };
 pub const ElfN = switch (@sizeOf(usize)) {

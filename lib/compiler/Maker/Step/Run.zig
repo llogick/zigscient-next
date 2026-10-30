@@ -579,7 +579,7 @@ pub fn make(
 
         if (!any_discovered_inputs) {
             // We already know the final output paths; use them directly.
-            const digest = if (has_side_effects) man.hash.final() else man.missDigestHex();
+            const digest = missDigest(&man, has_side_effects);
             const output_dir_path = "o" ++ Dir.path.sep_str ++ &digest;
             try populateGeneratedStdIo(maker, &conf_run, &digest);
             try populateGeneratedPathsCreateDirs(arena, run_index, maker, output_dir_path, output_placeholders.items, switch (conf_run.flags.stdio) {
@@ -685,7 +685,7 @@ pub fn make(
         }
     }
 
-    const digest = if (has_side_effects) man.hash.final() else man.missDigestHex();
+    const digest = missDigest(&man, has_side_effects);
 
     const any_output = output_placeholders.items.len > 0 or
         conf_run.captured_stdout.value != null or conf_run.captured_stderr.value != null;
@@ -2979,4 +2979,26 @@ fn failForeign(
             return step.fail(maker, "unable to spawn foreign binary '{s}'", .{argv0});
         },
     }
+}
+
+fn missDigest(man: *Cache.Manifest, has_side_effects: bool) Cache.HexDigest {
+    if (!has_side_effects) {
+        return man.missDigestHex();
+    }
+
+    // If there are side effects, then we have populated the manifest as usual, but we only need the
+    // input digest (we may use it to create a unique name for a directory of output files). We have
+    // not called `man.check`, because there is no point actually checking the cache; however, that
+    // means that the input paths have not been added to `man.hash.hasher` yet, because that is
+    // usually handled by `check`. Therefore we need to manually add those paths to the hasher. If
+    // we didn't do this, our digest would not depend on the input paths, which would result in hash
+    // collisions, which in turn could cause different `Run` steps to clobber one another's work.
+    assert(man.state == .input);
+    assert(man.manifest_file == null);
+    var hasher = man.hash.hasher;
+    for (man.files.keys()[0..man.input_paths.items.len]) |file_off| {
+        const flags_and_path = file_off.flagsAndPath(man.contents.items);
+        hasher.update(mem.absorbSentinel(flags_and_path));
+    }
+    return Cache.binToHex(hasher.finalResult());
 }

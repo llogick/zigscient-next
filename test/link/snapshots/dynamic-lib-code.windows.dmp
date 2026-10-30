@@ -1,3 +1,5 @@
+dynamic-lib-code-lib.dll: PE/COFF image
+
 Export directory:
                0 flags
                0 time_date_stamp
@@ -9,5 +11,9 @@ xxxxxxxxxxxxxxxx number_of_names
 xxxxxxxxxxxxxxxx export_address_table_rva
 xxxxxxxxxxxxxxxx name_pointer_table_rva
 xxxxxxxxxxxxxxxx ordinal_table_rva
+
+Exports from dynamic-lib-code-lib.dll:
+ Ord Hint      RVA   Name
 xxxx xxxx xxxxxxxx | foo1
 xxxx xxxx xxxxxxxx | foo2
+

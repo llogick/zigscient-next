@@ -1,0 +1,8 @@
+weak_extern-test: ELF image
+
+??? relocations in section ".rela.dyn"
+  index        offset        type     sym  target
+
+??? relocations against section ".got.plt" in section ".rela.plt"
+  index        offset        type     sym  target
+

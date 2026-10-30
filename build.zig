@@ -771,6 +771,32 @@ pub fn build(b: *std.Build) !void {
     try tests.addRunnerTests(b, runner, test_llvm_step, "test/llvm", @import("test/llvm/matrix.zon"), runner_opts);
     test_step.dependOn(test_llvm_step);
 
+    // Provide steps for manually building commands which are usually JIT-compiled. This can be
+    // useful during development, e.g. for using incremental compilation.
+    {
+        const objdump_step = b.step("objdump", "Build and install objdump (for development purposes only; usually JIT-compiled)");
+        const objdump_exe = b.addExecutable(.{
+            .name = "objdump",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("lib/compiler/Objdump.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        objdump_step.dependOn(&b.addInstallArtifact(objdump_exe, .{}).step);
+
+        const maker_step = b.step("maker", "Build and install maker (for development purposes only; usually JIT-compiled)");
+        const maker_exe = b.addExecutable(.{
+            .name = "maker",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("lib/compiler/Maker.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        maker_step.dependOn(&b.addInstallArtifact(maker_exe, .{}).step);
+    }
+
     // Remove steps not relevant to the core of the project
     // Can always comment out to enable
     for (&[_][]const u8{
@@ -803,6 +829,8 @@ pub fn build(b: *std.Build) !void {
         "update-mingw",
         "test-incremental",
         "test-libc-nsz",
+        "objdump",
+        "maker",
     }) |tls_name| _ = b.top_level_steps.orderedRemove(tls_name);
 }
 

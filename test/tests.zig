@@ -2141,86 +2141,111 @@ const LinkTarget = struct {
     link_libc: bool = false,
     use_llvm: bool = false,
     use_lld: bool = false,
+    use_new_linker: bool = false,
 };
 
 const link_targets = blk: {
     @setEvalBranchQuota(30000);
     break :blk [_]LinkTarget{
-        // Native Targets
+        // Windows
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            },
+            .use_llvm = true,
+            .use_lld = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .use_llvm = true,
+            .use_lld = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .msvc,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .msvc,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .msvc,
+            },
+            .use_llvm = true,
+            .use_lld = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .x86_64,
+                .os_tag = .windows,
+                .abi = .msvc,
+            },
+            .link_libc = true,
+            .use_llvm = true,
+            .use_lld = true,
+        },
 
-        // .{
-        //     .use_llvm = true,
-        // },
-
-        // Windows Targets
-
+        // Linux
         .{
             .target = .{
                 .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .gnu,
+                .os_tag = .linux,
+                .abi = .none,
             },
+            .use_llvm = false,
+            .use_new_linker = true,
         },
         .{
             .target = .{
                 .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .gnu,
+                .os_tag = .linux,
+                .abi = .musl,
             },
             .link_libc = true,
+            .use_llvm = false,
+            .use_new_linker = true,
         },
         .{
             .target = .{
                 .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .gnu,
-            },
-            .use_llvm = true,
-            .use_lld = true,
-        },
-        .{
-            .target = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .windows,
+                .os_tag = .linux,
                 .abi = .gnu,
             },
             .link_libc = true,
-            .use_llvm = true,
-            .use_lld = true,
-        },
-        .{
-            .target = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .msvc,
-            },
-        },
-        .{
-            .target = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .msvc,
-            },
-            .link_libc = true,
-        },
-        .{
-            .target = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .msvc,
-            },
-            .use_llvm = true,
-            .use_lld = true,
-        },
-        .{
-            .target = .{
-                .cpu_arch = .x86_64,
-                .os_tag = .windows,
-                .abi = .msvc,
-            },
-            .link_libc = true,
-            .use_llvm = true,
-            .use_lld = true,
+            .use_llvm = false,
+            .use_new_linker = true,
         },
     };
 };
@@ -3099,15 +3124,17 @@ pub fn addLinkTests(b: *std.Build, options: LinkTestOptions) *Step {
                 .step = step,
                 .optimize = optimize_mode,
                 .target = resolved_target,
-                .target_desc = std.fmt.allocPrint(b.allocator, "{s}-{t}{s}{s}{s}", .{
+                .target_desc = std.fmt.allocPrint(b.allocator, "{s}-{t}{s}{s}{s}{s}", .{
                     target.zigTriple(b.allocator) catch @panic("OOM"),
                     optimize_mode,
                     if (link_target.use_llvm) "-llvm" else "",
                     if (link_target.use_lld) "-lld" else "",
+                    if (link_target.use_new_linker) "-new-linker" else "",
                     if (link_target.link_libc) "-libc" else "",
                 }) catch @panic("OOM"),
                 .use_llvm = link_target.use_llvm,
                 .use_lld = link_target.use_lld,
+                .use_new_linker = link_target.use_new_linker,
                 .link_libc = link_target.link_libc,
                 .test_filters = options.test_filters,
                 .update_step = opt_update_step,
