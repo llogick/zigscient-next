@@ -6,6 +6,9 @@ const pthread_t = std.c.pthread_t;
 const sigval_t = std.c.sigval_t;
 const uid_t = std.c.uid_t;
 const timespec = std.c.timespec;
+const fd_t = std.c.fd_t;
+
+pub extern "c" fn ioctl(fd: fd_t, request: c_ulong, ...) c_int;
 
 pub extern "c" fn ptrace(request: c_int, pid: pid_t, addr: ?*anyopaque, data: c_int) c_int;
 
@@ -28,7 +31,7 @@ pub extern "c" fn ___lwp_park60(
 ) c_int;
 
 pub extern "c" fn _lwp_unpark(lwp: lwpid_t, hint: ?*const anyopaque) c_int;
-pub extern "c" fn _lwp_unpark_all(targets: [*]const lwpid_t, ntargets: usize, hint: ?*const anyopaque) c_int;
+pub extern "c" fn _lwp_unpark_all(targets: [*]const lwpid_t, ntargets: usize, hint: ?*const anyopaque) isize;
 
 pub const TCIFLUSH = 1;
 pub const TCOFLUSH = 2;
@@ -80,7 +83,7 @@ pub const _ksiginfo = extern struct {
                 pe_lwp: lwpid_t,
             },
         },
-    } align(@sizeOf(usize)),
+    },
 };
 
 pub const E = enum(u16) {

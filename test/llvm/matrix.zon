@@ -303,7 +303,6 @@
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .freestanding = .{} }, .abi = .{ .eabihf = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .haiku = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .hurd = .{} }, .abi = .{ .gnu = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
-    .{ .cpu = .{ .x86 = .{} }, .os = .{ .illumos = .{} }, .abi = .{ .none = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .linux = .{} }, .abi = .{ .android = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .linux = .{} }, .abi = .{ .gnu = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },
     .{ .cpu = .{ .x86 = .{} }, .os = .{ .linux = .{} }, .abi = .{ .musl = .{} }, .cache_mode = .whole, .backend = .llvm, .linker = .lld, .pic = .pic },

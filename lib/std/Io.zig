@@ -334,7 +334,7 @@ pub const Operation = union(enum) {
             file: File,
             /// Device-dependent operation code.
             code: switch (builtin.target.os.tag) {
-                .dragonfly, .freebsd, .openbsd => usize,
+                .dragonfly, .freebsd, .netbsd, .openbsd => usize,
                 else => u32,
             },
             arg: ?*anyopaque,

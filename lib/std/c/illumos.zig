@@ -19,7 +19,6 @@ comptime {
     assert(builtin.os.tag == .illumos); // Prevent access of std.c symbols on wrong OS.
 }
 
-pub extern "c" fn pthread_setname_np(thread: pthread_t, name: [*:0]const u8, arg: ?*anyopaque) c_int;
 pub extern "c" fn sysconf(sc: c_int) i64;
 
 pub const major_t = u32;
@@ -35,6 +34,13 @@ pub const GETCONTEXT = 0;
 pub const SETCONTEXT = 1;
 pub const GETUSTACK = 2;
 pub const SETUSTACK = 3;
+
+pub const TCSA = enum(c_uint) {
+    NOW = 0x540e,
+    DRAIN = 0x540f,
+    FLUSH = 0x5410,
+    _,
+};
 
 pub const POSIX_FADV = struct {
     pub const NORMAL = 0;

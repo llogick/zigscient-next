@@ -247,11 +247,14 @@ pub const ACCMODE = switch (native_os) {
     },
 };
 
-pub const TCSA = enum(c_uint) {
-    NOW,
-    DRAIN,
-    FLUSH,
-    _,
+pub const TCSA = switch (native_os) {
+    .illumos => system.TCSA,
+    else => enum(c_uint) {
+        NOW,
+        DRAIN,
+        FLUSH,
+        _,
+    },
 };
 
 pub const winsize = extern struct {

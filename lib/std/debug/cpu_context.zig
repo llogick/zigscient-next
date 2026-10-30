@@ -2427,24 +2427,6 @@ const signal_ucontext_t = switch (native_os) {
         _stack: std.c.stack_t,
         mcontext: switch (native_arch) {
             // https://github.com/illumos/illumos-gate/blob/d4ce137bba3bd16823db6374d9e9a643264ce245/usr/src/uts/intel/sys/mcontext.h
-            .x86 => extern struct {
-                _gs: u32,
-                _fs: u32,
-                _es: u32,
-                _ds: u32,
-                edi: u32,
-                esi: u32,
-                ebp: u32,
-                esp: u32,
-                ebx: u32,
-                edx: u32,
-                ecx: u32,
-                eax: u32,
-                _trapno: i32,
-                _err: i32,
-                eip: u32,
-            },
-            // https://github.com/illumos/illumos-gate/blob/d4ce137bba3bd16823db6374d9e9a643264ce245/usr/src/uts/intel/sys/mcontext.h
             .x86_64 => extern struct {
                 r15: u64 align(16),
                 r14: u64,

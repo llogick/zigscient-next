@@ -987,8 +987,6 @@ pub const os_log_type_t = enum(u8) {
 pub extern "c" fn os_log_create(subsystem: [*]const u8, category: [*]const u8) os_log_t;
 pub extern "c" fn os_log_type_enabled(log: os_log_t, tpe: os_log_type_t) bool;
 pub extern "c" fn os_signpost_id_generate(log: os_log_t) os_signpost_id_t;
-pub extern "c" fn os_signpost_interval_begin(log: os_log_t, signpos: os_signpost_id_t, func: [*]const u8, ...) void;
-pub extern "c" fn os_signpost_interval_end(log: os_log_t, signpos: os_signpost_id_t, func: [*]const u8, ...) void;
 pub extern "c" fn os_signpost_id_make_with_pointer(log: os_log_t, ptr: ?*anyopaque) os_signpost_id_t;
 pub extern "c" fn os_signpost_enabled(log: os_log_t) bool;
 

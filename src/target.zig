@@ -167,7 +167,7 @@ pub fn hasValgrindSupport(target: *const std.Target, backend: std.lang.CompilerB
             else => false,
         },
         .x86 => switch (target.os.tag) {
-            .linux, .freebsd, .illumos => true,
+            .linux, .freebsd => true,
             .windows => !ofmt_c_msvc,
             else => false,
         },

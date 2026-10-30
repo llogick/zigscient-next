@@ -2626,13 +2626,7 @@ pub const DynamicLinker = struct {
                 else => none,
             },
 
-            .illumos,
-            => switch (cpu.arch) {
-                .x86,
-                .x86_64,
-                => initFmt("/lib/{s}ld.so.1", .{if (ptrBitWidth_cpu_abi(cpu, .none) == 64) "64/" else ""}),
-                else => none,
-            },
+            .illumos => if (cpu.arch == .x86_64) init("/lib/64/ld.so.1") else none,
 
             .linux => if (abi.isAndroid())
                 switch (cpu.arch) {

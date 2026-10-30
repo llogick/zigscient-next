@@ -124,7 +124,6 @@ pub const can_unwind: bool = s: {
             .x86_64,
         },
         .illumos => &.{
-            .x86,
             .x86_64,
         },
         // Not supported yet: hppa, hppa64, microblaze/microblazeel, sh/sheb
