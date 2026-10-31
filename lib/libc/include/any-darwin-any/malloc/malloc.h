@@ -545,6 +545,7 @@ typedef kern_return_t memory_reader_t(task_t remote_task, vm_address_t remote_ad
 #define MALLOC_PTR_IN_USE_RANGE_TYPE	1	/* for allocated pointers */
 #define MALLOC_PTR_REGION_RANGE_TYPE	2	/* for region containing pointers */
 #define MALLOC_ADMIN_REGION_RANGE_TYPE	4	/* for region used internally */
+#define MALLOC_GUARD_REGION_RANGE_TYPE	8	/* for region used as guards */
 #define MALLOC_ZONE_SPECIFIC_FLAGS	0xff00	/* bits reserved for zone-specific purposes */
 
 typedef void vm_range_recorder_t(task_t, void *, unsigned type, vm_range_t *, unsigned);

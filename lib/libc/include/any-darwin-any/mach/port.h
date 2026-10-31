@@ -418,17 +418,6 @@ typedef struct mach_service_port_info * mach_service_port_info_t;
 #define MPO_MAKE_PORT_TYPE(a, b)   (((a & 0x7) << 14) | ((b & 0x7) << 10))
 #define MPO_PORT_TYPE_MASK          MPO_MAKE_PORT_TYPE(0x7, 0x7) /* 0x1dc00 */
 
-#if __BUILDING_XNU_LIB_UNITTEST__
-/*
- * This is a test only MPO flag for bootstrap port
- * as copyin doesn't work in unit test yet.
- */
-#define MPO_UNIT_TEST_BOOTSTRAP_ENTRY \
-	MPO_UNIT_TEST_BOOTSTRAP_PORT = MPO_MAKE_PORT_TYPE(4, 4),  /* 0x11000 */
-#else /* __BUILDING_XNU_LIB_UNITTEST__ */
-#define MPO_UNIT_TEST_BOOTSTRAP_ENTRY
-#endif /* __BUILDING_XNU_LIB_UNITTEST__ */
-
 /* These need to be defined for libxpc and other clients who `#ifdef` */
 	#define MPO_PORT                            MPO_PORT
 	#define MPO_SERVICE_PORT                    MPO_SERVICE_PORT
@@ -455,11 +444,6 @@ __options_decl(mpo_flags_t, uint32_t, {
 	MPO_EXCEPTION_PORT                  = MPO_MAKE_PORT_TYPE(2, 0),  /* 0x8000 */
 	/* Can receive OOL port array descriptors */
 	MPO_CONNECTION_PORT_WITH_PORT_ARRAY = MPO_MAKE_PORT_TYPE(4, 0),  /* 0x10000 */
-	/*
-	 * Temporary flag for IPC unit testing. Expand to nothing if
-	 * __BUILDING_XNU_LIB_UNITTEST__ is not defined.
-	 */
-	MPO_UNIT_TEST_BOOTSTRAP_ENTRY                                    /* 0x11000 */
 });
 
 /* For bincompat: weak reply port used to be called provisional reply port */

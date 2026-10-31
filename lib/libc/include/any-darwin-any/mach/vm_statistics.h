@@ -391,6 +391,7 @@ typedef int32_t vm_page_disposition_t;
 #define VM_FLAGS_RESILIENT_CODESIGN     0x00000020
 #define VM_FLAGS_RESILIENT_MEDIA        0x00000040
 #define VM_FLAGS_PERMANENT              0x00000080
+#define VM_FLAGS_FOR_INSPECTION         0x00000100
 #define VM_FLAGS_TPRO                   0x00001000
 #define VM_FLAGS_MTE                    0x00002000
 #define VM_FLAGS_OVERWRITE              0x00004000  /* delete any existing mappings first */
@@ -431,7 +432,8 @@ typedef int32_t vm_page_disposition_t;
 	                         VM_FLAGS_OVERWRITE|            \
 	                         VM_FLAGS_RETURN_DATA_ADDR |    \
 	                         VM_FLAGS_RESILIENT_CODESIGN |  \
-	                         VM_FLAGS_RESILIENT_MEDIA)
+	                         VM_FLAGS_RESILIENT_MEDIA |     \
+	                         VM_FLAGS_FOR_INSPECTION)
 
 /*
  * Superpage macros are deprecated as we don't currently support this feature

@@ -3,7 +3,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/libSystem.B.dylib'
-current-version: 1359
+current-version: 1359.40.3
 reexported-libraries:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -72,7 +72,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libcommonCrypto.dylib'
-current-version: 65535
+current-version: 65535.40.3
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -401,7 +401,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libcorecrypto.dylib'
-current-version: 2109.0.22
+current-version: 2109.40.22
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -655,32 +655,32 @@ exports:
                        _cckem_xwing_mlkem768x25519, _cckmac256_info, _cckmac_finalize, 
                        _cckmac_init, _cckmac_update, _cclr_aes_init, _cclr_block_nbytes, 
                        _cclr_decrypt_block, _cclr_encrypt_block, _ccmd2_ltc_di, _ccmd4_ltc_di, 
-                       _ccmd5_di, _ccmd5_ltc_di, _ccmgf, _ccmldsa65, _ccmldsa87, 
-                       _ccmldsa_derive_key_from_seed, _ccmldsa_export_privkey, _ccmldsa_export_pubkey, 
-                       _ccmldsa_full_ctx_init, _ccmldsa_generate_key, _ccmldsa_generate_key_with_seed, 
-                       _ccmldsa_hash_nbytes_ctx, _ccmldsa_hash_nbytes_params, _ccmldsa_import_privkey, 
-                       _ccmldsa_import_pubkey, _ccmldsa_prehash, _ccmldsa_prehash_with_context, 
-                       _ccmldsa_privkey_nbytes_ctx, _ccmldsa_privkey_nbytes_params, 
-                       _ccmldsa_pub_ctx_init, _ccmldsa_pubkey_nbytes_ctx, _ccmldsa_pubkey_nbytes_params, 
-                       _ccmldsa_public_ctx, _ccmldsa_seed_nbytes_ctx, _ccmldsa_seed_nbytes_params, 
-                       _ccmldsa_sign, _ccmldsa_sign_prehashed, _ccmldsa_sign_with_context, 
-                       _ccmldsa_signature_nbytes_ctx, _ccmldsa_signature_nbytes_params, 
-                       _ccmldsa_sizeof_full_ctx, _ccmldsa_sizeof_pub_ctx, _ccmldsa_verify, 
-                       _ccmldsa_verify_prehashed, _ccmldsa_verify_prehashed_with_canary, 
-                       _ccmldsa_verify_with_canary, _ccmldsa_verify_with_context, 
-                       _ccmldsa_verify_with_context_and_canary, _ccmode_factory_cbc_decrypt, 
-                       _ccmode_factory_cbc_encrypt, _ccmode_factory_ccm_decrypt, 
-                       _ccmode_factory_ccm_encrypt, _ccmode_factory_cfb8_decrypt, 
-                       _ccmode_factory_cfb8_encrypt, _ccmode_factory_cfb_decrypt, 
-                       _ccmode_factory_cfb_encrypt, _ccmode_factory_ctr_crypt, _ccmode_factory_gcm_decrypt, 
-                       _ccmode_factory_gcm_encrypt, _ccmode_factory_ofb_crypt, _ccmode_factory_siv_decrypt, 
-                       _ccmode_factory_siv_encrypt, _ccmode_factory_xts_decrypt, 
-                       _ccmode_factory_xts_encrypt, _ccn_add, _ccn_add1, _ccn_bitlen, 
-                       _ccn_cmp, _ccn_cmpn, _ccn_lprint, _ccn_print, _ccn_read_uint, 
-                       _ccn_set_bit, _ccn_seti, _ccn_sub, _ccn_swap, _ccn_write_int, 
-                       _ccn_write_int_size, _ccn_write_uint, _ccn_write_uint_padded, 
-                       _ccn_write_uint_padded_ct, _ccn_write_uint_size, _ccn_xor, 
-                       _ccn_zero, _ccnistkdf_ctr_cmac, _ccnistkdf_ctr_cmac_fixed, 
+                       _ccmd5_di, _ccmd5_ltc_di, _ccmgf, _ccmldsa44, _ccmldsa65, 
+                       _ccmldsa87, _ccmldsa_derive_key_from_seed, _ccmldsa_export_privkey, 
+                       _ccmldsa_export_pubkey, _ccmldsa_full_ctx_init, _ccmldsa_generate_key, 
+                       _ccmldsa_generate_key_with_seed, _ccmldsa_hash_nbytes_ctx, 
+                       _ccmldsa_hash_nbytes_params, _ccmldsa_import_privkey, _ccmldsa_import_pubkey, 
+                       _ccmldsa_prehash, _ccmldsa_prehash_with_context, _ccmldsa_privkey_nbytes_ctx, 
+                       _ccmldsa_privkey_nbytes_params, _ccmldsa_pub_ctx_init, _ccmldsa_pubkey_nbytes_ctx, 
+                       _ccmldsa_pubkey_nbytes_params, _ccmldsa_public_ctx, _ccmldsa_seed_nbytes_ctx, 
+                       _ccmldsa_seed_nbytes_params, _ccmldsa_sign, _ccmldsa_sign_prehashed, 
+                       _ccmldsa_sign_with_context, _ccmldsa_signature_nbytes_ctx, 
+                       _ccmldsa_signature_nbytes_params, _ccmldsa_sizeof_full_ctx, 
+                       _ccmldsa_sizeof_pub_ctx, _ccmldsa_verify, _ccmldsa_verify_prehashed, 
+                       _ccmldsa_verify_prehashed_with_canary, _ccmldsa_verify_with_canary, 
+                       _ccmldsa_verify_with_context, _ccmldsa_verify_with_context_and_canary, 
+                       _ccmode_factory_cbc_decrypt, _ccmode_factory_cbc_encrypt, 
+                       _ccmode_factory_ccm_decrypt, _ccmode_factory_ccm_encrypt, 
+                       _ccmode_factory_cfb8_decrypt, _ccmode_factory_cfb8_encrypt, 
+                       _ccmode_factory_cfb_decrypt, _ccmode_factory_cfb_encrypt, 
+                       _ccmode_factory_ctr_crypt, _ccmode_factory_gcm_decrypt, _ccmode_factory_gcm_encrypt, 
+                       _ccmode_factory_ofb_crypt, _ccmode_factory_siv_decrypt, _ccmode_factory_siv_encrypt, 
+                       _ccmode_factory_xts_decrypt, _ccmode_factory_xts_encrypt, 
+                       _ccn_add, _ccn_add1, _ccn_bitlen, _ccn_cmp, _ccn_cmpn, _ccn_lprint, 
+                       _ccn_print, _ccn_read_uint, _ccn_set_bit, _ccn_seti, _ccn_sub, 
+                       _ccn_swap, _ccn_write_int, _ccn_write_int_size, _ccn_write_uint, 
+                       _ccn_write_uint_padded, _ccn_write_uint_padded_ct, _ccn_write_uint_size, 
+                       _ccn_xor, _ccn_zero, _ccnistkdf_ctr_cmac, _ccnistkdf_ctr_cmac_fixed, 
                        _ccnistkdf_ctr_hmac, _ccnistkdf_ctr_hmac_fixed, _ccofb_block_size, 
                        _ccofb_context_size, _ccofb_init, _ccofb_one_shot, _ccofb_update, 
                        _ccoid_equal, _ccoid_payload, _ccoid_size, _ccpad_cts1_decrypt, 
@@ -817,7 +817,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libdispatch.dylib'
-current-version: 1605.0.2
+current-version: 1605.40.4
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -1157,7 +1157,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libquarantine.dylib'
-current-version: 217.0.4
+current-version: 217.40.5
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -1204,7 +1204,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libremovefile.dylib'
-current-version: 96
+current-version: 96.40.3
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -1222,7 +1222,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_asl.dylib'
-current-version: 409
+current-version: 409.40.3
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -1322,7 +1322,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_c.dylib'
-current-version: 1786.0.3
+current-version: 1786.40.6
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -1621,7 +1621,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_collections.dylib'
-current-version: 1786.0.3
+current-version: 1786.40.6
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -1654,7 +1654,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_configuration.dylib'
-current-version: 1446
+current-version: 1453.40.1
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -1766,6 +1766,7 @@ exports:
                        _container_frozenset_get_container_class_of_container_at_index, 
                        _container_frozenset_get_count, _container_frozenset_get_creator_of_container_at_index, 
                        _container_frozenset_get_generation, _container_frozenset_get_identifier_of_container_at_index, 
+                       _container_frozenset_get_instance_uuid_of_container_at_index, 
                        _container_frozenset_get_is_new_of_container_at_index, _container_frozenset_get_is_transient_of_container_at_index, 
                        _container_frozenset_get_ownership_of_container_at_index, 
                        _container_frozenset_get_path_of_container_at_index, _container_frozenset_get_persona_unique_string_of_container_at_index, 
@@ -1779,9 +1780,9 @@ exports:
                        _container_fs_set_mode_string, _container_get_all_with_class_for_current_user, 
                        _container_get_class, _container_get_creator_codesign_identifier, 
                        _container_get_error_description, _container_get_identifier, 
-                       _container_get_info, _container_get_info_value_for_key, _container_get_path, 
-                       _container_get_persona_unique_string, _container_get_posix_ownership, 
-                       _container_get_uid, _container_get_unique_path_component, 
+                       _container_get_info, _container_get_info_value_for_key, _container_get_instance_uuid, 
+                       _container_get_path, _container_get_persona_unique_string, 
+                       _container_get_posix_ownership, _container_get_uid, _container_get_unique_path_component, 
                        _container_get_user_managed_assets_relative_path, _container_group_container_identifiers_for_current_user, 
                        _container_info_delete, _container_info_modify, _container_info_put, 
                        _container_internal_get_first_boot_uuid, _container_invalidate_code_signing_cache, 
@@ -1801,19 +1802,21 @@ exports:
                        _container_notify_stop, _container_object_copy, _container_object_create, 
                        _container_object_create_blank, _container_object_free, _container_object_get_class, 
                        _container_object_get_creator_codesign_identifier, _container_object_get_identifier, 
-                       _container_object_get_info, _container_object_get_path, _container_object_get_persona_unique_string, 
+                       _container_object_get_info, _container_object_get_instance_uuid, 
+                       _container_object_get_path, _container_object_get_persona_unique_string, 
                        _container_object_get_posix_ownership, _container_object_get_query, 
                        _container_object_get_sandbox_token, _container_object_get_uid, 
                        _container_object_get_unique_path_component, _container_object_get_user_managed_assets_relative_path, 
                        _container_object_get_uuid, _container_object_is_new, _container_object_is_transient, 
                        _container_object_sandbox_extension_activate, _container_object_set_backing_store_from_query, 
                        _container_object_set_class, _container_object_set_creator_codesign_identifier, 
-                       _container_object_set_info, _container_object_set_is_new, 
-                       _container_object_set_path, _container_object_set_posix_ownership, 
-                       _container_object_set_sandbox_token, _container_object_set_transient, 
-                       _container_object_set_unique_path_component, _container_object_set_user_managed_assets_relative_path, 
-                       _container_object_set_uuid, _container_object_update_metadata, 
-                       _container_operation_complete_background_tasks, _container_operation_delete, 
+                       _container_object_set_info, _container_object_set_instance_uuid, 
+                       _container_object_set_is_new, _container_object_set_path, 
+                       _container_object_set_posix_ownership, _container_object_set_sandbox_token, 
+                       _container_object_set_transient, _container_object_set_unique_path_component, 
+                       _container_object_set_user_managed_assets_relative_path, _container_object_set_uuid, 
+                       _container_object_update_metadata, _container_operation_complete_background_tasks, 
+                       _container_operation_copy_superseded, _container_operation_delete, 
                        _container_operation_delete_array, _container_operation_delete_reclaim_disk_space, 
                        _container_operation_set_data_protection, _container_paths_context_create, 
                        _container_paths_context_free, _container_paths_context_set_class, 
@@ -1844,17 +1847,18 @@ exports:
                        _container_query_operation_set_part_domain, _container_query_operation_set_platform, 
                        _container_query_set_class, _container_query_set_container_identifiers, 
                        _container_query_set_group_identifiers, _container_query_set_identifiers, 
-                       _container_query_set_include_other_owners, _container_query_set_ownership, 
-                       _container_query_set_persona_unique_string, _container_query_set_transient, 
-                       _container_query_set_uid, _container_realpath, _container_realpathat, 
-                       _container_recreate_structure, _container_references_get_last_error, 
-                       _container_regenerate_uuid, _container_repair_user_data, _container_replace, 
-                       _container_retry_test, _container_sandbox_extension_consume, 
-                       _container_sandbox_extension_revoke, _container_sandbox_issue_custom_extension, 
-                       _container_sandbox_issue_extension, _container_seam_container_reset, 
-                       _container_seam_container_set_common, _container_seam_dispatch_reset, 
-                       _container_seam_dispatch_set_common, _container_seam_fs_ensure_lazy_loaded, 
-                       _container_seam_fs_reset, _container_seam_fs_set_common, _container_seam_kpersona_reset, 
+                       _container_query_set_include_other_owners, _container_query_set_instance_uuid, 
+                       _container_query_set_ownership, _container_query_set_persona_unique_string, 
+                       _container_query_set_transient, _container_query_set_uid, 
+                       _container_realpath, _container_realpathat, _container_recreate_structure, 
+                       _container_references_get_last_error, _container_regenerate_uuid, 
+                       _container_repair_user_data, _container_replace, _container_retry_test, 
+                       _container_sandbox_extension_consume, _container_sandbox_extension_revoke, 
+                       _container_sandbox_issue_custom_extension, _container_sandbox_issue_extension, 
+                       _container_seam_container_reset, _container_seam_container_set_common, 
+                       _container_seam_dispatch_reset, _container_seam_dispatch_set_common, 
+                       _container_seam_fs_ensure_lazy_loaded, _container_seam_fs_reset, 
+                       _container_seam_fs_set_common, _container_seam_kpersona_reset, 
                        _container_seam_kpersona_set_common, _container_seam_notify_reset, 
                        _container_seam_notify_set_common, _container_seam_pwd_reset, 
                        _container_seam_pwd_set_common, _container_seam_quarantine_reset, 
@@ -1991,7 +1995,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_dnssd.dylib'
-current-version: 3111.0.5
+current-version: 3111.40.45
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -2028,27 +2032,30 @@ exports:
 tbd-version:     4
 targets:         [ x86_64-macos, arm64e-macos, arm64e.x1-macos ]
 install-name:    '/usr/lib/system/libsystem_eligibility.dylib'
-current-version: 446.1.3
+current-version: 446.41.1
 parent-umbrella:
   - targets:         [ x86_64-macos, arm64e-macos, arm64e.x1-macos ]
     umbrella:        System
 exports:
   - targets:         [ x86_64-macos, arm64e-macos, arm64e.x1-macos ]
-    symbols:         [ _os_eligibility_bring_up_daemon_4_migration, _os_eligibility_bring_up_daemon_4_secure_erase, 
-                       _os_eligibility_diff_mobile_asset, _os_eligibility_domain_for_name, 
-                       _os_eligibility_dump_sysdiagnose_data_to_dir, _os_eligibility_fetch_newest_policies, 
-                       _os_eligibility_force_domain_answer, _os_eligibility_force_domain_set_answers, 
-                       _os_eligibility_get_all_domain_answers, _os_eligibility_get_domain_answer, 
-                       _os_eligibility_get_domain_notification_name, _os_eligibility_get_error_description, 
-                       _os_eligibility_get_internal_state, _os_eligibility_get_state_dump, 
-                       _os_eligibility_precise_locations, _os_eligibility_reset_all_domains, 
-                       _os_eligibility_reset_domain, _os_eligibility_set_input, _os_eligibility_set_test_mode ]
+    symbols:         [ _os_eligibility_bring_up_daemon_4_migration, _os_eligibility_bring_up_daemon_4_network_prompt, 
+                       _os_eligibility_bring_up_daemon_4_secure_erase, _os_eligibility_diff_mobile_asset, 
+                       _os_eligibility_domain_for_name, _os_eligibility_dump_sysdiagnose_data_to_dir, 
+                       _os_eligibility_fetch_newest_policies, _os_eligibility_force_domain_answer, 
+                       _os_eligibility_force_domain_set_answers, _os_eligibility_get_all_domain_answers, 
+                       _os_eligibility_get_domain_answer, _os_eligibility_get_domain_notification_name, 
+                       _os_eligibility_get_error_description, _os_eligibility_get_internal_state, 
+                       _os_eligibility_get_state_dump, _os_eligibility_precise_locations, 
+                       _os_eligibility_reset_all_domains, _os_eligibility_reset_all_inputs, 
+                       _os_eligibility_reset_domain, _os_eligibility_reset_input, 
+                       _os_eligibility_set_input, _os_eligibility_set_input_forced, 
+                       _os_eligibility_set_test_mode ]
 --- !tapi-tbd
 tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_featureflags.dylib'
-current-version: 108
+current-version: 111
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -2186,7 +2193,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst, 
                    arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_kernel.dylib'
-current-version: 13432.1.9
+current-version: 13432.41.4
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst, 
                        arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -2539,26 +2546,26 @@ exports:
                        _os_packet_set_transport_retransmit, _os_packet_set_transport_traffic_background, 
                        _os_packet_set_transport_traffic_realtime, _os_packet_set_tso_flags, 
                        _os_packet_set_tx_timestamp, _os_packet_set_vlan_tag, _os_packet_set_wake_flag, 
-                       _os_packet_trace_event, _os_proc_available_memory, _panic, 
-                       _panic_init, _panic_with_data, _pathconf, _peeloff, _pid_for_task, 
-                       _pid_hibernate, _pid_resume, _pid_shutdown_networking, _pid_shutdown_sockets, 
-                       _pid_suspend, _pipe, _pipe2, _pivot_root, _poll, '_poll$NOCANCEL', 
-                       _port_obj_init, _port_obj_table, _port_obj_table_size, _posix_madvise, 
-                       _posix_spawn, _posix_spawn_file_actions_add_fileportdup2_np, 
-                       _posix_spawn_file_actions_addchdir, _posix_spawn_file_actions_addchdir_np, 
-                       _posix_spawn_file_actions_addclose, _posix_spawn_file_actions_adddup2, 
-                       _posix_spawn_file_actions_addfchdir, _posix_spawn_file_actions_addfchdir_np, 
-                       _posix_spawn_file_actions_addinherit_np, _posix_spawn_file_actions_addopen, 
-                       _posix_spawn_file_actions_destroy, _posix_spawn_file_actions_init, 
-                       _posix_spawnattr_destroy, _posix_spawnattr_disable_ptr_auth_a_keys_np, 
-                       _posix_spawnattr_get_darwin_role_np, _posix_spawnattr_get_qos_clamp_np, 
-                       _posix_spawnattr_get_shared_region_config_np, _posix_spawnattr_get_shared_region_namespace_np, 
-                       _posix_spawnattr_getarchpref_np, _posix_spawnattr_getbinpref_np, 
-                       _posix_spawnattr_getcpumonitor, _posix_spawnattr_getflags, 
-                       _posix_spawnattr_getmacpolicyinfo_np, _posix_spawnattr_getpcontrol_np, 
-                       _posix_spawnattr_getpgroup, _posix_spawnattr_getprocesstype_np, 
-                       _posix_spawnattr_getsigdefault, _posix_spawnattr_getsigmask, 
-                       _posix_spawnattr_init, _posix_spawnattr_set_4k_page_size_np, 
+                       _os_packet_trace_event, _os_proc_available_memory, _os_sme_engine_attr_count, 
+                       _os_sme_engine_attr_read, _panic, _panic_init, _panic_with_data, 
+                       _pathconf, _peeloff, _pid_for_task, _pid_hibernate, _pid_resume, 
+                       _pid_shutdown_networking, _pid_shutdown_sockets, _pid_suspend, 
+                       _pipe, _pipe2, _pivot_root, _poll, '_poll$NOCANCEL', _port_obj_init, 
+                       _port_obj_table, _port_obj_table_size, _posix_madvise, _posix_spawn, 
+                       _posix_spawn_file_actions_add_fileportdup2_np, _posix_spawn_file_actions_addchdir, 
+                       _posix_spawn_file_actions_addchdir_np, _posix_spawn_file_actions_addclose, 
+                       _posix_spawn_file_actions_adddup2, _posix_spawn_file_actions_addfchdir, 
+                       _posix_spawn_file_actions_addfchdir_np, _posix_spawn_file_actions_addinherit_np, 
+                       _posix_spawn_file_actions_addopen, _posix_spawn_file_actions_destroy, 
+                       _posix_spawn_file_actions_init, _posix_spawnattr_destroy, 
+                       _posix_spawnattr_disable_ptr_auth_a_keys_np, _posix_spawnattr_get_darwin_role_np, 
+                       _posix_spawnattr_get_qos_clamp_np, _posix_spawnattr_get_shared_region_config_np, 
+                       _posix_spawnattr_get_shared_region_namespace_np, _posix_spawnattr_getarchpref_np, 
+                       _posix_spawnattr_getbinpref_np, _posix_spawnattr_getcpumonitor, 
+                       _posix_spawnattr_getflags, _posix_spawnattr_getmacpolicyinfo_np, 
+                       _posix_spawnattr_getpcontrol_np, _posix_spawnattr_getpgroup, 
+                       _posix_spawnattr_getprocesstype_np, _posix_spawnattr_getsigdefault, 
+                       _posix_spawnattr_getsigmask, _posix_spawnattr_init, _posix_spawnattr_set_4k_page_size_np, 
                        _posix_spawnattr_set_alt_rosetta_np, _posix_spawnattr_set_conclave_id_np, 
                        _posix_spawnattr_set_conclavememlimit_ext, _posix_spawnattr_set_crash_behavior_deadline_np, 
                        _posix_spawnattr_set_crash_behavior_np, _posix_spawnattr_set_crash_count_np, 
@@ -2724,7 +2731,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, x86_64h-macos, x86_64h-maccatalyst, 
                    arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_m.dylib'
-current-version: 3326.0.1
+current-version: 3326.40.2
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, x86_64h-macos, x86_64h-maccatalyst, 
                        arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -2946,7 +2953,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_malloc.dylib'
-current-version: 886.0.8
+current-version: 886.41.1
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -3093,7 +3100,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_notify.dylib'
-current-version: 368
+current-version: 368.40.2
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -3113,7 +3120,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst, 
                    arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_platform.dylib'
-current-version: 402.0.1
+current-version: 402.40.3
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst, 
                        arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -3194,7 +3201,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst, 
                    arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_pthread.dylib'
-current-version: 553.0.1
+current-version: 553.40.2
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64-macos, arm64-maccatalyst, 
                        arm64e-macos, arm64e-maccatalyst, arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -3290,7 +3297,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_sandbox.dylib'
-current-version: 3051.0.52
+current-version: 3051.41.1
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -3417,7 +3424,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_secinit.dylib'
-current-version: 182
+current-version: 182.40.2
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -3450,7 +3457,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libsystem_trace.dylib'
-current-version: 1966.1.1
+current-version: 1966.40.15
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
@@ -3539,7 +3546,7 @@ exports:
 tbd-version:     4
 targets:         [ x86_64-macos, arm64e-macos, arm64e.x1-macos ]
 install-name:    '/usr/lib/system/libsystem_trial.dylib'
-current-version: 511
+current-version: 511.1.2
 parent-umbrella:
   - targets:         [ x86_64-macos, arm64e-macos, arm64e.x1-macos ]
     umbrella:        System
@@ -3580,7 +3587,7 @@ tbd-version:     4
 targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                    arm64e.x1-macos, arm64e.x1-maccatalyst ]
 install-name:    '/usr/lib/system/libxpc.dylib'
-current-version: 3298.1.1
+current-version: 3298.40.28
 parent-umbrella:
   - targets:         [ x86_64-macos, x86_64-maccatalyst, arm64e-macos, arm64e-maccatalyst, 
                        arm64e.x1-macos, arm64e.x1-maccatalyst ]
