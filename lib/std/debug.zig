@@ -1137,7 +1137,7 @@ const StackIterator = union(enum) {
                 }) return .end;
 
                 it.fp = bp;
-                const ra = stripInstructionPtrAuthCode(ra_ptr.*);
+                const ra = stripInstructionPtrMarkerBits(ra_ptr.*);
                 if (ra <= 1) return .end;
                 return .{ .frame = ra };
             },
@@ -1205,9 +1205,16 @@ const StackIterator = union(enum) {
     }
 };
 
+/// Removes any bits that do not represent part of the logical address of an instruction.
+///
 /// Some platforms use pointer authentication: the upper bits of instruction pointers contain a
 /// signature. This function clears those signature bits to make the pointer directly usable.
-pub inline fn stripInstructionPtrAuthCode(ptr: usize) usize {
+///
+/// For Arm/thumb architectures, when executing in thumb mode, the LSB of branches and return
+/// addresses will be set, however this bit is not actually part of the instruction address;
+/// all instructions must be align(2). So we want to ensure it's cleared when unwinding to ensure
+/// we can convert a return address to an address within the calling instruction by subtracting 1.
+pub inline fn stripInstructionPtrMarkerBits(ptr: usize) usize {
     if (native_arch.isAARCH64()) {
         // `hint 0x07` maps to `xpaclri` (or `nop` if the hardware doesn't support it)
         // The save / restore is because `xpaclri` operates on x30 (LR)
@@ -1220,6 +1227,9 @@ pub inline fn stripInstructionPtrAuthCode(ptr: usize) usize {
             : [ret] "={x15}" (-> usize),
             : [ptr] "{x15}" (ptr),
             : .{ .x16 = true });
+    } else if (native_arch.isArm()) {
+        const thumb_bit: usize = 1;
+        return ptr & ~thumb_bit;
     }
 
     return ptr;

@@ -451,7 +451,7 @@ fn unwindFrameInner(si: *SelfInfo, io: Io, context: *UnwindContext) !usize {
         else => comptime unreachable, // unimplemented
     };
 
-    const ret_addr = std.debug.stripInstructionPtrAuthCode(new_ip);
+    const ret_addr = std.debug.stripInstructionPtrMarkerBits(new_ip);
 
     // Like `Dwarf.SelfUnwinder.next`, adjust our next lookup pc in case the `call` was this
     // function's last instruction making `ret_addr` one byte past its end.

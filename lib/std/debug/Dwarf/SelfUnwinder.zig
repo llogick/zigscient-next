@@ -49,7 +49,7 @@ pub const CacheEntry = struct {
 pub fn init(cpu_context: *const std.debug.cpu_context.Native) SelfUnwinder {
     return .{
         .cpu_state = cpu_context.*,
-        .pc = stripInstructionPtrAuthCode(cpu_context.getPc()),
+        .pc = stripInstructionPtrMarkerBits(cpu_context.getPc()),
         .cfi_vm = .{},
         .expr_vm = .{},
     };
@@ -270,7 +270,7 @@ fn nextInner(unwinder: *SelfUnwinder, gpa: Allocator, cache_entry: *const CacheE
     }
 
     const return_address = if (has_return_address)
-        stripInstructionPtrAuthCode(@intCast((try regNative(&new_cpu_state, return_address_register)).*))
+        stripInstructionPtrMarkerBits(@intCast((try regNative(&new_cpu_state, return_address_register)).*))
     else
         0;
 
@@ -321,7 +321,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Dwarf = std.debug.Dwarf;
 const assert = std.debug.assert;
-const stripInstructionPtrAuthCode = std.debug.stripInstructionPtrAuthCode;
+const stripInstructionPtrMarkerBits = std.debug.stripInstructionPtrMarkerBits;
 
 const builtin = @import("builtin");
 const native_endian = builtin.target.cpu.arch.endian();
