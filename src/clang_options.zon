@@ -754,7 +754,7 @@
     .pd2 = true,
 },
 .{ .name = "mcpu=help", .ze = .mcpu },
-.{ .name = "mtune=help", .ze = .mcpu },
+.{ .name = "mtune=help", .ze = .ignore },
 .{ .name = "integrated-as" },
 .{ .name = "no-integrated-as" },
 .{ .name = "shared-libasan" },
@@ -4944,7 +4944,7 @@
 .{ .name = "msimd=", .syntax = .joined },
 .{
     .name = "mtune=",
-    .ze = .mcpu,
+    .ze = .ignore,
     .syntax = .joined,
 },
 .{

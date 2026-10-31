@@ -332,7 +332,7 @@ const known_options = [_]KnownOpt{
     },
     .{
         .name = "mtune",
-        .ident = "mcpu",
+        .ident = "ignore",
     },
     .{
         .name = "mred-zone",
