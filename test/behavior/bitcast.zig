@@ -673,3 +673,28 @@ test "@bitCast between float and vector" {
     try static.doTheTest();
     try comptime static.doTheTest();
 }
+
+test "@bitCast to vectors of f80 and f128" {
+    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+
+    const static = struct {
+        fn doTheTest() !void {
+            {
+                var x: u160 = undefined;
+                x = 0xc000_d000000000000000_3fff_c000000000000000;
+                const v: @Vector(2, f80) = @bitCast(x);
+                try expect(v[0] == 1.5);
+                try expect(v[1] == -3.25);
+            }
+            {
+                var v: @Vector(4, u64) = undefined;
+                v = .{ 0x1, 0x3fff000000000000, 0x0, 0xc000400000000000 };
+                const f: @Vector(2, f128) = @bitCast(v);
+                try expect(f[0] == 1.0 + 0x1p-112);
+                try expect(f[1] == -2.5);
+            }
+        }
+    };
+    try static.doTheTest();
+    try comptime static.doTheTest();
+}
