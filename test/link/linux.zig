@@ -47,17 +47,15 @@ pub fn addCases(ctx: *LinkContext) void {
 
     if (ctx.includeTest("copy_reloc")) |case| case: {
         if (!ctx.link_libc) break :case;
-        if (ctx.target.result.abi.isMusl()) {
-            // TODO: Elf2 currently fails to link a dynamic executable on musl without PIC, citing
-            // illegal dynamic relocations. This is most likely due to Elf2 not yet supporting
-            // canonical PLT entries.
-            break :case;
-        }
 
         const lib = case.addLibrary(.dynamic, .{
             .name = "lib",
             .zig_source_bytes =
             \\export var my_favourite_number: u32 = 42;
+            \\
+            \\export const var_ptr_in_lib: *const u32 = &struct {
+            \\    extern var my_favourite_number: u32;
+            \\}.my_favourite_number;
             \\
             ,
         });
@@ -67,7 +65,11 @@ pub fn addCases(ctx: *LinkContext) void {
             .pic = false, // force PDC so that we need a copy reloc
             .zig_source_bytes =
             \\extern var my_favourite_number: u32;
+            \\extern const var_ptr_in_lib: *u32;
             \\pub fn main() void {
+            \\    if (var_ptr_in_lib != &my_favourite_number) {
+            \\        std.process.fatal("pointers do not match\n", .{});
+            \\    }
             \\    std.debug.print("number: {d}\n", .{my_favourite_number});
             \\}
             \\const std = @import("std");
@@ -88,6 +90,53 @@ pub fn addCases(ctx: *LinkContext) void {
 
         const run = case.addRunArtifact(exe);
         run.expectStdErrEqual("number: 42\n");
+    }
+
+    if (ctx.includeTest("canonical_plt")) |case| case: {
+        if (!ctx.link_libc) break :case;
+
+        const lib = case.addLibrary(.dynamic, .{
+            .name = "lib",
+            .zig_source_bytes =
+            \\export fn get_a_number() u32 {
+            \\    return 1234;
+            \\}
+            \\
+            \\export const fn_ptr_in_lib: *const fn () callconv(.c) u32 = &struct {
+            \\    extern fn get_a_number() u32;
+            \\}.get_a_number;
+            \\
+            ,
+        });
+
+        const exe = case.addExecutable(.{
+            .name = "test",
+            .pic = false, // force PDC so that we need a copy reloc
+            .zig_source_bytes =
+            \\extern fn get_a_number() u32;
+            \\extern const fn_ptr_in_lib: *const fn () callconv(.c) u32;
+            \\pub fn main() void {
+            \\    if (fn_ptr_in_lib != &get_a_number) {
+            \\        std.process.fatal("pointers do not match\n", .{});
+            \\    }
+            \\    std.debug.print("number: {d}\n", .{get_a_number()});
+            \\}
+            \\const std = @import("std");
+            \\
+            ,
+        });
+        exe.linkage = .dynamic;
+        exe.root_module.linkLibrary(lib);
+
+        case.verifyObjdump(exe.getEmittedBin(), &.{
+            "-s",
+            "--symbols",
+            "--only-symbol=get_a_number",
+            "--only-section=.dynsym",
+        }, .{});
+
+        const run = case.addRunArtifact(exe);
+        run.expectStdErrEqual("number: 1234\n");
     }
 
     if (ctx.includeTest("textrel")) |case| {
@@ -134,12 +183,6 @@ pub fn addCases(ctx: *LinkContext) void {
         }, .{ .sub_name = "lib" });
 
         if (!ctx.link_libc) break :case;
-        if (ctx.target.result.abi.isMusl()) {
-            // TODO: Elf2 currently fails to link a dynamic executable on musl without PIC, citing
-            // illegal dynamic relocations. This is most likely due to Elf2 not yet supporting
-            // canonical PLT entries.
-            break :case;
-        }
 
         // ...but in an executable, we statically resolve the value to 0:
         const exe = case.addExecutable(.{
@@ -208,12 +251,6 @@ pub fn addCases(ctx: *LinkContext) void {
 
     if (ctx.includeTest("dynamic_symbol_versions")) |case| case: {
         if (!ctx.link_libc) break :case;
-        if (ctx.target.result.abi.isMusl()) {
-            // TODO: Elf2 currently fails to link a dynamic executable on musl without PIC, citing
-            // illegal dynamic relocations. This is most likely due to Elf2 not yet supporting
-            // canonical PLT entries.
-            break :case;
-        }
 
         const libfoo = case.addLibrary(.dynamic, .{
             .name = "foo",
@@ -282,12 +319,23 @@ pub fn addCases(ctx: *LinkContext) void {
             "--only-symbol=do_stuff",
         }, .{ .sub_name = "call_explicit" });
         const run_call_explicit = case.addRunArtifact(call_explicit);
-        run_call_explicit.expectStdErrEqual(
-            \\explicit V1: 1
-            \\explicit V2: 2
-            \\explicit V3: 3
-            \\
-        );
+        if (ctx.target.result.abi.isMusl()) {
+            // musl's dynamic linker does not support GNU symbol versioning and will simply always
+            // bind to the default version.
+            run_call_explicit.expectStdErrEqual(
+                \\explicit V1: 3
+                \\explicit V2: 3
+                \\explicit V3: 3
+                \\
+            );
+        } else {
+            run_call_explicit.expectStdErrEqual(
+                \\explicit V1: 1
+                \\explicit V2: 2
+                \\explicit V3: 3
+                \\
+            );
+        }
 
         const call_both = case.addExecutable(.{
             .name = "call_both",
@@ -317,13 +365,25 @@ pub fn addCases(ctx: *LinkContext) void {
             "--only-symbol=do_stuff",
         }, .{ .sub_name = "call_both" });
         const run_call_both = case.addRunArtifact(call_both);
-        run_call_both.expectStdErrEqual(
-            \\default: 3
-            \\explicit V1: 1
-            \\explicit V2: 2
-            \\explicit V3: 3
-            \\
-        );
+        if (ctx.target.result.abi.isMusl()) {
+            // musl's dynamic linker does not support GNU symbol versioning and will simply always
+            // bind to the default version.
+            run_call_both.expectStdErrEqual(
+                \\default: 3
+                \\explicit V1: 3
+                \\explicit V2: 3
+                \\explicit V3: 3
+                \\
+            );
+        } else {
+            run_call_both.expectStdErrEqual(
+                \\default: 3
+                \\explicit V1: 1
+                \\explicit V2: 2
+                \\explicit V3: 3
+                \\
+            );
+        }
     }
 }
 

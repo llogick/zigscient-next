@@ -114,6 +114,7 @@ pub const Options = struct {
 
     phdrs: bool,
     dynamic: bool,
+    dyn_syms: bool,
     symbol_versions: bool,
     version_definitions: bool,
 
@@ -256,6 +257,7 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
 
     var phdrs: bool = false;
     var dynamic: bool = false;
+    var dyn_syms: bool = false;
     var symbol_versions: bool = false;
     var version_definitions: bool = false;
 
@@ -285,6 +287,7 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
 
             phdrs = true;
             dynamic = true;
+            dyn_syms = true;
             symbol_versions = true;
             version_definitions = true;
 
@@ -328,6 +331,8 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
             phdrs = true;
         } else if (mem.eql(u8, arg, "--dynamic")) {
             dynamic = true;
+        } else if (mem.eql(u8, arg, "--dyn-syms")) {
+            dyn_syms = true;
         } else if (mem.eql(u8, arg, "--symbol-versions")) {
             symbol_versions = true;
         } else if (mem.eql(u8, arg, "--version-definitions")) {
@@ -369,6 +374,7 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
 
         .phdrs = phdrs,
         .dynamic = dynamic,
+        .dyn_syms = dyn_syms,
         .symbol_versions = symbol_versions,
         .version_definitions = version_definitions,
 
@@ -536,6 +542,7 @@ const usage =
     \\ELF-specific options:
     \\  --phdrs                            Display program headers
     \\  --dynamic                          Display dynamic entries
+    \\  --dyn-syms                         Display symbol tables of type SHT_DYNSYM, but not those of type SHT_SYMTAB
     \\  --symbol-versions                  Display GNU symbol version tables
     \\  --version-definitions              Display GNU symbol version definitions and requirements
     \\

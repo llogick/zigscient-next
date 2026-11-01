@@ -3618,40 +3618,6 @@ fn updateGlobalDynamic(elf: *Elf, orig_gsi: Symbol.Global.Index, force_apply_rel
         }
     }
 
-    {
-        const dynsym_versym: std.elf.Versym = versym: {
-            // If there's a definition, just use the version in the symbol name.
-            if (gsi.defined(elf)) {
-                if (gsi.version(elf)) |orig_version_slice| {
-                    // We want to add the version to dynstr, but we need to explicitly reserve space
-                    // first because that reservation could invalidate the version slice.
-                    try elf.ensureAdditionalStringCapacity(.dynstr, orig_version_slice.len);
-                    const version_dynstr = elf.stringAssumeCapacity(.dynstr, gsi.version(elf).?);
-                    break :versym .{
-                        .VERSION = try elf.verdefId(version_dynstr),
-                        .HIDDEN = !gsi.isDefaultDefinition(elf),
-                    };
-                }
-                break :versym .GLOBAL;
-            }
-
-            // ...but if it's undefined, we need to consult the matching input DSO global.
-            if (maybe_dso_global) |dso_global| {
-                if (dso_global.version.unwrap()) |version| {
-                    const version_dynstr = try elf.string(.dynstr, version.slice(&elf.dso_globals));
-                    break :versym .{
-                        .VERSION = try elf.verneedId(dso_global.soname, version_dynstr),
-                        .HIDDEN = false,
-                    };
-                }
-            }
-
-            break :versym .LOCAL;
-        };
-
-        elf.targetStore(&elf.versymSlice()[new_dynsym_index], dynsym_versym);
-    }
-
     // Populate the dynsym info from the symtab.
     switch (elf.dynsymPtr(new_dynsym_index)) {
         inline else => |dynsym, class| {
@@ -3700,91 +3666,181 @@ fn updateGlobalDynamic(elf: *Elf, orig_gsi: Symbol.Global.Index, force_apply_rel
         }
     }
 
-    const want_copy_rel: bool = copy: {
+    const copy: enum { no, copy_reloc, canonical_plt } = copy: {
         if (elf.base.comp.config.output_mode != .Exe) {
             // Only executables can contain copy relocations.
-            break :copy false;
+            break :copy .no;
         }
         if (gsi.defined(elf)) {
             // No need for a copy relocation when there's a local definition (which we know is not
             // preemptible because this is the executable).
-            break :copy false;
+            break :copy .no;
         }
         if (!gsi.ptr(elf).status.want_static_value) {
             // Nobody's actually requesting a copy relocation, so no need to make one... unless the
             // alias is actually the one who needs it!
-            const alias_gsi = maybe_alias_gsi orelse break :copy false;
-            if (!alias_gsi.ptr(elf).status.want_static_value) break :copy false;
+            const alias_gsi = maybe_alias_gsi orelse break :copy .no;
+            if (!alias_gsi.ptr(elf).status.want_static_value) break :copy .no;
+        }
+        if (need_plt_entry) {
+            break :copy .canonical_plt;
         }
         const dso_global = maybe_dso_global orelse {
             // We cannot create a copy relocation until we see the symbol in an input DSO.
-            break :copy false;
+            break :copy .no;
         };
         if (dso_global.type != .OBJECT) {
             // We can only create copy relocations for `STT_OBJECT` symbols.
-            break :copy false;
+            break :copy .no;
         }
         // A copy relocation was requested and is possible!
-        break :copy true;
+        break :copy .copy_reloc;
     };
-    if (want_copy_rel) {
-        const dso_global = maybe_dso_global.?;
-
-        const shndx: Section.Index = .data;
-
-        try shndx.ensureAligned(elf, dso_global.alignment);
-
-        switch (elf.symPtr(gsi.ptr(elf).symtab_index)) {
-            inline else => |sym| elf.targetStore(&sym.size, @intCast(dso_global.size)),
-        }
-        switch (elf.dynsymPtr(new_dynsym_index)) {
-            inline else => |dynsym| elf.targetStore(&dynsym.size, @intCast(dso_global.size)),
-        }
-
-        const gop = try elf.copied_globals.getOrPut(gpa, gsi);
-        if (gop.found_existing) {
-            if (dso_global.alignment.compare(.gt, gop.value_ptr.node.alignment(&elf.mf))) {
-                try gop.value_ptr.node.realign(gpa, &elf.mf, dso_global.alignment);
+    switch (copy) {
+        .no => {
+            if (elf.copied_globals.fetchSwapRemove(gsi)) |copied_global_kv| {
+                // We previously made a copy relocation, but now have deemed it unnecessary.
+                try elf.deleteNode(copied_global_kv.value.node);
+                elf.shndx.rela_dyn.relaDeleteOne(elf, copied_global_kv.value.rela_index);
+                apply_relocs = true;
             }
-            try gop.value_ptr.node.ensureMinimumSize(gpa, &elf.mf, dso_global.size);
-        } else {
-            errdefer assert(elf.copied_globals.pop().?.key == gsi);
-            try elf.nodes.ensureUnusedCapacity(gpa, 1);
-            const node = elf.addNodeAssumeCapacity(
-                try shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
-                    .size = dso_global.alignment.forward(dso_global.size),
-                    .alignment = dso_global.alignment,
-                }),
-                .{ .copied_global = gsi },
-            );
-            const vaddr = elf.computeNodeVAddr(node);
-            const rela_index = elf.shndx.rela_dyn.relaAddOneAssumeCapacity(elf, .{
-                .type = .copy(elf),
-                .offset = vaddr,
-                .raw_sym_index = new_dynsym_index,
-                .addend = 0,
-            });
-            gop.value_ptr.* = .{
-                .node = node,
-                .rela_index = rela_index,
-            };
+            if (!gsi.defined(elf)) {
+                // The symbol is undefined, so its value in the symtab should be nonzero iff it has
+                // a canonical PLT entry. We don't want one of those, so set the value to 0.
+                switch (elf.symPtr(gsi.ptr(elf).symtab_index)) {
+                    inline else => |sym| {
+                        elf.targetStore(&sym.size, 0);
+                        elf.targetStore(&sym.value, 0);
+                    },
+                }
+                switch (elf.dynsymPtr(new_dynsym_index)) {
+                    inline else => |sym| {
+                        elf.targetStore(&sym.size, 0);
+                        elf.targetStore(&sym.value, 0);
+                    },
+                }
+            }
+        },
+        .copy_reloc => {
+            const dso_global = maybe_dso_global.?;
 
-            // We have added a copy relocation so we now own the canonical address of the symbol.
+            const shndx: Section.Index = .data;
+
+            try shndx.ensureAligned(elf, dso_global.alignment);
+
             switch (elf.symPtr(gsi.ptr(elf).symtab_index)) {
-                inline else => |sym| elf.targetStore(&sym.value, @intCast(vaddr)),
+                inline else => |sym| elf.targetStore(&sym.size, @intCast(dso_global.size)),
             }
             switch (elf.dynsymPtr(new_dynsym_index)) {
-                inline else => |sym| elf.targetStore(&sym.value, @intCast(vaddr)),
+                inline else => |dynsym| elf.targetStore(&dynsym.size, @intCast(dso_global.size)),
             }
-            apply_relocs = true;
-        }
-    } else {
-        if (elf.copied_globals.fetchSwapRemove(gsi)) |copied_global_kv| {
-            // We previously made a copy relocation, but now have deemed it unnecessary.
-            try elf.deleteNode(copied_global_kv.value.node);
-            elf.shndx.rela_dyn.relaDeleteOne(elf, copied_global_kv.value.rela_index);
-            apply_relocs = true;
-        }
+
+            const gop = try elf.copied_globals.getOrPut(gpa, gsi);
+            if (gop.found_existing) {
+                if (dso_global.alignment.compare(.gt, gop.value_ptr.node.alignment(&elf.mf))) {
+                    try gop.value_ptr.node.realign(gpa, &elf.mf, dso_global.alignment);
+                }
+                try gop.value_ptr.node.ensureMinimumSize(gpa, &elf.mf, dso_global.size);
+            } else {
+                errdefer assert(elf.copied_globals.pop().?.key == gsi);
+                try elf.nodes.ensureUnusedCapacity(gpa, 1);
+                const node = elf.addNodeAssumeCapacity(
+                    try shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
+                        .size = dso_global.alignment.forward(dso_global.size),
+                        .alignment = dso_global.alignment,
+                    }),
+                    .{ .copied_global = gsi },
+                );
+                const vaddr = elf.computeNodeVAddr(node);
+                const rela_index = elf.shndx.rela_dyn.relaAddOneAssumeCapacity(elf, .{
+                    .type = .copy(elf),
+                    .offset = vaddr,
+                    .raw_sym_index = new_dynsym_index,
+                    .addend = 0,
+                });
+                gop.value_ptr.* = .{
+                    .node = node,
+                    .rela_index = rela_index,
+                };
+
+                // We have added a copy relocation so we now own the canonical address of the symbol.
+                switch (elf.symPtr(gsi.ptr(elf).symtab_index)) {
+                    inline else => |sym| elf.targetStore(&sym.value, @intCast(vaddr)),
+                }
+                switch (elf.dynsymPtr(new_dynsym_index)) {
+                    inline else => |sym| elf.targetStore(&sym.value, @intCast(vaddr)),
+                }
+                apply_relocs = true;
+            }
+            // For a copy relocation we should also set the shndx to `.data` in the dynamic symbol
+            // table. We don't do it in the symtab, because if we did, `Symbol.Global.Index.defined`
+            // would incorrectly believe there was actually a local definition.
+            switch (elf.dynsymPtr(new_dynsym_index)) {
+                inline else => |dynsym| {
+                    elf.targetStore(&dynsym.shndx, Section.Index.data.toSection().?);
+                },
+            }
+        },
+        .canonical_plt => {
+            const old_sym_val = Symbol.Id.global(gsi).value(elf);
+            const plt_entry_addr = elf.pltEntryTargetAddr(.global(gsi)).?;
+            if (old_sym_val != plt_entry_addr) {
+                switch (elf.symPtr(gsi.ptr(elf).symtab_index)) {
+                    inline else => |sym| {
+                        elf.targetStore(&sym.size, 0);
+                        elf.targetStore(&sym.value, @intCast(plt_entry_addr));
+                    },
+                }
+                switch (elf.dynsymPtr(new_dynsym_index)) {
+                    inline else => |sym| {
+                        elf.targetStore(&sym.size, 0);
+                        elf.targetStore(&sym.value, @intCast(plt_entry_addr));
+                    },
+                }
+                apply_relocs = true;
+            }
+        },
+    }
+
+    // We couldn't set up the symbol versioning entry until now because it could be affected by the
+    // choice of whether we emit a copy relocation.
+    {
+        const dynsym_versym: std.elf.Versym = versym: {
+            // If there's a definition, just use the version in the symbol name.
+            if (gsi.defined(elf)) {
+                if (gsi.version(elf)) |orig_version_slice| {
+                    // We want to add the version to dynstr, but we need to explicitly reserve space
+                    // first because that reservation could invalidate the version slice.
+                    try elf.ensureAdditionalStringCapacity(.dynstr, orig_version_slice.len);
+                    const version_dynstr = elf.stringAssumeCapacity(.dynstr, gsi.version(elf).?);
+                    break :versym .{
+                        .VERSION = try elf.verdefId(version_dynstr),
+                        .HIDDEN = !gsi.isDefaultDefinition(elf),
+                    };
+                }
+                break :versym .GLOBAL;
+            }
+
+            // ...but if it's undefined, we need to consult the matching input DSO global.
+            if (maybe_dso_global) |dso_global| {
+                if (dso_global.version.unwrap()) |version| {
+                    const version_dynstr = try elf.string(.dynstr, version.slice(&elf.dso_globals));
+                    break :versym .{
+                        .VERSION = try elf.verneedId(dso_global.soname, version_dynstr),
+                        .HIDDEN = false,
+                    };
+                }
+            }
+
+            // Otherwise, use `.LOCAL`, unless we emitted a copy relocation or canonical PLT entry,
+            // in which case the symbol is technically defined so should be `.GLOBAL`.
+            break :versym switch (copy) {
+                .no => .LOCAL,
+                .copy_reloc, .canonical_plt => .GLOBAL,
+            };
+        };
+
+        elf.targetStore(&elf.versymSlice()[new_dynsym_index], dynsym_versym);
     }
 
     if (!gsi.defined(elf) and
@@ -4670,9 +4726,16 @@ fn classifySymbolValue(elf: *Elf, sym: Symbol.Id) enum {
             break :shndx symtab_shndx;
         },
         .global => |gsi| shndx: {
-            const shndx: Section.Index = switch (symtab_shndx) {
-                .UNDEF => if (elf.copied_globals.contains(gsi)) .data else .UNDEF,
-                else => |shndx| shndx,
+            const shndx: Section.Index = s: {
+                if (symtab_shndx == .UNDEF and gsi.dynsymIndex(elf) != null) {
+                    // canonical PLT entry?
+                    if (resolved_sym.value(elf) != 0) break :s elf.shndx.plt;
+                    // copy relocation?
+                    if (elf.copied_globals.contains(gsi)) break :s .data;
+                } else {
+                    assert(!elf.copied_globals.contains(gsi));
+                }
+                break :s symtab_shndx;
             };
 
             // Check for dynamic symbols before falling into the static path.
@@ -8919,6 +8982,7 @@ fn createInitFiniArraySection(
             .@"32" => .@"4",
             .@"64" => .@"8",
         },
+        .entsize = elf.identClass().size(),
         .manual_size = true,
     });
     elf.section_by_name.putAssumeCapacityNoClobber(shndx.name(elf), {});

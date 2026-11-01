@@ -112,7 +112,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
                 error.EndOfStream => try d.warn("failed to read phdrs: unexpected eof", .{}),
                 else => |e| return e,
             };
-            if (d.opts.symbols) {
+            if (d.opts.symbols or d.opts.dyn_syms) {
                 try dumpSymbols(d, sections);
             }
             if (d.opts.symbol_versions) {
@@ -1411,11 +1411,19 @@ fn dumpSymbols(
 ) Objdump.Error!void {
     const w = d.w;
 
+    assert(d.opts.symbols or d.opts.dyn_syms);
+
     for (sections) |symtab_section| {
         const symbols = switch (symtab_section.contents) {
             .symtab => |symtab| symtab,
             else => continue,
         };
+        // If only `--dyn-syms` was passed, ignore `SHT_SYMTAB` sections
+        switch (symtab_section.type) {
+            .SYMTAB => if (!d.opts.symbols) continue,
+            .DYNSYM => {},
+            else => unreachable,
+        }
 
         for (d.opts.section_filters) |filter| {
             if (std.mem.find(u8, symtab_section.name, filter) != null) break;
@@ -1461,8 +1469,30 @@ fn dumpSymbols(
                 symbolBindString(symbol.info.bind),
                 symbol.other.visibility,
                 fmtShndx(d, symbol.shndx),
-                d.fmtIntField(symbol.value, .address),
-                d.fmtIntField(symbol.size, .size),
+                // For SHN_UNDEF symbols in a dynamic symbol table, the address is usually 0, but it
+                // is significant for it to be non-zero because this causes the dynamic linker to
+                // treat the symbol as defined anyway (this is commonly used for canonical PLT
+                // entries). To allow snapshots to differentiate between these two fundamentally
+                // different cases, do not redact the value of SHN_UNDEF symbols in dynamic symbol
+                // tables if that value is zero.
+                d.fmtIntField(symbol.value, kind: {
+                    if (symtab_section.type == .DYNSYM and
+                        symbol.shndx == std.elf.SHN_UNDEF and
+                        symbol.value == 0)
+                    {
+                        break :kind null;
+                    }
+                    break :kind .address;
+                }),
+                // For STT_OBJECT symbols, the symbol size is considered a part of the ABI (and will
+                // not change due to codegen or linker decisions), so don't redact it in that case.
+                d.fmtIntField(symbol.size, switch (symbol.info.bind) {
+                    .LOCAL => .size,
+                    else => switch (symbol.info.type) {
+                        .OBJECT => null,
+                        else => .size,
+                    },
+                }),
                 sym_name,
             });
         }
