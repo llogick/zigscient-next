@@ -1010,6 +1010,7 @@ test "vector reduce operation" {
             try testReduce(.Max, [4]f80{ -10.3, 10.0e9, 13.0, -100.0 }, @as(f80, 10.0e9));
             try testReduce(.Max, [4]f128{ -10.3, 10.0e9, 13.0, -100.0 }, @as(f128, 10.0e9));
 
+            try testReduce(.Mul, [4]i1{ -1, -1, -1, -1 }, @as(i1, -1));
             try testReduce(.Mul, [4]i16{ -1, 2, 3, 4 }, @as(i16, -24));
             try testReduce(.Mul, [4]u16{ 1, 2, 3, 4 }, @as(u16, 24));
             try testReduce(.Mul, [4]i32{ -9, -99, -999, 999 }, @as(i32, -889218891));
