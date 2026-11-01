@@ -4,6 +4,7 @@ const fmt = std.fmt;
 const testing = std.testing;
 
 const Secp256k1 = @import("../secp256k1.zig").Secp256k1;
+const AffineCoordinates = @import("../secp256k1.zig").AffineCoordinates;
 
 const lambda: u256 = 0x5363ad4cc05c30e0a5261c028812645a122e22ea20816678df02967c1b23bd72;
 
@@ -136,12 +137,19 @@ test "secp256k1 field element non-canonical encoding" {
     try testing.expectError(error.NonCanonical, Secp256k1.Fe.fromBytes(s, .little));
 }
 
-test "secp256k1 neutral element decoding" {
+test "secp256k1 neutral element encoding/decoding" {
     if (builtin.zig_backend == .stage2_llvm and builtin.target.cpu.arch.isPowerpc64()) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/37121
 
-    try testing.expectError(error.InvalidEncoding, Secp256k1.fromAffineCoordinates(.{ .x = Secp256k1.Fe.zero, .y = Secp256k1.Fe.zero }));
+    try testing.expectError(error.InvalidEncoding, Secp256k1.fromAffineCoordinates(AffineCoordinates.identityElement));
     try testing.expectError(error.InvalidEncoding, Secp256k1.fromAffineCoordinates(.{ .x = Secp256k1.Fe.zero, .y = Secp256k1.Fe.one }));
+    try testing.expectError(error.IdentityElement, (try Secp256k1.fromSec1(&.{0})).rejectIdentity());
     try testing.expectError(error.IdentityElement, Secp256k1.identityElement.rejectIdentity());
+    const compressed = Secp256k1.identityElement.toCompressedSec1();
+    const uncompressed = Secp256k1.identityElement.toUncompressedSec1();
+    try testing.expect(std.mem.allEqual(u8, &compressed, 0));
+    try testing.expect(std.mem.allEqual(u8, &uncompressed, 0));
+    try testing.expectError(error.InvalidEncoding, Secp256k1.fromSec1(&compressed));
+    try testing.expectError(error.InvalidEncoding, Secp256k1.fromSec1(&uncompressed));
 }
 
 test "secp256k1 uncompressed SEC1 must not accept infinity" {
@@ -225,4 +233,12 @@ test "secp256k1 scalar parity" {
     try std.testing.expect(Secp256k1.scalar.Scalar.zero.isOdd() == false);
     try std.testing.expect(Secp256k1.scalar.Scalar.one.isOdd());
     try std.testing.expect(Secp256k1.scalar.Scalar.one.dbl().isOdd() == false);
+}
+
+test "secp256k1 mixed addition with the neutral element" {
+    if (builtin.zig_backend == .stage2_llvm and builtin.target.cpu.arch.isPowerpc64()) return error.SkipZigTest; // https://codeberg.org/ziglang/zig/issues/37121
+
+    try testing.expectEqualDeep(AffineCoordinates.identityElement, Secp256k1.identityElement.affineCoordinates());
+    try testing.expect(Secp256k1.identityElement.addMixed(AffineCoordinates.identityElement).equivalent(Secp256k1.identityElement));
+    try testing.expect(Secp256k1.basePoint.addMixed(AffineCoordinates.identityElement).equivalent(Secp256k1.basePoint));
 }

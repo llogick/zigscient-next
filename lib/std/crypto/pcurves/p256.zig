@@ -36,7 +36,7 @@ pub const P256 = struct {
 
     /// Reject the neutral element.
     pub fn rejectIdentity(p: P256) IdentityElementError!void {
-        const affine_0 = @intFromBool(p.x.equivalent(AffineCoordinates.identityElement.x)) & (@intFromBool(p.y.isZero()) | @intFromBool(p.y.equivalent(AffineCoordinates.identityElement.y)));
+        const affine_0 = @intFromBool(p.x.isZero()) & @intFromBool(p.y.isZero());
         const is_identity = @intFromBool(p.z.isZero()) | affine_0;
         if (is_identity != 0) {
             return error.IdentityElement;
@@ -102,7 +102,9 @@ pub const P256 = struct {
     pub fn toCompressedSec1(p: P256) [33]u8 {
         var out: [33]u8 = undefined;
         const xy = p.affineCoordinates();
+        const is_identity: u8 = @intFromBool(xy.isIdentity());
         out[0] = if (xy.y.isOdd()) 3 else 2;
+        out[0] &= is_identity -% 1;
         out[1..].* = xy.x.toBytes(.big);
         return out;
     }
@@ -112,6 +114,8 @@ pub const P256 = struct {
         var out: [65]u8 = undefined;
         out[0] = 4;
         const xy = p.affineCoordinates();
+        const is_identity: u8 = @intFromBool(xy.isIdentity());
+        out[0] &= is_identity -% 1;
         out[1..33].* = xy.x.toBytes(.big);
         out[33..65].* = xy.y.toBytes(.big);
         return out;
@@ -215,7 +219,7 @@ pub const P256 = struct {
             .y = Y3,
             .z = Z3,
         };
-        ret.cMov(p, @intFromBool(q.x.isZero() and q.y.isZero()));
+        ret.cMov(p, @intFromBool(q.isIdentity()));
         return ret;
     }
 
@@ -284,15 +288,11 @@ pub const P256 = struct {
 
     /// Return affine coordinates.
     pub fn affineCoordinates(p: P256) AffineCoordinates {
-        const affine_0 = @intFromBool(p.x.equivalent(AffineCoordinates.identityElement.x)) & (@intFromBool(p.y.isZero()) | @intFromBool(p.y.equivalent(AffineCoordinates.identityElement.y)));
-        const is_identity = @intFromBool(p.z.isZero()) | affine_0;
         const zinv = p.z.invert();
-        var ret = AffineCoordinates{
+        return .{
             .x = p.x.mul(zinv),
             .y = p.y.mul(zinv),
         };
-        ret.cMov(AffineCoordinates.identityElement, is_identity);
-        return ret;
     }
 
     /// Return true if both coordinate sets represent the same point.
@@ -465,15 +465,14 @@ pub const AffineCoordinates = struct {
     y: P256.Fe,
 
     /// Identity element in affine coordinates.
-    pub const identityElement = AffineCoordinates{ .x = P256.identityElement.x, .y = P256.identityElement.y };
+    pub const identityElement = AffineCoordinates{ .x = P256.Fe.zero, .y = P256.Fe.zero };
 
     pub fn neg(p: AffineCoordinates) AffineCoordinates {
         return .{ .x = p.x, .y = p.y.neg() };
     }
 
-    fn cMov(p: *AffineCoordinates, a: AffineCoordinates, c: u1) void {
-        p.x.cMov(a.x, c);
-        p.y.cMov(a.y, c);
+    fn isIdentity(p: AffineCoordinates) bool {
+        return p.x.isZero() & p.y.isZero();
     }
 };
 

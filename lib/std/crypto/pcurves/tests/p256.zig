@@ -3,6 +3,7 @@ const fmt = std.fmt;
 const testing = std.testing;
 
 const P256 = @import("../p256.zig").P256;
+const AffineCoordinates = @import("../p256.zig").AffineCoordinates;
 
 test "p256 ECDH key exchange" {
     const io = testing.io;
@@ -101,10 +102,17 @@ test "p256 field element non-canonical encoding" {
     try testing.expectError(error.NonCanonical, P256.Fe.fromBytes(s, .little));
 }
 
-test "p256 neutral element decoding" {
-    try testing.expectError(error.InvalidEncoding, P256.fromAffineCoordinates(.{ .x = P256.Fe.zero, .y = P256.Fe.zero }));
+test "p256 neutral element encoding/decoding" {
+    try testing.expectError(error.InvalidEncoding, P256.fromAffineCoordinates(AffineCoordinates.identityElement));
     try testing.expectError(error.InvalidEncoding, P256.fromAffineCoordinates(.{ .x = P256.Fe.zero, .y = P256.Fe.one }));
+    try testing.expectError(error.IdentityElement, (try P256.fromSec1(&.{0})).rejectIdentity());
     try testing.expectError(error.IdentityElement, P256.identityElement.rejectIdentity());
+    const compressed = P256.identityElement.toCompressedSec1();
+    const uncompressed = P256.identityElement.toUncompressedSec1();
+    try testing.expect(std.mem.allEqual(u8, &compressed, 0));
+    try testing.expect(std.mem.allEqual(u8, &uncompressed, 0));
+    try testing.expectError(error.InvalidEncoding, P256.fromSec1(&compressed));
+    try testing.expectError(error.InvalidEncoding, P256.fromSec1(&uncompressed));
 }
 
 test "p256 double base multiplication" {
@@ -147,16 +155,20 @@ test "p256 scalar parity" {
 }
 
 test "p256 with x = 0 point" {
-    const yh = "66485c780e2f83d72433bd5d84a06bb6541c2af31dae871728bf856a174f93f4";
-    var ys: [32]u8 = undefined;
-    _ = try fmt.hexToBytes(&ys, yh);
-    const y = try P256.Fe.fromBytes(ys, .big);
+    const a: AffineCoordinates = .{ .x = P256.Fe.zero, .y = try P256.recoverY(P256.Fe.zero, false) };
+    const q = try P256.fromAffineCoordinates(a);
+    for ([_]P256{ P256.identityElement, P256.basePoint, q, q.neg() }) |p| {
+        try testing.expect(p.addMixed(a).equivalent(p.add(q)));
+        try testing.expect(p.subMixed(a).equivalent(p.sub(q)));
+    }
 
-    const p = P256.basePoint.dbl();
-    const q = try P256.fromAffineCoordinates(.{ .x = .zero, .y = y });
-    const want = p.add(q);
-    const got = p.addMixed(.{ .x = .zero, .y = y });
+    // Same point with Y = 1, which must not be mistaken for the identity.
+    const scaled = P256{ .x = P256.Fe.zero, .y = P256.Fe.one, .z = a.y.invert() };
+    try scaled.rejectIdentity();
+}
 
-    try std.testing.expect(!got.equivalent(p));
-    try std.testing.expect(got.equivalent(want));
+test "p256 mixed addition with the neutral element" {
+    try testing.expectEqualDeep(AffineCoordinates.identityElement, P256.identityElement.affineCoordinates());
+    try testing.expect(P256.identityElement.addMixed(AffineCoordinates.identityElement).equivalent(P256.identityElement));
+    try testing.expect(P256.basePoint.addMixed(AffineCoordinates.identityElement).equivalent(P256.basePoint));
 }
