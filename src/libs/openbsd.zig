@@ -65,21 +65,21 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
 
     switch (crt_file) {
         .scrt0_o => {
-            var cflags = std.array_list.Managed([]const u8).init(arena);
-            try cflags.appendSlice(&.{
+            var cflags: std.ArrayList([]const u8) = .empty;
+            try cflags.appendSlice(arena, &.{
                 "-w", // Disable all warnings.
             });
 
             // See `Compilation.addCommonCCArgs`.
-            try cflags.append(try std.fmt.allocPrint(arena, "-D___OpenBSD={d}", .{
+            try cflags.append(arena, try std.fmt.allocPrint(arena, "-D___OpenBSD={d}", .{
                 202510,
             }));
-            try cflags.append(try std.fmt.allocPrint(arena, "-DOpenBSD{d}_{d}", .{
+            try cflags.append(arena, try std.fmt.allocPrint(arena, "-DOpenBSD{d}_{d}", .{
                 target_version.major,
                 target_version.minor,
             }));
 
-            try cflags.appendSlice(&.{
+            try cflags.appendSlice(arena, &.{
                 "-I",
                 try includePath(comp, arena, try std.fmt.allocPrint(arena, "{s}-{s}-{s}", .{
                     std.zig.target.openbsdArchNameHeaders(target.cpu.arch),
@@ -399,13 +399,13 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
         break :blk latest_index;
     };
 
-    var stubs_asm = std.array_list.Managed(u8).init(gpa);
-    defer stubs_asm.deinit();
+    var stubs_asm: std.ArrayList(u8) = .empty;
+    defer stubs_asm.deinit(gpa);
 
     for (libs, 0..) |lib, lib_i| {
         stubs_asm.shrinkRetainingCapacity(0);
 
-        try stubs_asm.appendSlice(".text\n");
+        try stubs_asm.appendSlice(gpa, ".text\n");
 
         var sym_i: usize = 0;
         var sym_name_buf: std.Io.Writer.Allocating = .init(arena);
@@ -469,7 +469,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                 // .globl _Exit
                 // .type _Exit, %function
                 // _Exit: .long 0
-                try stubs_asm.print(
+                try stubs_asm.print(gpa,
                     \\.balign {d}
                     \\.{s} {s}
                     \\.type {s}, %function
@@ -486,7 +486,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             }
         }
 
-        try stubs_asm.appendSlice(".data\n");
+        try stubs_asm.appendSlice(gpa, ".data\n");
 
         const obj_inclusions_len = try inc_reader.takeInt(u16, .little);
 
@@ -549,7 +549,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                 // .type malloc_conf, %object
                 // .size malloc_conf, 4
                 // malloc_conf: .fill 4, 1, 0
-                try stubs_asm.print(
+                try stubs_asm.print(gpa,
                     \\.balign {d}
                     \\.{s} {s}
                     \\.type {s}, %object

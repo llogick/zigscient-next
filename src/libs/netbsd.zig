@@ -69,14 +69,14 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
 
     switch (crt_file) {
         .scrt0_o => {
-            var cflags = std.array_list.Managed([]const u8).init(arena);
-            try cflags.appendSlice(&.{
+            var cflags: std.ArrayList([]const u8) = .empty;
+            try cflags.appendSlice(arena, &.{
                 "-DHAVE_INITFINI_ARRAY",
                 "-w", // Disable all warnings.
             });
 
-            var acflags = std.array_list.Managed([]const u8).init(arena);
-            try acflags.appendSlice(&.{
+            var acflags: std.ArrayList([]const u8) = .empty;
+            try acflags.appendSlice(arena, &.{
                 // See `Compilation.addCCArgs`.
                 try std.fmt.allocPrint(arena, "-D__NetBSD_Version__={d}", .{(target_version.major * 100_000_000) + (target_version.minor * 1_000_000)}),
             });
@@ -89,13 +89,13 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
 
             inline for (.{ &cflags, &acflags }) |flags| {
                 if (csu_march) |march| {
-                    try flags.appendSlice(&.{
+                    try flags.appendSlice(arena, &.{
                         try std.fmt.allocPrint(arena, "-DELF_NOTE_MARCH_DESC=\"{s}\"", .{march}),
                         try std.fmt.allocPrint(arena, "-DELF_NOTE_MARCH_DESCSZ={d}", .{march.len + 1}),
                     });
                 }
 
-                try flags.appendSlice(&.{
+                try flags.appendSlice(arena, &.{
                     "-I",
                     try includePath(comp, arena, try std.fmt.allocPrint(arena, "{s}-{s}-{s}", .{
                         std.zig.target.netbsdArchNameHeaders(target.cpu.arch),
@@ -479,13 +479,13 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
         break :blk latest_index;
     };
 
-    var stubs_asm = std.array_list.Managed(u8).init(gpa);
-    defer stubs_asm.deinit();
+    var stubs_asm: std.ArrayList(u8) = .empty;
+    defer stubs_asm.deinit(gpa);
 
     for (libs, 0..) |lib, lib_i| {
         stubs_asm.shrinkRetainingCapacity(0);
 
-        try stubs_asm.appendSlice(".text\n");
+        try stubs_asm.appendSlice(gpa, ".text\n");
 
         var sym_i: usize = 0;
         var sym_name_buf: std.Io.Writer.Allocating = .init(arena);
@@ -549,7 +549,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                 // .globl _Exit
                 // .type _Exit, %function
                 // _Exit: .long 0
-                try stubs_asm.print(
+                try stubs_asm.print(gpa,
                     \\.balign {d}
                     \\.{s} {s}
                     \\.type {s}, %function
@@ -566,7 +566,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             }
         }
 
-        try stubs_asm.appendSlice(".data\n");
+        try stubs_asm.appendSlice(gpa, ".data\n");
 
         const obj_inclusions_len = try inc_reader.takeInt(u16, .little);
 
@@ -629,7 +629,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                 // .type malloc_conf, %object
                 // .size malloc_conf, 4
                 // malloc_conf: .fill 4, 1, 0
-                try stubs_asm.print(
+                try stubs_asm.print(gpa,
                     \\.balign {d}
                     \\.{s} {s}
                     \\.type {s}, %object

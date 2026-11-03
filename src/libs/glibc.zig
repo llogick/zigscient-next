@@ -186,9 +186,9 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
     switch (crt_file) {
         .scrt1_o => {
             const start_o: Compilation.CSourceFile = blk: {
-                var args = std.array_list.Managed([]const u8).init(arena);
+                var args: std.ArrayList([]const u8) = .empty;
                 try add_include_dirs(comp, arena, &args);
-                try args.appendSlice(&[_][]const u8{
+                try args.appendSlice(arena, &.{
                     "-w", // Disable all warnings.
                     "-D_LIBC_REENTRANT",
                     "-include",
@@ -210,13 +210,12 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 };
             };
             const abi_note_o: Compilation.CSourceFile = blk: {
-                var args = std.array_list.Managed([]const u8).init(arena);
-                try args.appendSlice(&[_][]const u8{
-                    "-I",
-                    try lib_path(comp, arena, lib_libc_glibc ++ "csu"),
+                var args: std.ArrayList([]const u8) = .empty;
+                try args.appendSlice(arena, &.{
+                    "-I", try lib_path(comp, arena, lib_libc_glibc ++ "csu"),
                 });
                 try add_include_dirs(comp, arena, &args);
-                try args.appendSlice(&[_][]const u8{
+                try args.appendSlice(arena, &.{
                     "-w", // Disable all warnings.
                     "-D_LIBC_REENTRANT",
                     "-DMODULE_NAME=libc",
@@ -231,8 +230,8 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 };
             };
             const init_o: Compilation.CSourceFile = blk: {
-                var args = std.array_list.Managed([]const u8).init(arena);
-                try args.appendSlice(&[_][]const u8{
+                var args: std.ArrayList([]const u8) = .empty;
+                try args.appendSlice(arena, &.{
                     "-w", // Disable all warnings.
                 });
                 break :blk .{
@@ -316,8 +315,8 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
             for (deps) |dep| {
                 if (!dep.include) continue;
 
-                var args = std.array_list.Managed([]const u8).init(arena);
-                try args.appendSlice(&[_][]const u8{
+                var args: std.ArrayList([]const u8) = .empty;
+                try args.appendSlice(arena, &.{
                     "-w", // Disable all warnings.
                     "-std=gnu11",
                     "-fgnu89-inline",
@@ -330,16 +329,16 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 });
                 try add_include_dirs(comp, arena, &args);
 
-                try args.append("-DNO_INITFINI");
+                try args.append(arena, "-DNO_INITFINI");
 
                 if (target.cpu.arch == .x86) {
                     // This prevents i386/sysdep.h from trying to do some
                     // silly and unnecessary inline asm hack that uses weird
                     // syntax that clang does not support.
-                    try args.append("-DCAN_USE_REGISTER_ASM_EBP");
+                    try args.append(arena, "-DCAN_USE_REGISTER_ASM_EBP");
                 }
 
-                try args.appendSlice(&[_][]const u8{
+                try args.appendSlice(arena, &.{
                     "-D_LIBC_REENTRANT",
                     "-include",
                     try lib_path(comp, arena, lib_libc_glibc ++ "include" ++ path.sep_str ++ "libc-modules.h"),
@@ -374,58 +373,64 @@ fn start_asm_path(comp: *Compilation, arena: Allocator, basename: []const u8) ![
 
     const s = path.sep_str;
 
-    var result = std.array_list.Managed(u8).init(arena);
-    try result.appendSlice(comp.dirs.zig_lib.path orelse ".");
-    try result.appendSlice(s ++ "libc" ++ s ++ "glibc" ++ s ++ "sysdeps" ++ s);
+    var result: std.ArrayList(u8) = .empty;
+    try result.appendSlice(arena, comp.dirs.zig_lib.path orelse ".");
+    try result.appendSlice(arena, s ++ "libc" ++ s ++ "glibc" ++ s ++ "sysdeps" ++ s);
     if (is_sparc) {
         if (is_64) {
-            try result.appendSlice("sparc" ++ s ++ "sparc64");
+            try result.appendSlice(arena, "sparc" ++ s ++ "sparc64");
         } else {
-            try result.appendSlice("sparc" ++ s ++ "sparc32");
+            try result.appendSlice(arena, "sparc" ++ s ++ "sparc32");
         }
     } else if (arch.isArm()) {
-        try result.appendSlice("arm");
+        try result.appendSlice(arena, "arm");
     } else if (arch.isMIPS()) {
-        try result.appendSlice("mips");
+        try result.appendSlice(arena, "mips");
     } else if (arch == .x86_64) {
-        try result.appendSlice("x86_64");
+        try result.appendSlice(arena, "x86_64");
     } else if (arch == .x86) {
-        try result.appendSlice("i386");
+        try result.appendSlice(arena, "i386");
     } else if (is_aarch64) {
-        try result.appendSlice("aarch64");
+        try result.appendSlice(arena, "aarch64");
     } else if (arch.isRISCV()) {
-        try result.appendSlice("riscv");
+        try result.appendSlice(arena, "riscv");
     } else if (is_ppc) {
         if (is_64) {
-            try result.appendSlice("powerpc" ++ s ++ "powerpc64");
+            try result.appendSlice(arena, "powerpc" ++ s ++ "powerpc64");
         } else {
-            try result.appendSlice("powerpc" ++ s ++ "powerpc32");
+            try result.appendSlice(arena, "powerpc" ++ s ++ "powerpc32");
         }
     } else if (arch == .s390x) {
-        try result.appendSlice("s390");
+        try result.appendSlice(arena, "s390");
     } else if (arch.isLoongArch()) {
-        try result.appendSlice("loongarch");
+        try result.appendSlice(arena, "loongarch");
     } else if (arch == .m68k) {
-        try result.appendSlice("m68k");
+        try result.appendSlice(arena, "m68k");
     } else if (arch == .arc) {
-        try result.appendSlice("arc");
+        try result.appendSlice(arena, "arc");
     } else if (arch == .csky) {
-        try result.appendSlice("csky" ++ s ++ "abiv2");
+        try result.appendSlice(arena, "csky" ++ s ++ "abiv2");
     }
 
-    try result.appendSlice(s);
-    try result.appendSlice(basename);
+    try result.appendSlice(arena, s);
+    try result.appendSlice(arena, basename);
     return result.items;
 }
 
-fn add_include_dirs(comp: *Compilation, arena: Allocator, args: *std.array_list.Managed([]const u8)) error{OutOfMemory}!void {
+fn add_include_dirs(
+    comp: *Compilation,
+    arena: Allocator,
+    /// uses `arena` as its allocator
+    args: *std.ArrayList([]const u8),
+) error{OutOfMemory}!void {
     const target = comp.getTarget();
     const opt_nptl: ?[]const u8 = if (target.os.tag == .linux) "nptl" else "htl";
 
     const s = path.sep_str;
 
-    try args.append("-I");
-    try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "include"));
+    try args.appendSlice(arena, &.{
+        "-I", try lib_path(comp, arena, lib_libc_glibc ++ "include"),
+    });
 
     if (target.os.tag == .linux) {
         try add_include_dirs_arch(arena, args, target, null, try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "unix" ++ s ++ "sysv" ++ s ++ "linux"));
@@ -436,65 +441,66 @@ fn add_include_dirs(comp: *Compilation, arena: Allocator, args: *std.array_list.
     }
 
     if (target.os.tag == .linux) {
-        try args.append("-I");
-        try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++
-            "unix" ++ s ++ "sysv" ++ s ++ "linux" ++ s ++ "generic"));
-
-        try args.append("-I");
-        try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++
-            "unix" ++ s ++ "sysv" ++ s ++ "linux" ++ s ++ "include"));
-        try args.append("-I");
-        try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++
-            "unix" ++ s ++ "sysv" ++ s ++ "linux"));
+        try args.appendSlice(arena, &.{
+            "-I",
+            try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++
+                "unix" ++ s ++ "sysv" ++ s ++ "linux" ++ s ++ "generic"),
+            "-I",
+            try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++
+                "unix" ++ s ++ "sysv" ++ s ++ "linux" ++ s ++ "include"),
+            "-I",
+            try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++
+                "unix" ++ s ++ "sysv" ++ s ++ "linux"),
+        });
     }
     if (opt_nptl) |nptl| {
-        try args.append("-I");
-        try args.append(try path.join(arena, &.{ comp.dirs.zig_lib.path orelse ".", lib_libc_glibc ++ "sysdeps", nptl }));
+        try args.appendSlice(arena, &.{
+            "-I", try path.join(arena, &.{ comp.dirs.zig_lib.path orelse ".", lib_libc_glibc ++ "sysdeps", nptl }),
+        });
     }
 
-    try args.append("-I");
-    try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "pthread"));
-
-    try args.append("-I");
-    try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "unix" ++ s ++ "sysv"));
+    try args.appendSlice(arena, &.{
+        "-I", try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "pthread"),
+        "-I", try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "unix" ++ s ++ "sysv"),
+    });
 
     try add_include_dirs_arch(arena, args, target, null, try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "unix"));
 
-    try args.append("-I");
-    try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "unix"));
+    try args.appendSlice(arena, &.{
+        "-I",
+        try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "unix"),
+    });
 
     try add_include_dirs_arch(arena, args, target, null, try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps"));
 
-    try args.append("-I");
-    try args.append(try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "generic"));
-
-    try args.append("-I");
-    try args.append(try path.join(arena, &[_][]const u8{ comp.dirs.zig_lib.path orelse ".", lib_libc ++ "glibc" }));
-
-    try args.append("-I");
-    try args.append(try std.fmt.allocPrint(arena, "{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-{s}-{s}", .{
-        comp.dirs.zig_lib.path orelse ".",
-        std.zig.target.glibcArchNameHeaders(target.cpu.arch),
-        @tagName(target.os.tag),
-        std.zig.target.glibcAbiNameHeaders(target.abi),
-    }));
-
-    try args.append("-I");
-    try args.append(try lib_path(comp, arena, lib_libc ++ "include" ++ s ++ "generic-glibc"));
+    try args.appendSlice(arena, &.{
+        "-I", try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "generic"),
+        "-I", try path.join(arena, &.{ comp.dirs.zig_lib.path orelse ".", lib_libc ++ "glibc" }),
+        "-I",
+        try std.fmt.allocPrint(arena, "{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-{s}-{s}", .{
+            comp.dirs.zig_lib.path orelse ".",
+            std.zig.target.glibcArchNameHeaders(target.cpu.arch),
+            @tagName(target.os.tag),
+            std.zig.target.glibcAbiNameHeaders(target.abi),
+        }),
+        "-I", try lib_path(comp, arena, lib_libc ++ "include" ++ s ++ "generic-glibc"),
+    });
 
     const arch_name = std.zig.target.osArchName(target);
-    try args.append("-I");
-    try args.append(try std.fmt.allocPrint(arena, "{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-linux-any", .{
-        comp.dirs.zig_lib.path orelse ".", arch_name,
-    }));
-
-    try args.append("-I");
-    try args.append(try lib_path(comp, arena, lib_libc ++ "include" ++ s ++ "any-linux-any"));
+    try args.appendSlice(arena, &.{
+        "-I",
+        try std.fmt.allocPrint(arena, "{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-linux-any", .{
+            comp.dirs.zig_lib.path orelse ".", arch_name,
+        }),
+        "-I",
+        try lib_path(comp, arena, lib_libc ++ "include" ++ s ++ "any-linux-any"),
+    });
 }
 
 fn add_include_dirs_arch(
     arena: Allocator,
-    args: *std.array_list.Managed([]const u8),
+    /// uses `arena` as its allocator
+    args: *std.ArrayList([]const u8),
     target: *const std.Target,
     opt_nptl: ?[]const u8,
     dir: []const u8,
@@ -511,129 +517,129 @@ fn add_include_dirs_arch(
     if (is_x86) {
         if (arch == .x86_64) {
             if (opt_nptl) |nptl| {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "x86_64", nptl }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "x86_64", nptl }));
             } else {
                 if (target.abi == .gnux32) {
-                    try args.append("-I");
-                    try args.append(try path.join(arena, &[_][]const u8{ dir, "x86_64", "x32" }));
+                    try args.append(arena, "-I");
+                    try args.append(arena, try path.join(arena, &.{ dir, "x86_64", "x32" }));
                 }
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "x86_64" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "x86_64" }));
             }
         } else if (arch == .x86) {
             if (opt_nptl) |nptl| {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "i386", nptl }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "i386", nptl }));
             } else {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "i386" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "i386" }));
             }
         }
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "x86", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "x86", nptl }));
         } else {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "x86" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "x86" }));
         }
     } else if (arch.isArm()) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "arm", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "arm", nptl }));
         } else {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "arm" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "arm" }));
         }
     } else if (arch.isMIPS()) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "mips", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "mips", nptl }));
         } else {
             if (is_64) {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "mips" ++ s ++ "mips64" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "mips" ++ s ++ "mips64" }));
             } else {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "mips" ++ s ++ "mips32" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "mips" ++ s ++ "mips32" }));
             }
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "mips" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "mips" }));
         }
     } else if (is_sparc) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "sparc", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "sparc", nptl }));
         } else {
             if (is_64) {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "sparc" ++ s ++ "sparc64" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "sparc" ++ s ++ "sparc64" }));
             } else {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "sparc" ++ s ++ "sparc32" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "sparc" ++ s ++ "sparc32" }));
             }
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "sparc" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "sparc" }));
         }
     } else if (is_aarch64) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "aarch64", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "aarch64", nptl }));
         } else {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "aarch64" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "aarch64" }));
         }
     } else if (is_ppc) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "powerpc", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "powerpc", nptl }));
         } else {
             if (is_64) {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "powerpc" ++ s ++ "powerpc64" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "powerpc" ++ s ++ "powerpc64" }));
             } else {
-                try args.append("-I");
-                try args.append(try path.join(arena, &[_][]const u8{ dir, "powerpc" ++ s ++ "powerpc32" }));
+                try args.append(arena, "-I");
+                try args.append(arena, try path.join(arena, &.{ dir, "powerpc" ++ s ++ "powerpc32" }));
             }
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "powerpc" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "powerpc" }));
         }
     } else if (arch.isRISCV()) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "riscv", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "riscv", nptl }));
         } else {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "riscv" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "riscv" }));
         }
     } else if (arch == .s390x) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "s390", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "s390", nptl }));
         } else {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "s390" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "s390" }));
         }
     } else if (arch.isLoongArch()) {
-        try args.append("-I");
-        try args.append(try path.join(arena, &[_][]const u8{ dir, "loongarch" }));
+        try args.append(arena, "-I");
+        try args.append(arena, try path.join(arena, &.{ dir, "loongarch" }));
     } else if (arch == .m68k) {
         if (opt_nptl) |nptl| {
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "m68k", nptl }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "m68k", nptl }));
         } else {
             // coldfire ABI support requires: https://github.com/ziglang/zig/issues/20690
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "m68k" ++ s ++ "m680x0" }));
-            try args.append("-I");
-            try args.append(try path.join(arena, &[_][]const u8{ dir, "m68k" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "m68k" ++ s ++ "m680x0" }));
+            try args.append(arena, "-I");
+            try args.append(arena, try path.join(arena, &.{ dir, "m68k" }));
         }
     } else if (arch == .arc) {
-        try args.append("-I");
-        try args.append(try path.join(arena, &[_][]const u8{ dir, "arc" }));
+        try args.append(arena, "-I");
+        try args.append(arena, try path.join(arena, &.{ dir, "arc" }));
     } else if (arch == .csky) {
-        try args.append("-I");
-        try args.append(try path.join(arena, &[_][]const u8{ dir, "csky" }));
+        try args.append(arena, "-I");
+        try args.append(arena, try path.join(arena, &.{ dir, "csky" }));
     }
 }
 
@@ -776,20 +782,20 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
     };
 
     {
-        var map_contents = std.array_list.Managed(u8).init(arena);
+        var map_contents: std.ArrayList(u8) = .empty;
         for (metadata.all_versions[0 .. target_ver_index + 1]) |ver| {
             if (ver.patch == 0) {
-                try map_contents.print("GLIBC_{d}.{d} {{ }};\n", .{ ver.major, ver.minor });
+                try map_contents.print(arena, "GLIBC_{d}.{d} {{ }};\n", .{ ver.major, ver.minor });
             } else {
-                try map_contents.print("GLIBC_{d}.{d}.{d} {{ }};\n", .{ ver.major, ver.minor, ver.patch });
+                try map_contents.print(arena, "GLIBC_{d}.{d}.{d} {{ }};\n", .{ ver.major, ver.minor, ver.patch });
             }
         }
         try o_directory.handle.writeFile(io, .{ .sub_path = all_map_basename, .data = map_contents.items });
-        map_contents.deinit(); // The most recent allocation of an arena can be freed :)
+        map_contents.deinit(arena); // The most recent allocation of an arena can be freed :)
     }
 
-    var stubs_asm = std.array_list.Managed(u8).init(gpa);
-    defer stubs_asm.deinit();
+    var stubs_asm: std.ArrayList(u8) = .empty;
+    defer stubs_asm.deinit(gpa);
 
     for (libs, 0..) |lib, lib_i| {
         if (lib.removed_in) |rem_in| {
@@ -797,7 +803,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
         }
 
         stubs_asm.shrinkRetainingCapacity(0);
-        try stubs_asm.appendSlice(".text\n");
+        try stubs_asm.appendSlice(gpa, ".text\n");
 
         var sym_i: usize = 0;
         var sym_name_buf: Io.Writer.Allocating = .init(arena);
@@ -908,7 +914,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                             "{s}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor },
                         );
-                        try stubs_asm.print(
+                        try stubs_asm.print(gpa,
                             \\.balign {d}
                             \\.globl {s}
                             \\.type {s}, %function
@@ -933,7 +939,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                             "{s}_{d}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor, ver.patch },
                         );
-                        try stubs_asm.print(
+                        try stubs_asm.print(gpa,
                             \\.balign {d}
                             \\.globl {s}
                             \\.type {s}, %function
@@ -958,7 +964,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             }
         }
 
-        try stubs_asm.appendSlice(".rodata\n");
+        try stubs_asm.appendSlice(gpa, ".rodata\n");
 
         // For some targets, the real `libc.so.6` will contain a weak reference to `_IO_stdin_used`,
         // making the linker put the symbol in the dynamic symbol table. We likewise need to emit a
@@ -978,7 +984,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
         // versions where the symbol didn't exist. We only care about modern glibc versions, so use
         // a strong reference.
         if (std.mem.eql(u8, lib.name, "c")) {
-            try stubs_asm.print(
+            try stubs_asm.print(gpa,
                 \\.balign {d}
                 \\.globl _IO_stdin_used
                 \\{s} _IO_stdin_used
@@ -989,7 +995,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             });
         }
 
-        try stubs_asm.appendSlice(".data\n");
+        try stubs_asm.appendSlice(gpa, ".data\n");
 
         const obj_inclusions_len = try inc_reader.takeInt(u16, .little);
 
@@ -1085,7 +1091,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                             "{s}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor },
                         );
-                        try stubs_asm.print(
+                        try stubs_asm.print(gpa,
                             \\.balign {d}
                             \\.globl {s}
                             \\.type {s}, %object
@@ -1113,7 +1119,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                             "{s}_{d}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor, ver.patch },
                         );
-                        try stubs_asm.print(
+                        try stubs_asm.print(gpa,
                             \\.balign {d}
                             \\.globl {s}
                             \\.type {s}, %object

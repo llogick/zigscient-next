@@ -41,10 +41,10 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
 
     switch (crt_file) {
         .crt2_o => {
-            var args = std.array_list.Managed([]const u8).init(arena);
+            var args: std.ArrayList([]const u8) = .empty;
             try addCrtCcArgs(comp, arena, &args);
             if (comp.mingw_unicode_entry_point) {
-                try args.appendSlice(&.{ "-DUNICODE", "-D_UNICODE" });
+                try args.appendSlice(arena, &.{ "-DUNICODE", "-D_UNICODE" });
             }
             var files = [_]Compilation.CSourceFile{
                 .{
@@ -61,7 +61,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
         },
 
         .dllcrt2_o => {
-            var args = std.array_list.Managed([]const u8).init(arena);
+            var args: std.ArrayList([]const u8) = .empty;
             try addCrtCcArgs(comp, arena, &args);
             var files = [_]Compilation.CSourceFile{
                 .{
@@ -76,14 +76,14 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
         },
 
         .libmingw32_lib => {
-            var c_source_files = std.array_list.Managed(Compilation.CSourceFile).init(arena);
+            var c_source_files: std.ArrayList(Compilation.CSourceFile) = .empty;
 
             {
-                var crt_args = std.array_list.Managed([]const u8).init(arena);
+                var crt_args: std.ArrayList([]const u8) = .empty;
                 try addCrtCcArgs(comp, arena, &crt_args);
 
                 for (mingw32_generic_src) |dep| {
-                    try c_source_files.append(.{
+                    try c_source_files.append(arena, .{
                         .src_path = try comp.dirs.zig_lib.join(arena, &.{
                             "libc", "mingw", dep,
                         }),
@@ -93,7 +93,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 }
                 if (target.cpu.arch.isX86()) {
                     for (mingw32_x86_src) |dep| {
-                        try c_source_files.append(.{
+                        try c_source_files.append(arena, .{
                             .src_path = try comp.dirs.zig_lib.join(arena, &.{
                                 "libc", "mingw", dep,
                             }),
@@ -103,7 +103,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                     }
                     if (target.cpu.arch == .x86) {
                         for (mingw32_x86_32_src) |dep| {
-                            try c_source_files.append(.{
+                            try c_source_files.append(arena, .{
                                 .src_path = try comp.dirs.zig_lib.join(arena, &.{
                                     "libc", "mingw", dep,
                                 }),
@@ -114,7 +114,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                     }
                 } else if (target.cpu.arch == .thumb or target.cpu.arch == .aarch64) {
                     for (mingw32_arm_src) |dep| {
-                        try c_source_files.append(.{
+                        try c_source_files.append(arena, .{
                             .src_path = try comp.dirs.zig_lib.join(arena, &.{
                                 "libc", "mingw", dep,
                             }),
@@ -128,19 +128,19 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
             }
 
             {
-                var winpthreads_args = std.array_list.Managed([]const u8).init(arena);
+                var winpthreads_args: std.ArrayList([]const u8) = .empty;
                 try addCcArgs(comp, arena, &winpthreads_args);
-                try winpthreads_args.appendSlice(&[_][]const u8{
+                try winpthreads_args.appendSlice(arena, &[_][]const u8{
                     "-DIN_WINPTHREAD",
                 });
 
                 switch (comp.compilerRtOptMode()) {
-                    .debug, .safe => try winpthreads_args.append("-DWINPTHREAD_DBG"),
+                    .debug, .safe => try winpthreads_args.append(arena, "-DWINPTHREAD_DBG"),
                     .fast, .small => {},
                 }
 
                 for (mingw32_winpthreads_src) |dep| {
-                    try c_source_files.append(.{
+                    try c_source_files.append(arena, .{
                         .src_path = try comp.dirs.zig_lib.join(arena, &.{
                             "libc", "mingw", dep,
                         }),
@@ -161,9 +161,10 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
 fn addCcArgs(
     comp: *Compilation,
     arena: Allocator,
-    args: *std.array_list.Managed([]const u8),
+    /// uses `arena` as its allocator
+    args: *std.ArrayList([]const u8),
 ) error{OutOfMemory}!void {
-    try args.appendSlice(&[_][]const u8{
+    try args.appendSlice(arena, &[_][]const u8{
         "-w", // Disable all warnings.
         "-std=gnu11",
         "-D__USE_MINGW_ANSI_STDIO=0",
@@ -176,15 +177,16 @@ fn addCcArgs(
 fn addCrtCcArgs(
     comp: *Compilation,
     arena: Allocator,
-    args: *std.array_list.Managed([]const u8),
+    /// uses `arena` as its allocator
+    args: *std.ArrayList([]const u8),
 ) error{OutOfMemory}!void {
     try addCcArgs(comp, arena, args);
 
     if (comp.getTarget().cpu.arch == .thumb) {
-        try args.append("-mfpu=vfp");
+        try args.append(arena, "-mfpu=vfp");
     }
 
-    try args.appendSlice(&[_][]const u8{
+    try args.appendSlice(arena, &[_][]const u8{
         // According to Martin Storsjö,
         // > the files under mingw-w64-crt are designed to always
         // be built with __MSVCRT_VERSION__=0x700
