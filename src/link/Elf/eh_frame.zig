@@ -194,8 +194,8 @@ pub fn calcEhFrameSize(elf_file: *Elf) !usize {
         break :blk math.cast(usize, sym.atom(elf_file).?.size) orelse return error.Overflow;
     } else 0;
 
-    var cies = std.array_list.Managed(Cie).init(gpa);
-    defer cies.deinit();
+    var cies: std.ArrayList(Cie) = .empty;
+    defer cies.deinit(gpa);
 
     for (elf_file.objects.items) |index| {
         const object = elf_file.file(index).?.object;
@@ -214,7 +214,7 @@ pub fn calcEhFrameSize(elf_file: *Elf) !usize {
             cie.alive = true;
             cie.out_offset = offset;
             offset += cie.calcSize();
-            try cies.append(cie.*);
+            try cies.append(gpa, cie.*);
         }
     }
 
@@ -419,7 +419,7 @@ fn emitReloc(elf_file: *Elf, r_offset: u64, sym: *const Symbol, rel: elf.Elf64_R
     };
 }
 
-pub fn writeEhFrameRelocs(elf_file: *Elf, relocs: *std.array_list.Managed(elf.Elf64_Rela)) !void {
+pub fn writeEhFrameRelocs(elf_file: *Elf, gpa: Allocator, relocs: *std.ArrayList(elf.Elf64_Rela)) !void {
     relocs_log.debug("{x}: .eh_frame", .{
         elf_file.sections.items(.shdr)[elf_file.section_indexes.eh_frame.?].sh_addr,
     });
@@ -432,7 +432,7 @@ pub fn writeEhFrameRelocs(elf_file: *Elf, relocs: *std.array_list.Managed(elf.El
         for (atom_ptr.relocs(elf_file)) |rel| {
             const ref = zo.resolveSymbol(rel.r_sym(), elf_file);
             const target = elf_file.symbol(ref).?;
-            try relocs.append(emitReloc(elf_file, rel.r_offset, target, rel));
+            try relocs.append(gpa, emitReloc(elf_file, rel.r_offset, target, rel));
         }
     }
 
@@ -445,7 +445,7 @@ pub fn writeEhFrameRelocs(elf_file: *Elf, relocs: *std.array_list.Managed(elf.El
                 const ref = object.resolveSymbol(rel.r_sym(), elf_file);
                 const sym = elf_file.symbol(ref).?;
                 const r_offset = cie.address(elf_file) + rel.r_offset - cie.offset;
-                try relocs.append(emitReloc(elf_file, r_offset, sym, rel));
+                try relocs.append(gpa, emitReloc(elf_file, r_offset, sym, rel));
             }
         }
 
@@ -455,13 +455,13 @@ pub fn writeEhFrameRelocs(elf_file: *Elf, relocs: *std.array_list.Managed(elf.El
                 const ref = object.resolveSymbol(rel.r_sym(), elf_file);
                 const sym = elf_file.symbol(ref).?;
                 const r_offset = fde.address(elf_file) + rel.r_offset - fde.offset;
-                try relocs.append(emitReloc(elf_file, r_offset, sym, rel));
+                try relocs.append(gpa, emitReloc(elf_file, r_offset, sym, rel));
             }
         }
     }
 }
 
-pub fn writeEhFrameHdr(elf_file: *Elf, writer: anytype) !void {
+pub fn writeEhFrameHdr(elf_file: *Elf, writer: *std.Io.Writer) !void {
     const endian = elf_file.getTarget().cpu.arch.endian();
     const have_table = haveEhFrameHdrSearchTable(elf_file);
 

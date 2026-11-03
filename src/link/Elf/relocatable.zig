@@ -63,9 +63,8 @@ pub fn flushStaticLib(elf_file: *Elf, comp: *Compilation) !void {
         try zig_object.readFileContents(elf_file);
     }
 
-    var files = std.array_list.Managed(File.Index).init(gpa);
-    defer files.deinit();
-    try files.ensureTotalCapacityPrecise(elf_file.objects.items.len + 1);
+    var files: std.ArrayList(File.Index) = try .initCapacity(gpa, elf_file.objects.items.len + 1);
+    defer files.deinit(gpa);
     if (elf_file.zigObjectPtr()) |zig_object| files.appendAssumeCapacity(zig_object.index);
     for (elf_file.objects.items) |index| files.appendAssumeCapacity(index);
 
@@ -359,14 +358,14 @@ fn allocateAllocSections(elf_file: *Elf) !void {
 fn writeAtoms(elf_file: *Elf) !void {
     const gpa = elf_file.base.comp.gpa;
 
-    var buffer = std.array_list.Managed(u8).init(gpa);
-    defer buffer.deinit();
+    var buffer: std.ArrayList(u8) = .empty;
+    defer buffer.deinit(gpa);
 
     const slice = elf_file.sections.slice();
     for (slice.items(.shdr), slice.items(.atom_list_2)) |shdr, atom_list| {
         if (shdr.sh_type == elf.SHT_NOBITS) continue;
         if (atom_list.atoms.keys().len == 0) continue;
-        try atom_list.writeRelocatable(&buffer, elf_file);
+        try atom_list.writeRelocatable(gpa, &buffer, elf_file);
     }
 }
 
@@ -390,8 +389,8 @@ fn writeSyntheticSections(elf_file: *Elf) !void {
 
         const num_relocs = math.cast(usize, @divExact(shdr.sh_size, shdr.sh_entsize)) orelse
             return error.Overflow;
-        var relocs = try std.array_list.Managed(elf.Elf64_Rela).initCapacity(gpa, num_relocs);
-        defer relocs.deinit();
+        var relocs: std.ArrayList(elf.Elf64_Rela) = try .initCapacity(gpa, num_relocs);
+        defer relocs.deinit(gpa);
 
         for (atom_list.items) |ref| {
             const atom_ptr = elf_file.atom(ref) orelse continue;
@@ -435,9 +434,9 @@ fn writeSyntheticSections(elf_file: *Elf) !void {
         const shdr = slice.items(.shdr)[shndx];
         const num_relocs = math.cast(usize, @divExact(shdr.sh_size, shdr.sh_entsize)) orelse
             return error.Overflow;
-        var relocs = try std.array_list.Managed(elf.Elf64_Rela).initCapacity(gpa, num_relocs);
-        defer relocs.deinit();
-        try eh_frame.writeEhFrameRelocs(elf_file, &relocs);
+        var relocs = try std.ArrayList(elf.Elf64_Rela).initCapacity(gpa, num_relocs);
+        defer relocs.deinit(gpa);
+        try eh_frame.writeEhFrameRelocs(elf_file, gpa, &relocs);
         assert(relocs.items.len == num_relocs);
         // Sort output relocations by r_offset which is usually an expected (and desired) condition
         // by the linkers.

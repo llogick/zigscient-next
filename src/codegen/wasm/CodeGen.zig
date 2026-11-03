@@ -1011,8 +1011,8 @@ fn resolveCallingConventionValues(
     };
     if (cc == .naked) return result;
 
-    var args = std.array_list.Managed(WValue).init(gpa);
-    defer args.deinit();
+    var args: std.ArrayList(WValue) = .empty;
+    defer args.deinit(gpa);
 
     // Check if we store the result as a pointer to the stack rather than
     // by value
@@ -1030,7 +1030,7 @@ fn resolveCallingConventionValues(
                     continue;
                 }
 
-                try args.append(.{ .local = result.local_index });
+                try args.append(gpa, .{ .local = result.local_index });
                 result.local_index += 1;
             }
         },
@@ -1043,17 +1043,17 @@ fn resolveCallingConventionValues(
 
                 switch (abi.classifyType(param_ty, zcu, target)) {
                     .direct, .indirect => {
-                        try args.append(.{ .local = result.local_index });
+                        try args.append(gpa, .{ .local = result.local_index });
                         result.local_index += 1;
                     },
                     .double_i64 => {
-                        try args.append(.{ .local = result.local_index });
-                        try args.append(.{ .local = result.local_index + 1 });
+                        try args.append(gpa, .{ .local = result.local_index });
+                        try args.append(gpa, .{ .local = result.local_index + 1 });
                         result.local_index += 2;
                     },
                     .unrolled => |vector| {
                         for (0..vector.len) |_| {
-                            try args.append(.{ .local = result.local_index });
+                            try args.append(gpa, .{ .local = result.local_index });
                             result.local_index += 1;
                         }
                     },
@@ -1068,7 +1068,7 @@ fn resolveCallingConventionValues(
         result.local_index += 1;
     }
 
-    result.args = try args.toOwnedSlice();
+    result.args = try args.toOwnedSlice(gpa);
     return result;
 }
 
@@ -7578,8 +7578,8 @@ fn airErrorSetHasValue(cg: *CodeGen, inst: Air.Inst.Index) InnerError!void {
     const result = try cg.allocLocal(Type.bool);
 
     const names = error_set_ty.errorSetNames(zcu);
-    var values = try std.array_list.Managed(u32).initCapacity(cg.gpa, names.len);
-    defer values.deinit();
+    var values: std.ArrayList(u32) = try .initCapacity(cg.gpa, names.len);
+    defer values.deinit(cg.gpa);
 
     var lowest: ?u32 = null;
     var highest: ?u32 = null;

@@ -2192,8 +2192,8 @@ pub fn buildOutputType(
             var c_out_mode: ?COutMode = null;
             var out_path: ?[]const u8 = null;
             var is_shared_lib = false;
-            var preprocessor_args = std.array_list.Managed([]const u8).init(arena);
-            var linker_args = std.array_list.Managed([]const u8).init(arena);
+            var preprocessor_args: std.ArrayList([]const u8) = .empty;
+            var linker_args: std.ArrayList([]const u8) = .empty;
             var it = ClangArgIterator.init(arena, all_args);
             var emit_llvm = false;
             var needed = false;
@@ -2439,12 +2439,12 @@ pub fn buildOutputType(
                                 if (mem.findScalar(u8, preprocessor_arg, '=')) |equals_pos| {
                                     const key = preprocessor_arg[0..equals_pos];
                                     const value = preprocessor_arg[equals_pos + 1 ..];
-                                    try preprocessor_args.append(key);
-                                    try preprocessor_args.append(value);
+                                    try preprocessor_args.append(arena, key);
+                                    try preprocessor_args.append(arena, value);
                                     continue;
                                 }
                             }
-                            try preprocessor_args.append(preprocessor_arg);
+                            try preprocessor_args.append(arena, preprocessor_arg);
                         }
                     },
                     .wl => {
@@ -2476,8 +2476,8 @@ pub fn buildOutputType(
                                         continue;
                                     }
 
-                                    try linker_args.append(key);
-                                    try linker_args.append(value);
+                                    try linker_args.append(arena, key);
+                                    try linker_args.append(arena, value);
                                     continue;
                                 }
                             }
@@ -2516,7 +2516,7 @@ pub fn buildOutputType(
                                 cs.lib_search_strategy = .mode_first;
                                 cs.lib_preferred_mode = .dynamic;
                             } else {
-                                try linker_args.append(linker_arg);
+                                try linker_args.append(arena, linker_arg);
                             }
                         }
                     },
@@ -2683,8 +2683,8 @@ pub fn buildOutputType(
                                     continue;
                                 }
 
-                                try linker_args.append(key);
-                                try linker_args.append(value);
+                                try linker_args.append(arena, key);
+                                try linker_args.append(arena, value);
                                 break :blk;
                             }
                         }
@@ -2791,12 +2791,12 @@ pub fn buildOutputType(
                             cs.lib_search_strategy = .mode_first;
                             cs.lib_preferred_mode = .dynamic;
                         } else {
-                            try linker_args.append(it.only_arg);
+                            try linker_args.append(arena, it.only_arg);
                         }
                     },
                     .linker_input_z => {
-                        try linker_args.append("-z");
-                        try linker_args.append(it.only_arg);
+                        try linker_args.append(arena, "-z");
+                        try linker_args.append(arena, it.only_arg);
                     },
                     .lib_dir => try cs.create_module.lib_dir_args.append(arena, it.only_arg),
                     .mcpu => cs.target_mcpu = it.only_arg,
@@ -4382,10 +4382,10 @@ fn createModule(
                     try llvm_to_zig_name.put(llvm_name, feature.name);
                 }
 
-                var mcpu_buffer = std.array_list.Managed(u8).init(gpa);
-                defer mcpu_buffer.deinit();
+                var mcpu_buffer: std.ArrayList(u8) = .empty;
+                defer mcpu_buffer.deinit(gpa);
 
-                try mcpu_buffer.appendSlice(cli_mod.target_mcpu orelse "baseline");
+                try mcpu_buffer.appendSlice(gpa, cli_mod.target_mcpu orelse "baseline");
 
                 for (create_module.llvm_m_args.items) |llvm_m_arg| {
                     if (mem.cutPrefix(u8, llvm_m_arg, "mno-")) |llvm_name| {
@@ -4394,16 +4394,16 @@ fn createModule(
                                 cpu_arch, llvm_name,
                             });
                         };
-                        try mcpu_buffer.append('-');
-                        try mcpu_buffer.appendSlice(zig_name);
+                        try mcpu_buffer.append(gpa, '-');
+                        try mcpu_buffer.appendSlice(gpa, zig_name);
                     } else if (mem.cutPrefix(u8, llvm_m_arg, "m")) |llvm_name| {
                         const zig_name = llvm_to_zig_name.get(llvm_name) orelse {
                             fatal("target architecture {t} has no LLVM CPU feature named {q}", .{
                                 cpu_arch, llvm_name,
                             });
                         };
-                        try mcpu_buffer.append('+');
-                        try mcpu_buffer.appendSlice(zig_name);
+                        try mcpu_buffer.append(gpa, '+');
+                        try mcpu_buffer.appendSlice(gpa, zig_name);
                     } else {
                         unreachable;
                     }
@@ -4975,23 +4975,24 @@ fn runOrTest(
         }),
     };
 
-    var argv = std.array_list.Managed([]const u8).init(gpa);
-    defer argv.deinit();
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(gpa);
 
     if (test_exec_args.len == 0) {
-        try argv.append(exe_path);
+        try argv.append(gpa, exe_path);
         if (arg_mode == .zig_test) {
             try argv.append(
+                gpa,
                 try arena.print("--seed=0x{x}", .{randInt(io, u32)}),
             );
         }
     } else {
         for (test_exec_args) |arg| {
-            try argv.append(arg orelse exe_path);
+            try argv.append(gpa, arg orelse exe_path);
         }
     }
     if (runtime_args_start) |i| {
-        try argv.appendSlice(all_args[i..]);
+        try argv.appendSlice(gpa, all_args[i..]);
     }
     try environ_map.put("ZIG_EXE", self_exe_path);
 
@@ -5131,33 +5132,33 @@ fn runOrTestHotSwap(
     };
     defer gpa.free(exe_path);
 
-    var argv = std.array_list.Managed([]const u8).init(gpa);
-    defer argv.deinit();
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(gpa);
 
     if (test_exec_args.len == 0) {
         // when testing pass the zig_exe_path to argv
         if (arg_mode == .zig_test)
-            try argv.appendSlice(&[_][]const u8{
+            try argv.appendSlice(gpa, &.{
                 exe_path, self_exe_path_or_argv0,
             })
             // when running just pass the current exe
         else
-            try argv.appendSlice(&[_][]const u8{
+            try argv.appendSlice(gpa, &.{
                 exe_path,
             });
     } else {
         for (test_exec_args) |arg| {
             if (arg) |a| {
-                try argv.append(a);
+                try argv.append(gpa, a);
             } else {
-                try argv.appendSlice(&[_][]const u8{
+                try argv.appendSlice(gpa, &.{
                     exe_path, self_exe_path_or_argv0,
                 });
             }
         }
     }
     if (runtime_args_start) |i| {
-        try argv.appendSlice(all_args[i..]);
+        try argv.appendSlice(gpa, all_args[i..]);
     }
 
     if (!process.can_spawn) {
@@ -5754,11 +5755,11 @@ pub const ClangArgIterator = struct {
             // NOTE: The ArgIteratorResponseFile returns tokens from next() that are slices of an
             // internal buffer. This internal buffer is arena allocated, so it is not cleaned up here.
 
-            var resp_arg_list = std.array_list.Managed([]const u8).init(arena);
-            defer resp_arg_list.deinit();
+            var resp_arg_list: std.ArrayList([]const u8) = .empty;
+            defer resp_arg_list.deinit(arena);
             {
                 while (self.arg_iterator_response_file.next()) |token| {
-                    try resp_arg_list.append(token);
+                    try resp_arg_list.append(arena, token);
                 }
 
                 const args = try arena.create(Args);
@@ -5769,7 +5770,7 @@ pub const ClangArgIterator = struct {
                 };
                 self.root_args = args;
             }
-            const resp_arg_slice = try resp_arg_list.toOwnedSlice();
+            const resp_arg_slice = try resp_arg_list.toOwnedSlice(arena);
             self.next_index = 0;
             self.argv = resp_arg_slice;
 

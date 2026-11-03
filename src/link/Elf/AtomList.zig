@@ -127,7 +127,7 @@ pub fn write(list: AtomList, buffer: *std.Io.Writer.Allocating, undefs: anytype,
     buffer.clearRetainingCapacity();
 }
 
-pub fn writeRelocatable(list: AtomList, buffer: *std.array_list.Managed(u8), elf_file: *Elf) !void {
+pub fn writeRelocatable(list: AtomList, allocator: Allocator, buffer: *std.ArrayList(u8), elf_file: *Elf) !void {
     const comp = elf_file.base.comp;
     const gpa = comp.gpa;
     const io = comp.io;
@@ -137,7 +137,7 @@ pub fn writeRelocatable(list: AtomList, buffer: *std.array_list.Managed(u8), elf
     log.debug("writing atoms in section '{s}'", .{elf_file.getShString(osec.sh_name)});
 
     const list_size = math.cast(usize, list.size) orelse return error.Overflow;
-    try buffer.ensureUnusedCapacity(list_size);
+    try buffer.ensureUnusedCapacity(allocator, list_size);
     buffer.appendNTimesAssumeCapacity(0, list_size);
 
     for (list.atoms.keys()) |ref| {

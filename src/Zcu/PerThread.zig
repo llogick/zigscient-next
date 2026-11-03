@@ -1203,8 +1203,8 @@ fn analyzeMemoizedState(
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
 
-    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
-    defer comptime_err_ret_trace.deinit();
+    var comptime_err_ret_trace: std.ArrayList(Zcu.LazySrcLoc) = .empty;
+    defer comptime_err_ret_trace.deinit(gpa);
 
     var sema: Sema = .{
         .pt = pt,
@@ -1319,8 +1319,8 @@ fn analyzeComptimeUnit(pt: Zcu.PerThread, cu_id: InternPool.ComptimeUnit.Id) Zcu
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
 
-    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
-    defer comptime_err_ret_trace.deinit();
+    var comptime_err_ret_trace: std.ArrayList(Zcu.LazySrcLoc) = .empty;
+    defer comptime_err_ret_trace.deinit(gpa);
 
     var sema: Sema = .{
         .pt = pt,
@@ -1446,8 +1446,8 @@ pub fn ensureTypeLayoutUpToDate(
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
 
-    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
-    defer comptime_err_ret_trace.deinit();
+    var comptime_err_ret_trace: std.ArrayList(Zcu.LazySrcLoc) = .empty;
+    defer comptime_err_ret_trace.deinit(gpa);
 
     const file = zcu.namespacePtr(ty.getNamespaceIndex(zcu)).fileScope(zcu);
 
@@ -1574,8 +1574,8 @@ pub fn ensureStructDefaultsUpToDate(
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
 
-    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
-    defer comptime_err_ret_trace.deinit();
+    var comptime_err_ret_trace: std.ArrayList(Zcu.LazySrcLoc) = .empty;
+    defer comptime_err_ret_trace.deinit(gpa);
 
     const file = zcu.namespacePtr(ty.getNamespaceIndex(zcu)).fileScope(zcu);
 
@@ -1742,8 +1742,8 @@ fn analyzeNavVal(
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
 
-    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
-    defer comptime_err_ret_trace.deinit();
+    var comptime_err_ret_trace: std.ArrayList(Zcu.LazySrcLoc) = .empty;
+    defer comptime_err_ret_trace.deinit(gpa);
 
     var sema: Sema = .{
         .pt = pt,
@@ -2119,8 +2119,8 @@ fn analyzeNavType(
     var analysis_arena: std.heap.ArenaAllocator = .init(gpa);
     defer analysis_arena.deinit();
 
-    var comptime_err_ret_trace: std.array_list.Managed(Zcu.LazySrcLoc) = .init(gpa);
-    defer comptime_err_ret_trace.deinit();
+    var comptime_err_ret_trace: std.ArrayList(Zcu.LazySrcLoc) = .empty;
+    defer comptime_err_ret_trace.deinit(gpa);
 
     var sema: Sema = .{
         .pt = pt,
@@ -3370,8 +3370,8 @@ fn analyzeFuncBodyInner(
     var analysis_arena = std.heap.ArenaAllocator.init(gpa);
     defer analysis_arena.deinit();
 
-    var comptime_err_ret_trace = std.array_list.Managed(Zcu.LazySrcLoc).init(gpa);
-    defer comptime_err_ret_trace.deinit();
+    var comptime_err_ret_trace: std.ArrayList(Zcu.LazySrcLoc) = .empty;
+    defer comptime_err_ret_trace.deinit(gpa);
 
     // In the case of a generic function instance, this is the type of the
     // instance, which has comptime parameters elided. In other words, it is

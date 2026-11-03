@@ -1,17 +1,17 @@
 pub fn gcAtoms(elf_file: *Elf) !void {
     const comp = elf_file.base.comp;
     const gpa = comp.gpa;
-    var roots = std.array_list.Managed(*Atom).init(gpa);
-    defer roots.deinit();
-    try collectRoots(&roots, elf_file);
-    mark(roots, elf_file);
+    var roots: std.ArrayList(*Atom) = .empty;
+    defer roots.deinit(gpa);
+    try collectRoots(gpa, &roots, elf_file);
+    mark(roots.items, elf_file);
     prune(elf_file);
 }
 
-fn collectRoots(roots: *std.array_list.Managed(*Atom), elf_file: *Elf) !void {
+fn collectRoots(gpa: Allocator, roots: *std.ArrayList(*Atom), elf_file: *Elf) !void {
     if (elf_file.linkerDefinedPtr()) |obj| {
         if (obj.entrySymbol(elf_file)) |sym| {
-            try markSymbol(sym, roots, elf_file);
+            try markSymbol(sym, gpa, roots, elf_file);
         }
     }
 
@@ -21,7 +21,7 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), elf_file: *Elf) !void {
             const sym = elf_file.symbol(ref) orelse continue;
             if (sym.file(elf_file).?.index() != zo.index) continue;
             if (sym.flags.@"export") {
-                try markSymbol(sym, roots, elf_file);
+                try markSymbol(sym, gpa, roots, elf_file);
             }
         }
     }
@@ -33,13 +33,13 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), elf_file: *Elf) !void {
             const sym = elf_file.symbol(ref) orelse continue;
             if (sym.file(elf_file).?.index() != object.index) continue;
             if (sym.flags.@"export") {
-                try markSymbol(sym, roots, elf_file);
+                try markSymbol(sym, gpa, roots, elf_file);
             }
         }
     }
 
     const atomRoots = struct {
-        fn atomRoots(file: File, rs: anytype, ef: *Elf) !void {
+        fn atomRoots(allocator: Allocator, file: File, rs: *std.ArrayList(*Atom), ef: *Elf) !void {
             for (file.atoms()) |atom_index| {
                 const atom = file.atom(atom_index) orelse continue;
                 if (!atom.alive) continue;
@@ -59,7 +59,7 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), elf_file: *Elf) !void {
                     if (Elf.isCIdentifier(name)) break :blk true;
                     break :blk false;
                 };
-                if (is_gc_root and markAtom(atom)) try rs.append(atom);
+                if (is_gc_root and markAtom(atom)) try rs.append(allocator, atom);
                 if (shdr.sh_flags & elf.SHF_ALLOC == 0) atom.visited = true;
             }
 
@@ -68,27 +68,27 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), elf_file: *Elf) !void {
                 for (cie.relocs(ef)) |rel| {
                     const ref = file.resolveSymbol(rel.r_sym(), ef);
                     const sym = ef.symbol(ref) orelse continue;
-                    try markSymbol(sym, rs, ef);
+                    try markSymbol(sym, allocator, rs, ef);
                 }
             }
         }
     }.atomRoots;
 
     if (elf_file.zigObjectPtr()) |zo| {
-        try atomRoots(zo.asFile(), roots, elf_file);
+        try atomRoots(gpa, zo.asFile(), roots, elf_file);
     }
     for (elf_file.objects.items) |index| {
-        try atomRoots(elf_file.file(index).?, roots, elf_file);
+        try atomRoots(gpa, elf_file.file(index).?, roots, elf_file);
     }
 }
 
-fn markSymbol(sym: *Symbol, roots: *std.array_list.Managed(*Atom), elf_file: *Elf) !void {
+fn markSymbol(sym: *Symbol, gpa: Allocator, roots: *std.ArrayList(*Atom), elf_file: *Elf) !void {
     if (sym.mergeSubsection(elf_file)) |msub| {
         msub.alive = true;
         return;
     }
     const atom = sym.atom(elf_file) orelse return;
-    if (markAtom(atom)) try roots.append(atom);
+    if (markAtom(atom)) try roots.append(gpa, atom);
 }
 
 fn markAtom(atom: *Atom) bool {
@@ -133,8 +133,8 @@ fn markLive(atom: *Atom, elf_file: *Elf) void {
     }
 }
 
-fn mark(roots: std.array_list.Managed(*Atom), elf_file: *Elf) void {
-    for (roots.items) |root| {
+fn mark(roots: []const *Atom, elf_file: *Elf) void {
+    for (roots) |root| {
         gc_track_live_log.debug("root atom({d})", .{root.atom_index});
         markLive(root, elf_file);
     }

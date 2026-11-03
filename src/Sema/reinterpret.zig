@@ -40,7 +40,7 @@ pub fn castMemory(
         .arena = sema.arena,
         .skip_bytes = byte_offset,
         .remaining_bytes = dest_ty.abiSize(zcu),
-        .unpacked = .init(sema.arena),
+        .unpacked = .empty,
     };
     unpack.add(val) catch |err| switch (err) {
         error.ReinterpretDeclRef => return null,
@@ -79,7 +79,7 @@ pub fn spliceMemory(
         .arena = sema.arena,
         .skip_bytes = 0,
         .remaining_bytes = byte_offset,
-        .unpacked = .init(sema.arena),
+        .unpacked = .empty,
     };
     unpack.add(val) catch |err| switch (err) {
         error.ReinterpretDeclRef => return null,
@@ -121,7 +121,8 @@ const UnpackValueBytes = struct {
     arena: Allocator,
     skip_bytes: u64,
     remaining_bytes: u64,
-    unpacked: std.array_list.Managed(InternPool.Index),
+    /// Uses `arena` as its allocator
+    unpacked: std.ArrayList(InternPool.Index),
 
     fn add(unpack: *UnpackValueBytes, val: Value) (error{ReinterpretDeclRef} || Allocator.Error)!void {
         const pt = unpack.pt;
@@ -255,7 +256,7 @@ const UnpackValueBytes = struct {
         }
 
         unpack.remaining_bytes -= size;
-        try unpack.unpacked.append(val.toIntern());
+        try unpack.unpacked.append(unpack.arena, val.toIntern());
     }
 
     fn splitPrimitive(unpack: *UnpackValueBytes, val: Value, offset: u64, len: u64) (error{ReinterpretDeclRef} || Allocator.Error)!void {
@@ -265,7 +266,7 @@ const UnpackValueBytes = struct {
 
         assert(offset + len <= ty.abiSize(zcu));
 
-        try unpack.unpacked.ensureUnusedCapacity(@intCast(len));
+        try unpack.unpacked.ensureUnusedCapacity(unpack.arena, @intCast(len));
         unpack.remaining_bytes -= len;
 
         switch (pt.zcu.intern_pool.indexToKey(val.toIntern())) {

@@ -278,8 +278,8 @@ pub fn writeAdhocSignature(
         .count = 0,
     };
 
-    var blobs = std.array_list.Managed(Blob).init(gpa);
-    defer blobs.deinit();
+    var blobs: std.ArrayList(Blob) = .empty;
+    defer blobs.deinit(gpa);
 
     self.code_directory.inner.execSegBase = opts.exec_seg_base;
     self.code_directory.inner.execSegLimit = opts.exec_seg_limit;
@@ -298,7 +298,7 @@ pub fn writeAdhocSignature(
         .max_file_size = opts.file_size,
     });
 
-    try blobs.append(.{ .code_directory = &self.code_directory });
+    try blobs.append(gpa, .{ .code_directory = &self.code_directory });
     header.length += @sizeOf(macho.BlobIndex);
     header.count += 1;
 
@@ -311,7 +311,7 @@ pub fn writeAdhocSignature(
         Sha256.hash(a.written(), &hash, .{});
         self.code_directory.addSpecialHash(req.slotType(), hash);
 
-        try blobs.append(.{ .requirements = req });
+        try blobs.append(gpa, .{ .requirements = req });
         header.count += 1;
         header.length += @sizeOf(macho.BlobIndex) + req.size();
     }
@@ -323,13 +323,13 @@ pub fn writeAdhocSignature(
         Sha256.hash(a.written(), &hash, .{});
         self.code_directory.addSpecialHash(ents.slotType(), hash);
 
-        try blobs.append(.{ .entitlements = ents });
+        try blobs.append(gpa, .{ .entitlements = ents });
         header.count += 1;
         header.length += @sizeOf(macho.BlobIndex) + ents.size();
     }
 
     if (self.signature) |*sig| {
-        try blobs.append(.{ .signature = sig });
+        try blobs.append(gpa, .{ .signature = sig });
         header.count += 1;
         header.length += @sizeOf(macho.BlobIndex) + sig.size();
     }

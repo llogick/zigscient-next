@@ -102,7 +102,8 @@ reused_operands: std.bit_set.Static(Air.Liveness.bpi - 1) = undefined,
 /// within different branches. Special consideration is needed when a branch
 /// joins with its parent, to make sure all instructions have the same MCValue
 /// across each runtime branch upon joining.
-branch_stack: *std.array_list.Managed(Branch),
+/// Uses `gpa` as its allocator
+branch_stack: *std.ArrayList(Branch),
 
 // Currently set vector properties, null means they haven't been set yet in the function.
 avl: ?u64,
@@ -676,13 +677,13 @@ fn restoreState(func: *Func, state: State, deaths: []const Air.Inst.Index, compt
     var bfa_buf: [stack_buf_len]ExpectedContents = undefined;
     var bfa = if (opts.update_tracking) {} else std.heap.BufferFirstAllocator.init(@ptrCast(&bfa_buf), func.gpa);
 
-    var reg_locks = if (opts.update_tracking) {} else try std.array_list.Managed(RegisterLock).initCapacity(
+    var reg_locks = if (opts.update_tracking) {} else try std.ArrayList(RegisterLock).initCapacity(
         bfa.allocator(),
         @typeInfo(ExpectedContents).array.len,
     );
     defer if (!opts.update_tracking) {
         for (reg_locks.items) |lock| func.register_manager.unlockReg(lock);
-        reg_locks.deinit();
+        reg_locks.deinit(bfa.allocator());
     };
 
     for (0..state.registers.len) |index| {
@@ -722,7 +723,7 @@ fn restoreState(func: *Func, state: State, deaths: []const Air.Inst.Index, compt
                 );
             }
         } else if (target_maybe_inst) |_|
-            try reg_locks.append(func.register_manager.lockRegIndexAssumeUnused(@intCast(index)));
+            try reg_locks.append(bfa.allocator(), func.register_manager.lockRegIndexAssumeUnused(@intCast(index)));
     }
 
     if (opts.update_tracking and std.debug.runtime_safety) {
@@ -754,13 +755,13 @@ pub fn generate(
     const fn_type = Type.fromInterned(func.ty);
     const mod = zcu.navFileScope(func.owner_nav).mod.?;
 
-    var branch_stack = std.array_list.Managed(Branch).init(gpa);
+    var branch_stack: std.ArrayList(Branch) = .empty;
     defer {
         assert(branch_stack.items.len == 1);
         branch_stack.items[0].deinit(gpa);
-        branch_stack.deinit();
+        branch_stack.deinit(gpa);
     }
-    try branch_stack.append(.{});
+    try branch_stack.append(gpa, .{});
 
     var function: Func = .{
         .gpa = gpa,
@@ -4893,9 +4894,9 @@ fn genCall(
         stack_frame_align.* = stack_frame_align.max(needed_call_frame.abi_align);
     }
 
-    var reg_locks = std.array_list.Managed(?RegisterLock).init(allocator);
-    defer reg_locks.deinit();
-    try reg_locks.ensureTotalCapacity(8);
+    var reg_locks: std.ArrayList(?RegisterLock) = .empty;
+    defer reg_locks.deinit(allocator);
+    try reg_locks.ensureTotalCapacity(allocator, 8);
     defer for (reg_locks.items) |reg_lock| if (reg_lock) |lock| func.register_manager.unlockReg(lock);
 
     const frame_indices = try allocator.alloc(FrameIndex, args.len);
@@ -4911,17 +4912,17 @@ fn genCall(
             .none => {},
             .register => |reg| {
                 try func.register_manager.getReg(reg, null);
-                try reg_locks.append(func.register_manager.lockReg(reg));
+                try reg_locks.append(allocator, func.register_manager.lockReg(reg));
             },
             .register_pair => |regs| {
                 for (regs) |reg| try func.register_manager.getReg(reg, null);
-                try reg_locks.appendSlice(&func.register_manager.lockRegs(2, regs));
+                try reg_locks.appendSlice(allocator, &func.register_manager.lockRegs(2, regs));
             },
             .indirect => |reg_off| {
                 frame_index.* = try func.allocFrameIndex(FrameAlloc.initType(arg_ty, zcu));
                 try func.genSetMem(.{ .frame = frame_index.* }, 0, arg_ty, src_arg);
                 try func.register_manager.getReg(reg_off.reg, null);
-                try reg_locks.append(func.register_manager.lockReg(reg_off.reg));
+                try reg_locks.append(allocator, func.register_manager.lockReg(reg_off.reg));
             },
             else => return func.fail("TODO: genCall set arg {s}", .{@tagName(dst_arg)}),
         }
@@ -4936,7 +4937,7 @@ fn genCall(
                 .lea_frame = .{ .index = frame_index, .off = -reg_off.off },
             });
             call_info.return_value.short = .{ .load_frame = .{ .index = frame_index } };
-            try reg_locks.append(func.register_manager.lockReg(reg_off.reg));
+            try reg_locks.append(allocator, func.register_manager.lockReg(reg_off.reg));
         },
         else => unreachable,
     }
@@ -6046,13 +6047,13 @@ fn airAsm(func: *Func, inst: Air.Inst.Index) !void {
     const inputs = unwrapped_asm.inputs;
 
     var result: MCValue = .none;
-    var args = std.array_list.Managed(MCValue).init(func.gpa);
-    try args.ensureTotalCapacity(outputs.len + inputs.len);
+    var args: std.ArrayList(MCValue) = .empty;
+    try args.ensureTotalCapacity(func.gpa, outputs.len + inputs.len);
     defer {
         for (args.items) |arg| if (arg.getReg()) |reg| func.register_manager.unlockReg(.{
             .tracked_index = RegisterManager.indexOfRegIntoTracked(reg) orelse continue,
         });
-        args.deinit();
+        args.deinit(func.gpa);
     }
     var arg_map = std.StringHashMap(u8).init(func.gpa);
     try arg_map.ensureTotalCapacity(@intCast(outputs.len + inputs.len));

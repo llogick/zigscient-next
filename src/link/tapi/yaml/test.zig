@@ -407,11 +407,11 @@ test "duplicate map keys" {
 }
 
 fn testStringify(expected: []const u8, input: anytype) !void {
-    var output = std.array_list.Managed(u8).init(testing.allocator);
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
     defer output.deinit();
 
-    try yaml_mod.stringify(testing.allocator, input, output.writer());
-    try testing.expectEqualStrings(expected, output.items);
+    try yaml_mod.stringify(testing.allocator, input, &output.writer);
+    try testing.expectEqualStrings(expected, output.written());
 }
 
 test "stringify an int" {

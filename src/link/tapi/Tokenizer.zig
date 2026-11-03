@@ -297,12 +297,12 @@ fn testExpected(source: []const u8, expected: []const Token.Id) !void {
         .buffer = source,
     };
 
-    var given = std.array_list.Managed(Token.Id).init(testing.allocator);
-    defer given.deinit();
+    var given: std.ArrayList(Token.Id) = .empty;
+    defer given.deinit(testing.allocator);
 
     while (true) {
         const token = tokenizer.next();
-        try given.append(token.id);
+        try given.append(testing.allocator, token.id);
         if (token.id == .eof) break;
     }
 

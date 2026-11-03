@@ -88,7 +88,8 @@ reused_operands: std.bit_set.Static(Air.Liveness.bpi - 1) = undefined,
 /// within different branches. Special consideration is needed when a branch
 /// joins with its parent, to make sure all instructions have the same MCValue
 /// across each runtime branch upon joining.
-branch_stack: *std.array_list.Managed(Branch),
+/// Uses `gpa` as its allocator
+branch_stack: *std.ArrayList(Branch),
 
 // Key is the block instruction
 blocks: std.AutoHashMapUnmanaged(Air.Inst.Index, BlockData) = .empty,
@@ -275,13 +276,13 @@ pub fn generate(
     const file_scope = zcu.navFileScope(func.owner_nav);
     const target = &file_scope.mod.?.resolved_target.result;
 
-    var branch_stack = std.array_list.Managed(Branch).init(gpa);
+    var branch_stack: std.ArrayList(Branch) = .empty;
     defer {
         assert(branch_stack.items.len == 1);
         branch_stack.items[0].deinit(gpa);
-        branch_stack.deinit();
+        branch_stack.deinit(gpa);
     }
-    try branch_stack.append(.{});
+    try branch_stack.append(gpa, .{});
 
     var function: Self = .{
         .gpa = gpa,
@@ -1469,7 +1470,7 @@ fn airCondBr(self: *Self, inst: Air.Inst.Index) !void {
     const parent_registers = self.register_manager.registers;
     const parent_condition_flags_inst = self.condition_flags_inst;
 
-    try self.branch_stack.append(.{});
+    try self.branch_stack.append(self.gpa, .{});
     errdefer {
         _ = self.branch_stack.pop().?;
     }

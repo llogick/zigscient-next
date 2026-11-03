@@ -71,11 +71,11 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
     var enable_stats = false;
     var fix_precedence = false;
 
-    var input_files = std.array_list.Managed([]const u8).init(gpa);
-    defer input_files.deinit();
+    var input_files: std.ArrayList([]const u8) = .empty;
+    defer input_files.deinit(gpa);
 
-    var excluded_files = std.array_list.Managed([]const u8).init(gpa);
-    defer excluded_files.deinit();
+    var excluded_files: std.ArrayList([]const u8) = .empty;
+    defer excluded_files.deinit(gpa);
 
     {
         var i: usize = 0;
@@ -108,7 +108,7 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
                     }
                     i += 1;
                     const next_arg = args[i];
-                    try excluded_files.append(next_arg);
+                    try excluded_files.append(gpa, next_arg);
                 } else if (mem.eql(u8, arg, "--zon")) {
                     force_zon = true;
                 } else if (mem.eql(u8, arg, "--upgrade")) {
@@ -117,7 +117,7 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
                     fatal("unrecognized parameter: {q}", .{arg});
                 }
             } else {
-                try input_files.append(arg);
+                try input_files.append(gpa, arg);
             }
         }
     }

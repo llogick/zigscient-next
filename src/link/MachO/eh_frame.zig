@@ -292,8 +292,8 @@ pub fn calcSize(macho_file: *MachO) !u32 {
 
     var offset: u32 = 0;
 
-    var cies = std.array_list.Managed(Cie).init(macho_file.base.comp.gpa);
-    defer cies.deinit();
+    var cies: std.ArrayList(Cie) = .empty;
+    defer cies.deinit(macho_file.base.comp.gpa);
 
     for (macho_file.objects.items) |index| {
         const object = macho_file.getFile(index).?.object;
@@ -312,7 +312,7 @@ pub fn calcSize(macho_file: *MachO) !u32 {
             cie.alive = true;
             cie.out_offset = offset;
             offset += cie.getSize();
-            try cies.append(cie.*);
+            try cies.append(macho_file.base.comp.gpa, cie.*);
         }
     }
 

@@ -172,15 +172,15 @@ pub const Value = union(enum) {
 
             return Value{ .map = out_map };
         } else if (node.cast(Node.List)) |list| {
-            var out_list = std.array_list.Managed(Value).init(arena);
-            try out_list.ensureUnusedCapacity(list.values.items.len);
+            var out_list: std.ArrayList(Value) = .empty;
+            try out_list.ensureUnusedCapacity(arena, list.values.items.len);
 
             for (list.values.items) |elem| {
                 const value = try Value.fromNode(arena, tree, elem);
                 out_list.appendAssumeCapacity(value);
             }
 
-            return Value{ .list = try out_list.toOwnedSlice() };
+            return Value{ .list = try out_list.toOwnedSlice(arena) };
         } else if (node.cast(Node.Value)) |value| {
             const raw = tree.getRaw(node.start, node.end);
 
@@ -296,7 +296,8 @@ pub const Value = union(enum) {
 pub const Yaml = struct {
     arena: ArenaAllocator,
     tree: ?Tree = null,
-    docs: std.array_list.Managed(Value),
+    /// Uses `arena.allocator()` as its allocator
+    docs: std.ArrayList(Value),
 
     pub fn deinit(self: *Yaml) void {
         self.arena.deinit();
@@ -309,8 +310,8 @@ pub const Yaml = struct {
         var tree = Tree.init(arena.allocator());
         try tree.parse(source);
 
-        var docs = std.array_list.Managed(Value).init(arena.allocator());
-        try docs.ensureTotalCapacityPrecise(tree.docs.items.len);
+        var docs: std.ArrayList(Value) = .empty;
+        try docs.ensureTotalCapacityPrecise(arena.allocator(), tree.docs.items.len);
 
         for (tree.docs.items) |node| {
             const value = try Value.fromNode(arena.allocator(), &tree, node);

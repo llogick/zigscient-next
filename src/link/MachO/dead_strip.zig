@@ -1,20 +1,20 @@
 pub fn gcAtoms(macho_file: *MachO) !void {
     const gpa = macho_file.base.comp.gpa;
 
-    var objects = try std.array_list.Managed(File.Index).initCapacity(gpa, macho_file.objects.items.len + 1);
-    defer objects.deinit();
+    var objects: std.ArrayList(File.Index) = try .initCapacity(gpa, macho_file.objects.items.len + 1);
+    defer objects.deinit(gpa);
     for (macho_file.objects.items) |index| objects.appendAssumeCapacity(index);
     if (macho_file.internal_object) |index| objects.appendAssumeCapacity(index);
 
-    var roots = std.array_list.Managed(*Atom).init(gpa);
-    defer roots.deinit();
+    var roots: std.ArrayList(*Atom) = .empty;
+    defer roots.deinit(gpa);
 
-    try collectRoots(&roots, objects.items, macho_file);
+    try collectRoots(gpa, &roots, objects.items, macho_file);
     mark(roots.items, objects.items, macho_file);
     prune(objects.items, macho_file);
 }
 
-fn collectRoots(roots: *std.array_list.Managed(*Atom), objects: []const File.Index, macho_file: *MachO) !void {
+fn collectRoots(gpa: Allocator, roots: *std.ArrayList(*Atom), objects: []const File.Index, macho_file: *MachO) !void {
     for (objects) |index| {
         const object = macho_file.getFile(index).?;
         for (object.getSymbols(), 0..) |*sym, i| {
@@ -22,7 +22,7 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), objects: []const File.Ind
             const file = ref.getFile(macho_file) orelse continue;
             if (file.getIndex() != index) continue;
             if (sym.flags.no_dead_strip or (macho_file.base.isDynLib() and sym.visibility == .global))
-                try markSymbol(sym, roots, macho_file);
+                try markSymbol(sym, gpa, roots, macho_file);
         }
 
         for (object.getAtoms()) |atom_index| {
@@ -31,10 +31,10 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), objects: []const File.Ind
             switch (isec.type()) {
                 macho.S_MOD_INIT_FUNC_POINTERS,
                 macho.S_MOD_TERM_FUNC_POINTERS,
-                => if (markAtom(atom)) try roots.append(atom),
+                => if (markAtom(atom)) try roots.append(gpa, atom),
 
                 else => if (isec.isDontDeadStrip() and markAtom(atom)) {
-                    try roots.append(atom);
+                    try roots.append(gpa, atom);
                 },
             }
         }
@@ -46,8 +46,8 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), objects: []const File.Ind
             const cu = object.getUnwindRecord(cu_index);
             if (!cu.alive) continue;
             if (cu.getFde(macho_file)) |fde| {
-                if (fde.getCie(macho_file).getPersonality(macho_file)) |sym| try markSymbol(sym, roots, macho_file);
-            } else if (cu.getPersonality(macho_file)) |sym| try markSymbol(sym, roots, macho_file);
+                if (fde.getCie(macho_file).getPersonality(macho_file)) |sym| try markSymbol(sym, gpa, roots, macho_file);
+            } else if (cu.getPersonality(macho_file)) |sym| try markSymbol(sym, gpa, roots, macho_file);
         }
     }
 
@@ -56,7 +56,7 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), objects: []const File.Ind
             const ref = obj.getSymbolRef(sym_index, macho_file);
             if (ref.getFile(macho_file) != null) {
                 const sym = ref.getSymbol(macho_file).?;
-                try markSymbol(sym, roots, macho_file);
+                try markSymbol(sym, gpa, roots, macho_file);
             }
         }
 
@@ -69,16 +69,16 @@ fn collectRoots(roots: *std.array_list.Managed(*Atom), objects: []const File.Ind
                 const ref = obj.getSymbolRef(idx, macho_file);
                 if (ref.getFile(macho_file) != null) {
                     const sym = ref.getSymbol(macho_file).?;
-                    try markSymbol(sym, roots, macho_file);
+                    try markSymbol(sym, gpa, roots, macho_file);
                 }
             }
         }
     }
 }
 
-fn markSymbol(sym: *Symbol, roots: *std.array_list.Managed(*Atom), macho_file: *MachO) !void {
+fn markSymbol(sym: *Symbol, gpa: Allocator, roots: *std.ArrayList(*Atom), macho_file: *MachO) !void {
     const atom = sym.getAtom(macho_file) orelse return;
-    if (markAtom(atom)) try roots.append(atom);
+    if (markAtom(atom)) try roots.append(gpa, atom);
 }
 
 fn markAtom(atom: *Atom) bool {

@@ -62,7 +62,8 @@ func_index: InternPool.Index,
 func_is_naked: bool,
 /// Used to restore the error return trace when returning a non-error from a function.
 error_return_trace_index_on_fn_entry: Air.Inst.Ref = .none,
-comptime_err_ret_trace: *std.array_list.Managed(LazySrcLoc),
+/// Uses `gpa` as its allocator
+comptime_err_ret_trace: *std.ArrayList(LazySrcLoc),
 /// When semantic analysis needs to know the return type of the function whose body
 /// is being analyzed, this `Type` should be used instead of going through `func`.
 /// This will correctly handle the case of a comptime/inline function call of a
@@ -3543,7 +3544,7 @@ fn resolveComptimeKnownAllocPtr(sema: *Sema, block: *Block, alloc: Air.Inst.Ref,
 
     // Whilst constructing our mapping, we will also initialize optional and error union payloads when
     // we encounter the corresponding pointers. For this reason, the ordering of `to_map` matters.
-    var to_map = try std.array_list.Managed(Air.Inst.Index).initCapacity(sema.arena, stores.len);
+    var to_map: std.ArrayList(Air.Inst.Index) = try .initCapacity(sema.arena, stores.len);
 
     for (stores) |store_inst_idx| {
         const store_inst = sema.air_instructions.get(@backingInt(store_inst_idx));
@@ -3630,7 +3631,7 @@ fn resolveComptimeKnownAllocPtr(sema: *Sema, block: *Block, alloc: Air.Inst.Ref,
         const decl_parent_ptr = ptr_mapping.get(air_parent_ptr.toIndex().?) orelse {
             // Resolve the parent pointer first.
             // Note that we add in what seems like the wrong order, because we're popping from the end of this array.
-            try to_map.appendSlice(&.{ air_ptr, air_parent_ptr.toIndex().? });
+            try to_map.appendSlice(sema.arena, &.{ air_ptr, air_parent_ptr.toIndex().? });
             continue;
         };
         const new_ptr_ty = tmp_air.typeOfIndex(air_ptr, &zcu.intern_pool).toIntern();
@@ -17261,13 +17262,13 @@ fn typeInfoDecls(
     const zcu = pt.zcu;
     const gpa = sema.gpa;
 
-    var decl_vals = std.array_list.Managed(InternPool.Index).init(gpa);
-    defer decl_vals.deinit();
+    var decl_vals: std.ArrayList(InternPool.Index) = .empty;
+    defer decl_vals.deinit(gpa);
 
     var seen_namespaces = std.AutoHashMap(*Namespace, void).init(gpa);
     defer seen_namespaces.deinit();
 
-    try sema.typeInfoNamespaceDecls(opt_namespace, &decl_vals, &seen_namespaces);
+    try sema.typeInfoNamespaceDecls(opt_namespace, gpa, &decl_vals, &seen_namespaces);
 
     const array_decl_ty = try pt.arrayType(.{
         .len = decl_vals.items.len,
@@ -17299,7 +17300,8 @@ fn typeInfoDecls(
 fn typeInfoNamespaceDecls(
     sema: *Sema,
     opt_namespace_index: InternPool.OptionalNamespaceIndex,
-    decl_vals: *std.array_list.Managed(InternPool.Index),
+    gpa: Allocator,
+    decl_vals: *std.ArrayList(InternPool.Index),
     seen_namespaces: *std.AutoHashMap(*Namespace, void),
 ) !void {
     const pt = sema.pt;
@@ -17350,7 +17352,7 @@ fn typeInfoNamespaceDecls(
                 },
             });
         };
-        try decl_vals.append(name_val);
+        try decl_vals.append(gpa, name_val);
     }
 }
 
@@ -18405,7 +18407,7 @@ fn analyzeRet(
         inlining.comptime_result = operand;
 
         if (sema.fn_ret_ty.isError(zcu) and ret_val.getErrorName(zcu) != .none) {
-            try sema.comptime_err_ret_trace.append(src);
+            try sema.comptime_err_ret_trace.append(sema.gpa, src);
         }
         return error.ComptimeReturn;
     }

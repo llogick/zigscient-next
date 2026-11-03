@@ -121,9 +121,8 @@ pub fn flushStaticLib(macho_file: *MachO, comp: *Compilation) link.Error!void {
         try zo.readFileContents(macho_file);
     }
 
-    var files = std.array_list.Managed(File.Index).init(gpa);
-    defer files.deinit();
-    try files.ensureTotalCapacityPrecise(macho_file.objects.items.len + 1);
+    var files: std.ArrayList(File.Index) = try .initCapacity(gpa, macho_file.objects.items.len + 1);
+    defer files.deinit(gpa);
     if (macho_file.getZigObject()) |zo| files.appendAssumeCapacity(zo.index);
     for (macho_file.objects.items) |index| files.appendAssumeCapacity(index);
 
@@ -394,8 +393,8 @@ fn calcSymtabSize(macho_file: *MachO) error{OutOfMemory}!void {
     var nimports: u32 = 0;
     var strsize: u32 = 1;
 
-    var objects = try std.array_list.Managed(File.Index).initCapacity(gpa, macho_file.objects.items.len + 1);
-    defer objects.deinit();
+    var objects: std.ArrayList(File.Index) = try .initCapacity(gpa, macho_file.objects.items.len + 1);
+    defer objects.deinit(gpa);
     if (macho_file.getZigObject()) |zo| objects.appendAssumeCapacity(zo.index);
     objects.appendSliceAssumeCapacity(macho_file.objects.items);
 

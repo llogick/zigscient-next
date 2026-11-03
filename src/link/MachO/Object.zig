@@ -227,8 +227,8 @@ pub fn parse(self: *Object, macho_file: *MachO) !void {
         }
     };
 
-    var nlists = try std.array_list.Managed(NlistIdx).initCapacity(gpa, self.symtab.items(.nlist).len);
-    defer nlists.deinit();
+    var nlists: std.ArrayList(NlistIdx) = try .initCapacity(gpa, self.symtab.items(.nlist).len);
+    defer nlists.deinit(gpa);
     for (self.symtab.items(.nlist), 0..) |nlist, i| {
         if (nlist.n_type.bits.is_stab != 0 or nlist.n_type.bits.type != .sect) continue;
         nlists.appendAssumeCapacity(.{ .nlist = nlist, .idx = i });
@@ -684,8 +684,8 @@ pub fn resolveLiterals(self: *Object, lp: *MachO.LiteralPool, macho_file: *MachO
     const gpa = comp.gpa;
     const file = macho_file.getFileHandle(self.file_handle);
 
-    var buffer = std.array_list.Managed(u8).init(gpa);
-    defer buffer.deinit();
+    var buffer: std.ArrayList(u8) = .empty;
+    defer buffer.deinit(gpa);
 
     var sections_data = std.AutoHashMap(u32, []const u8).init(gpa);
     try sections_data.ensureTotalCapacity(@intCast(self.sections.items(.header).len));
@@ -731,8 +731,7 @@ pub fn resolveLiterals(self: *Object, lp: *MachO.LiteralPool, macho_file: *MachO
                 };
                 const addend = try macho_file.cast(u32, rel.addend);
                 const target_size = try macho_file.cast(usize, target.size);
-                try buffer.ensureUnusedCapacity(target_size);
-                buffer.resize(target_size) catch unreachable;
+                try buffer.resize(gpa, target_size);
                 const gop = try sections_data.getOrPut(target.n_sect);
                 if (!gop.found_existing) {
                     gop.value_ptr.* = try self.readSectionData(gpa, io, file, @intCast(target.n_sect));

@@ -545,61 +545,60 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
         break :p try p.toString(arena);
     };
 
-    var argv = std.array_list.Managed([]const u8).init(arena);
+    var argv: std.ArrayList([]const u8) = .empty;
 
-    try argv.append("zig");
+    try argv.append(arena, "zig");
 
     if (self.base.isStaticLib()) {
-        try argv.append("ar");
+        try argv.append(arena, "ar");
     } else {
-        try argv.append("ld");
+        try argv.append(arena, "ld");
     }
 
     if (self.base.isObject()) {
-        try argv.append("-r");
+        try argv.append(arena, "-r");
     }
 
     if (self.base.isRelocatable()) {
         for (comp.link_inputs) |link_input| switch (link_input) {
-            .object, .archive => |obj| try argv.append(try obj.path.toString(arena)),
-            .res => |res| try argv.append(try res.path.toString(arena)),
-            .dso => |dso| try argv.append(try dso.path.toString(arena)),
-            .tbd => |tbd| try argv.append(try tbd.path.toString(arena)),
+            .object, .archive => |obj| try argv.append(arena, try obj.path.toString(arena)),
+            .res => |res| try argv.append(arena, try res.path.toString(arena)),
+            .dso => |dso| try argv.append(arena, try dso.path.toString(arena)),
+            .tbd => |tbd| try argv.append(arena, try tbd.path.toString(arena)),
         };
 
         for (comp.c_objects.items) |c_object| {
-            try argv.append(try c_object.status.success.object_path.toString(arena));
+            try argv.append(arena, try c_object.status.success.object_path.toString(arena));
         }
 
         if (zcu_obj_path) |p| {
-            try argv.append(p);
+            try argv.append(arena, p);
         }
     } else {
         if (!self.base.isStatic()) {
-            try argv.append("-dynamic");
+            try argv.append(arena, "-dynamic");
         }
 
         if (self.base.isDynLib()) {
-            try argv.append("-dylib");
+            try argv.append(arena, "-dylib");
 
             if (self.install_name) |install_name| {
-                try argv.append("-install_name");
-                try argv.append(install_name);
+                try argv.appendSlice(arena, &.{ "-install_name", install_name });
             }
         }
 
-        try argv.append("-platform_version");
-        try argv.append(@tagName(self.platform.os_tag));
-        try argv.append(try std.fmt.allocPrint(arena, "{d}.{d}.{d}", .{
+        try argv.append(arena, "-platform_version");
+        try argv.append(arena, @tagName(self.platform.os_tag));
+        try argv.append(arena, try std.fmt.allocPrint(arena, "{d}.{d}.{d}", .{
             self.platform.version.major,
             self.platform.version.minor,
             self.platform.version.patch,
         }));
 
         if (self.sdk_version) |ver| {
-            try argv.append(try std.fmt.allocPrint(arena, "{d}.{d}", .{ ver.major, ver.minor }));
+            try argv.append(arena, try std.fmt.allocPrint(arena, "{d}.{d}", .{ ver.major, ver.minor }));
         } else {
-            try argv.append(try std.fmt.allocPrint(arena, "{d}.{d}.{d}", .{
+            try argv.append(arena, try std.fmt.allocPrint(arena, "{d}.{d}.{d}", .{
                 self.platform.version.major,
                 self.platform.version.minor,
                 self.platform.version.patch,
@@ -607,93 +606,90 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
         }
 
         if (comp.sysroot) |syslibroot| {
-            try argv.append("-syslibroot");
-            try argv.append(syslibroot);
+            try argv.appendSlice(arena, &.{ "-syslibroot", syslibroot });
         }
 
         for (self.rpath_list) |rpath| {
-            try argv.appendSlice(&.{ "-rpath", rpath });
+            try argv.appendSlice(arena, &.{ "-rpath", rpath });
         }
 
         if (self.pagezero_size) |size| {
-            try argv.append("-pagezero_size");
-            try argv.append(try std.fmt.allocPrint(arena, "0x{x}", .{size}));
+            try argv.append(arena, "-pagezero_size");
+            try argv.append(arena, try std.fmt.allocPrint(arena, "0x{x}", .{size}));
         }
 
         if (self.headerpad_size) |size| {
-            try argv.append("-headerpad_size");
-            try argv.append(try std.fmt.allocPrint(arena, "0x{x}", .{size}));
+            try argv.append(arena, "-headerpad_size");
+            try argv.append(arena, try std.fmt.allocPrint(arena, "0x{x}", .{size}));
         }
 
         if (self.headerpad_max_install_names) {
-            try argv.append("-headerpad_max_install_names");
+            try argv.append(arena, "-headerpad_max_install_names");
         }
 
         if (self.base.gc_sections) {
-            try argv.append("-dead_strip");
+            try argv.append(arena, "-dead_strip");
         }
 
         if (self.dead_strip_dylibs) {
-            try argv.append("-dead_strip_dylibs");
+            try argv.append(arena, "-dead_strip_dylibs");
         }
 
         if (self.force_load_objc) {
-            try argv.append("-ObjC");
+            try argv.append(arena, "-ObjC");
         }
 
         if (self.discard_local_symbols) {
-            try argv.append("-x");
+            try argv.append(arena, "-x");
         }
 
         if (self.entry_name) |entry_name| {
-            try argv.appendSlice(&.{ "-e", entry_name });
+            try argv.appendSlice(arena, &.{ "-e", entry_name });
         }
 
-        try argv.append("-o");
-        try argv.append(full_out_path);
+        try argv.appendSlice(arena, &.{ "-o", full_out_path });
 
         if (self.base.isDynLib() and self.base.allow_shlib_undefined) {
-            try argv.append("-undefined");
-            try argv.append("dynamic_lookup");
+            try argv.appendSlice(arena, &.{ "-undefined", "dynamic_lookup" });
         }
 
         for (comp.link_inputs) |link_input| switch (link_input) {
             .dso, .tbd => continue, // handled below
             .res => unreachable, // windows only
             .object, .archive => |obj| {
-                if (obj.must_link) try argv.append("-force_load"); // TODO: verify this
-                try argv.append(try obj.path.toString(arena));
+                if (obj.must_link) try argv.append(arena, "-force_load"); // TODO: verify this
+                try argv.append(arena, try obj.path.toString(arena));
             },
         };
 
         for (comp.c_objects.items) |c_object| {
-            try argv.append(try c_object.status.success.object_path.toString(arena));
+            try argv.append(arena, try c_object.status.success.object_path.toString(arena));
         }
 
         if (zcu_obj_path) |p| {
-            try argv.append(p);
+            try argv.append(arena, p);
         }
 
         if (comp.config.any_sanitize_thread) {
             const path = try comp.tsan_lib.?.full_object_path.toString(arena);
-            try argv.appendSlice(&.{ path, "-rpath", std.fs.path.dirname(path) orelse "." });
+            try argv.appendSlice(arena, &.{ path, "-rpath", std.fs.path.dirname(path) orelse "." });
         }
 
         if (comp.config.any_fuzz) {
-            try argv.append(try comp.fuzzer_lib.?.full_object_path.toString(arena));
+            try argv.append(arena, try comp.fuzzer_lib.?.full_object_path.toString(arena));
         }
 
         for (self.lib_directories) |lib_directory| {
             // TODO delete this, directories must instead be resolved by the frontend
             const arg = try std.fmt.allocPrint(arena, "-L{s}", .{lib_directory.path orelse "."});
-            try argv.append(arg);
+            try argv.append(arena, arg);
         }
 
         for (comp.link_inputs) |link_input| switch (link_input) {
             .object, .archive => continue, // handled above
             .res => unreachable, // windows only
             inline .dso, .tbd => |dso| {
-                try argv.ensureUnusedCapacity(2);
+                try argv.ensureUnusedCapacity(arena, 2);
                 if (dso.needed) {
                     argv.appendAssumeCapacity("-needed-l");
                 } else if (dso.weak) {
@@ -706,24 +702,23 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
         };
 
         for (comp.framework_dirs) |f_dir| {
-            try argv.append("-F");
-            try argv.append(f_dir.path orelse ".");
+            try argv.appendSlice(arena, &.{ "-F", f_dir.path orelse "." });
         }
 
         if (comp.config.link_libcpp) {
-            try argv.appendSlice(&.{
+            try argv.appendSlice(arena, &.{
                 try comp.libcxxabi_static_lib.?.full_object_path.toString(arena),
                 try comp.libcxx_static_lib.?.full_object_path.toString(arena),
             });
         }
 
-        try argv.append("-lSystem");
+        try argv.append(arena, "-lSystem");
 
-        if (comp.zigc_static_lib) |lib| try argv.append(try lib.full_object_path.toString(arena));
-        if (comp.compiler_rt_lib) |lib| try argv.append(try lib.full_object_path.toString(arena));
-        if (comp.compiler_rt_obj) |obj| try argv.append(try obj.full_object_path.toString(arena));
-        if (comp.ubsan_rt_lib) |lib| try argv.append(try lib.full_object_path.toString(arena));
-        if (comp.ubsan_rt_obj) |obj| try argv.append(try obj.full_object_path.toString(arena));
+        if (comp.zigc_static_lib) |lib| try argv.append(arena, try lib.full_object_path.toString(arena));
+        if (comp.compiler_rt_lib) |lib| try argv.append(arena, try lib.full_object_path.toString(arena));
+        if (comp.compiler_rt_obj) |obj| try argv.append(arena, try obj.full_object_path.toString(arena));
+        if (comp.ubsan_rt_lib) |lib| try argv.append(arena, try lib.full_object_path.toString(arena));
+        if (comp.ubsan_rt_obj) |obj| try argv.append(arena, try obj.full_object_path.toString(arena));
     }
 
     try Compilation.dumpArgv(io, argv.items);
@@ -953,8 +948,8 @@ fn isHoisted(self: *MachO, install_name: []const u8) bool {
 fn accessLibPath(
     arena: Allocator,
     io: Io,
-    test_path: *std.array_list.Managed(u8),
-    checked_paths: *std.array_list.Managed([]const u8),
+    test_path: *std.ArrayList(u8),
+    checked_paths: *std.ArrayList([]const u8),
     search_dir: []const u8,
     name: []const u8,
 ) !bool {
@@ -962,8 +957,8 @@ fn accessLibPath(
 
     for (&[_][]const u8{ ".tbd", ".dylib", "" }) |ext| {
         test_path.clearRetainingCapacity();
-        try test_path.print("{s}" ++ sep ++ "lib{s}{s}", .{ search_dir, name, ext });
-        try checked_paths.append(try arena.dupe(u8, test_path.items));
+        try test_path.print(arena, "{s}" ++ sep ++ "lib{s}{s}", .{ search_dir, name, ext });
+        try checked_paths.append(arena, try arena.dupe(u8, test_path.items));
         Io.Dir.cwd().access(io, test_path.items, .{}) catch |err| switch (err) {
             error.FileNotFound => continue,
             else => |e| return e,
@@ -977,8 +972,8 @@ fn accessLibPath(
 fn accessFrameworkPath(
     arena: Allocator,
     io: Io,
-    test_path: *std.array_list.Managed(u8),
-    checked_paths: *std.array_list.Managed([]const u8),
+    test_path: *std.ArrayList(u8),
+    checked_paths: *std.ArrayList([]const u8),
     search_dir: []const u8,
     name: []const u8,
 ) !bool {
@@ -986,13 +981,13 @@ fn accessFrameworkPath(
 
     for (&[_][]const u8{ ".tbd", ".dylib", "" }) |ext| {
         test_path.clearRetainingCapacity();
-        try test_path.print("{s}" ++ sep ++ "{s}.framework" ++ sep ++ "{s}{s}", .{
+        try test_path.print(arena, "{s}" ++ sep ++ "{s}.framework" ++ sep ++ "{s}{s}", .{
             search_dir,
             name,
             name,
             ext,
         });
-        try checked_paths.append(try arena.dupe(u8, test_path.items));
+        try checked_paths.append(arena, try arena.dupe(u8, test_path.items));
         Io.Dir.cwd().access(io, test_path.items, .{}) catch |err| switch (err) {
             error.FileNotFound => continue,
             else => |e| return e,
@@ -1025,9 +1020,8 @@ fn parseDependentDylibs(self: *MachO) !void {
     while (index < self.dylibs.items.len) : (index += 1) {
         const dylib_index = self.dylibs.items[index];
 
-        var dependents = std.array_list.Managed(File.Index).init(gpa);
-        defer dependents.deinit();
-        try dependents.ensureTotalCapacityPrecise(self.getFile(dylib_index).?.dylib.dependents.items.len);
+        var dependents: std.ArrayList(File.Index) = try .initCapacity(gpa, self.getFile(dylib_index).?.dylib.dependents.items.len);
+        defer dependents.deinit(gpa);
 
         const is_weak = self.getFile(dylib_index).?.dylib.weak;
         for (self.getFile(dylib_index).?.dylib.dependents.items) |id| {
@@ -1038,8 +1032,8 @@ fn parseDependentDylibs(self: *MachO) !void {
             // 3. If name is a relative path, substitute @rpath, @loader_path, @executable_path with
             //    dependees list of rpaths, and search there.
             // 4. Finally, just search the provided relative path directly in CWD.
-            var test_path = std.array_list.Managed(u8).init(arena);
-            var checked_paths = std.array_list.Managed([]const u8).init(arena);
+            var test_path: std.ArrayList(u8) = .empty;
+            var checked_paths: std.ArrayList([]const u8) = .empty;
 
             const full_path = full_path: {
                 {
@@ -1065,11 +1059,11 @@ fn parseDependentDylibs(self: *MachO) !void {
                     for (&[_][]const u8{ ".tbd", ".dylib", "" }) |ext| {
                         test_path.clearRetainingCapacity();
                         if (comp.sysroot) |root| {
-                            try test_path.print("{s}" ++ fs.path.sep_str ++ "{s}{s}", .{ root, path, ext });
+                            try test_path.print(arena, "{s}" ++ fs.path.sep_str ++ "{s}{s}", .{ root, path, ext });
                         } else {
-                            try test_path.print("{s}{s}", .{ path, ext });
+                            try test_path.print(arena, "{s}{s}", .{ path, ext });
                         }
-                        try checked_paths.append(try arena.dupe(u8, test_path.items));
+                        try checked_paths.append(arena, try arena.dupe(u8, test_path.items));
                         Io.Dir.cwd().access(io, test_path.items, .{}) catch |err| switch (err) {
                             error.FileNotFound => continue,
                             else => |e| return e,
@@ -1083,7 +1077,7 @@ fn parseDependentDylibs(self: *MachO) !void {
                     for (self.getFile(dylib.umbrella).?.dylib.rpaths.keys()) |rpath| {
                         const prefix = eatPrefix(rpath, "@loader_path/") orelse rpath;
                         const rel_path = try fs.path.join(arena, &.{ prefix, path });
-                        try checked_paths.append(rel_path);
+                        try checked_paths.append(arena, rel_path);
                         var buffer: [fs.max_path_bytes]u8 = undefined;
                         // TODO don't use realpath
                         const full_path = buffer[0 .. Io.Dir.realPathFileAbsolute(io, rel_path, &buffer) catch continue];
@@ -1097,7 +1091,7 @@ fn parseDependentDylibs(self: *MachO) !void {
                     return error.Unhandled;
                 }
 
-                try checked_paths.append(try arena.dupe(u8, id.name));
+                try checked_paths.append(arena, try arena.dupe(u8, id.name));
                 var buffer: [fs.max_path_bytes]u8 = undefined;
                 // TODO don't use realpath
                 if (Io.Dir.realPathFileAbsolute(io, id.name, &buffer)) |full_path_n| {
@@ -1461,8 +1455,8 @@ fn reportUndefs(self: *MachO) !void {
     const max_notes = 4;
 
     // We will sort by name, and then by file to ensure deterministic output.
-    var keys = try std.array_list.Managed(SymbolResolver.Index).initCapacity(gpa, self.undefs.keys().len);
-    defer keys.deinit();
+    var keys: std.ArrayList(SymbolResolver.Index) = try .initCapacity(gpa, self.undefs.keys().len);
+    defer keys.deinit(gpa);
     keys.appendSliceAssumeCapacity(self.undefs.keys());
     self.sortGlobalSymbolsByName(keys.items);
 
@@ -1726,8 +1720,8 @@ pub fn sortSections(self: *MachO) !void {
 
     const gpa = self.base.comp.gpa;
 
-    var entries = try std.array_list.Managed(Entry).initCapacity(gpa, self.sections.slice().len);
-    defer entries.deinit();
+    var entries: std.ArrayList(Entry) = try .initCapacity(gpa, self.sections.slice().len);
+    defer entries.deinit(gpa);
     for (0..self.sections.slice().len) |index| {
         entries.appendAssumeCapacity(.{ .index = @intCast(index) });
     }
@@ -2036,8 +2030,8 @@ fn initSegments(self: *MachO) !void {
         }
     };
 
-    var entries = try std.array_list.Managed(Entry).initCapacity(gpa, self.segments.items.len);
-    defer entries.deinit();
+    var entries: std.ArrayList(Entry) = try .initCapacity(gpa, self.segments.items.len);
+    defer entries.deinit(gpa);
     for (0..self.segments.items.len) |index| {
         entries.appendAssumeCapacity(.{ .index = @intCast(index) });
     }
@@ -2660,9 +2654,8 @@ fn calcSymtabSize(self: *MachO) !void {
 
     const gpa = self.base.comp.gpa;
 
-    var files = std.array_list.Managed(File.Index).init(gpa);
-    defer files.deinit();
-    try files.ensureTotalCapacityPrecise(self.objects.items.len + self.dylibs.items.len + 2);
+    var files: std.ArrayList(File.Index) = try .initCapacity(gpa, self.objects.items.len + self.dylibs.items.len + 2);
+    defer files.deinit(gpa);
     if (self.zig_object) |index| files.appendAssumeCapacity(index);
     for (self.objects.items) |index| files.appendAssumeCapacity(index);
     for (self.dylibs.items) |index| files.appendAssumeCapacity(index);
@@ -3787,8 +3780,8 @@ fn reportDuplicates(self: *MachO) error{ HasDuplicates, OutOfMemory }!void {
     const max_notes = 3;
 
     // We will sort by name, and then by file to ensure deterministic output.
-    var keys = try std.array_list.Managed(SymbolResolver.Index).initCapacity(gpa, self.dupes.keys().len);
-    defer keys.deinit();
+    var keys: std.ArrayList(SymbolResolver.Index) = try .initCapacity(gpa, self.dupes.keys().len);
+    defer keys.deinit(gpa);
     keys.appendSliceAssumeCapacity(self.dupes.keys());
     self.sortGlobalSymbolsByName(keys.items);
 
@@ -4217,10 +4210,7 @@ pub const Platform = struct {
 
     /// Caller owns the memory.
     pub fn allocPrintTarget(plat: Platform, gpa: Allocator, cpu_arch: std.Target.Cpu.Arch) error{OutOfMemory}![]u8 {
-        var buffer = std.array_list.Managed(u8).init(gpa);
-        defer buffer.deinit();
-        try buffer.writer().print("{f}", .{plat.fmtTarget(cpu_arch)});
-        return buffer.toOwnedSlice();
+        return gpa.print("{f}", .{plat.fmtTarget(cpu_arch)});
     }
 
     pub fn eqlTarget(plat: Platform, other: Platform) bool {

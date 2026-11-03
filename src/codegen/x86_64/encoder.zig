@@ -1207,15 +1207,15 @@ const TestEncode = struct {
 };
 
 test "encode" {
-    var buf = std.array_list.Managed(u8).init(testing.allocator);
+    var buf: std.Io.Writer.Allocating = .init(testing.allocator);
     defer buf.deinit();
 
     const inst: Instruction = try .new(.none, .mov, &.{
         .{ .reg = .rbx },
         .{ .imm = .u(4) },
     });
-    try inst.encode(buf.writer(), .{});
-    try testing.expectEqualSlices(u8, &.{ 0x48, 0xc7, 0xc3, 0x4, 0x0, 0x0, 0x0 }, buf.items);
+    try inst.encode(&buf.writer, .{});
+    try testing.expectEqualSlices(u8, &.{ 0x48, 0xc7, 0xc3, 0x4, 0x0, 0x0, 0x0 }, buf.written());
 }
 
 test "lower I encoding" {
@@ -2638,10 +2638,10 @@ test "assemble" {
     // zig fmt: on
 
     var as = Assembler.init(input);
-    var output = std.array_list.Managed(u8).init(testing.allocator);
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
     defer output.deinit();
-    try as.assemble(output.writer());
-    try expectEqualHexStrings(expected, output.items, input);
+    try as.assemble(&output.writer);
+    try expectEqualHexStrings(expected, output.written(), input);
 }
 
 test "assemble - Jcc" {
@@ -2682,9 +2682,9 @@ test "assemble - Jcc" {
         const input = @tagName(mnemonic[0]) ++ " 0x0";
         const expected = [_]u8{ 0x0f, mnemonic[1], 0x0, 0x0, 0x0, 0x0 };
         var as = Assembler.init(input);
-        var output = std.array_list.Managed(u8).init(testing.allocator);
+        var output: std.Io.Writer.Allocating = .init(testing.allocator);
         defer output.deinit();
-        try as.assemble(output.writer());
+        try as.assemble(&output.writer);
         try expectEqualHexStrings(&expected, output.items, input);
     }
 }
@@ -2727,9 +2727,9 @@ test "assemble - SETcc" {
         const input = @tagName(mnemonic[0]) ++ " al";
         const expected = [_]u8{ 0x0f, mnemonic[1], 0xC0 };
         var as = Assembler.init(input);
-        var output = std.array_list.Managed(u8).init(testing.allocator);
+        var output: std.Io.Writer.Allocating = .init(testing.allocator);
         defer output.deinit();
-        try as.assemble(output.writer());
+        try as.assemble(&output.writer);
         try expectEqualHexStrings(&expected, output.items, input);
     }
 }
@@ -2772,9 +2772,9 @@ test "assemble - CMOVcc" {
         const input = @tagName(mnemonic[0]) ++ " rax, rbx";
         const expected = [_]u8{ 0x48, 0x0f, mnemonic[1], 0xC3 };
         var as = Assembler.init(input);
-        var output = std.array_list.Managed(u8).init(testing.allocator);
+        var output: std.Io.Writer.Allocating = .init(testing.allocator);
         defer output.deinit();
-        try as.assemble(output.writer());
+        try as.assemble(&output.writer);
         try expectEqualHexStrings(&expected, output.items, input);
     }
 }

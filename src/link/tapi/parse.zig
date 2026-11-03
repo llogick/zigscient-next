@@ -231,8 +231,8 @@ pub const Tree = struct {
 
     pub fn parse(self: *Tree, source: []const u8) !void {
         var tokenizer = Tokenizer{ .buffer = source };
-        var tokens = std.array_list.Managed(Token).init(self.allocator);
-        defer tokens.deinit();
+        var tokens: std.ArrayList(Token) = .empty;
+        defer tokens.deinit(self.allocator);
 
         var line: usize = 0;
         var prev_line_last_col: usize = 0;
@@ -240,7 +240,7 @@ pub const Tree = struct {
         while (true) {
             const token = tokenizer.next();
             const tok_id = tokens.items.len;
-            try tokens.append(token);
+            try tokens.append(self.allocator, token);
 
             try self.line_cols.putNoClobber(tok_id, .{
                 .line = line,
@@ -258,7 +258,7 @@ pub const Tree = struct {
         }
 
         self.source = source;
-        self.tokens = try tokens.toOwnedSlice();
+        self.tokens = try tokens.toOwnedSlice(self.allocator);
 
         var it = TokenIterator{ .buffer = self.tokens };
         var parser = Parser{

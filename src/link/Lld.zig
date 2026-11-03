@@ -366,13 +366,13 @@ fn linkAsArchive(lld: *Lld, arena: Allocator) link.Error!void {
     }
 }
 
-fn addCommonArgs(argv: *std.array_list.Managed([]const u8), coff: bool) !void {
+fn addCommonArgs(gpa: Allocator, argv: *std.ArrayList([]const u8), coff: bool) !void {
     if (builtin.os.tag == .netbsd) {
         // NetBSD 10.1's `malloc` appears to have some nasty bugs that occur
         // when doing parallel linking in LLD, manifesting as input and/or
         // output section memory randomly being unmapped. So just don't do
         // parallel linking for now.
-        try argv.append(if (coff) "-threads:1" else "--threads=1");
+        try argv.append(gpa, if (coff) "-threads:1" else "--threads=1");
     }
 }
 
@@ -431,23 +431,22 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
         );
     } else {
         // Create an LLD command line and invoke it.
-        var argv = std.array_list.Managed([]const u8).init(gpa);
-        defer argv.deinit();
+        var argv: std.ArrayList([]const u8) = .empty;
+        defer argv.deinit(gpa);
         // We will invoke ourselves as a child process to gain access to LLD.
         // This is necessary because LLD does not behave properly as a library -
         // it calls exit() and does not reset all global data between invocations.
         const linker_command = "lld-link";
-        try argv.appendSlice(&[_][]const u8{ comp.self_exe_path.?, linker_command });
-        try addCommonArgs(&argv, true);
+        try argv.appendSlice(gpa, &.{ comp.self_exe_path.?, linker_command });
+        try addCommonArgs(gpa, &argv, true);
 
         if (target.isMinGW()) {
-            try argv.append("-lldmingw");
+            try argv.append(gpa, "-lldmingw");
         }
 
-        try argv.append("-ERRORLIMIT:0");
-        try argv.append("-NOLOGO");
+        try argv.appendSlice(gpa, &.{ "-ERRORLIMIT:0", "-NOLOGO" });
         if (comp.config.debug_format != .strip) {
-            try argv.append("-DEBUG");
+            try argv.append(gpa, "-DEBUG");
 
             const out_ext = std.fs.path.extension(full_out_path);
             const out_pdb = coff.pdb_out_path orelse try arena.print("{s}.pdb", .{
@@ -455,101 +454,101 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
             });
             const out_pdb_basename = std.fs.path.basename(out_pdb);
 
-            try argv.append(try arena.print("-PDB:{s}", .{out_pdb}));
-            try argv.append(try arena.print("-PDBALTPATH:{s}", .{out_pdb_basename}));
+            try argv.append(gpa, try arena.print("-PDB:{s}", .{out_pdb}));
+            try argv.append(gpa, try arena.print("-PDBALTPATH:{s}", .{out_pdb_basename}));
         }
         if (comp.version) |version| {
-            try argv.append(try arena.print("-VERSION:{d}.{d}", .{ version.major, version.minor }));
+            try argv.append(gpa, try arena.print("-VERSION:{d}.{d}", .{ version.major, version.minor }));
         }
 
         if (target_util.llvmMachineAbi(target)) |mabi| {
-            try argv.append(try arena.print("-MLLVM:-target-abi={s}", .{mabi}));
+            try argv.append(gpa, try arena.print("-MLLVM:-target-abi={s}", .{mabi}));
         }
 
-        try argv.append(try arena.print("-MLLVM:-float-abi={s}", .{if (target.abi.float() == .hard) "hard" else "soft"}));
+        try argv.append(gpa, try arena.print("-MLLVM:-float-abi={s}", .{if (target.abi.float() == .hard) "hard" else "soft"}));
 
         if (comp.config.lto != .none) {
             switch (optimize_mode) {
                 .debug => {},
-                .small => try argv.append("-OPT:lldlto=2"),
-                .fast, .safe => try argv.append("-OPT:lldlto=3"),
+                .small => try argv.append(gpa, "-OPT:lldlto=2"),
+                .fast, .safe => try argv.append(gpa, "-OPT:lldlto=3"),
             }
         }
         if (comp.config.output_mode == .Exe) {
-            try argv.append(try arena.print("-STACK:{d}", .{base.stack_size}));
+            try argv.append(gpa, try arena.print("-STACK:{d}", .{base.stack_size}));
         }
-        try argv.append(try arena.print("-BASE:{d}", .{coff.image_base}));
+        try argv.append(gpa, try arena.print("-BASE:{d}", .{coff.image_base}));
 
         switch (base.build_id) {
-            .none => try argv.append("-BUILD-ID:NO"),
-            .fast => try argv.append("-BUILD-ID"),
+            .none => try argv.append(gpa, "-BUILD-ID:NO"),
+            .fast => try argv.append(gpa, "-BUILD-ID"),
             .uuid, .sha1, .md5, .hexstring => {},
         }
 
         if (target.cpu.arch == .x86) {
-            try argv.append("-MACHINE:X86");
+            try argv.append(gpa, "-MACHINE:X86");
         } else if (target.cpu.arch == .x86_64) {
-            try argv.append("-MACHINE:X64");
+            try argv.append(gpa, "-MACHINE:X64");
         } else if (target.cpu.arch == .thumb) {
-            try argv.append("-MACHINE:ARM");
+            try argv.append(gpa, "-MACHINE:ARM");
         } else if (target.cpu.arch == .aarch64) {
-            try argv.append("-MACHINE:ARM64");
+            try argv.append(gpa, "-MACHINE:ARM64");
         }
 
         for (comp.force_undefined_symbols.keys()) |symbol| {
-            try argv.append(try arena.print("-INCLUDE:{s}", .{symbol}));
+            try argv.append(gpa, try arena.print("-INCLUDE:{s}", .{symbol}));
         }
 
         if (is_dyn_lib) {
-            try argv.append("-DLL");
+            try argv.append(gpa, "-DLL");
         }
 
         if (entry_name) |name| {
-            try argv.append(try arena.print("-ENTRY:{s}", .{name}));
+            try argv.append(gpa, try arena.print("-ENTRY:{s}", .{name}));
         } else if (coff.entry == .disabled) {
-            try argv.append("-NOENTRY");
+            try argv.append(gpa, "-NOENTRY");
         }
 
         if (coff.repro) {
-            try argv.append("-BREPRO");
+            try argv.append(gpa, "-BREPRO");
         }
 
         if (coff.tsaware) {
-            try argv.append("-tsaware");
+            try argv.append(gpa, "-tsaware");
         }
         if (coff.nxcompat) {
-            try argv.append("-nxcompat");
+            try argv.append(gpa, "-nxcompat");
         }
         if (!coff.dynamicbase) {
-            try argv.append("-dynamicbase:NO");
+            try argv.append(gpa, "-dynamicbase:NO");
         }
         if (base.allow_shlib_undefined) {
-            try argv.append("-FORCE:UNRESOLVED");
+            try argv.append(gpa, "-FORCE:UNRESOLVED");
         }
 
-        try argv.append(try arena.print("-OUT:{s}", .{full_out_path}));
+        try argv.append(gpa, try arena.print("-OUT:{s}", .{full_out_path}));
 
         if (comp.emit_implib) |raw_emit_path| {
             const path = try comp.resolveEmitPathFlush(arena, .artifact, raw_emit_path);
-            try argv.append(try arena.print("-IMPLIB:{f}", .{path}));
+            try argv.append(gpa, try arena.print("-IMPLIB:{f}", .{path}));
         }
 
         if (comp.config.link_libc) {
             if (comp.libc_installation) |libc_installation| {
-                try argv.append(try arena.print("-LIBPATH:{s}", .{libc_installation.crt_dir.?}));
+                try argv.append(gpa, try arena.print("-LIBPATH:{s}", .{libc_installation.crt_dir.?}));
 
                 if (target.abi == .msvc) {
-                    try argv.append(try arena.print("-LIBPATH:{s}", .{libc_installation.msvc_lib_dir.?}));
-                    try argv.append(try arena.print("-LIBPATH:{s}", .{libc_installation.kernel32_lib_dir.?}));
+                    try argv.append(gpa, try arena.print("-LIBPATH:{s}", .{libc_installation.msvc_lib_dir.?}));
+                    try argv.append(gpa, try arena.print("-LIBPATH:{s}", .{libc_installation.kernel32_lib_dir.?}));
                 }
             }
         }
 
         for (coff.lib_directories) |lib_directory| {
-            try argv.append(try arena.print("-LIBPATH:{s}", .{lib_directory.path orelse "."}));
+            try argv.append(gpa, try arena.print("-LIBPATH:{s}", .{lib_directory.path orelse "."}));
         }
 
-        try argv.ensureUnusedCapacity(comp.link_inputs.len);
+        try argv.ensureUnusedCapacity(gpa, comp.link_inputs.len);
         for (comp.link_inputs) |link_input| switch (link_input) {
             inline .dso, .res => |x| {
                 argv.appendAssumeCapacity(try x.path.toString(arena));
@@ -565,19 +564,19 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
         };
 
         for (comp.c_objects.items) |c_object| {
-            try argv.append(try c_object.status.success.object_path.toString(arena));
+            try argv.append(gpa, try c_object.status.success.object_path.toString(arena));
         }
 
         for (comp.win32_resources.items) |win32_resource| {
-            try argv.append(win32_resource.status.success.res_path);
+            try argv.append(gpa, win32_resource.status.success.res_path);
         }
 
         if (zcu_obj_path) |p| {
-            try argv.append(try p.toString(arena));
+            try argv.append(gpa, try p.toString(arena));
         }
 
         if (coff.module_definition_file) |def| {
-            try argv.append(try arena.print("-DEF:{s}", .{def}));
+            try argv.append(gpa, try arena.print("-DEF:{s}", .{def}));
         }
 
         const resolved_subsystem: ?std.zig.Subsystem = blk: {
@@ -606,7 +605,7 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
         const Mode = enum { uefi, win32 };
         const mode: Mode = mode: {
             if (resolved_subsystem) |subsystem| {
-                try argv.append(try arena.print("-SUBSYSTEM:{s},{d}.{d}", .{
+                try argv.append(gpa, try arena.print("-SUBSYSTEM:{s},{d}.{d}", .{
                     @tagName(subsystem),
                     coff.major_subsystem_version,
                     coff.minor_subsystem_version,
@@ -631,7 +630,7 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
         };
 
         switch (mode) {
-            .uefi => try argv.appendSlice(&[_][]const u8{
+            .uefi => try argv.appendSlice(gpa, &.{
                 "-BASE:0",
                 "-ENTRY:EfiMain",
                 "-OPT:REF",
@@ -644,15 +643,15 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
                 if (link_in_crt) {
                     if (target.abi.isGnu()) {
                         if (target.cpu.arch == .x86) {
-                            try argv.append("-ALTERNATENAME:__image_base__=___ImageBase");
+                            try argv.append(gpa, "-ALTERNATENAME:__image_base__=___ImageBase");
                         } else {
-                            try argv.append("-ALTERNATENAME:__image_base__=__ImageBase");
+                            try argv.append(gpa, "-ALTERNATENAME:__image_base__=__ImageBase");
                         }
 
-                        try argv.append(try comp.crtFileAsString(arena, if (is_dyn_lib) "dllcrt2.obj" else "crt2.obj"));
-                        try argv.append(try comp.crtFileAsString(arena, "libmingw32.lib"));
+                        try argv.append(gpa, try comp.crtFileAsString(arena, if (is_dyn_lib) "dllcrt2.obj" else "crt2.obj"));
+                        try argv.append(gpa, try comp.crtFileAsString(arena, "libmingw32.lib"));
                     } else {
-                        try argv.append(switch (comp.config.link_mode) {
+                        try argv.append(gpa, switch (comp.config.link_mode) {
                             .static => "libcmt.lib",
                             .dynamic => "msvcrt.lib",
                         });
@@ -661,28 +660,28 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
                             .static => "lib",
                             .dynamic => "",
                         };
-                        try argv.append(try arena.print("{s}vcruntime.lib", .{lib_str}));
-                        try argv.append(try arena.print("{s}ucrt.lib", .{lib_str}));
+                        try argv.append(gpa, try arena.print("{s}vcruntime.lib", .{lib_str}));
+                        try argv.append(gpa, try arena.print("{s}ucrt.lib", .{lib_str}));
 
                         //Visual C++ 2015 Conformance Changes
                         //https://msdn.microsoft.com/en-us/library/bb531344.aspx
-                        try argv.append("legacy_stdio_definitions.lib");
+                        try argv.append(gpa, "legacy_stdio_definitions.lib");
 
                         // msvcrt depends on kernel32 and ntdll
-                        try argv.append("kernel32.lib");
-                        try argv.append("ntdll.lib");
+                        try argv.append(gpa, "kernel32.lib");
+                        try argv.append(gpa, "ntdll.lib");
                     }
                 } else {
-                    try argv.append("-NODEFAULTLIB");
+                    try argv.append(gpa, "-NODEFAULTLIB");
                     if (!is_lib and entry_name == null) {
                         if (comp.zcu != null) {
                             if (coff.lld_export_flags.winmain_crt_startup) {
-                                try argv.append("-ENTRY:WinMainCRTStartup");
+                                try argv.append(gpa, "-ENTRY:WinMainCRTStartup");
                             } else {
-                                try argv.append("-ENTRY:wWinMainCRTStartup");
+                                try argv.append(gpa, "-ENTRY:wWinMainCRTStartup");
                             }
                         } else {
-                            try argv.append("-ENTRY:wWinMainCRTStartup");
+                            try argv.append(gpa, "-ENTRY:wWinMainCRTStartup");
                         }
                     }
                 }
@@ -691,23 +690,23 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
 
         if (comp.config.link_libc and link_in_crt) {
             if (comp.zigc_static_lib) |zigc| {
-                try argv.append(try zigc.full_object_path.toString(arena));
+                try argv.append(gpa, try zigc.full_object_path.toString(arena));
             }
         }
 
         // libc++ dep
         if (comp.config.link_libcpp) {
-            try argv.append(try comp.libcxxabi_static_lib.?.full_object_path.toString(arena));
-            try argv.append(try comp.libcxx_static_lib.?.full_object_path.toString(arena));
+            try argv.append(gpa, try comp.libcxxabi_static_lib.?.full_object_path.toString(arena));
+            try argv.append(gpa, try comp.libcxx_static_lib.?.full_object_path.toString(arena));
         }
 
         // libunwind dep
         if (comp.config.link_libunwind) {
-            try argv.append(try comp.libunwind_static_lib.?.full_object_path.toString(arena));
+            try argv.append(gpa, try comp.libunwind_static_lib.?.full_object_path.toString(arena));
         }
 
         if (comp.config.any_fuzz) {
-            try argv.append(try comp.fuzzer_lib.?.full_object_path.toString(arena));
+            try argv.append(gpa, try comp.fuzzer_lib.?.full_object_path.toString(arena));
         }
 
         const ubsan_rt_path: ?Cache.Path = blk: {
@@ -716,17 +715,17 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
             break :blk null;
         };
         if (ubsan_rt_path) |path| {
-            try argv.append(try path.toString(arena));
+            try argv.append(gpa, try path.toString(arena));
         }
 
         if (is_exe_or_dyn_lib and !comp.skip_linker_dependencies) {
             // MSVC compiler_rt is missing some stuff, so we build it unconditionally but
             // and rely on weak linkage to allow MSVC compiler_rt functions to override ours.
-            if (comp.compiler_rt_obj) |obj| try argv.append(try obj.full_object_path.toString(arena));
-            if (comp.compiler_rt_lib) |lib| try argv.append(try lib.full_object_path.toString(arena));
+            if (comp.compiler_rt_obj) |obj| try argv.append(gpa, try obj.full_object_path.toString(arena));
+            if (comp.compiler_rt_lib) |lib| try argv.append(gpa, try lib.full_object_path.toString(arena));
         }
 
-        try argv.ensureUnusedCapacity(comp.windows_libs.count());
+        try argv.ensureUnusedCapacity(gpa, comp.windows_libs.count());
         for (comp.windows_libs.keys()) |key| {
             const lib_basename = try arena.print("{s}.lib", .{key});
             if (comp.crt_files.get(lib_basename)) |crt_file| {
@@ -843,196 +842,188 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
         );
     } else {
         // Create an LLD command line and invoke it.
-        var argv = std.array_list.Managed([]const u8).init(gpa);
-        defer argv.deinit();
+        var argv: std.ArrayList([]const u8) = .empty;
+        defer argv.deinit(gpa);
         // We will invoke ourselves as a child process to gain access to LLD.
         // This is necessary because LLD does not behave properly as a library -
         // it calls exit() and does not reset all global data between invocations.
         const linker_command = "ld.lld";
-        try argv.appendSlice(&[_][]const u8{ comp.self_exe_path.?, linker_command });
-        try addCommonArgs(&argv, false);
+        try argv.appendSlice(gpa, &.{ comp.self_exe_path.?, linker_command });
+        try addCommonArgs(gpa, &argv, false);
 
         if (is_obj) {
-            try argv.append("-r");
+            try argv.append(gpa, "-r");
         }
 
-        try argv.append("--error-limit=0");
+        try argv.append(gpa, "--error-limit=0");
 
         if (comp.sysroot) |sysroot| {
-            try argv.append(try arena.print("--sysroot={s}", .{sysroot}));
+            try argv.append(gpa, try arena.print("--sysroot={s}", .{sysroot}));
         }
 
         if (target_util.llvmMachineAbi(target)) |mabi| {
-            try argv.appendSlice(&.{
+            try argv.appendSlice(gpa, &.{
                 "-mllvm",
                 try arena.print("-target-abi={s}", .{mabi}),
             });
         }
 
-        try argv.appendSlice(&.{
+        try argv.appendSlice(gpa, &.{
             "-mllvm",
             try arena.print("-float-abi={s}", .{if (target.abi.float() == .hard) "hard" else "soft"}),
         });
 
         switch (target.cpu.arch) {
-            .armeb, .thumbeb => if (is_exe_or_dyn_lib and target.cpu.has(.arm, .has_v6)) try argv.append("--be8"),
+            .armeb, .thumbeb => if (is_exe_or_dyn_lib and target.cpu.has(.arm, .has_v6)) try argv.append(gpa, "--be8"),
             else => {},
         }
 
         if (comp.config.lto != .none) {
             switch (comp.root_mod.optimize_mode) {
                 .debug => {},
-                .small => try argv.append("--lto-O2"),
-                .fast, .safe => try argv.append("--lto-O3"),
+                .small => try argv.append(gpa, "--lto-O2"),
+                .fast, .safe => try argv.append(gpa, "--lto-O3"),
             }
         }
         switch (comp.root_mod.optimize_mode) {
             .debug => {},
-            .small => try argv.append("-O2"),
-            .fast, .safe => try argv.append("-O3"),
+            .small => try argv.append(gpa, "-O2"),
+            .fast, .safe => try argv.append(gpa, "-O3"),
         }
 
         if (elf.entry_name) |name| {
-            try argv.appendSlice(&.{ "--entry", name });
+            try argv.appendSlice(gpa, &.{ "--entry", name });
         }
 
         for (comp.force_undefined_symbols.keys()) |sym| {
-            try argv.append("-u");
-            try argv.append(sym);
+            try argv.appendSlice(gpa, &.{ "-u", sym });
         }
 
         switch (elf.hash_style) {
-            .gnu => try argv.append("--hash-style=gnu"),
-            .sysv => try argv.append("--hash-style=sysv"),
+            .gnu => try argv.append(gpa, "--hash-style=gnu"),
+            .sysv => try argv.append(gpa, "--hash-style=sysv"),
             .both => {}, // this is the default
         }
 
         if (output_mode == .Exe) {
-            try argv.appendSlice(&.{
+            try argv.appendSlice(gpa, &.{
                 "-z",
                 try arena.print("stack-size={d}", .{base.stack_size}),
             });
         }
 
         switch (base.build_id) {
-            .none => try argv.append("--build-id=none"),
-            .fast, .uuid, .sha1, .md5 => try argv.append(try arena.print("--build-id={s}", .{
+            .none => try argv.append(gpa, "--build-id=none"),
+            .fast, .uuid, .sha1, .md5 => try argv.append(gpa, try arena.print("--build-id={s}", .{
                 @tagName(base.build_id),
             })),
-            .hexstring => |hs| try argv.append(try arena.print("--build-id=0x{x}", .{hs.toSlice()})),
+            .hexstring => |hs| try argv.append(gpa, try arena.print("--build-id=0x{x}", .{hs.toSlice()})),
         }
 
-        try argv.append(try arena.print("--image-base={d}", .{elf.image_base}));
+        try argv.append(gpa, try arena.print("--image-base={d}", .{elf.image_base}));
 
         if (elf.linker_script) |linker_script| {
-            try argv.append("-T");
-            try argv.append(try linker_script.toString(arena));
+            try argv.appendSlice(gpa, &.{ "-T", try linker_script.toString(arena) });
         }
 
         if (elf.sort_section) |how| {
             const arg = try arena.print("--sort-section={s}", .{@tagName(how)});
-            try argv.append(arg);
+            try argv.append(gpa, arg);
         }
 
         if (base.gc_sections) {
-            try argv.append("--gc-sections");
+            try argv.append(gpa, "--gc-sections");
         }
 
         if (base.print_gc_sections) {
-            try argv.append("--print-gc-sections");
+            try argv.append(gpa, "--print-gc-sections");
         }
 
         if (elf.print_icf_sections) {
-            try argv.append("--print-icf-sections");
+            try argv.append(gpa, "--print-icf-sections");
         }
 
         if (elf.print_map) {
-            try argv.append("--print-map");
+            try argv.append(gpa, "--print-map");
         }
 
         if (elf.nmagic) {
-            try argv.append("--nmagic");
+            try argv.append(gpa, "--nmagic");
         }
 
         if (elf.fatal_warnings) {
-            try argv.append("--fatal-warnings");
+            try argv.append(gpa, "--fatal-warnings");
         }
 
         if (comp.link_eh_frame_hdr) {
-            try argv.append("--eh-frame-hdr");
+            try argv.append(gpa, "--eh-frame-hdr");
         }
 
         if (elf.emit_relocs) {
-            try argv.append("--emit-relocs");
+            try argv.append(gpa, "--emit-relocs");
         }
 
         if (comp.config.rdynamic) {
-            try argv.append("--export-dynamic");
+            try argv.append(gpa, "--export-dynamic");
         }
 
         if (comp.config.debug_format == .strip) {
-            try argv.append("-s");
+            try argv.append(gpa, "-s");
         }
 
         if (elf.z_nodelete) {
-            try argv.append("-z");
-            try argv.append("nodelete");
+            try argv.appendSlice(gpa, &.{ "-z", "nodelete" });
         }
         if (elf.z_notext) {
-            try argv.append("-z");
-            try argv.append("notext");
+            try argv.appendSlice(gpa, &.{ "-z", "notext" });
         }
         if (elf.z_defs) {
-            try argv.append("-z");
-            try argv.append("defs");
+            try argv.appendSlice(gpa, &.{ "-z", "defs" });
         }
         if (elf.z_origin) {
-            try argv.append("-z");
-            try argv.append("origin");
+            try argv.appendSlice(gpa, &.{ "-z", "origin" });
         }
         if (elf.z_nocopyreloc) {
-            try argv.append("-z");
-            try argv.append("nocopyreloc");
+            try argv.appendSlice(gpa, &.{ "-z", "nocopyreloc" });
         }
         if (elf.z_now) {
             // LLD defaults to -zlazy
-            try argv.append("-znow");
+            try argv.append(gpa, "-znow");
         }
         if (!elf.z_relro) {
             // LLD defaults to -zrelro
-            try argv.append("-znorelro");
+            try argv.append(gpa, "-znorelro");
         }
         if (elf.z_common_page_size) |size| {
-            try argv.append("-z");
-            try argv.append(try arena.print("common-page-size={d}", .{size}));
+            try argv.append(gpa, "-z");
+            try argv.append(gpa, try arena.print("common-page-size={d}", .{size}));
         }
         if (elf.z_max_page_size) |size| {
-            try argv.append("-z");
-            try argv.append(try arena.print("max-page-size={d}", .{size}));
+            try argv.append(gpa, "-z");
+            try argv.append(gpa, try arena.print("max-page-size={d}", .{size}));
         }
 
         if (getLDMOption(target)) |ldm| {
-            try argv.append("-m");
-            try argv.append(ldm);
+            try argv.appendSlice(gpa, &.{ "-m", ldm });
         }
 
         if (link_mode == .static) {
             if (target.cpu.arch.isArm()) {
-                try argv.append("-Bstatic");
+                try argv.append(gpa, "-Bstatic");
             } else {
-                try argv.append("-static");
+                try argv.append(gpa, "-static");
             }
         } else if (switch (target.os.tag) {
             else => is_dyn_lib,
             .haiku => is_exe_or_dyn_lib,
         }) {
-            try argv.append("-shared");
+            try argv.append(gpa, "-shared");
         }
 
         if (output_mode == .Exe) {
             // Always be explicit: some lld builds (e.g. OpenBSD's) default
             // to PIE, which breaks non-PIE executables for other targets.
-            try argv.append(if (comp.config.pie) "-pie" else "-no-pie");
+            try argv.append(gpa, if (comp.config.pie) "-pie" else "-no-pie");
         }
 
         if (is_exe_or_dyn_lib and target.os.tag == .netbsd) {
@@ -1040,62 +1031,60 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
             // NetBSD expects 2 PT.LOAD segments in a shared object, otherwise
             // ld.elf_so fails loading dynamic libraries with "not found" error.
             // See https://github.com/ziglang/zig/issues/9109 .
-            try argv.append("--no-rosegment");
-            try argv.append("-znorelro");
+            try argv.append(gpa, "--no-rosegment");
+            try argv.append(gpa, "-znorelro");
         }
 
-        try argv.append("-o");
-        try argv.append(full_out_path);
+        try argv.appendSlice(gpa, &.{ "-o", full_out_path });
 
         // csu prelude
         const csu = try comp.getCrtPaths(arena);
-        if (csu.crt0) |p| try argv.append(try p.toString(arena));
-        if (csu.crti) |p| try argv.append(try p.toString(arena));
-        if (csu.crtbegin) |p| try argv.append(try p.toString(arena));
+        if (csu.crt0) |p| try argv.append(gpa, try p.toString(arena));
+        if (csu.crti) |p| try argv.append(gpa, try p.toString(arena));
+        if (csu.crtbegin) |p| try argv.append(gpa, try p.toString(arena));
 
         for (elf.rpath_list) |rpath| {
-            try argv.appendSlice(&.{ "-rpath", rpath });
+            try argv.appendSlice(gpa, &.{ "-rpath", rpath });
         }
 
         for (elf.symbol_wrap_set) |symbol_name| {
-            try argv.appendSlice(&.{ "-wrap", symbol_name });
+            try argv.appendSlice(gpa, &.{ "-wrap", symbol_name });
         }
 
         if (comp.config.link_libc) {
             if (comp.libc_installation) |libc_installation| {
-                try argv.append("-L");
-                try argv.append(libc_installation.crt_dir.?);
+                try argv.appendSlice(gpa, &.{ "-L", libc_installation.crt_dir.? });
             }
         }
 
         if (output_mode == .Exe and link_mode == .dynamic) {
             if (target.dynamic_linker.get()) |dynamic_linker| {
-                try argv.append("--dynamic-linker");
-                try argv.append(dynamic_linker);
+                try argv.appendSlice(gpa, &.{ "--dynamic-linker", dynamic_linker });
             } else {
-                try argv.append("--no-dynamic-linker");
+                try argv.append(gpa, "--no-dynamic-linker");
             }
         }
 
         if (is_dyn_lib) {
             if (elf.soname) |soname| {
-                try argv.append("-soname");
-                try argv.append(soname);
+                try argv.appendSlice(gpa, &.{ "-soname", soname });
             }
             if (elf.version_script) |version_script| {
-                try argv.append("-version-script");
-                try argv.append(try version_script.toString(arena));
+                try argv.appendSlice(gpa, &.{
+                    "-version-script",
+                    try version_script.toString(arena),
+                });
             }
             if (elf.allow_undefined_version) {
-                try argv.append("--undefined-version");
+                try argv.append(gpa, "--undefined-version");
             } else {
-                try argv.append("--no-undefined-version");
+                try argv.append(gpa, "--no-undefined-version");
             }
             if (elf.enable_new_dtags) |enable_new_dtags| {
                 if (enable_new_dtags) {
-                    try argv.append("--enable-new-dtags");
+                    try argv.append(gpa, "--enable-new-dtags");
                 } else {
-                    try argv.append("--disable-new-dtags");
+                    try argv.append(gpa, "--disable-new-dtags");
                 }
             }
         }
@@ -1109,32 +1098,32 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
             .dso => continue,
             .object, .archive => |obj| {
                 if (obj.must_link and !whole_archive) {
-                    try argv.append("--whole-archive");
+                    try argv.append(gpa, "--whole-archive");
                     whole_archive = true;
                 } else if (!obj.must_link and whole_archive) {
-                    try argv.append("--no-whole-archive");
+                    try argv.append(gpa, "--no-whole-archive");
                     whole_archive = false;
                 }
-                try argv.append(try obj.path.toString(arena));
+                try argv.append(gpa, try obj.path.toString(arena));
             },
         };
 
         if (whole_archive) {
-            try argv.append("--no-whole-archive");
+            try argv.append(gpa, "--no-whole-archive");
             whole_archive = false;
         }
 
         for (comp.c_objects.items) |c_object| {
-            try argv.append(try c_object.status.success.object_path.toString(arena));
+            try argv.append(gpa, try c_object.status.success.object_path.toString(arena));
         }
 
         if (zcu_obj_path) |p| {
-            try argv.append(try p.toString(arena));
+            try argv.append(gpa, try p.toString(arena));
         }
 
         if (comp.tsan_lib) |lib| {
             assert(comp.config.any_sanitize_thread);
-            try argv.appendSlice(&.{
+            try argv.appendSlice(gpa, &.{
                 "--whole-archive",
                 try lib.full_object_path.toString(arena),
                 "--no-whole-archive",
@@ -1143,18 +1132,18 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
 
         if (comp.fuzzer_lib) |lib| {
             assert(comp.config.any_fuzz);
-            try argv.append(try lib.full_object_path.toString(arena));
+            try argv.append(gpa, try lib.full_object_path.toString(arena));
         }
 
         if (ubsan_rt_path) |p| {
-            try argv.append(try p.toString(arena));
+            try argv.append(gpa, try p.toString(arena));
         }
 
         // Shared libraries.
         if (is_exe_or_dyn_lib) {
             // Worst-case, we need an --as-needed argument for every lib, as well
             // as one before and one after.
-            try argv.ensureUnusedCapacity(2 * base.comp.link_inputs.len + 2);
+            try argv.ensureUnusedCapacity(gpa, 2 * base.comp.link_inputs.len + 2);
             argv.appendAssumeCapacity("--as-needed");
             var as_needed = true;
 
@@ -1164,8 +1153,8 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
             // the given path not actually as an absolute path, but as relative to the library
             // search path, so the root directory must therefore be the only library search path.
             switch (builtin.os.tag) {
-                .windows => try argv.appendSlice(&.{ "-L", "" }),
-                else => try argv.append("-L/"),
+                .windows => try argv.appendSlice(gpa, &.{ "-L", "" }),
+                else => try argv.append(gpa, "-L/"),
             }
 
             for (base.comp.link_inputs) |link_input| switch (link_input) {
@@ -1190,12 +1179,12 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
                     // not static libraries (the check for that needs to be earlier), but they could
                     // be full file paths, in which case we don't want to use the "-l:" strategy.
                     switch (dso.fallback_soname) {
-                        .basename => try argv.append(try arena.print("-l:{s}", .{try fs.path.resolve(arena, &.{
+                        .basename => try argv.append(gpa, try arena.print("-l:{s}", .{try fs.path.resolve(arena, &.{
                             comp.dirs.cwd,
                             dso.path.root_dir.path orelse ".",
                             dso.path.sub_path,
                         })})),
-                        .full_path => try argv.append(try dso.path.toString(arena)),
+                        .full_path => try argv.append(gpa, try dso.path.toString(arena)),
                     }
                 },
             };
@@ -1207,13 +1196,13 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
 
             // libc++ dep
             if (comp.config.link_libcpp) {
-                try argv.append(try comp.libcxxabi_static_lib.?.full_object_path.toString(arena));
-                try argv.append(try comp.libcxx_static_lib.?.full_object_path.toString(arena));
+                try argv.append(gpa, try comp.libcxxabi_static_lib.?.full_object_path.toString(arena));
+                try argv.append(gpa, try comp.libcxx_static_lib.?.full_object_path.toString(arena));
             }
 
             // libunwind dep
             if (comp.config.link_libunwind) {
-                try argv.append(try comp.libunwind_static_lib.?.full_object_path.toString(arena));
+                try argv.append(gpa, try comp.libunwind_static_lib.?.full_object_path.toString(arena));
             }
 
             // libc dep
@@ -1221,9 +1210,9 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
             if (comp.config.link_libc) {
                 if (comp.libc_installation != null) {
                     const needs_grouping = link_mode == .static;
-                    if (needs_grouping) try argv.append("--start-group");
-                    try argv.appendSlice(target_util.libcFullLinkFlags(target));
-                    if (needs_grouping) try argv.append("--end-group");
+                    if (needs_grouping) try argv.append(gpa, "--start-group");
+                    try argv.appendSlice(gpa, target_util.libcFullLinkFlags(target));
+                    if (needs_grouping) try argv.append(gpa, "--end-group");
                 } else if (target.isGnuLibC()) {
                     for (glibc.libs) |lib| {
                         if (lib.removed_in) |rem_in| {
@@ -1233,11 +1222,11 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
                         const lib_path = try arena.print("{f}{c}lib{s}.so.{d}", .{
                             comp.glibc_so_files.?.dir_path, fs.path.sep, lib.name, lib.sover,
                         });
-                        try argv.append(lib_path);
+                        try argv.append(gpa, lib_path);
                     }
-                    try argv.append(try comp.crtFileAsString(arena, "libc_nonshared.a"));
+                    try argv.append(gpa, try comp.crtFileAsString(arena, "libc_nonshared.a"));
                 } else if (target.isMuslLibC()) {
-                    try argv.append(try comp.crtFileAsString(arena, switch (link_mode) {
+                    try argv.append(gpa, try comp.crtFileAsString(arena, switch (link_mode) {
                         .static => "libc.a",
                         .dynamic => "libc.so",
                     }));
@@ -1250,28 +1239,28 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
                         const lib_path = try arena.print("{f}{c}lib{s}.so.{d}", .{
                             comp.freebsd_so_files.?.dir_path, fs.path.sep, lib.name, lib.getSoVersion(&target.os),
                         });
-                        try argv.append(lib_path);
+                        try argv.append(gpa, lib_path);
                     }
                 } else if (target.isNetBSDLibC()) {
                     for (netbsd.libs) |lib| {
                         const lib_path = try arena.print("{f}{c}lib{s}.so.{d}", .{
                             comp.netbsd_so_files.?.dir_path, fs.path.sep, lib.name, lib.sover,
                         });
-                        try argv.append(lib_path);
+                        try argv.append(gpa, lib_path);
                     }
                 } else if (target.isOpenBSDLibC()) {
                     for (openbsd.libs) |lib| {
                         const lib_path = try arena.print("{f}{c}lib{s}.so", .{
                             comp.openbsd_so_files.?.dir_path, fs.path.sep, lib.name,
                         });
-                        try argv.append(lib_path);
+                        try argv.append(gpa, lib_path);
                     }
                 } else {
                     diags.flags.missing_libc = true;
                 }
 
                 if (comp.zigc_static_lib) |zigc| {
-                    try argv.append(try zigc.full_object_path.toString(arena));
+                    try argv.append(gpa, try zigc.full_object_path.toString(arena));
                 }
             }
         }
@@ -1280,25 +1269,25 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
         // to be after the shared libraries, so they are picked up from the shared
         // libraries, not libcompiler_rt.
         if (compiler_rt_path) |p| {
-            try argv.append(try p.toString(arena));
+            try argv.append(gpa, try p.toString(arena));
         }
 
         // crt postlude
-        if (csu.crtend) |p| try argv.append(try p.toString(arena));
-        if (csu.crtn) |p| try argv.append(try p.toString(arena));
+        if (csu.crtend) |p| try argv.append(gpa, try p.toString(arena));
+        if (csu.crtn) |p| try argv.append(gpa, try p.toString(arena));
 
         if (base.allow_shlib_undefined) {
-            try argv.append("--allow-shlib-undefined");
+            try argv.append(gpa, "--allow-shlib-undefined");
         }
 
         switch (elf.compress_debug_sections) {
             .none => {},
-            .zlib => try argv.append("--compress-debug-sections=zlib"),
-            .zstd => try argv.append("--compress-debug-sections=zstd"),
+            .zlib => try argv.append(gpa, "--compress-debug-sections=zlib"),
+            .zstd => try argv.append(gpa, "--compress-debug-sections=zstd"),
         }
 
         if (elf.bind_global_refs_locally) {
-            try argv.append("-Bsymbolic");
+            try argv.append(gpa, "-Bsymbolic");
         }
 
         try spawnLld(comp, arena, argv.items);
@@ -1443,127 +1432,127 @@ fn wasmLink(lld: *Lld, arena: Allocator) !void {
         );
     } else {
         // Create an LLD command line and invoke it.
-        var argv = std.array_list.Managed([]const u8).init(gpa);
-        defer argv.deinit();
+        var argv: std.ArrayList([]const u8) = .empty;
+        defer argv.deinit(gpa);
         // We will invoke ourselves as a child process to gain access to LLD.
         // This is necessary because LLD does not behave properly as a library -
         // it calls exit() and does not reset all global data between invocations.
         const linker_command = "wasm-ld";
-        try argv.appendSlice(&[_][]const u8{ comp.self_exe_path.?, linker_command });
-        try addCommonArgs(&argv, false);
+        try argv.appendSlice(gpa, &.{ comp.self_exe_path.?, linker_command });
+        try addCommonArgs(gpa, &argv, false);
 
-        try argv.append("--error-limit=0");
+        try argv.append(gpa, "--error-limit=0");
 
         if (comp.config.lto != .none) {
             switch (comp.root_mod.optimize_mode) {
                 .debug => {},
-                .small => try argv.append("-O2"),
-                .fast, .safe => try argv.append("-O3"),
+                .small => try argv.append(gpa, "-O2"),
+                .fast, .safe => try argv.append(gpa, "-O3"),
             }
         }
 
         if (import_memory) {
-            try argv.append("--import-memory");
+            try argv.append(gpa, "--import-memory");
         }
 
         if (export_memory) {
-            try argv.append("--export-memory");
+            try argv.append(gpa, "--export-memory");
         }
 
         if (wasm.import_table) {
             assert(!wasm.export_table);
-            try argv.append("--import-table");
+            try argv.append(gpa, "--import-table");
         }
 
         if (wasm.export_table) {
             assert(!wasm.import_table);
-            try argv.append("--export-table");
+            try argv.append(gpa, "--export-table");
         }
 
         if (wasm.growable_table) {
-            try argv.append("--growable-table");
+            try argv.append(gpa, "--growable-table");
         }
 
         // For wasm-ld we only need to specify '--no-gc-sections' when the user explicitly
         // specified it as garbage collection is enabled by default.
         if (!base.gc_sections) {
-            try argv.append("--no-gc-sections");
+            try argv.append(gpa, "--no-gc-sections");
         }
 
         if (comp.config.debug_format == .strip) {
-            try argv.append("-s");
+            try argv.append(gpa, "-s");
         }
 
         if (wasm.initial_memory) |initial_memory| {
             const arg = try arena.print("--initial-memory={d}", .{initial_memory});
-            try argv.append(arg);
+            try argv.append(gpa, arg);
         }
 
         if (wasm.max_memory) |max_memory| {
             const arg = try arena.print("--max-memory={d}", .{max_memory});
-            try argv.append(arg);
+            try argv.append(gpa, arg);
         }
 
         if (shared_memory) {
-            try argv.append("--shared-memory");
+            try argv.append(gpa, "--shared-memory");
         }
 
         if (wasm.global_base) |global_base| {
             const arg = try arena.print("--global-base={d}", .{global_base});
-            try argv.append(arg);
+            try argv.append(gpa, arg);
         } else {
             // We prepend it by default, so when a stack overflow happens the runtime will trap correctly,
             // rather than silently overwrite all global declarations. See https://github.com/ziglang/zig/issues/4496
             //
             // The user can overwrite this behavior by setting the global-base
-            try argv.append("--stack-first");
+            try argv.append(gpa, "--stack-first");
         }
 
         // Users are allowed to specify which symbols they want to export to the wasm host.
         for (wasm.export_symbol_names) |symbol_name| {
             const arg = try arena.print("--export={s}", .{symbol_name});
-            try argv.append(arg);
+            try argv.append(gpa, arg);
         }
 
         if (comp.config.rdynamic) {
-            try argv.append("--export-dynamic");
+            try argv.append(gpa, "--export-dynamic");
         }
 
         if (wasm.entry_name) |entry_name| {
-            try argv.appendSlice(&.{ "--entry", entry_name });
+            try argv.appendSlice(gpa, &.{ "--entry", entry_name });
         } else {
-            try argv.append("--no-entry");
+            try argv.append(gpa, "--no-entry");
         }
 
-        try argv.appendSlice(&.{
+        try argv.appendSlice(gpa, &.{
             "-z",
             try arena.print("stack-size={d}", .{base.stack_size}),
         });
 
         switch (base.build_id) {
-            .none => try argv.append("--build-id=none"),
-            .fast, .uuid, .sha1 => try argv.append(try arena.print("--build-id={s}", .{
+            .none => try argv.append(gpa, "--build-id=none"),
+            .fast, .uuid, .sha1 => try argv.append(gpa, try arena.print("--build-id={s}", .{
                 @tagName(base.build_id),
             })),
-            .hexstring => |hs| try argv.append(try arena.print("--build-id=0x{x}", .{hs.toSlice()})),
+            .hexstring => |hs| try argv.append(gpa, try arena.print("--build-id=0x{x}", .{hs.toSlice()})),
             .md5 => {},
         }
 
         if (wasm.import_symbols) {
-            try argv.append("--allow-undefined");
+            try argv.append(gpa, "--allow-undefined");
         }
 
         if (comp.config.output_mode == .Lib and comp.config.link_mode == .dynamic) {
-            try argv.append("--shared");
+            try argv.append(gpa, "--shared");
         }
         if (comp.config.pie) {
-            try argv.append("--pie");
+            try argv.append(gpa, "--pie");
         }
 
-        try argv.appendSlice(&.{ "-o", full_out_path });
+        try argv.appendSlice(gpa, &.{ "-o", full_out_path });
 
         if (target.cpu.arch == .wasm64) {
-            try argv.append("-mwasm64");
+            try argv.append(gpa, "-mwasm64");
         }
 
         const is_exe_or_dyn_lib = comp.config.output_mode == .Exe or
@@ -1571,8 +1560,8 @@ fn wasmLink(lld: *Lld, arena: Allocator) !void {
 
         if (comp.config.link_libc and is_exe_or_dyn_lib) {
             if (comp.config.link_libcpp) {
-                try argv.append(try comp.libcxx_static_lib.?.full_object_path.toString(arena));
-                try argv.append(try comp.libcxxabi_static_lib.?.full_object_path.toString(arena));
+                try argv.append(gpa, try comp.libcxx_static_lib.?.full_object_path.toString(arena));
+                try argv.append(gpa, try comp.libcxxabi_static_lib.?.full_object_path.toString(arena));
             }
         }
 
@@ -1581,38 +1570,38 @@ fn wasmLink(lld: *Lld, arena: Allocator) !void {
         for (comp.link_inputs) |link_input| switch (link_input) {
             .object, .archive => |obj| {
                 if (obj.must_link and !whole_archive) {
-                    try argv.append("--whole-archive");
+                    try argv.append(gpa, "--whole-archive");
                     whole_archive = true;
                 } else if (!obj.must_link and whole_archive) {
-                    try argv.append("--no-whole-archive");
+                    try argv.append(gpa, "--no-whole-archive");
                     whole_archive = false;
                 }
-                try argv.append(try obj.path.toString(arena));
+                try argv.append(gpa, try obj.path.toString(arena));
             },
             .dso => |dso| {
-                try argv.append(try dso.path.toString(arena));
+                try argv.append(gpa, try dso.path.toString(arena));
             },
             .tbd => unreachable,
             .res => unreachable,
         };
         if (whole_archive) {
-            try argv.append("--no-whole-archive");
+            try argv.append(gpa, "--no-whole-archive");
             whole_archive = false;
         }
 
         for (comp.c_objects.items) |c_object| {
-            try argv.append(try c_object.status.success.object_path.toString(arena));
+            try argv.append(gpa, try c_object.status.success.object_path.toString(arena));
         }
         if (zcu_obj_path) |p| {
-            try argv.append(try p.toString(arena));
+            try argv.append(gpa, try p.toString(arena));
         }
 
         if (compiler_rt_path) |p| {
-            try argv.append(try p.toString(arena));
+            try argv.append(gpa, try p.toString(arena));
         }
 
         if (ubsan_rt_path) |p| {
-            try argv.append(try p.toStringZ(arena));
+            try argv.append(gpa, try p.toStringZ(arena));
         }
 
         try spawnLld(comp, arena, argv.items);

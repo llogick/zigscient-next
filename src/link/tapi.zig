@@ -83,26 +83,26 @@ pub const Tbd = union(enum) {
 
     /// Caller owns memory.
     pub fn targets(self: Tbd, gpa: Allocator) error{OutOfMemory}![]const []const u8 {
-        var out = std.array_list.Managed([]const u8).init(gpa);
-        defer out.deinit();
+        var out: std.ArrayList([]const u8) = .empty;
+        defer out.deinit(gpa);
 
         switch (self) {
             .v3 => |v3| {
-                try out.ensureTotalCapacityPrecise(v3.archs.len);
+                try out.ensureTotalCapacityPrecise(gpa, v3.archs.len);
                 for (v3.archs) |arch| {
                     const target = try std.fmt.allocPrint(gpa, "{s}-{s}", .{ arch, v3.platform });
                     out.appendAssumeCapacity(target);
                 }
             },
             .v4 => |v4| {
-                try out.ensureTotalCapacityPrecise(v4.targets.len);
+                try out.ensureTotalCapacityPrecise(gpa, v4.targets.len);
                 for (v4.targets) |t| {
                     out.appendAssumeCapacity(try gpa.dupe(u8, t));
                 }
             },
         }
 
-        return out.toOwnedSlice();
+        return out.toOwnedSlice(gpa);
     }
 
     pub fn currentVersion(self: Tbd) ?VersionField {

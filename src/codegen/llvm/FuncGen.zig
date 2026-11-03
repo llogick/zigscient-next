@@ -2868,8 +2868,8 @@ fn airAssembly(self: *FuncGen, inst: Air.Inst.Index) TodoError!Builder.Value {
     const asm_source = unwrapped_asm.source;
 
     // hackety hacks until stage2 has proper inline asm in the frontend.
-    var rendered_template = std.array_list.Managed(u8).init(gpa);
-    defer rendered_template.deinit();
+    var rendered_template: std.ArrayList(u8) = .empty;
+    defer rendered_template.deinit(gpa);
 
     const State = enum { start, percent, input, modifier };
 
@@ -2881,27 +2881,27 @@ fn airAssembly(self: *FuncGen, inst: Air.Inst.Index) TodoError!Builder.Value {
         switch (state) {
             .start => switch (byte) {
                 '%' => state = .percent,
-                '$' => try rendered_template.appendSlice("$$"),
-                else => try rendered_template.append(byte),
+                '$' => try rendered_template.appendSlice(gpa, "$$"),
+                else => try rendered_template.append(gpa, byte),
             },
             .percent => switch (byte) {
                 '%' => {
-                    try rendered_template.append('%');
+                    try rendered_template.append(gpa, '%');
                     state = .start;
                 },
                 '[' => {
-                    try rendered_template.append('$');
-                    try rendered_template.append('{');
+                    try rendered_template.append(gpa, '$');
+                    try rendered_template.append(gpa, '{');
                     name_start = i + 1;
                     state = .input;
                 },
                 '=' => {
-                    try rendered_template.appendSlice("${:uid}");
+                    try rendered_template.appendSlice(gpa, "${:uid}");
                     state = .start;
                 },
                 else => {
-                    try rendered_template.append('%');
-                    try rendered_template.append(byte);
+                    try rendered_template.append(gpa, '%');
+                    try rendered_template.append(gpa, byte);
                     state = .start;
                 },
             },
@@ -2913,13 +2913,13 @@ fn airAssembly(self: *FuncGen, inst: Air.Inst.Index) TodoError!Builder.Value {
                         // we should validate the assembly in Sema; by now it is too late
                         return self.todo("unknown input or output name: '{s}'", .{name});
                     };
-                    try rendered_template.print("{d}", .{index});
+                    try rendered_template.print(gpa, "{d}", .{index});
                     if (byte == ':') {
-                        try rendered_template.append(':');
+                        try rendered_template.append(gpa, ':');
                         modifier_start = i + 1;
                         state = .modifier;
                     } else {
-                        try rendered_template.append('}');
+                        try rendered_template.append(gpa, '}');
                         state = .start;
                     }
                 },
@@ -2927,8 +2927,8 @@ fn airAssembly(self: *FuncGen, inst: Air.Inst.Index) TodoError!Builder.Value {
             },
             .modifier => switch (byte) {
                 ']' => {
-                    try rendered_template.appendSlice(asm_source[modifier_start..i]);
-                    try rendered_template.append('}');
+                    try rendered_template.appendSlice(gpa, asm_source[modifier_start..i]);
+                    try rendered_template.append(gpa, '}');
                     state = .start;
                 },
                 else => {},

@@ -796,15 +796,16 @@ pub const TargetMatcher = struct {
 
         const targets = switch (tbd) {
             .v3 => |v3| blk: {
-                var targets = std.array_list.Managed([]const u8).init(arena.allocator());
+                var targets: std.ArrayList([]const u8) = .empty;
+                const allocator = arena.allocator();
                 for (v3.archs) |arch| {
                     if (mem.eql(u8, v3.platform, "zippered")) {
                         // From Xcode 10.3 → 11.3.1, macos SDK .tbd files specify platform as 'zippered'
                         // which should map to [ '<arch>-macos', '<arch>-maccatalyst' ]
-                        try targets.append(try std.fmt.allocPrint(arena.allocator(), "{s}-macos", .{arch}));
-                        try targets.append(try std.fmt.allocPrint(arena.allocator(), "{s}-maccatalyst", .{arch}));
+                        try targets.append(allocator, try allocator.print("{s}-macos", .{arch}));
+                        try targets.append(allocator, try allocator.print("{s}-maccatalyst", .{arch}));
                     } else {
-                        try targets.append(try std.fmt.allocPrint(arena.allocator(), "{s}-{s}", .{ arch, v3.platform }));
+                        try targets.append(allocator, try allocator.print("{s}-{s}", .{ arch, v3.platform }));
                     }
                 }
                 break :blk targets.items;

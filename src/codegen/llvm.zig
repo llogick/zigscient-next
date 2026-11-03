@@ -395,8 +395,8 @@ pub const Object = struct {
         }
 
         {
-            var module_flags = try std.array_list.Managed(Builder.Metadata).initCapacity(o.gpa, 11);
-            defer module_flags.deinit();
+            var module_flags: std.ArrayList(Builder.Metadata) = try .initCapacity(o.gpa, 11);
+            defer module_flags.deinit(o.gpa);
 
             const behavior_error = try o.builder.metadataConstant(try o.builder.intConst(.i32, 1));
             const behavior_warning = try o.builder.metadataConstant(try o.builder.intConst(.i32, 2));
