@@ -106,6 +106,10 @@ copied_globals: std.array_hash_map.Auto(Symbol.Global.Index, struct {
     /// The index of this global's runtime relocation in `.rela.dyn`.
     rela_index: Section.RelaIndex,
 }),
+common_globals: std.array_hash_map.Auto(Symbol.Global.Index, struct {
+    size: u64,
+    @"align": Alignment,
+}),
 /// When rearranging entries in the dynamic symbol table, we need to map a dynamic symbol index to
 /// the corresponding `Symbol.Global.Index` which "owns" that dynsym entry. Usually this is usually
 /// by simply looking up the dynamic symbol's name in `globals_by_name`, but versioned symbols may
@@ -3244,6 +3248,64 @@ fn addGlobalSymbol(elf: *Elf, opts: Symbol.Global.AddOptions) (error{
             {
                 elf.setGlobalSymbolBind(gsi, .strong);
             }
+        } else if (opts.shndx == .COMMON) {
+            assert(opts.node == .none);
+            assert(opts.bind == .strong);
+            const new_common_align: Alignment = .fromByteUnits(
+                std.math.ceilPowerOfTwoAssert(u64, @max(opts.value, 1)),
+            );
+            const common_gop = try elf.common_globals.getOrPut(gpa, gsi);
+            const common_changed: bool = changed: {
+                if (!common_gop.found_existing) {
+                    common_gop.value_ptr.* = .{
+                        .size = opts.size,
+                        .@"align" = new_common_align,
+                    };
+                    break :changed true;
+                }
+                var changed: bool = false;
+                if (new_common_align.compare(.gt, common_gop.value_ptr.@"align")) {
+                    common_gop.value_ptr.@"align" = new_common_align;
+                    changed = true;
+                }
+                if (opts.size > common_gop.value_ptr.size) {
+                    common_gop.value_ptr.size = opts.size;
+                    changed = true;
+                }
+                break :changed changed;
+            };
+
+            const set_value: bool =
+                !gsi.defined(elf) or // common definitions override undefined references
+                gsi.ptr(elf).status.bind == .weak or // common definitions override weak definitions
+                (gsi.ptr(elf).status.is_common and common_changed); // update to new size/alignment
+
+            if (set_value) {
+                elf.setGlobalSymbolBind(gsi, .strong);
+                switch (elf.ehdrType()) {
+                    .REL => try elf.setGlobalSymbolValue(gsi, .{
+                        .node = .none,
+                        .value = common_gop.value_ptr.@"align".toByteUnits(),
+                        .size = common_gop.value_ptr.size,
+                        .type = opts.type,
+                        .shndx = .COMMON,
+                        .is_common = true,
+                    }),
+                    .DYN, .EXEC => try elf.setGlobalSymbolValue(gsi, .{
+                        .node = .none,
+                        .value = try elf.allocNobitsSpace(
+                            elf.shndx.bss,
+                            common_gop.value_ptr.@"align",
+                            common_gop.value_ptr.size,
+                        ),
+                        .size = common_gop.value_ptr.size,
+                        .type = opts.type,
+                        .shndx = elf.shndx.bss,
+                        .is_common = true,
+                    }),
+                }
+                force_apply_relocs = true;
+            }
         } else if (!gsi.defined(elf)) {
             elf.setGlobalSymbolBind(gsi, opts.bind);
             try elf.setGlobalSymbolValue(gsi, .{
@@ -3252,11 +3314,25 @@ fn addGlobalSymbol(elf: *Elf, opts: Symbol.Global.AddOptions) (error{
                 .size = opts.size,
                 .type = opts.type,
                 .shndx = opts.shndx,
+                .is_common = false,
             });
             force_apply_relocs = true;
         } else switch (opts.bind) {
             .strong => switch (gsi.ptr(elf).status.bind) {
-                .strong => return error.MultipleDefinitions,
+                .strong => if (gsi.ptr(elf).status.is_common) {
+                    // The new definition overrides the common definition.
+                    try elf.setGlobalSymbolValue(gsi, .{
+                        .node = opts.node,
+                        .value = opts.value,
+                        .size = opts.size,
+                        .type = opts.type,
+                        .shndx = opts.shndx,
+                        .is_common = false,
+                    });
+                    force_apply_relocs = true;
+                } else {
+                    return error.MultipleDefinitions;
+                },
                 .weak => {
                     elf.setGlobalSymbolBind(gsi, .strong);
                     try elf.setGlobalSymbolValue(gsi, .{
@@ -3265,6 +3341,7 @@ fn addGlobalSymbol(elf: *Elf, opts: Symbol.Global.AddOptions) (error{
                         .size = opts.size,
                         .type = opts.type,
                         .shndx = opts.shndx,
+                        .is_common = false,
                     });
                     force_apply_relocs = true;
                 },
@@ -3282,21 +3359,11 @@ fn addGlobalSymbol(elf: *Elf, opts: Symbol.Global.AddOptions) (error{
 
     const strtab_name = try elf.string(.strtab, opts.name);
 
-    const force_local_bind: bool = switch (opts.visibility) {
-        .HIDDEN, .INTERNAL => elf.ehdrType() != .REL,
-        .PROTECTED, .DEFAULT => false,
-    };
-
-    const bind: std.elf.STB = if (force_local_bind) b: {
-        break :b .LOCAL;
-    } else switch (opts.bind) {
-        .strong => .GLOBAL,
-        .weak => .WEAK,
-    };
-
+    // Create a symbol in a default state: SHN_UNDEF STB_WEAK STV_DEFAULT. After that we'll populate
+    // the correct values using `mergeGlobalSymbolVisibility` and `setGlobalSymbolValue`.
     const sym_index: Symbol.Index = @fromBackingInt(@intCast(elf.symtab.items.len));
     elf.symtab.appendAssumeCapacity(.{
-        .node = opts.node,
+        .node = .none,
         .first_target_reloc = .none,
     });
     switch (elf.shdrPtr(.symtab)) {
@@ -3310,32 +3377,21 @@ fn addGlobalSymbol(elf: *Elf, opts: Symbol.Global.AddOptions) (error{
             const sym = @field(elf.symPtr(sym_index), @tagName(class));
             sym.* = .{
                 .name = @backingInt(strtab_name),
-                .value = @intCast(opts.value),
-                .size = @intCast(opts.size),
-                .info = .{ .type = opts.type, .bind = bind },
-                .other = .{ .visibility = opts.visibility },
-                .shndx = opts.shndx.toSection().?,
+                .value = 0,
+                .size = 0,
+                .info = .{ .type = .NOTYPE, .bind = .WEAK },
+                .other = .{ .visibility = .DEFAULT },
+                .shndx = std.elf.SHN_UNDEF,
             };
             if (elf.targetEndian() != std.lang.Endian.native) {
                 std.mem.byteSwapAllFields(Sym, sym);
             }
         },
     }
-
-    const old_head: Symbol.Global.Index.Optional = old_head: {
-        const node = opts.node.unwrap() orelse break :old_head .none;
-        const node_globals_gop = elf.node_global_symbols.getOrPutAssumeCapacity(node);
-        const old_head: Symbol.Global.Index.Optional = if (node_globals_gop.found_existing)
-            .wrap(node_globals_gop.value_ptr.*)
-        else
-            .none;
-        node_globals_gop.value_ptr.* = gsi;
-        break :old_head old_head;
-    };
-
     gsi.ptr(elf).* = .{
         .status = .{
-            .bind = opts.bind,
+            .bind = .weak,
+            .is_common = false,
             .want_static_value = false,
             .owns_dynsym = false,
             .any_static_target_relocs = false,
@@ -3345,30 +3401,52 @@ fn addGlobalSymbol(elf: *Elf, opts: Symbol.Global.AddOptions) (error{
         .dynsym_index = 0,
         .symtab_index = sym_index,
         .prev_in_node = .none,
-        .next_in_node = old_head,
+        .next_in_node = .none,
     };
 
-    if (old_head.unwrap()) |old_head_gsi| {
-        const old_head_ptr = old_head_gsi.ptr(elf);
-        assert(old_head_ptr.symtab_index.ptr(elf).node == opts.node);
-        assert(old_head_ptr.prev_in_node == .none);
-        old_head_ptr.prev_in_node = .wrap(gsi);
-    }
-
-    if (elf.ehdrType() != .REL) {
-        if (opts.shndx == elf.shndx.bss) {
-            assert(opts.node == .none);
-            try elf.bss_globals.put(gpa, gsi, {});
-        } else if (elf.ni.tls != .none and opts.shndx == elf.shndx.tbss) {
-            assert(opts.node == .none);
-            try elf.tbss_globals.put(gpa, gsi, {});
-        } else if (opts.shndx != .UNDEF and opts.shndx != .ABS) {
-            assert(opts.node != .none);
+    elf.mergeGlobalSymbolVisibility(gsi, opts.visibility);
+    elf.setGlobalSymbolBind(gsi, opts.bind);
+    if (opts.shndx == .COMMON) {
+        assert(opts.node == .none);
+        assert(opts.bind == .strong);
+        const common_align: Alignment = .fromByteUnits(
+            std.math.ceilPowerOfTwoAssert(u64, @max(opts.value, 1)),
+        );
+        try elf.common_globals.putNoClobber(gpa, gsi, .{
+            .size = opts.size,
+            .@"align" = common_align,
+        });
+        switch (elf.ehdrType()) {
+            .REL => try elf.setGlobalSymbolValue(gsi, .{
+                .node = .none,
+                .value = common_align.toByteUnits(),
+                .size = opts.size,
+                .type = opts.type,
+                .shndx = .COMMON,
+                .is_common = true,
+            }),
+            .DYN, .EXEC => try elf.setGlobalSymbolValue(gsi, .{
+                .node = .none,
+                .value = try elf.allocNobitsSpace(
+                    elf.shndx.bss,
+                    common_align,
+                    opts.size,
+                ),
+                .size = opts.size,
+                .type = opts.type,
+                .shndx = elf.shndx.bss,
+                .is_common = true,
+            }),
         }
-    }
-
-    if (force_local_bind) {
-        elf.moveDemotedGlobal(gsi);
+    } else {
+        try elf.setGlobalSymbolValue(gsi, .{
+            .node = opts.node,
+            .value = opts.value,
+            .size = opts.size,
+            .type = opts.type,
+            .shndx = opts.shndx,
+            .is_common = false,
+        });
     }
 
     if (name.version != null and name.is_default_version) {
@@ -3878,10 +3956,10 @@ fn setGlobalSymbolValue(elf: *Elf, gsi: Symbol.Global.Index, new: struct {
     size: u64,
     type: std.elf.STT,
     shndx: Section.Index,
+    is_common: bool,
 }) Error!void {
     const gpa = elf.base.comp.gpa;
 
-    assert(new.shndx != .UNDEF);
     const global_ptr = gsi.ptr(elf);
 
     if (global_ptr.symtab_index.ptr(elf).node.unwrap()) |old_node| {
@@ -3915,10 +3993,12 @@ fn setGlobalSymbolValue(elf: *Elf, gsi: Symbol.Global.Index, new: struct {
         } else if (elf.ni.tls != .none and new.shndx == elf.shndx.tbss) {
             assert(new.node == .none);
             try elf.tbss_globals.put(gpa, gsi, {});
-        } else if (new.shndx != .UNDEF) {
+        } else if (new.shndx != .UNDEF and new.shndx != .ABS) {
             assert(new.node != .none);
         }
     }
+
+    global_ptr.status.is_common = new.is_common;
 
     global_ptr.symtab_index.ptr(elf).node = new.node;
 
@@ -4186,7 +4266,7 @@ fn deleteOwnedDynsym(elf: *Elf, gsi: Symbol.Global.Index) std.mem.Allocator.Erro
 
 const Symbol = struct {
     /// The node which this symbol's value is defined relative to. Possible values are:
-    /// * `.none` for a SHN_ABS or SHN_UNDEF symbol, *or* a symbol in `.bss`/`.tbss`
+    /// * `.none` for a SHN_ABS or SHN_COMMON or SHN_UNDEF symbol, *or* a symbol in `.bss`/`.tbss`
     ///   (see `Elf.bss_globals` and `Elf.tbss_globals`)
     /// * A section (the symbol's value is some vaddr in that section)
     /// * An input section (the symbol's value is some vaddr in that input section)
@@ -4202,6 +4282,7 @@ const Symbol = struct {
             /// with visibility `STV_HIDDEN` are "demoted" to `STB_LOCAL` binding, yet we must still
             /// consider them strong or weak for the purposes of the link.
             bind: Symbol.Global.Bind,
+            is_common: bool,
             /// Initially set to `false`. If a relocation is added which targets this symbol and
             /// wants it to have a statically-known value, this flag is set to signal to
             /// `updateGlobalDynamic` that it may need to create a copy relocation.
@@ -4215,7 +4296,7 @@ const Symbol = struct {
             any_static_target_relocs: bool,
             any_static_relative_target_relocs: bool,
             any_dynamic_target_relocs: bool,
-            _: u2 = 0,
+            _: u1 = 0,
         },
 
         dynsym_index: u32,
@@ -4756,6 +4837,7 @@ fn classifySymbolValue(elf: *Elf, sym: Symbol.Id) enum {
     if (runtime_load_addr and
         shndx != .UNDEF and
         shndx != .ABS and
+        shndx != .COMMON and
         shndx.flags(elf).ALLOC and
         !shndx.flags(elf).TLS)
     {
@@ -5251,6 +5333,7 @@ fn create(
         .unknown_globals = .empty,
         .defined_alias_globals = .empty,
         .copied_globals = .empty,
+        .common_globals = .empty,
         .versioned_dynsym_owners = .empty,
         .verdef = .empty,
         .verneed = .empty,
@@ -5349,6 +5432,7 @@ pub fn deinit(elf: *Elf) void {
     elf.unknown_globals.deinit(gpa);
     elf.defined_alias_globals.deinit(gpa);
     elf.copied_globals.deinit(gpa);
+    elf.common_globals.deinit(gpa);
     elf.versioned_dynsym_owners.deinit(gpa);
     elf.verdef.deinit(gpa);
     elf.verneed.deinit(gpa);
@@ -8138,19 +8222,12 @@ fn loadObject(
                         std.math.ceilPowerOfTwoAssert(usize, @intCast(@max(section.shdr.addralign, 1))),
                     );
 
-                    try opts.shndx.ensureAligned(elf, need_align);
-
                     if (sect_type == .NOBITS) {
-                        const offset: u64 = switch (elf.shdrPtr(opts.shndx)) {
-                            inline else => |shdr| offset: {
-                                // Bump our BSS output section size
-                                const old_size: u64 = elf.targetLoad(&shdr.size);
-                                const offset = need_align.forward(old_size);
-                                elf.targetStore(&shdr.size, @intCast(offset + section.shdr.size));
-                                break :offset offset;
-                            },
-                        };
-
+                        const offset: u64 = try elf.allocNobitsSpace(
+                            opts.shndx,
+                            need_align,
+                            section.shdr.size,
+                        );
                         section.placement = .{ .nobits = .{
                             .shndx = opts.shndx,
                             .offset = offset,
@@ -8165,6 +8242,8 @@ fn loadObject(
 
                         continue;
                     }
+
+                    try opts.shndx.ensureAligned(elf, need_align);
 
                     const add_node_opts: MappedFile.Node.AddOptions = .{
                         .size = need_align.forward(section.shdr.size),
@@ -8259,7 +8338,17 @@ fn loadObject(
                     si.* = .null;
                     const input_sym = try r.peekStruct(ElfN.Sym, target_endian);
                     try r.discardAll64(symtab.shdr.entsize);
-                    if (input_sym.name >= strtab.len or input_sym.shndx >= ehdr.shnum) continue;
+
+                    if (input_sym.name >= strtab.len) {
+                        continue;
+                    }
+
+                    if (input_sym.shndx >= ehdr.shnum and
+                        input_sym.shndx != std.elf.SHN_ABS and
+                        input_sym.shndx != std.elf.SHN_COMMON)
+                    {
+                        continue;
+                    }
 
                     const name = std.mem.sliceTo(strtab[input_sym.name..], 0);
 
@@ -8270,69 +8359,100 @@ fn loadObject(
                     const sym_type: std.elf.STT = switch (input_sym.info.type) {
                         .NOTYPE, .OBJECT, .FUNC, .TLS => |t| t,
                         .SECTION => .NOTYPE,
-                        .FILE, .COMMON, _ => continue,
+                        .COMMON => if (input_sym.shndx != std.elf.SHN_COMMON) {
+                            return diags.failParse(
+                                path,
+                                "non-common symbol '{s}' has type STT_COMMON",
+                                .{name},
+                            );
+                        } else .COMMON,
+                        .FILE, _ => continue,
                     };
 
-                    if (input_sym.shndx == std.elf.SHN_UNDEF) switch (input_sym.info.bind) {
-                        else => |bind| return diags.failParse(
-                            path,
-                            "symbol '{s}' has unsupported binding (0x{x})",
-                            .{ name, bind },
-                        ),
-                        .LOCAL => continue,
-                        .GLOBAL, .WEAK, .GNU_UNIQUE => |bind| {
-                            si.* = .global(elf.addGlobalSymbol(.{
-                                .node = .none,
-                                .name = name,
-                                .value = input_sym.value,
-                                .size = input_sym.size,
-                                .type = sym_type,
-                                .bind = switch (bind) {
-                                    .WEAK, .GNU_UNIQUE => .weak,
-                                    .GLOBAL => .strong,
-                                    else => unreachable,
-                                },
-                                .visibility = input_sym.other.visibility,
-                                .shndx = .UNDEF,
-                            }) catch |err| switch (err) {
-                                error.MultipleDefinitions => unreachable, // shndx is .UNDEF
-                                error.MultipleDefaultVersions => unreachable, // shndx is .UNDEF
-                                error.UndefinedDefaultVersion => return diags.failParse(
+                    const symbol_oni: MappedFile.Node.Index.Optional, const output_shndx: Section.Index, const symbol_value: u64 = switch (input_sym.shndx) {
+                        std.elf.SHN_UNDEF => switch (input_sym.info.bind) {
+                            else => |bind| return diags.failParse(
+                                path,
+                                "symbol '{s}' has unsupported binding (0x{x})",
+                                .{ name, bind },
+                            ),
+                            .LOCAL => continue,
+                            .GLOBAL, .WEAK, .GNU_UNIQUE => |bind| {
+                                si.* = .global(elf.addGlobalSymbol(.{
+                                    .node = .none,
+                                    .name = name,
+                                    .value = input_sym.value,
+                                    .size = input_sym.size,
+                                    .type = sym_type,
+                                    .bind = switch (bind) {
+                                        .WEAK, .GNU_UNIQUE => .weak,
+                                        .GLOBAL => .strong,
+                                        else => unreachable,
+                                    },
+                                    .visibility = input_sym.other.visibility,
+                                    .shndx = .UNDEF,
+                                }) catch |err| switch (err) {
+                                    error.MultipleDefinitions => unreachable, // shndx is .UNDEF
+                                    error.MultipleDefaultVersions => unreachable, // shndx is .UNDEF
+                                    error.UndefinedDefaultVersion => return diags.failParse(
+                                        path,
+                                        "symbol '{s}' specifies default version without defining it",
+                                        .{name},
+                                    ),
+                                    else => |e| return e,
+                                });
+                                continue;
+                            },
+                        },
+
+                        std.elf.SHN_COMMON => sym: {
+                            if (input_sym.info.bind != .GLOBAL) {
+                                return diags.failParse(
                                     path,
-                                    "symbol '{s}' specifies default version without defining it",
+                                    "common symbol '{s}' must have bind STB_GLOBAL",
                                     .{name},
-                                ),
-                                else => |e| return e,
-                            });
-                            continue;
+                                );
+                            }
+                            if (sym_type != .COMMON and sym_type != .OBJECT) {
+                                return diags.failParse(
+                                    path,
+                                    "common symbol '{s}' must have type STT_COMMON or STT_OBJECT",
+                                    .{name},
+                                );
+                            }
+                            break :sym .{ .none, .COMMON, input_sym.value };
                         },
-                    };
 
-                    const symbol_oni: MappedFile.Node.Index.Optional, const output_shndx: Section.Index, const symbol_value: u64 = switch (sections[input_sym.shndx].placement) {
-                        .none => continue,
-                        .progbits => |isi| .{
-                            .wrap(isi.node(elf)),
-                            elf.getNodeShndx(isi.node(elf)),
-                            input_sym.value,
-                        },
-                        .nobits => |nobits| sym: {
-                            const section_base: u64 = switch (elf.ehdrType()) {
-                                .REL => 0,
-                                .EXEC, .DYN => base: {
-                                    if (elf.ni.tls != .none and
-                                        nobits.shndx == elf.shndx.tbss)
-                                    {
-                                        break :base elf.tbssOffset();
-                                    }
-                                    assert(nobits.shndx == elf.shndx.bss);
-                                    break :base nobits.shndx.vaddr(elf);
-                                },
-                            };
-                            break :sym .{
-                                .none,
-                                nobits.shndx,
-                                section_base + nobits.offset + input_sym.value,
-                            };
+                        std.elf.SHN_ABS => .{ .none, .ABS, input_sym.value },
+
+                        else => if (input_sym.shndx >= ehdr.shnum) {
+                            continue;
+                        } else switch (sections[input_sym.shndx].placement) {
+                            .none => continue,
+                            .progbits => |isi| .{
+                                .wrap(isi.node(elf)),
+                                elf.getNodeShndx(isi.node(elf)),
+                                input_sym.value,
+                            },
+                            .nobits => |nobits| sym: {
+                                const section_base: u64 = switch (elf.ehdrType()) {
+                                    .REL => 0,
+                                    .EXEC, .DYN => base: {
+                                        if (elf.ni.tls != .none and
+                                            nobits.shndx == elf.shndx.tbss)
+                                        {
+                                            break :base elf.tbssOffset();
+                                        }
+                                        assert(nobits.shndx == elf.shndx.bss);
+                                        break :base nobits.shndx.vaddr(elf);
+                                    },
+                                };
+                                break :sym .{
+                                    .none,
+                                    nobits.shndx,
+                                    section_base + nobits.offset + input_sym.value,
+                                };
+                            },
                         },
                     };
 
@@ -9002,6 +9122,7 @@ fn createInitFiniArraySection(
         .size = 0,
         .type = .NOTYPE,
         .shndx = shndx.*,
+        .is_common = false,
     });
     try elf.updateGlobalDynamic(start_gsi, true);
     try elf.setGlobalSymbolValue(end_gsi, .{
@@ -9010,6 +9131,7 @@ fn createInitFiniArraySection(
         .size = 0,
         .type = .NOTYPE,
         .shndx = shndx.*,
+        .is_common = false,
     });
     try elf.updateGlobalDynamic(end_gsi, true);
 }
@@ -11220,6 +11342,8 @@ pub fn idle(elf: *Elf) link.Error!bool {
         if (elf.bss_moved) {
             elf.bss_moved = false;
 
+            assert(elf.ehdrType() != .REL);
+
             const idle_prog_node = elf.mf.update_prog_node.start(".bss", 0);
             defer idle_prog_node.end();
 
@@ -12903,20 +13027,39 @@ fn ensurePltEntry(elf: *Elf, gsi: Symbol.Global.Index) Error!bool {
 }
 fn flushMovedPltSection(elf: *Elf, which: enum { plt, plt_sec, got_plt }, old_addr: u64, addr: u64) void {
     const target_endian = elf.targetEndian();
+
+    const update_plt_relocs: bool = switch (which) {
+        .plt => elf.targetPltInfo().plt_sec == null,
+        .plt_sec => true,
+        .got_plt => false,
+    };
+    if (update_plt_relocs) {
+        for (elf.plt.keys()) |gsi| {
+            const sym_id: Symbol.Id = .global(gsi);
+            if (gsi.dynsymIndex(elf) != null and
+                !gsi.defined(elf) and
+                sym_id.value(elf) != 0)
+            {
+                // Non-zero value on an undefined symbol in the PLT means we are treating the PLT
+                // entry as canonical, so we need to update the symbol's address (this call will
+                // re-apply relocations for us).
+                sym_id.flushMoved(elf, sym_id.value(elf) - old_addr + addr);
+            } else {
+                // Just re-apply the PLT relocations. If a symbol is in the PLT then probably most
+                // of its relocations are PLT relocations, so we don't bother specifically tracking
+                // PLT relocations---instead just re-apply all relocations targeting this symbol.
+                sym_id.applyTargetRelocs(elf);
+            }
+        }
+    }
+
     switch (elf.ehdrMachine()) {
         .AARCH64, .PPC64, .RISCV => |machine| @panic(@tagName(machine)),
         .X86_64 => {
             switch (which) {
                 .plt => return,
                 .plt_sec => {
-                    // Re-apply all PLT relocations. If a symbol is in the PLT then the majority of
-                    // its relocations are probably going through the PLT, so we don't bother with
-                    // specific tracking for PLT relocations---instead just re-apply all relocations
-                    // targeting symbols with PLT entries.
-                    for (elf.plt.keys()) |gsi| {
-                        Symbol.Id.global(gsi).applyTargetRelocs(elf);
-                    }
-                    // We also need to update all of the references from `.plt.sec` to `.got.plt`.
+                    // We need to update all of the references from `.plt.sec` to `.got.plt`.
                     // However, if there's also a flush pending for `.got.plt`, don't bother doing
                     // this now, because we'll do it when `.got.plt` is flushed anyway.
                     if (elf.shndx.got_plt.node(elf).hasMoved(&elf.mf)) {
@@ -12966,16 +13109,9 @@ fn flushMovedPltSection(elf: *Elf, which: enum { plt, plt_sec, got_plt }, old_ad
         .LOONGARCH => {
             switch (which) {
                 .plt => {
-                    // Re-apply all PLT relocations. If a symbol is in the PLT then the majority of
-                    // its relocations are probably going through the PLT, so we don't bother with
-                    // specific tracking for PLT relocations---instead just re-apply all relocations
-                    // targeting symbols with PLT entries.
-                    for (elf.plt.keys()) |gsi| {
-                        Symbol.Id.global(gsi).applyTargetRelocs(elf);
-                    }
-                    // We also need to update all of the references from `.plt` to `.got.plt`.
-                    // However, if there's also a flush pending for `.got.plt`, don't bother doing
-                    // this now, because we'll do it when `.got.plt` is flushed anyway.
+                    // We need to update all of the references from `.plt` to `.got.plt`. However,
+                    // if there's also a flush pending for `.got.plt`, don't bother doing this now,
+                    // because we'll do it when `.got.plt` is flushed anyway.
                     if (elf.shndx.got_plt.node(elf).hasMoved(&elf.mf)) {
                         return;
                     }
@@ -13032,13 +13168,6 @@ fn flushMovedPltSection(elf: *Elf, which: enum { plt, plt_sec, got_plt }, old_ad
         },
         .SPARCV9 => switch (which) {
             .plt => {
-                // Re-apply all PLT relocations. If a symbol is in the PLT then the majority of
-                // its relocations are probably going through the PLT, so we don't bother with
-                // specific tracking for PLT relocations---instead just re-apply all relocations
-                // targeting symbols with PLT entries.
-                for (elf.plt.keys()) |gsi| {
-                    Symbol.Id.global(gsi).applyTargetRelocs(elf);
-                }
                 // Update the offsets of the relocation entries in `.rela.plt`.
                 const rela_plt_shndx = elf.shndx.rela_plt;
                 for (0..elf.plt.count()) |plt_index| {
@@ -13538,4 +13667,23 @@ fn verneedId(elf: *Elf, file: String(.dynstr), version: String(.dynstr)) Error!u
     }
 
     return version_id;
+}
+
+/// Returns the offset into `shndx` of the allocated region.
+fn allocNobitsSpace(
+    elf: *Elf,
+    shndx: Section.Index,
+    @"align": Alignment,
+    size: u64,
+) Error!u64 {
+    assert(shndx.get(elf).ni == .none); // must be a SHT_NOBITS section
+    try shndx.ensureAligned(elf, @"align");
+    switch (elf.shdrPtr(shndx)) {
+        inline else => |shdr| {
+            const old_size: u64 = elf.targetLoad(&shdr.size);
+            const offset = @"align".forward(old_size);
+            elf.targetStore(&shdr.size, @intCast(offset + size));
+            return offset;
+        },
+    }
 }

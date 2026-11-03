@@ -1,8 +1,8 @@
 copy_reloc-test: ELF image
 
 ??? dynamic symbols in section ".dynsym"
-  index  type        bind        visibility  shndx        value                size         name
-  ?????  OBJECT      GLOBAL      DEFAULT     ?????  0x????????????????  0x0000000000000004  my_favourite_number
+  index  type        bind        visibility   shndx  section              value                size         name
+  ?????  OBJECT      GLOBAL      DEFAULT     ??????  .data           0x????????????????  0x0000000000000004  my_favourite_number
 
 ??? relocations in section ".rela.dyn"
   index        offset        type     sym  target

@@ -385,6 +385,99 @@ pub fn addCases(ctx: *LinkContext) void {
             );
         }
     }
+
+    if (ctx.includeTest("common_symbol")) |case| {
+        const foo = case.addObject(.{
+            .name = "foo",
+            .asm_source_bytes =
+            \\.comm something, 0x40, 0x10
+            \\
+            ,
+        });
+        const bar = case.addObject(.{
+            .name = "bar",
+            .asm_source_bytes =
+            \\// This weak definition should be overriden by the common definition
+            \\.weak something
+            \\something:
+            \\.word 0
+            \\
+            ,
+        });
+        const qux = case.addObject(.{
+            .name = "qux",
+            .asm_source_bytes =
+            \\.comm something, 0x100, 0x4
+            \\
+            ,
+        });
+
+        const combined_obj = case.addObject(.{ .name = "combined" });
+        combined_obj.root_module.addObject(foo);
+        combined_obj.root_module.addObject(bar);
+        combined_obj.root_module.addObject(qux);
+        case.verifyObjdump(combined_obj.getEmittedBin(), &.{
+            "-s",
+            "--symbols",
+            "--only-symbol=something",
+        }, .{ .sub_name = "obj" });
+
+        const combined_dynlib = case.addLibrary(.dynamic, .{ .name = "combined" });
+        combined_dynlib.root_module.addObject(foo);
+        combined_dynlib.root_module.addObject(bar);
+        combined_dynlib.root_module.addObject(qux);
+        case.verifyObjdump(combined_dynlib.getEmittedBin(), &.{
+            "-s",
+            "--symbols",
+            "--only-symbol=something",
+        }, .{ .sub_name = "dynlib" });
+    }
+
+    if (ctx.includeTest("override_common_symbol")) |case| {
+        const foo = case.addObject(.{
+            .name = "foo",
+            .asm_source_bytes =
+            \\.comm something, 0x40, 0x10
+            \\
+            ,
+        });
+        const bar = case.addObject(.{
+            .name = "bar",
+            .asm_source_bytes =
+            \\// This strong definition should override the common definition
+            \\.global something
+            \\.set something, 0x1234
+            \\
+            ,
+        });
+        const qux = case.addObject(.{
+            .name = "qux",
+            .asm_source_bytes =
+            \\.comm something, 0x100, 0x4
+            \\
+            ,
+        });
+
+        const combined_obj = case.addObject(.{ .name = "combined" });
+        combined_obj.root_module.addObject(foo);
+        combined_obj.root_module.addObject(bar);
+        combined_obj.root_module.addObject(qux);
+        case.verifyObjdump(combined_obj.getEmittedBin(), &.{
+            "-s",
+            "--symbols",
+            "--only-symbol=something",
+        }, .{ .sub_name = "obj" });
+
+        const combined_dynlib = case.addLibrary(.dynamic, .{ .name = "combined" });
+        combined_dynlib.root_module.addObject(foo);
+        combined_dynlib.root_module.addObject(bar);
+        combined_dynlib.root_module.addObject(qux);
+        case.verifyObjdump(combined_dynlib.getEmittedBin(), &.{
+            "-s",
+            "--symbols",
+            "--only-symbol=something",
+        }, .{ .sub_name = "dynlib" });
+    }
 }
 
 const LinkContext = @import("../tests.zig").LinkContext;

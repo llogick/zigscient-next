@@ -1,0 +1,10 @@
+libcommon_symbol-combined.so: ELF image
+
+??? symbols in section ".symtab"
+  index  type        bind        visibility   shndx  section              value                size         name
+  ?????  OBJECT      GLOBAL      DEFAULT     ??????  .bss            0x????????????????  0x0000000000000100  something
+
+??? dynamic symbols in section ".dynsym"
+  index  type        bind        visibility   shndx  section              value                size         name
+  ?????  OBJECT      GLOBAL      DEFAULT     ??????  .bss            0x????????????????  0x0000000000000100  something
+

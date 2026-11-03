@@ -1,0 +1,6 @@
+common_symbol-combined.o: ELF relocatable
+
+??? symbols in section ".symtab"
+  index  type        bind        visibility   shndx  section              value                size         name
+  ?????  OBJECT      GLOBAL      DEFAULT     COMMON                  0x0000000000000010  0x0000000000000100  something
+

@@ -1,0 +1,6 @@
+override_common_symbol-combined.o: ELF relocatable
+
+??? symbols in section ".symtab"
+  index  type        bind        visibility   shndx  section              value                size         name
+  ?????  NOTYPE      GLOBAL      DEFAULT        ABS                  0x0000000000001234  0x????????????????  something
+

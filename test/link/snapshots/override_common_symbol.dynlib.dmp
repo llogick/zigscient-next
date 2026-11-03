@@ -1,0 +1,10 @@
+liboverride_common_symbol-combined.so: ELF image
+
+??? symbols in section ".symtab"
+  index  type        bind        visibility   shndx  section              value                size         name
+  ?????  NOTYPE      GLOBAL      DEFAULT        ABS                  0x0000000000001234  0x????????????????  something
+
+??? dynamic symbols in section ".dynsym"
+  index  type        bind        visibility   shndx  section              value                size         name
+  ?????  NOTYPE      GLOBAL      DEFAULT        ABS                  0x0000000000001234  0x????????????????  something
+
