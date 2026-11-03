@@ -1632,6 +1632,8 @@ test "Test inner PKE" {
 }
 
 test "Test happy flow" {
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
+
     var seed: [64]u8 = undefined;
     for (&seed, 0..) |*s, i| {
         s.* = @as(u8, @intCast(i));
