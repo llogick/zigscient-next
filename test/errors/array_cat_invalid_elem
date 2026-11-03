@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = enum { a };
+export fn entry1() void {
+    const arr = [_]Foo{.a};
+    _ = arr ++ .{.b};
+}
+export fn entry2() void {
+    const b = .{.b};
+    const arr = [_]Foo{.a};
+    _ = arr ++ b;
+}
+#}
+#update
+#check errors {
+test.zig:4:19: error: no field named 'b' in enum 'test.Foo'
+test.zig:1:13: note: enum declared here
+test.zig:9:16: error: no field named 'b' in enum 'test.Foo'
+test.zig:1:13: note: enum declared here
+#}

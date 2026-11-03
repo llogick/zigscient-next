@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = @TypeOf(.{}).is_optional;
+}
+#}
+#update
+#check errors {
+test.zig:2:21: error: struct '@TypeOf(.{})' has no member named 'is_optional'
+#}

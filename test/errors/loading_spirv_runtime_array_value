@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target spirv32-vulkan -fno-llvm
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const RuntimeArray = @SpirvType(.{ .runtime_array = f32 });
+const Buffer = extern struct {
+    data: RuntimeArray,
+};
+const buf = @extern(*addrspace(.storage_buffer) Buffer, .{
+    .name = "buf",
+    .decoration = .{ .descriptor = .{ .set = 0, .binding = 0 } },
+});
+export fn main() callconv(.kernel) void {
+    const a = buf.data;
+    _ = a;
+}
+export fn main2() callconv(.kernel) void {
+    const p: *addrspace(.storage_buffer) const RuntimeArray = &buf.data;
+    _ = p.*;
+}
+#}
+#update
+#check errors {
+test.zig:10:18: error: cannot load SPIR-V runtime array value
+test.zig:15:10: error: cannot load SPIR-V runtime array value
+#}

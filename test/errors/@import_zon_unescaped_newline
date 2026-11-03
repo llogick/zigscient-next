@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: i8 = @import("unescaped_newline.zon");
+    _ = f;
+}
+#}
+#write unescaped_newline.zon {
+"a
+b"
+#}
+#update
+#check errors {
+unescaped_newline.zon:1:1: error: expected expression, found 'invalid token'
+#}

@@ -1,0 +1,49 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    blk: {
+        blk: while (false) {}
+    }
+}
+comptime {
+    blk: while (false) {
+        blk: for (@as([0]void, undefined)) |_| {}
+    }
+}
+comptime {
+    blk: for (@as([0]void, undefined)) |_| {
+        blk: {}
+    }
+}
+comptime {
+    blk: {}
+}
+comptime {
+    blk: while (false) {}
+}
+comptime {
+    blk: for (@as([0]void, undefined)) |_| {}
+}
+comptime {
+    blk: switch (true) {
+        else => {},
+    }
+}
+#}
+#update
+#check errors {
+test.zig:3:9: error: redefinition of label 'blk'
+test.zig:2:5: note: previous definition here
+test.zig:8:9: error: redefinition of label 'blk'
+test.zig:7:5: note: previous definition here
+test.zig:13:9: error: redefinition of label 'blk'
+test.zig:12:5: note: previous definition here
+test.zig:17:5: error: unused block label
+test.zig:20:5: error: unused while loop label
+test.zig:23:5: error: unused for loop label
+test.zig:26:5: error: unused switch label
+#}

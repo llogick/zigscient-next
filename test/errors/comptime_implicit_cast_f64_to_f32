@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x: f64 = 16777217;
+    const y: f32 = x;
+    _ = y;
+}
+#}
+#update
+#check errors {
+test.zig:3:20: error: type 'f32' cannot represent float value '16777217'
+#}

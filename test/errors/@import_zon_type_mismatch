@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: bool = @import("struct.zon");
+    _ = f;
+}
+#}
+#write struct.zon {
+.{
+    .boolean = true,
+    .number = 123,
+}
+#}
+#update
+#check errors {
+struct.zon:1:2: error: expected type 'bool'
+test.zig:2:29: note: imported here
+#}

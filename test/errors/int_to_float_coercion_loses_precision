@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    const int: u16 = 65535;
+    const float: f16 = int;
+    _ = float;
+}
+#}
+#update
+#check errors {
+test.zig:3:24: error: type 'f16' cannot represent integer value '65535'
+#}

@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    while(true);
+}
+#}
+#update
+#check errors {
+test.zig:2:16: error: expected block or assignment, found ';'
+#}

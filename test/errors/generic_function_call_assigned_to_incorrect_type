@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var res: []i32 = undefined;
+    res = myAlloc(i32);
+}
+fn myAlloc(comptime arg: type) anyerror!arg {
+    unreachable;
+}
+#}
+#update
+#check errors {
+test.zig:3:18: error: expected type '[]i32', found 'anyerror!i32'
+#}

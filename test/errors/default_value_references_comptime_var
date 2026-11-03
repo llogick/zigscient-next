@@ -1,0 +1,35 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    comptime var a: u8 = 0;
+    _ = struct { comptime *u8 = &a };
+}
+
+export fn bar() void {
+    comptime var a: u8 = 0;
+    _ = struct { foo: *u8 = &a };
+}
+export fn baz() void {
+    comptime var a: u8 = 0;
+    _ = @Struct(
+        .auto,
+        null,
+        &.{"foo"},
+        &.{*u8},
+        &.{.{ .default_value_ptr = @ptrCast(&&a) }},
+    );
+}
+#}
+#update
+#check errors {
+test.zig:3:33: error: field default value contains reference to comptime var
+test.zig:2:14: note: '0' points to comptime var declared here
+test.zig:8:9: error: captured value contains reference to comptime var
+test.zig:7:14: note: 'a' points to comptime var declared here
+test.zig:17:9: error: field default value contains reference to comptime var
+test.zig:11:14: note: 'foo' points to comptime var declared here
+#}

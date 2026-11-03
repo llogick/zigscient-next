@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn b() void {
+    for (0..10) |i, j| {
+        _ = i;
+        _ = j;
+    }
+}
+#}
+#update
+#check errors {
+test.zig:2:21: error: extra capture in for loop
+#}

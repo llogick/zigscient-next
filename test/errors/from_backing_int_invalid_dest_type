@@ -1,0 +1,44 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S1 = extern struct { x: u32 };
+export fn entry1(x: u32) void {
+    _ = @as(S1, @fromBackingInt(x));
+}
+
+const U1 = extern union { x: u32 };
+export fn entry2(x: u32) void {
+    _ = @as(U1, @fromBackingInt(x));
+}
+
+export fn entry3(x: u32) void {
+    _ = @as(u32, @fromBackingInt(x));
+}
+
+const S2 = packed struct { x: u32 };
+export fn entry4(x: u32) void {
+    _ = @as(S2, @fromBackingInt(x));
+}
+
+const U2 = packed union { x: u32 };
+export fn entry5(x: u32) u32 {
+    _ = @as(U2, @fromBackingInt(x));
+}
+#}
+#update
+#check errors {
+test.zig:3:17: error: non-packed struct 'test.S1' does not have a backing integer
+test.zig:1:19: note: struct declared here
+test.zig:8:17: error: non-packed union 'test.U1' does not have a backing integer
+test.zig:6:19: note: union declared here
+test.zig:12:18: error: expected enum, packed union or packed struct, found 'u32'
+test.zig:17:17: error: @fromBackingInt is ambiguous for type 'test.S2'
+test.zig:15:19: note: backing integer type of struct is inferred
+test.zig:15:19: note: consider explicitly specifying the backing integer type
+test.zig:22:17: error: @fromBackingInt is ambiguous for type 'test.U2'
+test.zig:20:19: note: backing integer type of union is inferred
+test.zig:20:19: note: consider explicitly specifying the backing integer type
+#}

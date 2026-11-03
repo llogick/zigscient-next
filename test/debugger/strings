@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name strings
 -Mroot=strings.zig
 #}
@@ -19,6 +19,7 @@ pub fn main() void {
 #}
 #update
 #check lldb {
+#...
 (lldb) breakpoint set --file strings.zig --source-pattern-regexp '_ = strings;'
 Breakpoint 1: where = strings`strings.testStrings + #... at strings.zig:9:1, address = 0x#...
 (lldb) process launch
@@ -69,4 +70,5 @@ Process #... stopped
 }
 (lldb) breakpoint delete --force 1
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...
 #}

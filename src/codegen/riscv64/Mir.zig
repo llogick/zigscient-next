@@ -119,7 +119,6 @@ pub fn emit(
     const func = zcu.funcInfo(func_index);
     const fn_info = zcu.typeToFunc(.fromInterned(func.ty)).?;
     const nav = func.owner_nav;
-    const mod = zcu.navFileScope(nav).mod.?;
     var e: Emit = .{
         .lower = .{
             .pt = pt,
@@ -127,9 +126,6 @@ pub fn emit(
             .mir = mir,
             .cc = fn_info.cc,
             .src_loc = zcu.navSrcLoc(nav),
-            .output_mode = comp.config.output_mode,
-            .link_mode = comp.config.link_mode,
-            .pic = mod.pic,
         },
         .bin_file = lf,
         .debug_output = debug_output,

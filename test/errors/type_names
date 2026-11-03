@@ -1,0 +1,95 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const namespace = struct {
+    const S = struct {};
+    const E = enum {};
+    const U = union {};
+    const O = opaque {};
+};
+export fn declarationValue() void {
+    @compileLog(@typeName(namespace.S));
+    @compileLog(@typeName(namespace.E));
+    @compileLog(@typeName(namespace.U));
+    @compileLog(@typeName(namespace.O));
+}
+
+export fn localVarValue() void {
+    const S = struct {};
+    const E = enum {};
+    const U = union {};
+    const O = opaque {};
+    @compileLog(@typeName(S));
+    @compileLog(@typeName(E));
+    @compileLog(@typeName(U));
+    @compileLog(@typeName(O));
+}
+
+fn MakeS() type {
+    return struct {};
+}
+fn MakeE() type {
+    return enum {};
+}
+fn MakeU() type {
+    return union {};
+}
+fn MakeO() type {
+    return opaque {};
+}
+
+export fn returnValue() void {
+    @compileLog(@typeName(MakeS()));
+    @compileLog(@typeName(MakeE()));
+    @compileLog(@typeName(MakeU()));
+    @compileLog(@typeName(MakeO()));
+}
+
+const StructInStruct = struct { a: struct { b: u8 } };
+const UnionInStruct = struct { a: union { b: u8 } };
+const StructInUnion = union { a: struct { b: u8 } };
+const UnionInUnion = union { a: union { b: u8 } };
+const InnerStruct = struct { b: u8 };
+const StructInTuple = struct { a: InnerStruct };
+const InnerUnion = union { b: u8 };
+const UnionInTuple = struct { a: InnerUnion };
+
+export fn nestedTypes() void {
+    @compileLog(@typeName(StructInStruct));
+    @compileLog(@typeName(UnionInStruct));
+    @compileLog(@typeName(StructInUnion));
+    @compileLog(@typeName(UnionInUnion));
+    @compileLog(@typeName(StructInTuple));
+    @compileLog(@typeName(UnionInTuple));
+}
+#}
+#update
+#check errors {
+test.zig:8:5: error: found compile log statement
+test.zig:19:5: note: also here
+test.zig:39:5: note: also here
+test.zig:55:5: note: also here
+
+Compile Log Output:
+@as(*const [16:0]u8, "test.namespace.S")
+@as(*const [16:0]u8, "test.namespace.E")
+@as(*const [16:0]u8, "test.namespace.U")
+@as(*const [16:0]u8, "test.namespace.O")
+@as(*const [20:0]u8, "test.localVarValue.S")
+@as(*const [20:0]u8, "test.localVarValue.E")
+@as(*const [20:0]u8, "test.localVarValue.U")
+@as(*const [20:0]u8, "test.localVarValue.O")
+@as(*const [12:0]u8, "test.MakeS()")
+@as(*const [12:0]u8, "test.MakeE()")
+@as(*const [12:0]u8, "test.MakeU()")
+@as(*const [12:0]u8, "test.MakeO()")
+@as(*const [19:0]u8, "test.StructInStruct")
+@as(*const [18:0]u8, "test.UnionInStruct")
+@as(*const [18:0]u8, "test.StructInUnion")
+@as(*const [17:0]u8, "test.UnionInUnion")
+@as(*const [18:0]u8, "test.StructInTuple")
+@as(*const [17:0]u8, "test.UnionInTuple")
+#}

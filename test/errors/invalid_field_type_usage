@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    _ = @FieldType(u8, "a");
+}
+export fn bar() void {
+    const S = struct { a: u8 };
+    _ = @FieldType(S, "b");
+}
+#}
+#update
+#check errors {
+test.zig:2:20: error: expected struct or union; found 'u8'
+test.zig:6:23: error: no field named 'b' in struct 'test.bar.S'
+test.zig:5:15: note: struct declared here
+#}

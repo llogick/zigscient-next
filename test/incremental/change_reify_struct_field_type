@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 fn getEnum(s: @Struct(.auto, null, &.{"field"}, &.{struct { tag: Enum }}, &.{.{}})) Enum {
     return s.field.tag;
 }
@@ -15,7 +16,7 @@ const std = @import("std");
 #update
 #check stdout "foo"
 
-#write main.zig {
+#write test.zig {
 fn getEnum(s: @Struct(.auto, null, &.{"field"}, &.{Enum}, &.{.{}})) Enum {
     return s.field;
 }

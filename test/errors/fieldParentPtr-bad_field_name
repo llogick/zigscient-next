@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = extern struct {
+    derp: i32,
+};
+export fn foo(a: *i32) *Foo {
+    return @fieldParentPtr("a", a);
+}
+#}
+#update
+#check errors {
+test.zig:5:28: error: no field named 'a' in struct 'test.Foo'
+test.zig:1:20: note: struct declared here
+#}

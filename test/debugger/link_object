@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name link_object
 -Mroot=main.zig
 #}
@@ -13,6 +13,7 @@ pub fn main() void {
 #}
 #update
 #check lldb {
+#...
 (lldb) breakpoint set --file main.zig --source-pattern-regexp 'x = fabsf\(x\);'
 Breakpoint 1: where = link_object`main.main + #... at main.zig:4:14, address = 0x#...
 (lldb) process launch
@@ -36,4 +37,5 @@ Process #... stopped
 (f32) x = 1234.5
 (lldb) breakpoint delete --force 2
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...
 #}

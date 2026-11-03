@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn Observable(comptime T: type) type {
+    return struct {
+        fn map(Src: T, Dst: anytype, function: fn (T) Dst) Dst {
+            _ = Src;
+            _ = function;
+            return Observable(Dst);
+        }
+    };
+}
+
+fn u32Tou64(x: u32) u64 {
+    _ = x;
+    return 0;
+}
+
+export fn entry() void {
+    Observable(u32).map(u32, u64, u32Tou64(0));
+}
+#}
+#update
+#check errors {
+test.zig:17:25: error: expected type 'u32', found 'type'
+test.zig:3:21: note: parameter type declared here
+#}

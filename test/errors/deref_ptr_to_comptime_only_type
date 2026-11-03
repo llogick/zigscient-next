@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(ptr: *anyopaque) void {
+    const ct_only: *type = @ptrCast(ptr);
+    _ = ct_only.*;
+}
+#}
+#update
+#check errors {
+test.zig:3:16: error: cannot load comptime-only type 'type'
+test.zig:3:9: note: pointer of type '*type' is runtime-known
+#}

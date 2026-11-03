@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn f() void {
+    var array = "aoeu";
+    var bad = false;
+    array[bad] = array[bad];
+    _ = &bad;
+}
+export fn g() void {
+    var array = "aoeu";
+    var bad = false;
+    _ = array[bad];
+    _ = .{ &array, &bad };
+}
+#}
+#update
+#check errors {
+test.zig:4:11: error: expected type 'usize', found 'bool'
+test.zig:10:15: error: expected type 'usize', found 'bool'
+#}

@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Letter = extern union {
+    A,
+};
+export fn entry() void {
+    const a: Letter = .{ .A = {} };
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: union field missing type
+#}

@@ -48,6 +48,7 @@ use_lib_llvm: bool,
 use_lld: bool,
 c_frontend: CFrontend,
 use_new_linker: bool,
+pic: bool,
 pie: bool,
 lto: std.zig.LtoMode,
 incremental: bool,
@@ -110,6 +111,7 @@ pub const Options = struct {
     use_lld: ?bool = null,
     use_clang: ?bool = null,
     use_new_linker: ?bool = null,
+    pic: ?bool = null,
     pie: ?bool = null,
     lto: ?std.zig.LtoMode = null,
     legalize_all: bool = false,
@@ -151,6 +153,9 @@ pub const ResolveError = error{
     SharedLibrariesRequireDynamicLinking,
     DynamicLinkingWithLldRequiresSharedLibraries,
     ExportMemoryAndDynamicIncompatible,
+    TargetRequiresPic,
+    PieRequiresPic,
+    DynamicLinkingRequiresPic,
     DynamicLibraryPrecludesPie,
     TargetRequiresPie,
     SanitizeThreadRequiresPie,
@@ -349,7 +354,7 @@ pub fn resolve(options: Options) ResolveError!Config {
         }
 
         // If Zig does not support the target, then we can't use it.
-        if (target_util.zigBackend(target, false) == .other) {
+        if (std.zig.compilerBackend(target, false) == .other) {
             if (options.use_llvm == false) return error.ZigLacksTargetSupport;
             break :b true;
         }
@@ -385,7 +390,7 @@ pub fn resolve(options: Options) ResolveError!Config {
         // we are confident in the robustness of the backend.
         break :b !target_util.selfHostedBackendIsAsRobustAsLlvm(target);
     };
-    const backend = target_util.zigBackend(target, use_llvm);
+    const backend = std.zig.compilerBackend(target, use_llvm);
 
     if (options.emit_bin and options.have_zcu) {
         if (target.ofmt != .llvmbc and target.ofmt != .llvmir and !use_lib_llvm and use_llvm) {
@@ -498,6 +503,31 @@ pub fn resolve(options: Options) ResolveError!Config {
         }
         if (options.pie) |pie| break :b pie;
         break :b if (options.output_mode == .Exe) target_util.defaultPie(target) else false;
+    };
+
+    const pic = b: {
+        if (target_util.requiresPic(target)) {
+            if (options.pic == false)
+                return error.TargetRequiresPic;
+            break :b true;
+        }
+        if (pie) {
+            if (options.pic == false)
+                return error.PieRequiresPic;
+            break :b true;
+        }
+        if (link_mode == .dynamic and
+            target_util.requiresPicForDynamicLink(target, options.output_mode))
+        {
+            if (options.pic == false)
+                return error.DynamicLinkingRequiresPic;
+            break :b true;
+        }
+        if (options.pic) |x| break :b x;
+
+        // Default to PIC for objects and static libraries to make the common
+        // cases of linking those into a PIE or a shared library just work.
+        break :b options.output_mode != .Exe;
     };
 
     const lto: std.zig.LtoMode = b: {
@@ -635,6 +665,7 @@ pub fn resolve(options: Options) ResolveError!Config {
         .san_cov_trace_pc_guard = options.san_cov_trace_pc_guard,
         .root_error_tracing = root_error_tracing,
         .use_new_linker = use_new_linker,
+        .pic = pic,
         .pie = pie,
         .lto = lto,
         .incremental = options.incremental,

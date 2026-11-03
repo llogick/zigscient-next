@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    x: i32,
+};
+fn foo() Foo {
+    return .{ .x = 42 };
+}
+fn bar(val: anytype) Foo {
+    return .{ .x = val };
+}
+export fn entry() void {
+    const baz: Foo = undefined;
+    baz = foo();
+}
+export fn entry1() void {
+    const baz: Foo = undefined;
+    baz = bar(42);
+}
+#}
+#update
+#check errors {
+test.zig:12:5: error: cannot assign to constant
+test.zig:16:5: error: cannot assign to constant
+#}

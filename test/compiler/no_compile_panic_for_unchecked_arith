@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub const panic = @compileError("");
+
+export fn entry() usize {
+    var x: usize = 0;
+    x +%= 1;
+    x -%= 1;
+    x *%= 2;
+    x +|= 1;
+    x -|= 1;
+    x *|= 2;
+    return x;
+}
+#}
+#update
+#check errors

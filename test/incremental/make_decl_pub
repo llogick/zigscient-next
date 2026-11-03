@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const foo = @import("foo.zig");
 pub fn main() !void {
     try foo.hello();
@@ -17,7 +18,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 #}
 #update
 #check errors {
-main.zig:3:12: error: 'hello' is not marked 'pub'
+test.zig:3:12: error: 'hello' is not marked 'pub'
 foo.zig:2:1: note: declared here
 #}
 

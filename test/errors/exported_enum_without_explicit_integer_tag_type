@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum { one, two };
+comptime {
+    @export(&E, .{ .name = "E" });
+}
+const e: E = .two;
+comptime {
+    @export(&e, .{ .name = "e" });
+}
+#}
+#update
+#check errors {
+test.zig:3:5: error: unable to export type 'type'
+test.zig:7:5: error: unable to export type 'test.E'
+test.zig:1:11: note: integer tag type of enum is inferred
+test.zig:1:11: note: consider explicitly specifying the integer tag type
+test.zig:1:11: note: enum declared here
+#}

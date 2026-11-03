@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const U = union(enum) {
+    int: isize,
+    float: f64,
+};
+
+export fn entry() void {
+    const f = U{ .int = 20 };
+    _ = f.float();
+}
+#}
+#update
+#check errors {
+test.zig:8:10: error: access of union field 'float' while field 'int' is active
+test.zig:1:11: note: union declared here
+#}

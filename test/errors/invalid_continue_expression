@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn f() void {
+    continue;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: continue expression outside loop
+#}

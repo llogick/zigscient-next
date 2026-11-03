@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+export fn entry() void {
+    const f: struct { name: u8 } = @import("struct_dup_field.zon");
+    _ = f;
+}
+#}
+#write struct_dup_field.zon {
+.{
+    .name = 10,
+    .name = 20,
+}
+#}
+#update
+#check errors {
+struct_dup_field.zon:2:6: error: duplicate struct field name
+struct_dup_field.zon:3:6: note: duplicate name here
+#}

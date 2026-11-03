@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    const optional_fn: ?fn () void = null;
+    _ = optional_fn();
+}
+export fn entry2() void {
+    const optional_fn_ptr: ?*const fn () void = null;
+    _ = optional_fn_ptr();
+}
+#}
+#update
+#check errors {
+test.zig:3:9: error: cannot call optional type '?fn () void'
+test.zig:3:9: note: consider using '.?', 'orelse' or 'if'
+test.zig:7:9: error: cannot call optional type '?*const fn () void'
+test.zig:7:9: note: consider using '.?', 'orelse' or 'if'
+#}

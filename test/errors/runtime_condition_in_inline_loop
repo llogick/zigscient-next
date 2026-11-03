@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+var rt_slice: []const u8 = &.{ 1, 2, 3 };
+
+export fn foo() void {
+    inline for (rt_slice) |_| {}
+}
+
+export fn bar() void {
+    inline while (rt_slice.len == 0) {}
+}
+#}
+#update
+#check errors {
+test.zig:4:17: error: unable to resolve comptime value
+test.zig:4:17: note: inline loop condition must be comptime-known
+test.zig:8:32: error: unable to resolve comptime value
+test.zig:8:32: note: inline loop condition must be comptime-known
+#}

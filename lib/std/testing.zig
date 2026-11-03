@@ -682,10 +682,7 @@ pub fn expectEqualStrings(expected: []const u8, actual: []const u8) !void {
         failPrintWithVisibleNewlines(actual);
         failPrint("\n======================================\n", .{});
 
-        var diff_line_number: usize = 1;
-        for (expected[0..diff_index]) |value| {
-            if (value == '\n') diff_line_number += 1;
-        }
+        const diff_line_number = 1 + std.mem.countScalar(u8, expected[0..diff_index], '\n');
         failPrint("First difference occurs on line {d}:\n", .{diff_line_number});
 
         failPrint("expected:\n", .{});

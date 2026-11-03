@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern fn foo() align(3) void;
+export fn entry() void {
+    return foo();
+}
+#}
+#update
+#check errors {
+test.zig:1:23: error: alignment value '3' is not a power of two
+#}

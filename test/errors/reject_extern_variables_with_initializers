@@ -1,0 +1,12 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern var foo: int = 2;
+#}
+#update
+#check errors {
+test.zig:1:23: error: extern variables have no initializers
+#}

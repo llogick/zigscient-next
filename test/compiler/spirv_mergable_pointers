@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test
+-target spirv64-vulkan -fno-llvm
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    var x: *addrspace(.physical_storage_buffer) i32 = undefined;
+    _ = &x;
+    var y: *addrspace(.physical_storage_buffer) i32 = undefined;
+    _ = &y;
+    var rt_cond = false;
+    _ = &rt_cond;
+
+    var z = if (rt_cond) x else y;
+    _ = &z;
+}
+#}
+#update
+#check errors

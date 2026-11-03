@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    name: []const u8,
+    T: type,
+};
+export fn entry() void {
+    const xx: [2]Foo = .{ .{ .name = "", .T = u8 }, .{ .name = "", .T = u8 } };
+    for (xx) |f| {
+        _ = f;
+    }
+}
+#}
+#update
+#check errors {
+test.zig:7:10: error: values of type 'test.Foo' must be comptime-known, but index value is runtime-known
+test.zig:3:8: note: struct requires comptime because of this field
+test.zig:3:8: note: types are not available at runtime
+#}

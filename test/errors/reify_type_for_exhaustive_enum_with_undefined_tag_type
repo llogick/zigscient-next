@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Tag = @Enum(undefined, .exhaustive, &.{}, &.{});
+export fn entry() void {
+    _ = @as(Tag, @enumFromInt(0));
+}
+#}
+#update
+#check errors {
+test.zig:1:19: error: use of undefined value here causes illegal behavior
+#}

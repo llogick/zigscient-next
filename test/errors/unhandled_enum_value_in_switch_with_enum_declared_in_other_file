@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+
+export fn entry1() void {
+    const order: std.math.Order = .lt;
+    switch (order) {}
+}
+#}
+#update
+#check errors {
+test.zig:5:5: error: switch must handle all possibilities
+lib/std/**.zig:?:?: note: unhandled enumeration value: 'gt'
+lib/std/**.zig:?:?: note: unhandled enumeration value: 'lt'
+lib/std/**.zig:?:?: note: unhandled enumeration value: 'eq'
+lib/std/**.zig:?:?: note: enum 'math.Order' declared here
+#}

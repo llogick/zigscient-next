@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const A = enum {
+    a,
+    b,
+    _ = 1,
+};
+#}
+#update
+#check errors {
+test.zig:4:9: error: '_' is used to mark an enum as non-exhaustive and cannot be assigned a value
+#}

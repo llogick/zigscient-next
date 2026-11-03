@@ -1,0 +1,31 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    const e: error{Foo}!u32 = error.Foo;
+    e catch |err| switch (err) {
+        error.Foo => |err| {
+            _ = err catch {};
+        },
+    };
+}
+
+export fn entry2() void {
+    const e: error{Foo}!u32 = error.Foo;
+    if (e) {} else |err| switch (err) {
+        error.Foo => |err| {
+            _ = err catch {};
+        },
+    }
+}
+#}
+#update
+#check errors {
+test.zig:4:23: error: redeclaration of capture 'err'
+test.zig:3:14: note: previous declaration here
+test.zig:13:23: error: redeclaration of capture 'err'
+test.zig:12:21: note: previous declaration here
+#}

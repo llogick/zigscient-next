@@ -421,7 +421,7 @@ fn buildWasmBinary(
     child.stdin = null;
 
     const term = try child.wait(io);
-    if (!term.success()) {
+    if (!term.eql(.success)) {
         std.log.err("the following command {f}:\n{s}", .{
             term, try std.zig.allocPrintCmd(arena, argv.items, .{}),
         });

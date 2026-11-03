@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const bitfield = struct {
+        e: u8,
+        e: u8,
+    };
+    var a = .{@sizeOf(bitfield)};
+    _ = &a;
+}
+#}
+#update
+#check errors {
+test.zig:3:9: error: duplicate struct member name 'e'
+test.zig:4:9: note: duplicate name here
+test.zig:2:22: note: struct declared here
+#}

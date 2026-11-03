@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const p: *anyopaque = undefined;
+export fn a() void {
+    _ = @ptrCast(@ptrCast(p));
+}
+export fn b() void {
+    const ptr1: *u32 = @alignCast(@ptrCast(@alignCast(p)));
+    _ = ptr1;
+}
+export fn c() void {
+    _ = @constCast(@alignCast(@ptrCast(@constCast(@volatileCast(p)))));
+}
+#}
+#update
+#check errors {
+test.zig:3:18: error: redundant @ptrCast
+test.zig:6:44: error: redundant @alignCast
+test.zig:10:40: error: redundant @constCast
+#}

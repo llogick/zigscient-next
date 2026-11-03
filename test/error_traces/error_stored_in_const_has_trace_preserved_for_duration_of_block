@@ -1,0 +1,44 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void { return error.TheSkyIsFalling; }
+fn bar() !void { return error.InternalError; }
+fn baz() !void { return error.UnexpectedReality; }
+
+pub fn main() !void {
+    const x = foo();
+    const y = b: {
+        if (true)
+            break :b bar();
+
+        break :b {};
+    };
+    x catch {};
+    y catch {};
+    // foo()/bar() error traces not popped until end of block
+
+    {
+        const z = baz();
+        z catch {};
+        // baz() error trace still alive here
+    }
+    // baz() error trace popped, foo(), bar() still alive
+    return error.StillUnresolved;
+}
+#}
+#update
+#check error-trace {
+error: StillUnresolved
+test.zig:1:18: 0x? in foo (test*)
+fn foo() !void { return error.TheSkyIsFalling; }
+                 ^
+test.zig:2:18: 0x? in bar (test*)
+fn bar() !void { return error.InternalError; }
+                 ^
+test.zig:23:5: 0x? in main (test*)
+    return error.StillUnresolved;
+    ^
+#}

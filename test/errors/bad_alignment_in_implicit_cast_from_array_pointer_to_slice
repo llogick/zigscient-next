@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    var x: [10]u8 = undefined;
+    const y: []align(16) u8 = &x;
+    _ = y;
+}
+#}
+#update
+#check errors {
+test.zig:3:31: error: expected type '[]align(16) u8', found '*[10]u8'
+test.zig:3:31: note: pointer alignment '1' cannot cast into pointer alignment '16'
+#}

@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern var foo: u3;
+export fn entry() void {
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:1:17: error: extern variable cannot have type 'u3'
+test.zig:1:17: note: only integers with 0 or power of two bits are extern compatible
+#}

@@ -1,0 +1,39 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum {};
+
+export fn entry1() void {
+    const e: E = undefined;
+    _ = e;
+}
+
+export fn entry2() void {
+    const e: E = @enumFromInt(@as(u8, undefined));
+    _ = e;
+}
+
+export fn entry3() void {
+    const e: E = .a;
+    _ = e;
+}
+
+export fn entry4() void {
+    const e: E = @enumFromInt(0);
+    _ = e;
+}
+#}
+#update
+#check errors {
+test.zig:4:18: error: expected type 'test.E', found '@TypeOf(undefined)'
+test.zig:4:18: note: cannot coerce to uninstantiable type 'test.E'
+test.zig:1:11: note: enum declared here
+test.zig:9:31: error: use of undefined value here causes illegal behavior
+test.zig:14:19: error: enum 'test.E' has no member named 'a'
+test.zig:1:11: note: enum declared here
+test.zig:19:18: error: enum 'test.E' has no tag with value '0'
+test.zig:1:11: note: enum declared here
+#}

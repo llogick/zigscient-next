@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    bar() catch unreachable;
+}
+fn bar() anyerror!i32 {
+    return 0;
+}
+#}
+#update
+#check errors {
+test.zig:2:11: error: value of type 'i32' ignored
+test.zig:2:11: note: all non-void values must be used
+test.zig:2:11: note: to discard the value, assign it to '_'
+#}

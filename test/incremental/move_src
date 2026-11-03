@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     var stdout_writer = std.Io.File.stdout().writerStreaming(io, &.{});
@@ -21,7 +22,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 7 123
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     var stdout_writer = std.Io.File.stdout().writerStreaming(io, &.{});

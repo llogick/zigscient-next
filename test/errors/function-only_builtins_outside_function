@@ -1,0 +1,69 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    @branchHint(.cold);
+}
+
+comptime {
+    @src();
+}
+
+comptime {
+    @returnAddress();
+}
+
+comptime {
+    @frameAddress();
+}
+
+comptime {
+    @breakpoint();
+}
+
+comptime {
+    @cVaArg(1, 2);
+}
+
+comptime {
+    @cVaCopy(1);
+}
+
+comptime {
+    @cVaEnd(1);
+}
+
+comptime {
+    @cVaStart();
+}
+
+comptime {
+    @workItemId(42);
+}
+
+comptime {
+    @workGroupSize(42);
+}
+
+comptime {
+    @workGroupId(42);
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: '@branchHint' outside function scope
+test.zig:6:5: error: '@src' outside function scope
+test.zig:10:5: error: '@returnAddress' outside function scope
+test.zig:14:5: error: '@frameAddress' outside function scope
+test.zig:18:5: error: '@breakpoint' outside function scope
+test.zig:22:5: error: '@cVaArg' outside function scope
+test.zig:26:5: error: '@cVaCopy' outside function scope
+test.zig:30:5: error: '@cVaEnd' outside function scope
+test.zig:34:5: error: '@cVaStart' outside function scope
+test.zig:38:5: error: '@workItemId' outside function scope
+test.zig:42:5: error: '@workGroupSize' outside function scope
+test.zig:46:5: error: '@workGroupId' outside function scope
+#}

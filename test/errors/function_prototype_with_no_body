@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() void;
+export fn entry() void {
+    foo();
+}
+#}
+#update
+#check errors {
+test.zig:1:1: error: non-extern function has no body
+#}

@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn entry(a: *addrspace(.gs) i32) *addrspace(.fs) i32 {
+    return a;
+}
+export fn entry2() void {
+    _ = &entry;
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: expected type '*addrspace(.fs) i32', found '*addrspace(.gs) i32'
+test.zig:2:12: note: address space 'gs' cannot cast into address space 'fs'
+test.zig:1:34: note: function return type declared here
+#}

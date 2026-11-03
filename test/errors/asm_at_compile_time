@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    doSomeAsm();
+}
+
+fn doSomeAsm() void {
+    asm volatile (
+        \\.globl aoeu;
+        \\.type aoeu, @function;
+        \\.set aoeu, derp;
+    );
+}
+#}
+#update
+#check errors {
+test.zig:6:5: error: unable to evaluate comptime expression
+test.zig:2:14: note: called at comptime from here
+test.zig:1:1: note: 'comptime' keyword forces comptime evaluation
+#}

@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const U = packed union {
+    x: f32,
+    y: u8 align(10),
+    z: u32,
+};
+#}
+#update
+#check errors {
+test.zig:3:17: error: unable to override alignment of packed union fields
+#}

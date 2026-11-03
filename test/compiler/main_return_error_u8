@@ -1,0 +1,14 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Err = error{Foo};
+
+pub fn main() !u8 {
+    return Err.Foo;
+}
+#}
+#update
+#check errors

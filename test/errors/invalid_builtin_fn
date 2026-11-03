@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn f() @bogus(foo) {}
+export fn entry() void {
+    _ = f();
+}
+#}
+#update
+#check errors {
+test.zig:1:8: error: invalid builtin function: '@bogus'
+#}

@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name sssl
 -Mroot=step_single_stmt_loops.zig
 #}

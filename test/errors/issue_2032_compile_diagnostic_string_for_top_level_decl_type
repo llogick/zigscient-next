@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const foo: u32 = @This(){};
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:2:29: error: expected type 'u32', found 'test'
+test.zig:1:1: note: struct declared here
+#}

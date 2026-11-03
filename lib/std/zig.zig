@@ -2008,7 +2008,7 @@ pub fn buildExeSubprocess(
         },
     };
 
-    if (!term.success()) {
+    if (!term.eql(.success)) {
         log.err("command {f}: {f}", .{ term, cmd });
         if (received_fs_inputs) return error.FailedButCacheIntact;
         return error.AlreadyReported;
@@ -2056,6 +2056,46 @@ pub fn buildExeSubprocess(
         .cache_hit = cache_hit,
         .path = try base_path.join(gpa, bin_name),
     };
+}
+
+pub fn compilerBackend(t: *const std.Target, use_llvm: bool) std.lang.CompilerBackend {
+    if (use_llvm) return .stage2_llvm;
+    if (t.ofmt == .c) return .stage2_c;
+    return switch (t.cpu.arch) {
+        .aarch64, .aarch64_be => .stage2_aarch64,
+        .arm, .armeb, .thumb, .thumbeb => .stage2_arm,
+        .loongarch32, .loongarch64 => .stage2_loongarch,
+        .powerpc, .powerpcle, .powerpc64, .powerpc64le => .stage2_powerpc,
+        .riscv64 => .stage2_riscv64,
+        .sparc64 => .stage2_sparc64,
+        .spirv32, .spirv64 => .stage2_spirv,
+        .wasm32, .wasm64 => .stage2_wasm,
+        .x86, .x86c16 => .stage2_x86,
+        .x86_64 => .stage2_x86_64,
+        .spork8 => .zsf_spork8,
+        else => .other,
+    };
+}
+
+pub fn defaultOmitFramePointer(t: *const std.Target, optimize: std.lang.Optimize) bool {
+    if (optimize == .small) {
+        // On x86, in most cases, keeping the frame pointer usually results in smaller binary size.
+        // This has to do with how instructions for memory access via the stack base pointer register
+        // (when keeping the frame pointer) are smaller than instructions for memory access via the
+        // stack pointer register (when omitting the frame pointer).
+        return !t.cpu.arch.isX86();
+    }
+    return false;
+}
+
+pub fn defaultUnwindTables(t: *const std.Target) std.lang.UnwindTables {
+    switch (t.cpu.arch) {
+        else => {},
+        // The old 32-bit x86 variant of SEH doesn't support tables.
+        .x86 => if (t.os.tag == .windows) return .none,
+        .nvptx, .nvptx64, .spirv32, .spirv64 => return .none,
+    }
+    return .async;
 }
 
 test {

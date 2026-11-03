@@ -1,0 +1,36 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    @compileError("this is an error");
+}
+comptime {
+    @compileLog("this is a log");
+}
+#}
+#update "compile error"
+#check errors {
+test.zig:2:5: error: this is an error
+
+Compile Log Output:
+@as(*const [13:0]u8, "this is a log")
+#}
+
+#write test.zig {
+comptime {
+    //@compileError("this is an error");
+}
+comptime {
+    @compileLog("this is a log");
+}
+#}
+#update "remove the compile error"
+#check errors {
+test.zig:5:5: error: found compile log statement
+
+Compile Log Output:
+@as(*const [13:0]u8, "this is a log")
+#}

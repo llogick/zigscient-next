@@ -1,0 +1,48 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    const U = union(enum) {
+        a: u32,
+        b: noreturn,
+        fn foo(_: @This()) void {}
+        fn bar() noreturn {
+            unreachable;
+        }
+    };
+
+    var a = U{ .b = undefined };
+    _ = &a;
+}
+export fn entry2() void {
+    const U = union(enum) {
+        a: noreturn,
+    };
+    const u: U = .a;
+    _ = u;
+}
+export fn entry3() void {
+    const U = union(enum) {
+        a: noreturn,
+        b: void,
+    };
+    var e = @typeInfo(U).@"union".tag_type.?.a;
+    var u: U = undefined;
+    u = (&e).*;
+}
+#}
+#update
+#check errors {
+test.zig:11:14: error: cannot initialize union field with uninstantiable type 'noreturn'
+test.zig:4:9: note: field 'b' declared here
+test.zig:2:15: note: union declared here
+test.zig:18:19: error: cannot initialize union field with uninstantiable type 'noreturn'
+test.zig:16:9: note: field 'a' declared here
+test.zig:15:15: note: union declared here
+test.zig:28:13: error: runtime coercion from enum '@typeInfo(test.entry3.U).@"union".tag_type.?' to union 'test.entry3.U' which has non-void fields
+test.zig:23:9: note: field 'a' has uninstantiable type 'noreturn'
+test.zig:22:15: note: union declared here
+#}

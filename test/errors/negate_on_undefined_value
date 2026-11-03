@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const a: i64 = undefined;
+    _ = -a;
+}
+#}
+#update
+#check errors {
+test.zig:3:10: error: use of undefined value here causes illegal behavior
+#}

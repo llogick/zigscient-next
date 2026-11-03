@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(x: [*]i32) i32 {
+    return x.*;
+}
+#}
+#update
+#check errors {
+test.zig:2:13: error: index syntax required for unknown-length pointer type '[*]i32'
+#}

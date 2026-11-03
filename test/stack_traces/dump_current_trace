@@ -1,0 +1,40 @@
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-none-dynamic-lc
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-async-dynamic-lc
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-omit-async-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-none-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-async-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-omit-async-dynamic-lc
+
+#require safe-unwind
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {
+    foo(bar());
+}
+fn bar() void {
+    qux(123);
+}
+fn foo(_: void) void {}
+fn qux(x: u32) void {
+    std.debug.dumpCurrentStackTrace(.{});
+    _ = x;
+}
+const std = @import("std");
+#}
+#update
+#check stack-trace {
+test.zig:9:36: 0x? in qux (test*)
+    std.debug.dumpCurrentStackTrace(.{});
+                                   ^
+test.zig:5:8: 0x? in bar (test*)
+    qux(123);
+       ^
+test.zig:2:12: 0x? in main (test*)
+    foo(bar());
+           ^
+...
+#}

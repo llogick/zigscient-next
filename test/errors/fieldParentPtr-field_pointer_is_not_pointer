@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = extern struct {
+    a: i32,
+};
+export fn foo(a: i32) *const Foo {
+    return @fieldParentPtr("a", a);
+}
+#}
+#update
+#check errors {
+test.zig:5:33: error: expected pointer type, found 'i32'
+#}

@@ -1,81 +1,36 @@
-#skip amdgcn-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-amdhsa-none-baseline-whole-llvm-debug-lld
 
-#skip csky-freestanding-eabi-baseline-whole-llvm-lld-pic
-#skip csky-freestanding-eabihf-baseline-whole-llvm-lld-pic
-#skip csky-linux-eabi-baseline-whole-llvm-lld-pic
-#skip csky-linux-eabihf-baseline-whole-llvm-lld-pic
-#skip csky-linux-gnueabi-baseline-whole-llvm-lld-pic
-#skip csky-linux-gnueabihf-baseline-whole-llvm-lld-pic
+#skip bpfeb-freestanding-none-baseline-whole-llvm-debug-lld
 
-#skip bpfeb-freestanding-none-baseline-whole-llvm-lld-pic
+#skip bpfel-freestanding-none-baseline-whole-llvm-debug-lld
 
-#skip bpfel-freestanding-none-baseline-whole-llvm-lld-pic
+#skip csky-freestanding-eabi-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-eabihf-baseline-whole-llvm-debug-lld
+#skip csky-linux-eabi-baseline-whole-llvm-debug-lld
+#skip csky-linux-eabihf-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnueabi-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnueabihf-baseline-whole-llvm-debug-lld
 
-#skip loongarch32-freestanding-none-baseline-whole-llvm-lld-pic
-#skip loongarch32-linux-gnu-baseline-whole-llvm-lld-pic
-#skip loongarch32-linux-gnuf32-baseline-whole-llvm-lld-pic
-#skip loongarch32-linux-gnusf-baseline-whole-llvm-lld-pic
-#skip loongarch32-linux-musl-baseline-whole-llvm-lld-pic
-#skip loongarch32-linux-muslf32-baseline-whole-llvm-lld-pic
-#skip loongarch32-linux-muslsf-baseline-whole-llvm-lld-pic
-#skip loongarch32-linux-none-baseline-whole-llvm-lld-pic
-#skip loongarch32-uefi-none-baseline-whole-llvm-lld-pic
+#skip nvptx-cuda-none-baseline-whole-llvm-debug-lld
+#skip nvptx-nvcl-none-baseline-whole-llvm-debug-lld
 
-#skip loongarch64-freestanding-none-baseline-whole-llvm-lld-pic
-#skip loongarch64-linux-gnu-baseline-whole-llvm-lld-pic
-#skip loongarch64-linux-gnuf32-baseline-whole-llvm-lld-pic
-#skip loongarch64-linux-gnusf-baseline-whole-llvm-lld-pic
-#skip loongarch64-linux-musl-baseline-whole-llvm-lld-pic
-#skip loongarch64-linux-muslf32-baseline-whole-llvm-lld-pic
-#skip loongarch64-linux-muslsf-baseline-whole-llvm-lld-pic
-#skip loongarch64-linux-none-baseline-whole-llvm-lld-pic
-#skip loongarch64-uefi-none-baseline-whole-llvm-lld-pic
+#skip nvptx64-cuda-none-baseline-whole-llvm-debug-lld
+#skip nvptx64-nvcl-none-baseline-whole-llvm-debug-lld
 
-#skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
-#skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
+#skip spirv32-opencl-none-baseline-whole-llvm-debug-lld
+#skip spirv32-opengl-none-baseline-whole-llvm-debug-lld
+#skip spirv32-vulkan-none-baseline-whole-llvm-debug-lld
 
-#skip nvptx64-cuda-none-baseline-whole-llvm-lld-pic
-#skip nvptx64-nvcl-none-baseline-whole-llvm-lld-pic
+#skip spirv64-amdhsa-none-baseline-whole-llvm-debug-lld
+#skip spirv64-opencl-none-baseline-whole-llvm-debug-lld
+#skip spirv64-vulkan-none-baseline-whole-llvm-debug-lld
 
-#skip riscv32-freestanding-none-baseline-whole-llvm-lld-pic
-#skip riscv32-linux-gnu-baseline-whole-llvm-lld-pic
-#skip riscv32-linux-musl-baseline-whole-llvm-lld-pic
-#skip riscv32-linux-none-baseline-whole-llvm-lld-pic
-#skip riscv32-netbsd-none-baseline-whole-llvm-lld-pic
-#skip riscv32-rtems-none-baseline-whole-llvm-lld-pic
-#skip riscv32-uefi-none-baseline-whole-llvm-lld-pic
-#skip riscv32be-freestanding-none-baseline-whole-llvm-lld-pic
+#skip x86_64-linux-gnux32-baseline-whole-llvm-debug-new
+#skip x86_64-linux-muslx32-baseline-whole-llvm-debug-new
+#skip x86_64-linux-x32-baseline-whole-llvm-debug-new
 
-#skip riscv64-freebsd-none-baseline-whole-llvm-lld-pic
-#skip riscv64-freestanding-none-baseline-whole-llvm-lld-pic
-#skip riscv64-fuchsia-none-baseline-whole-llvm-lld-pic
-#skip riscv64-haiku-none-baseline-whole-llvm-lld-pic
-#skip riscv64-hurd-gnu-baseline-whole-llvm-lld-pic
-#skip riscv64-linux-android-baseline-whole-llvm-lld-pic
-#skip riscv64-linux-gnu-baseline-whole-llvm-lld-pic
-#skip riscv64-linux-musl-baseline-whole-llvm-lld-pic
-#skip riscv64-linux-none-baseline-whole-llvm-lld-pic
-#skip riscv64-netbsd-none-baseline-whole-llvm-lld-pic
-#skip riscv64-openbsd-none-baseline-whole-llvm-lld-pic
-#skip riscv64-rtems-none-baseline-whole-llvm-lld-pic
-#skip riscv64-serenity-none-baseline-whole-llvm-lld-pic
-#skip riscv64-uefi-none-baseline-whole-llvm-lld-pic
-#skip riscv64be-freestanding-none-baseline-whole-llvm-lld-pic
-
-#skip spirv32-opencl-none-baseline-whole-llvm-lld-pic
-#skip spirv32-opengl-none-baseline-whole-llvm-lld-pic
-#skip spirv32-vulkan-none-baseline-whole-llvm-lld-pic
-
-#skip spirv64-amdhsa-none-baseline-whole-llvm-lld-pic
-#skip spirv64-opencl-none-baseline-whole-llvm-lld-pic
-#skip spirv64-vulkan-none-baseline-whole-llvm-lld-pic
-
-#skip x86_64-linux-gnux32-baseline-whole-llvm-new-pic
-#skip x86_64-linux-muslx32-baseline-whole-llvm-new-pic
-#skip x86_64-linux-x32-baseline-whole-llvm-new-pic
-
-#obj {
---name test -fno-lld -fno-new-linker -ofmt=llvmir
+#zig build-obj {
+--name test -ofmt=llvmir -fno-lld -fno-new-linker
 -Mroot=test.zig
 #}
 
@@ -86,11 +41,17 @@ export fn entry(arr: *const [16]u8) @Vector(16, u8) {
 #}
 #update "one vector load"
 #check llvm {
-define #...<16 x i8> @test.entry(#...) #...{
-#...
-  %1 = alloca [16 x i8], align 1#...
-  %3 = load <16 x i8>, ptr %1, align 1#...
-  ret <16 x i8> %3#...
+...
+define ... @test.entry(..., ptr ... %arr) ... {
+  ...
+  %arr.local = alloca [16 x i8], align 1, !...
+  ...
+  call void @llvm.memcpy.p0.p0.isize(ptr align 1 %arr.local, ptr align 1 %arr, isize 16, i1 false), !...
+  %vec = load <16 x i8>, ptr %arr.load, align 1, !...
+  ...
+}
+
+...
 #}
 
 #write test.zig {
@@ -102,13 +63,17 @@ export fn entry(a: *@Vector(8, u8), b: *@Vector(8, u8), src: [*]const u8) void {
 #}
 #update "feeding overlapping shuffles"
 #check llvm {
-define #...void @test.entry(ptr #...%0, ptr #...%1, #...) #...{
-#...
-  %11 = load <16 x i8>, ptr %#...
-  %12 = shufflevector <16 x i8> %11, #...
-  store <8 x i8> %12, ptr %0, align 8#...
-  %13 = shufflevector <16 x i8> %11, #...
-  store <8 x i8> %13, ptr %1, align 8#...
-  ret void#...
+...
+define ... void @test.entry(ptr ... %a, ptr ... %b, ptr ... %src) ... {
+  ...
+  %src.load = load <16 x i8>, ptr %src.local, align 1, !...
+  ...
+  %a.shuffle = shufflevector <16 x i8> %src.load, <16 x i8> poison, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 6, i32 7>, !...
+  store <8 x i8> %a.shuffle, ptr %a, align 8, !...
+  %b.shuffle = shufflevector <16 x i8> %src.load, <16 x i8> poison, <8 x i32> <i32 7, i32 8, i32 9, i32 10, i32 11, i32 12, i32 13, i32 14>, !...
+  store <8 x i8> %b.shuffle, ptr %b, align 8, !...
+  ret void, !...
 }
+
+...
 #}

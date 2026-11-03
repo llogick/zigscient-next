@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = error{A};
+comptime {
+    const z = Foo.Bar;
+    _ = z;
+}
+#}
+#update
+#check errors {
+test.zig:3:18: error: no error named 'Bar' in 'error{A}'
+#}

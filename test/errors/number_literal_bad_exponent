@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const a = 0x1e-4;
+const b = 0x1e+4;
+const c = 0x1E-4;
+const d = 0x1E+4;
+#}
+#update
+#check errors {
+test.zig:1:15: error: sign '-' cannot follow digit 'e' in hex base
+test.zig:2:15: error: sign '+' cannot follow digit 'e' in hex base
+test.zig:3:15: error: sign '-' cannot follow digit 'E' in hex base
+test.zig:4:15: error: sign '+' cannot follow digit 'E' in hex base
+#}

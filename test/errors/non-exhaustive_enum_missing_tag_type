@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum {
+    a,
+    b,
+    _,
+};
+#}
+#update
+#check errors {
+test.zig:1:11: error: non-exhaustive enum missing integer tag type
+test.zig:4:5: note: marked non-exhaustive here
+#}

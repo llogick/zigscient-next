@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const a: i32 = 1;
+    const b: i32 = 0;
+    const c = a % b;
+    _ = c;
+}
+#}
+#update
+#check errors {
+test.zig:4:19: error: division by zero here causes illegal behavior
+#}

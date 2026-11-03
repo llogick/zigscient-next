@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    const U = packed union {};
+    _ = @as(U, undefined);
+}
+#}
+#update
+#check errors {
+test.zig:2:22: error: packed union has no fields
+#}

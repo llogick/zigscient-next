@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 fn Printer(message: []const u8) type {
@@ -23,7 +24,7 @@ foo
 bar
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const io = std.Io.Threaded.global_single_threaded.io();
 

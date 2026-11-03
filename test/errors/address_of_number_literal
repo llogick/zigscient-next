@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const x = 3;
+const y = &x;
+fn foo() *const i32 {
+    return y;
+}
+export fn entry() usize {
+    return @sizeOf(@TypeOf(&foo));
+}
+#}
+#update
+#check errors {
+test.zig:4:12: error: expected type '*const i32', found '*const comptime_int'
+test.zig:4:12: note: pointer type child 'comptime_int' cannot cast into pointer type child 'i32'
+test.zig:3:10: note: function return type declared here
+#}

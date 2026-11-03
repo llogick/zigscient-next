@@ -1,0 +1,20 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+
+fn foo() noreturn {
+    std.process.exit(0);
+}
+
+fn bar(_: u8, _: u8) void {}
+
+pub fn main() void {
+    bar(foo(), @compileError("bad"));
+}
+#}
+#update
+#check exit "0"

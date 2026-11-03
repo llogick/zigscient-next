@@ -1,3 +1,4 @@
+#...
 (lldb) breakpoint set --file basic.zig --source-pattern-regexp '_ = basic;'
 Breakpoint 1: where = basic`basic.testBasic + #... at basic.zig:68:1, address = 0x#...
 (lldb) process launch
@@ -73,3 +74,4 @@ Process #... stopped
 }
 (lldb) breakpoint delete --force 1
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...

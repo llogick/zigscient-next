@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    _ = -0;
+}
+#}
+#update
+#check errors {
+test.zig:2:10: error: integer literal '-0' is ambiguous
+test.zig:2:10: note: use '0' for an integer zero
+test.zig:2:10: note: use '-0.0' for a floating-point signed zero
+#}

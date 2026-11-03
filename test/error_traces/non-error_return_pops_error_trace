@@ -1,0 +1,28 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn bar() !void {
+    return error.UhOh;
+}
+
+fn foo() !void {
+    bar() catch {
+        return; // non-error result: success
+    };
+}
+
+pub fn main() !void {
+    try foo();
+    return error.UnrelatedError;
+}
+#}
+#update
+#check error-trace {
+error: UnrelatedError
+test.zig:13:5: 0x? in main (test*)
+    return error.UnrelatedError;
+    ^
+#}

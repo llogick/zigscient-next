@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn foo() !void {
+    try return bar();
+}
+pub fn bar() !void {}
+#}
+#update
+#check errors {
+test.zig:2:5: error: unreachable code
+test.zig:2:9: note: control flow is diverted here
+#}

@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const Foo = @Struct(.auto, null, &.{"reified_field"}, &.{void}, &.{.{}});
 pub fn main(init: std.process.Init) !void {
     const field_name = @typeInfo(Foo).@"struct".field_names[0];
@@ -15,7 +16,7 @@ const std = @import("std");
 reified_field
 #}
 
-#write main.zig {
+#write test.zig {
 const Foo = @TypeOf(.{ .anon_field = 123 });
 pub fn main(init: std.process.Init) !void {
     const field_name = @typeInfo(Foo).@"struct".field_names[0];

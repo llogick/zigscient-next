@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+threadlocal const x: i32 = 1234;
+export fn entry() i32 {
+    return x;
+}
+#}
+#update
+#check errors {
+test.zig:1:1: error: threadlocal variable cannot be constant
+#}

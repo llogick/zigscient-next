@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x: []u8 = undefined;
+    const y: f32 = x;
+    _ = y;
+}
+#}
+#update
+#check errors {
+test.zig:3:20: error: expected type 'f32', found '[]u8'
+#}

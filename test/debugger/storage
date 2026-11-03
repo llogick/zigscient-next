@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name storage
 -Mroot=storage.zig
 #}
@@ -54,6 +54,7 @@ export threadlocal var extern_threadlocal2: u64 = 0xfd330ab00b4bc5eb;
 #}
 #update
 #check lldb {
+#...
 (lldb) breakpoint set --file storage.zig --source-pattern-regexp 'local_var = local_var;'
 Breakpoint 1: where = storage`storage.testStorage + #... at storage.zig:28:5, address = 0x#...
 (lldb) process launch
@@ -86,4 +87,5 @@ Process #... stopped
 (u64) local_var = 0x92a39776a1f5380c
 (lldb) breakpoint delete --force 1
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...
 #}

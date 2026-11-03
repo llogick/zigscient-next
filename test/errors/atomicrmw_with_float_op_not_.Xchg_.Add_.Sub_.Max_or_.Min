@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var x: f32 = 0;
+    _ = @atomicRmw(f32, &x, .And, 2, .seq_cst);
+}
+#}
+#update
+#check errors {
+test.zig:3:30: error: @atomicRmw with float only allowed with .Xchg, .Add, .Sub, .Max, and .Min
+#}

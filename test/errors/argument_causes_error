@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub export fn entry() void {
+    var lib: @import("b.zig").ElfDynLib = undefined;
+    _ = lib.lookup(fn () void);
+}
+#}
+#write b.zig {
+pub const ElfDynLib = struct {
+    pub fn lookup(self: *ElfDynLib, comptime T: type) ?T {
+        _ = self;
+        return undefined;
+    }
+};
+#}
+#update
+#check errors {
+test.zig:3:12: error: unable to resolve comptime value
+test.zig:3:19: note: call to generic function instantiated with comptime-only return type '?fn () void' is evaluated at comptime
+b.zig:2:55: note: return type declared here
+test.zig:3:19: note: use '*const fn () void' for a function pointer type
+#}

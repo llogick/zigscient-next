@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const FooType = opaque {};
+export fn entry1() void {
+    const someFuncPtr: fn (FooType) void = undefined;
+    _ = someFuncPtr;
+}
+
+fn foo(p: FooType) void {
+    _ = p;
+}
+export fn entry3() void {
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:3:28: error: parameter of opaque type 'test.FooType' not allowed
+test.zig:1:17: note: opaque declared here
+test.zig:7:8: error: parameter of opaque type 'test.FooType' not allowed
+test.zig:1:17: note: opaque declared here
+#}

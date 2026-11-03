@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() u32 {
+    var bytes: [4]u8 = [_]u8{ 0x01, 0x02, 0x03, 0x04 };
+    const ptr: *u32 = @ptrCast(&bytes[0]);
+    return ptr.*;
+}
+#}
+#update
+#check errors {
+test.zig:3:23: error: @ptrCast increases pointer alignment
+test.zig:3:32: note: '*u8' has alignment '1'
+test.zig:3:23: note: '*u32' has alignment '4'
+test.zig:3:23: note: use @alignCast to assert pointer alignment
+#}

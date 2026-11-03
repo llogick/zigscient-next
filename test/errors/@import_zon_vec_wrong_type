@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: @Vector(2, bool) = @import("tuple.zon");
+    _ = f;
+}
+#}
+#write tuple.zon ".{ 1.5, 2 }"
+#update
+#check errors {
+tuple.zon:1:4: error: expected type 'bool'
+test.zig:2:41: note: imported here
+#}

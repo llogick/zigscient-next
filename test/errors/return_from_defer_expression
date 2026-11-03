@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn testTrickyDefer() !void {
+    defer canFail() catch {};
+
+    defer try canFail();
+
+    const a = maybeInt() orelse return;
+}
+
+fn canFail() anyerror!void {}
+
+pub fn maybeInt() ?i32 {
+    return 0;
+}
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(testTrickyDefer));
+}
+#}
+#update
+#check errors {
+test.zig:4:11: error: 'try' not allowed inside defer expression
+test.zig:4:5: note: defer expression here
+#}

@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    foo();
+}
+fn foo() callconv(.naked) void {}
+#}
+#update
+#check errors {
+test.zig:2:5: error: unable to call function with calling convention 'naked'
+test.zig:4:1: note: function declared here
+#}

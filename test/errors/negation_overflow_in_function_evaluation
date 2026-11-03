@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const y = neg(-128);
+fn neg(x: i8) i8 {
+    return -x;
+}
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(&y));
+}
+#}
+#update
+#check errors {
+test.zig:3:12: error: overflow of integer type 'i8' with value '128'
+test.zig:1:14: note: called at comptime here
+#}

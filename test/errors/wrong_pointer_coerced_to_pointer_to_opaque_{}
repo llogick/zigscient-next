@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Derp = opaque {};
+extern fn bar(d: *Derp) void;
+export fn foo() void {
+    var x = @as(u8, 1);
+    bar(@as(*anyopaque, @ptrCast(&x)));
+}
+#}
+#update
+#check errors {
+test.zig:5:9: error: expected type '*test.Derp', found '*anyopaque'
+test.zig:5:9: note: pointer type child 'anyopaque' cannot cast into pointer type child 'test.Derp'
+test.zig:1:14: note: opaque declared here
+test.zig:2:18: note: parameter type declared here
+#}

@@ -1,0 +1,32 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn List(comptime Head: type, comptime Tail: type) type {
+    return union {
+        const Self = @This();
+        head: Head,
+        tail: Tail,
+
+        fn AppendReturnType(comptime item: anytype) type {
+            return List(Head, List(@TypeOf(item), void));
+        }
+    };
+}
+
+fn makeList(item: anytype) List(@TypeOf(item), void) {
+    return List(@TypeOf(item), void){ .head = item };
+}
+
+export fn entry() void {
+    @TypeOf(makeList(42)).AppendReturnType(64);
+}
+#}
+#update
+#check errors {
+test.zig:18:43: error: value of type 'type' ignored
+test.zig:18:43: note: all non-void values must be used
+test.zig:18:43: note: to discard the value, assign it to '_'
+#}

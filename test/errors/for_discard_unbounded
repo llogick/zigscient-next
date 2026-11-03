@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    for (0..10, 10..) |i, _| {
+        _ = i;
+    }
+}
+#}
+#update
+#check errors {
+test.zig:2:27: error: discard of unbounded counter
+#}

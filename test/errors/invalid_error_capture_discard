@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    const x: error{}!void = {};
+    x catch |_| {
+        @"_";
+    };
+}
+export fn b() void {
+    const x: error{}!void = {};
+    x catch |_| switch (_) {};
+}
+export fn c() void {
+    const x: error{}!u32 = 0;
+    if (x) |v| v else |_| switch (_) {}
+}
+#}
+#update
+#check errors {
+test.zig:3:14: error: discard of error capture; omit it instead
+test.zig:4:9: error: use of undeclared identifier '_'
+test.zig:9:14: error: discard of error capture; omit it instead
+test.zig:13:24: error: discard of error capture; omit it instead
+#}

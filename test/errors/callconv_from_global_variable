@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+var cc: @import("std").builtin.CallingConvention = .c;
+export fn foo() callconv(cc) void {}
+#}
+#update
+#check errors {
+test.zig:2:26: error: unable to resolve comptime value
+test.zig:2:26: note: calling convention must be comptime-known
+#}

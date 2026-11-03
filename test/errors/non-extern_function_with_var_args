@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo(args: ...) void {}
+export fn entry() void {
+    foo();
+}
+#}
+#update
+#check errors {
+test.zig:1:14: error: expected type expression, found '...'
+#}

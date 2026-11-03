@@ -172514,7 +172514,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 const is_threadlocal = zcu.comp.config.any_non_single_threaded and nav.resolved.?.@"threadlocal";
 
                 if (is_threadlocal) switch (cg.target.ofmt) {
-                    .elf => if (cg.mod.pic) {
+                    .elf => if (zcu.comp.config.pic) {
                         // LD model: `__tls_get_addr` uses the standard ABI
                         try cg.spillEflagsIfOccupied();
                         try cg.spillRegisters(abi.getCallerPreservedRegs(.x86_64_sysv));
@@ -176483,7 +176483,7 @@ fn lowerSwitchBr(
     const liveness = try cg.liveness.getSwitchBr(allocator, inst, switch_br.cases_len + 1);
     defer allocator.free(liveness.deaths);
 
-    if (!cg.mod.pic and cg.target.ofmt == .elf) table: {
+    if (!zcu.comp.config.pic and cg.target.ofmt == .elf) table: {
         var prong_items: u32 = 0;
         var min: ?Value = null;
         var max: ?Value = null;

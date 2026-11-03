@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Tag = @Enum(bool, .nonexhaustive, &.{}, &.{});
+export fn entry() void {
+    _ = @as(Tag, @enumFromInt(0));
+}
+#}
+#update
+#check errors {
+test.zig:1:19: error: expected integer tag type, found 'bool'
+#}

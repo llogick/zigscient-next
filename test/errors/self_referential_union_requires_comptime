@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const U = union {
+    a: fn () void,
+    b: *U,
+};
+export fn entry() void {
+    var u: U = undefined;
+    _ = &u;
+}
+#}
+#update
+#check errors {
+test.zig:6:12: error: variable of type 'test.U' must be const or comptime
+test.zig:2:8: note: union requires comptime because of this field
+test.zig:2:8: note: use '*const fn () void' for a function pointer type
+#}

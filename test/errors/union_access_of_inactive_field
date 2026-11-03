@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const U = union {
+    a: void,
+    b: u64,
+};
+comptime {
+    var u: U = .{ .a = {} };
+    const v = u.b;
+    _ = &u;
+    _ = v;
+}
+#}
+#update
+#check errors {
+test.zig:7:16: error: access of union field 'b' while field 'a' is active
+test.zig:1:11: note: union declared here
+#}

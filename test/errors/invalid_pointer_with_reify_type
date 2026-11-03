@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    _ = @Pointer(.one, .{}, u8, 0);
+}
+#}
+#update
+#check errors {
+test.zig:2:33: error: sentinels are only allowed on slices and unknown-length pointers
+#}

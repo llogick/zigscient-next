@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    const x: ?u8 = 256;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:20: error: expected type '?u8', found 'comptime_int'
+test.zig:2:20: note: type 'u8' cannot represent value '256'
+#}

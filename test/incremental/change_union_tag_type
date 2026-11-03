@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const A = enum(u8) { a };
 const B = enum(u8) { b };
 const Foo = union(A) { a: u8 };
@@ -18,7 +19,7 @@ const std = @import("std");
 a
 #}
 
-#write main.zig {
+#write test.zig {
 const A = enum(u8) { a };
 const B = enum(u8) { b };
 const Foo = union(B) { a: u8 };
@@ -31,11 +32,11 @@ const std = @import("std");
 #}
 #update "change tag type"
 #check errors {
-main.zig:3:24: error: no field named 'a' in enum 'main.B'
-main.zig:2:11: note: enum declared here
+test.zig:3:24: error: no field named 'a' in enum 'test.B'
+test.zig:2:11: note: enum declared here
 #}
 
-#write main.zig {
+#write test.zig {
 const A = enum(u8) { a };
 const B = enum(u8) { b };
 const Foo = union(B) { b: u8 };

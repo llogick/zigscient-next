@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const z = i32!i32;
+    const x: z = undefined;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:15: error: expected error set type, found 'i32'
+#}

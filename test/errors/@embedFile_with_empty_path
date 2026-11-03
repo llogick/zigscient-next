@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const resource = @embedFile("");
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(resource));
+}
+#}
+#update
+#check errors {
+test.zig:1:29: error: file path name cannot be empty
+#}

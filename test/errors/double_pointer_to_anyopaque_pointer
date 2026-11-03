@@ -1,0 +1,34 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    const x: usize = 5;
+
+    const ptr: *const anyopaque = &(&x);
+    _ = ptr;
+}
+export fn entry2() void {
+    var val: [*:0]u8 = undefined;
+    func(&val);
+}
+fn func(_: ?*anyopaque) void {}
+export fn entry3() void {
+    var x: *?*usize = undefined;
+    _ = &x;
+    const ptr: *const anyopaque = x;
+    _ = ptr;
+}
+#}
+#update
+#check errors {
+test.zig:4:35: error: expected type '*const anyopaque', found '*const *const usize'
+test.zig:4:35: note: cannot implicitly cast double pointer '*const *const usize' to anyopaque pointer '*const anyopaque'
+test.zig:9:10: error: expected type '?*anyopaque', found '*[*:0]u8'
+test.zig:9:10: note: cannot implicitly cast double pointer '*[*:0]u8' to anyopaque pointer '?*anyopaque'
+test.zig:11:12: note: parameter type declared here
+test.zig:15:35: error: expected type '*const anyopaque', found '*?*usize'
+test.zig:15:35: note: cannot implicitly cast double pointer '*?*usize' to anyopaque pointer '*const anyopaque'
+#}

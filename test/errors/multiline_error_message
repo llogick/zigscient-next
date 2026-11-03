@@ -1,0 +1,39 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    @compileError("hello\nworld");
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: hello
+                     world
+#}
+
+#write test.zig {
+comptime {
+    @compileError(
+        \\
+        \\hello!
+        \\I'm a multiline error message.
+        \\I hope to be very useful!
+        \\
+        \\also I will leave this trailing newline here if you don't mind
+        \\
+    );
+}
+}
+#update "with trailing newline"
+#check errors {
+:2:5: error: 
+             hello!
+             I'm a multiline error message.
+             I hope to be very useful!
+             
+             also I will leave this trailing newline here if you don't mind
+             
+#}

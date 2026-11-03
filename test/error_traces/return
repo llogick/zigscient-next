@@ -1,0 +1,17 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() !void {
+    return error.TheSkyIsFalling;
+}
+#}
+#update
+#check error-trace {
+error: TheSkyIsFalling
+test.zig:2:5: 0x? in main (test*)
+    return error.TheSkyIsFalling;
+    ^
+#}

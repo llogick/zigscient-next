@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() bool {
+    return false;
+}
+
+export fn entry() void {
+    const Widget = union(enum) { a: u0 };
+
+    comptime var a = 1;
+    const info = @typeInfo(Widget).@"union";
+    inline for (info.field_types) |field_type| {
+        if (foo()) {
+            switch (field_type) {
+                u0 => a = 2,
+                else => unreachable,
+            }
+        }
+    }
+}
+#}
+#update
+#check errors {
+test.zig:13:25: error: store to comptime variable depends on runtime condition
+test.zig:11:16: note: runtime condition here
+#}

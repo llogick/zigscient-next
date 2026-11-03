@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern fn foo() i32;
+const x = foo();
+export fn entry() i32 {
+    return x;
+}
+#}
+#update
+#check errors {
+test.zig:2:14: error: comptime call of extern function
+test.zig:2:14: note: initializer of container-level variable must be comptime-known
+#}

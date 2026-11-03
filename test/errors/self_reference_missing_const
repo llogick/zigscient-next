@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct { self: *S, x: u32 };
+const s: S = .{ .self = &s, .x = 123 };
+
+comptime {
+    _ = s;
+}
+#}
+#update
+#check errors {
+test.zig:2:18: error: expected type '*test.S', found '*const test.S'
+test.zig:2:18: note: cast discards const qualifier
+#}

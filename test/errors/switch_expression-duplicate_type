@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo(comptime T: type, x: T) u8 {
+    _ = x;
+    return switch (T) {
+        u32 => 0,
+        u64 => 1,
+        u32 => 2,
+        else => 3,
+    };
+}
+export fn entry() usize {
+    return @sizeOf(@TypeOf(foo(u32, 0)));
+}
+#}
+#update
+#check errors {
+test.zig:6:9: error: duplicate switch value 'u32'
+test.zig:4:9: note: previous value here
+#}

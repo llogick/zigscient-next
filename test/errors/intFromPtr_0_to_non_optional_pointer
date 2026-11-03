@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const b: *i32 = @ptrFromInt(0);
+    _ = b;
+}
+#}
+#update
+#check errors {
+test.zig:2:33: error: pointer type '*i32' does not allow address zero
+#}

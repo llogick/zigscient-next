@@ -1,0 +1,16 @@
+#skip wasm32-wasi-none-baseline-whole-llvm-debug
+#skip wasm32-wasi-none-baseline-whole-selfhosted-debug
+
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {
+    const large_slice = @as([*]const u8, @ptrFromInt(1))[0..(0xffffffffffffffff >> 3)];
+    _ = large_slice;
+}
+#}
+#update
+#check errors

@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foobar() void {
+    var t = true;
+    _ = &t;
+    const a, _ = if (t) .{ .a, {} } else .{ .b, {} };
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:4:5: error: value with comptime-only type '@EnumLiteral()' depends on runtime control flow
+#}

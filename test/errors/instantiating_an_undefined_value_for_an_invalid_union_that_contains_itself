@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = union {
+    x: Foo,
+};
+
+var foo: Foo = undefined;
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(foo.x));
+}
+#}
+#update
+#check errors {
+test.zig:2:8: error: type 'test.Foo' depends on itself for field declared here
+#}

@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    const result: u32 = b: {
+        if (false) break :b 1;
+    };
+    _ = result;
+}
+#}
+#update
+#check errors {
+test.zig:2:28: error: expected type 'u32', found 'void'
+#}

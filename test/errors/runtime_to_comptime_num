@@ -1,0 +1,40 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var a: u32 = 0;
+    _ = &a;
+    _ = @as(comptime_int, a);
+}
+export fn entry2() void {
+    var a: u32 = 0;
+    _ = &a;
+    _ = @as(comptime_float, a);
+}
+export fn entry3() void {
+    comptime var aa: comptime_float = 0.0;
+    var a: f32 = 4;
+    _ = &a;
+    aa = a;
+}
+export fn entry4() void {
+    comptime var aa: comptime_int = 0.0;
+    var a: f32 = 4;
+    _ = &a;
+    aa = a;
+}
+#}
+#update
+#check errors {
+test.zig:4:27: error: unable to resolve comptime value
+test.zig:4:27: note: value casted to 'comptime_int' must be comptime-known
+test.zig:9:29: error: unable to resolve comptime value
+test.zig:9:29: note: value casted to 'comptime_float' must be comptime-known
+test.zig:15:10: error: unable to resolve comptime value
+test.zig:15:10: note: value casted to 'comptime_float' must be comptime-known
+test.zig:21:10: error: unable to resolve comptime value
+test.zig:21:10: note: value casted to 'comptime_int' must be comptime-known
+#}

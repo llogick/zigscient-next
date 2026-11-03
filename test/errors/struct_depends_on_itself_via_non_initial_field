@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const A = struct {
+    a: u8,
+    bytes: [@sizeOf(A)]u8,
+};
+
+comptime {
+    _ = @as(A, undefined);
+}
+#}
+#update
+#check errors {
+test.zig:3:21: error: type 'test.A' depends on itself for size query here
+#}

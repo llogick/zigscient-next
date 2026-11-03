@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    @compileLog(@as(*const anyopaque, @ptrCast(&entry)));
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: found compile log statement
+
+Compile Log Output:
+@as(*const anyopaque, @as(*const anyopaque, @ptrCast(&test.entry)))
+#}

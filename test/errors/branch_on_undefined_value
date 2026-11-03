@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const x = if (undefined) true else false;
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(x));
+}
+#}
+#update
+#check errors {
+test.zig:1:15: error: use of undefined value here causes illegal behavior
+#}

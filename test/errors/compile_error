@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    @compileError("this is an error");
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: this is an error
+#}

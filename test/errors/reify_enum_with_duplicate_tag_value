@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const E = @Enum(u32, .nonexhaustive, &.{ "a", "b" }, &.{ 10, 10 });
+    _ = E.a;
+}
+#}
+#update
+#check errors {
+test.zig:2:58: error: enum tag value '10' for field 'b' already taken
+test.zig:2:58: note: previous occurrence in field 'a'
+#}

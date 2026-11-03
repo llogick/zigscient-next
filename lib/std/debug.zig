@@ -692,7 +692,7 @@ pub noinline fn captureCurrentStackTrace(options: StackUnwindOptions, addr_buf: 
 
     var total_frames: usize = 0;
     var index: usize = 0;
-    var wait_for = options.first_address;
+    var wait_for: ?usize = options.first_address orelse @returnAddress();
     // Ideally, we would iterate the whole stack so that the `index - min(buf.len, index)` would be
     // indicative of how many frames were skipped. However, this has a significant runtime cost
     // in some cases, so at least for now, we don't do that.
@@ -931,6 +931,58 @@ pub fn dumpErrorReturnTrace(et: *const std.builtin.StackTrace) void {
     };
 }
 
+pub const FpUsability = enum {
+    /// FP unwinding is impractical on this target. For example, due to its very silly ABI
+    /// design decisions, it's not possible to do generic FP unwinding on MIPS without a
+    /// complicated code scanning algorithm.
+    useless,
+    /// FP unwinding is unsafe on this target; we may crash when doing so. We will only perform
+    /// FP unwinding in the case of crashes/panics, or if the user opts in.
+    unsafe,
+    /// FP unwinding is guaranteed to be safe on this target. We will do so if unwinding with
+    /// debug info does not work, and if this compilation has frame pointers enabled.
+    safe,
+    /// FP unwinding is the best option on this target. This is usually because the ABI requires
+    /// a backchain pointer, thus making it always available, safe, and fast.
+    ideal,
+
+    pub fn of(target: *const std.Target) FpUsability {
+        return switch (target.cpu.arch) {
+            .alpha,
+            .avr,
+            .csky,
+            .microblaze,
+            .microblazeel,
+            .mips,
+            .mipsel,
+            .mips64,
+            .mips64el,
+            .msp430,
+            .sh,
+            .sheb,
+            .xcore,
+            .xtensa,
+            .xtensaeb,
+            => .useless,
+            .hexagon,
+            // The PowerPC ABIs don't actually strictly require a backchain pointer; they allow omitting
+            // it when full unwind info is present. Despite this, both GCC and Clang always enforce the
+            // presence of the backchain pointer no matter what options they are given. This seems to be
+            // a case of "the spec is only a polite suggestion", except it works in our favor this time!
+            .powerpc,
+            .powerpcle,
+            .powerpc64,
+            .powerpc64le,
+            .sparc,
+            .sparc64,
+            => .ideal,
+            // https://developer.apple.com/documentation/xcode/writing-arm64-code-for-apple-platforms#Respect-the-purpose-of-specific-CPU-registers
+            .aarch64 => if (target.os.tag.isDarwin()) .safe else .unsafe,
+            else => .unsafe,
+        };
+    }
+};
+
 const StackIterator = union(enum) {
     /// We will first report the current PC of this `CpuContextPtr`, then we will switch to a
     /// different strategy to actually unwind.
@@ -1000,55 +1052,7 @@ const StackIterator = union(enum) {
             asm volatile ("ta 3" ::: .{ .memory = true }); // ST_FLUSH_WINDOWS
     }
 
-    const FpUsability = enum {
-        /// FP unwinding is impractical on this target. For example, due to its very silly ABI
-        /// design decisions, it's not possible to do generic FP unwinding on MIPS without a
-        /// complicated code scanning algorithm.
-        useless,
-        /// FP unwinding is unsafe on this target; we may crash when doing so. We will only perform
-        /// FP unwinding in the case of crashes/panics, or if the user opts in.
-        unsafe,
-        /// FP unwinding is guaranteed to be safe on this target. We will do so if unwinding with
-        /// debug info does not work, and if this compilation has frame pointers enabled.
-        safe,
-        /// FP unwinding is the best option on this target. This is usually because the ABI requires
-        /// a backchain pointer, thus making it always available, safe, and fast.
-        ideal,
-    };
-
-    const fp_usability: FpUsability = switch (builtin.target.cpu.arch) {
-        .alpha,
-        .avr,
-        .csky,
-        .microblaze,
-        .microblazeel,
-        .mips,
-        .mipsel,
-        .mips64,
-        .mips64el,
-        .msp430,
-        .sh,
-        .sheb,
-        .xcore,
-        .xtensa,
-        .xtensaeb,
-        => .useless,
-        .hexagon,
-        // The PowerPC ABIs don't actually strictly require a backchain pointer; they allow omitting
-        // it when full unwind info is present. Despite this, both GCC and Clang always enforce the
-        // presence of the backchain pointer no matter what options they are given. This seems to be
-        // a case of "the spec is only a polite suggestion", except it works in our favor this time!
-        .powerpc,
-        .powerpcle,
-        .powerpc64,
-        .powerpc64le,
-        .sparc,
-        .sparc64,
-        => .ideal,
-        // https://developer.apple.com/documentation/xcode/writing-arm64-code-for-apple-platforms#Respect-the-purpose-of-specific-CPU-registers
-        .aarch64 => if (builtin.target.os.tag.isDarwin()) .safe else .unsafe,
-        else => .unsafe,
-    };
+    const fp_usability: FpUsability = .of(&builtin.target);
 
     /// Whether the current unwind strategy is allowed given `allow_unsafe`.
     fn stratOk(it: *const StackIterator, allow_unsafe: bool) bool {

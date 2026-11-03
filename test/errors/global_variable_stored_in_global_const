@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+var a: u32 = 2;
+const b = a;
+export fn entry() void {
+    _ = b;
+}
+#}
+#update
+#check errors {
+test.zig:2:11: error: unable to resolve comptime value
+test.zig:2:11: note: initializer of container-level variable must be comptime-known
+#}

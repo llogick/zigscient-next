@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name optionals
 -Mroot=optionals.zig
 #}
@@ -17,6 +17,7 @@ pub fn main() void {
 #}
 #update
 #check lldb {
+#...
 (lldb) breakpoint set --file optionals.zig --source-pattern-regexp 'maybe_u32 = 123;'
 Breakpoint 1: where = optionals`optionals.main + #... at optionals.zig:7:9, address = 0x#...
 (lldb) process launch
@@ -51,4 +52,5 @@ Process #... stopped
 (u32) nonnull_u32.? = 456
 (lldb) breakpoint delete --force 2
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...
 #}

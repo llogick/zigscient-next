@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const src: [10]u8 = @splat(0);
+var dest: [10]u16 = undefined;
+
+export fn foo() void {
+    @memcpy(&dest, &src);
+}
+#}
+#update
+#check errors {
+test.zig:5:5: error: pointer element type 'u8' cannot coerce into element type 'u16'
+#}

@@ -1,0 +1,38 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn f1() void {
+    const x: usize = for ("hello") |_| {};
+    _ = x;
+}
+export fn f2() void {
+    const x: usize = for ("hello") |_| {
+        break;
+    };
+    _ = x;
+}
+export fn f3() void {
+    var t: bool = true;
+    _ = &t;
+    const x: usize = while (t) {
+        break;
+    };
+    _ = x;
+}
+export fn f4() void {
+    const x: usize = blk: {
+        break :blk;
+    };
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:22: error: expected type 'usize', found 'void'
+test.zig:7:9: error: expected type 'usize', found 'void'
+test.zig:15:9: error: expected type 'usize', found 'void'
+test.zig:21:9: error: expected type 'usize', found 'void'
+#}

@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    comptime_field: comptime_int = 2,
+    normal_ptr: *u32,
+};
+
+export fn a() void {
+    var value: u32 = 3;
+    const comptimeStruct = S{
+        .normal_ptr = &value,
+    };
+    _ = comptimeStruct;
+}
+#}
+#update
+#check errors {
+test.zig:9:10: error: unable to resolve comptime value
+test.zig:9:10: note: initializer of comptime-only struct 'test.S' must be comptime-known
+test.zig:2:21: note: struct requires comptime because of this field
+#}

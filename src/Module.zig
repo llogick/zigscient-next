@@ -32,7 +32,6 @@ code_model: std.lang.CodeModel,
 single_threaded: bool,
 error_tracing: bool,
 valgrind: bool,
-pic: bool,
 strip: bool,
 omit_frame_pointer: bool,
 stack_check: bool,
@@ -72,7 +71,6 @@ pub const CreateOptions = struct {
         single_threaded: ?bool = null,
         error_tracing: ?bool = null,
         valgrind: ?bool = null,
-        pic: ?bool = null,
         strip: ?bool = null,
         omit_frame_pointer: ?bool = null,
         stack_check: ?bool = null,
@@ -102,9 +100,6 @@ pub const CreateError = error{
     ValgrindUnsupportedOnTarget,
     TargetRequiresSingleThreaded,
     BackendRequiresSingleThreaded,
-    TargetRequiresPic,
-    PieRequiresPic,
-    DynamicLinkingRequiresPic,
     TargetHasNoRedZone,
     StackCheckUnsupportedByTarget,
     StackProtectorUnsupportedByTarget,
@@ -133,7 +128,7 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         break :b options.global.root_strip;
     };
 
-    const zig_backend = target_util.zigBackend(target, options.global.use_llvm);
+    const zig_backend = std.zig.compilerBackend(target, options.global.use_llvm);
 
     const valgrind = b: {
         if (!target_util.hasValgrindSupport(target, zig_backend)) {
@@ -173,32 +168,6 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         break :b options.global.root_error_tracing;
     };
 
-    const pic = b: {
-        if (target_util.requiresPic(target)) {
-            if (options.inherited.pic == false)
-                return error.TargetRequiresPic;
-            break :b true;
-        }
-        if (options.global.pie) {
-            if (options.inherited.pic == false)
-                return error.PieRequiresPic;
-            break :b true;
-        }
-        if (options.global.link_mode == .dynamic and
-            target_util.requiresPicForDynamicLink(target, options.global.output_mode))
-        {
-            if (options.inherited.pic == false)
-                return error.DynamicLinkingRequiresPic;
-            break :b true;
-        }
-        if (options.inherited.pic) |x| break :b x;
-        if (options.parent) |p| break :b p.pic;
-
-        // Default to PIC for objects and static libraries to make the common
-        // cases of linking those into a PIE or a shared library just work.
-        break :b options.global.output_mode != .Exe;
-    };
-
     const red_zone = b: {
         if (!target_util.hasRedZone(target)) {
             if (options.inherited.red_zone == true)
@@ -213,13 +182,7 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
     const omit_frame_pointer = b: {
         if (options.inherited.omit_frame_pointer) |x| break :b x;
         if (options.parent) |p| break :b p.omit_frame_pointer;
-        if (optimize_mode == .small) {
-            // On x86, in most cases, keeping the frame pointer usually results in smaller binary size.
-            // This has to do with how instructions for memory access via the stack base pointer register (when keeping the frame pointer)
-            // are smaller than instructions for memory access via the stack pointer register (when omitting the frame pointer).
-            break :b !target.cpu.arch.isX86();
-        }
-        break :b false;
+        break :b std.zig.defaultOmitFramePointer(target, optimize_mode);
     };
 
     const sanitize_thread = b: {
@@ -232,11 +195,7 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         if (options.inherited.unwind_tables) |x| break :b x;
         if (options.parent) |p| break :b p.unwind_tables;
 
-        break :b target_util.defaultUnwindTables(
-            target,
-            options.global.link_libunwind,
-            sanitize_thread or options.global.any_sanitize_thread,
-        );
+        break :b std.zig.defaultUnwindTables(target);
     };
 
     const fuzz = b: {
@@ -395,7 +354,7 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         }
 
         if (target.cpu.arch.isMips()) {
-            try buf.append(if (pic) '-' else '+');
+            try buf.append(if (options.global.pic) '-' else '+');
             try buf.appendSlice("noabicalls,");
             try buf.appendSlice(if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))
                 "-fpxx,+nooddspreg,+single-float,"
@@ -450,7 +409,6 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         .single_threaded = single_threaded,
         .error_tracing = error_tracing,
         .valgrind = valgrind,
-        .pic = pic,
         .strip = strip,
         .omit_frame_pointer = omit_frame_pointer,
         .stack_check = stack_check,
@@ -490,7 +448,6 @@ pub fn createLimited(gpa: Allocator, options: LimitedOptions) Allocator.Error!*M
         .single_threaded = undefined,
         .error_tracing = undefined,
         .valgrind = undefined,
-        .pic = undefined,
         .strip = undefined,
         .omit_frame_pointer = undefined,
         .stack_check = undefined,
@@ -527,7 +484,6 @@ pub fn createBuiltin(arena: Allocator, opts: Builtin, dirs: std.zig.Directories)
         .single_threaded = opts.single_threaded,
         .error_tracing = opts.error_tracing,
         .valgrind = opts.valgrind,
-        .pic = opts.pic,
         .strip = opts.strip,
         .omit_frame_pointer = opts.omit_frame_pointer,
         .code_model = opts.code_model,
@@ -551,7 +507,7 @@ pub fn getBuiltinOptions(m: Module, global: Compilation.Config) Builtin {
     assert(global.have_zcu);
     return .{
         .target = m.resolved_target.result,
-        .zig_backend = target_util.zigBackend(&m.resolved_target.result, global.use_llvm),
+        .zig_backend = std.zig.compilerBackend(&m.resolved_target.result, global.use_llvm),
         .output_mode = global.output_mode,
         .link_mode = global.link_mode,
         .unwind_tables = m.unwind_tables,
@@ -564,7 +520,7 @@ pub fn getBuiltinOptions(m: Module, global: Compilation.Config) Builtin {
         .valgrind = m.valgrind,
         .sanitize_thread = m.sanitize_thread,
         .fuzz = m.fuzz,
-        .pic = m.pic,
+        .pic = global.pic,
         .pie = global.pie,
         .strip = m.strip,
         .code_model = m.code_model,

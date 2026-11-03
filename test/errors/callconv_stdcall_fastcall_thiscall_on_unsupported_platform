@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const F1 = fn () callconv(.{ .x86_stdcall = .{} }) void;
+const F2 = fn () callconv(.{ .x86_fastcall = .{} }) void;
+const F3 = fn () callconv(.{ .x86_thiscall = .{} }) void;
+export fn entry1() void {
+    const a: F1 = undefined;
+    _ = a;
+}
+export fn entry2() void {
+    const a: F2 = undefined;
+    _ = a;
+}
+export fn entry3() void {
+    const a: F3 = undefined;
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:1:28: error: calling convention 'x86_stdcall' only available on architectures 'x86', 'x86c16'
+test.zig:2:28: error: calling convention 'x86_fastcall' only available on architectures 'x86', 'x86c16'
+test.zig:3:28: error: calling convention 'x86_thiscall' only available on architectures 'x86', 'x86c16'
+#}

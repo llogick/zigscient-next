@@ -52,7 +52,6 @@ stage3-debug/bin/zig build install test docs \
   -Dno-lib \
   -Dskip-non-native \
   -Dskip-cbe \
-  -Dskip-compile-errors \
   -Dskip-single-threaded
 
 stage4-debug/bin/zig test ../test/behavior.zig

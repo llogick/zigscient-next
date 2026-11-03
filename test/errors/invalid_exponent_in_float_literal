@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var bad: f128 = 0x1.0p1ab1;
+    _ = bad;
+}
+#}
+#update
+#check errors {
+test.zig:2:28: error: invalid digit 'a' in exponent
+#}
+
+#write test.zig {
+export fn entry() void {
+    var bad: f128 = 0x1.0p50F;
+    _ = bad;
+}
+#}
+#update
+#check errors {
+test.zig:2:29: error: invalid digit 'F' in exponent
+#}

@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-linux-none
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = union {
+    A: i32,
+    B: f32,
+    C: bool,
+};
+export fn entry(foo: Foo) void {
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:6:17: error: parameter of type 'test.Foo' not allowed in function with calling convention 'x86_64_sysv'
+test.zig:6:17: note: union with automatic layout has no guaranteed in-memory representation
+test.zig:1:13: note: union declared here
+#}

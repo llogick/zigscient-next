@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() fn () void {
+    return struct {};
+}
+comptime {
+    _ = foo();
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: expected type 'fn () void', found 'type'
+test.zig:1:10: note: function return type declared here
+test.zig:5:12: note: called at comptime here
+#}

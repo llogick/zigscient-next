@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = enum { M };
+
+export fn entry() void {
+    const f = Foo.M;
+    switch (f) {}
+}
+#}
+#update
+#check errors {
+test.zig:5:5: error: switch must handle all possibilities
+test.zig:1:20: note: unhandled enumeration value: 'M'
+test.zig:1:13: note: enum 'test.Foo' declared here
+#}

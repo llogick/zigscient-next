@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn comptimeStruct(comptime _: anytype) void {}
+fn bar() u8 {
+    return 123;
+}
+export fn entry() void {
+    const y = bar();
+    comptimeStruct(.{ .foo = y });
+}
+#}
+#update
+#check errors {
+test.zig:7:21: error: unable to resolve comptime value
+test.zig:7:21: note: argument to comptime parameter must be comptime-known
+test.zig:1:19: note: parameter declared comptime here
+#}

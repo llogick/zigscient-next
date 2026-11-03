@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const string = @embedFile("string.txt");
 pub fn main() !void {
@@ -29,10 +30,10 @@ Hello again, World!
 #delete string.txt
 #update "delete file"
 #check errors {
-main.zig:2:27: error: failed opening "string.txt": FileNotFound
+test.zig:2:27: error: failed opening "string.txt": FileNotFound
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const string = @embedFile("string.txt");
 pub fn main() !void {
@@ -45,7 +46,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 a hardcoded string
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const string = @embedFile("string.txt");
 pub fn main() !void {
@@ -55,7 +56,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 #}
 #update "re-introduce reference to file"
 #check errors {
-main.zig:2:27: error: failed opening "string.txt": FileNotFound
+test.zig:2:27: error: failed opening "string.txt": FileNotFound
 #}
 
 #write string.txt {

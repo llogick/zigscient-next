@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn T() type {
+    return u64;
+}
+
+test {
+    struct {
+        var a: u64 = 0;
+    }.a, const b: T() = .{ 1, 2 };
+    _ = b;
+}
+#}
+#update
+#check errors

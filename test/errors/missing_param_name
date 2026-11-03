@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn f(i32) void {}
+export fn entry() usize {
+    return @sizeOf(@TypeOf(f));
+}
+#}
+#update
+#check errors {
+test.zig:1:6: error: missing parameter name
+#}

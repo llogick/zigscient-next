@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+threadlocal var global: u32 = 23;
+threadlocal var global_ptr: *u32 = &global;
+
+export fn entry() void {
+    if (global_ptr.* != 23) unreachable;
+}
+#}
+#update
+#check errors {
+test.zig:2:36: error: unable to resolve comptime value
+test.zig:2:36: note: initializer of container-level variable must be comptime-known
+#}

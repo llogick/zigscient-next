@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    while (bar()) |x| {
+        _ = x;
+    }
+}
+const X = enum { a };
+fn bar() X {
+    return .a;
+}
+#}
+#update
+#check errors {
+test.zig:2:15: error: expected optional type, found 'test.X'
+test.zig:6:11: note: enum declared here
+#}

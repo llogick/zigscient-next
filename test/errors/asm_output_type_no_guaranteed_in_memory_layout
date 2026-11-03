@@ -1,0 +1,69 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct { x: u32 };
+export fn entry1() void {
+    const s = asm volatile (""
+        : [_] "=r" (-> S),
+    );
+    _ = s;
+}
+export fn entry2() void {
+    var s: S = undefined;
+    asm volatile (""
+        : [_] "=r" (s),
+    );
+}
+
+const U = union { x: u32 };
+export fn entry3() void {
+    const u = asm volatile (""
+        : [_] "=r" (-> U),
+    );
+    _ = u;
+}
+export fn entry4() void {
+    var u: U = undefined;
+    asm volatile (""
+        : [_] "=r" (u),
+    );
+}
+const ES = extern struct { x: u32 };
+export fn entry5() void {
+    var es: ES = undefined;
+    asm volatile (""
+        : [_] "=r" (es),
+    );
+}
+const EU = extern union { x: u32 };
+export fn entry6() void {
+    var eu: EU = undefined;
+    asm volatile (""
+        : [_] "=r" (eu),
+    );
+}
+#}
+#update
+#check errors {
+test.zig:4:24: error: invalid inline assembly output type 'test.S'
+test.zig:4:24: note: struct types cannot be passed to inline assembly
+test.zig:1:11: note: struct declared here
+test.zig:11:21: error: invalid inline assembly output type 'test.S'
+test.zig:11:21: note: struct types cannot be passed to inline assembly
+test.zig:1:11: note: struct declared here
+test.zig:18:24: error: invalid inline assembly output type 'test.U'
+test.zig:18:24: note: union types cannot be passed to inline assembly
+test.zig:15:11: note: union declared here
+test.zig:25:21: error: invalid inline assembly output type 'test.U'
+test.zig:25:21: note: union types cannot be passed to inline assembly
+test.zig:15:11: note: union declared here
+test.zig:32:21: error: invalid inline assembly output type 'test.ES'
+test.zig:32:21: note: struct types cannot be passed to inline assembly
+test.zig:28:19: note: struct declared here
+test.zig:39:21: error: invalid inline assembly output type 'test.EU'
+test.zig:39:21: note: union types cannot be passed to inline assembly
+test.zig:35:19: note: union declared here
+#}

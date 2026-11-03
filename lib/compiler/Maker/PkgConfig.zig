@@ -118,7 +118,7 @@ fn captureChildProcess(maker: *Maker, step: *Step, arena: Allocator, options: St
     };
     if (captured.stderr.len != 0) try step.setResultStderr(maker.gpa, captured.stderr);
     assert(step.result_failed_command != null);
-    if (captured.term.success()) return captured.stdout;
+    if (captured.term.eql(.success)) return captured.stdout;
     if (!options.allow_failure) return step.fail(maker, "{s} {f}", .{ options.argv[0], captured.term });
     return error.PkgConfigUnavailable;
 }

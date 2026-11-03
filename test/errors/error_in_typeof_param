@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn getSize() usize {
+    return 2;
+}
+pub fn expectEqual(expected: anytype, _: @TypeOf(expected)) !void {}
+export fn entry() void {
+    try expectEqual(2, getSize());
+}
+#}
+#update
+#check errors {
+test.zig:6:31: error: unable to resolve comptime value
+test.zig:6:31: note: value casted to 'comptime_int' must be comptime-known
+#}

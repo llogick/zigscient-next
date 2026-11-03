@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum(comptime_int) { a };
+comptime {
+    _ = E.a;
+}
+#}
+#update
+#check errors {
+test.zig:1:16: error: expected integer tag type, found 'comptime_int'
+#}

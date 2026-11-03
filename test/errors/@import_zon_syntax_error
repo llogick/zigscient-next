@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: bool = @import("syntax_error.zon");
+    _ = f;
+}
+#}
+#write syntax_error.zon {
+.{
+    .boolean = true
+    .number = 123,
+}
+#}
+#update
+#check errors {
+syntax_error.zon:3:13: error: expected ',' after initializer
+#}

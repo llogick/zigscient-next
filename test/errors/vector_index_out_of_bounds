@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x = @Vector(3, f32){ 25, 75, 5, 0 };
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:30: error: expected 3 vector elements; found 4
+#}

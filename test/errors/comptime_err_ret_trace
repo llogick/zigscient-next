@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn inner() !void {
+    return error.SomethingBadHappened;
+}
+
+fn outer() !void {
+    return inner();
+}
+
+comptime {
+    outer() catch unreachable;
+}
+#}
+#update
+#check errors {
+test.zig:10:19: error: caught unexpected error 'SomethingBadHappened'
+test.zig:2:18: note: error returned here
+test.zig:6:5: note: error returned here
+#}

@@ -1,0 +1,130 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+var runtime_int: u32 = 123;
+
+export fn foo() void {
+    comptime var x: u32 = 123;
+    var runtime = &x;
+    _ = &runtime;
+}
+
+export fn bar() void {
+    const S = struct { u32, *const u32 };
+    comptime var x: u32 = 123;
+    const runtime: S = .{ runtime_int, &x };
+    _ = runtime;
+}
+
+export fn qux() void {
+    const S = struct { a: u32, b: *const u32 };
+    comptime var x: u32 = 123;
+    const runtime: S = .{ .a = runtime_int, .b = &x };
+    _ = runtime;
+}
+
+export fn baz() void {
+    const S = struct {
+        fn f(_: *const u32) void {}
+    };
+    comptime var x: u32 = 123;
+    S.f(&x);
+}
+
+export fn faz() void {
+    const S = struct {
+        fn f(_: anytype) void {}
+    };
+    comptime var x: u32 = 123;
+    S.f(&x);
+}
+
+export fn boo() *const u32 {
+    comptime var x: u32 = 123;
+    return &x;
+}
+
+export fn qar() void {
+    comptime var x: u32 = 123;
+    const y = if (runtime_int == 123) &x else undefined;
+    _ = y;
+}
+
+export fn bux() void {
+    comptime var x: [2]u32 = undefined;
+    x = .{ 1, 2 };
+
+    var rt: [2]u32 = undefined;
+    @memcpy(&rt, &x);
+}
+
+export fn far() void {
+    comptime var x: u32 = 123;
+
+    var rt: [2]*u32 = undefined;
+    const elem: *u32 = &x;
+    @memset(&rt, elem);
+}
+
+export fn bax() void {
+    comptime var x: [2]u32 = undefined;
+    x = .{ 1, 2 };
+
+    var rt: [2]u32 = undefined;
+    @memmove(&rt, &x);
+}
+
+export fn qoo(i: u8) void {
+    comptime var x: u32 = 123;
+    const y = .{ .p = &x, .i = i };
+    _ = y;
+}
+
+var runtimeP: *bool = undefined;
+export fn qaz() void {
+    comptime var b = true;
+    runtimeP = &b;
+}
+#}
+#update
+#check errors {
+test.zig:5:19: error: runtime value contains reference to comptime var
+test.zig:5:19: note: comptime var pointers are not available at runtime
+test.zig:4:14: note: 'runtime_value' points to comptime var declared here
+test.zig:12:40: error: runtime value contains reference to comptime var
+test.zig:12:40: note: comptime var pointers are not available at runtime
+test.zig:11:14: note: 'runtime_value' points to comptime var declared here
+test.zig:19:50: error: runtime value contains reference to comptime var
+test.zig:19:50: note: comptime var pointers are not available at runtime
+test.zig:18:14: note: 'runtime_value' points to comptime var declared here
+test.zig:28:9: error: runtime value contains reference to comptime var
+test.zig:28:9: note: comptime var pointers are not available at runtime
+test.zig:27:14: note: 'runtime_value' points to comptime var declared here
+test.zig:36:9: error: runtime value contains reference to comptime var
+test.zig:36:9: note: comptime var pointers are not available at runtime
+test.zig:35:14: note: 'runtime_value' points to comptime var declared here
+test.zig:41:12: error: runtime value contains reference to comptime var
+test.zig:41:12: note: comptime var pointers are not available at runtime
+test.zig:40:14: note: 'runtime_value' points to comptime var declared here
+test.zig:46:39: error: runtime value contains reference to comptime var
+test.zig:46:39: note: comptime var pointers are not available at runtime
+test.zig:45:14: note: 'runtime_value' points to comptime var declared here
+test.zig:55:18: error: runtime value contains reference to comptime var
+test.zig:55:18: note: comptime var pointers are not available at runtime
+test.zig:51:14: note: 'runtime_value' points to comptime var declared here
+test.zig:63:18: error: runtime value contains reference to comptime var
+test.zig:63:18: note: comptime var pointers are not available at runtime
+test.zig:59:14: note: 'runtime_value' points to comptime var declared here
+test.zig:71:19: error: runtime value contains reference to comptime var
+test.zig:71:19: note: comptime var pointers are not available at runtime
+test.zig:67:14: note: 'runtime_value' points to comptime var declared here
+test.zig:76:19: error: runtime value contains reference to comptime var
+test.zig:76:19: note: comptime var pointers are not available at runtime
+test.zig:75:14: note: 'runtime_value' points to comptime var declared here
+test.zig:83:16: error: runtime value contains reference to comptime var
+test.zig:83:16: note: comptime var pointers are not available at runtime
+test.zig:82:22: note: 'runtime_value' points to comptime var declared here
+#}

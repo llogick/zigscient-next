@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var x = .{};
+    x = x ++ .{ 1, 2, 3 };
+}
+#}
+#update
+#check errors {
+test.zig:3:11: error: expected type '@TypeOf(.{})', found 'struct { comptime T = 1, comptime T = 2, comptime T = 3 }'
+test.zig:3:11: note: T = comptime_int
+#}

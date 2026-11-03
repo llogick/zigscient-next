@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    const a = 1;
+    _ = struct {
+        test a {}
+    };
+}
+#}
+#update
+#check errors {
+test.zig:4:14: error: cannot test a local constant
+test.zig:2:11: note: local constant declared here
+#}

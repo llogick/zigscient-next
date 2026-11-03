@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const a = @as();
+}
+comptime {
+    const b = @bitCast();
+}
+comptime {
+    const c = @as(u32);
+}
+#}
+#update
+#check errors {
+test.zig:2:15: error: expected 2 arguments, found 0
+test.zig:5:15: error: expected 1 argument, found 0
+test.zig:8:15: error: expected 2 arguments, found 1
+#}

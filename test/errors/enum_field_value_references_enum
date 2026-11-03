@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub const Foo = enum(c_int) {
+    a = 10,
+    b = @intFromEnum(Foo.a) - 1,
+};
+export fn entry() void {
+    _ = @as(Foo, .a);
+}
+#}
+#update
+#check errors {
+test.zig:3:25: error: type 'test.Foo' depends on itself for field usage here
+#}

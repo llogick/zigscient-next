@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: [5]u8 = @import("hello.zon");
+    _ = f;
+}
+#}
+#write hello.zon {
+"hello"
+#}
+#update
+#check errors {
+hello.zon:1:1: error: expected type '[5]u8'
+test.zig:2:30: note: imported here
+#}

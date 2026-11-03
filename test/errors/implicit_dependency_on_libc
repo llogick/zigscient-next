@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target native-linux
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern "c" fn exit(u8) void;
+export fn entry() void {
+    exit(0);
+}
+#update
+#check errors {
+test.zig:1:8: error: dependency on libc must be explicitly specified in the build command
+#}

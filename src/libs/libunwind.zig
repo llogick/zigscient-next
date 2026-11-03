@@ -41,6 +41,7 @@ pub fn buildStaticLib(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         .root_strip = comp.compilerRtStrip(),
         .link_libc = true,
         .any_unwind_tables = unwind_tables != .none,
+        .pic = if (target_util.supports_fpic(target)) true else null,
         .lto = comp.config.lto,
         .function_sections = true,
         .data_sections = true,
@@ -71,7 +72,6 @@ pub fn buildStaticLib(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
             // necessary so that libunwind can unwind through its own stack frames
             // The old 32-bit x86 variant of SEH doesn't use tables.
             .unwind_tables = unwind_tables,
-            .pic = if (target_util.supports_fpic(target)) true else null,
             .optimize_mode = comp.compilerRtOptMode(),
             .code_model = comp.root_mod.code_model,
         },

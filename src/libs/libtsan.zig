@@ -67,6 +67,7 @@ pub fn buildTsan(comp: *Compilation, prog_node: std.Progress.Node) BuildError!vo
         .link_libc = true,
         .link_libcpp = link_libcpp,
         .any_unwind_tables = unwind_tables != .none,
+        .pic = true,
         // LLVM disables LTO for its libtsan.
         .lto = .none,
         .function_sections = true,
@@ -102,7 +103,6 @@ pub fn buildTsan(comp: *Compilation, prog_node: std.Progress.Node) BuildError!vo
             .valgrind = false,
             .unwind_tables = unwind_tables,
             .optimize_mode = optimize_mode,
-            .pic = true,
             .no_builtin = true,
             .code_model = comp.root_mod.code_model,
         },

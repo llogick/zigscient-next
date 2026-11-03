@@ -1,0 +1,12 @@
+#zig build-exe {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig
+#update
+#check errors {
+lib/std/**.zig:?:?: error: root source file struct 'test' has no member named 'main'
+test.zig:1:1: note: struct declared here
+lib/std/**.zig:?:?: note: called inline here
+#}

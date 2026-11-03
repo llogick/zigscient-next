@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = union {
+    Bar: u8,
+    Baz: type,
+};
+export fn f() void {
+    var x: u8 = 0;
+    _ = &x;
+    const foo = Foo{ .Bar = x };
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:8:23: error: unable to resolve comptime value
+test.zig:8:23: note: initializer of comptime-only union 'test.Foo' must be comptime-known
+test.zig:3:10: note: union requires comptime because of this field
+test.zig:3:10: note: types are not available at runtime
+#}

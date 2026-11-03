@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() !void {
     try foo(123);
 }
@@ -18,7 +19,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 123
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() !void {
     try foo(123);
 }
@@ -34,7 +35,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 123
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() !void {
     try foo(-42);
 }

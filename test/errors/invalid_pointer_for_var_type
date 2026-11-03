@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern fn ext() usize;
+var bytes: [ext()]u8 = undefined;
+export fn f() void {
+    for (&bytes, 0..) |*b, i| {
+        b.* = @as(u8, i);
+    }
+}
+#}
+#update
+#check errors {
+test.zig:2:16: error: comptime call of extern function
+test.zig:2:12: note: types must be comptime-known
+#}

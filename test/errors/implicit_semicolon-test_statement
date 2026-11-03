@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    if (foo()) |_| {}
+    var good = {};
+    if (foo()) |_| ({})
+    var bad = {};
+    _ = good;
+    _ = bad;
+}
+fn foo() void {}
+#}
+#update
+#check errors {
+test.zig:4:24: error: expected ';' or 'else' after statement
+#}

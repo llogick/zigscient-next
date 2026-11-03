@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Bar = union(enum(u32)) {
+    X: i32 = 1,
+};
+
+fn testCompileLog(x: Bar) void {
+    @compileLog(x);
+}
+
+export fn entry() void {
+    comptime testCompileLog(Bar{ .X = 123 });
+    _ = &testCompileLog;
+}
+#}
+#update
+#check errors {
+test.zig:6:5: error: found compile log statement
+test.zig:6:5: note: also here
+
+Compile Log Output:
+@as(test.Bar, .{ .X = 123 })
+@as(test.Bar, [runtime value])
+#}

@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const E = enum(u0) { a, _ };
+    _ = @as(E, undefined);
+}
+
+comptime {
+    const E = enum(u0) { a, b, _ };
+    _ = @as(E, undefined);
+}
+#}
+#update
+#check errors {
+test.zig:2:15: error: non-exhaustive enum specifies every value
+test.zig:7:29: error: enum tag value '1' too large for type 'u0'
+#}

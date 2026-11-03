@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const a: *u8 = null;
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(a));
+}
+#}
+#update
+#check errors {
+test.zig:1:16: error: expected type '*u8', found '@TypeOf(null)'
+#}

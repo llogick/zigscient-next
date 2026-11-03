@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Moo = enum(u8) {
+    Last = 255,
+    Over,
+};
+export fn entry() void {
+    const y = Moo.Last;
+    _ = y;
+}
+#}
+#update
+#check errors {
+test.zig:3:5: error: enum tag value '256' too large for type 'u8'
+#}

@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x: i32 = @intFromFloat(@as(i32, 54));
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:34: error: expected float type, found 'i32'
+#}

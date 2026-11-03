@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn builtinCallBoolFunctionInlineWithVoid() void {
+    @call(.always_inline, boolFunction, .{{}});
+}
+
+fn boolFunction(_: bool) void {}
+#}
+#update
+#check errors {
+test.zig:2:43: error: expected type 'bool', found 'void'
+test.zig:5:20: note: parameter type declared here
+#}

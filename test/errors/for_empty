@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn b() void {
+    for () |i| {
+        _ = i;
+    }
+}
+#}
+#update
+#check errors {
+test.zig:2:10: error: expected expression, found ')'
+#}

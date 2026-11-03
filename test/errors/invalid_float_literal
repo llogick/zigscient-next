@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() bool {
+    var bad_float :f32 = 0.0;
+    bad_float = bad_float + .20;
+    return bad_float < 1.0;
+}
+#}
+#update
+#check errors {
+test.zig:3:29: error: expected expression, found '.'
+#}

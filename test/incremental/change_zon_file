@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const message: []const u8 = @import("message.zon");
 pub fn main() !void {
@@ -30,10 +31,10 @@ Hello again, World!
 #update "delete file"
 #check errors {
 message.zon:1:1: error: unable to load "message.zon": FileNotFound
-main.zig:2:37: note: file imported here
+test.zig:2:37: note: file imported here
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const message: []const u8 = @import("message.zon");
 pub fn main() !void {
@@ -44,7 +45,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 #update "remove reference to ZON file"
 #check errors {
 message.zon:1:1: error: unable to load "message.zon": FileNotFound
-main.zig:2:37: note: file imported here
+test.zig:2:37: note: file imported here
 #}
 
 #write message.zon {
@@ -55,7 +56,7 @@ main.zig:2:37: note: file imported here
 a hardcoded string
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 const message: []const u8 = @import("message.zon");
 pub fn main() !void {

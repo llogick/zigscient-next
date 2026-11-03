@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    x: i32,
+
+    fn init(x: i32) Foo {
+        return Foo{
+            .x = x,
+        };
+    }
+};
+
+export fn f() void {
+    const derp = Foo.init(3);
+
+    derp.init();
+}
+#}
+#update
+#check errors {
+test.zig:14:9: error: no field or member function named 'init' in 'test.Foo'
+test.zig:1:13: note: struct declared here
+test.zig:4:5: note: 'init' is not a member function
+#}

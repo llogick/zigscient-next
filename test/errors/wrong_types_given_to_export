@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn entry() callconv(.c) void {}
+comptime {
+    @export(&entry, .{ .name = "entry", .linkage = @as(u32, 1234) });
+}
+#}
+#update
+#check errors {
+test.zig:3:42: error: expected type 'lang.GlobalLinkage', found 'u32'
+lib/std/**.zig:?:?: note: enum declared here
+#}

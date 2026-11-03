@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const tile = Tile.Empty;
+    switch (tile.*) {
+        Tile.Empty => {},
+        Tile.Filled => {},
+    }
+}
+const Tile = enum {
+    Empty,
+    Filled,
+};
+#}
+#update
+#check errors {
+test.zig:3:17: error: cannot dereference non-pointer type 'test.Tile'
+test.zig:8:14: note: enum declared here
+#}

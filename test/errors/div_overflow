@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const a = -128;
+    const b: i8 = -1;
+    _ = a / b;
+}
+#}
+#update
+#check errors {
+test.zig:4:11: error: overflow of integer type 'i8' with value '128'
+#}

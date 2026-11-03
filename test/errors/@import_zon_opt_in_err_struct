@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Struct = struct { f: bool };
+export fn testStruct() void {
+    const f: ?Struct = @import("nan.zon");
+    _ = f;
+}
+
+const Tuple = struct { bool };
+export fn testTuple() void {
+    const f: ?Tuple = @import("nan.zon");
+    _ = f;
+}
+#}
+#write nan.zon "nan"
+#update
+#check errors {
+nan.zon:1:1: error: expected type '?struct { bool }'
+test.zig:9:31: note: imported here
+nan.zon:1:1: error: expected type '?test.Struct'
+test.zig:3:32: note: imported here
+#}

@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: u8 = @import("neg_char.zon");
+    _ = f;
+}
+#}
+#write neg_char.zon {
+-'a'
+#}
+#update
+#check errors {
+neg_char.zon:1:1: error: expected number or 'inf' after '-'
+#}

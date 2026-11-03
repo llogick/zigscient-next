@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, foo);
@@ -15,7 +16,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 good morning
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, foo);
@@ -29,7 +30,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 good morning
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, bar);
@@ -43,7 +44,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 good evening
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, qux);
@@ -54,10 +55,10 @@ const io = std.Io.Threaded.global_single_threaded.io();
 #}
 #update "reference missing declaration"
 #check errors {
-main.zig:3:52: error: use of undeclared identifier 'qux'
+test.zig:3:52: error: use of undeclared identifier 'qux'
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, qux);
@@ -72,7 +73,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 good night
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 pub fn main() !void {
     try std.Io.File.stdout().writeStreamingAll(io, qux);

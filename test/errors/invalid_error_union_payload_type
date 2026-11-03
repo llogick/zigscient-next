@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = anyerror!anyopaque;
+}
+comptime {
+    _ = anyerror!anyerror;
+}
+fn someFunction() !anyerror {
+    return error.C;
+}
+comptime {
+    _ = someFunction;
+}
+#}
+#update
+#check errors {
+test.zig:2:18: error: error union with payload of opaque type 'anyopaque' not allowed
+test.zig:5:18: error: error union with payload of error set type 'anyerror' not allowed
+test.zig:7:20: error: error union with payload of error set type 'anyerror' not allowed
+#}

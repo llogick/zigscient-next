@@ -1,0 +1,100 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    const a = 1;
+    a = 1;
+}
+export fn entry2() void {
+    const a = 1;
+    a |= 1;
+}
+export fn entry3() void {
+    const a = 1;
+    a %= 1;
+}
+export fn entry4() void {
+    const a = 1;
+    a ^= 1;
+}
+export fn entry5() void {
+    const a = 1;
+    a += 1;
+}
+export fn entry6() void {
+    const a = 1;
+    a +%= 1;
+}
+export fn entry7() void {
+    const a = 1;
+    a +|= 1;
+}
+export fn entry8() void {
+    const a = 1;
+    a -= 1;
+}
+export fn entry9() void {
+    const a = 1;
+    a -%= 1;
+}
+export fn entry10() void {
+    const a = 1;
+    a -|= 1;
+}
+export fn entry11() void {
+    const a = 1;
+    a *= 1;
+}
+export fn entry12() void {
+    const a = 1;
+    a *%= 1;
+}
+export fn entry13() void {
+    const a = 1;
+    a *|= 1;
+}
+export fn entry14() void {
+    const a = 1;
+    a /= 1;
+}
+export fn entry15() void {
+    const a = 1;
+    a &= 1;
+}
+export fn entry16() void {
+    const a = 1;
+    a <<= 1;
+}
+export fn entry17() void {
+    const a = 1;
+    a <<|= 1;
+}
+export fn entry18() void {
+    const a = 1;
+    a >>= 1;
+}
+#}
+#update
+#check errors {
+test.zig:3:5: error: cannot assign to constant
+test.zig:7:5: error: cannot assign to constant
+test.zig:11:5: error: cannot assign to constant
+test.zig:15:5: error: cannot assign to constant
+test.zig:19:5: error: cannot assign to constant
+test.zig:23:5: error: cannot assign to constant
+test.zig:27:5: error: cannot assign to constant
+test.zig:31:5: error: cannot assign to constant
+test.zig:35:5: error: cannot assign to constant
+test.zig:39:5: error: cannot assign to constant
+test.zig:43:5: error: cannot assign to constant
+test.zig:47:5: error: cannot assign to constant
+test.zig:51:5: error: cannot assign to constant
+test.zig:55:5: error: cannot assign to constant
+test.zig:59:5: error: cannot assign to constant
+test.zig:63:5: error: cannot assign to constant
+test.zig:67:5: error: cannot assign to constant
+test.zig:71:5: error: cannot assign to constant
+#}

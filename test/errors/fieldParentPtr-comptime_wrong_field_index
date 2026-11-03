@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    a: i32,
+    b: i32,
+};
+const foo = Foo{
+    .a = 1,
+    .b = 2,
+};
+
+comptime {
+    const another_foo_ptr: *const Foo = @fieldParentPtr("b", &foo.a);
+    _ = another_foo_ptr;
+}
+#}
+#update
+#check errors {
+test.zig:11:41: error: field 'b' has index '1' but pointer value is index '0' of struct 'test.Foo'
+test.zig:1:13: note: struct declared here
+#}

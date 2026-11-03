@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = @Fn(&.{u32}, &.{.{}}, u8, .{ .varargs = true });
+}
+#}
+#update
+#check errors {
+test.zig:2:36: error: variadic function does not support 'auto' calling convention
+test.zig:2:36: note: supported calling conventions: 'x86_64_sysv', 'x86_64_x32', 'x86_64_win'
+#}

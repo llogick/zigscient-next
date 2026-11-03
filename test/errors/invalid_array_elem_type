@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = [1]anyopaque;
+}
+comptime {
+    _ = [1]noreturn;
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: array of opaque type 'anyopaque' not allowed
+test.zig:5:12: error: array of 'noreturn' not allowed
+#}

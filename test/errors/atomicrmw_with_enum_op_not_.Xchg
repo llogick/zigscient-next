@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const E = enum(u8) {
+        a,
+        b,
+        c,
+        d,
+    };
+    var x: E = .a;
+    _ = @atomicRmw(E, &x, .Add, .b, .seq_cst);
+}
+#}
+#update
+#check errors {
+test.zig:9:28: error: @atomicRmw with enum only allowed with .Xchg
+#}

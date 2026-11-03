@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {};
+fn f(Foo: i32) void {}
+export fn entry() void {
+    f(1234);
+}
+#}
+#update
+#check errors {
+test.zig:2:6: error: function parameter shadows declaration of 'Foo'
+test.zig:1:1: note: declared here
+#}

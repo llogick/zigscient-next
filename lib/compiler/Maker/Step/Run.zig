@@ -811,6 +811,9 @@ fn waitZigTest(
     const gpa = maker.gpa;
     const io = graph.io;
     const step = maker.stepByIndex(run_index);
+    const conf = &maker.scanned_config.configuration;
+    const conf_step = run_index.ptr(conf);
+    const conf_run = conf_step.extended.get(conf.extra).run;
 
     const stdout = multi_reader.reader(0);
     const stderr = multi_reader.reader(1);
@@ -843,15 +846,19 @@ fn waitZigTest(
 
     var last_update: Io.Clock.Timestamp = .now(io, .awake);
 
+    const test_timeout_ns = if (maker.unit_test_timeout_ns) |global_test_timeout_ns|
+        global_test_timeout_ns * (conf_run.protocol_test_timeout_scale.value orelse 1)
+    else
+        null;
     // This timeout is used when we're waiting on the test runner itself rather than a user-specified
     // test. For instance, if the test runner leaves this much time between us requesting a test to
     // start and it acknowledging the test starting, we terminate the child and raise an error. This
     // *should* never happen, but could in theory be caused by some very unlucky IB in a test.
-    const response_timeout: Io.Clock.Duration = t: {
-        const ns = @max(maker.unit_test_timeout_ns orelse 0, 60 * std.time.ns_per_s);
-        break :t .{ .clock = .awake, .raw = .fromNanoseconds(ns) };
+    const response_timeout: Io.Clock.Duration = .{
+        .clock = .awake,
+        .raw = .fromNanoseconds(@max(test_timeout_ns orelse 0, 60 * std.time.ns_per_s)),
     };
-    const test_timeout: ?Io.Clock.Duration = if (maker.unit_test_timeout_ns) |ns| .{
+    const test_timeout: ?Io.Clock.Duration = if (test_timeout_ns) |ns| .{
         .clock = .awake,
         .raw = .fromNanoseconds(ns),
     } else null;
@@ -2608,7 +2615,7 @@ fn runCommand(
         },
         else => {
             // On failure, report captured stderr like normal standard error output.
-            if (!generic_result.term.success()) {
+            if (!generic_result.term.eql(.success)) {
                 if (generic_result.stderr) |bytes| {
                     try step.setResultStderr(gpa, bytes);
                 }

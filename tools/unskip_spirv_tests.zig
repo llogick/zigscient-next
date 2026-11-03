@@ -137,7 +137,7 @@ pub fn main(init: std.process.Init) !void {
                     else => |e| return e,
                 };
 
-                if (result.term.success()) {
+                if (result.term.eql(.success)) {
                     try removed.omit_nodes.put(arena, skip, {});
                     std.debug.print("{s}: removed skip for {s}\n", .{ basename, candidate.name });
                     continue;

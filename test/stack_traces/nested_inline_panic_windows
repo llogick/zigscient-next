@@ -1,0 +1,28 @@
+#require windows
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {
+    foo();
+}
+inline fn foo() void {
+    bar();
+}
+inline fn bar() void {
+    baz();
+}
+inline fn baz() void {
+    @panic("oh no");
+}
+#}
+#update
+#check panic {
+thread ? panic: oh no
+test.zig:11: 0x? in baz (test*)
+    @panic("oh no");
+
+...
+#}

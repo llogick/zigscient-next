@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x = []u8{};
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:19: error: type '[]u8' does not support array initialization syntax
+test.zig:2:19: note: inferred array length is specified with an underscore: '[_]u8'
+#}

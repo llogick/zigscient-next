@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const z = error.A > error.B;
+    _ = z;
+}
+#}
+#update
+#check errors {
+test.zig:2:23: error: operator > not allowed for type 'error{A,B}'
+#}

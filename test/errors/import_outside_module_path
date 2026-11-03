@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = @import("../a.zig");
+}
+#}
+#update
+#check errors {
+test.zig:2:17: error: import of file outside module path
+#}

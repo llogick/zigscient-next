@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    var ptr: [*]u8 = undefined;
+    _ = &ptr;
+    @memset(ptr, 123);
+}
+export fn bar() void {
+    var ptr: [*c]bool = undefined;
+    _ = &ptr;
+    @memset(ptr, true);
+}
+#}
+#update
+#check errors {
+test.zig:4:5: error: unknown @memset length
+test.zig:4:13: note: destination type '[*]u8' provides no length
+test.zig:9:5: error: unknown @memset length
+test.zig:9:13: note: destination type '[*c]bool' provides no length
+#}

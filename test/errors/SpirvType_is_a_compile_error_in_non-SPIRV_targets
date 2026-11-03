@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = @SpirvType(.{ .runtime_array = u32 });
+}
+#}
+#update
+#check errors {
+test.zig:2:9: error: builtin @SpirvType is only available when targeting SPIR-V; targeted CPU architecture is x86_64
+#}

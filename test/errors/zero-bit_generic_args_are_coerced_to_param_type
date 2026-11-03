@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn bar(a: anytype, _: @TypeOf(a)) void {}
+export fn entry() void {
+    bar(@as(u0, 0), "fooo");
+}
+#}
+#update
+#check errors {
+test.zig:3:21: error: expected type 'u0', found '*const [4:0]u8'
+test.zig:1:23: note: parameter type declared here
+#}

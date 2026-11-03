@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Car = struct {
+    foo: *SymbolThatDoesNotExist,
+    pub fn init() !Car {}
+};
+export fn entry() void {
+    const car = Car.init();
+    _ = car;
+}
+#}
+#update
+#check errors {
+test.zig:2:11: error: use of undeclared identifier 'SymbolThatDoesNotExist'
+#}

@@ -1,0 +1,30 @@
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-none-dynamic-lc
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-async-dynamic-lc
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-omit-async-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-none-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-async-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-omit-async-dynamic-lc
+
+#require !windows
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {
+    foo(false);
+    foo(true);
+}
+inline fn foo(b: bool) void {
+    if (b) @panic("oh no");
+}
+#}
+#update
+#check panic {
+thread ? panic: oh no
+test.zig:6:12: 0x? in foo (test*)
+    if (b) @panic("oh no");
+           ^
+...
+#}

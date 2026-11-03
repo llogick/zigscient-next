@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = union {
+    Bar: i32,
+    Bar: usize,
+};
+export fn entry() void {
+    const a: Foo = undefined;
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: duplicate union member name 'Bar'
+test.zig:3:5: note: duplicate name here
+test.zig:1:13: note: union declared here
+#}

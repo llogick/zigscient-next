@@ -1260,7 +1260,6 @@ pub const cache_helpers = struct {
         hh.add(mod.single_threaded);
         hh.add(mod.error_tracing);
         hh.add(mod.valgrind);
-        hh.add(mod.pic);
         hh.add(mod.strip);
         hh.add(mod.omit_frame_pointer);
         hh.add(mod.stack_check);
@@ -1785,9 +1784,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 error.ValgrindUnsupportedOnTarget => unreachable,
                 error.TargetRequiresSingleThreaded => unreachable,
                 error.BackendRequiresSingleThreaded => unreachable,
-                error.TargetRequiresPic => unreachable,
-                error.PieRequiresPic => unreachable,
-                error.DynamicLinkingRequiresPic => unreachable,
                 error.TargetHasNoRedZone => unreachable,
                 error.PatchableFunctionEntryUnsupportedByBackend => unreachable,
                 // These are not possible because are explicitly *not* requesting these things.
@@ -1844,9 +1840,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 error.ValgrindUnsupportedOnTarget => unreachable,
                 error.TargetRequiresSingleThreaded => unreachable,
                 error.BackendRequiresSingleThreaded => unreachable,
-                error.TargetRequiresPic => unreachable,
-                error.PieRequiresPic => unreachable,
-                error.DynamicLinkingRequiresPic => unreachable,
                 error.TargetHasNoRedZone => unreachable,
                 error.StackCheckUnsupportedByTarget => unreachable,
                 error.StackProtectorUnsupportedByTarget => unreachable,
@@ -1890,9 +1883,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 error.ValgrindUnsupportedOnTarget => unreachable,
                 error.TargetRequiresSingleThreaded => unreachable,
                 error.BackendRequiresSingleThreaded => unreachable,
-                error.TargetRequiresPic => unreachable,
-                error.PieRequiresPic => unreachable,
-                error.DynamicLinkingRequiresPic => unreachable,
                 error.TargetHasNoRedZone => unreachable,
                 error.StackCheckUnsupportedByTarget => unreachable,
                 error.StackProtectorUnsupportedByTarget => unreachable,
@@ -1939,6 +1929,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
         cache.hash.addBytes(build_options.version);
         cache.hash.addBytes("Zigscient");
         cache.hash.add(builtin.zig_backend);
+        cache.hash.add(options.config.pic);
         cache.hash.add(options.config.pie);
         cache.hash.add(options.config.lto);
         cache.hash.add(options.config.link_mode);
@@ -2009,9 +2000,6 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 error.ValgrindUnsupportedOnTarget => unreachable,
                 error.TargetRequiresSingleThreaded => unreachable,
                 error.BackendRequiresSingleThreaded => unreachable,
-                error.TargetRequiresPic => unreachable,
-                error.PieRequiresPic => unreachable,
-                error.DynamicLinkingRequiresPic => unreachable,
                 error.TargetHasNoRedZone => unreachable,
                 error.StackCheckUnsupportedByTarget => unreachable,
                 error.StackProtectorUnsupportedByTarget => unreachable,
@@ -2662,6 +2650,96 @@ pub fn hotCodeSwap(
     try lf.makeExecutable();
 }
 
+fn reset(comp: *Compilation, arena: std.mem.Allocator) Allocator.Error!void {
+    const gpa = comp.gpa;
+    const io = comp.io;
+
+    comp.clearMiscFailures();
+    comp.last_update_was_cache_hit = false;
+    if (comp.time_report) |*tr| {
+        tr.deinit(gpa);
+        tr.* = .init;
+    }
+    if (comp.file_system_inputs) |file_system_inputs| file_system_inputs.clearRetainingCapacity();
+
+    if (comp.zcu) |zcu| {
+        zcu.skip_analysis_this_update = false;
+        if (zcu.generation > 0) return;
+        try zcu.reset(arena);
+    }
+
+    comp.windows_libs_num_done = 0;
+
+    {
+        var it = comp.crt_files.iterator();
+        while (it.next()) |entry| {
+            gpa.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(gpa, io);
+        }
+        comp.crt_files.clearRetainingCapacity();
+    }
+    if (comp.libcxx_static_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.libcxx_static_lib = null;
+    }
+    if (comp.libcxxabi_static_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.libcxxabi_static_lib = null;
+    }
+    if (comp.libunwind_static_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.libunwind_static_lib = null;
+    }
+    if (comp.tsan_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.tsan_lib = null;
+    }
+    if (comp.ubsan_rt_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.ubsan_rt_lib = null;
+    }
+    if (comp.ubsan_rt_obj) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.ubsan_rt_obj = null;
+    }
+    if (comp.zigc_static_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.zigc_static_lib = null;
+    }
+    if (comp.compiler_rt_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.compiler_rt_lib = null;
+    }
+    if (comp.compiler_rt_obj) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.compiler_rt_obj = null;
+    }
+    if (comp.fuzzer_lib) |*crt_file| {
+        crt_file.deinit(gpa, io);
+        comp.fuzzer_lib = null;
+    }
+    if (comp.glibc_so_files) |*glibc_file| {
+        glibc_file.deinit(gpa, io);
+        comp.glibc_so_files = null;
+    }
+    if (comp.freebsd_so_files) |*freebsd_file| {
+        freebsd_file.deinit(gpa, io);
+        comp.freebsd_so_files = null;
+    }
+    if (comp.netbsd_so_files) |*netbsd_file| {
+        netbsd_file.deinit(gpa, io);
+        comp.netbsd_so_files = null;
+    }
+    if (comp.openbsd_so_files) |*openbsd_file| {
+        openbsd_file.deinit(gpa, io);
+        comp.openbsd_so_files = null;
+    }
+    for (comp.failed_c_objects.values()) |bundle| bundle.destroy(comp.gpa);
+    comp.failed_c_objects.clearRetainingCapacity();
+    for (comp.failed_win32_resources.values()) |*bundle| bundle.deinit(comp.gpa);
+    comp.failed_win32_resources.clearRetainingCapacity();
+}
+
 fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
     const io = comp.io;
 
@@ -2749,25 +2827,7 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
-    reset: {
-        comp.clearMiscFailures();
-        comp.last_update_was_cache_hit = false;
-        if (comp.time_report) |*tr| {
-            tr.deinit(comp.gpa);
-            tr.* = .init;
-        }
-        if (comp.file_system_inputs) |file_system_inputs| file_system_inputs.clearRetainingCapacity();
-
-        if (comp.zcu) |zcu| {
-            zcu.skip_analysis_this_update = false;
-            if (zcu.generation > 0) break :reset;
-            try zcu.reset(arena);
-        }
-        for (comp.failed_c_objects.values()) |bundle| bundle.destroy(comp.gpa);
-        comp.failed_c_objects.clearRetainingCapacity();
-        for (comp.failed_win32_resources.values()) |*bundle| bundle.deinit(comp.gpa);
-        comp.failed_win32_resources.clearRetainingCapacity();
-    }
+    try comp.reset(arena);
 
     var tmp_dir_rand_int: u64 = undefined;
     var man: Cache.Manifest = undefined;
@@ -4436,7 +4496,7 @@ fn dispatchPrelinkWork(comp: *Compilation, main_progress_node: std.Progress.Node
     comp.queuePrelinkTasks(comp.oneshot_prelink_tasks.items) catch |err| switch (err) {
         error.Canceled => unreachable, // see swapCancelProtection above
     };
-    comp.oneshot_prelink_tasks.clearRetainingCapacity();
+    if (comp.config.incremental) comp.oneshot_prelink_tasks.clearRetainingCapacity();
 
     // In case it failed last time, try again. `clearMiscFailures` was already
     // called at the start of `update`.
@@ -6271,7 +6331,7 @@ fn addCommonCCArgs(
         // PIE needs to go before PIC because Clang interprets `-fno-PIE` to imply `-fno-PIC`, which
         // we don't necessarily want.
         try argv.append(if (comp.config.pie) "-fPIE" else "-fno-PIE");
-        try argv.append(if (mod.pic) "-fPIC" else "-fno-PIC");
+        try argv.append(if (comp.config.pic) "-fPIC" else "-fno-PIC");
     }
 
     switch (target.os.tag) {
@@ -6717,7 +6777,7 @@ pub fn addCCArgs(
     }
 
     if (target.cpu.arch.isMips()) {
-        try argv.append(if (mod.pic) "-mabicalls" else "-mno-abicalls");
+        try argv.append(if (comp.config.pic) "-mabicalls" else "-mno-abicalls");
     }
 
     try comp.addCommonCCArgs(arena, argv, ext, out_dep_path, mod, comp.config.c_frontend);
@@ -6733,7 +6793,7 @@ pub fn addCCArgs(
             try argv.appendSlice(&.{ "-Xclang", "-msoft-float" });
         }
 
-        if (target.cpu.arch.isMips() and !mod.pic) {
+        if (target.cpu.arch.isMips() and !comp.config.pic) {
             try argv.append("-mno-gpopt");
         }
 
@@ -7334,7 +7394,7 @@ fn dumpArgvWriter(w: *Io.Writer, argv: []const []const u8) Io.Writer.Error!void 
 
 pub fn getZigBackend(comp: Compilation) std.lang.CompilerBackend {
     const target = &comp.root_mod.resolved_target.result;
-    return target_util.zigBackend(target, comp.config.use_llvm);
+    return std.zig.compilerBackend(target, comp.config.use_llvm);
 }
 
 pub const SubUpdateError = UpdateError || error{AlreadyReported};
@@ -7408,6 +7468,7 @@ fn buildOutputFromZig(
         .any_unwind_tables = comp.root_mod.unwind_tables != .none,
         .any_error_tracing = false,
         .root_error_tracing = false,
+        .pic = comp.config.pic,
         .lto = if (options.allow_lto) comp.config.lto else .none,
         .function_sections = true,
         .data_sections = true,
@@ -7430,7 +7491,6 @@ fn buildOutputFromZig(
             .red_zone = comp.root_mod.red_zone,
             .omit_frame_pointer = comp.root_mod.omit_frame_pointer,
             .unwind_tables = comp.root_mod.unwind_tables,
-            .pic = comp.root_mod.pic,
             .optimize_mode = optimize_mode,
             .no_builtin = true,
             .code_model = comp.root_mod.code_model,
@@ -7545,6 +7605,8 @@ pub fn build_crt_file(
         .root_strip = comp.compilerRtStrip(),
         .link_libc = false,
         .any_unwind_tables = comp.root_mod.unwind_tables != .none,
+        // Some CRT objects (e.g. musl's rcrt1.o and Scrt1.o) are opinionated about PIC.
+        .pic = options.pic orelse comp.config.pic,
         .lto = switch (output_mode) {
             .Lib => if (options.allow_lto) comp.config.lto else .none,
             .Obj, .Exe => .none,
@@ -7572,8 +7634,6 @@ pub fn build_crt_file(
             .omit_frame_pointer = comp.root_mod.omit_frame_pointer,
             .valgrind = false,
             .unwind_tables = comp.root_mod.unwind_tables,
-            // Some CRT objects (e.g. musl's rcrt1.o and Scrt1.o) are opinionated about PIC.
-            .pic = options.pic orelse comp.root_mod.pic,
             .optimize_mode = comp.compilerRtOptMode(),
             // Some libcs (e.g. musl) are opinionated about -fno-builtin.
             .no_builtin = options.no_builtin orelse comp.root_mod.no_builtin,

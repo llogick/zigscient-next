@@ -1,0 +1,48 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const globl = g: {
+    @branchHint(.none);
+    break :g {};
+};
+
+comptime {
+    @branchHint(.none);
+}
+
+test {
+    @branchHint(.none);
+}
+
+export fn foo() void {
+    {
+        @branchHint(.none);
+    }
+}
+
+export fn bar() void {
+    _ = (b: {
+        @branchHint(.none);
+        break :b true;
+    }) or true;
+}
+
+export fn qux() void {
+    (b: {
+        @branchHint(.none);
+        break :b @as(?void, {});
+    }) orelse unreachable;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: '@branchHint' outside function scope
+test.zig:7:5: error: '@branchHint' outside function scope
+test.zig:11:5: error: '@branchHint' must appear as the first statement in a function or conditional branch
+test.zig:16:9: error: '@branchHint' must appear as the first statement in a function or conditional branch
+test.zig:22:9: error: '@branchHint' must appear as the first statement in a function or conditional branch
+test.zig:29:9: error: '@branchHint' must appear as the first statement in a function or conditional branch
+#}

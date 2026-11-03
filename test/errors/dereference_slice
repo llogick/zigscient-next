@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn entry(x: []i32) i32 {
+    return x.*;
+}
+comptime {
+    _ = &entry;
+}
+#}
+#update
+#check errors {
+test.zig:2:13: error: index syntax required to access runtime-known slice
+#}

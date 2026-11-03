@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var self: Error = undefined;
+    switch ((&self).*) {
+        InvalidToken => |x| return x.token,
+        ExpectedVarDeclOrFn => |x| return x.token,
+    }
+}
+const Error = union(enum) {
+    A: InvalidToken,
+    B: ExpectedVarDeclOrFn,
+};
+const InvalidToken = struct {};
+const ExpectedVarDeclOrFn = struct {};
+#}
+#update
+#check errors {
+test.zig:4:9: error: expected type '@typeInfo(test.Error).@"union".tag_type.?', found 'type'
+test.zig:8:15: note: enum declared here
+#}

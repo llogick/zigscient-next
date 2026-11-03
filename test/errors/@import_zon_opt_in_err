@@ -1,0 +1,89 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn testFloatA() void {
+    const f: ?f32 = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testFloatB() void {
+    const f: *const ?f32 = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testFloatC() void {
+    const f: ?*const f32 = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testBool() void {
+    const f: ?bool = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testInt() void {
+    const f: ?i32 = @import("vec2.zon");
+    _ = f;
+}
+
+const Enum = enum { foo };
+export fn testEnum() void {
+    const f: ?Enum = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testEnumLit() void {
+    const f: ?@TypeOf(.foo) = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testArray() void {
+    const f: ?[1]u8 = @import("vec2.zon");
+    _ = f;
+}
+
+const Union = union {};
+export fn testUnion() void {
+    const f: ?Union = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testSlice() void {
+    const f: ?[]const u8 = @import("vec2.zon");
+    _ = f;
+}
+
+export fn testVector() void {
+    const f: ?@Vector(3, f32) = @import("vec2.zon");
+    _ = f;
+}
+#}
+#write vec2.zon ".{ .x = 1.5, .y = 2 }"
+#update
+#check errors {
+vec2.zon:1:2: error: expected type '*const ?f32'
+test.zig:7:36: note: imported here
+vec2.zon:1:2: error: expected type '?*const f32'
+test.zig:12:36: note: imported here
+vec2.zon:1:2: error: expected type '?@EnumLiteral()'
+test.zig:33:39: note: imported here
+vec2.zon:1:2: error: expected type '?@Vector(3, f32)'
+test.zig:54:41: note: imported here
+vec2.zon:1:2: error: expected type '?[1]u8'
+test.zig:38:31: note: imported here
+vec2.zon:1:2: error: expected type '?[]const u8'
+test.zig:49:36: note: imported here
+vec2.zon:1:2: error: expected type '?bool'
+test.zig:17:30: note: imported here
+vec2.zon:1:2: error: expected type '?f32'
+test.zig:2:29: note: imported here
+vec2.zon:1:2: error: expected type '?i32'
+test.zig:22:29: note: imported here
+vec2.zon:1:2: error: expected type '?test.Enum'
+test.zig:28:30: note: imported here
+vec2.zon:1:2: error: expected type '?test.Union'
+test.zig:44:31: note: imported here
+#}

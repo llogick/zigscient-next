@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn u() void {
+    _ = @unionInit(0, "a", 0);
+}
+#}
+#update
+#check errors {
+test.zig:2:20: error: expected type 'type', found 'comptime_int'
+#}

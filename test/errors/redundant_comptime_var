@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    comptime var x = undefined;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: 'comptime var' is redundant in comptime scope
+#}

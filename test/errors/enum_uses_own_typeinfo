@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum(u9) {
+    const a_val: @typeInfo(E).@"enum".tag_type = 0;
+    a = a_val,
+};
+comptime {
+    _ = E.a;
+}
+#}
+#update
+#check errors {
+error: dependency loop with length 3
+    test.zig:3:9: note: type 'test.E' uses value of declaration 'test.E.a_val' here
+    test.zig:2:50: note: value of declaration 'test.E.a_val' uses type of declaration 'test.E.a_val' here
+    test.zig:2:18: note: type of declaration 'test.E.a_val' depends on type 'test.E' for type information query here
+    note: eliminate any one of these dependencies to break the loop
+#}

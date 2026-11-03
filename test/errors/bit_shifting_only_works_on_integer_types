@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x = &@as(u8, 1) << 10;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:15: error: bit shifting operation expected integer type, found '*const u8'
+#}

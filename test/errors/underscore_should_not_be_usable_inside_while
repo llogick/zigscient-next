@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn returns() void {
+    while (optionalReturn()) |_| {
+        while (optionalReturn()) |_| {
+            return _;
+        }
+    }
+}
+fn optionalReturn() ?u32 {
+    return 1;
+}
+#}
+#update
+#check errors {
+test.zig:4:20: error: '_' used as an identifier without @"_" syntax
+#}

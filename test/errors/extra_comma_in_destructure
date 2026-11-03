@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    const x, const y, = .{ 1, 2 };
+    _ = .{ x, y };
+}
+#}
+#update
+#check errors {
+test.zig:2:23: error: expected expression or var decl, found '='
+#}

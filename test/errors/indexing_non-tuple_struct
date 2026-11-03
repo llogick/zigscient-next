@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    const S = struct { x: i32, y: i32 };
+    var s: S = undefined;
+    s[0] = 10;
+}
+#}
+#update
+#check errors {
+test.zig:4:6: error: type 'test.a.S' does not support indexing
+test.zig:4:6: note: operand must be an array, slice, tuple, or vector
+test.zig:2:15: note: struct declared here
+#}

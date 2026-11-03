@@ -398,7 +398,7 @@ fn translate(
             .argv = &.{ pkg_config_exe, "--list-all" },
             .environ_map = environ_map,
         })) |result| {
-            if (result.term.success()) {
+            if (result.term.eql(.success)) {
                 opt_pc = try PkgConfig.init(arena, result.stdout, null);
             } else if (any_force_pkg_conf) {
                 fatal("{s} {f}", .{ pkg_config_exe, result.term });
@@ -626,7 +626,7 @@ fn runPkgConfig(
         if (force) fatal("failed running {s}: {t}", .{ pkg_config_exe, err });
         return;
     };
-    if (!result.term.success()) {
+    if (!result.term.eql(.success)) {
         if (result.stderr.len != 0) std.log.err("{s}: {s}", .{ pkg_config_exe, result.stderr });
         if (force) fatal("{s} {f}", .{ pkg_config_exe, result.term });
         return;

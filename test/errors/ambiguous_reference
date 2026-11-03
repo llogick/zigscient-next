@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const T = struct {
+    const T = struct {
+        fn f() void {
+            _ = T;
+        }
+    };
+};
+#}
+#update
+#check errors {
+test.zig:4:17: error: ambiguous reference
+test.zig:2:5: note: declared here
+test.zig:1:1: note: also declared here
+#}

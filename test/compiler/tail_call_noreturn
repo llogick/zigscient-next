@@ -1,0 +1,29 @@
+#skip wasm32-wasi-none-baseline-whole-llvm-debug
+#skip wasm32-wasi-none-baseline-whole-selfhosted-debug
+#skip x86_64-linux-musl-baseline-whole-selfhosted-debug
+#skip x86_64-macos-none-baseline-whole-selfhosted-debug
+#skip x86_64-windows-gnu-baseline-whole-selfhosted-debug
+
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+const builtin = std.builtin;
+pub fn foo(message: []const u8, stack_trace: ?*builtin.StackTrace) noreturn {
+    @call(.always_tail, bar, .{ message, stack_trace });
+}
+pub fn bar(message: []const u8, stack_trace: ?*builtin.StackTrace) noreturn {
+    _ = message;
+    _ = stack_trace;
+    std.process.exit(0);
+}
+
+pub fn main() void {
+    foo("foo", null);
+}
+#}
+#update
+#check exit "0"

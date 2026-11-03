@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+const MyStruct = struct {
+    a: i32,
+    b: i32,
+
+    pub fn getA(self: *List) i32 {
+        return self.items(.c);
+    }
+};
+const List = std.MultiArrayList(MyStruct);
+export fn entry() void {
+    var list = List{};
+    _ = MyStruct.getA(&list);
+}
+#}
+#update
+#check errors {
+test.zig:7:28: error: enum 'meta.FieldEnum(test.MyStruct)' has no member named 'c'
+lib/std/**.zig:?:?: note: enum declared here
+#}

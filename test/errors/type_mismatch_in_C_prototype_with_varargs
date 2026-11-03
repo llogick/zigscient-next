@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const fn_ty = ?fn ([*c]u8, ...) callconv(.c) void;
+extern fn fn_decl(fmt: [*:0]u8, ...) void;
+
+export fn entry() void {
+    const x: fn_ty = fn_decl;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:5:22: error: expected type '?fn ([*c]u8, ...) callconv(.c) void', found 'fn ([*:0]u8, ...) callconv(.c) void'
+test.zig:5:22: note: parameter 0 '[*:0]u8' cannot cast into '[*c]u8'
+test.zig:5:22: note: '[*c]u8' could have null values which are illegal in type '[*:0]u8'
+#}

@@ -1,40 +1,32 @@
-#skip amdgcn-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-amdhsa-none-baseline-whole-llvm-debug-lld
 
-#skip csky-freestanding-eabi-baseline-whole-llvm-lld-pic
-#skip csky-freestanding-eabihf-baseline-whole-llvm-lld-pic
-#skip csky-linux-eabi-baseline-whole-llvm-lld-pic
-#skip csky-linux-eabihf-baseline-whole-llvm-lld-pic
-#skip csky-linux-gnueabi-baseline-whole-llvm-lld-pic
-#skip csky-linux-gnueabihf-baseline-whole-llvm-lld-pic
+#skip csky-freestanding-eabi-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-eabihf-baseline-whole-llvm-debug-lld
+#skip csky-linux-eabi-baseline-whole-llvm-debug-lld
+#skip csky-linux-eabihf-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnueabi-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnueabihf-baseline-whole-llvm-debug-lld
 
-#skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
-#skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
+#skip nvptx-cuda-none-baseline-whole-llvm-debug-lld
+#skip nvptx-nvcl-none-baseline-whole-llvm-debug-lld
 
-#skip nvptx64-cuda-none-baseline-whole-llvm-lld-pic
-#skip nvptx64-nvcl-none-baseline-whole-llvm-lld-pic
+#skip nvptx64-cuda-none-baseline-whole-llvm-debug-lld
+#skip nvptx64-nvcl-none-baseline-whole-llvm-debug-lld
 
-#skip spirv32-opencl-none-baseline-whole-llvm-lld-pic
-#skip spirv32-opengl-none-baseline-whole-llvm-lld-pic
-#skip spirv32-vulkan-none-baseline-whole-llvm-lld-pic
+#skip spirv32-opencl-none-baseline-whole-llvm-debug-lld
+#skip spirv32-opengl-none-baseline-whole-llvm-debug-lld
+#skip spirv32-vulkan-none-baseline-whole-llvm-debug-lld
 
-#skip spirv64-amdhsa-none-baseline-whole-llvm-lld-pic
-#skip spirv64-opencl-none-baseline-whole-llvm-lld-pic
-#skip spirv64-vulkan-none-baseline-whole-llvm-lld-pic
+#skip spirv64-amdhsa-none-baseline-whole-llvm-debug-lld
+#skip spirv64-opencl-none-baseline-whole-llvm-debug-lld
+#skip spirv64-vulkan-none-baseline-whole-llvm-debug-lld
 
-#skip wasm32-emscripten-none-baseline-whole-llvm-lld-pic
-#skip wasm32-freestanding-none-baseline-whole-llvm-lld-pic
-#skip wasm32-wasi-none-baseline-whole-llvm-lld-pic
+#skip x86_64-linux-gnux32-baseline-whole-llvm-debug-new
+#skip x86_64-linux-muslx32-baseline-whole-llvm-debug-new
+#skip x86_64-linux-x32-baseline-whole-llvm-debug-new
 
-#skip wasm64-emscripten-none-baseline-whole-llvm-lld-pic
-#skip wasm64-freestanding-none-baseline-whole-llvm-lld-pic
-#skip wasm64-wasi-none-baseline-whole-llvm-lld-pic
-
-#skip x86_64-linux-gnux32-baseline-whole-llvm-new-pic
-#skip x86_64-linux-muslx32-baseline-whole-llvm-new-pic
-#skip x86_64-linux-x32-baseline-whole-llvm-new-pic
-
-#obj {
---name test -fno-lld -fno-new-linker -ofmt=llvmir
+#zig build-obj {
+--name test -ofmt=llvmir -fno-lld -fno-new-linker
 -Mroot=test.zig
 #}
 
@@ -45,10 +37,14 @@ export fn entry(ptr: *i16) void {
 #}
 #update "atomic acquire"
 #check llvm {
-define #...@test.entry(ptr #...%0) #...{
-#...load atomic i16, ptr %0 acquire#...
+...
+define ... @test.entry(ptr ... %ptr) ... {
+  ...
+  %ptr.load = load atomic i16, ptr %ptr ... acquire, align ?, !...
+  ...
 }
 
+...
 #}
 
 #write test.zig {
@@ -58,10 +54,14 @@ export fn entry(ptr: *volatile i16) void {
 #}
 #update "atomic volatile unordered"
 #check llvm {
-define #...@test.entry(ptr #...%0) #...{
-#...load atomic volatile i16, ptr %0 unordered#...
+...
+define ... @test.entry(ptr ... %ptr) ... {
+  ...
+  %ptr.load = load atomic volatile i16, ptr %ptr ... unordered, align ?, !...
+  ...
 }
 
+...
 #}
 
 #write test.zig {
@@ -71,10 +71,14 @@ export fn entry(ptr: *volatile i16) void {
 #}
 #update "volatile"
 #check llvm {
-define #...@test.entry(ptr #...%0) #...{
-#...load volatile i16, ptr %0#...
+...
+define ... @test.entry(ptr ... %ptr) ... {
+  ...
+  %ptr.load = load volatile i16, ptr %ptr, align ?, !...
+  ...
 }
 
+...
 #}
 
 #write test.zig {
@@ -88,15 +92,14 @@ fn entry2(slice: []volatile i16) void {
 #}
 #update "volatile slice"
 #check llvm {
-define #...@test.entry(#...) #...{
-#...
+...
+define ... @test.entry2(..., ptr ... %slice.ptr, isize ... %slice.len) ... {
+  ...
+  %slice.load = load volatile i16, ptr %slice.ptr.0, align ?, !...
+  ...
 }
 
-#...
-define #...@test.entry2(#...) #...{
-#...load volatile i16, ptr %#...
-}
-
+...
 #}
 
 #write test.zig {
@@ -107,8 +110,12 @@ export fn entry(ptr: *volatile S) void {
 #}
 #update "volatile packed"
 #check llvm {
-define #...@test.entry(ptr #...%0) #...{
-#...load volatile i16, ptr %#...
+...
+define ... @test.entry(ptr ... %ptr) ... {
+  ...
+  %ptr.load = load volatile i16, ptr %ptr.0, align ?, !...
+  ...
 }
 
+...
 #}

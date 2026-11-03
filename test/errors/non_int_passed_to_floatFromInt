@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x: f32 = @floatFromInt(1.1);
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:34: error: expected integer type, found 'comptime_float'
+#}

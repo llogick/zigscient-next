@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = enum {
+    a,
+    b,
+};
+export fn entry() void {
+    const x: Foo = .c;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:6:21: error: enum 'test.Foo' has no member named 'c'
+test.zig:1:13: note: enum declared here
+#}

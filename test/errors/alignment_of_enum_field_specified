@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Number = enum {
+    a,
+    b align(i32),
+};
+
+export fn entry1() void {
+    const x: Number = undefined;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:3:13: error: enum fields cannot be aligned
+#}

@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const llamas1 = makeLlamas(5);
+    const llamas2 = makeLlamas(5);
+    _ = llamas1;
+    _ = llamas2;
+}
+
+fn makeLlamas(count: usize) [count]u8 {}
+#}
+#update
+#check errors {
+test.zig:8:30: error: unable to resolve comptime value
+test.zig:8:30: note: array length must be comptime-known
+test.zig:2:31: note: generic function instantiated here
+#}

@@ -3,13 +3,16 @@
     // to run due to the output (C source code or LLVM IR) being built non-incrementally (by Clang
     // or LLVM). We just have a couple here to make sure that it works.
     .{
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
         .cpu = .{ .x86_64 = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .musl = .{} },
         .cache_mode = .incremental,
         .backend = .cbe,
-        .linker = .old,
-        .pic = .nopic,
+        .link_libc = .lc,
     },
     .{
         .cpu = .{ .x86_64 = .{} },
@@ -17,8 +20,6 @@
         .abi = .{ .none = .{} },
         .cache_mode = .incremental,
         .backend = .llvm,
-        .linker = .lld,
-        .pic = .nopic,
     },
 
     .{
@@ -27,8 +28,6 @@
         .abi = .{ .none = .{} },
         .cache_mode = .incremental,
         .backend = .selfhosted,
-        .linker = .new,
-        .pic = .nopic,
     },
     .{
         .cpu = .{ .x86_64 = .{} },
@@ -36,8 +35,6 @@
         .abi = .{ .none = .{} },
         .cache_mode = .incremental,
         .backend = .selfhosted,
-        .linker = .old,
-        .pic = .pic,
     },
     .{
         .cpu = .{ .wasm32 = .{} },
@@ -45,7 +42,5 @@
         .abi = .{ .none = .{} },
         .cache_mode = .incremental,
         .backend = .selfhosted,
-        .linker = .old,
-        .pic = .nopic,
     },
 }

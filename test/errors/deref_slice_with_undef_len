@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry2() void {
+    comptime var slice: []const u16 = &.{ 1, 2, 3 };
+    slice.len = undefined;
+    _ = slice.*;
+}
+
+export fn entry3() void {
+    comptime var slice: []const u16 = &.{ 1, 2, 3 };
+    slice.len = undefined;
+    _ = &slice.*;
+}
+
+export fn entry4() void {
+    comptime var slice: []const u8 = "hello";
+    slice.len = undefined;
+    @compileError(slice);
+}
+#}
+#update
+#check errors {
+test.zig:4:14: error: cannot dereference slice with undefined length
+test.zig:10:15: error: cannot dereference slice with undefined length
+test.zig:16:19: error: use of slice with undefined length here causes illegal behavior
+#}

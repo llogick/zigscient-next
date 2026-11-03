@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+inline fn a() null {
+    return null;
+}
+export fn entry() void {
+    _ = a();
+}
+#}
+#update
+#check errors {
+test.zig:1:15: error: expected type 'type', found '@TypeOf(null)'
+#}

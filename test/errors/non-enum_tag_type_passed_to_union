@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = union(u32) {
+    A: i32,
+};
+export fn entry() void {
+    const x = @typeInfo(Foo).@"union".tag_type.?;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:1:19: error: expected enum tag type, found 'u32'
+#}

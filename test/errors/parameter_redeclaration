@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn f(a: i32, a: i32) void {}
+export fn entry() void {
+    f(1, 2);
+}
+#}
+#update
+#check errors {
+test.zig:1:14: error: redeclaration of function parameter 'a'
+test.zig:1:6: note: previous declaration here
+#}

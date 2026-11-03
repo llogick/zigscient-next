@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() [*:0]const u8 {
+    var buffer: [64]u8 = undefined;
+    return buffer[0..];
+}
+#}
+#update
+#check errors {
+test.zig:3:18: error: expected type '[*:0]const u8', found '*[64]u8'
+test.zig:3:18: note: destination pointer requires '0' sentinel
+test.zig:1:17: note: function return type declared here
+#}

@@ -1,0 +1,12 @@
+#zig build-exe {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn (main) void {}
+#}
+#update
+#check errors {
+test.zig:1:5: error: missing function name
+#}

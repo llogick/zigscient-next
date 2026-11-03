@@ -1,8 +1,8 @@
-#todo "implement inline line info in lldb"
-#skip x86_64-linux-none-baseline-incremental-selfhosted-new-nopic
-#skip x86_64-linux-none-baseline-incremental-selfhosted-new-pic
+# "TODO: implement inline line info in lldb"
+#skip x86_64-linux-none-baseline-incremental-selfhosted-debug-pdc-new
+#skip x86_64-linux-none-baseline-incremental-selfhosted-debug-pic-new
 
-#exe {
+#zig build-exe {
 --name inline_call
 --dep module -Mroot=root0.zig
 -Mmodule=mod0.zig

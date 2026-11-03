@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = packed struct {
+    ptr: *u32,
+};
+export fn foo() void {
+    _ = @as(S, undefined);
+}
+
+const U = packed union {
+    ptr: *u32,
+};
+export fn bar() void {
+    _ = @as(U, undefined);
+}
+#}
+#update
+#check errors {
+test.zig:2:10: error: packed structs cannot contain fields of type '*u32'
+test.zig:2:10: note: pointers cannot be directly bitpacked
+test.zig:2:10: note: consider using 'usize' and '@intFromPtr'
+test.zig:9:10: error: packed unions cannot contain fields of type '*u32'
+test.zig:9:10: note: pointers cannot be directly bitpacked
+test.zig:9:10: note: consider using 'usize' and '@intFromPtr'
+#}

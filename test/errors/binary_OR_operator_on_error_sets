@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub const A = error.A;
+pub const AB = A | error.B;
+export fn entry() void {
+    const x: AB = undefined;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:18: error: invalid operands to binary bitwise expression: 'error_set' and 'error_set'
+#}

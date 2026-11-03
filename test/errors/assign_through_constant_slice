@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn f() void {
+    var cstr: []const u8 = "Hat";
+    cstr[0] = 'W';
+}
+#}
+#update
+#check errors {
+test.zig:3:9: error: cannot assign to constant
+#}

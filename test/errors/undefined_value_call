@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    @as(fn () void, undefined)();
+}
+#}
+#update
+#check errors {
+test.zig:2:31: error: use of undefined value here causes illegal behavior
+#}

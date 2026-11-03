@@ -1,0 +1,12 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const aFunc = fn someFunc(x: i32) void;
+#}
+#update
+#check errors {
+test.zig:1:18: error: function type cannot have a name
+#}

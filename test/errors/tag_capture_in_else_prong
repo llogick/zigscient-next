@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = union(enum) { a: u32, b: u32 };
+export fn entry() void {
+    const foo: Foo = .{ .a = 123 };
+    switch (foo) {
+        else => |payload, tag| {
+            _ = payload;
+            _ = tag;
+        },
+    }
+}
+#}
+#update
+#check errors {
+test.zig:5:27: error: cannot capture tag of 'else' prong
+test.zig:5:18: note: first capture in 'else' prong always captures 'switch' operand
+#}

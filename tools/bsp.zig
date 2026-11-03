@@ -248,7 +248,7 @@ pub fn main(init: std.process.Init) !void {
 
     const term = try child_process.wait(io);
 
-    if (!term.success()) {
+    if (!term.eql(.success)) {
         log.err("maker {f}", .{term});
     }
 }

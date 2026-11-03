@@ -1,0 +1,49 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn entry0() void {
+    var a: u32 = 1 + 2;
+    _ = a;
+}
+
+fn entry1() void {
+    const a: u32 = 1;
+    const b: u32 = 2;
+    var c = a + b;
+    const d = c;
+    _ = d;
+}
+
+fn entry2() void {
+    var a: u32 = 123;
+    foo(a);
+}
+
+fn foo(_: u32) void {}
+
+fn entry3() void {
+    var a: [1]u8 = .{0};
+    _ = a[0];
+}
+
+fn entry4() void {
+    var s: struct { a: u8 } = .{ .a = 0 };
+    _ = s.a;
+}
+#}
+#update
+#check errors {
+test.zig:2:9: error: local variable is never mutated
+test.zig:2:9: note: consider using 'const'
+test.zig:9:9: error: local variable is never mutated
+test.zig:9:9: note: consider using 'const'
+test.zig:15:9: error: local variable is never mutated
+test.zig:15:9: note: consider using 'const'
+test.zig:22:9: error: local variable is never mutated
+test.zig:22:9: note: consider using 'const'
+test.zig:27:9: error: local variable is never mutated
+test.zig:27:9: note: consider using 'const'
+#}

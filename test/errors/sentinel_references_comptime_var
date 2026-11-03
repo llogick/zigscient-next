@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    comptime var a: u8 = 0;
+    _ = [0:&a]*u8;
+}
+
+export fn baz() void {
+    comptime var a: u8 = 0;
+    _ = [:&a]*u8;
+}
+export fn qux() void {
+    comptime var a: u8 = 0;
+    _ = @Pointer(.many, .{}, *u8, &a);
+}
+#}
+#update
+#check errors {
+test.zig:3:12: error: sentinel contains reference to comptime var
+test.zig:2:14: note: 'sentinel' points to comptime var declared here
+test.zig:8:11: error: sentinel contains reference to comptime var
+test.zig:7:14: note: 'sentinel' points to comptime var declared here
+test.zig:12:35: error: sentinel contains reference to comptime var
+test.zig:11:14: note: 'sentinel' points to comptime var declared here
+#}

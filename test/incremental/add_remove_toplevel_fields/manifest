@@ -1,27 +1,28 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig @0/main.zig
+#write test.zig @0/test.zig
 #update
 #check stdout {
 1 100
 #}
 
-#write main.zig @1/main.zig
+#write test.zig @1/test.zig
 #update "add a field"
 #check stdout {
 2 100
 #}
 
-#write main.zig @2/main.zig
+#write test.zig @2/test.zig
 #update "remove all fields"
 #check errors {
-main.zig:15:24: error: no field named 'x' in struct 'main'
-main.zig:1:1: note: struct declared here
+test.zig:15:24: error: no field named 'x' in struct 'test'
+test.zig:1:1: note: struct declared here
 #}
 
-#write main.zig @3/main.zig
+#write test.zig @3/test.zig
 #update "remove reference to non-existent field"
 #check stdout {
 0 <no fields>

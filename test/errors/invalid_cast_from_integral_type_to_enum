@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum(usize) { One, Two };
+
+export fn entry() void {
+    foo(1);
+}
+
+fn foo(x: usize) void {
+    switch (x) {
+        E.One => {},
+    }
+}
+#}
+#update
+#check errors {
+test.zig:9:10: error: expected type 'usize', found 'test.E'
+test.zig:1:11: note: enum declared here
+#}

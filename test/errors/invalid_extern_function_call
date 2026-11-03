@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const x = @extern(*const fn () callconv(.c) void, .{ .name = "foo" });
+
+export fn entry0() void {
+    comptime x();
+}
+
+export fn entry1() void {
+    @call(.always_inline, x, .{});
+}
+#}
+#update
+#check errors {
+test.zig:4:15: error: comptime call of extern function
+test.zig:4:5: note: 'comptime' keyword forces comptime evaluation
+test.zig:8:5: error: inline call of extern function
+#}

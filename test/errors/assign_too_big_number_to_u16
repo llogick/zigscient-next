@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    const vga_mem: u16 = 0xB8000;
+    _ = vga_mem;
+}
+#}
+#update
+#check errors {
+test.zig:2:26: error: type 'u16' cannot represent integer value '753664'
+#}

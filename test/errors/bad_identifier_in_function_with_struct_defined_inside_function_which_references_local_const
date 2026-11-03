@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const BlockKind = u32;
+
+    const Block = struct {
+        kind: BlockKind,
+    };
+
+    bogus;
+
+    _ = Block;
+}
+#}
+#update
+#check errors {
+test.zig:8:5: error: use of undeclared identifier 'bogus'
+#}

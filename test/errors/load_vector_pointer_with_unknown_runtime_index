@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var v: @Vector(4, i31) = [_]i31{ 1, 5, 3, undefined };
+
+    var i: u32 = 0;
+    var x = loadv(&v[i]);
+    _ = .{ &i, &x };
+}
+
+fn loadv(ptr: anytype) i31 {
+    return ptr.*;
+}
+#}
+#update
+#check errors {
+test.zig:5:22: error: vector index not comptime known
+#}

@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn Undeclared() type {
+    return T;
+}
+fn Gen() type {
+    const X = Undeclared();
+    return struct {
+        x: X,
+    };
+}
+export fn entry() void {
+    const S = Gen();
+    _ = S;
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: use of undeclared identifier 'T'
+#}

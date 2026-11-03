@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    fn b() void {}
+};
+
+export fn entry(a: **S) void {
+    _ = a.b();
+}
+#}
+#update
+#check errors {
+test.zig:6:10: error: no field or member function named 'b' in '*test.S'
+test.zig:6:10: note: method invocation only supports up to one level of implicit pointer dereferencing
+test.zig:6:10: note: use '.*' to dereference pointer
+#}

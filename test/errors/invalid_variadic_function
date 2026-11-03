@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo(...) void {}
+inline fn foo2(...) void {}
+
+comptime {
+    _ = foo;
+}
+comptime {
+    _ = foo2;
+}
+#}
+#update
+#check errors {
+test.zig:1:8: error: variadic function does not support 'auto' calling convention
+test.zig:1:8: note: supported calling conventions: 'x86_64_sysv', 'x86_64_x32', 'x86_64_win'
+test.zig:2:16: error: variadic function does not support 'inline' calling convention
+test.zig:2:16: note: supported calling conventions: 'x86_64_sysv', 'x86_64_x32', 'x86_64_win'
+#}

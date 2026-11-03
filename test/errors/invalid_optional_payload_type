@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = ?anyopaque;
+}
+comptime {
+    _ = ?@TypeOf(null);
+}
+#}
+#update
+#check errors {
+test.zig:2:10: error: opaque type 'anyopaque' cannot be optional
+test.zig:5:10: error: type '@TypeOf(null)' cannot be optional
+#}

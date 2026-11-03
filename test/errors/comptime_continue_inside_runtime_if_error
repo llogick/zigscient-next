@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var p: anyerror!i32 = undefined;
+    _ = &p;
+    comptime var q = true;
+    inline while (q) {
+        if (p) |_| continue else |_| {}
+        q = false;
+    }
+}
+#}
+#update
+#check errors {
+test.zig:6:20: error: comptime control flow inside runtime block
+test.zig:6:13: note: runtime control flow here
+#}

@@ -200,11 +200,6 @@ pub const can_unwind: bool = s: {
     }
     break :s false;
 };
-comptime {
-    if (can_unwind) {
-        std.debug.assert(Dwarf.supportsUnwinding(&builtin.target));
-    }
-}
 pub const UnwindContext = Dwarf.SelfUnwinder;
 pub fn unwindFrame(si: *SelfInfo, io: Io, context: *UnwindContext) Error!usize {
     comptime assert(can_unwind);

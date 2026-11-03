@@ -1,0 +1,53 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum { a, b, c };
+var my_e: E = .a;
+
+export fn f0() void {
+    switch (my_e) {
+        .a => {},
+        .b => {},
+        .x => {},
+        .c => {},
+    }
+}
+
+export fn f1() void {
+    switch (my_e) {
+        else => {},
+        .x, .y => {},
+    }
+}
+
+export fn f2() void {
+    switch (my_e) {
+        else => {},
+        .a => {},
+        .x, .y => {},
+        .b => {},
+    }
+}
+
+export fn f3() void {
+    switch (my_e) {
+        .a, .b => {},
+        .x, .y => {},
+        else => {},
+    }
+}
+#}
+#update
+#check errors {
+test.zig:8:10: error: enum 'test.E' has no member named 'x'
+test.zig:1:11: note: enum declared here
+test.zig:16:10: error: enum 'test.E' has no member named 'x'
+test.zig:1:11: note: enum declared here
+test.zig:24:10: error: enum 'test.E' has no member named 'x'
+test.zig:1:11: note: enum declared here
+test.zig:32:10: error: enum 'test.E' has no member named 'x'
+test.zig:1:11: note: enum declared here
+#}

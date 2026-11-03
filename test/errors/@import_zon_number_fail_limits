@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: i66 = @import("large_number.zon");
+    _ = f;
+}
+#}
+#write large_number.zon "36893488147419103232"
+#update
+#check errors {
+large_number.zon:1:1: error: type 'i66' cannot represent integer value '36893488147419103232'
+test.zig:2:28: note: imported here
+#}

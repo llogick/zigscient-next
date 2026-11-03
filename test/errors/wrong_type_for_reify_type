@@ -1,0 +1,32 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entryI() void {
+    _ = @Int(0, 0);
+}
+
+export fn entryE() void {
+    _ = @Enum(0, 0, 0, 0);
+}
+
+export fn entryS() void {
+    _ = @Struct(0, 0, &.{}, &.{}, &.{});
+}
+
+export fn entryU() void {
+    _ = @Union(0, 0, &.{}, &.{}, &.{});
+}
+#}
+#update
+#check errors {
+test.zig:2:14: error: expected type 'lang.Signedness', found 'comptime_int'
+lib/std/**.zig:?:?: note: enum declared here
+test.zig:6:15: error: expected type 'type', found 'comptime_int'
+test.zig:10:17: error: expected type 'lang.Type.ContainerLayout', found 'comptime_int'
+lib/std/**.zig:?:?: note: enum declared here
+test.zig:14:16: error: expected type 'lang.Type.ContainerLayout', found 'comptime_int'
+lib/std/**.zig:?:?: note: enum declared here
+#}

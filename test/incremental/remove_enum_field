@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const MyEnum = enum(u8) {
     foo = 1,
     bar = 2,
@@ -19,7 +20,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 1
 #}
 
-#write main.zig {
+#write test.zig {
 const MyEnum = enum(u8) {
     //foo = 1,
     bar = 2,
@@ -33,6 +34,6 @@ const io = std.Io.Threaded.global_single_threaded.io();
 #}
 #update "remove enum field"
 #check errors {
-main.zig:7:68: error: enum 'main.MyEnum' has no member named 'foo'
-main.zig:1:16: note: enum declared here
+test.zig:7:68: error: enum 'test.MyEnum' has no member named 'foo'
+test.zig:1:16: note: enum declared here
 #}

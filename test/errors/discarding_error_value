@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    _ = foo();
+}
+fn foo() !void {
+    return error.OutOfMemory;
+}
+export fn entry2() void {
+    const x: error{a} = undefined;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: error union is discarded
+test.zig:2:12: note: consider using 'try', 'catch', or 'if'
+test.zig:9:9: error: error set is discarded
+#}

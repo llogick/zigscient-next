@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(param: usize) usize {
+    return struct { @TypeOf(param) };
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: expected type 'usize', found 'type'
+test.zig:1:31: note: function return type declared here
+#}

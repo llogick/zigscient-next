@@ -1,0 +1,10 @@
+#zig build-obj {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() align(1) void {}
+#}
+#update
+#check errors

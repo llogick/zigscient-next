@@ -1,0 +1,32 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+const Version = std.SemanticVersion;
+const print = @import("std").debug.print;
+
+fn readVersion() Version {
+    const version_file = "foo";
+    const len = std.mem.indexOfAny(u8, version_file, " \n") orelse version_file.len;
+    const version_string = version_file[0..len];
+    return Version.parse(version_string) catch unreachable;
+}
+
+const version: Version = readVersion();
+export fn entry() void {
+    print("Version {}.{}.{}+{?s}\n", .{ version.major, version.minor, version.patch, version.build });
+}
+#}
+#update
+#check errors {
+test.zig:9:48: error: caught unexpected error 'InvalidVersion'
+lib/std/**.zig:?:?: note: error returned here
+lib/std/**.zig:?:?: note: error returned here
+lib/std/**.zig:?:?: note: error returned here
+lib/std/**.zig:?:?: note: error returned here
+lib/std/**.zig:?:?: note: error returned here
+test.zig:12:37: note: called at comptime here
+#}

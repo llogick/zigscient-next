@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+export fn entry() void {
+    const E = enum { foo };
+    const f: struct { E, E } = @import("enum_embedded_null.zon");
+    _ = f;
+}
+#}
+#write enum_embedded_null.zon {
+.{
+    .@"\x00",
+    10,
+}
+#}
+#update
+#check errors {
+enum_embedded_null.zon:2:6: error: identifier cannot contain null bytes
+#}

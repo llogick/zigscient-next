@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: @Vector(1, f32) = @import("tuple.zon");
+    _ = f;
+}
+#}
+#write tuple.zon ".{ 1.5, 2 }"
+#update
+#check errors {
+tuple.zon:1:2: error: expected 1 vector elements; found 2
+test.zig:2:40: note: imported here
+#}

@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() i32 {
+    if (true || false) {
+        return 1234;
+    }
+    return 5678;
+}
+#}
+#update
+#check errors {
+test.zig:2:9: error: expected error set type, found 'bool'
+test.zig:2:14: note: '||' merges error sets; 'or' performs boolean OR
+#}

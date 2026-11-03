@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Number = enum {
+    One,
+    Two,
+    Three,
+    Four,
+};
+fn f(n: Number) i32 {
+    switch (n) {
+        Number.One => 1,
+        Number.Two => 2,
+        Number.Three => @as(i32, 3),
+    }
+}
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(&f));
+}
+#}
+#update
+#check errors {
+test.zig:8:5: error: switch must handle all possibilities
+test.zig:5:5: note: unhandled enumeration value: 'Four'
+test.zig:1:16: note: enum 'test.Number' declared here
+#}

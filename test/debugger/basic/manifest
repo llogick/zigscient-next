@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name basic
 -Mroot=basic.zig
 #}

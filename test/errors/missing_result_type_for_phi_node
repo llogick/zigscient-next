@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void {
+    return anyerror.Foo;
+}
+export fn entry() void {
+    foo() catch 0;
+}
+#}
+#update
+#check errors {
+test.zig:5:11: error: incompatible types: 'void' and 'comptime_int'
+test.zig:5:11: note: type 'void' here
+test.zig:5:17: note: type 'comptime_int' here
+#}

@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo(comptime x: i32) i32 {
+    comptime {
+        if (x >= 0) return -x;
+        unreachable;
+    }
+}
+export fn entry() void {
+    _ = comptime foo(-42);
+}
+#}
+#update
+#check errors {
+test.zig:4:9: error: reached unreachable code
+test.zig:8:21: note: called at comptime here
+#}

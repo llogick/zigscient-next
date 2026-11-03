@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    x += 1;
+}
+export fn b() void {
+    x += 1;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: use of undeclared identifier 'x'
+test.zig:5:5: error: use of undeclared identifier 'x'
+#}

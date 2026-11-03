@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const foo: anyerror!u32 = error.Failure;
+    const bar, const baz = foo;
+    _ = bar;
+    _ = baz;
+}
+#}
+#update
+#check errors {
+test.zig:3:28: error: type 'anyerror!u32' cannot be destructured
+test.zig:3:26: note: result destructured here
+#}

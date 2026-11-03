@@ -1,0 +1,13 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() callconv(.avr_signal) void {}
+#}
+#update
+#check errors {
+test.zig:1:29: error: calling convention 'avr_signal' only available on architectures 'avr'
+#}

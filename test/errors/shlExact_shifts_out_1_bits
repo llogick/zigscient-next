@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const x = @shlExact(@as(u8, 0b01010101), 2);
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:15: error: overflow of integer type 'u8' with value '340'
+#}

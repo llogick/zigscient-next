@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    _ = my_func{u8} catch {};
+}
+export fn entry1() void {
+    _ = my_func{} catch {};
+}
+fn my_func(comptime T: type) !T {}
+#}
+#update
+#check errors {
+test.zig:2:9: error: expected type 'type', found 'fn (comptime type) @typeInfo(@typeInfo(@TypeOf(test.my_func)).@"fn".return_type.?).error_union.error_set!anytype'
+test.zig:5:9: error: expected type 'type', found 'fn (comptime type) @typeInfo(@typeInfo(@TypeOf(test.my_func)).@"fn".return_type.?).error_union.error_set!anytype'
+#}

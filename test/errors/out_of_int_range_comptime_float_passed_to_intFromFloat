@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x: i8 = @intFromFloat(200);
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:33: error: float value '200' cannot be stored in integer type 'i8'
+#}

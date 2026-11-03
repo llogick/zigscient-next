@@ -18,7 +18,8 @@ pub const Error = Lower.Error || link.EmitError || error{
 };
 
 pub fn emitMir(emit: *Emit) Error!void {
-    const gpa = emit.bin_file.comp.gpa;
+    const comp = emit.bin_file.comp;
+    const gpa = comp.gpa;
     log.debug("mir instruction len: {}", .{emit.lower.mir.instructions.len});
     for (0..emit.lower.mir.instructions.len) |mir_i| {
         const mir_index: Mir.Inst.Index = @intCast(mir_i);
@@ -50,7 +51,7 @@ pub fn emitMir(emit: *Emit) Error!void {
                     const atom_ptr = zo.symbol(@backingInt(symbol.atom_index)).atom(elf_file).?;
                     const sym = zo.symbol(@backingInt(symbol.sym_index));
 
-                    if (emit.lower.pic) {
+                    if (comp.config.pic) {
                         return emit.fail("know when to emit GOT relocation for symbol '{s}'", .{sym.name(elf_file)});
                     }
 

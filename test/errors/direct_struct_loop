@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const A = struct {
+    a: A,
+};
+export fn entry() usize {
+    return @sizeOf(A);
+}
+#}
+#update
+#check errors {
+test.zig:2:8: error: type 'test.A' depends on itself for field declared here
+#}

@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    _ = u032;
+}
+#}
+#update
+#check errors {
+test.zig:2:9: error: primitive integer type 'u032' has leading zero
+#}

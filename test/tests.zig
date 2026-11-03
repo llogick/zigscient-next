@@ -10,8 +10,6 @@ const libc = @import("libc.zig");
 const link = @import("link.zig");
 
 // Implementations
-pub const ErrorTracesContext = @import("src/ErrorTrace.zig");
-pub const StackTracesContext = @import("src/StackTrace.zig");
 pub const LibcContext = @import("src/Libc.zig");
 pub const LinkContext = @import("src/Link.zig");
 
@@ -2250,54 +2248,6 @@ const link_targets = blk: {
     };
 };
 
-pub fn addStackTraceTests(b: *std.Build, options: StackTracesContext.Options) *Step {
-    const step = b.step("test-stack-traces", "Run the stack trace tests");
-
-    const convert_exe = b.addExecutable(.{
-        .name = "convert-stack-trace",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/src/convert-stack-trace.zig"),
-            .target = b.graph.host,
-            .optimize = .debug,
-        }),
-    });
-
-    const stack_traces_context = b.allocator.create(StackTracesContext) catch @panic("OOM");
-    stack_traces_context.* = .{
-        .b = b,
-        .step = step,
-        .options = options,
-        .convert_exe = convert_exe,
-    };
-    stack_traces_context.addCases();
-
-    return step;
-}
-
-pub fn addErrorTraceTests(b: *std.Build, options: ErrorTracesContext.Options) *Step {
-    const step = b.step("test-error-traces", "Run the error trace tests");
-
-    const convert_exe = b.addExecutable(.{
-        .name = "convert-stack-trace",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/src/convert-stack-trace.zig"),
-            .target = b.graph.host,
-            .optimize = .debug,
-        }),
-    });
-
-    const error_traces_context = b.allocator.create(ErrorTracesContext) catch @panic("OOM");
-    error_traces_context.* = .{
-        .b = b,
-        .step = step,
-        .options = options,
-        .convert_exe = convert_exe,
-    };
-    error_traces_context.addCases();
-
-    return step;
-}
-
 pub fn addStandaloneTests(
     b: *std.Build,
     optimize_modes: []const OptimizeMode,
@@ -3148,36 +3098,11 @@ pub fn addLinkTests(b: *std.Build, options: LinkTestOptions) *Step {
     return step;
 }
 
-pub fn addCases(
-    b: *std.Build,
-    parent_step: *Step,
-    case_test_options: @import("src/Cases.zig").CaseTestOptions,
-) !void {
-    const arena = b.allocator;
-    const gpa = b.allocator;
-    const io = b.graph.io;
-
-    var cases = @import("src/Cases.zig").init(gpa, arena, io);
-
-    b.dependOnDirectoryContents(b.path("test/cases"));
-
-    var dir = try b.root.openDir(io, "test/cases", .{ .iterate = true });
-    defer dir.close(io);
-
-    cases.addFromDir(dir, "test/cases", b);
-    try @import("cases.zig").addCases(&cases, b);
-
-    cases.lowerToBuildSteps(
-        b,
-        parent_step,
-        case_test_options,
-    );
-}
-
-pub const RunnerTarget = @import("Runner.zig").Target;
+pub const RunnerTarget = @import("Runner/Target.zig");
 pub const RunnerOptions = struct {
     test_filters: []const []const u8,
     test_target_filters: []const []const u8,
+    test_extra_targets: bool,
     skip_non_native: bool,
     skip_wasm: bool,
     skip_freebsd: bool,
@@ -3225,7 +3150,11 @@ pub fn addRunnerTests(
 
         const run = b.addRunArtifact(runner);
         run.setName(@"test".name);
-        run.enableProtocolMode();
+        run.enableProtocolMode(.{
+            // We need more time to compile an entire program than an individual unit test needs.
+            .test_timeout_scale = 3,
+        });
+        run.addArg("--log=err"); // don't fill stderr telling us about skipped tests etc
 
         const test_path = tests_path.path(b, @"test".name);
         switch (@"test".kind) {
@@ -3238,43 +3167,56 @@ pub fn addRunnerTests(
         _ = run.addPrefixedOutputDirectoryArg("--src=", "src");
 
         for (matrix) |test_target| {
-            const resolved_target = b.resolveTargetQuery(test_target.toQuery());
-
-            if (options.skip_non_native and !std.zig.target.isNative(&resolved_target.query, &resolved_target.result, &b.graph.host.result))
-                continue;
-
-            const target = &resolved_target.result;
-
-            if (options.skip_wasm and target.cpu.arch.isWasm()) continue;
-
-            if (options.skip_freebsd and target.os.tag == .freebsd) continue;
-            if (options.skip_netbsd and target.os.tag == .netbsd) continue;
-            if (options.skip_openbsd and target.os.tag == .openbsd) continue;
-            if (options.skip_windows and target.os.tag == .windows) continue;
-            if (options.skip_darwin and target.os.tag.isDarwin()) continue;
-            if (options.skip_linux and target.os.tag == .linux) continue;
-
-            if (test_target.backend == .llvm) {
-                if (options.skip_llvm) continue;
-                switch (target.cpu.arch) {
-                    else => {},
-                    .m68k => if (!options.llvm_has_m68k) continue,
-                    .csky => if (!options.llvm_has_csky) continue,
-                    .arc => if (!options.llvm_has_arc) continue,
-                    .xtensa => if (!options.llvm_has_xtensa) continue,
-                }
-            }
-            if (test_target.backend == .cbe) {
-                if (options.skip_cbe) continue;
-            }
-
             const target_str = b.fmt("{f}", .{test_target});
 
-            for (options.test_target_filters) |filter| {
-                if (std.mem.find(u8, target_str, filter) != null) break;
-            } else if (options.test_target_filters.len > 0) continue;
+            const skip = skip: {
+                const resolved_target = b.resolveTargetQuery(test_target.toQuery());
 
-            run.addArgs(&.{ "--target", target_str });
+                if (!options.test_extra_targets and test_target.extra) break :skip true;
+
+                if (options.skip_non_native and !std.zig.target.isNative(
+                    &resolved_target.query,
+                    &resolved_target.result,
+                    &b.graph.host.result,
+                )) break :skip true;
+
+                const target = &resolved_target.result;
+
+                if (options.skip_wasm and target.cpu.arch.isWasm()) break :skip true;
+
+                if (options.skip_freebsd and target.os.tag == .freebsd) break :skip true;
+                if (options.skip_netbsd and target.os.tag == .netbsd) break :skip true;
+                if (options.skip_openbsd and target.os.tag == .openbsd) break :skip true;
+                if (options.skip_windows and target.os.tag == .windows) break :skip true;
+                if (options.skip_darwin and target.os.tag.isDarwin()) break :skip true;
+                if (options.skip_linux and target.os.tag == .linux) break :skip true;
+
+                if (test_target.backend == .llvm) {
+                    if (options.skip_llvm) break :skip true;
+                    switch (target.cpu.arch) {
+                        else => {},
+                        .m68k => if (!options.llvm_has_m68k) break :skip true,
+                        .csky => if (!options.llvm_has_csky) break :skip true,
+                        .arc => if (!options.llvm_has_arc) break :skip true,
+                        .xtensa => if (!options.llvm_has_xtensa) break :skip true,
+                    }
+                }
+                if (test_target.backend == .cbe) {
+                    if (options.skip_cbe) break :skip true;
+                }
+
+                // We can't provide MSVC libc when cross-compiling.
+                if (target.abi == .msvc and test_target.link_libc == .lc and builtin.os.tag != .windows)
+                    break :skip true;
+
+                for (options.test_target_filters) |filter| {
+                    if (std.mem.find(u8, target_str, filter) != null) break;
+                } else if (options.test_target_filters.len > 0) break :skip true;
+
+                break :skip false;
+            };
+
+            run.addArgs(&.{ if (skip) "--skipped-target" else "--target", target_str });
         }
 
         run.addPrefixedDirectoryArg("--libc-runtimes=", .{ .relative = .{ .base = .libc_runtimes } });
@@ -3286,8 +3228,6 @@ pub fn addRunnerTests(
 
         if (options.gdb) |gdb| run.addPrefixedFileArg("--gdb=", b.graph.cwdRelativePath(gdb));
         if (options.lldb) |lldb| run.addPrefixedFileArg("--lldb=", b.graph.cwdRelativePath(lldb));
-
-        run.addArg("--quiet"); // don't fill stderr telling us about skipped tests etc
 
         tests_step.dependOn(&run.step);
     }

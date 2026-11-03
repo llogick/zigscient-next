@@ -1,0 +1,52 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+// operator ==
+comptime {
+    const a: i64 = undefined;
+    var x: i32 = 0;
+    if (a == a) x += 1;
+}
+// operator !=
+comptime {
+    const a: i64 = undefined;
+    var x: i32 = 0;
+    if (a != a) x += 1;
+}
+// operator >
+comptime {
+    const a: i64 = undefined;
+    var x: i32 = 0;
+    if (a > a) x += 1;
+}
+// operator <
+comptime {
+    const a: i64 = undefined;
+    var x: i32 = 0;
+    if (a < a) x += 1;
+}
+// operator >=
+comptime {
+    const a: i64 = undefined;
+    var x: i32 = 0;
+    if (a >= a) x += 1;
+}
+// operator <=
+comptime {
+    const a: i64 = undefined;
+    var x: i32 = 0;
+    if (a <= a) x += 1;
+}
+#}
+#update
+#check errors {
+test.zig:5:11: error: use of undefined value here causes illegal behavior
+test.zig:11:11: error: use of undefined value here causes illegal behavior
+test.zig:17:11: error: use of undefined value here causes illegal behavior
+test.zig:23:11: error: use of undefined value here causes illegal behavior
+test.zig:29:11: error: use of undefined value here causes illegal behavior
+test.zig:35:11: error: use of undefined value here causes illegal behavior
+#}

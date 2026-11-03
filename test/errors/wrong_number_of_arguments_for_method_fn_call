@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    fn method(self: *const Foo, a: i32) void {
+        _ = self;
+        _ = a;
+    }
+};
+fn f(foo: *const Foo) void {
+    foo.method(1, 2);
+}
+export fn entry() usize {
+    return @sizeOf(@TypeOf(&f));
+}
+#}
+#update
+#check errors {
+test.zig:8:8: error: member function expected 1 argument(s), found 2
+test.zig:2:5: note: function declared here
+#}

@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+
+export fn foo() void {
+    // This should appear in the reference trace
+    // (and definitely shouldn't crash due to an unneeded source location!)
+    @panic("oh no");
+}
+
+pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    @compileError("panic");
+}
+#}
+#update
+#check errors {
+test.zig:10:5: error: panic
+#}

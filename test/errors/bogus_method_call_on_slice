@@ -1,0 +1,33 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+var self = "aoeu";
+
+fn f(m: []const u8) void {
+    m.copy(u8, self[0..], m);
+}
+
+export fn entry() usize {
+    return @sizeOf(@TypeOf(&f));
+}
+
+export fn entry1() void {
+    .{}.bar();
+}
+
+const S = struct { foo: i32 };
+export fn entry2() void {
+    const x = S{ .foo = 1 };
+    x.bar();
+}
+#}
+#update
+#check errors {
+test.zig:4:6: error: no field or member function named 'copy' in '[]const u8'
+test.zig:12:8: error: no field or member function named 'bar' in '@TypeOf(.{})'
+test.zig:18:6: error: no field or member function named 'bar' in 'test.S'
+test.zig:15:11: note: struct declared here
+#}

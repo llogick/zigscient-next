@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    defer bar();
+}
+fn bar() anyerror!i32 {
+    return 0;
+}
+
+export fn foo2() void {
+    defer bar2();
+}
+fn bar2() anyerror {
+    return error.a;
+}
+#}
+#update
+#check errors {
+test.zig:2:14: error: error union of type 'anyerror!i32' is ignored
+test.zig:2:14: note: consider using 'try', 'catch', or 'if'
+test.zig:9:15: error: error set of type 'anyerror' is ignored
+#}

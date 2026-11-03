@@ -7,7 +7,7 @@ const std = @import("../std.zig");
 const assert = std.debug.assert;
 const math = std.math;
 const mem = std.mem;
-const Alignment = std.mem.Alignment;
+const Alignment = mem.Alignment;
 const Slice = std.meta.Slice;
 const AbsorbSentinel = std.meta.AbsorbSentinel;
 
@@ -187,13 +187,12 @@ pub inline fn createAdvancedWithRetAddr(
     comptime alignment: ?Alignment,
     return_address: usize,
 ) Error!*align(if (alignment) |a| a.toByteUnits() else @alignOf(T)) T {
-    if (@sizeOf(T) == 0) {
-        const ptr = comptime std.mem.alignBackward(usize, math.maxInt(usize), @alignOf(T));
+    if (sizeOfOrZero(T) == 0) {
+        const ptr = comptime mem.alignBackward(usize, math.maxInt(usize), @alignOf(T));
         return @ptrFromInt(ptr);
     }
-    const a: Alignment = alignment orelse comptime .of(T);
-    const ptr: *align(a.toByteUnits()) T = @ptrCast(try self.allocBytesAligned(a, @sizeOf(T), return_address));
-    return ptr;
+    const a: Alignment = alignment orelse .of(T);
+    return @ptrCast(try self.allocBytesAligned(a, @sizeOf(T), return_address));
 }
 
 /// `ptr` should be the return value of `create`, or otherwise
@@ -202,7 +201,7 @@ pub fn destroy(self: Allocator, ptr: anytype) void {
     const info = @typeInfo(@TypeOf(ptr)).pointer;
     if (info.size != .one) @compileError("ptr must be a single item pointer");
     const T = info.child;
-    if (@sizeOf(T) == 0) return;
+    if (sizeOfOrZero(T) == 0) return;
     const non_const_ptr = @as([*]u8, @ptrCast(@constCast(ptr)));
     self.rawFree(
         non_const_ptr[0..@sizeOf(T)],
@@ -288,15 +287,15 @@ pub fn alignedAlloc(
 }
 
 pub inline fn allocAdvancedWithRetAddr(
-    self: Allocator,
+    allocator: Allocator,
     comptime T: type,
     /// null means naturally aligned
     comptime alignment: ?Alignment,
     n: usize,
     return_address: usize,
 ) Error![]align(if (alignment) |a| a.toByteUnits() else @alignOf(T)) T {
-    const a: Alignment = alignment orelse comptime .of(T);
-    const ptr: [*]align(a.toByteUnits()) T = @ptrCast(try self.allocWithSizeAndAlignment(@sizeOf(T), a, n, return_address));
+    const a: Alignment = alignment orelse .of(T);
+    const ptr: [*]align(a.toByteUnits()) T = @ptrCast(try allocator.allocWithSizeAndAlignment(sizeOfOrZero(T), a, n, return_address));
     return ptr[0..n];
 }
 
@@ -350,7 +349,7 @@ pub fn resize(self: Allocator, allocation: anytype, new_len: usize) bool {
         return false;
     }
     const old_memory: []u8 = @ptrCast(@constCast(mem.absorbSentinel(allocation)));
-    const new_len_bytes = math.mul(usize, @sizeOf(T), new_len) catch return false;
+    const new_len_bytes = math.mul(usize, sizeOfOrZero(T), new_len) catch return false;
     return self.rawResize(
         old_memory,
         .fromByteUnits(slice_info.attrs.@"align" orelse @alignOf(T)),
@@ -389,7 +388,7 @@ pub fn remap(self: Allocator, allocation: anytype, new_len: usize) ?Slice(Absorb
     if (allocation.len == 0) {
         return null;
     }
-    if (@sizeOf(T) == 0) {
+    if (sizeOfOrZero(T) == 0) {
         var new_memory = allocation;
         new_memory.len = new_len;
         return new_memory;
@@ -440,13 +439,13 @@ pub fn reallocAdvanced(
     if (new_n == 0) {
         self.free(old_mem);
         const alignment = slice_info.attrs.@"align" orelse @alignOf(T);
-        const addr = comptime std.mem.alignBackward(usize, math.maxInt(usize), alignment);
+        const addr = comptime mem.alignBackward(usize, math.maxInt(usize), alignment);
         const ptr: *align(alignment) [0]T = @ptrFromInt(addr);
         return ptr;
     }
 
     const old_byte_slice: []u8 = @ptrCast(@constCast(mem.absorbSentinel(old_mem)));
-    const byte_count = math.mul(usize, @sizeOf(T), new_n) catch return error.OutOfMemory;
+    const byte_count = math.mul(usize, sizeOfOrZero(T), new_n) catch return error.OutOfMemory;
     // Note: can't set shrunk memory to undefined as memory shouldn't be modified on realloc failure
     if (self.rawRemap(old_byte_slice, .fromByteUnits(slice_info.attrs.@"align" orelse @alignOf(T)), byte_count, return_address)) |p| {
         return @ptrCast(@alignCast(p[0..byte_count]));
@@ -539,6 +538,50 @@ pub fn printSentinel(
         error.WriteFailed => return error.OutOfMemory,
     };
     return aw.toOwnedSliceSentinel(sentinel);
+}
+
+inline fn sizeOfOrZero(Type: type) usize {
+    return if (isInstantiable(Type)) @sizeOf(Type) else 0;
+}
+
+inline fn isInstantiable(Type: type) bool {
+    return struct {
+        const is_instantiable = switch (@typeInfo(Type)) {
+            .type,
+            .void,
+            .bool,
+            .int,
+            .float,
+            .pointer,
+            .comptime_float,
+            .comptime_int,
+            .undefined,
+            .null,
+            .optional,
+            .error_union,
+            .error_set,
+            .@"fn",
+            .frame,
+            .@"anyframe",
+            .vector,
+            .enum_literal,
+            => true,
+            .noreturn, .@"opaque" => false,
+            .array => |array| (array.len == 0 and array.sentinel_ptr == null) or
+                isInstantiable(array.child),
+            .@"struct" => |@"struct"| for (@"struct".field_types) |Field| {
+                if (!isInstantiable(Field)) break false;
+            } else true,
+            .@"enum" => |@"enum"| isInstantiable(@"enum".tag_type),
+            .@"union" => |@"union"| for (@"union".field_types) |Field| {
+                if (isInstantiable(Field)) break true;
+            } else false,
+            .spirv => |spirv| switch (spirv) {
+                .sampler, .image, .sampled_image => false,
+                .runtime_array => true,
+            },
+        };
+    }.is_instantiable;
 }
 
 test printSentinel {

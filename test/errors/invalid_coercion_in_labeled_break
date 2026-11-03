@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn invalidBreak() u8 {
+    const result: u8 = label: {
+        break :label 256;
+    };
+    return result;
+}
+#}
+#update
+#check errors {
+test.zig:3:22: error: type 'u8' cannot represent integer value '256'
+#}

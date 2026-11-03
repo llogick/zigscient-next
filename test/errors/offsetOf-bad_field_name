@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    derp: i32,
+};
+export fn foo() usize {
+    return @offsetOf(
+        Foo,
+        "a",
+    );
+}
+#}
+#update
+#check errors {
+test.zig:7:9: error: no field named 'a' in struct 'test.Foo'
+test.zig:1:13: note: struct declared here
+#}

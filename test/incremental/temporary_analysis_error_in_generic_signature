@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 //! The original repro here depends on re-analysis order, which depends on
 //! declaration order, so this exact declaration order must be used.
 const Foo = struct { x: u8 };
@@ -20,7 +21,7 @@ const std = @import("std");
 Z
 #}
 
-#write main.zig {
+#write test.zig {
 //! The original repro here depends on re-analysis order, which depends on
 //! declaration order, so this exact declaration order must be used.
 const Foo = struct { x: u8 };
@@ -35,11 +36,11 @@ const std = @import("std");
 #}
 #update "change generic signature to use non-existent member"
 #check errors {
-main.zig:8:31: error: root source file struct 'main' has no member named 'FooAlias'
-main.zig:1:1: note: struct declared here
+test.zig:8:31: error: root source file struct 'test' has no member named 'FooAlias'
+test.zig:1:1: note: struct declared here
 #}
 
-#write main.zig {
+#write test.zig {
 //! The original repro here depends on re-analysis order, which depends on
 //! declaration order, so this exact declaration order must be used.
 const Foo = struct { x: u8 };

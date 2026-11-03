@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Input = struct {
+    value: u32 = @as(error{}!u32, 0),
+};
+export fn foo() void {
+    var x: Input = Input{};
+    _ = &x;
+}
+#}
+#update
+#check errors {
+test.zig:2:18: error: expected type 'u32', found 'error{}!u32'
+test.zig:2:18: note: cannot convert error union to payload type
+test.zig:2:18: note: consider using 'try', 'catch', or 'if'
+#}

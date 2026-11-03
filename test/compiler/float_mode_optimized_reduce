@@ -1,0 +1,19 @@
+#skip wasm32-wasi-none-baseline-whole-selfhosted-debug
+
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {
+    var a: @Vector(2, f32) = @splat(5.0);
+    _ = &a;
+
+    @setFloatMode(.optimized);
+    var b = @reduce(.Add, a);
+    _ = &b;
+}
+#}
+#update
+#check stdout

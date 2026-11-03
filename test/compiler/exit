@@ -1,0 +1,10 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {}
+#}
+#update
+#check stdout

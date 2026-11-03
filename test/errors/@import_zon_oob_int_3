@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: u64 = @import("int_neg_33.zon");
+    _ = f;
+}
+#}
+#write int_neg_33.zon "-33"
+#update
+#check errors {
+int_neg_33.zon:1:1: error: type 'u64' cannot represent integer value '-33'
+test.zig:2:28: note: imported here
+#}

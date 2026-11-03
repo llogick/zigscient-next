@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const one = .{@as(u32, 1)};
+    const two = .{@as(u32, 2)};
+    const coerced: @TypeOf(one) = two;
+    _ = coerced;
+}
+#}
+#update
+#check errors {
+test.zig:4:35: error: value stored in comptime field does not match the default value of the field
+#}

@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const a = '\u{12z34}';
+}
+#}
+#update
+#check errors {
+test.zig:2:21: error: expected hex digit or '}', found 'z'
+#}

@@ -1,0 +1,16 @@
+#zig test {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+test "enum" {
+    const E = enum(u8) { A, B, _ };
+    _ = @tagName(@as(E, @enumFromInt(5)));
+}
+#}
+#update
+#check errors {
+test.zig:3:9: error: no field with value '@fromBackingInt(5)' in enum 'test.test.enum.E'
+test.zig:2:15: note: declared here
+#}

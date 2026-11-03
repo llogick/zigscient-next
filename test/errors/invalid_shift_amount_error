@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const x: u8 = 2;
+fn f() u16 {
+    return x << 8;
+}
+export fn entry() u16 {
+    return f();
+}
+#}
+#update
+#check errors {
+test.zig:3:17: error: type 'u3' cannot represent integer value '8'
+#}

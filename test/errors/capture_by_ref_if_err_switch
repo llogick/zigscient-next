@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+test {
+    const e: error{A}!u32 = error.A;
+    if (e) |*ptr| {} else |err| switch (err) {}
+}
+#}
+#update
+#check errors {
+test.zig:3:14: error: unused capture
+#}

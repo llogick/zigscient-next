@@ -1,0 +1,26 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void { return error.FooError; }
+
+pub fn main() !void {
+    for (0..2) |_| {
+        const f = foo();
+        f catch {};
+    } else {
+        const f = foo();
+        f catch {};
+    }
+    return error.Stop;
+}
+#}
+#update
+#check error-trace {
+error: Stop
+test.zig:11:5: 0x? in main (test*)
+    return error.Stop;
+    ^
+#}

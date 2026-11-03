@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: i32 = @import("type_expr_fn.zon");
+    _ = f;
+}
+#}
+#write type_expr_fn.zon "fn foo() void {}"
+#update
+#check errors {
+type_expr_fn.zon:1:1: error: types are not available in ZON
+type_expr_fn.zon:1:1: note: replace the type with '.'
+#}

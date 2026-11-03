@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn A(comptime T: type) type {
+    return struct { a: T };
+}
+fn B(comptime T: type) type {
+    return struct { b: T };
+}
+fn foo() A(u32) {
+    return B(u32){ .b = 1 };
+}
+export fn entry() void {
+    _ = foo();
+}
+#}
+#update
+#check errors {
+test.zig:8:18: error: expected type 'test.A(u32)', found 'test.B(u32)'
+test.zig:5:12: note: struct declared here
+test.zig:2:12: note: struct declared here
+test.zig:7:11: note: function return type declared here
+#}

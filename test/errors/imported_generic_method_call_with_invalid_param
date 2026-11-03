@@ -1,0 +1,39 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub const import = @import("import.zig");
+
+export fn callComptimeBoolFunctionWithRuntimeBool(x: bool) void {
+    import.comptimeBoolFunction(x);
+}
+
+export fn callComptimeAnytypeFunctionWithRuntimeBool(x: bool) void {
+    import.comptimeAnytypeFunction(x);
+}
+
+export fn callAnytypeFunctionWithRuntimeComptimeOnlyType(x: u32) void {
+    const S = struct { x: u32, y: type };
+    import.anytypeFunction(S{ .x = x, .y = u32 });
+}
+#}
+#write import.zig {
+pub fn comptimeBoolFunction(comptime _: bool) void {}
+pub fn comptimeAnytypeFunction(comptime _: anytype) void {}
+pub fn anytypeFunction(_: anytype) void {}
+#}
+#update
+#check errors {
+test.zig:4:33: error: unable to resolve comptime value
+test.zig:4:33: note: argument to comptime parameter must be comptime-known
+import.zig:1:29: note: parameter declared comptime here
+test.zig:8:36: error: unable to resolve comptime value
+test.zig:8:36: note: argument to comptime parameter must be comptime-known
+import.zig:2:32: note: parameter declared comptime here
+test.zig:13:32: error: unable to resolve comptime value
+test.zig:13:32: note: initializer of comptime-only struct 'test.callAnytypeFunctionWithRuntimeComptimeOnlyType.S' must be comptime-known
+test.zig:12:35: note: struct requires comptime because of this field
+test.zig:12:35: note: types are not available at runtime
+#}

@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    foo(error.A);
+}
+fn foo(a: anyerror) void {
+    switch (a) {
+        error.A => {},
+    }
+}
+#}
+#update
+#check errors {
+test.zig:5:5: error: else prong required when switching on type 'anyerror'
+#}

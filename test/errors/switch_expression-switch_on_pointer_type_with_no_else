@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo(x: *u8) void {
+    switch (x) {
+        &y => {},
+    }
+}
+var y: u8 = 100;
+export fn entry() usize {
+    return @sizeOf(@TypeOf(&foo));
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: else prong required when switching on type '*u8'
+#}

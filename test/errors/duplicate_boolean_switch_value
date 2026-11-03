@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const x = switch (true) {
+        true => false,
+        false => true,
+        true => false,
+    };
+    _ = x;
+}
+comptime {
+    const x = switch (true) {
+        false => true,
+        true => false,
+        false => true,
+    };
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:5:9: error: duplicate switch value 'true'
+test.zig:3:9: note: previous value here
+test.zig:13:9: error: duplicate switch value 'false'
+test.zig:11:9: note: previous value here
+#}

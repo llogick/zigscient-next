@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    foo();
+}
+
+fn foo() void {
+    try bar();
+}
+
+pub fn bar() u8 {
+    return 0;
+}
+#}
+#update
+#check errors {
+test.zig:6:12: error: expected error union type, found 'u8'
+test.zig:6:12: note: consider omitting 'try'
+test.zig:2:8: note: called at comptime here
+#}

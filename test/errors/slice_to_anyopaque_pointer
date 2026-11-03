@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const slice: []const u8 = "foo";
+    const x = @as(*const anyopaque, slice);
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:3:37: error: expected type '*const anyopaque', found '[]const u8'
+test.zig:3:37: note: cannot implicitly cast slice '[]const u8' to anyopaque pointer '*const anyopaque'
+test.zig:3:37: note: consider using '.ptr'
+#}

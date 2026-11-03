@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(ptr: *i32) i32 {
+    return ptr[1];
+}
+#}
+#update
+#check errors {
+test.zig:2:15: error: type '*i32' does not support indexing
+test.zig:2:15: note: operand must be an array, slice, tuple, or vector
+#}

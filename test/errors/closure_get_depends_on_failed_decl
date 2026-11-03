@@ -1,0 +1,31 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub inline fn instanceRequestAdapter() void {}
+
+pub inline fn requestAdapter(
+    comptime callbackArg: fn () callconv(.@"inline") void,
+) void {
+    _ = &(struct {
+        pub fn callback() callconv(.c) void {
+            callbackArg();
+        }
+    }).callback;
+    instanceRequestAdapter(undefined);
+}
+
+inline fn foo() void {}
+
+export fn entry() void {
+    requestAdapter(foo);
+}
+#}
+#update
+#check errors {
+test.zig:11:5: error: expected 0 argument(s), found 1
+test.zig:1:12: note: function declared here
+test.zig:17:19: note: called inline here
+#}

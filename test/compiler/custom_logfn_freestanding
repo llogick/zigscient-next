@@ -1,0 +1,31 @@
+#zig build-exe {
+--name test
+-target wasm32-freestanding
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+
+pub const std_options: std.Options = .{
+    .logFn = log,
+};
+
+pub fn log(
+    comptime message_level: std.log.Level,
+    comptime scope: @EnumLiteral(),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    _ = message_level;
+    _ = scope;
+    _ = format;
+    _ = args;
+}
+
+pub fn main() anyerror!void {
+    std.log.info("All your codebase are belong to us.", .{});
+}
+#}
+#update
+#check errors

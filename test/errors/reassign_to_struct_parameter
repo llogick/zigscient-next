@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    x: u32,
+};
+fn reassign(s: S) void {
+    s = S{ .x = 2 };
+}
+export fn entry() void {
+    reassign(S{ .x = 3 });
+}
+#}
+#update
+#check errors {
+test.zig:5:5: error: cannot assign to constant
+#}

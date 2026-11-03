@@ -1,0 +1,318 @@
+// Only add a non-native target to this set if there's a way to emulate it, or if it can built on a
+// platform with the same arch/OS but has a different ABI. For example, it makes little sense to
+// add `riscv64-netbsd` here because there's no QEMU user-mode emulation for it anyway, and it'll
+// still be covered by the native entries when run on a real `riscv64-netbsd` system. But adding
+// `aarch64-windows-msvc` is valuable because the native entries will default to `gnu` on Windows.
+.{
+    .{
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    // FreeBSD Targets
+
+    .{
+        .cpu = .{ .arm = .{} },
+        .os = .{ .freebsd = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .x86 = .{} },
+        .os = .{ .freebsd = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    // Linux Targets
+
+    .{
+        .cpu = .{ .aarch64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .aarch64_be = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .arm = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .armeb = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .hexagon = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .loongarch32 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .loongarch64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mips = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mipsel = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mips64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
+        .cpu = .{ .mips64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .abin32 = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mips64el = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
+        .cpu = .{ .mips64el = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .abin32 = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .powerpc = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .powerpc64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .powerpc64le = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .riscv32 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .riscv64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .s390x = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .sparc64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .thumb = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .thumbeb = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .eabihf = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .x86 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .selfhosted,
+        .linker = .old,
+    },
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .selfhosted,
+        .linker = .new,
+    },
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+        .linker = .lld,
+    },
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+        .linker = .new,
+    },
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .x32 = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    // NetBSD Targets
+
+    .{
+        .cpu = .{ .riscv32 = .{} },
+        .os = .{ .netbsd = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .x86 = .{} },
+        .os = .{ .netbsd = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    // Windows Targets
+
+    .{
+        .cpu = .{ .aarch64 = .{} },
+        .os = .{ .windows = .{} },
+        .abi = .{ .msvc = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
+        .cpu = .{ .aarch64 = .{} },
+        .os = .{ .windows = .{} },
+        .abi = .{ .gnu = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .x86 = .{} },
+        .os = .{ .windows = .{} },
+        .abi = .{ .msvc = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
+        .cpu = .{ .x86 = .{} },
+        .os = .{ .windows = .{} },
+        .abi = .{ .gnu = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .windows = .{} },
+        .abi = .{ .msvc = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
+        .cpu = .{ .x86_64 = .{} },
+        .os = .{ .windows = .{} },
+        .abi = .{ .gnu = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+}

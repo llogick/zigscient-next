@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const lhs: [2]void = .{ {}, {} };
+    const rhs: [2]comptime_int = .{ 2, 3 };
+    _ = lhs ++ rhs;
+}
+#}
+#update
+#check errors {
+test.zig:4:13: error: incompatible types: 'void' and 'comptime_int'
+test.zig:4:9: note: type 'void' here
+test.zig:4:16: note: type 'comptime_int' here
+#}

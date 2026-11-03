@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    _ = @wasmMemoryGrow(0, 1);
+    return;
+}
+#}
+#update
+#check errors {
+test.zig:2:9: error: builtin @wasmMemoryGrow is available when targeting WebAssembly; targeted CPU architecture is x86_64
+#}

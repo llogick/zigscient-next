@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    _ = foo();
+}
+const A = struct {
+    a: u32,
+};
+fn foo() A {
+    return bar();
+}
+const B = struct {
+    a: u32,
+};
+fn bar() B {
+    unreachable;
+}
+#}
+#update
+#check errors {
+test.zig:8:15: error: expected type 'test.A', found 'test.B'
+test.zig:10:11: note: struct declared here
+test.zig:4:11: note: struct declared here
+test.zig:7:10: note: function return type declared here
+#}

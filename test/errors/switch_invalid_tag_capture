@@ -1,0 +1,85 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const P = packed union(u8) {
+    a: u8,
+    b: i8,
+};
+export fn entry1(p: P) void {
+    switch (p) {
+        .{ .a = 123 } => |_, tag| _ = tag,
+        else => {},
+    }
+}
+export fn entry2(p: P) void {
+    label: switch (p) {
+        .{ .a = 123 } => |_, tag| _ = tag,
+        else => continue :label .{ .a = 123 },
+    }
+}
+
+const E = enum(u8) { a, b };
+export fn entry3(e: E) void {
+    switch (e) {
+        .a => |_, tag| _ = tag,
+        else => {},
+    }
+}
+export fn entry4(e: E) void {
+    label: switch (e) {
+        .a => |_, tag| _ = tag,
+        else => continue :label .a,
+    }
+}
+
+const Error = error{ MyError, MyOtherError };
+export fn entry5(ok: bool) void {
+    switch (foo(ok)) {
+        error.MyError => |_, tag| _ = tag,
+        else => {},
+    }
+}
+export fn entry6(ok: bool) void {
+    label: switch (foo(ok)) {
+        error.MyError => |_, tag| _ = tag,
+        else => continue :label error.MyError,
+    }
+}
+fn foo(ok: bool) Error {
+    return if (ok) error.MyError else error.MyOtherError;
+}
+
+export fn entry7() void {
+    switch (@as(u0, 0)) {
+        0 => |_, tag| _ = tag,
+    }
+}
+export fn entry8() void {
+    label: switch (@as(u0, 0)) {
+        0 => |_, tag| {
+            _ = tag;
+            continue :label 0;
+        },
+    }
+}
+#}
+#update
+#check errors {
+test.zig:7:30: error: cannot capture tag of packed union
+test.zig:1:18: note: union declared here
+test.zig:1:18: note: consider using a tagged union
+test.zig:13:30: error: cannot capture tag of packed union
+test.zig:1:18: note: union declared here
+test.zig:1:18: note: consider using a tagged union
+test.zig:21:19: error: cannot capture tag of non-union type 'test.E'
+test.zig:18:11: note: enum declared here
+test.zig:27:19: error: cannot capture tag of non-union type 'test.E'
+test.zig:18:11: note: enum declared here
+test.zig:35:30: error: cannot capture tag of non-union type 'error{MyError,MyOtherError}'
+test.zig:41:30: error: cannot capture tag of non-union type 'error{MyError,MyOtherError}'
+test.zig:51:18: error: cannot capture tag of non-union type 'u0'
+test.zig:56:18: error: cannot capture tag of non-union type 'u0'
+#}

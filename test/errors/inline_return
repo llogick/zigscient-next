@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+inline fn select(cond: bool, a: anytype, b: anytype) @TypeOf(a, b) {
+    if (cond) {
+        return a;
+    } else {
+        return b;
+    }
+}
+export fn f(x: u32) u32 {
+    return select(x > 0, 2, 1);
+}
+#}
+#update
+#check errors {
+test.zig:9:18: error: value with comptime-only type 'comptime_int' depends on runtime control flow
+test.zig:2:9: note: runtime control flow here
+test.zig:9:18: note: called inline here
+#}

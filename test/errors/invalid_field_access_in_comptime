@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    var x = doesnt_exist.whatever;
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:13: error: use of undeclared identifier 'doesnt_exist'
+#}

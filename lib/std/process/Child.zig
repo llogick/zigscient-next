@@ -100,10 +100,14 @@ pub const Term = union(enum) {
     // This probably needs some more thought for Windows.
     const Signal = if (native_os == .windows) std.c.SIG else std.posix.SIG;
 
-    pub fn success(t: Term) bool {
-        return switch (t) {
-            .exited => |code| code == 0,
-            else => false,
+    pub const success: Term = .{ .exited = 0 };
+
+    pub fn eql(lhs: Term, rhs: Term) bool {
+        return switch (lhs) {
+            .exited => |lhs_exited| rhs == .exited and lhs_exited == rhs.exited,
+            .signal => |lhs_signal| rhs == .signal and lhs_signal == rhs.signal,
+            .stopped => |lhs_stopped| rhs == .stopped and lhs_stopped == rhs.stopped,
+            .unknown => |lhs_unknown| rhs == .unknown and lhs_unknown == rhs.unknown,
         };
     }
 

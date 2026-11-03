@@ -54,7 +54,6 @@ stage3-release/bin/zig build install test docs \
   -Dno-lib \
   -Dskip-non-native \
   -Dskip-cbe \
-  -Dskip-compile-errors \
   -Dskip-single-threaded
 
 # Ensure that the fuzzer at least compiles.

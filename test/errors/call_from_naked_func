@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn runtimeCall() callconv(.naked) void {
+    f();
+}
+
+export fn runtimeBuiltinCall() callconv(.naked) void {
+    @call(.auto, f, .{});
+}
+
+export fn comptimeCall() callconv(.naked) void {
+    comptime f();
+}
+
+export fn comptimeBuiltinCall() callconv(.naked) void {
+    @call(.compile_time, f, .{});
+}
+
+fn f() void {}
+#}
+#update
+#check errors {
+test.zig:2:6: error: runtime call not allowed in naked function
+test.zig:6:5: error: runtime @call not allowed in naked function
+#}

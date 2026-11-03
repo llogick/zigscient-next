@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    const Foo = struct {
+        y: Bar,
+    };
+    const Bar = struct {
+        y: if (@sizeOf(Foo) == 0) u64 else void,
+    };
+};
+comptime {
+    _ = @sizeOf(S.Foo) + 1;
+}
+#}
+#update
+#check errors {
+error: dependency loop with length 2
+    test.zig:3:12: note: type 'test.S.Foo' depends on type 'test.S.Bar' for field declared here
+    test.zig:6:24: note: type 'test.S.Bar' depends on type 'test.S.Foo' for size query here
+    note: eliminate any one of these dependencies to break the loop
+#}

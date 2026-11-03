@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const resolutions = [*][*]const u8{
+    "[320 240  ]",
+    null,
+};
+comptime {
+    _ = resolutions;
+}
+#}
+#update
+#check errors {
+test.zig:1:21: error: type '[*][*]const u8' does not support array initialization syntax
+#}

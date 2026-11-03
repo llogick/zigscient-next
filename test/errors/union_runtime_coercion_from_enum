@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum {
+    a,
+    b,
+};
+const U = union(E) {
+    a: u32,
+    b: u64,
+};
+fn foo() E {
+    return E.b;
+}
+export fn doTheTest() u64 {
+    var u: U = foo();
+    return (&u).b;
+}
+#}
+#update
+#check errors {
+test.zig:13:19: error: runtime coercion from enum 'test.E' to union 'test.U' which has non-void fields
+test.zig:6:5: note: field 'a' has type 'u32'
+test.zig:7:5: note: field 'b' has type 'u64'
+test.zig:5:11: note: union declared here
+#}

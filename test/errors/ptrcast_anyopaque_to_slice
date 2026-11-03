@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1(x: *anyopaque) void {
+    _ = @as([]u8, @ptrCast(x));
+}
+
+const Opaque = opaque {};
+export fn entry2(x: *Opaque) void {
+    _ = @as([]u8, @ptrCast(x));
+}
+#}
+#update
+#check errors {
+test.zig:2:19: error: cannot infer length of slice of 'u8' from pointer to opaque type 'anyopaque' with unknown size
+test.zig:7:19: error: cannot infer length of slice of 'u8' from pointer to opaque type 'test.Opaque' with unknown size
+test.zig:5:16: note: opaque declared here
+#}

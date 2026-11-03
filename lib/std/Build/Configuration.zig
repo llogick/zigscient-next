@@ -617,6 +617,7 @@ pub const Step = extern struct {
         captured_stdout: Storage.FlagOptional(.flags, .captured_stdout, CapturedStream),
         captured_stderr: Storage.FlagOptional(.flags, .captured_stderr, CapturedStream),
         file_inputs: Storage.LengthPrefixedList(LazyPath.Index),
+        protocol_test_timeout_scale: Storage.FlagOptional(.flags, .protocol_test_timeout_scale, u32),
         stdio_limit: Storage.FlagOptional(.flags, .stdio_limit, u64),
         /// Always a compile step.
         producer: Storage.FlagOptional(.flags, .producer, Step.Index),
@@ -724,6 +725,7 @@ pub const Step = extern struct {
             stdio: StdIo,
             stdout_trim_whitespace: TrimWhitespace,
             stderr_trim_whitespace: TrimWhitespace,
+            protocol_test_timeout_scale: bool,
             stdio_limit: bool,
             producer: bool,
             cwd: bool,
@@ -731,7 +733,7 @@ pub const Step = extern struct {
             captured_stderr: bool,
             environ_map: bool,
             preopens: bool,
-            _: u3 = 0,
+            _: u2 = 0,
         };
 
         pub const Flags2 = packed struct(u32) {

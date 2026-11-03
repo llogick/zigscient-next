@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const B = enum(u1) {
+    a,
+    _,
+    b,
+};
+#}
+#update
+#check errors {
+test.zig:3:5: error: '_' field of non-exhaustive enum must be last
+#}

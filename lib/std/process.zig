@@ -491,6 +491,10 @@ pub const RunOptions = struct {
     /// The child's progress tree will be grafted into the parent's progress tree,
     /// by substituting this node with the child's root node.
     progress_node: std.Progress.Node = std.Progress.Node.none,
+
+    inherit_dirs: []const Dir = &.{},
+    inherit_files: []const File = &.{},
+
     /// Windows-only. Sets the CREATE_NO_WINDOW flag in CreateProcess.
     create_no_window: bool = true,
     timeout: Io.Timeout = .none,
@@ -508,15 +512,19 @@ pub fn run(gpa: Allocator, io: Io, options: RunOptions) RunError!RunResult {
     var child = try spawn(io, .{
         .exe = options.exe,
         .argv = options.argv,
+
         .cwd = options.cwd,
         .environ_map = options.environ_map,
         .expand_arg0 = options.expand_arg0,
         .progress_node = options.progress_node,
-        .create_no_window = options.create_no_window,
 
         .stdin = .ignore,
         .stdout = .pipe,
         .stderr = .pipe,
+        .inherit_dirs = options.inherit_dirs,
+        .inherit_files = options.inherit_files,
+
+        .create_no_window = options.create_no_window,
     });
     defer child.kill(io);
 

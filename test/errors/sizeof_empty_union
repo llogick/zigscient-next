@@ -1,0 +1,51 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const EnumInferred = enum {};
+const EnumExplicit = enum(noreturn) {};
+const EnumNonexhaustive = enum(u8) { _ };
+
+const U0 = union {};
+const U1 = union(enum) {};
+const U2 = union(enum(noreturn)) {};
+const U3 = union(EnumInferred) {};
+const U4 = union(EnumExplicit) {};
+const U5 = union(EnumNonexhaustive) {};
+
+export fn size0() void {
+    _ = @sizeOf(U0);
+}
+export fn size1() void {
+    _ = @sizeOf(U1);
+}
+export fn size2() void {
+    _ = @sizeOf(U2);
+}
+export fn size3() void {
+    _ = @sizeOf(U3);
+}
+export fn size4() void {
+    _ = @sizeOf(U4);
+}
+export fn size5() void {
+    _ = @sizeOf(U5);
+}
+#}
+#update
+#check errors {
+test.zig:13:17: error: no size available for uninstantiable type 'test.U0'
+test.zig:5:12: note: union declared here
+test.zig:16:17: error: no size available for uninstantiable type 'test.U1'
+test.zig:6:12: note: union declared here
+test.zig:19:17: error: no size available for uninstantiable type 'test.U2'
+test.zig:7:12: note: union declared here
+test.zig:22:17: error: no size available for uninstantiable type 'test.U3'
+test.zig:8:12: note: union declared here
+test.zig:25:17: error: no size available for uninstantiable type 'test.U4'
+test.zig:9:12: note: union declared here
+test.zig:28:17: error: no size available for uninstantiable type 'test.U5'
+test.zig:10:12: note: union declared here
+#}

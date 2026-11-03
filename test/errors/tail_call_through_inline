@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn f() u32 {
+    return bad();
+}
+
+inline fn bad() bool {
+    return @call(.always_tail, g, .{});
+}
+
+fn g() u32 {
+    return 123;
+}
+#}
+#update
+#check errors {
+test.zig:6:12: error: expected type 'bool', found 'u32'
+test.zig:5:17: note: function return type declared here
+test.zig:2:15: note: called inline here
+#}

@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const T = struct {
+        comptime f32 = 1.5,
+        comptime f32 = 2.5,
+    };
+    const f: T = @import("tuple.zon");
+    _ = f;
+}
+#}
+#write tuple.zon ".{ 1.5, 2 }"
+#update
+#check errors {
+tuple.zon:1:9: error: value stored in comptime field does not match the default value of the field
+test.zig:6:26: note: imported here
+#}

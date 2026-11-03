@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+// dummy comment
+fn entry() void {}
+fn entry() void {}
+#}
+#update
+#check errors {
+test.zig:2:4: error: duplicate struct member name 'entry'
+test.zig:3:4: note: duplicate name here
+test.zig:2:1: note: struct declared here
+#}

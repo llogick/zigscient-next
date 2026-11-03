@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-native
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn interrupt_param1(_: u32) callconv(.{ .x86_64_interrupt = .{} }) void {}
+export fn interrupt_param2(_: *anyopaque, _: u32) callconv(.{ .x86_64_interrupt = .{} }) void {}
+export fn interrupt_param3(_: *anyopaque, _: u64, _: u32) callconv(.{ .x86_64_interrupt = .{} }) void {}
+export fn interrupt_ret(_: *anyopaque, _: u64) callconv(.{ .x86_64_interrupt = .{} }) u32 {
+    return 0;
+}
+
+export fn signal_param(_: u32) callconv(.avr_signal) void {}
+export fn signal_ret() callconv(.avr_signal) noreturn {}
+#}
+#update
+#check errors {
+test.zig:1:28: error: first parameter of function with 'x86_64_interrupt' calling convention must be a pointer type
+test.zig:2:43: error: second parameter of function with 'x86_64_interrupt' calling convention must be a 64-bit integer
+test.zig:3:51: error: 'x86_64_interrupt' calling convention supports up to 2 parameters, found 3
+test.zig:4:87: error: function with calling convention 'x86_64_interrupt' must return 'void' or 'noreturn'
+test.zig:8:24: error: parameters are not allowed with 'avr_signal' calling convention
+test.zig:9:34: error: calling convention 'avr_signal' only available on architectures 'avr'
+#}

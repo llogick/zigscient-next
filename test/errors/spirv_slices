@@ -1,0 +1,39 @@
+#write test.zig {
+export fn a() void {
+    var x: [3]f32 = .{ 1, 2, 3 };
+    takesSlice(&x);
+}
+
+fn takesSlice(buf: []f32) void {
+    _ = buf;
+}
+
+export fn b() void {
+    const x: [3]f32 = .{ 1, 2, 3 };
+    for (comptime x[0..3]) |_| {}
+    for (&x) |_| {}
+    for (x[0..3]) |_| {}
+}
+#}
+
+#zig build-obj {
+--name test -fno-emit-bin
+-target spirv32-opengl -mcpu baseline+variable_pointers -fno-llvm
+-Mroot=test.zig
+#}
+#update
+#check errors {
+test.zig:3:16: error: cannot construct slice from logical address space 'generic'
+test.zig:14:11: error: cannot construct slice from logical address space 'generic'
+#}
+
+#zig build-obj {
+--name test -fno-emit-bin
+-target spirv32-vulkan -mcpu baseline+variable_pointers -fno-llvm
+-Mroot=test.zig
+#}
+#update
+#check errors {
+test.zig:3:16: error: cannot construct slice from logical address space 'generic'
+test.zig:14:11: error: cannot construct slice from logical address space 'generic'
+#}

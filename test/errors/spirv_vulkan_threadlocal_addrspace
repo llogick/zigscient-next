@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target spirv32-vulkan -fno-llvm
+-Mroot=test.zig
+#}
+
+#write test.zig {
+threadlocal var counter: u32 addrspace(.generic) = 0;
+
+export fn main() callconv(.kernel) void {
+    counter += 1;
+}
+#}
+#update
+#check errors {
+test.zig:1:41: error: threadlocal variables with address space 'generic' are not supported on vulkan
+#}

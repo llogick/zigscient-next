@@ -1,0 +1,17 @@
+#skip aarch64-linux-musl-baseline-whole-llvm-debug
+#skip aarch64-macos-none-baseline-whole-llvm-debug
+#skip wasm32-wasi-none-baseline-whole-llvm-debug
+#skip wasm32-wasi-none-baseline-whole-selfhosted-debug
+
+#zig build-obj {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(a: *addrspace(.gs) i32) *addrspace(.gs) i32 {
+    return a;
+}
+#}
+#update
+#check errors

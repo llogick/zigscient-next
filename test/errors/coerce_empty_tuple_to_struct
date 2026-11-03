@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const empty = .{};
+
+const Foo = struct {};
+const foo: Foo = empty;
+
+const Bar = struct { a: u32 };
+const bar: Bar = empty;
+
+comptime {
+    _ = foo;
+}
+comptime {
+    _ = bar;
+}
+#}
+#update
+#check errors {
+test.zig:4:18: error: expected type 'test.Foo', found '@TypeOf(.{})'
+test.zig:3:13: note: struct declared here
+test.zig:7:18: error: expected type 'test.Bar', found '@TypeOf(.{})'
+test.zig:6:13: note: struct declared here
+#}

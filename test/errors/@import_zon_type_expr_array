@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: [3]i32 = @import("type_expr_array.zon");
+    _ = f;
+}
+#}
+#write type_expr_array.zon "[3]i32{1, 2, 3}"
+#update
+#check errors {
+type_expr_array.zon:1:1: error: types are not available in ZON
+type_expr_array.zon:1:1: note: replace the type with '.'
+#}

@@ -412,7 +412,7 @@ pub const Object = struct {
             }
 
             const pic_level = target_util.picLevel(target);
-            if (comp.root_mod.pic) {
+            if (comp.config.pic) {
                 module_flags.appendAssumeCapacity(try o.builder.metadataTuple(&.{
                     behavior_min,
                     (try o.builder.metadataString("PIC Level")).toMetadata(),
@@ -599,7 +599,7 @@ pub const Object = struct {
         else
             .Aggressive;
 
-        const reloc_mode: bindings.RelocMode = if (comp.root_mod.pic)
+        const reloc_mode: bindings.RelocMode = if (comp.config.pic)
             .PIC
         else if (comp.config.link_mode == .dynamic)
             bindings.RelocMode.DynamicNoPIC

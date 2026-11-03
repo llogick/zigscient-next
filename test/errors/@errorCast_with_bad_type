@@ -1,0 +1,36 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const err = error.Foo;
+
+export fn entry1() void {
+    const a: anyerror = @errorCast(1);
+    _ = a;
+}
+export fn entry2() void {
+    const a: i32 = @errorCast(err);
+    _ = a;
+}
+export fn entry3() void {
+    const e: anyerror!void = err;
+    const a: anyerror = @errorCast(e);
+    _ = a;
+}
+export fn entry4() void {
+    const a: anyerror!u32 = 123;
+    const b: anyerror!f32 = @errorCast(a);
+    _ = b;
+}
+#}
+#update
+#check errors {
+test.zig:4:25: error: expected error set or error union type, found 'comptime_int'
+test.zig:8:20: error: expected error set or error union type, found 'int'
+test.zig:13:25: error: cannot cast an error union type to error set
+test.zig:18:29: error: payload types of error unions must match
+test.zig:18:29: note: destination payload is 'f32'
+test.zig:18:29: note: operand payload is 'u32'
+#}

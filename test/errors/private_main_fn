@@ -1,0 +1,14 @@
+#zig build-exe {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn main() void {}
+#}
+#update
+#check errors {
+lib/std/**.zig:?:?: error: 'main' is not marked 'pub'
+test.zig:1:1: note: declared here
+lib/std/**.zig:?:?: note: called inline here
+#}

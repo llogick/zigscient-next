@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn f1(x: bool) u32 {
+    if (x) return 1;
+}
+fn f2() noreturn {}
+export fn entry() void {
+    _ = f1(true);
+    _ = f2();
+}
+#}
+#update
+#check errors {
+test.zig:1:16: error: function with non-void return type 'u32' implicitly returns
+test.zig:3:1: note: control flow reaches end of body here
+test.zig:4:9: error: function declared 'noreturn' implicitly returns
+test.zig:4:19: note: control flow reaches end of body here
+#}

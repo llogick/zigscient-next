@@ -904,9 +904,6 @@ pub fn generateLazy(
             .mir = mir,
             .cc = .auto,
             .src_loc = Type.fromInterned(lazy_sym.ty).srcLocOrNull(pt.zcu) orelse .unneeded,
-            .output_mode = comp.config.output_mode,
-            .link_mode = comp.config.link_mode,
-            .pic = mod.pic,
         },
         .bin_file = bin_file,
         .debug_output = debug_output,
@@ -930,7 +927,6 @@ const FormatWipMirData = struct {
 };
 fn formatWipMir(data: FormatWipMirData, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     const pt = data.func.pt;
-    const comp = pt.zcu.comp;
     var lower: Lower = .{
         .pt = pt,
         .allocator = data.func.gpa,
@@ -943,9 +939,6 @@ fn formatWipMir(data: FormatWipMirData, writer: *std.Io.Writer) std.Io.Writer.Er
             .nav_index => |nav| pt.zcu.navSrcLoc(nav),
             .lazy_sym => |lazy_sym| Type.fromInterned(lazy_sym.ty).srcLocOrNull(pt.zcu) orelse .unneeded,
         },
-        .output_mode = comp.config.output_mode,
-        .link_mode = comp.config.link_mode,
-        .pic = comp.root_mod.pic,
     };
     var first = true;
     for ((lower.lowerMir(data.inst, .{ .allow_frame_locs = false }) catch |err| switch (err) {
@@ -4976,7 +4969,7 @@ fn genCall(
                             const zo = elf_file.zigObjectPtr().?;
                             const sym_index: link.File.SymbolId = @fromBackingInt(@intCast(try zo.getOrCreateMetadataForNav(zcu, func_val.owner_nav)));
 
-                            if (func.mod.pic) {
+                            if (pt.zcu.comp.config.pic) {
                                 return func.fail("TODO: genCall pic", .{});
                             } else {
                                 try func.genSetReg(Type.u64, .ra, .{ .lea_symbol = .{ .sym = sym_index } });

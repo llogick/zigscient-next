@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const MyFn = fn () ?*const MyFn;
+comptime {
+    _ = MyFn;
+}
+#}
+#update
+#check errors {
+test.zig:1:28: error: value of declaration 'test.MyFn' depends on itself here
+#}

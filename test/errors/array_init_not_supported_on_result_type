@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn dummy(_: u32) void {}
+
+export fn foo() void {
+    dummy(.{ 1, 2 });
+}
+#}
+#update
+#check errors {
+test.zig:4:12: error: type 'u32' does not support array initialization syntax
+#}

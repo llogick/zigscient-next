@@ -1,0 +1,26 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    foo(452) catch |err| switch (err) {
+        error.Foo => {},
+    };
+}
+fn foo(x: i32) !void {
+    switch (x) {
+        0...10 => return error.Foo,
+        11...20 => return error.Bar,
+        21...30 => return error.Baz,
+        else => {},
+    }
+}
+#}
+#update
+#check errors {
+test.zig:2:26: error: switch must handle all possibilities
+test.zig:2:26: note: unhandled error value: 'error.Bar'
+test.zig:2:26: note: unhandled error value: 'error.Baz'
+#}

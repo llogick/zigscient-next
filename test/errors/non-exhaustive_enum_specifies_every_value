@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const C = enum(u1) {
+    a,
+    b,
+    _,
+};
+export fn entry() void {
+    _ = C.a;
+}
+#}
+#update
+#check errors {
+test.zig:1:11: error: non-exhaustive enum specifies every value
+#}

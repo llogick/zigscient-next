@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var x: i32 = 1234;
+    while (!@cmpxchgWeak(i32, &x, 1234, 5678, @as(u32, 1234), @as(u32, 1234))) {}
+}
+#}
+#update
+#check errors {
+test.zig:3:47: error: expected type 'lang.AtomicOrder', found 'u32'
+lib/std/**.zig:?:?: note: enum declared here
+#}

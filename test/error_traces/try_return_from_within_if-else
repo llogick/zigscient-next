@@ -1,0 +1,33 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void {
+    return error.TheSkyIsFalling;
+}
+
+fn bar() !void {
+    return error.AndMyCarIsOutOfGas;
+}
+
+pub fn main() !void {
+    if (foo()) |_| {} else |_| { // error trace should include foo()
+        try bar();
+    }
+}
+#}
+#update
+#check error-trace {
+error: AndMyCarIsOutOfGas
+test.zig:2:5: 0x? in foo (test*)
+    return error.TheSkyIsFalling;
+    ^
+test.zig:6:5: 0x? in bar (test*)
+    return error.AndMyCarIsOutOfGas;
+    ^
+test.zig:11:9: 0x? in main (test*)
+        try bar();
+        ^
+#}

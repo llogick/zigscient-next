@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const T = union(enum) {
+    a,
+    pub fn f(self: T) void {
+        _ = self;
+    }
+};
+export fn entry() void {
+    T.a.f();
+}
+#}
+#update
+#check errors {
+test.zig:8:8: error: no field or member function named 'f' in '@typeInfo(test.T).@"union".tag_type.?'
+test.zig:1:11: note: enum declared here
+#}

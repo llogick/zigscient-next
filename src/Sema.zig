@@ -8525,7 +8525,7 @@ pub fn handleExternLibName(
                 .{lib_name},
             );
         }
-        if (!block.ownerModule().pic and target_util.requiresPicForDynamicLink(target, comp.config.output_mode)) {
+        if (!comp.config.pic and target_util.requiresPicForDynamicLink(target, comp.config.output_mode)) {
             return sema.fail(
                 block,
                 src_loc,
@@ -8956,7 +8956,7 @@ fn checkMergeAllowed(sema: *Sema, block: *Block, src: LazySrcLoc, peer_ty: Type)
         const runtime_src = block.runtime_cond orelse block.runtime_loop.?;
         try sema.errNote(runtime_src, msg, "runtime control flow here", .{});
 
-        const backend = target_util.zigBackend(target, zcu.comp.config.use_llvm);
+        const backend = std.zig.compilerBackend(target, zcu.comp.config.use_llvm);
         try sema.errNote(src, msg, "pointers with address space '{s}' cannot be returned from a branch on target '{s}-{s}' by compiler backend '{s}'", .{
             @tagName(as),
             @tagName(target.cpu.arch.family()),
@@ -18486,9 +18486,6 @@ fn zirPtrType(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air
         break :blk ty;
     };
 
-    if (elem_ty.zigTypeTag(zcu) == .noreturn)
-        return sema.fail(block, elem_ty_src, "pointer to noreturn not allowed", .{});
-
     const target = zcu.getTarget();
 
     var extra_i = extra.end;
@@ -20083,7 +20080,6 @@ fn zirReifyPointer(
     const elem_ty = try sema.resolveType(block, elem_ty_src, extra.elem_ty);
 
     switch (elem_ty.zigTypeTag(zcu)) {
-        .noreturn => return sema.fail(block, elem_ty_src, "pointer to noreturn not allowed", .{}),
         // This needs to be disallowed, because the sentinel parameter would otherwise have type
         // `?@TypeOf(null)`, which is not a valid type because you cannot differentiate between
         // constructing the "inner" null value and the "outer" null value.

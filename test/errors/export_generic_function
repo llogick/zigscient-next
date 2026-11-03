@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-linux-none
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo(num: anytype) i32 {
+    _ = num;
+    return 0;
+}
+#}
+#update
+#check errors {
+test.zig:1:15: error: generic parameters not allowed in function with calling convention 'x86_64_sysv'
+#}

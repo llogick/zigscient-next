@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name switch_blocks
 -Mroot=switch_blocks.zig
 #}
@@ -21,6 +21,7 @@ pub fn main() void {
 #}
 #update
 #check lldb {
+#...
 (lldb) breakpoint set --file switch_blocks.zig --source-pattern-regexp '_ = &x;'
 Breakpoint 1: 2 locations.
 (lldb) process launch
@@ -41,4 +42,5 @@ Process #... stopped
 (f32) x = 4.5
 (lldb) breakpoint delete --force 1
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...
 #}

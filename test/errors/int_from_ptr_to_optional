@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const num: usize = 4;
+    const y: ?*const usize = &num;
+    _ = @intFromPtr(y);
+}
+#}
+#update
+#check errors {
+test.zig:4:9: error: unable to evaluate comptime expression
+test.zig:4:21: note: operation is runtime due to this operand
+test.zig:1:1: note: 'comptime' keyword forces comptime evaluation
+#}

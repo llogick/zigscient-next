@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    var u: ?*anyopaque = null;
+    var v: *anyopaque = undefined;
+    v = (&u).*;
+}
+#}
+#update
+#check errors {
+test.zig:4:13: error: expected type '*anyopaque', found '?*anyopaque'
+test.zig:4:13: note: cannot convert optional to payload type
+test.zig:4:13: note: consider using '.?', 'orelse', or 'if'
+test.zig:4:13: note: '?*anyopaque' could have null values which are illegal in type '*anyopaque'
+#}

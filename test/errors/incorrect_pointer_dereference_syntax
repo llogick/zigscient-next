@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const a: *u32 = undefined;
+    _ = *a;
+}
+#}
+#update
+#check errors {
+test.zig:3:10: error: expected type 'type', found '*u32'
+test.zig:3:10: note: use '.*' to dereference pointer
+#}

@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: f32 = @import("double_negation_float.zon");
+    _ = f;
+}
+#}
+#write double_negation_float.zon "--1.0"
+#update
+#check errors {
+double_negation_float.zon:1:1: error: expected number or 'inf' after '-'
+#}

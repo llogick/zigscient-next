@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+test {
+    switch (undefined) {
+        .a => |*ident| {},
+    }
+}
+#}
+#update
+#check errors {
+test.zig:3:17: error: unused capture
+#}

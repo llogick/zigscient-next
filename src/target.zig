@@ -457,7 +457,7 @@ pub fn canBuildLibCompilerRt(target: *const std.Target) enum { no, yes, llvm_onl
         .amdgcn => return .no,
         else => {},
     }
-    return switch (zigBackend(target, false)) {
+    return switch (std.zig.compilerBackend(target, false)) {
         .stage2_aarch64, .stage2_wasm, .stage2_x86_64 => .yes,
         else => .llvm_only,
     };
@@ -471,7 +471,7 @@ pub fn canBuildLibUbsanRt(target: *const std.Target) enum { no, yes, llvm_only, 
         .nvptx, .nvptx64 => return .no,
         else => {},
     }
-    return switch (zigBackend(target, false)) {
+    return switch (std.zig.compilerBackend(target, false)) {
         .stage2_wasm => .yes,
         .stage2_x86_64 => .yes,
         else => .llvm_only,
@@ -592,18 +592,6 @@ pub fn clangSupportsNoImplicitFloatArg(target: *const std.Target) bool {
         => true,
         else => false,
     };
-}
-
-pub fn defaultUnwindTables(target: *const std.Target, libunwind: bool, libtsan: bool) std.lang.UnwindTables {
-    if (target.os.tag == .windows) {
-        // The old 32-bit x86 variant of SEH doesn't use tables.
-        return if (target.cpu.arch != .x86) .async else .none;
-    }
-    if (target.os.tag.isDarwin()) return .async;
-    if (libunwind) return .async;
-    if (libtsan) return .async;
-    if (std.debug.Dwarf.supportsUnwinding(target)) return .async;
-    return .none;
 }
 
 pub fn defaultAddressSpace(
@@ -890,25 +878,6 @@ pub fn fnCallConvAllowsZigTypes(cc: std.lang.CallingConvention) bool {
         // integrated CPU/GPU code.
         .nvptx_kernel => true,
         else => false,
-    };
-}
-
-pub fn zigBackend(target: *const std.Target, use_llvm: bool) std.lang.CompilerBackend {
-    if (use_llvm) return .stage2_llvm;
-    if (target.ofmt == .c) return .stage2_c;
-    return switch (target.cpu.arch) {
-        .aarch64, .aarch64_be => .stage2_aarch64,
-        .arm, .armeb, .thumb, .thumbeb => .stage2_arm,
-        .loongarch32, .loongarch64 => .stage2_loongarch,
-        .powerpc, .powerpcle, .powerpc64, .powerpc64le => .stage2_powerpc,
-        .riscv64 => .stage2_riscv64,
-        .sparc64 => .stage2_sparc64,
-        .spirv32, .spirv64 => .stage2_spirv,
-        .wasm32, .wasm64 => .stage2_wasm,
-        .x86, .x86c16 => .stage2_x86,
-        .x86_64 => .stage2_x86_64,
-        .spork8 => .zsf_spork8,
-        else => .other,
     };
 }
 

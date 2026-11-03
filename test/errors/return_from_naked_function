@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() callconv(.naked) void {
+    return;
+}
+
+comptime {
+    _ = &foo;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: cannot return from naked function
+test.zig:2:5: note: can only return using assembly
+#}

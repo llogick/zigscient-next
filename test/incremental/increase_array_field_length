@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const Big = struct { arr: [10]u8 };
 pub fn main(init: std.process.Init) !void {
     var big: Big = undefined;
@@ -21,7 +22,7 @@ const std = @import("std");
 arr[9] = 234
 #}
 
-#write main.zig {
+#write test.zig {
 const Big = struct { arr: [1000]u8 };
 pub fn main(init: std.process.Init) !void {
     var big: Big = undefined;

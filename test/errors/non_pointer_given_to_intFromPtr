@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(x: i32) usize {
+    return @intFromPtr(x);
+}
+#}
+#update
+#check errors {
+test.zig:2:24: error: expected pointer, found 'i32'
+#}

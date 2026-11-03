@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    a: i32,
+};
+export fn f1() void {
+    var foo: ?Foo = undefined;
+    foo.a += 1;
+}
+export fn f2() void {
+    var foo: anyerror!Foo = undefined;
+    foo.a += 1;
+}
+#}
+#update
+#check errors {
+test.zig:6:8: error: optional type '?test.Foo' does not support field access
+test.zig:6:8: note: consider using '.?', 'orelse', or 'if'
+test.zig:10:8: error: error union type 'anyerror!test.Foo' does not support field access
+test.zig:10:8: note: consider using 'try', 'catch', or 'if'
+#}

@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const A = struct {
+    b: B,
+};
+const B = struct {
+    a: A,
+};
+comptime {
+    _ = @as(A, undefined);
+}
+#}
+#update
+#check errors {
+error: dependency loop with length 2
+    test.zig:2:8: note: type 'test.A' depends on type 'test.B' for field declared here
+    test.zig:5:8: note: type 'test.B' depends on type 'test.A' for field declared here
+    note: eliminate any one of these dependencies to break the loop
+#}

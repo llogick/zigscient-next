@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn a() noreturn {
+    return;
+}
+export fn entry() void {
+    a();
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: function declared 'noreturn' returns
+test.zig:1:8: note: 'noreturn' declared here
+#}

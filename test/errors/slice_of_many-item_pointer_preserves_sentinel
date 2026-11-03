@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    var ptr: [*]const u8 = undefined;
+    _ = ptr[0.. :0];
+}
+
+comptime {
+    var ptrz: [*:0]const u8 = undefined;
+    _ = ptrz[0.. :1];
+}
+#}
+#update
+#check errors {
+test.zig:3:18: error: sentinel-terminated slicing of many-item pointer must match existing sentinel
+test.zig:3:9: note: type '[*]const u8' does not have a sentinel
+test.zig:3:12: note: use @ptrCast to cast pointer sentinel
+test.zig:8:19: error: sentinel-terminated slicing of many-item pointer must match existing sentinel
+test.zig:8:19: note: expected sentinel '0', found '1'
+test.zig:8:13: note: use @ptrCast to cast pointer sentinel
+#}

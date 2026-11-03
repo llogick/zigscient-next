@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const array = [2]u8{ 1, 2, 3 };
+    _ = array;
+}
+#}
+#update
+#check errors {
+test.zig:2:24: error: expected 2 array elements; found 3
+#}

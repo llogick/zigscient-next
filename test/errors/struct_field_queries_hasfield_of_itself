@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = packed struct {
+    bar: (T: {
+        _ = @hasField(Foo, "bar");
+        break :T void;
+    }),
+};
+
+comptime {
+    _ = @as(Foo, undefined);
+}
+#}
+#update
+#check errors {
+test.zig:3:23: error: type 'test.Foo' depends on itself for field query here
+#}

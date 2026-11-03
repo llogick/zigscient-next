@@ -1,32 +1,32 @@
-#skip amdgcn-amdhsa-none-baseline-whole-llvm-lld-pic
+#skip amdgcn-amdhsa-none-baseline-whole-llvm-debug-lld
 
-#skip csky-freestanding-eabi-baseline-whole-llvm-lld-pic
-#skip csky-freestanding-eabihf-baseline-whole-llvm-lld-pic
-#skip csky-linux-eabi-baseline-whole-llvm-lld-pic
-#skip csky-linux-eabihf-baseline-whole-llvm-lld-pic
-#skip csky-linux-gnueabi-baseline-whole-llvm-lld-pic
-#skip csky-linux-gnueabihf-baseline-whole-llvm-lld-pic
+#skip csky-freestanding-eabi-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-eabihf-baseline-whole-llvm-debug-lld
+#skip csky-linux-eabi-baseline-whole-llvm-debug-lld
+#skip csky-linux-eabihf-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnueabi-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnueabihf-baseline-whole-llvm-debug-lld
 
-#skip nvptx-cuda-none-baseline-whole-llvm-lld-pic
-#skip nvptx-nvcl-none-baseline-whole-llvm-lld-pic
+#skip nvptx-cuda-none-baseline-whole-llvm-debug-lld
+#skip nvptx-nvcl-none-baseline-whole-llvm-debug-lld
 
-#skip nvptx64-cuda-none-baseline-whole-llvm-lld-pic
-#skip nvptx64-nvcl-none-baseline-whole-llvm-lld-pic
+#skip nvptx64-cuda-none-baseline-whole-llvm-debug-lld
+#skip nvptx64-nvcl-none-baseline-whole-llvm-debug-lld
 
-#skip spirv32-opencl-none-baseline-whole-llvm-lld-pic
-#skip spirv32-opengl-none-baseline-whole-llvm-lld-pic
-#skip spirv32-vulkan-none-baseline-whole-llvm-lld-pic
+#skip spirv32-opencl-none-baseline-whole-llvm-debug-lld
+#skip spirv32-opengl-none-baseline-whole-llvm-debug-lld
+#skip spirv32-vulkan-none-baseline-whole-llvm-debug-lld
 
-#skip spirv64-amdhsa-none-baseline-whole-llvm-lld-pic
-#skip spirv64-opencl-none-baseline-whole-llvm-lld-pic
-#skip spirv64-vulkan-none-baseline-whole-llvm-lld-pic
+#skip spirv64-amdhsa-none-baseline-whole-llvm-debug-lld
+#skip spirv64-opencl-none-baseline-whole-llvm-debug-lld
+#skip spirv64-vulkan-none-baseline-whole-llvm-debug-lld
 
-#skip x86_64-linux-gnux32-baseline-whole-llvm-new-pic
-#skip x86_64-linux-muslx32-baseline-whole-llvm-new-pic
-#skip x86_64-linux-x32-baseline-whole-llvm-new-pic
+#skip x86_64-linux-gnux32-baseline-whole-llvm-debug-new
+#skip x86_64-linux-muslx32-baseline-whole-llvm-debug-new
+#skip x86_64-linux-x32-baseline-whole-llvm-debug-new
 
-#obj {
---name test -fno-lld -fno-new-linker -ofmt=llvmir
+#zig build-obj {
+--name test -ofmt=llvmir -fno-lld -fno-new-linker
 -Mroot=test.zig
 #}
 
@@ -38,11 +38,15 @@ export fn entry(ptr: *volatile i16) void {
 #}
 #update "volatile"
 #check llvm {
-define #...@test.entry(ptr #...%0) #...{
-#...store volatile i16 123, ptr %0#...
-#...store volatile i16 321, ptr %0#...
+...
+define ... @test.entry(ptr ... %ptr) ... {
+  ...
+  store volatile i16 123, ptr %ptr, align ?, !...
+  store volatile i16 321, ptr %ptr, align ?, !...
+  ...
 }
 
+...
 #}
 
 #write test.zig {
@@ -57,14 +61,14 @@ fn entry2(slice: []volatile i16) void {
 #}
 #update "volatile slice"
 #check llvm {
-define #...@test.entry(#...) #...{
-#...
+...
+define ... @test.entry2(..., ptr ... %slice.ptr, isize ... %slice.len) ... {
+  ...
+  store volatile i16 123, ptr %slice.ptr.0, align ?, !...
+  ...
+  store volatile i16 321, ptr %slice.ptr.1, align ?, !...
+  ...
 }
 
-#...
-define #...@test.entry2(#...) #...{
-#...store volatile i16 123, ptr %#...
-#...store volatile i16 321, ptr %#...
-}
-
+...
 #}

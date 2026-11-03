@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    if (0) {}
+}
+
+export fn bar() void {
+    comptime if (0) {};
+}
+#}
+#update
+#check errors {
+test.zig:2:9: error: expected type 'bool', found 'comptime_int'
+test.zig:6:18: error: expected type 'bool', found 'comptime_int'
+#}

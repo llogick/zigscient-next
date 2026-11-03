@@ -1,0 +1,35 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern fn printf([*:0]const u8, ...) c_int;
+
+export fn entry() void {
+    _ = printf("%d %d %d %d\n", 1, 2, 3, 4);
+}
+
+export fn entry1() void {
+    var arr: [2]u8 = undefined;
+    _ = printf("%d\n", arr);
+    _ = &arr;
+}
+
+export fn entry2() void {
+    _ = printf("%d\n", @as(u48, 2));
+}
+
+export fn entry3() void {
+    _ = printf("%d\n", {});
+}
+#}
+#update
+#check errors {
+test.zig:4:33: error: integer and float literals passed to variadic function must be casted to a fixed-size number type
+test.zig:9:24: error: arrays must be passed by reference to variadic function
+test.zig:14:24: error: cannot pass 'u48' to variadic function
+test.zig:14:24: note: only integers with 0 or power of two bits are extern compatible
+test.zig:18:24: error: cannot pass 'void' to variadic function
+test.zig:18:24: note: 'void' is a zero bit type
+#}

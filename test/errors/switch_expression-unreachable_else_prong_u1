@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo(x: u1) void {
+    switch (x) {
+        0 => {},
+        1 => {},
+        else => {},
+    }
+}
+export fn entry() usize {
+    return @sizeOf(@TypeOf(&foo));
+}
+#}
+#update
+#check errors {
+test.zig:5:14: error: unreachable else prong; all cases already handled
+#}

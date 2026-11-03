@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: struct { value: bool } = @import("unknown_ident.zon");
+    _ = f;
+}
+#}
+#write unknown_ident.zon {
+.{
+    .value = truefalse,
+}
+#}
+#update
+#check errors {
+unknown_ident.zon:2:14: error: invalid expression
+unknown_ident.zon:2:14: note: ZON allows identifiers 'true', 'false', 'null', 'inf', and 'nan'
+unknown_ident.zon:2:14: note: precede identifier with '.' for an enum literal
+#}

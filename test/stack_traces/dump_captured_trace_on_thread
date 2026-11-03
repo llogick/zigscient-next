@@ -1,0 +1,46 @@
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-none-dynamic-lc
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-async-dynamic-lc
+#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-omit-async-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-none-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-async-dynamic-lc
+#skip s390x-linux-musl-baseline-whole-llvm-debug-omit-async-dynamic-lc
+
+#require safe-unwind
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() !void {
+    var stack_trace_buf: [8]usize = undefined;
+    const t = try std.Thread.spawn(.{}, threadMain, .{&stack_trace_buf});
+    t.join();
+}
+fn threadMain(stack_trace_buf: []usize) void {
+    dumpIt(&captureIt(stack_trace_buf));
+}
+fn captureIt(buf: []usize) std.debug.StackTrace {
+    return captureItInner(buf);
+}
+fn dumpIt(st: *const std.debug.StackTrace) void {
+    std.debug.dumpStackTrace(st);
+}
+fn captureItInner(buf: []usize) std.debug.StackTrace {
+    return std.debug.captureCurrentStackTrace(.{}, buf);
+}
+const std = @import("std");
+#}
+#update
+#check stack-trace {
+test.zig:16:46: 0x? in captureItInner (test*)
+    return std.debug.captureCurrentStackTrace(.{}, buf);
+                                             ^
+test.zig:10:26: 0x? in captureIt (test*)
+    return captureItInner(buf);
+                         ^
+test.zig:7:22: 0x? in threadMain (test*)
+    dumpIt(&captureIt(stack_trace_buf));
+                     ^
+...
+#}

@@ -1,0 +1,26 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void {
+    return error.TheSkyIsFalling;
+}
+
+pub fn main() !void {
+    // Once an error is stored in a variable, it is popped from the trace
+    var x = foo();
+    x = {};
+
+    // As a result, this error trace will still be clean
+    return error.SomethingUnrelatedWentWrong;
+}
+#}
+#update
+#check error-trace {
+error: SomethingUnrelatedWentWrong
+test.zig:11:5: 0x? in main (test*)
+    return error.SomethingUnrelatedWentWrong;
+    ^
+#}

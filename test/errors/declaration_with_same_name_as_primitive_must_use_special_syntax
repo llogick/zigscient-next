@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const u8 = u16;
+export fn entry() void {
+    const a: u8 = 300;
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:1:7: error: name shadows primitive 'u8'
+test.zig:1:7: note: consider using @"u8" to disambiguate
+#}

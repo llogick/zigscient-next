@@ -250,6 +250,7 @@ fn lowerZigArgs(
     {
         var is_linking_libc = false;
         var is_linking_libcpp = false;
+        var pic: ?bool = null;
 
         // Stores system libraries that have already been seen for at least one
         // module, along with any C compiler arguments that need to be passed
@@ -541,6 +542,16 @@ fn lowerZigArgs(
                 // have the correct parent module, but only if the module is part of
                 // this compilation.
                 if (!my_responsibility) continue;
+
+                if (is_linking_libc and mod.flags2.link_libc == .false)
+                    return step.fail(maker, "modules have conflicting values for link_libc", .{});
+                if (is_linking_libcpp and mod.flags2.link_libcpp == .false)
+                    return step.fail(maker, "modules have conflicting values for link_libcpp", .{});
+                if (mod.flags2.pic.toBool()) |mod_pic| {
+                    if (pic == !mod_pic) return step.fail(maker, "modules have conflicting values for pic", .{});
+                    pic = mod_pic;
+                }
+
                 if (cli_named_modules.modules.getIndex(mod_index)) |module_cli_index| {
                     const module_cli_name = cli_named_modules.names.keys()[module_cli_index];
                     const module_index = cli_named_modules.modules.keys()[module_cli_index];
@@ -614,6 +625,7 @@ fn lowerZigArgs(
         try zig_args.ensureUnusedCapacity(gpa, 2);
         if (is_linking_libcpp) zig_args.appendAssumeCapacity("-lc++");
         if (is_linking_libc) zig_args.appendAssumeCapacity("-lc");
+        try addFlag(gpa, zig_args, "PIC", pic);
     }
 
     if (conf_comp.win32_manifest.value) |manifest_file| {
@@ -1281,7 +1293,6 @@ fn appendModuleFlags(
     try addFlag(gpa, zig_args, "sanitize-thread", m.flags.sanitize_thread.toBool());
     try addFlag(gpa, zig_args, "fuzz", m.flags.fuzz.toBool());
     try addFlag(gpa, zig_args, "valgrind", m.flags2.valgrind.toBool());
-    try addFlag(gpa, zig_args, "PIC", m.flags2.pic.toBool());
     try addFlag(gpa, zig_args, "no-builtin", m.flags2.no_builtin.toBool());
 
     try addArchFlag(gpa, zig_args, "red-zone", m.flags2.red_zone.toBool());

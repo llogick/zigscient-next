@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = enum(u32) {
+    A = 10,
+    B = 11,
+};
+export fn entry() void {
+    const x: Foo = @enumFromInt(0);
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:6:20: error: enum 'test.Foo' has no tag with value '0'
+test.zig:1:13: note: enum declared here
+#}

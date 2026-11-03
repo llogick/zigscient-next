@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo(a: usize) void {
+    struct {
+        const a = 1;
+    };
+    _ = a;
+}
+fn bar(a: usize) void {
+    struct {
+        const b = struct {
+            const a = 1;
+        };
+    };
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:3:15: error: declaration 'a' shadows function parameter from outer scope
+test.zig:1:8: note: previous declaration here
+test.zig:10:19: error: declaration 'a' shadows function parameter from outer scope
+test.zig:7:8: note: previous declaration here
+#}

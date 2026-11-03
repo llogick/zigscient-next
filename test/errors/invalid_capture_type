@@ -1,0 +1,31 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn f1() void {
+    if (true) |x| {
+        _ = x;
+    }
+}
+export fn f2() void {
+    if (@as(usize, 5)) |_| {}
+}
+export fn f3() void {
+    if (@as(usize, 5)) |_| {} else |_| {}
+}
+export fn f4() void {
+    if (null) |_| {}
+}
+export fn f5() void {
+    if (error.Foo) |_| {} else |_| {}
+}
+#}
+#update
+#check errors {
+test.zig:2:9: error: expected optional type, found 'bool'
+test.zig:7:9: error: expected optional type, found 'usize'
+test.zig:10:9: error: expected error union type, found 'usize'
+test.zig:16:9: error: expected error union type, found 'error{Foo}'
+#}

@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    _ = @import("neg_inf.zon");
+}
+#}
+#write neg_inf.zon "-inf"
+#update
+#check errors {
+neg_inf.zon:1:1: error: negative infinity requires a known result type
+test.zig:2:17: note: imported here
+#}

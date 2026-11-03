@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    fizz: void,
+};
+
+export fn entry() void {
+    _ = @as(S, struct { void }{{}});
+}
+#}
+#update
+#check errors {
+test.zig:6:31: error: expected type 'test.S', found 'struct { void }'
+test.zig:1:11: note: struct declared here
+#}

@@ -1,0 +1,25 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const LhsExpr = struct {
+    rhsExpr: ?AstObject,
+};
+const AstObject = union {
+    lhsExpr: LhsExpr,
+};
+export fn entry() void {
+    const lhsExpr = LhsExpr{ .rhsExpr = null };
+    const obj = AstObject{ .lhsExpr = lhsExpr };
+    _ = obj;
+}
+#}
+#update
+#check errors {
+error: dependency loop with length 2
+    test.zig:2:14: note: type 'test.LhsExpr' depends on type 'test.AstObject' for field declared here
+    test.zig:5:14: note: type 'test.AstObject' depends on type 'test.LhsExpr' for field declared here
+    note: eliminate any one of these dependencies to break the loop
+#}

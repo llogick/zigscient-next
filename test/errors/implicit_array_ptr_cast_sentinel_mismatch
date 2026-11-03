@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() [:0xff]const u8 {
+    return "bark";
+}
+fn bar() [:0]const u16 {
+    return "bark";
+}
+export fn entry() void {
+    _ = foo();
+}
+export fn entry1() void {
+    _ = bar();
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: expected type '[:255]const u8', found '*const [4:0]u8'
+test.zig:2:12: note: pointer sentinel '0' cannot cast into pointer sentinel '255'
+test.zig:1:10: note: function return type declared here
+test.zig:5:12: error: expected type '[:0]const u16', found '*const [4:0]u8'
+test.zig:5:12: note: pointer type child 'u8' cannot cast into pointer type child 'u16'
+test.zig:4:10: note: function return type declared here
+#}

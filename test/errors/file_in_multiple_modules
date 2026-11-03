@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+--dep foo -Mroot=test.zig
+-Mfoo=foo.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = @import("foo");
+    _ = @import("foo.zig");
+}
+#}
+#write foo.zig "const dummy = 0;"
+#update
+#check errors {
+foo.zig:1:1: error: file exists in modules 'foo' and 'root'
+foo.zig:1:1: note: files must belong to only one module
+foo.zig:1:1: note: file is the root of module 'foo'
+test.zig:3:17: note: file is imported here by the root of module 'root'
+#}

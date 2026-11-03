@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: []const u8 = @import("invalid_string.zon");
+    _ = f;
+}
+#}
+#write invalid_string.zon {
+"\"\a\""
+#}
+#update
+#check errors {
+invalid_string.zon:1:5: error: invalid escape character: 'a'
+#}

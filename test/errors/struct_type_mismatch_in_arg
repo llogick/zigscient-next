@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct { i: i32 };
+const Bar = struct { j: i32 };
+
+pub fn helper(_: Foo, _: Bar) void {}
+
+comptime {
+    helper(Bar{ .j = 10 }, Bar{ .j = 10 });
+    helper(Bar{ .i = 10 }, Bar{ .j = 10 });
+}
+#}
+#update
+#check errors {
+test.zig:7:15: error: expected type 'test.Foo', found 'test.Bar'
+test.zig:2:13: note: struct declared here
+test.zig:1:13: note: struct declared here
+test.zig:4:18: note: parameter type declared here
+#}

@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+inline fn needComptime(comptime a: u64) void {
+    if (a != 0) @compileError("foo");
+}
+fn acceptRuntime(value: u64) void {
+    needComptime(value);
+}
+export fn entry() void {
+    var value: u64 = 0;
+    acceptRuntime((&value).*);
+}
+#}
+#update
+#check errors {
+test.zig:5:18: error: unable to resolve comptime value
+test.zig:5:18: note: argument to comptime parameter must be comptime-known
+test.zig:1:24: note: parameter declared comptime here
+#}

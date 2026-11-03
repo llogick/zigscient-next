@@ -1,9 +1,10 @@
-#exe {
---dep foo -Mroot=main.zig
+#zig build-exe {
+--name test
+--dep foo -Mroot=test.zig
 -Mfoo=foo.zig
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     _ = @import("foo");
     //_ = @import("other.zig");
@@ -30,7 +31,7 @@ Compile Log Output:
 @as([:0]const u8, "foo"[0..3])
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     _ = @import("foo");
     _ = @import("other.zig");
@@ -49,7 +50,7 @@ Compile Log Output:
 @as([:0]const u8, "root"[0..4])
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     _ = @import("foo");
     _ = @import("other.zig");
@@ -64,11 +65,11 @@ comptime {
 #check errors {
 other.zig:1:1: error: file exists in modules 'root' and 'foo'
 other.zig:1:1: note: files must belong to only one module
-main.zig:3:17: note: file is imported here by the root of module 'root'
+test.zig:3:17: note: file is imported here by the root of module 'root'
 foo.zig:2:17: note: file is imported here by the root of module 'foo'
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     _ = @import("foo");
     //_ = @import("other.zig");

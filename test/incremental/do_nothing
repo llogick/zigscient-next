@@ -1,9 +1,10 @@
-#todo "it'd be great if we could actually check that no analysis happened!"
-#exe {
--Mroot=main.zig
+# "TODO: it'd be great if we could actually check that no analysis happened!"
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     const ptr: *const O = @ptrFromInt(0x1000);
     _ = ptr;
@@ -25,7 +26,7 @@ const O = opaque {
 #update
 #check stdout
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     const ptr: *const O = @ptrFromInt(0x1000);
     _ = ptr;

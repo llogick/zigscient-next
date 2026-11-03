@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var x: u32 = 0;
+    @atomicStore(u32, &x, 1, .acquire);
+}
+#}
+#update
+#check errors {
+test.zig:3:31: error: @atomicStore atomic ordering must not be acquire or acq_rel
+#}

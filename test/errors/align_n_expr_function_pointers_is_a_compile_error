@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target wasm32-freestanding -fno-llvm
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() align(2) void {
+    return;
+}
+#}
+#update
+#check errors {
+test.zig:1:23: error: target does not support function alignment greater than 1
+#}

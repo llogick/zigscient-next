@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 var some_enum: enum { first, second } = .first;
 const io = std.Io.Threaded.global_single_threaded.io();
@@ -13,7 +14,7 @@ pub fn main() !void {
 #update
 #check stdout "first"
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 var some_enum: enum { first, second } = .first;
 const io = std.Io.Threaded.global_single_threaded.io();
@@ -24,7 +25,7 @@ pub fn main() !void {
 #update "no change"
 #check stdout "first"
 
-#write main.zig {
+#write test.zig {
 const std = @import("std");
 var some_enum: enum { second, first } = .first;
 const io = std.Io.Threaded.global_single_threaded.io();

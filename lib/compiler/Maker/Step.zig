@@ -783,7 +783,7 @@ pub inline fn handleChildProcUnsupported(s: *Step, maker: *Maker) FailError!void
 }
 
 pub fn handleChildProcessTerm(s: *Step, maker: *Maker, term: std.process.Child.Term) FailError!void {
-    if (!term.success()) return s.fail(maker, "process {f}", .{term});
+    if (!term.eql(.success)) return s.fail(maker, "process {f}", .{term});
 }
 
 /// Prefer `cacheHitWatched` unless you already added watch inputs

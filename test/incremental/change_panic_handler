@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() !u8 {
     var a: u8 = undefined;
     a = 255;
@@ -23,7 +24,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 panic message: integer overflow
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() !u8 {
     var a: u8 = undefined;
     a = 255;
@@ -44,7 +45,7 @@ const io = std.Io.Threaded.global_single_threaded.io();
 new panic message: integer overflow
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() !u8 {
     var a: u8 = undefined;
     a = 255;

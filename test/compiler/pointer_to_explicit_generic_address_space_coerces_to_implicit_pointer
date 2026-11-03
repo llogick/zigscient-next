@@ -1,0 +1,12 @@
+#zig build-obj {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry(a: *addrspace(.generic) i32) *i32 {
+    return a;
+}
+#}
+#update
+#check errors

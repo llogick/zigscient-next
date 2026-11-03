@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Opaque = opaque {};
+const Untagged = @Union(.auto, null, &.{"foo"}, &.{Opaque}, &.{.{}});
+export fn entry() usize {
+    return @sizeOf(Untagged);
+}
+#}
+#update
+#check errors {
+test.zig:2:49: error: cannot directly embed opaque type 'test.Opaque' in union
+test.zig:2:49: note: opaque types have unknown size
+test.zig:1:16: note: opaque declared here
+#}

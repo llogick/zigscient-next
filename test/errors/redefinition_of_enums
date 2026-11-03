@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const A = enum { x };
+const A = enum { x };
+#}
+#update
+#check errors {
+test.zig:1:7: error: duplicate struct member name 'A'
+test.zig:2:7: note: duplicate name here
+test.zig:1:1: note: struct declared here
+#}

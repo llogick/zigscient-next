@@ -1,0 +1,18 @@
+#zig test {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn A() type {
+    return Q;
+}
+test "1" {
+    _ = A().a;
+    _ = A().a;
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: use of undeclared identifier 'Q'
+#}

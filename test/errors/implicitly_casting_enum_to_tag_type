@@ -1,0 +1,23 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Small = enum(u2) {
+    One,
+    Two,
+    Three,
+    Four,
+};
+
+export fn entry() void {
+    var x: u2 = Small.Two;
+    _ = &x;
+}
+#}
+#update
+#check errors {
+test.zig:9:22: error: expected type 'u2', found 'test.Small'
+test.zig:1:15: note: enum declared here
+#}

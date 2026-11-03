@@ -1,0 +1,25 @@
+#zig build-exe {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() !void {
+    try a();
+    try b();
+}
+
+fn a() !void {
+    defer try b();
+}
+fn b() !void {
+    defer return a();
+}
+#}
+#update
+#check errors {
+test.zig:7:11: error: 'try' not allowed inside defer expression
+test.zig:7:5: note: defer expression here
+test.zig:10:11: error: cannot return from defer expression
+test.zig:10:5: note: defer expression here
+#}

@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = enum {
+    Bar,
+    Bar,
+};
+
+export fn entry() void {
+    const a: Foo = undefined;
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: duplicate enum member name 'Bar'
+test.zig:3:5: note: duplicate name here
+test.zig:1:13: note: enum declared here
+#}

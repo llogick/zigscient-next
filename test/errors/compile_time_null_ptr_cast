@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    const opt_ptr: ?*i32 = null;
+    const ptr: *i32 = @ptrCast(opt_ptr);
+    _ = ptr;
+}
+#}
+#update
+#check errors {
+test.zig:3:32: error: null pointer casted to type '*i32'
+#}

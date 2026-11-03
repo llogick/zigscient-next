@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn f1(x: u32) u32 {
+    const y = -%x;
+    return -y;
+}
+export fn f2(x: @Vector(4, u32)) @Vector(4, u32) {
+    const y = -%x;
+    return -y;
+}
+#}
+#update
+#check errors {
+test.zig:3:12: error: negation of type 'u32'
+test.zig:7:12: error: negation of type '@Vector(4, u32)'
+#}

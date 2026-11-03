@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = struct {
+    comptime b: i32,
+};
+export fn entry() void {
+    var f: Foo = undefined;
+    _ = &f;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: comptime field without default initialization value
+#}

@@ -4553,7 +4553,7 @@ pub fn runCodegen(pt: Zcu.PerThread, func_index: InternPool.Index, air: *Air) Ru
             error.OutOfMemory => comp.setAllocFailure(),
             error.AlreadyReported => {},
             error.NoLinkFile => assert(comp.bin_file == null),
-            error.BackendDoesNotProduceMir => switch (target_util.zigBackend(
+            error.BackendDoesNotProduceMir => switch (std.zig.compilerBackend(
                 &zcu.root_mod.resolved_target.result,
                 comp.config.use_llvm,
             )) {

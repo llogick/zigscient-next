@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x = 1;
+    const y, var z: u32 = .{ 2, 3 };
+}
+#}
+#update
+#check errors {
+test.zig:3:18: error: unused local variable
+test.zig:3:11: error: unused local constant
+test.zig:2:11: error: unused local constant
+#}

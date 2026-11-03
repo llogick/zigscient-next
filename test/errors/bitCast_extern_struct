@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = extern struct { x: u32 };
+export fn foo(s: S) void {
+    const as_int: u32 = @bitCast(s);
+    _ = as_int;
+}
+#}
+#update
+#check errors {
+test.zig:3:34: error: cannot @bitCast from 'test.S'
+test.zig:1:18: note: struct declared here
+#}

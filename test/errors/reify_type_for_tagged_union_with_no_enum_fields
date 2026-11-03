@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Tag = @Enum(noreturn, .exhaustive, &.{}, &.{});
+const Tagged = @Union(.auto, Tag, &.{ "signed", "unsigned" }, &.{ i32, u32 }, &@splat(.{}));
+export fn entry() void {
+    const tagged: Tagged = undefined;
+    _ = tagged;
+}
+#}
+#update
+#check errors {
+test.zig:2:35: error: no field named 'signed' in enum 'test.Tag'
+test.zig:1:13: note: enum declared here
+#}

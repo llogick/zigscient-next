@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const T = packed struct {
+        a: u65535,
+        b: u65535,
+    };
+    @compileLog(@sizeOf(T));
+}
+#}
+#update
+#check errors {
+test.zig:2:22: error: packed struct bit width '131070' exceeds maximum bit width of 65535
+#}

@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var a: []u8 = undefined;
+    _ = a.*.len;
+    _ = &a;
+}
+#}
+#update
+#check errors {
+test.zig:3:10: error: index syntax required to access runtime-known slice
+#}

@@ -1,0 +1,27 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const A = struct {
+    x: i32,
+    y: i32,
+    z: i32,
+};
+export fn f() void {
+    const a = A{
+        .z = 1,
+        .y = 2,
+        .x = 3,
+        .z = 4,
+    };
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:8:10: error: duplicate struct field name
+test.zig:11:10: note: duplicate name here
+test.zig:7:16: note: struct declared here
+#}

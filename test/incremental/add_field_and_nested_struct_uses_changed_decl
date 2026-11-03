@@ -1,8 +1,9 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     _ = @as(S, undefined);
 }
@@ -16,7 +17,7 @@ const S = struct {
 #update
 #check stdout
 
-#write main.zig {
+#write test.zig {
 pub fn main() void {
     _ = @as(S, undefined);
 }

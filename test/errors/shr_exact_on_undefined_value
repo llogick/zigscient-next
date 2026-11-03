@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    var a: i64 = undefined;
+    var b: u6 = undefined;
+    _ = &a;
+    _ = &b;
+    _ = @shrExact(a, b);
+}
+#}
+#update
+#check errors {
+test.zig:6:19: error: use of undefined value here causes illegal behavior
+#}

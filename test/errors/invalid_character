@@ -1,0 +1,34 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig "\xff\xfeexport fn foo() bool {\n    return true;\n}\n"
+#update "non-printable"
+#check errors {
+test.zig:1:1: error: expected type expression, found 'invalid token'
+#}
+
+#write test.zig "_ = \"\x01Q\";"
+#update "in string"
+#check errors {
+test.zig:1:6: error: string literal contains invalid byte: '\x01'
+#}
+
+#write test.zig "//\x01Q"
+#update "in comment"
+#check errors {
+test.zig:1:3: error: comment contains invalid byte: '\x01'
+#}
+
+#write test.zig "const c = '\x01';"
+#update "in character literal"
+#check errors {
+test.zig:1:12: error: character literal contains invalid byte: '\x01'
+#}
+
+#write test.zig "x = \x00Q"
+#update "at start of token"
+#check errors {
+test.zig:1:5: error: expected expression, found 'invalid token'
+#}

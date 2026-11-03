@@ -1,0 +1,13 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+u32,
+comptime u8 = 123,
+#}
+#update
+#check errors {
+test.zig:1:1: error: file cannot be a tuple
+#}

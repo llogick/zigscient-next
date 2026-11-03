@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const foo = @import("foo");
+comptime {
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:1:21: error: no module named 'foo' available within module 'root'
+#}

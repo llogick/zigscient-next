@@ -1,0 +1,24 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Letter = enum {
+    A,
+    B,
+    C,
+};
+const Payload = union(Letter) {
+    A: i32,
+    B: f64,
+};
+export fn entry() usize {
+    return @sizeOf(Payload);
+}
+#}
+#update
+#check errors {
+test.zig:6:17: error: enum field 'C' missing from union
+test.zig:4:5: note: enum field here
+#}

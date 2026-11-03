@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x = 1 << &@as(u8, 10);
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:20: error: expected type 'comptime_int', found pointer
+test.zig:2:20: note: address-of operator always returns a pointer
+#}

@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var a: ?*anyopaque = undefined;
+    a = @as(?usize, null);
+}
+#}
+#update
+#check errors {
+test.zig:3:9: error: expected type '?*anyopaque', found '?usize'
+test.zig:3:9: note: optional type child 'usize' cannot cast into optional type child '*anyopaque'
+#}

@@ -1,0 +1,28 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void {
+    return error.TheSkyIsFalling;
+}
+
+pub fn main() !void {
+    foo() catch {}; // should not affect error trace
+    if (foo()) |_| {} else |_| {
+        // should also not affect error trace
+    }
+    try foo();
+}
+#}
+#update
+#check error-trace {
+error: TheSkyIsFalling
+test.zig:2:5: 0x? in foo (test*)
+    return error.TheSkyIsFalling;
+    ^
+test.zig:10:5: 0x? in main (test*)
+    try foo();
+    ^
+#}

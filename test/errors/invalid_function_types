@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    _ = fn name() void;
+}
+comptime {
+    _ = fn () align(128) void;
+}
+comptime {
+    _ = fn () addrspace(.generic) void;
+}
+comptime {
+    _ = fn () linksection("section") void;
+}
+comptime {
+    _ = fn () !void;
+}
+#}
+#update
+#check errors {
+test.zig:2:12: error: function type cannot have a name
+test.zig:5:21: error: function type cannot have an alignment
+test.zig:8:26: error: function type cannot have an addrspace
+test.zig:11:27: error: function type cannot have a linksection
+test.zig:14:15: error: function type cannot have an inferred error set
+#}

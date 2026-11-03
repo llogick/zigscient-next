@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    _ = for(foo()) |_| {};
+    var good = {};
+    _ = for(foo()) |_| {}
+    var bad = {};
+    _ = good;
+    _ = bad;
+}
+fn foo() void {}
+#}
+#update
+#check errors {
+test.zig:4:26: error: expected ';' after statement
+#}

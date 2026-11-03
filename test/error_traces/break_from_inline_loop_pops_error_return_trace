@@ -1,0 +1,27 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void { return error.FooBar; }
+
+pub fn main() !void {
+    comptime var i: usize = 0;
+    b: inline while (i < 5) : (i += 1) {
+        foo() catch {
+            break :b; // non-error break, success
+        };
+    }
+    // foo() was successfully handled, should not appear in trace (test*)
+
+    return error.BadTime;
+}
+#}
+#update
+#check error-trace {
+error: BadTime
+test.zig:12:5: 0x? in main (test*)
+    return error.BadTime;
+    ^
+#}

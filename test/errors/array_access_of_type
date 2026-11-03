@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    var b: u8[40] = undefined;
+    _ = &b;
+}
+#}
+#update
+#check errors {
+test.zig:2:14: error: type 'type' does not support indexing
+test.zig:2:14: note: operand must be an array, slice, tuple, or vector
+#}

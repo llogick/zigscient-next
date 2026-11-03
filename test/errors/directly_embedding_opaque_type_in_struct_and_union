@@ -1,0 +1,45 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const O = opaque {};
+const Foo = struct {
+    o: O,
+};
+const Bar = union {
+    One: i32,
+    Two: O,
+};
+export fn a() void {
+    var foo: Foo = undefined;
+    _ = &foo;
+}
+export fn b() void {
+    var bar: Bar = undefined;
+    _ = &bar;
+}
+export fn c() void {
+    const baz = @as(O, undefined);
+    _ = baz;
+}
+export fn d() void {
+    const ptr: *O = @ptrFromInt(0x1000);
+    const x = .{ptr.*};
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:3:8: error: cannot directly embed opaque type 'test.O' in struct
+test.zig:3:8: note: opaque types have unknown size
+test.zig:1:11: note: opaque declared here
+test.zig:7:10: error: cannot directly embed opaque type 'test.O' in union
+test.zig:7:10: note: opaque types have unknown size
+test.zig:1:11: note: opaque declared here
+test.zig:18:24: error: cannot cast to opaque type 'test.O'
+test.zig:1:11: note: opaque declared here
+test.zig:23:20: error: cannot load opaque type 'test.O'
+test.zig:1:11: note: opaque declared here
+#}

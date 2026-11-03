@@ -1,0 +1,15 @@
+#skip wasm32-wasi-none-baseline-whole-selfhosted-debug
+
+#zig build-obj {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn errorName(err: anyerror) [:0]const u8 {
+    return @errorName(err);
+}
+export const error_name: *const anyopaque = &errorName;
+#}
+#update
+#check errors

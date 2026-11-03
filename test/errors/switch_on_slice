@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var a: [:0]const u8 = "foo";
+    _ = &a;
+    switch (a) {
+        ("--version"), ("version") => unreachable,
+        else => {},
+    }
+}
+#}
+#update
+#check errors {
+test.zig:4:13: error: switch on type '[:0]const u8'
+#}

@@ -1,0 +1,33 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const E = enum(u8) {
+    a,
+    b,
+    _,
+};
+const U = union(E) {
+    a,
+    b,
+};
+export fn foo() void {
+    var e: E = @enumFromInt(15);
+    var u: U = e;
+    _ = .{ &e, &u };
+}
+export fn bar() void {
+    const e: E = @enumFromInt(15);
+    var u: U = e;
+    _ = &u;
+}
+#}
+#update
+#check errors {
+test.zig:12:16: error: runtime coercion to union 'test.U' from non-exhaustive enum
+test.zig:1:11: note: enum declared here
+test.zig:17:16: error: union 'test.U' has no tag with value '@fromBackingInt(15)'
+test.zig:6:11: note: union declared here
+#}

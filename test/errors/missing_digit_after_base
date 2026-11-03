@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const x = @as(usize, -0x);
+    _ = x;
+}
+#}
+#update
+#check errors {
+test.zig:2:27: error: expected a digit after base prefix
+#}

@@ -6,7 +6,7 @@
         .cache_mode = .whole,
         .backend = .selfhosted,
         .linker = .old,
-        .pic = .nopic,
+        .pic = .pdc,
     },
     .{
         .cpu = .{ .x86_64 = .{} },
@@ -24,7 +24,7 @@
         .cache_mode = .whole,
         .backend = .selfhosted,
         .linker = .new,
-        .pic = .nopic,
+        .pic = .pdc,
     },
     .{
         .cpu = .{ .x86_64 = .{} },
@@ -42,7 +42,7 @@
         .cache_mode = .incremental,
         .backend = .selfhosted,
         .linker = .new,
-        .pic = .nopic,
+        .pic = .pdc,
     },
     .{
         .cpu = .{ .x86_64 = .{} },

@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var y: [*]align(4) u8 = @ptrFromInt(5);
+    _ = &y;
+}
+#}
+#update
+#check errors {
+test.zig:2:41: error: pointer type '[*]align(4) u8' requires aligned address
+#}

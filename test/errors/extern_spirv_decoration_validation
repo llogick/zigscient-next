@@ -1,0 +1,36 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target spirv32-vulkan -fno-llvm
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const flat = @extern(*addrspace(.push_constant) u32, .{
+    .name = "flat",
+    .decoration = .{ .flat = 0 },
+});
+const location = @extern(*addrspace(.uniform) u32, .{
+    .name = "location",
+    .decoration = .{ .location = 0 },
+});
+const descriptor = @extern(*addrspace(.input) u32, .{
+    .name = "descriptor",
+    .decoration = .{ .descriptor = .{ .set = 0, .binding = 0 } },
+});
+
+comptime {
+    _ = flat;
+}
+comptime {
+    _ = location;
+}
+comptime {
+    _ = descriptor;
+}
+#}
+#update
+#check errors {
+test.zig:1:55: error: 'flat' decoration requires 'input' or 'output' address space
+test.zig:5:53: error: 'location' decoration requires 'input' or 'output' address space
+test.zig:9:53: error: 'descriptor' decoration requires 'storage_buffer', 'uniform', 'constant' or 'global' address space
+#}

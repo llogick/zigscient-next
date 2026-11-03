@@ -1,0 +1,49 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+comptime {
+    var array = [_:0]u8{ 1, 2, 3, 4 };
+    const src_slice: [:0]u8 = &array;
+    const slice = src_slice[2..6];
+    _ = slice;
+}
+comptime {
+    var array = [_:0]u8{ 1, 2, 3, 4 };
+    const slice = array[2..6];
+    _ = slice;
+}
+comptime {
+    var array = [_]u8{ 1, 2, 3, 4 };
+    const slice = array[2..5];
+    _ = slice;
+}
+comptime {
+    var array = [_:0]u8{ 1, 2, 3, 4 };
+    const slice = array[3..2];
+    _ = slice;
+}
+#}
+#update
+#check errors {
+test.zig:4:32: error: end index 6 out of bounds for slice of length 4 +1 (sentinel)
+test.zig:9:28: error: end index 6 out of bounds for array of length 4 +1 (sentinel)
+test.zig:14:28: error: end index 5 out of bounds for array of length 4
+test.zig:19:25: error: start index 3 is larger than end index 2
+#}
+
+#write test.zig {
+comptime {
+    const x: [*c]u8 = null;
+    var runtime_len: usize = undefined;
+    runtime_len = 0;
+    const y = x[0..runtime_len];
+    _ = y;
+}
+#}
+#update "delete and modify comptime decls"
+#check errors {
+test.zig:5:16: error: slice of null pointer
+#}

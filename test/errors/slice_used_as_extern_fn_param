@@ -1,0 +1,17 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-linux-none
+-Mroot=test.zig
+#}
+
+#write test.zig {
+extern fn Text(str: []const u8, num: i32) callconv(.c) void;
+export fn entry() void {
+    Text(undefined, undefined);
+}
+#}
+#update
+#check errors {
+test.zig:1:16: error: parameter of type '[]const u8' not allowed in function with calling convention 'x86_64_sysv'
+test.zig:1:16: note: slices have no guaranteed in-memory representation
+#}

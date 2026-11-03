@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const e = error.Foo;
+    @panic(e);
+}
+#}
+#update
+#check errors {
+test.zig:3:12: error: expected type '[]const u8', found 'error{Foo}'
+#}

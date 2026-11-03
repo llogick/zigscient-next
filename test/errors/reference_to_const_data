@@ -1,0 +1,42 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    var ptr = &[_]u8{ 0, 0, 0, 0 };
+    ptr[1] = 2;
+}
+export fn bar() void {
+    var ptr = &@as(u32, 2);
+    ptr.* = 2;
+    _ = &ptr;
+}
+export fn baz() void {
+    var ptr = &true;
+    ptr.* = false;
+    _ = &ptr;
+}
+export fn qux() void {
+    const S = struct {
+        x: usize,
+        y: usize,
+    };
+    var ptr = &S{ .x = 1, .y = 2 };
+    ptr.x = 2;
+}
+export fn quux() void {
+    var x = &@returnAddress();
+    x.* = 6;
+    _ = &x;
+}
+#}
+#update
+#check errors {
+test.zig:3:8: error: cannot assign to constant
+test.zig:7:8: error: cannot assign to constant
+test.zig:12:8: error: cannot assign to constant
+test.zig:21:8: error: cannot assign to constant
+test.zig:25:6: error: cannot assign to constant
+#}

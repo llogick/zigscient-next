@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const Foo = struct { u8, u8 };
+    const foo: anyerror!Foo = error.Failure;
+    const bar, const baz = foo;
+    _ = bar;
+    _ = baz;
+}
+#}
+#update
+#check errors {
+test.zig:4:28: error: type 'anyerror!struct { u8, u8 }' cannot be destructured
+test.zig:4:26: note: result destructured here
+test.zig:4:28: note: consider using 'try', 'catch', or 'if'
+#}

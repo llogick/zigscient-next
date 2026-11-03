@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+var internal_variable: u32 = 42;
+export const p_internal_variable = &internal_variable;
+
+extern var external_variable: u32;
+export const p_external_variable = &external_variable;
+#}
+#update
+#check errors

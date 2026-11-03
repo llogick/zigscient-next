@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    a: fn () void,
+    b: *S,
+};
+export fn entry() void {
+    var s: S = undefined;
+    _ = &s;
+}
+#}
+#update
+#check errors {
+test.zig:6:12: error: variable of type 'test.S' must be const or comptime
+test.zig:2:8: note: struct requires comptime because of this field
+test.zig:2:8: note: use '*const fn () void' for a function pointer type
+#}

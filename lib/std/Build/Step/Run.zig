@@ -84,6 +84,8 @@ skip_foreign_checks: bool,
 /// external executor (such as qemu) but not fail if the executor is unavailable.
 failing_to_execute_foreign_is_an_error: bool,
 
+protocol_test_timeout_scale: u32,
+
 /// If stderr or stdout exceeds this amount, the child process is killed and
 /// the step fails.
 stdio_limit: std.Io.Limit,
@@ -231,6 +233,7 @@ pub fn create(owner: *std.Build, name: []const u8) *Run {
         .rename_step_with_output_arg = true,
         .skip_foreign_checks = false,
         .failing_to_execute_foreign_is_an_error = true,
+        .protocol_test_timeout_scale = 1,
         .stdio_limit = .unlimited,
         .captured_stdout = null,
         .captured_stderr = null,
@@ -250,8 +253,12 @@ pub fn enableTestRunnerMode(run: *Run) void {
     run.stdio = .zig_test;
 }
 
-pub fn enableProtocolMode(run: *Run) void {
+pub fn enableProtocolMode(run: *Run, opts: struct {
+    /// The `--test-timeout` provided by the user is scaled by this amount for these tests.
+    test_timeout_scale: u32 = 1,
+}) void {
     run.stdio = .protocol;
+    run.protocol_test_timeout_scale = opts.test_timeout_scale;
 }
 
 pub const ArgOptions = struct {

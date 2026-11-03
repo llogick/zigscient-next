@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const UntaggedUnion = union { a: void };
+comptime {
+    @intFromEnum(@as(UntaggedUnion, undefined));
+}
+#}
+#update
+#check errors {
+test.zig:3:18: error: untagged union 'test.UntaggedUnion' cannot be converted to integer
+test.zig:1:23: note: union declared here
+#}

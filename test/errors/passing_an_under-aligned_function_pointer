@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-linux-none
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    testImplicitlyDecreaseFnAlign(alignedSmall, 1234);
+}
+fn testImplicitlyDecreaseFnAlign(ptr: *align(8) const fn () i32, answer: i32) void {
+    if (ptr() != answer) unreachable;
+}
+fn alignedSmall() align(4) i32 {
+    return 1234;
+}
+#}
+#update
+#check errors {
+test.zig:2:35: error: expected type '*align(8) const fn () i32', found '*align(4) const fn () i32'
+test.zig:2:35: note: pointer alignment '4' cannot cast into pointer alignment '8'
+#}

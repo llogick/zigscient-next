@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    const x: i32 = undefined;
+    const y: u32 = @bitCast(x);
+    @compileLog(y);
+}
+#}
+#update
+#check errors {
+test.zig:4:5: error: found compile log statement
+
+Compile Log Output:
+@as(u32, undefined)
+#}

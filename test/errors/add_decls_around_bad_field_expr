@@ -1,0 +1,40 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const pre = {};
+
+thing: @This().does_not_exist,
+
+const post = {};
+
+export fn entry() void {
+    _ = @as(@This(), undefined);
+}
+#}
+#update
+#check errors {
+test.zig:3:15: error: root source file struct 'test' has no member named 'does_not_exist'
+test.zig:1:1: note: struct declared here
+#}
+
+#write test.zig {
+const pre = {};
+const pre_1 = {};
+
+thing: @This().does_not_exist,
+
+const post = {};
+const post_1 = {};
+
+export fn entry() void {
+    _ = @as(@This(), undefined);
+}
+#}
+#update "add more decls around error"
+#check errors {
+test.zig:4:15: error: root source file struct 'test' has no member named 'does_not_exist'
+test.zig:1:1: note: struct declared here
+#}

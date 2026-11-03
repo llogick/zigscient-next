@@ -1,0 +1,22 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const a: @TypeOf(b) = 0;
+const b: @TypeOf(a) = 0;
+export fn entry() void {
+    const c = a + b;
+    _ = c;
+}
+#}
+#update
+#check errors {
+error: dependency loop with length 4
+    test.zig:1:23: note: value of declaration 'test.a' uses type of declaration 'test.a' here
+    test.zig:1:18: note: type of declaration 'test.a' uses value of declaration 'test.b' here
+    test.zig:2:23: note: value of declaration 'test.b' uses type of declaration 'test.b' here
+    test.zig:2:18: note: type of declaration 'test.b' uses value of declaration 'test.a' here
+    note: eliminate any one of these dependencies to break the loop
+#}

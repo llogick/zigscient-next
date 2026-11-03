@@ -1,0 +1,212 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const y: u32 = 0;
+
+export fn entry1() void {
+    _ = @as(comptime_float, @bitCast(y));
+}
+export fn entry2() void {
+    const x: comptime_float = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry3() void {
+    _ = @as(comptime_int, @bitCast(y));
+}
+export fn entry4() void {
+    const x: comptime_int = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry5() void {
+    _ = @as(@EnumLiteral(), @bitCast(y));
+}
+export fn entry6() void {
+    const x: @EnumLiteral() = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry7() void {
+    _ = @as(error{}, @bitCast(y));
+}
+export fn entry8() void {
+    const x: error{} = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry9() void {
+    _ = @as(?(anyerror!u32), @bitCast(y));
+}
+export fn entry10() void {
+    const x: anyerror!u32 = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry11() void {
+    _ = @as(fn () void, @bitCast(y));
+}
+export fn entry12() void {
+    const x: fn () void = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry13() void {
+    _ = @as(noreturn, @bitCast(y));
+}
+
+export fn entry14() void {
+    _ = @as(@TypeOf(null), @bitCast(y));
+}
+export fn entry15() void {
+    const x: @TypeOf(null) = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry16() void {
+    const O = opaque {};
+    _ = @as(O, @bitCast(y));
+}
+
+export fn entry17() void {
+    _ = @as(??u32, @bitCast(y));
+}
+export fn entry18() void {
+    const x: ?u32 = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry19() void {
+    _ = @as(type, @bitCast(y));
+}
+export fn entry20() void {
+    const x: type = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry21() void {
+    _ = @as(@TypeOf(undefined), @bitCast(y));
+}
+export fn entry22() void {
+    const x: @TypeOf(undefined) = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry23() void {
+    _ = @as(void, @bitCast(y));
+}
+export fn entry24() void {
+    const x: void = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry25() void {
+    _ = @as(*u8, @bitCast(y));
+}
+export fn entry26() void {
+    const x: *u8 = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry27() void {
+    _ = @as(*u8, @bitCast(@as(*u32, @ptrFromInt(y))));
+}
+export fn entry28() void {
+    const x: *u8 = undefined;
+    _ = @as(*u32, @bitCast(x));
+}
+
+export fn entry29() void {
+    const S = struct { x: u32 };
+    _ = @as(S, @bitCast(y));
+}
+export fn entry30() void {
+    const S = struct { x: u32 };
+    const x: S = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry31() void {
+    const U = union { x: u32 };
+    _ = @as(U, @bitCast(y));
+}
+export fn entry32() void {
+    const U = union { x: u32 };
+    const x: U = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry33() void {
+    const S = struct { x: u32 };
+    _ = @as([10]S, @bitCast(y));
+}
+export fn entry34() void {
+    const S = struct { x: u32 };
+    const x: [10]S = undefined;
+    _ = @as(u32, @bitCast(x));
+}
+
+export fn entry35() void {
+    const E = enum {};
+    _ = @as(E, @bitCast(y));
+}
+
+export fn entry36() void {
+    const E = enum { a, b, c };
+    _ = @as(E, @bitCast(y));
+}
+#}
+#update
+#check errors {
+test.zig:4:29: error: cannot @bitCast to 'comptime_float'
+test.zig:8:27: error: cannot @bitCast from 'comptime_float'
+test.zig:12:27: error: cannot @bitCast to 'comptime_int'
+test.zig:16:27: error: cannot @bitCast from 'comptime_int'
+test.zig:20:29: error: cannot @bitCast to '@EnumLiteral()'
+test.zig:24:27: error: cannot @bitCast from '@EnumLiteral()'
+test.zig:28:22: error: cannot @bitCast to 'error{}'
+test.zig:32:27: error: cannot @bitCast from 'error{}'
+test.zig:36:30: error: cannot @bitCast to 'anyerror!u32'
+test.zig:40:27: error: cannot @bitCast from 'anyerror!u32'
+test.zig:44:25: error: cannot @bitCast to 'fn () void'
+test.zig:48:27: error: cannot @bitCast from 'fn () void'
+test.zig:52:23: error: cannot @bitCast to 'noreturn'
+test.zig:56:28: error: cannot @bitCast to '@TypeOf(null)'
+test.zig:60:27: error: cannot @bitCast from '@TypeOf(null)'
+test.zig:65:16: error: cannot @bitCast to 'test.entry16.O'
+test.zig:64:15: note: opaque declared here
+test.zig:69:20: error: cannot @bitCast to '?u32'
+test.zig:69:20: note: use @ptrFromInt to cast from 'u32'
+test.zig:73:27: error: cannot @bitCast from '?u32'
+test.zig:73:27: note: use @intFromPtr to cast to 'u32'
+test.zig:77:19: error: cannot @bitCast to 'type'
+test.zig:81:27: error: cannot @bitCast from 'type'
+test.zig:85:33: error: cannot @bitCast to '@TypeOf(undefined)'
+test.zig:89:27: error: cannot @bitCast from '@TypeOf(undefined)'
+test.zig:93:19: error: @bitCast size mismatch: destination type 'void' has 0 bits but source type 'u32' has 32 bits
+test.zig:97:18: error: @bitCast size mismatch: destination type 'u32' has 32 bits but source type 'void' has 0 bits
+test.zig:101:18: error: cannot @bitCast to '*u8'
+test.zig:101:18: note: use @ptrFromInt to cast from 'u32'
+test.zig:105:27: error: cannot @bitCast from '*u8'
+test.zig:105:27: note: use @intFromPtr to cast to 'u32'
+test.zig:109:49: error: pointer type '*u32' does not allow address zero
+test.zig:113:19: error: cannot @bitCast to '*u32'
+test.zig:113:19: note: use @ptrCast to cast from '*u8'
+test.zig:118:16: error: cannot @bitCast to 'test.entry29.S'
+test.zig:117:15: note: struct declared here
+test.zig:123:27: error: cannot @bitCast from 'test.entry30.S'
+test.zig:121:15: note: struct declared here
+test.zig:128:16: error: cannot @bitCast to 'test.entry31.U'
+test.zig:127:15: note: union declared here
+test.zig:133:27: error: cannot @bitCast from 'test.entry32.U'
+test.zig:131:15: note: union declared here
+test.zig:138:20: error: cannot @bitCast to '[10]test.entry33.S'
+test.zig:143:27: error: cannot @bitCast from '[10]test.entry34.S'
+test.zig:148:16: error: cannot @bitCast to 'test.entry35.E'
+test.zig:147:15: note: enum declared here
+test.zig:153:16: error: cannot @bitCast to 'test.entry36.E'
+test.zig:152:15: note: enum declared here
+#}

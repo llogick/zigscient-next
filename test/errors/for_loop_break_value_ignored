@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn returns() usize {
+    return 2;
+}
+
+export fn f1() void {
+    for ("hello") |_| {
+        break returns();
+    }
+}
+#}
+#update
+#check errors {
+test.zig:6:5: error: incompatible types: 'usize' and 'void'
+test.zig:7:22: note: type 'usize' here
+#}

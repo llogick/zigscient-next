@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+var foo = u8;
+export fn entry() foo {
+    return 1;
+}
+#}
+#update
+#check errors {
+test.zig:1:11: error: variable of type 'type' must be const or comptime
+test.zig:1:11: note: types are not available at runtime
+#}

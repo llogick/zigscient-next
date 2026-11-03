@@ -1,0 +1,19 @@
+#zig test {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+test "@unionInit on union w/ tag but no fields" {
+    const S = struct {
+        comptime {
+            try expect(false);
+        }
+    };
+    _ = S;
+}
+#}
+#update
+#check errors {
+test.zig:4:13: error: 'try' outside function scope
+#}

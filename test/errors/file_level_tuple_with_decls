@@ -1,0 +1,14 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const std = @import("std");
+
+u8,
+#}
+#update
+#check errors {
+test.zig:3:1: error: file cannot be a tuple
+#}

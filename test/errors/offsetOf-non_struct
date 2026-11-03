@@ -1,0 +1,15 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = i32;
+export fn foo() usize {
+    return @offsetOf(Foo, "a");
+}
+#}
+#update
+#check errors {
+test.zig:3:22: error: expected struct type, found 'i32'
+#}

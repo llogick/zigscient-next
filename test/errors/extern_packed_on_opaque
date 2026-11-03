@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const X = extern opaque {};
+const Y = packed opaque {};
+
+export fn foo(x: *X, y: *Y) void {
+    _ = x;
+    _ = y;
+}
+#}
+#update
+#check errors {
+test.zig:1:11: error: opaque types do not support 'packed' or 'extern'
+test.zig:2:11: error: opaque types do not support 'packed' or 'extern'
+#}

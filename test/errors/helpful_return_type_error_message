@@ -1,0 +1,37 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() u32 {
+    return error.Ohno;
+}
+fn bar() !u32 {
+    return error.Ohno;
+}
+export fn baz() void {
+    try bar();
+}
+export fn qux() u32 {
+    return bar();
+}
+export fn quux() u32 {
+    var buf: u32 = 0;
+    buf = bar();
+}
+#}
+#update
+#check errors {
+test.zig:2:18: error: expected type 'u32', found 'error{Ohno}'
+test.zig:1:17: note: function cannot return an error
+test.zig:8:5: error: expected type 'void', found '@typeInfo(@typeInfo(@TypeOf(test.bar)).@"fn".return_type.?).error_union.error_set'
+test.zig:7:17: note: function cannot return an error
+test.zig:11:15: error: expected type 'u32', found '@typeInfo(@typeInfo(@TypeOf(test.bar)).@"fn".return_type.?).error_union.error_set!u32'
+test.zig:11:15: note: cannot convert error union to payload type
+test.zig:11:15: note: consider using 'try', 'catch', or 'if'
+test.zig:10:17: note: function cannot return an error
+test.zig:15:14: error: expected type 'u32', found '@typeInfo(@typeInfo(@TypeOf(test.bar)).@"fn".return_type.?).error_union.error_set!u32'
+test.zig:15:14: note: cannot convert error union to payload type
+test.zig:15:14: note: consider using 'try', 'catch', or 'if'
+#}

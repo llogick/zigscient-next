@@ -1,0 +1,16 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+noinline fn foo() callconv(.@"inline") void {}
+
+comptime {
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:1:29: error: 'noinline' function cannot have calling convention 'inline'
+#}

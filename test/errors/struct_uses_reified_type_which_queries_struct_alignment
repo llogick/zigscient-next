@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const A = struct { b: *B };
+const B = @Struct(.auto, null, &.{"x"}, &.{A}, &.{.{ .@"align" = @alignOf(A) }});
+comptime {
+    _ = @as(A, undefined);
+    _ = @as(B, undefined);
+}
+#}
+#update
+#check errors {
+error: dependency loop with length 2
+    test.zig:1:24: note: type 'test.A' uses value of declaration 'test.B' here
+    test.zig:2:75: note: value of declaration 'test.B' depends on type 'test.A' for alignment query here
+    note: eliminate any one of these dependencies to break the loop
+#}

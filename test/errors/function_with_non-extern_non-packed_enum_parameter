@@ -1,0 +1,19 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-target x86_64-linux-none
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = enum { A, B, C };
+export fn entry(foo: Foo) void {
+    _ = foo;
+}
+#}
+#update
+#check errors {
+test.zig:2:17: error: parameter of type 'test.Foo' not allowed in function with calling convention 'x86_64_sysv'
+test.zig:1:13: note: integer tag type of enum is inferred
+test.zig:1:13: note: consider explicitly specifying the integer tag type
+test.zig:1:13: note: enum declared here
+#}

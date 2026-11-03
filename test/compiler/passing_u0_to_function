@@ -1,0 +1,15 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {
+    doNothing(0);
+}
+fn doNothing(arg: u0) void {
+    _ = arg;
+}
+#}
+#update
+#check stdout

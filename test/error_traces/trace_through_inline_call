@@ -1,0 +1,31 @@
+#require !windows
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() !void {
+    try foo(false);
+    try foo(true);
+}
+inline fn foo(b: bool) !void {
+    if (b) try bar();
+}
+fn bar() !void {
+    return error.ThisIsSoSad;
+}
+#}
+#update
+#check error-trace {
+error: ThisIsSoSad
+test.zig:9:5: 0x? in bar (test*)
+    return error.ThisIsSoSad;
+    ^
+test.zig:6:12: 0x? in foo (test*)
+    if (b) try bar();
+           ^
+test.zig:3:5: 0x? in main (test*)
+    try foo(true);
+    ^
+#}

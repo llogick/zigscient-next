@@ -1,0 +1,27 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Letter = enum {
+    A,
+    B,
+    C,
+};
+const Payload = union(Letter) {
+    A: i32,
+    B: f64,
+    C: bool,
+    D: bool,
+};
+export fn entry() void {
+    const a: Payload = .{ .A = 1234 };
+    _ = a;
+}
+#}
+#update
+#check errors {
+test.zig:10:5: error: no field named 'D' in enum 'test.Letter'
+test.zig:1:16: note: enum declared here
+#}

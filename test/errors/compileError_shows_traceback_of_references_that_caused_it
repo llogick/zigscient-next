@@ -1,0 +1,21 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const foo = @compileError(
+    "aoeu",
+);
+
+const bar = baz + foo;
+const baz = 1;
+
+export fn entry() i32 {
+    return bar;
+}
+#}
+#update
+#check errors {
+test.zig:1:13: error: aoeu
+#}

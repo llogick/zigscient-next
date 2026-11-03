@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry1() void {
+    const E = enum(u31) { A, B, C };
+    _ = @sizeOf(extern struct {
+        x: E,
+    });
+}
+export fn entry2() void {
+    const E = enum(noreturn) {};
+    _ = @sizeOf(extern struct {
+        x: E,
+    });
+}
+#}
+#update
+#check errors {
+test.zig:4:12: error: extern structs cannot contain fields of type 'test.entry1.E'
+test.zig:2:15: note: enum tag type 'u31' is not extern compatible
+test.zig:2:15: note: only integers with 0 or power of two bits are extern compatible
+test.zig:2:15: note: enum declared here
+test.zig:10:12: error: extern structs cannot contain fields of type 'test.entry2.E'
+test.zig:8:15: note: enum tag type 'noreturn' is not extern compatible
+test.zig:8:15: note: 'noreturn' is only allowed as a return type
+test.zig:8:15: note: enum declared here
+#}

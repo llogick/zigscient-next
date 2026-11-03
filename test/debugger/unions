@@ -1,10 +1,10 @@
-#todo "passes, but prints errors"
-#skip x86_64-linux-none-baseline-whole-selfhosted-new-nopic
-#skip x86_64-linux-none-baseline-whole-selfhosted-new-pic
-#skip x86_64-linux-none-baseline-incremental-selfhosted-new-nopic
-#skip x86_64-linux-none-baseline-incremental-selfhosted-new-pic
+# "TODO: passes, but prints errors"
+#skip x86_64-linux-none-baseline-whole-selfhosted-debug-pdc-new
+#skip x86_64-linux-none-baseline-whole-selfhosted-debug-pic-new
+#skip x86_64-linux-none-baseline-incremental-selfhosted-debug-pdc-new
+#skip x86_64-linux-none-baseline-incremental-selfhosted-debug-pic-new
 
-#exe {
+#zig build-exe {
 --name unions
 -Mroot=unions.zig
 #}
@@ -41,6 +41,7 @@ pub fn main() void {
 #}
 #update
 #check lldb {
+#...
 (lldb) breakpoint set --file unions.zig --source-pattern-regexp '_ = unions;'
 Breakpoint 1: where = unions`unions.testUnions + #... at unions.zig:25:1, address = 0x#...
 (lldb) process launch
@@ -85,4 +86,5 @@ Process #... stopped
 }
 (lldb) breakpoint delete --force 1
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...
 #}

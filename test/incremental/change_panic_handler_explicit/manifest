@@ -1,20 +1,21 @@
-#exe {
--Mroot=main.zig
+#zig build-exe {
+--name test
+-Mroot=test.zig
 #}
 
-#write main.zig @0/main.zig
+#write test.zig @0/test.zig
 #update
 #check stdout {
 panic message: integer overflow
 #}
 
-#write main.zig @1/main.zig
+#write test.zig @1/test.zig
 #update "change the panic handler body"
 #check stdout {
 new panic message: integer overflow
 #}
 
-#write main.zig @2/main.zig
+#write test.zig @2/test.zig
 #update "change the panic handler function value"
 #check stdout {
 third panic message: integer overflow

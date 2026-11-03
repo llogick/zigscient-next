@@ -1,4 +1,4 @@
-#exe {
+#zig build-exe {
 --name hash_map
 -Mroot=main.zig
 #}
@@ -32,6 +32,7 @@ pub fn main() !void {
 #}
 #update
 #check lldb {
+#...
 (lldb) breakpoint set --file main.zig --source-pattern-regexp '_ = map;'
 Breakpoint 1: where = hash_map`main.testHashMap + #... at main.zig:13:1, address = 0x#...
 (lldb) process launch
@@ -64,4 +65,5 @@ Process #... stopped
 }
 (lldb) breakpoint delete --force 1
 1 breakpoints deleted; 0 breakpoint locations disabled.
+#...
 #}

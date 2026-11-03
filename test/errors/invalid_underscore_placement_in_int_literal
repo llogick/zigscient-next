@@ -1,0 +1,48 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var bad: u128 = 10_;
+    _ = bad;
+}
+#}
+#update
+#check errors {
+test.zig:2:23: error: trailing digit separator
+#}
+
+#write test.zig {
+export fn entry() void {
+    var bad: u128 = 0b0010_;
+    _ = bad;
+}
+#}
+#update
+#check errors {
+test.zig:2:27: error: trailing digit separator
+#}
+
+#write test.zig {
+export fn entry() void {
+    var bad: u128 = 0o0010_;
+    _ = bad;
+}
+#}
+#update
+#check errors {
+test.zig:2:27: error: trailing digit separator
+#}
+
+#write test.zig {
+export fn entry() void {
+    var bad: u128 = 0x0010_;
+    _ = bad;
+}
+#}
+#update
+#check errors {
+test.zig:2:27: error: trailing digit separator
+#}

@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn b() !u32 {
+    return 2;
+}
+
+export fn a() void {
+    for (b()) |_| {}
+}
+#}
+#update
+#check errors {
+test.zig:6:11: error: type '@typeInfo(@typeInfo(@TypeOf(test.b)).@"fn".return_type.?).error_union.error_set!u32' is not indexable and not a range
+test.zig:6:11: note: for loop operand must be a range, array, slice, tuple, or vector
+test.zig:6:11: note: consider using 'try', 'catch', or 'if'
+#}

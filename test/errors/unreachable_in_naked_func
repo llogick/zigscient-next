@@ -1,0 +1,35 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn runtimeSafetyDefault() callconv(.naked) void {
+    unreachable;
+}
+
+fn runtimeSafetyOn() callconv(.naked) void {
+    @setRuntimeSafety(true);
+    unreachable;
+}
+
+fn runtimeSafetyOff() callconv(.naked) void {
+    @setRuntimeSafety(false);
+    unreachable;
+}
+
+comptime {
+    _ = &runtimeSafetyDefault;
+    _ = &runtimeSafetyOn;
+    _ = &runtimeSafetyOff;
+}
+#}
+#update
+#check errors {
+test.zig:2:5: error: runtime safety check not allowed in naked function
+test.zig:2:5: note: use @setRuntimeSafety to disable runtime safety
+test.zig:2:5: note: the end of a naked function is implicitly unreachable
+test.zig:7:5: error: runtime safety check not allowed in naked function
+test.zig:7:5: note: use @setRuntimeSafety to disable runtime safety
+test.zig:7:5: note: the end of a naked function is implicitly unreachable
+#}

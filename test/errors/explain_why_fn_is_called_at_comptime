@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    fnPtr: fn () void,
+    a: u8,
+};
+fn bar() void {}
+
+fn foo(a: *u8) S {
+    return .{ .fnPtr = bar, .a = a.* };
+}
+export fn entry() void {
+    var a: u8 = 1;
+    _ = foo(&a);
+}
+#}
+#update
+#check errors {
+test.zig:12:13: error: unable to resolve comptime value
+test.zig:12:12: note: call to function with comptime-only return type 'test.S' is evaluated at comptime
+test.zig:7:16: note: return type declared here
+test.zig:2:12: note: struct requires comptime because of this field
+test.zig:2:12: note: use '*const fn () void' for a function pointer type
+#}

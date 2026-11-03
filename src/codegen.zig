@@ -72,7 +72,7 @@ pub fn legalizeFeatures(pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) ?*co
         return &Air.Legalize.all_features;
     }
     const target = &zcu.navFileScope(nav_index).mod.?.resolved_target.result;
-    switch (target_util.zigBackend(target, zcu.comp.config.use_llvm)) {
+    switch (std.zig.compilerBackend(target, zcu.comp.config.use_llvm)) {
         else => unreachable,
         inline .stage2_llvm,
         .stage2_c,
@@ -95,7 +95,7 @@ pub fn legalizeFeatures(pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) ?*co
 pub fn wantsLiveness(pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) bool {
     const zcu = pt.zcu;
     const target = &zcu.navFileScope(nav_index).mod.?.resolved_target.result;
-    return switch (target_util.zigBackend(target, zcu.comp.config.use_llvm)) {
+    return switch (std.zig.compilerBackend(target, zcu.comp.config.use_llvm)) {
         else => true,
         .stage2_aarch64, .stage2_loongarch => false,
     };
@@ -132,7 +132,7 @@ pub const AnyMir = union {
 
     pub fn deinit(mir: *AnyMir, zcu: *const Zcu) void {
         const gpa = zcu.gpa;
-        const backend = target_util.zigBackend(&zcu.root_mod.resolved_target.result, zcu.comp.config.use_llvm);
+        const backend = std.zig.compilerBackend(&zcu.root_mod.resolved_target.result, zcu.comp.config.use_llvm);
         switch (backend) {
             else => unreachable,
             inline .stage2_aarch64,
@@ -164,7 +164,7 @@ pub fn generateFunction(
     const zcu = pt.zcu;
     const func = zcu.funcInfo(func_index);
     const target = &zcu.navFileScope(func.owner_nav).mod.?.resolved_target.result;
-    switch (target_util.zigBackend(target, false)) {
+    switch (std.zig.compilerBackend(target, false)) {
         else => unreachable,
         inline .stage2_aarch64,
         .stage2_loongarch,
@@ -209,7 +209,7 @@ pub fn emitFunction(
     tracy_trace.addText(zcu.intern_pool.getNav(func.owner_nav).fqn.toSlice(&zcu.intern_pool));
     tracy_trace.addTextFmt("func_ip_index={d}", .{func_index});
 
-    switch (target_util.zigBackend(target, zcu.comp.config.use_llvm)) {
+    switch (std.zig.compilerBackend(target, zcu.comp.config.use_llvm)) {
         else => unreachable,
         inline .stage2_aarch64,
         .stage2_loongarch,
@@ -237,7 +237,7 @@ pub fn generateLazyFunction(
         &zcu.fileByIndex(inst_index.resolveFile(&zcu.intern_pool)).mod.?.resolved_target.result
     else
         zcu.getTarget();
-    switch (target_util.zigBackend(target, zcu.comp.config.use_llvm)) {
+    switch (std.zig.compilerBackend(target, zcu.comp.config.use_llvm)) {
         else => unreachable,
         inline .stage2_riscv64, .stage2_x86_64 => |backend| {
             dev.check(devFeatureForBackend(backend));

@@ -1703,7 +1703,7 @@ fn configure(graph: *Graph, options: ConfigureOptions) ConfigureError!ScannedCon
             break :term child.wait(io) catch |err|
                 fatal("failed to wait configure script {q}: {t}", .{ configure_argv[0], err });
         };
-        if (!term.success()) {
+        if (!term.eql(.success)) {
             // Failure to produce the configuration file.
             fatal("configure command {f}: {f}", .{ term, @as(std.zig.SubprocessCommand, .{
                 .argv = configure_argv,

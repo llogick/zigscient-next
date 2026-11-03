@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const S = struct {
+    a: u32,
+    fn foo(_: *S, _: u32, _: bool) void {}
+};
+export fn entry() void {
+    var s: S = undefined;
+    s.foo(true);
+}
+#}
+#update
+#check errors {
+test.zig:7:6: error: member function expected 2 argument(s), found 1
+test.zig:3:5: note: function declared here
+#}

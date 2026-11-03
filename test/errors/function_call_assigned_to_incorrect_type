@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    var arr: [4]f32 = undefined;
+    arr = concat();
+}
+fn concat() [16]f32 {
+    return @splat(0.0);
+}
+#}
+#update
+#check errors {
+test.zig:3:17: error: expected type '[4]f32', found '[16]f32'
+test.zig:3:17: note: destination has length 4
+test.zig:3:17: note: source has length 16
+#}

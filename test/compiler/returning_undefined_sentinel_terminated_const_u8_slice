@@ -1,0 +1,16 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() [:0]const u8 {
+    return undefined;
+}
+pub fn main() void {
+    var guid: [*:0]const u8 = undefined;
+    guid = foo();
+}
+#}
+#update
+#check stdout

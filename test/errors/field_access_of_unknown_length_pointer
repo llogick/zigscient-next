@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Foo = extern struct {
+    a: i32,
+};
+
+export fn entry(foo: [*]Foo) void {
+    foo.a += 1;
+}
+#}
+#update
+#check errors {
+test.zig:6:8: error: type '[*]test.Foo' does not support field access
+#}

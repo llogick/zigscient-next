@@ -1,0 +1,33 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const Wrapper = struct { ptr: *ComptimeThing };
+
+const ComptimeThing = struct {
+    x: comptime_int,
+    fn NewType(comptime ct: *ComptimeThing) type {
+        const wrapper: Wrapper = .{ .ptr = ct };
+        return struct {
+            pub fn foo() void {
+                _ = wrapper.ct;
+            }
+        };
+    }
+};
+
+comptime {
+    var ct: ComptimeThing = .{ .x = 123 };
+    const Inner = ct.NewType();
+    Inner.foo();
+}
+#}
+#update
+#check errors {
+test.zig:7:16: error: captured value contains reference to comptime var
+test.zig:7:16: note: 'wrapper' points to 'v0', where
+test.zig:16:5: note: 'v0.ptr' points to comptime var declared here
+test.zig:17:29: note: called at comptime here
+#}

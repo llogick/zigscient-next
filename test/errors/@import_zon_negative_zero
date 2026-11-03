@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const f: i8 = @import("negative_zero.zon");
+    _ = f;
+}
+#}
+#write negative_zero.zon "-0"
+#update
+#check errors {
+negative_zero.zon:1:2: error: integer literal '-0' is ambiguous
+negative_zero.zon:1:2: note: use '0' for an integer zero
+negative_zero.zon:1:2: note: use '-0.0' for a floating-point signed zero
+#}

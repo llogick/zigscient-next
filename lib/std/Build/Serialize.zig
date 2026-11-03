@@ -478,6 +478,7 @@ pub fn write(b: *std.Build, wc: *Configuration.Wip, writer: *std.Io.Writer) !voi
                             },
                             .stdout_trim_whitespace = if (run.captured_stdout) |cs| cs.trim_whitespace else .none,
                             .stderr_trim_whitespace = if (run.captured_stderr) |cs| cs.trim_whitespace else .none,
+                            .protocol_test_timeout_scale = run.protocol_test_timeout_scale > 1,
                             .stdio_limit = run.stdio_limit != .unlimited,
                             .producer = run.producer != null,
                             .cwd = run.cwd != null,
@@ -510,6 +511,10 @@ pub fn write(b: *std.Build, wc: *Configuration.Wip, writer: *std.Io.Writer) !voi
                         } else null },
                         .environ_map = .{ .value = try s.addEnvironMap(run.environ_map) },
                         .expect_term_value = .{ .value = if (expect_term) |t| t.value else null },
+                        .protocol_test_timeout_scale = .{ .value = switch (run.protocol_test_timeout_scale) {
+                            0...1 => null,
+                            else => |protocol_test_timeout_scale| protocol_test_timeout_scale,
+                        } },
                         .stdio_limit = .{ .value = run.stdio_limit.toInt64() },
                         .producer = .{ .value = if (run.producer) |cs| s.stepIndex(&cs.step) else null },
                         .expect_stderr_exact = .{ .value = if (expect_stderr_exact) |bytes| bytes else null },

@@ -1592,24 +1592,6 @@ pub fn spRegNum(arch: std.Target.Cpu.Arch) u16 {
     };
 }
 
-/// Tells whether unwinding for this target is supported by the Dwarf standard.
-///
-/// See also `std.debug.SelfInfo.can_unwind` which tells whether the Zig standard
-/// library has a working implementation of unwinding for the current target.
-pub fn supportsUnwinding(target: *const std.Target) bool {
-    return switch (target.cpu.arch) {
-        .nvptx,
-        .nvptx64,
-        .spirv32,
-        .spirv64,
-        => false,
-
-        // Conservative guess. Feel free to update this logic with any targets
-        // that are known to not support Dwarf unwinding.
-        else => true,
-    };
-}
-
 /// This function is to make it handy to comment out the return and make it
 /// into a crash when working on this file.
 pub fn bad() error{InvalidDebugInfo} {

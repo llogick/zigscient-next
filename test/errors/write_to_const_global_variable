@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+const x: i32 = 99;
+fn f() void {
+    x = 1;
+}
+export fn entry() void {
+    f();
+}
+#}
+#update
+#check errors {
+test.zig:3:5: error: cannot assign to constant
+#}

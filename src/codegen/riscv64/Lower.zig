@@ -1,9 +1,6 @@
 //! This file contains the functionality for lowering RISC-V MIR to Instructions
 
 pt: Zcu.PerThread,
-output_mode: std.lang.OutputMode,
-link_mode: std.lang.LinkMode,
-pic: bool,
 allocator: Allocator,
 mir: Mir,
 cc: std.lang.CallingConvention,

@@ -1,0 +1,25 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+fn foo() !void {
+    return error.UhOh;
+}
+
+pub fn main() !void {
+    var i: usize = 0;
+    while (i < 3) : (i += 1) {
+        foo() catch continue;
+    }
+    return error.UnrelatedError;
+}
+#}
+#update
+#check error-trace {
+error: UnrelatedError
+test.zig:10:5: 0x? in main (test*)
+    return error.UnrelatedError;
+    ^
+#}
