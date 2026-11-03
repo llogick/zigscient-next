@@ -1,6 +1,7 @@
 pt: Zcu.PerThread,
 air_instructions: std.MultiArrayList(Air.Inst),
 air_extra: std.ArrayList(u32),
+air_loop_switch_brs: std.hash_map.AutoHashMapUnmanaged(Air.Inst.Index, LoopBrData),
 features: if (switch (dev.env) {
     .bootstrap => @import("../codegen/c.zig").legalizeFeatures(undefined),
     else => null,
@@ -208,6 +209,8 @@ pub const Feature = enum {
     expand_ptr_elem_val,
     /// Replace `array_to_slice` with a `ptr_cast` followed by a `slice`.
     expand_array_to_slice,
+    /// Converts `loop_switch_br` and `switch_dispatch` to a `loop` and a `switch_br`.
+    expand_loop_switch_br,
 
     /// Replace all arithmetic operations on 16-bit floating-point types with calls to soft-float
     /// routines in compiler_rt, including `fptrunc`/`fpext`/`float_from_int`/`int_from_float`
@@ -350,8 +353,10 @@ pub fn legalize(air: *Air, pt: Zcu.PerThread, features: *const Features) Error!v
         .pt = pt,
         .air_instructions = air.instructions.toMultiArrayList(),
         .air_extra = air.extra,
+        .air_loop_switch_brs = .empty,
         .features = .init(features),
     };
+    defer l.air_loop_switch_brs.deinit(pt.zcu.gpa);
     defer air.* = l.getTmpAir();
     const main_extra = l.extraData(Air.Block, l.air_extra.items[@backingInt(Air.ExtraIndex.main_block)]);
     try l.legalizeBody(main_extra.end, main_extra.data.body_len);
@@ -791,7 +796,10 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                 try l.legalizeBody(extra.end, extra.data.then_body_len);
                 try l.legalizeBody(extra.end + extra.data.then_body_len, extra.data.else_body_len);
             },
-            .switch_br, .loop_switch_br => {
+            .switch_br, .loop_switch_br => |air_tag| {
+                if (l.features.has(.expand_loop_switch_br) and air_tag == .loop_switch_br) {
+                    continue :inst l.replaceInst(inst, .block, try l.loopSwitchBrBlockPayload(inst));
+                }
                 const pl_op = l.air_instructions.items(.data)[@backingInt(inst)].pl_op;
                 const extra = l.extraData(Air.SwitchBr, pl_op.payload);
                 const hint_bag_count = @divCeil(extra.data.cases_len + 1, 10);
@@ -804,7 +812,11 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                 }
                 try l.legalizeBody(extra_index, extra.data.else_body_len);
             },
-            .switch_dispatch => {},
+            .switch_dispatch => {
+                if (l.features.has(.expand_loop_switch_br)) {
+                    continue :inst l.replaceInst(inst, .block, try l.switchDispatchBlockPayload(inst));
+                }
+            },
             .@"try", .try_cold => {
                 const pl_op = l.air_instructions.items(.data)[@backingInt(inst)].pl_op;
                 const extra = l.extraData(Air.Try, pl_op.payload);
@@ -2756,6 +2768,83 @@ fn divCeilBlockPayload(
 
         else => unreachable,
     }
+}
+
+const LoopBrData = struct {
+    loop_inst: Air.Inst.Index,
+    loop_operand_ref: Air.Inst.Ref,
+};
+
+fn loopSwitchBrBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Error!Air.Inst.Data {
+    const pt = l.pt;
+    const zcu = pt.zcu;
+    const gpa = zcu.gpa;
+
+    const orig_pl_op = l.air_instructions.items(.data)[@backingInt(orig_inst)].pl_op;
+    const orig_op = orig_pl_op.operand;
+    const orig_op_ty = l.typeOf(orig_op);
+
+    var inst_buf: [5]Air.Inst.Index = undefined;
+    var main_block: Block = .init(&inst_buf);
+    try l.air_instructions.ensureUnusedCapacity(gpa, inst_buf.len);
+
+    const alloc_op_ref = main_block.addTy(l, .alloc, try pt.singleMutPtrType(orig_op_ty)).toRef();
+
+    _ = main_block.addBinOp(l, .store, alloc_op_ref, orig_op).toRef();
+
+    var main_loop: Loop = .init(l, &main_block);
+    main_loop.block = .init(main_block.stealCapacity(2));
+
+    const new_op_ref = main_loop.block.addTyOp(l, .load, orig_op_ty, alloc_op_ref).toRef();
+
+    _ = main_loop.block.add(l, .{
+        .tag = .switch_br,
+        .data = .{ .pl_op = .{
+            .operand = new_op_ref,
+            .payload = orig_pl_op.payload,
+        } },
+    }).toRef();
+
+    try main_loop.finish(l);
+
+    try l.air_loop_switch_brs.put(gpa, orig_inst, .{
+        .loop_operand_ref = alloc_op_ref,
+        .loop_inst = main_loop.inst,
+    });
+
+    return .{ .ty_pl = .{
+        .ty = .noreturn,
+        .payload = try l.addBlockBody(main_block.body()),
+    } };
+}
+
+fn switchDispatchBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Error!Air.Inst.Data {
+    const pt = l.pt;
+    const zcu = pt.zcu;
+    const gpa = zcu.gpa;
+
+    const orig_br = l.air_instructions.items(.data)[@backingInt(orig_inst)].br;
+    const switch_inst = l.air_loop_switch_brs.get(orig_br.block_inst).?;
+
+    var inst_buf: [2]Air.Inst.Index = undefined;
+    var main_block: Block = .init(&inst_buf);
+    try l.air_instructions.ensureUnusedCapacity(gpa, inst_buf.len);
+
+    _ = main_block.addBinOp(l, .store, switch_inst.loop_operand_ref, orig_br.operand).toRef();
+
+    _ = main_block.add(l, .{
+        .tag = .repeat,
+        .data = .{
+            .repeat = .{
+                .loop_inst = switch_inst.loop_inst,
+            },
+        },
+    }).toRef();
+
+    return .{ .ty_pl = .{
+        .ty = .noreturn,
+        .payload = try l.addBlockBody(main_block.body()),
+    } };
 }
 
 fn packedLoadBlockPayload(l: *Legalize, orig_inst: Air.Inst.Index) Error!Air.Inst.Data {

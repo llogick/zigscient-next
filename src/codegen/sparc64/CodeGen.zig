@@ -44,6 +44,7 @@ pub fn legalizeFeatures(_: *const std.Target) ?*const Air.Legalize.Features {
     return comptime &.initMany(&.{
         .expand_array_splat,
         .expand_array_to_vector,
+        .expand_loop_switch_br,
     });
 }
 
@@ -645,7 +646,7 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             .field_parent_ptr => @panic("TODO try self.airFieldParentPtr(inst)"),
 
             .switch_br       => try self.airSwitch(inst),
-            .loop_switch_br  => return self.fail("TODO implement `loop_switch_br`", .{}),
+            .loop_switch_br  => unreachable, // legalize .expand_loop_switch_br
             .slice_ptr       => try self.airSlicePtr(inst),
             .slice_len       => try self.airSliceLen(inst),
 
