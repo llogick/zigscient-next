@@ -47,11 +47,13 @@ const std = @import("std");
 
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
-const BitStack = std.BitStack;
+const BitStackUnmanaged = std.BitStackUnmanaged;
 
 state: State = .value,
 string_is_object_key: bool = false,
-stack: BitStack,
+stack: BitStackUnmanaged,
+/// Used for `stack`.
+allocator: Allocator,
 value_start: usize = undefined,
 utf16_code_units: [2]u16 = undefined,
 
@@ -63,7 +65,8 @@ diagnostics: ?*Diagnostics = null,
 /// The allocator is only used to track `[]` and `{}` nesting levels.
 pub fn initStreaming(allocator: Allocator) @This() {
     return .{
-        .stack = BitStack.init(allocator),
+        .stack = .empty,
+        .allocator = allocator,
     };
 }
 /// Use this if your input is a single slice.
@@ -75,13 +78,14 @@ pub fn initStreaming(allocator: Allocator) @This() {
 /// ```
 pub fn initCompleteInput(allocator: Allocator, complete_input: []const u8) @This() {
     return .{
-        .stack = BitStack.init(allocator),
+        .stack = .empty,
+        .allocator = allocator,
         .input = complete_input,
         .is_end_of_input = true,
     };
 }
 pub fn deinit(self: *@This()) void {
-    self.stack.deinit();
+    self.stack.deinit(self.allocator);
     self.* = undefined;
 }
 
@@ -313,7 +317,7 @@ pub fn stackHeight(self: *const @This()) usize {
 /// Pre allocate memory to hold the given number of nesting levels.
 /// `stackHeight()` up to the given number will not cause allocations.
 pub fn ensureTotalStackCapacity(self: *@This(), height: usize) Allocator.Error!void {
-    try self.stack.ensureTotalCapacity(height);
+    try self.stack.ensureTotalCapacity(self.allocator, height);
 }
 
 /// See `std.json.Token` for documentation of this function.
@@ -324,13 +328,13 @@ pub fn next(self: *@This()) NextError!Token {
                 switch (try self.skipWhitespaceExpectByte()) {
                     // Object, Array
                     '{' => {
-                        try self.stack.push(OBJECT_MODE);
+                        try self.stack.push(self.allocator, OBJECT_MODE);
                         self.cursor += 1;
                         self.state = .object_start;
                         return .object_begin;
                     },
                     '[' => {
-                        try self.stack.push(ARRAY_MODE);
+                        try self.stack.push(self.allocator, ARRAY_MODE);
                         self.cursor += 1;
                         self.state = .array_start;
                         return .array_begin;
@@ -403,19 +407,19 @@ pub fn next(self: *@This()) NextError!Token {
 
                 switch (c) {
                     '}' => {
-                        if (self.stack.pop() != OBJECT_MODE) return error.SyntaxError;
+                        if (self.stack.pop().? != OBJECT_MODE) return error.SyntaxError;
                         self.cursor += 1;
                         // stay in .post_value state.
                         return .object_end;
                     },
                     ']' => {
-                        if (self.stack.pop() != ARRAY_MODE) return error.SyntaxError;
+                        if (self.stack.pop().? != ARRAY_MODE) return error.SyntaxError;
                         self.cursor += 1;
                         // stay in .post_value state.
                         return .array_end;
                     },
                     ',' => {
-                        switch (self.stack.peek()) {
+                        switch (self.stack.peek().?) {
                             OBJECT_MODE => {
                                 self.state = .object_post_comma;
                             },
@@ -441,7 +445,7 @@ pub fn next(self: *@This()) NextError!Token {
                     },
                     '}' => {
                         self.cursor += 1;
-                        _ = self.stack.pop();
+                        _ = self.stack.pop().?;
                         self.state = .post_value;
                         return .object_end;
                     },
@@ -465,7 +469,7 @@ pub fn next(self: *@This()) NextError!Token {
                 switch (try self.skipWhitespaceExpectByte()) {
                     ']' => {
                         self.cursor += 1;
-                        _ = self.stack.pop();
+                        _ = self.stack.pop().?;
                         self.state = .post_value;
                         return .array_end;
                     },
@@ -1124,7 +1128,7 @@ pub fn peekNextTokenType(self: *@This()) PeekError!TokenType {
                     '}' => return .object_end,
                     ']' => return .array_end,
                     ',' => {
-                        switch (self.stack.peek()) {
+                        switch (self.stack.peek().?) {
                             OBJECT_MODE => {
                                 self.state = .object_post_comma;
                             },

@@ -41,7 +41,7 @@ next_punctuation: enum {
 } = .the_beginning,
 
 nesting_stack: switch (safety_checks) {
-    .checked_to_fixed_depth => |fixed_buffer_size| [(fixed_buffer_size + 7) >> 3]u8,
+    .checked_to_fixed_depth => |fixed_buffer_size| [BitStack.numBitsToNumBytes(fixed_buffer_size)]u8,
     .assumed_correct => void,
 } = switch (safety_checks) {
     .checked_to_fixed_depth => @splat(0),
@@ -127,7 +127,7 @@ pub fn endObject(self: *Stringify) Error!void {
 fn pushIndentation(self: *Stringify, mode: IndentationMode) !void {
     switch (safety_checks) {
         .checked_to_fixed_depth => {
-            BitStack.pushWithStateAssumeCapacity(&self.nesting_stack, &self.indent_level, @backingInt(mode));
+            BitStack.buffer.pushAssumeCapacity(&self.nesting_stack, &self.indent_level, @backingInt(mode));
         },
         .assumed_correct => {
             self.indent_level += 1;
@@ -137,7 +137,7 @@ fn pushIndentation(self: *Stringify, mode: IndentationMode) !void {
 fn popIndentation(self: *Stringify, expected_mode: IndentationMode) void {
     switch (safety_checks) {
         .checked_to_fixed_depth => {
-            assert(BitStack.popWithState(&self.nesting_stack, &self.indent_level) == @backingInt(expected_mode));
+            assert(BitStack.buffer.pop(&self.nesting_stack, &self.indent_level).? == @backingInt(expected_mode));
         },
         .assumed_correct => {
             self.indent_level -= 1;
@@ -202,7 +202,7 @@ fn valueDone(self: *Stringify) void {
 fn isObjectKeyExpected(self: *const Stringify) ?bool {
     switch (safety_checks) {
         .checked_to_fixed_depth => return self.indent_level > 0 and
-            BitStack.peekWithState(&self.nesting_stack, self.indent_level) == @backingInt(IndentationMode.object) and
+            BitStack.buffer.peek(&self.nesting_stack, self.indent_level).? == @backingInt(IndentationMode.object) and
             self.next_punctuation != .colon,
         .assumed_correct => return null,
     }
