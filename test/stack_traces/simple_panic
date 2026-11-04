@@ -1,10 +1,3 @@
-#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-none-dynamic-lc
-#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-keep-async-dynamic-lc
-#skip armeb-linux-musleabihf-baseline-whole-llvm-debug-omit-async-dynamic-lc
-#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-none-dynamic-lc
-#skip s390x-linux-musl-baseline-whole-llvm-debug-keep-async-dynamic-lc
-#skip s390x-linux-musl-baseline-whole-llvm-debug-omit-async-dynamic-lc
-
 #zig build-exe {
 --name test
 -Mroot=test.zig

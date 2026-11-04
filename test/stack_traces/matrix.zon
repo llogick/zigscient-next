@@ -514,7 +514,6 @@
         .frame_pointers = .omit,
         .unwind_tables = .async,
     },
-    // Crashes in weird ways when applying relocations.
     .{
         .cpu = .{ .armeb = .{} },
         .os = .{ .linux = .{} },
@@ -1975,7 +1974,6 @@
         .frame_pointers = .omit,
         .unwind_tables = .async,
     },
-    // Currently hangs in qemu-s390x.
     .{
         .cpu = .{ .s390x = .{} },
         .os = .{ .linux = .{} },

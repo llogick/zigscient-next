@@ -366,17 +366,16 @@ const module_test_targets = blk: {
             },
             .link_libc = true,
         },
-        // Crashes in weird ways when applying relocations.
-        // .{
-        //     .target = .{
-        //         .cpu_arch = .armeb,
-        //         .os_tag = .linux,
-        //         .abi = .musleabi,
-        //     },
-        //     .linkage = .dynamic,
-        //     .link_libc = true,
-        //     .extra_target = true,
-        // },
+        .{
+            .target = .{
+                .cpu_arch = .armeb,
+                .os_tag = .linux,
+                .abi = .musleabi,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
         .{
             .target = .{
                 .cpu_arch = .armeb,
@@ -394,17 +393,16 @@ const module_test_targets = blk: {
             },
             .link_libc = true,
         },
-        // Crashes in weird ways when applying relocations.
-        // .{
-        //     .target = .{
-        //         .cpu_arch = .armeb,
-        //         .os_tag = .linux,
-        //         .abi = .musleabihf,
-        //     },
-        //     .linkage = .dynamic,
-        //     .link_libc = true,
-        //     .extra_target = true,
-        // },
+        .{
+            .target = .{
+                .cpu_arch = .armeb,
+                .os_tag = .linux,
+                .abi = .musleabihf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
         .{
             .target = .{
                 .cpu_arch = .armeb,
@@ -1042,17 +1040,16 @@ const module_test_targets = blk: {
             },
             .link_libc = true,
         },
-        // Currently hangs in qemu-s390x.
-        // .{
-        //     .target = .{
-        //         .cpu_arch = .s390x,
-        //         .os_tag = .linux,
-        //         .abi = .musl,
-        //     },
-        //     .linkage = .dynamic,
-        //     .link_libc = true,
-        //     .extra_target = true,
-        // },
+        .{
+            .target = .{
+                .cpu_arch = .s390x,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
         .{
             .target = .{
                 .cpu_arch = .s390x,
