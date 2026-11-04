@@ -55,6 +55,9 @@ pub const Fe = struct {
     /// Edwards25519 sqrt(A-2)
     pub const edwards25519sqrtam2 = Fe{ .limbs = .{ 1693982333959686, 608509411481997, 2235573344831311, 947681270984193, 266558006233600 } };
 
+    /// Edwards25519 sqrt(-32d)
+    pub const edwards25519sqrtm32d = Fe{ .limbs = .{ 2039356100132940, 1653438333133651, 590636242893091, 967529024713264, 427587444244647 } };
+
     /// Return true if the field element is zero
     pub fn isZero(fe: Fe) bool {
         var reduced = fe;
