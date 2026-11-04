@@ -147,6 +147,17 @@ pub fn seekBy(r: *Reader, offset: i64) SeekError!void {
                     break :e err;
                 }
             };
+            switch (seek_err) {
+                error.Canceled,
+                error.EndOfStream,
+                error.ReadFailed,
+                => |e| return e,
+
+                error.Unseekable,
+                error.AccessDenied,
+                error.Unexpected,
+                => {}, // fall back to reading if possible
+            }
             var remaining = std.math.cast(u64, offset) orelse return seek_err;
             while (remaining > 0) {
                 remaining -= discard(&r.interface, .limited64(remaining)) catch |err| {
@@ -249,9 +260,16 @@ fn readVecPositional(r: *Reader, data: [][]u8) Io.Reader.Error!usize {
             const pos = r.pos;
             if (pos != 0) {
                 r.pos = 0;
-                r.seekBy(@intCast(pos)) catch {
-                    r.mode = .failure;
-                    return error.ReadFailed;
+                r.seekBy(@intCast(pos)) catch |seek_err| switch (seek_err) {
+                    error.Unseekable => unreachable, // guaranteed to fall back to reading
+                    error.AccessDenied => unreachable, // guaranteed to fall back to reading
+                    error.Unexpected => unreachable, // guaranteed to fall back to reading
+                    error.Canceled => |e| {
+                        r.mode = .failure;
+                        r.err = e;
+                        return error.ReadFailed;
+                    },
+                    else => |e| return e, // seek fell back to reading, which failed
                 };
             }
             return 0;
