@@ -6803,7 +6803,7 @@ pub fn addCCArgs(
 
         try argv.append(if (mod.omit_frame_pointer) "-fomit-frame-pointer" else "-fno-omit-frame-pointer");
         if (target.cpu.arch == .s390x) {
-            try argv.append(if (mod.omit_frame_pointer) "-mbackchain" else "-mno-backchain");
+            try argv.append(if (mod.omit_frame_pointer) "-mno-backchain" else "-mbackchain");
         }
 
         const ssp_buf_size = mod.stack_protector;
