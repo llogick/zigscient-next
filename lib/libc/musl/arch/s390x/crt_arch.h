@@ -3,6 +3,7 @@ __asm__(
 ".global " START "\n"
 ".type   " START ", %function\n"
 START ":\n"
+"	lghi %r14, 0\n"
 "	lgr  %r2, %r15\n"
 "	larl %r3, 1f\n"
 "	agf  %r3, 0(%r3)\n"
