@@ -1885,6 +1885,7 @@ pub const Elf64_Syminfo = extern struct {
     si_boundto: Half,
     si_flags: Half,
 };
+/// Deprecated, use `std.elf.Elf32.Rel`
 pub const Elf32_Rel = extern struct {
     r_offset: Elf32_Addr,
     r_info: Word,
@@ -1896,6 +1897,7 @@ pub const Elf32_Rel = extern struct {
         return @truncate(self.r_info);
     }
 };
+/// Deprecated, use `std.elf.Elf64.Rel`
 pub const Elf64_Rel = extern struct {
     r_offset: Elf64_Addr,
     r_info: Elf64_Xword,
@@ -1907,6 +1909,7 @@ pub const Elf64_Rel = extern struct {
         return @truncate(self.r_info);
     }
 };
+/// Deprecated, use `std.elf.Elf32.Rela`
 pub const Elf32_Rela = extern struct {
     r_offset: Elf32_Addr,
     r_info: Word,
@@ -1919,6 +1922,7 @@ pub const Elf32_Rela = extern struct {
         return @truncate(self.r_info);
     }
 };
+/// Deprecated, use `std.elf.Elf64.Rela`
 pub const Elf64_Rela = extern struct {
     r_offset: Elf64_Addr,
     r_info: Elf64_Xword,
@@ -1931,12 +1935,16 @@ pub const Elf64_Rela = extern struct {
         return @truncate(self.r_info);
     }
 };
+/// Deprecated, use `std.elf.Elf32.Relr`
 pub const Elf32_Relr = Word;
+/// Deprecated, use `std.elf.Elf64.Relr`
 pub const Elf64_Relr = Elf64_Xword;
+/// Deprecated, use `std.elf.Elf32.Dyn`
 pub const Elf32_Dyn = extern struct {
     d_tag: Sword,
     d_val: Elf32_Addr,
 };
+/// Deprecated, use `std.elf.Elf64.Dyn`
 pub const Elf64_Dyn = extern struct {
     d_tag: Elf64_Sxword,
     d_val: Elf64_Addr,
@@ -2085,26 +2093,31 @@ pub const Ehdr = switch (@sizeOf(usize)) {
     8 => Elf64_Ehdr,
     else => @compileError("expected pointer size of 32 or 64"),
 };
+/// Deprecated, use `std.elf.ElfN.Dyn`
 pub const Dyn = switch (@sizeOf(usize)) {
     4 => Elf32_Dyn,
     8 => Elf64_Dyn,
     else => @compileError("expected pointer size of 32 or 64"),
 };
+/// Deprecated, use `std.elf.ElfN.Rel`
 pub const Rel = switch (@sizeOf(usize)) {
     4 => Elf32_Rel,
     8 => Elf64_Rel,
     else => @compileError("expected pointer size of 32 or 64"),
 };
+/// Deprecated, use `std.elf.ElfN.Rela`
 pub const Rela = switch (@sizeOf(usize)) {
     4 => Elf32_Rela,
     8 => Elf64_Rela,
     else => @compileError("expected pointer size of 32 or 64"),
 };
+/// Deprecated, use `std.elf.ElfN.Relr`
 pub const Relr = switch (@sizeOf(usize)) {
     4 => Elf32_Relr,
     8 => Elf64_Relr,
     else => @compileError("expected pointer size of 32 or 64"),
 };
+/// Deprecated, use `std.elf.ElfN.Shdr`
 pub const Shdr = switch (@sizeOf(usize)) {
     4 => Elf32_Shdr,
     8 => Elf64_Shdr,
