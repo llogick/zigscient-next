@@ -928,6 +928,77 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
             return self.sub(x, self.one());
         }
 
+        // Halves val and its two coefficients
+        fn halveWithCoeffs(val: *FeUint, ca: *FeUint, cb: *FeUint, m: FeUint, a: FeUint) void {
+            _ = val.shiftRightByOneWithCarry(0);
+            if (ca.isOdd() or cb.isOdd()) {
+                _ = ca.shiftRightByOneWithCarry(ca.addWithOverflow(m));
+                _ = cb.shiftRightByOneWithCarry(cb.addWithOverflow(a));
+            } else {
+                _ = ca.shiftRightByOneWithCarry(0);
+                _ = cb.shiftRightByOneWithCarry(0);
+            }
+        }
+
+        /// Returns the inverse of x, or null if it doesn't have one.
+        ///
+        /// x and the modulus must be public.
+        pub fn invertPublic(self: Self, x: Fe) ?Fe {
+            if (x.isZero()) return null;
+
+            var plain = x;
+            if (plain.montgomery) {
+                self.fromMontgomery(&plain) catch unreachable;
+            }
+
+            const a = plain.v;
+            const m = self.v;
+            if (!a.isOdd() and !m.isOdd()) return null;
+            assert(a.limbs_len == m.limbs_len);
+            assert(ct.limbsCmpLt(a, m));
+
+            // Binary EGCD with bounded coefficients, the variant from BoringSSL. Bounds proven in Fiat-Crypto (https://github.com/mit-plv/fiat-crypto/pull/1597)
+            var u = a;
+            var v = m;
+
+            var coeff_a = self.one().v;
+            var coeff_b = self.zero.v;
+            var coeff_c = self.zero.v;
+            var coeff_d = self.one().v;
+
+            while (!v.isZero()) {
+                if (u.isOdd() and v.isOdd()) {
+                    if (ct.limbsCmpLt(v, u)) {
+                        _ = u.subWithOverflow(v);
+                        _ = coeff_b.addWithOverflow(coeff_d);
+                        const need_sub = addAndReduce(&coeff_a, coeff_c, m);
+                        _ = coeff_b.conditionalSubWithOverflow(need_sub, a);
+                    } else {
+                        _ = v.subWithOverflow(u);
+                        _ = coeff_d.addWithOverflow(coeff_b);
+                        const need_sub = addAndReduce(&coeff_c, coeff_a, m);
+                        _ = coeff_d.conditionalSubWithOverflow(need_sub, a);
+                    }
+                }
+
+                if (!u.isOdd()) {
+                    assert(v.isOdd());
+                    halveWithCoeffs(&u, &coeff_a, &coeff_b, m, a);
+                } else {
+                    assert(!v.isOdd());
+                    halveWithCoeffs(&v, &coeff_c, &coeff_d, m, a);
+                }
+            }
+
+            if (!u.isOne()) return null;
+
+            var out = Fe{ .v = coeff_a };
+            if (x.montgomery) {
+                self.toMontgomery(&out) catch unreachable;
+            }
+            return out;
+        }
+
         /// Converts a field element to the Montgomery form.
         /// Rejects even moduli, which have no Montgomery form.
         pub fn toMontgomery(self: Self, x: *Fe) RepresentationError!void {
@@ -1735,4 +1806,31 @@ test "even modulus arithmetic" {
     cap[cap.len - 1] = 0xfe;
     const mc = try M.fromBytesWithOptions(&cap, .big, opts);
     try testing.expect(mc.isOne(mc.sq(mc.subOne(mc.zero))));
+}
+
+test "modular inversion" {
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
+
+    const vectors = [_][3]u256{
+        .{ 0x0fb5a8aee7bbc4ef, 0x24ebd835a70be4e2, 0x9c7256574e0c5e93 },
+        .{ 0x46ae1fabe9521e4b99b198fc8439609023aa69be2247c0d1e27c2a0ea332f9c5, 0x6331fec5f01014046788c919ed50dc86ac7a80c085f1b6f645dd179c0f0dc9cd, 0x8ef409de82318259a8655a39293b1e762fa2cc7e0aeb4c59713a1e1fff6af640 },
+    };
+    for (vectors) |v| {
+        const m = try Modulus(256).fromPrimitiveWithOptions(u256, v[2], .{ .allow_even = true });
+        const x = try Modulus(256).Fe.fromPrimitive(u256, m, v[1]);
+        try testing.expectEqual(v[0], try m.invertPublic(x).?.toPrimitive(u256));
+    }
+
+    for ([_]u16{ 2, 15, 16, 17 }) |m_val| {
+        const m = try Modulus(16).fromPrimitiveWithOptions(u16, m_val, .{ .allow_even = true });
+        for (0..m_val) |a_val| {
+            const inv = m.invertPublic(try Modulus(16).Fe.fromPrimitive(u16, m, @intCast(a_val)));
+            if (math.gcd(a_val, m_val) == 1) {
+                const inv_val = try inv.?.toPrimitive(u16);
+                try testing.expectEqual(1, (inv_val * a_val) % m_val);
+            } else {
+                try testing.expect(inv == null);
+            }
+        }
+    }
 }
