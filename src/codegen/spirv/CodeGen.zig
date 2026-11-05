@@ -5651,6 +5651,22 @@ fn bitCast(
             });
             break :blk result_id;
         }
+        if (src_ty.isPtrAtRuntime(zcu) and dst_ty.zigTypeTag(zcu) == .int) {
+            if (target_util.addrSpaceIsLogical(target, src_ty.ptrAddressSpace(zcu))) {
+                return cg.fail(
+                    "cannot cast pointer with address space '{s}' to integer",
+                    .{@tagName(src_ty.ptrAddressSpace(zcu))},
+                );
+            }
+
+            const result_id = cg.allocId();
+            try cg.body.emit(gpa, .OpConvertPtrToU, .{
+                .id_result_type = dst_ty_id,
+                .id_result = result_id,
+                .pointer = src_id,
+            });
+            break :blk result_id;
+        }
 
         // We can only use OpBitcast for specific conversions: between numerical types, and
         // between pointers. If the resolved spir-v types fall into this category then emit OpBitcast,
