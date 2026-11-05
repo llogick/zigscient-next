@@ -2309,7 +2309,11 @@ pub const F = struct {
             const GETOWN = 23;
             const SETOWN = 24;
         },
-        .alpha, .sparc, .sparc64 => struct {
+        .alpha => struct {
+            const SETOWN = 5;
+            const GETOWN = 6;
+        },
+        .sparc, .sparc64 => struct {
             const GETOWN = 5;
             const SETOWN = 6;
         },
@@ -2318,8 +2322,8 @@ pub const F = struct {
             const SETOWN = 12;
         },
         else => struct {
-            const GETOWN = 8;
-            const SETOWN = 9;
+            const SETOWN = 8;
+            const GETOWN = 9;
         },
     };
 
