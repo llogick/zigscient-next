@@ -1798,9 +1798,16 @@ fn derivePtr(cg: *CodeGen, as: std.lang.AddressSpace, derivation: Value.PointerD
             }
             if (target_util.addrSpaceIsLogical(target, as)) return var_id;
 
-            const nav_ty_id = try cg.resolveType(nav_ty, .indirect);
+            // Match the pointee the variable was declared with. The
+            // undecorated variant is emitted even if unreferenced, leaving a
+            // buffer struct without Block that Vulkan rejects.
+            const is_block_root = cg.needsLayout(as, nav_ty);
+            const nav_ty_id = try cg.pointeeType(as, nav_ty, is_block_root);
             const decl_ptr_ty_id = try cg.ptrType(nav_ty_id, cg.storageClass(as));
-            const result_ty_id = try cg.derivedPtrType(as, derivation);
+            const result_ty_id = try cg.ptrType(
+                try cg.pointeeType(as, derivation.elem_ty, is_block_root),
+                cg.storageClass(as),
+            );
             if (decl_ptr_ty_id == result_ty_id) return var_id;
 
             const casted_ptr_id = cg.allocId();
@@ -6665,17 +6672,23 @@ fn ptrElemPtr(
     const elem_is_block = cg.block_var_ids.contains(ptr_id);
     const elem_ty_id = try cg.pointeeType(as, elem_ty, elem_is_block);
     const elem_ptr_ty_id = try cg.ptrType(elem_ty_id, cg.storageClass(as));
-    switch (mode) {
-        .single_array_ptr => {
+    const result_id = switch (mode) {
+        .single_array_ptr => id: {
             // Pointer-to-array. In this case, the resulting pointer is not of the same type
             // as the ptr_ty (we want a *T, not a *[N]T), and hence we need to use accessChain.
-            return cg.accessChainId(elem_ptr_ty_id, ptr_id, &.{index_id});
+            break :id try cg.accessChainId(elem_ptr_ty_id, ptr_id, &.{index_id});
         },
-        .many_ptr => {
+        .many_ptr => id: {
             // Resulting pointer type is the same as the ptr_ty, so use ptrAccessChain
-            return cg.ptrAccessChain(as, elem_ptr_ty_id, ptr_id, index_id, &.{});
+            break :id try cg.ptrAccessChain(as, elem_ptr_ty_id, ptr_id, index_id, &.{});
         },
-    }
+    };
+    // The element pointee was built as a block root above, so record the derived
+    // pointer too. `load` and `store` consult this set to pick the same layout
+    // variant. Without it they resolve the undecorated struct and emit an OpLoad
+    // whose result type does not match the pointee.
+    if (elem_is_block) try cg.block_var_ids.put(cg.gpa, result_id, {});
+    return result_id;
 }
 
 fn airRet(cg: *CodeGen, inst: Air.Inst.Index) !void {
