@@ -478,6 +478,135 @@ pub fn addCases(ctx: *LinkContext) void {
             "--only-symbol=something",
         }, .{ .sub_name = "dynlib" });
     }
+
+    if (ctx.includeTest("init_array_order")) |case| {
+        const arrays = case.addExecutable(.{
+            .name = "arrays",
+
+            .zig_source_bytes =
+            \\export fn init_00000() void { std.debug.print("init_00000\n", .{}); }
+            \\export fn init_65535() void { std.debug.print("init_65535\n", .{}); }
+            \\export fn init_default() void { std.debug.print("init_default\n", .{}); }
+            \\export fn init_60000() void { std.debug.print("init_60000\n", .{}); }
+            \\export fn init_00100() void { std.debug.print("init_00100\n", .{}); }
+            \\
+            \\export fn fini_00000() void { std.debug.print("fini_00000\n", .{}); }
+            \\export fn fini_65535() void { std.debug.print("fini_65535\n", .{}); }
+            \\export fn fini_default() void { std.debug.print("fini_default\n", .{}); }
+            \\export fn fini_60000() void { std.debug.print("fini_60000\n", .{}); }
+            \\export fn fini_00100() void { std.debug.print("fini_00100\n", .{}); }
+            \\
+            \\export fn preinit() void { std.debug.print("preinit\n", .{}); }
+            \\
+            \\pub fn main() void { std.debug.print("main\n", .{}); }
+            \\
+            \\const std = @import("std");
+            \\
+            ,
+
+            .asm_source_bytes =
+            \\.global init_00000
+            \\.global init_65535
+            \\.global init_default
+            \\.global init_60000
+            \\.global init_00100
+            \\
+            \\.global fini_00000
+            \\.global fini_65535
+            \\.global fini_default
+            \\.global fini_60000
+            \\.global fini_00100
+            \\
+            \\.global preinit
+            \\
+            \\.section .init_array.00000, "aw"
+            \\.balign 8
+            \\.quad init_00000
+            \\.section .init_array.65535, "aw"
+            \\.balign 8
+            \\.quad init_65535
+            \\.section .init_array, "aw"
+            \\.balign 8
+            \\.quad init_default
+            \\.section .init_array.60000, "aw"
+            \\.balign 8
+            \\.quad init_60000
+            \\.section .init_array.00100, "aw"
+            \\.balign 8
+            \\.quad init_00100
+            \\
+            \\.section .fini_array.00000, "aw"
+            \\.balign 8
+            \\.quad fini_00000
+            \\.section .fini_array.65535, "aw"
+            \\.balign 8
+            \\.quad fini_65535
+            \\.section .fini_array, "aw"
+            \\.balign 8
+            \\.quad fini_default
+            \\.section .fini_array.60000, "aw"
+            \\.balign 8
+            \\.quad fini_60000
+            \\.section .fini_array.00100, "aw"
+            \\.balign 8
+            \\.quad fini_00100
+            \\
+            \\.section .preinit_array, "aw"
+            \\.balign 8
+            \\.quad preinit
+            \\
+            ,
+        });
+
+        const run_arrays = case.addRunArtifact(arrays);
+        if (!ctx.link_libc) {
+            // Zig's freestanding entry point doesn't call preinit or fini.
+            run_arrays.expectStdErrEqual(
+                \\init_00000
+                \\init_00100
+                \\init_60000
+                \\init_65535
+                \\init_default
+                \\main
+                \\
+            );
+        } else if (ctx.target.result.abi.isMusl()) {
+            // musl libc doesn't call preinit.
+            run_arrays.expectStdErrEqual(
+                \\init_00000
+                \\init_00100
+                \\init_60000
+                \\init_65535
+                \\init_default
+                \\main
+                \\fini_default
+                \\fini_65535
+                \\fini_60000
+                \\fini_00100
+                \\fini_00000
+                \\
+            );
+        } else if (ctx.target.result.abi.isGnu()) {
+            // glibc does everything.
+            run_arrays.expectStdErrEqual(
+                \\preinit
+                \\init_00000
+                \\init_00100
+                \\init_60000
+                \\init_65535
+                \\init_default
+                \\main
+                \\fini_default
+                \\fini_65535
+                \\fini_60000
+                \\fini_00100
+                \\fini_00000
+                \\
+            );
+        } else {
+            unreachable;
+        }
+    }
 }
 
 const LinkContext = @import("../tests.zig").LinkContext;
