@@ -3631,11 +3631,11 @@ pub fn saveState(comp: *Compilation) !void {
     const gpa = comp.gpa;
     const io = comp.io;
 
-    var bufs = std.array_list.Managed([]const u8).init(gpa);
-    defer bufs.deinit();
+    var bufs: std.ArrayList([]const u8) = .empty;
+    defer bufs.deinit(gpa);
 
-    var pt_headers = std.array_list.Managed(Header.PerThread).init(gpa);
-    defer pt_headers.deinit();
+    var pt_headers: std.ArrayList(Header.PerThread) = .empty;
+    defer pt_headers.deinit(gpa);
 
     if (comp.zcu) |zcu| {
         const ip = &zcu.intern_pool;
@@ -3658,7 +3658,7 @@ pub fn saveState(comp: *Compilation) !void {
             },
         };
 
-        try pt_headers.ensureTotalCapacityPrecise(header.intern_pool.thread_count);
+        try pt_headers.ensureTotalCapacityPrecise(gpa, header.intern_pool.thread_count);
         for (ip.locals) |*local| pt_headers.appendAssumeCapacity(.{
             .intern_pool = .{
                 .items_len = @intCast(local.mutate.items.len),
@@ -3671,7 +3671,7 @@ pub fn saveState(comp: *Compilation) !void {
             },
         });
 
-        try bufs.ensureTotalCapacityPrecise(26 + 9 * pt_headers.items.len);
+        try bufs.ensureTotalCapacityPrecise(gpa, 26 + 9 * pt_headers.items.len);
         addBuf(&bufs, mem.asBytes(&header));
         addBuf(&bufs, @ptrCast(pt_headers.items));
 
@@ -3737,7 +3737,7 @@ pub fn saveState(comp: *Compilation) !void {
         .elf => {},
         .elf2 => {
             const elf = lf.cast(.elf2).?;
-            try bufs.ensureUnusedCapacity(3);
+            try bufs.ensureUnusedCapacity(gpa, 3);
             addBuf(&bufs, @ptrCast(elf.mf.nodes.items));
             addBuf(&bufs, @ptrCast(&elf.mf.free_ni));
             addBuf(&bufs, @ptrCast(elf.mf.large.items));
@@ -3745,7 +3745,7 @@ pub fn saveState(comp: *Compilation) !void {
         .wasm => {
             const wasm = lf.cast(.wasm).?;
             const is_obj = comp.config.output_mode == .Obj;
-            try bufs.ensureUnusedCapacity(85);
+            try bufs.ensureUnusedCapacity(gpa, 85);
             addBuf(&bufs, wasm.string_bytes.items);
             // TODO make it well-defined memory layout
             //addBuf(&bufs, @ptrCast(wasm.objects.items));
@@ -3872,7 +3872,7 @@ pub fn saveState(comp: *Compilation) !void {
     try af.replace(io);
 }
 
-fn addBuf(list: *std.array_list.Managed([]const u8), buf: []const u8) void {
+fn addBuf(list: *std.ArrayList([]const u8), buf: []const u8) void {
     if (buf.len == 0) return;
     list.appendAssumeCapacity(buf);
 }
@@ -5090,16 +5090,16 @@ pub fn translateC(
         break :blk out_dep_path;
     };
 
-    var argv = std.array_list.Managed([]const u8).init(arena);
+    var argv: std.ArrayList([]const u8) = .empty;
     {
         const target = &owner_mod.resolved_target.result;
         const zig_lib = try arena.print("--zig-lib={f}", .{comp.dirs.zig_lib});
-        try argv.appendSlice(&.{ "--zig-integration", zig_lib, "--", "-x", "c" });
+        try argv.appendSlice(arena, &.{ "--zig-integration", zig_lib, "--", "-x", "c" });
 
         const resource_path = try comp.dirs.zig_lib.join(arena, &.{ "compiler", "aro", "include" });
-        try argv.appendSlice(&.{ "-isystem", resource_path });
+        try argv.appendSlice(arena, &.{ "-isystem", resource_path });
         try comp.addCommonCCArgs(arena, &argv, ext, out_dep_path, owner_mod, .aro);
-        try argv.appendSlice(&[_][]const u8{ "-target", try target.zigTriple(arena) });
+        try argv.appendSlice(arena, &.{ "-target", try target.zigTriple(arena) });
 
         const mcpu = mcpu: {
             var buf: std.ArrayList(u8) = .empty;
@@ -5109,7 +5109,6 @@ pub fn translateC(
 
             // TODO better serialization https://github.com/ziglang/zig/issues/4584
             const all_features_list = target.cpu.arch.allFeaturesList();
-            try argv.ensureUnusedCapacity(all_features_list.len * 4);
             for (all_features_list, 0..) |feature, index_usize| {
                 const index = @as(std.Target.Cpu.Feature.Set.Index, @intCast(index_usize));
                 const is_enabled = target.cpu.features.isEnabled(index);
@@ -5119,11 +5118,11 @@ pub fn translateC(
             }
             break :mcpu try arena.dupe(u8, buf.items);
         };
-        try argv.append(mcpu);
+        try argv.append(arena, mcpu);
 
-        try argv.appendSlice(comp.global_cc_argv);
-        try argv.appendSlice(owner_mod.cc_argv);
-        try argv.appendSlice(&.{ source_path, "-o", translated_path });
+        try argv.appendSlice(arena, comp.global_cc_argv);
+        try argv.appendSlice(arena, owner_mod.cc_argv);
+        try argv.appendSlice(arena, &.{ source_path, "-o", translated_path });
     }
 
     const lsp_doc_store = if (comp.zcu) |zcu| if (zcu.lsp_document_store) |lsp_doc_store| lsp_doc_store else null else null;
@@ -5567,8 +5566,7 @@ fn updateCObject(
             log.debug("C object {q} cache {f}", .{ c_object.src.src_path, status.fmt(&man) });
             if (status == .hit) break :d man.hitDigestHex();
         }
-        var argv: std.array_list.Managed([]const u8) = .init(gpa);
-        defer argv.deinit();
+        var argv: std.ArrayList([]const u8) = .empty;
 
         // In case we are doing passthrough mode, we need to detect -S and -emit-llvm.
         const out_ext = e: {
@@ -5586,10 +5584,10 @@ fn updateCObject(
         const o_basename = try std.fmt.allocPrint(arena, "{s}{s}", .{ o_basename_noext, out_ext });
         const ext = c_object.src.ext orelse classifyFileExt(c_object.src.src_path);
 
-        try argv.appendSlice(&[_][]const u8{ self_exe_path, "clang" });
+        try argv.appendSlice(arena, &.{ self_exe_path, "clang" });
         // if "ext" is explicit, add "-x <lang>". Otherwise let clang do its thing.
         if (c_object.src.ext != null or ext.clangNeedsLanguageOverride()) {
-            try argv.appendSlice(&[_][]const u8{ "-x", switch (ext) {
+            try argv.appendSlice(arena, &.{ "-x", switch (ext) {
                 .assembly => "assembler",
                 .assembly_with_cpp => "assembler-with-cpp",
                 .c => "c",
@@ -5603,7 +5601,7 @@ fn updateCObject(
                 else => fatal("language '{s}' is unsupported in this context", .{@tagName(ext)}),
             } });
         }
-        try argv.append(c_object.src.src_path);
+        try argv.append(arena, c_object.src.src_path);
 
         // When all these flags are true, it means that the entire purpose of
         // this compilation is to perform a single zig cc operation. This means
@@ -5614,15 +5612,15 @@ fn updateCObject(
             comp.disable_c_depfile and comp.clang_passthrough_mode)
         {
             try comp.addCCArgs(arena, &argv, ext, null, c_object.src.owner);
-            try argv.appendSlice(c_object.src.extra_flags);
-            try argv.appendSlice(c_object.src.cache_exempt_flags);
+            try argv.appendSlice(arena, c_object.src.extra_flags);
+            try argv.appendSlice(arena, c_object.src.cache_exempt_flags);
 
             const out_obj_path = if (comp.bin_file) |lf|
                 try lf.emit.root_dir.join(arena, &.{lf.emit.sub_path})
             else
                 "/dev/null";
 
-            try argv.ensureUnusedCapacity(6);
+            try argv.ensureUnusedCapacity(arena, 6);
             switch (comp.clang_preprocessor_mode) {
                 .no => argv.appendSliceAssumeCapacity(&.{ "-c", "-o", out_obj_path }),
                 .yes => argv.appendSliceAssumeCapacity(&.{ "-E", "-o", out_obj_path }),
@@ -5634,7 +5632,7 @@ fn updateCObject(
             if (comp.emit_asm != null) {
                 argv.appendAssumeCapacity("-S");
             } else if (comp.emit_llvm_ir != null) {
-                argv.appendSliceAssumeCapacity(&[_][]const u8{ "-emit-llvm", "-S" });
+                argv.appendSliceAssumeCapacity(&.{ "-emit-llvm", "-S" });
             } else if (comp.emit_llvm_bc != null) {
                 argv.appendAssumeCapacity("-emit-llvm");
             }
@@ -5670,10 +5668,10 @@ fn updateCObject(
             try std.fmt.allocPrint(arena, "{s}.d", .{out_obj_path});
 
         try comp.addCCArgs(arena, &argv, ext, out_dep_path, c_object.src.owner);
-        try argv.appendSlice(c_object.src.extra_flags);
-        try argv.appendSlice(c_object.src.cache_exempt_flags);
+        try argv.appendSlice(arena, c_object.src.extra_flags);
+        try argv.appendSlice(arena, c_object.src.cache_exempt_flags);
 
-        try argv.ensureUnusedCapacity(6);
+        try argv.ensureUnusedCapacity(arena, 6);
         switch (comp.clang_preprocessor_mode) {
             .no => argv.appendSliceAssumeCapacity(&.{ "-c", "-o", out_obj_path }),
             .yes => argv.appendSliceAssumeCapacity(&.{ "-E", "-o", out_obj_path }),
@@ -6046,10 +6044,10 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
 
             try o_dir.writeFile(io, .{ .sub_path = rc_basename, .data = input });
 
-            var argv = std.array_list.Managed([]const u8).init(comp.gpa);
-            defer argv.deinit();
+            var argv: std.ArrayList([]const u8) = .empty;
+            defer argv.deinit(comp.gpa);
 
-            try argv.appendSlice(&.{
+            try argv.appendSlice(comp.gpa, &.{
                 self_exe_path,
                 "rc",
                 "--zig-integration",
@@ -6061,7 +6059,7 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
                 "/:auto-includes",
                 "none",
             });
-            try argv.appendSlice(&.{ "--", in_rc_path, out_res_path });
+            try argv.appendSlice(comp.gpa, &.{ "--", in_rc_path, out_res_path });
 
             try spawnZigRc(comp, win32_resource, arena, argv.items, child_progress_node);
 
@@ -6075,7 +6073,7 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
 
         win32_resource.status = .{
             .success = .{
-                .res_path = try comp.dirs.local_cache.join(comp.gpa, &[_][]const u8{
+                .res_path = try comp.dirs.local_cache.join(comp.gpa, &.{
                     "o", &digest, res_basename,
                 }),
                 .lock = man.toOwnedLock(),
@@ -6110,12 +6108,12 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
         // so we need a temporary filename.
         const out_res_path = try comp.tmpFilePath(arena, res_filename);
 
-        var argv = std.array_list.Managed([]const u8).init(comp.gpa);
-        defer argv.deinit();
+        var argv: std.ArrayList([]const u8) = .empty;
+        defer argv.deinit(comp.gpa);
 
         const depfile_filename = try std.fmt.allocPrint(arena, "{s}.d.json", .{rc_basename_noext});
         const out_dep_path = try comp.tmpFilePath(arena, depfile_filename);
-        try argv.appendSlice(&.{
+        try argv.appendSlice(comp.gpa, &.{
             self_exe_path,
             "rc",
             "--zig-integration",
@@ -6134,10 +6132,10 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
         // relevant behavior in this case.
         switch (rc_src.owner.optimize_mode) {
             .debug, .safe => {},
-            .fast, .small => try argv.append("-DNDEBUG"),
+            .fast, .small => try argv.append(comp.gpa, "-DNDEBUG"),
         }
-        try argv.appendSlice(rc_src.extra_flags);
-        try argv.appendSlice(&.{ "--", rc_src.src_path, out_res_path });
+        try argv.appendSlice(comp.gpa, rc_src.extra_flags);
+        try argv.appendSlice(comp.gpa, &.{ "--", rc_src.src_path, out_res_path });
 
         try spawnZigRc(comp, win32_resource, arena, argv.items, child_progress_node);
 
@@ -6318,7 +6316,8 @@ pub fn tmpFilePath(comp: Compilation, ally: Allocator, suffix: []const u8) error
 fn addCommonCCArgs(
     comp: *const Compilation,
     arena: Allocator,
-    argv: *std.array_list.Managed([]const u8),
+    /// Uses `arena` as its allocator
+    argv: *std.ArrayList([]const u8),
     ext: FileExt,
     out_dep_path: ?[]const u8,
     mod: *Module,
@@ -6330,13 +6329,13 @@ fn addCommonCCArgs(
     if (target_util.supports_fpic(target)) {
         // PIE needs to go before PIC because Clang interprets `-fno-PIE` to imply `-fno-PIC`, which
         // we don't necessarily want.
-        try argv.append(if (comp.config.pie) "-fPIE" else "-fno-PIE");
-        try argv.append(if (comp.config.pic) "-fPIC" else "-fno-PIC");
+        try argv.append(arena, if (comp.config.pie) "-fPIE" else "-fno-PIE");
+        try argv.append(arena, if (comp.config.pic) "-fPIC" else "-fno-PIC");
     }
 
     switch (target.os.tag) {
         .ios, .maccatalyst, .macos, .tvos, .watchos => |os| if (is_clang) {
-            try argv.ensureUnusedCapacity(2);
+            try argv.ensureUnusedCapacity(arena, 2);
             // Pass the proper -m<os>-version-min argument for darwin.
             const ver = target.os.version_range.semver.min;
             argv.appendAssumeCapacity(try std.fmt.allocPrint(arena, "-m{s}{s}-version-min={d}.{d}.{d}", .{
@@ -6363,10 +6362,10 @@ fn addCommonCCArgs(
     }
 
     if (comp.mingw_unicode_entry_point) {
-        try argv.append("-municode");
+        try argv.append(arena, "-municode");
     }
 
-    try argv.ensureUnusedCapacity(2);
+    try argv.ensureUnusedCapacity(arena, 2);
     switch (comp.config.debug_format) {
         .strip => {},
         .nsdi => argv.appendAssumeCapacity("-g"),
@@ -6385,24 +6384,24 @@ fn addCommonCCArgs(
     }
 
     switch (comp.config.lto) {
-        .none => try argv.append("-fno-lto"),
-        .full => try argv.append("-flto=full"),
-        .thin => try argv.append("-flto=thin"),
+        .none => try argv.append(arena, "-fno-lto"),
+        .full => try argv.append(arena, "-flto=full"),
+        .thin => try argv.append(arena, "-flto=thin"),
     }
 
     // This only works for preprocessed files. Guarded by `FileExt.clangSupportsDepFile`.
     if (out_dep_path) |p| {
-        try argv.appendSlice(&[_][]const u8{ "-MD", "-MV", "-MF", p });
+        try argv.appendSlice(arena, &.{ "-MD", "-MV", "-MF", p });
     }
 
     // Non-preprocessed assembly files don't support these flags.
     if (ext != .assembly) {
-        try argv.append(if (target.os.tag == .freestanding) "-ffreestanding" else "-fhosted");
+        try argv.append(arena, if (target.os.tag == .freestanding) "-ffreestanding" else "-fhosted");
 
-        try argv.append("-nostdinc");
+        try argv.append(arena, "-nostdinc");
 
         if (ext == .cpp or ext == .hpp) {
-            try argv.append("-nostdinc++");
+            try argv.append(arena, "-nostdinc++");
         }
 
         // LLVM IR files don't support these flags.
@@ -6410,25 +6409,25 @@ fn addCommonCCArgs(
             switch (mod.optimize_mode) {
                 .debug => {},
                 .safe => {
-                    try argv.append("-D_FORTIFY_SOURCE=2");
+                    try argv.append(arena, "-D_FORTIFY_SOURCE=2");
                 },
                 .fast, .small => {
-                    try argv.append("-DNDEBUG");
+                    try argv.append(arena, "-DNDEBUG");
                 },
             }
 
             switch (target.os.tag) {
                 // LLVM doesn't distinguish between Solaris and illumos, but the illumos GCC fork
                 // defines this macro.
-                .illumos => try argv.append("-D__illumos__"),
+                .illumos => try argv.append(arena, "-D__illumos__"),
                 // Homebrew targets without LLVM support; use communities's preferred macros.
-                .@"3ds" => try argv.append("-D__3DS__"),
-                .wiiu => try argv.append("-D__WIIU__"),
-                .@"switch" => try argv.append("-D__SWITCH__"),
-                .gba => try argv.append("-D__GBA__"),
-                .psx => try argv.append("-D__psx__"),
-                .psp => try argv.append("-D__PSP__"),
-                .vita => try argv.append("-D__vita__"),
+                .@"3ds" => try argv.append(arena, "-D__3DS__"),
+                .wiiu => try argv.append(arena, "-D__WIIU__"),
+                .@"switch" => try argv.append(arena, "-D__SWITCH__"),
+                .gba => try argv.append(arena, "-D__GBA__"),
+                .psx => try argv.append(arena, "-D__psx__"),
+                .psp => try argv.append(arena, "-D__PSP__"),
+                .vita => try argv.append(arena, "-D__vita__"),
                 else => {},
             }
 
@@ -6438,12 +6437,13 @@ fn addCommonCCArgs(
                     const glibc_minor_define = try std.fmt.allocPrint(arena, "-D__GLIBC_MINOR__={d}", .{
                         target_version.minor,
                     });
-                    try argv.append(glibc_minor_define);
+                    try argv.append(arena, glibc_minor_define);
                 } else if (target.isMinGW()) {
-                    try argv.append("-D__MSVCRT_VERSION__=0xE00"); // use ucrt
+                    try argv.append(arena, "-D__MSVCRT_VERSION__=0xE00"); // use ucrt
 
                     const minver: u16 = @truncate(@backingInt(target.os.versionRange().windows.min) >> 16);
                     try argv.append(
+                        arena,
                         try std.fmt.allocPrint(arena, "-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
                     );
 
@@ -6452,11 +6452,11 @@ fn addCommonCCArgs(
                     // `weak` linkage in compiler-rt or libzigc. So just disable them. Besides, they undermine the
                     // goal of moving more libc code to Zig, and they're also just kind of unnecessary since LLVM is
                     // perfectly capable of recognizing and optimizing libcalls.
-                    try argv.append("-D__CRT__NO_INLINE");
+                    try argv.append(arena, "-D__CRT__NO_INLINE");
                 } else if (target.isFreeBSDLibC()) {
                     // https://docs.freebsd.org/en/books/porters-handbook/versions
                     const min_ver = target.os.version_range.semver.min;
-                    try argv.append(try std.fmt.allocPrint(arena, "-D__FreeBSD_version={d}", .{
+                    try argv.append(arena, try std.fmt.allocPrint(arena, "-D__FreeBSD_version={d}", .{
                         // We don't currently respect the minor and patch components. This wouldn't be particularly
                         // helpful because our abilists file only tracks major FreeBSD releases, so the link-time stub
                         // symbols would be inconsistent with header declarations.
@@ -6464,7 +6464,7 @@ fn addCommonCCArgs(
                     }));
                 } else if (target.isNetBSDLibC()) {
                     const min_ver = target.os.version_range.semver.min;
-                    try argv.append(try std.fmt.allocPrint(arena, "-D__NetBSD_Version__={d}", .{
+                    try argv.append(arena, try std.fmt.allocPrint(arena, "-D__NetBSD_Version__={d}", .{
                         // We don't currently respect the patch component. This wouldn't be particularly helpful because
                         // our abilists file only tracks major and minor NetBSD releases, so the link-time stub symbols
                         // would be inconsistent with header declarations.
@@ -6475,13 +6475,13 @@ fn addCommonCCArgs(
                     // The macro in sys/param.h doesn't have the leading underscores, but we don't want to pollute the
                     // global namespace in all compilation units. So we use leading underscores and modify sys/param.h
                     // to just alias this one.
-                    try argv.append(try std.fmt.allocPrint(arena, "-D___OpenBSD={d}", .{
+                    try argv.append(arena, try std.fmt.allocPrint(arena, "-D___OpenBSD={d}", .{
                         // Brilliantly, OpenBSD defines this macro to the year and month of the release, so we need to
                         // maintain a manual mapping here whenever we update the headers.
                         202510,
                     }));
                     // We can't avoid pollution for this one...
-                    try argv.append(try std.fmt.allocPrint(arena, "-DOpenBSD{d}_{d}", .{
+                    try argv.append(arena, try std.fmt.allocPrint(arena, "-DOpenBSD{d}_{d}", .{
                         min_ver.major,
                         min_ver.minor,
                     }));
@@ -6489,13 +6489,13 @@ fn addCommonCCArgs(
             }
 
             if (comp.config.link_libcpp) {
-                try argv.append("-isystem");
-                try argv.append(try fs.path.join(arena, &[_][]const u8{
+                try argv.append(arena, "-isystem");
+                try argv.append(arena, try fs.path.join(arena, &.{
                     comp.dirs.zig_lib.path.?, "libcxx", "include",
                 }));
 
-                try argv.append("-isystem");
-                try argv.append(try fs.path.join(arena, &[_][]const u8{
+                try argv.append(arena, "-isystem");
+                try argv.append(arena, try fs.path.join(arena, &.{
                     comp.dirs.zig_lib.path.?, "libcxxabi", "include",
                 }));
 
@@ -6505,17 +6505,17 @@ fn addCommonCCArgs(
             // According to Rich Felker libc headers are supposed to go before C language headers.
             // However as noted by @dimenus, appending libc headers before compiler headers breaks
             // intrinsics and other compiler specific items.
-            try argv.append("-isystem");
-            try argv.append(try fs.path.join(arena, &.{ comp.dirs.zig_lib.path.?, "include" }));
+            try argv.append(arena, "-isystem");
+            try argv.append(arena, try fs.path.join(arena, &.{ comp.dirs.zig_lib.path.?, "include" }));
 
-            try argv.ensureUnusedCapacity(comp.libc_include_dir_list.len * 2);
+            try argv.ensureUnusedCapacity(arena, comp.libc_include_dir_list.len * 2);
             for (comp.libc_include_dir_list) |include_dir| {
-                try argv.append("-isystem");
-                try argv.append(include_dir);
+                argv.appendAssumeCapacity("-isystem");
+                argv.appendAssumeCapacity(include_dir);
             }
 
             if (mod.resolved_target.is_native_os and mod.resolved_target.is_native_abi) {
-                try argv.ensureUnusedCapacity(comp.native_system_include_paths.len * 2);
+                try argv.ensureUnusedCapacity(arena, comp.native_system_include_paths.len * 2);
                 for (comp.native_system_include_paths) |include_path| {
                     argv.appendAssumeCapacity("-isystem");
                     argv.appendAssumeCapacity(include_path);
@@ -6523,20 +6523,20 @@ fn addCommonCCArgs(
             }
 
             if (comp.config.link_libunwind) {
-                try argv.append("-isystem");
-                try argv.append(try fs.path.join(arena, &[_][]const u8{
+                try argv.append(arena, "-isystem");
+                try argv.append(arena, try fs.path.join(arena, &.{
                     comp.dirs.zig_lib.path.?, "libunwind", "include",
                 }));
             }
 
-            try argv.ensureUnusedCapacity(comp.libc_framework_dir_list.len * 2);
+            try argv.ensureUnusedCapacity(arena, comp.libc_framework_dir_list.len * 2);
             for (comp.libc_framework_dir_list) |framework_dir| {
-                try argv.appendSlice(&.{ "-iframework", framework_dir });
+                argv.appendSliceAssumeCapacity(&.{ "-iframework", framework_dir });
             }
 
-            try argv.ensureUnusedCapacity(comp.framework_dirs.len * 2);
+            try argv.ensureUnusedCapacity(arena, comp.framework_dirs.len * 2);
             for (comp.framework_dirs) |framework_dir| {
-                try argv.appendSlice(&.{ "-F", framework_dir.path orelse "." });
+                argv.appendSliceAssumeCapacity(&.{ "-F", framework_dir.path orelse "." });
             }
         }
     }
@@ -6553,17 +6553,17 @@ fn addCommonCCArgs(
         .hmm,
         => {
             if (is_clang) {
-                try argv.append("-fno-spell-checking");
+                try argv.append(arena, "-fno-spell-checking");
 
                 if (target.os.tag == .windows and target.abi.isGnu()) {
                     // windows.h has files such as pshpack1.h which do #pragma packing,
                     // triggering a clang warning. So for this target, we disable this warning.
-                    try argv.append("-Wno-pragma-pack");
+                    try argv.append(arena, "-Wno-pragma-pack");
                 }
             }
 
             if (mod.optimize_mode != .debug) {
-                try argv.append("-Werror=date-time");
+                try argv.append(arena, "-Werror=date-time");
             }
         },
         else => {},
@@ -6583,7 +6583,7 @@ fn addCommonCCArgs(
         .bc,
         => {
             if (mod.code_model != .default) {
-                try argv.append(try std.fmt.allocPrint(arena, "-mcmodel={s}", .{@tagName(mod.code_model)}));
+                try argv.append(arena, try std.fmt.allocPrint(arena, "-mcmodel={s}", .{@tagName(mod.code_model)}));
             }
 
             if (is_clang) {
@@ -6603,21 +6603,21 @@ fn addCommonCCArgs(
                 }
                 // Chop off the trailing comma and append to argv.
                 if (san_arg.pop()) |_| {
-                    try argv.append(san_arg.items);
+                    try argv.append(arena, san_arg.items);
 
                     switch (mod.sanitize_c) {
                         .off => {},
                         .trap => {
-                            try argv.append("-fsanitize-trap=undefined");
+                            try argv.append(arena, "-fsanitize-trap=undefined");
 
                             // Same reasoning as below.
-                            try argv.append("-fno-sanitize=function");
+                            try argv.append(arena, "-fno-sanitize=function");
                         },
                         .full => {
                             // This check requires implementing the Itanium C++ ABI.
                             // We would make it `-fsanitize-trap=vptr`, however this check requires
                             // a full runtime due to the type hashing involved.
-                            try argv.append("-fno-sanitize=vptr");
+                            try argv.append(arena, "-fno-sanitize=vptr");
 
                             // It is very common, and well-defined, for a pointer on one side of a C ABI
                             // to have a different but compatible element type. Examples include:
@@ -6626,20 +6626,20 @@ fn addCommonCCArgs(
                             // `char*` vs `unsigned char*`
                             // Without this flag, Clang would invoke UBSAN when such an extern
                             // function was called.
-                            try argv.append("-fno-sanitize=function");
+                            try argv.append(arena, "-fno-sanitize=function");
 
                             // This is necessary because, by default, Clang instructs LLVM to embed
                             // a COFF link dependency on `libclang_rt.ubsan_standalone.a` when the
                             // UBSan runtime is used.
                             if (target.os.tag == .windows) {
-                                try argv.append("-fno-rtlib-defaultlib");
+                                try argv.append(arena, "-fno-rtlib-defaultlib");
                             }
                         },
                     }
                 }
 
                 if (comp.config.san_cov_trace_pc_guard) {
-                    try argv.append("-fsanitize-coverage=trace-pc-guard");
+                    try argv.append(arena, "-fsanitize-coverage=trace-pc-guard");
                 }
             }
 
@@ -6648,12 +6648,12 @@ fn addCommonCCArgs(
                     // Clang has -Og for compatibility with GCC, but currently it is just equivalent
                     // to -O1. Besides potentially impairing debugging, -O1/-Og significantly
                     // increases compile times.
-                    try argv.append("-O0");
+                    try argv.append(arena, "-O0");
                 },
                 .safe => {
                     // See the comment in the BuildModeFastRelease case for why we pass -O2 rather
                     // than -O3 here.
-                    try argv.append("-O2");
+                    try argv.append(arena, "-O2");
                 },
                 .fast => {
                     // Here we pass -O2 rather than -O3 because, although we do the equivalent of
@@ -6661,10 +6661,10 @@ fn addCommonCCArgs(
                     // has better detection and prevention of undefined behavior, so -O3 is safer for
                     // Zig code than it is for C code. Also, C programmers are used to their code
                     // running in -O2 and thus the -O3 path has been tested less.
-                    try argv.append("-O2");
+                    try argv.append(arena, "-O2");
                 },
                 .small => {
-                    try argv.append("-Os");
+                    try argv.append(arena, "-Os");
                 },
             }
         },
@@ -6676,7 +6676,8 @@ fn addCommonCCArgs(
 pub fn addCCArgs(
     comp: *const Compilation,
     arena: Allocator,
-    argv: *std.array_list.Managed([]const u8),
+    /// Uses `arena` as its allocator
+    argv: *std.ArrayList([]const u8),
     ext: FileExt,
     out_dep_path: ?[]const u8,
     mod: *Module,
@@ -6688,14 +6689,14 @@ pub fn addCCArgs(
     // to learn about abstractions and where the appropriate boundaries between
     // them are. The road to hell is paved with good intentions. Fortunately it
     // can be disabled.
-    try argv.append("--no-default-config");
+    try argv.append(arena, "--no-default-config");
 
     // We don't ever put `-fcolor-diagnostics` or `-fno-color-diagnostics` because in passthrough mode
     // we want Clang to infer it, and in normal mode we always want it off, which will be true since
     // clang will detect stderr as a pipe rather than a terminal.
     if (!comp.clang_passthrough_mode and ext.clangSupportsDiagnostics()) {
         // Make stderr more easily parseable.
-        try argv.append("-fno-caret-diagnostics");
+        try argv.append(arena, "-fno-caret-diagnostics");
     }
 
     // We never want clang to invoke the system assembler for anything. So we would want
@@ -6703,14 +6704,14 @@ pub fn addCCArgs(
     // "unused parameter" warnings, and to keep CLI spam to a minimum, we only put this
     // flag on the command line if it is necessary.
     if (target_util.clangMightShellOutForAssembly(target)) {
-        try argv.append("-integrated-as");
+        try argv.append(arena, "-integrated-as");
     }
 
     const llvm_triple = try std.zig.llvm.Builder.tripleForTarget(arena, target);
-    try argv.appendSlice(&[_][]const u8{ "-target", llvm_triple });
+    try argv.appendSlice(arena, &.{ "-target", llvm_triple });
 
     if (target.cpu.arch.isThumb()) {
-        try argv.append(switch (ext) {
+        try argv.append(arena, switch (ext) {
             .assembly, .assembly_with_cpp => "-Wa,-mthumb",
             else => "-mthumb",
         });
@@ -6722,7 +6723,7 @@ pub fn addCCArgs(
         if (!(target.cpu.arch.isArm() and (ext == .assembly or ext == .assembly_with_cpp)) and
             !(target.cpu.arch.isPowerPC64() and target.os.tag == .freebsd))
         {
-            try argv.append(try std.fmt.allocPrint(arena, "-mabi={s}", .{mabi}));
+            try argv.append(arena, try std.fmt.allocPrint(arena, "-mabi={s}", .{mabi}));
         }
     }
 
@@ -6731,7 +6732,7 @@ pub fn addCCArgs(
         // LLVM and Clang also do not have complete support for it, producing wrong values in some
         // cases. So just enforce IEEE `long double` everywhere - either binary64 or binary128
         // depending on what the OS/ABI requires.
-        try argv.appendSlice(&.{
+        try argv.appendSlice(arena, &.{
             "-mabi=ieeelongdouble",
             // Clang has some truly goofy logic for emitting warnings about the
             // "current library" not supporting IEEE `long double`.
@@ -6740,21 +6741,21 @@ pub fn addCCArgs(
     }
 
     if (target.cpu.arch == .hexagon) {
-        try argv.append("-G0"); // Unsupported by LLD.
+        try argv.append(arena, "-G0"); // Unsupported by LLD.
     }
 
     // We might want to support -mfloat-abi=softfp for Arm and CSKY here in the future.
     if (target_util.clangSupportsFloatAbiArg(target)) {
         const fabi = target.abi.float();
 
-        try argv.append(switch (target.cpu.arch) {
+        try argv.append(arena, switch (target.cpu.arch) {
             // For whatever reason, Clang doesn't support `-mfloat-abi` for s390x.
             .s390x => try std.fmt.allocPrint(arena, "-m{s}-float", .{@tagName(fabi)}),
             else => try std.fmt.allocPrint(arena, "-mfloat-abi={s}", .{@tagName(fabi)}),
         });
 
         if (target.cpu.arch.isMips() and fabi == .hard) {
-            try argv.appendSlice(if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))
+            try argv.appendSlice(arena, if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))
                 &.{ "-msingle-float", "-mno-odd-spreg" }
             else if (target.cpu.arch.isMips64() or target.cpu.hasAny(.mips, &.{ .mips32r6, .msa }))
                 &.{ "-mfp64", "-modd-spreg" }
@@ -6768,16 +6769,16 @@ pub fn addCCArgs(
     if (target.cpu.arch.isX86() and target.abi.float() == .soft) {
         // This is necessary to get the effects of the `soft-float` backend
         // subtarget feature in the frontend as well.
-        try argv.append("-mgeneral-regs-only");
+        try argv.append(arena, "-mgeneral-regs-only");
     }
 
     if (mod.patchable_function_entry > 0) {
         const pf = mod.patchable_function_entry;
-        try argv.append(try std.fmt.allocPrint(arena, "-fpatchable-function-entry={}", .{pf}));
+        try argv.append(arena, try std.fmt.allocPrint(arena, "-fpatchable-function-entry={}", .{pf}));
     }
 
     if (target.cpu.arch.isMips()) {
-        try argv.append(if (comp.config.pic) "-mabicalls" else "-mno-abicalls");
+        try argv.append(arena, if (comp.config.pic) "-mabicalls" else "-mno-abicalls");
     }
 
     try comp.addCommonCCArgs(arena, argv, ext, out_dep_path, mod, comp.config.c_frontend);
@@ -6786,53 +6787,53 @@ pub fn addCCArgs(
     if (ext != .assembly) {
         if (target.abi.float() == .soft) {
             if (target_util.clangSupportsNoImplicitFloatArg(target)) {
-                try argv.append("-mno-implicit-float");
+                try argv.append(arena, "-mno-implicit-float");
             }
 
             // Ensure that Clang emits the `use-soft-float` function attribute.
-            try argv.appendSlice(&.{ "-Xclang", "-msoft-float" });
+            try argv.appendSlice(arena, &.{ "-Xclang", "-msoft-float" });
         }
 
         if (target.cpu.arch.isMips() and !comp.config.pic) {
-            try argv.append("-mno-gpopt");
+            try argv.append(arena, "-mno-gpopt");
         }
 
         if (target_util.hasRedZone(target)) {
-            try argv.append(if (mod.red_zone) "-mred-zone" else "-mno-red-zone");
+            try argv.append(arena, if (mod.red_zone) "-mred-zone" else "-mno-red-zone");
         }
 
-        try argv.append(if (mod.omit_frame_pointer) "-fomit-frame-pointer" else "-fno-omit-frame-pointer");
+        try argv.append(arena, if (mod.omit_frame_pointer) "-fomit-frame-pointer" else "-fno-omit-frame-pointer");
         if (target.cpu.arch == .s390x) {
-            try argv.append(if (mod.omit_frame_pointer) "-mno-backchain" else "-mbackchain");
+            try argv.append(arena, if (mod.omit_frame_pointer) "-mno-backchain" else "-mbackchain");
         }
 
         const ssp_buf_size = mod.stack_protector;
         if (ssp_buf_size != 0) {
-            try argv.appendSlice(&[_][]const u8{
+            try argv.appendSlice(arena, &.{
                 "-fstack-protector-strong",
                 "--param",
                 try std.fmt.allocPrint(arena, "ssp-buffer-size={d}", .{ssp_buf_size}),
             });
         } else {
-            try argv.append("-fno-stack-protector");
+            try argv.append(arena, "-fno-stack-protector");
         }
 
-        try argv.append(if (mod.no_builtin) "-fno-builtin" else "-fbuiltin");
+        try argv.append(arena, if (mod.no_builtin) "-fno-builtin" else "-fbuiltin");
 
-        try argv.append(if (comp.config.function_sections) "-ffunction-sections" else "-fno-function-sections");
-        try argv.append(if (comp.config.data_sections) "-fdata-sections" else "-fno-data-sections");
+        try argv.append(arena, if (comp.config.function_sections) "-ffunction-sections" else "-fno-function-sections");
+        try argv.append(arena, if (comp.config.data_sections) "-fdata-sections" else "-fno-data-sections");
 
         switch (mod.unwind_tables) {
             .none => {
-                try argv.append("-fno-unwind-tables");
-                try argv.append("-fno-asynchronous-unwind-tables");
+                try argv.append(arena, "-fno-unwind-tables");
+                try argv.append(arena, "-fno-asynchronous-unwind-tables");
             },
             .sync => {
                 // Need to override Clang's convoluted default logic.
-                try argv.append("-fno-asynchronous-unwind-tables");
-                try argv.append("-funwind-tables");
+                try argv.append(arena, "-fno-asynchronous-unwind-tables");
+                try argv.append(arena, "-funwind-tables");
             },
-            .async => try argv.append("-fasynchronous-unwind-tables"),
+            .async => try argv.append(arena, "-fasynchronous-unwind-tables"),
         }
     }
 
@@ -6860,7 +6861,7 @@ pub fn addCCArgs(
             if (target_util.clangSupportsTargetCpuArg(target)) {
                 if (target.cpu.model.llvm_name) |llvm_name| {
                     for (xclang_flags) |xclang| {
-                        try argv.appendSlice(&[_][]const u8{
+                        try argv.appendSlice(arena, &.{
                             xclang, "-target-cpu", xclang, llvm_name,
                         });
                     }
@@ -6869,7 +6870,7 @@ pub fn addCCArgs(
 
             // It would be really nice if there was a more compact way to communicate this info to Clang.
             const all_features_list = target.cpu.arch.allFeaturesList();
-            try argv.ensureUnusedCapacity(all_features_list.len * xclang_flags.len * 4);
+            try argv.ensureUnusedCapacity(arena, all_features_list.len * xclang_flags.len * 4);
             for (all_features_list, 0..) |feature, index_usize| {
                 const index = @as(std.Target.Cpu.Feature.Set.Index, @intCast(index_usize));
                 const is_enabled = target.cpu.features.isEnabled(index);
@@ -6882,14 +6883,14 @@ pub fn addCCArgs(
                     const plus_or_minus = "-+"[@intFromBool(is_enabled)];
                     const arg = try std.fmt.allocPrint(arena, "{c}{s}", .{ plus_or_minus, llvm_name });
                     for (xclang_flags) |xclang| {
-                        argv.appendSliceAssumeCapacity(&[_][]const u8{ xclang, "-target-feature", xclang, arg });
+                        argv.appendSliceAssumeCapacity(&.{ xclang, "-target-feature", xclang, arg });
                     }
                 }
             }
 
             if (target.cpu.arch.isPowerpc32()) {
                 // https://github.com/llvm/llvm-project/issues/235393
-                for (xclang_flags) |xclang| try argv.appendSlice(&.{
+                for (xclang_flags) |xclang| try argv.appendSlice(arena, &.{
                     xclang,
                     "-target-feature",
                     xclang,
@@ -6898,7 +6899,7 @@ pub fn addCCArgs(
             }
 
             if (target.cpu.arch == .x86c16) {
-                for (xclang_flags) |xclang| for ([_][]const u8{ "+16bit-mode", "-32bit-mode" }) |feature| try argv.appendSlice(&.{
+                for (xclang_flags) |xclang| for ([_][]const u8{ "+16bit-mode", "-32bit-mode" }) |feature| try argv.appendSlice(arena, &.{
                     xclang,
                     "-target-feature",
                     xclang,
@@ -6910,7 +6911,7 @@ pub fn addCCArgs(
                 // LLVM does not currently support specifying windowed vs call0 ABI any other way than
                 // disabling all windowed instructions altogether. That's kind of silly because a
                 // windowed core can do call0 just fine.
-                if (target.abi == .call0) for (xclang_flags) |xclang| try argv.appendSlice(&.{
+                if (target.abi == .call0) for (xclang_flags) |xclang| try argv.appendSlice(arena, &.{
                     xclang,
                     "-target-feature",
                     xclang,
@@ -6921,8 +6922,8 @@ pub fn addCCArgs(
         else => {},
     }
 
-    try argv.appendSlice(comp.global_cc_argv);
-    try argv.appendSlice(mod.cc_argv);
+    try argv.appendSlice(arena, comp.global_cc_argv);
+    try argv.appendSlice(arena, mod.cc_argv);
 }
 
 fn failCObjRetryable(

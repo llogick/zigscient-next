@@ -325,38 +325,38 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         if (options.inherited.resolved_target == null) break :b options.parent.?.llvm_cpu_features;
 
         // Append disabled features after enabled ones, so that their effects aren't overwritten.
-        var buf = std.array_list.Managed(u8).init(arena);
-        var disabled_features = std.array_list.Managed(u8).init(arena);
+        var buf: std.ArrayList(u8) = .empty;
+        var disabled_features: std.ArrayList(u8) = .empty;
         for (target.cpu.arch.allFeaturesList()) |feature| {
             if (feature.llvm_name) |llvm_name| {
                 if (target.cpu.features.isEnabled(feature.index)) {
-                    try buf.ensureUnusedCapacity(2 + llvm_name.len);
+                    try buf.ensureUnusedCapacity(arena, 2 + llvm_name.len);
                     buf.appendAssumeCapacity('+');
                     buf.appendSliceAssumeCapacity(llvm_name);
                     buf.appendAssumeCapacity(',');
                 } else {
-                    try disabled_features.ensureUnusedCapacity(2 + llvm_name.len);
+                    try disabled_features.ensureUnusedCapacity(arena, 2 + llvm_name.len);
                     disabled_features.appendAssumeCapacity('-');
                     disabled_features.appendSliceAssumeCapacity(llvm_name);
                     disabled_features.appendAssumeCapacity(',');
                 }
             }
         }
-        try buf.appendSlice(disabled_features.items);
+        try buf.appendSlice(arena, disabled_features.items);
 
         if (target.cpu.arch.isArm()) {
-            try buf.append(if (target.cpu.arch.isThumb()) '+' else '-');
-            try buf.appendSlice("thumb-mode,");
+            try buf.append(arena, if (target.cpu.arch.isThumb()) '+' else '-');
+            try buf.appendSlice(arena, "thumb-mode,");
         }
 
         if (target.cpu.arch == .hexagon) {
-            try buf.appendSlice("-small-data,"); // Unsupported by LLD.
+            try buf.appendSlice(arena, "-small-data,"); // Unsupported by LLD.
         }
 
         if (target.cpu.arch.isMips()) {
-            try buf.append(if (options.global.pic) '-' else '+');
-            try buf.appendSlice("noabicalls,");
-            try buf.appendSlice(if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))
+            try buf.append(arena, if (options.global.pic) '-' else '+');
+            try buf.appendSlice(arena, "noabicalls,");
+            try buf.appendSlice(arena, if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))
                 "-fpxx,+nooddspreg,+single-float,"
             else if (target.cpu.arch.isMips64() or target.cpu.hasAny(.mips, &.{ .mips32r6, .msa }))
                 "-fpxx,-nooddspreg,+fp64,"
@@ -368,23 +368,23 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
 
         if (target.cpu.arch.isPowerpc32()) {
             // https://github.com/llvm/llvm-project/issues/235393
-            try buf.appendSlice("-crbits,");
+            try buf.appendSlice(arena, "-crbits,");
         }
 
         if (target.cpu.arch == .s390x) {
-            try buf.append(if (omit_frame_pointer) '-' else '+');
-            try buf.appendSlice("backchain,");
+            try buf.append(arena, if (omit_frame_pointer) '-' else '+');
+            try buf.appendSlice(arena, "backchain,");
         }
 
         if (target.cpu.arch == .x86c16) {
-            try buf.appendSlice("+16bit-mode,-32bit-mode,");
+            try buf.appendSlice(arena, "+16bit-mode,-32bit-mode,");
         }
 
         if (target.cpu.arch.isXtensa()) {
             // LLVM does not currently support specifying windowed vs call0 ABI any other way than
             // disabling all windowed instructions altogether. That's kind of silly because a
             // windowed core can do call0 just fine.
-            if (target.abi == .call0) try buf.appendSlice("-windowed,");
+            if (target.abi == .call0) try buf.appendSlice(arena, "-windowed,");
         }
 
         if (buf.items.len == 0) break :b "";

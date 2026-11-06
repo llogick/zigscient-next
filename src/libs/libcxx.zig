@@ -1,6 +1,7 @@
 const std = @import("std");
 const path = std.fs.path;
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 
 const target_util = @import("../target.zig");
 const Compilation = @import("../Compilation.zig");
@@ -104,10 +105,9 @@ const libcxx_thread_files = [_][]const u8{
 };
 
 pub const BuildError = error{
-    OutOfMemory,
     AlreadyReported,
     ZigCompilerNotBuiltWithLLVMExtensions,
-} || std.Io.Cancelable;
+} || std.Io.Cancelable || Allocator.Error;
 
 pub fn buildLibCxx(comp: *Compilation, prog_node: std.Progress.Node) BuildError!void {
     if (!build_options.have_llvm) {
@@ -195,51 +195,44 @@ pub fn buildLibCxx(comp: *Compilation, prog_node: std.Progress.Node) BuildError!
     else
         &libcxx_base_files;
 
-    var c_source_files = try std.array_list.Managed(Compilation.CSourceFile).initCapacity(arena, libcxx_files.len);
+    var c_source_files: std.ArrayList(Compilation.CSourceFile) = try .initCapacity(arena, libcxx_files.len);
 
     for (libcxx_files) |cxx_src| {
         if (std.mem.startsWith(u8, cxx_src, "src/support/win32/") and target.os.tag != .windows)
             continue;
 
-        var cflags = std.array_list.Managed([]const u8).init(arena);
+        var cflags: std.ArrayList([]const u8) = .empty;
 
         try addCxxArgs(comp, arena, &cflags);
 
-        try cflags.append("-w"); // Disable all warnings.
-        try cflags.append("-DNDEBUG");
-        try cflags.append("-DLIBC_NAMESPACE=__llvm_libc_common_utils");
-        try cflags.append("-D_LIBCPP_BUILDING_LIBRARY");
-        try cflags.append("-DLIBCXX_BUILDING_LIBCXXABI");
-        try cflags.append("-D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER");
-        try cflags.append("-fvisibility=hidden");
-        try cflags.append("-fvisibility-inlines-hidden");
-
-        try cflags.append("-faligned-allocation");
-
-        try cflags.append("-nostdinc++");
-        try cflags.append("-std=c++26");
+        try cflags.appendSlice(arena, &.{
+            "-w", // Disable all warnings.
+            "-DNDEBUG",
+            "-DLIBC_NAMESPACE=__llvm_libc_common_utils",
+            "-D_LIBCPP_BUILDING_LIBRARY",
+            "-DLIBCXX_BUILDING_LIBCXXABI",
+            "-D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER",
+            "-fvisibility=hidden",
+            "-fvisibility-inlines-hidden",
+            "-faligned-allocation",
+            "-nostdinc++",
+            "-std=c++26",
+        });
 
         // These depend on only the zig lib directory file path, which is
         // purposefully either in the cache or not in the cache. The decision
         // should not be overridden here.
-        var cache_exempt_flags = std.array_list.Managed([]const u8).init(arena);
-
-        try cache_exempt_flags.append("-I");
-        try cache_exempt_flags.append(cxx_include_path);
-
-        try cache_exempt_flags.append("-I");
-        try cache_exempt_flags.append(cxxabi_include_path);
-
-        try cache_exempt_flags.append("-I");
-        try cache_exempt_flags.append(cxx_src_include_path);
-
-        try cache_exempt_flags.append("-I");
-        try cache_exempt_flags.append(cxx_libc_include_path);
+        const cache_exempt_flags = try arena.dupe([]const u8, &.{
+            "-I", cxx_include_path,
+            "-I", cxxabi_include_path,
+            "-I", cxx_src_include_path,
+            "-I", cxx_libc_include_path,
+        });
 
         c_source_files.appendAssumeCapacity(.{
             .src_path = try comp.dirs.zig_lib.join(arena, &.{ "libcxx", cxx_src }),
             .extra_flags = cflags.items,
-            .cache_exempt_flags = cache_exempt_flags.items,
+            .cache_exempt_flags = cache_exempt_flags,
             .owner = root_mod,
         });
     }
@@ -372,7 +365,7 @@ pub fn buildLibCxxAbi(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         return error.AlreadyReported;
     };
 
-    var c_source_files = try std.array_list.Managed(Compilation.CSourceFile).initCapacity(arena, libcxxabi_files.len);
+    var c_source_files: std.ArrayList(Compilation.CSourceFile) = try .initCapacity(arena, libcxxabi_files.len);
 
     for (libcxxabi_files) |cxxabi_src| {
         if (!comp.config.any_non_single_threaded and std.mem.eql(u8, cxxabi_src, "src/cxa_thread_atexit.cpp"))
@@ -380,47 +373,42 @@ pub fn buildLibCxxAbi(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         if (std.mem.eql(u8, cxxabi_src, "src/cxa_noexception.cpp"))
             continue;
 
-        var cflags = std.array_list.Managed([]const u8).init(arena);
+        var cflags: std.ArrayList([]const u8) = .empty;
 
         try addCxxArgs(comp, arena, &cflags);
 
-        try cflags.append("-w"); // Disable all warnings.
-        try cflags.append("-DNDEBUG");
-        try cflags.append("-D_LIBCPP_BUILDING_LIBRARY");
-        try cflags.append("-D_LIBCXXABI_BUILDING_LIBRARY");
+        try cflags.ensureUnusedCapacity(arena, 11);
+        cflags.appendAssumeCapacity("-w"); // Disable all warnings.
+        cflags.appendAssumeCapacity("-DNDEBUG");
+        cflags.appendAssumeCapacity("-D_LIBCPP_BUILDING_LIBRARY");
+        cflags.appendAssumeCapacity("-D_LIBCXXABI_BUILDING_LIBRARY");
         if (!comp.config.any_non_single_threaded) {
-            try cflags.append("-D_LIBCXXABI_HAS_NO_THREADS");
+            cflags.appendAssumeCapacity("-D_LIBCXXABI_HAS_NO_THREADS");
         }
         if (target.abi.isGnu()) {
             if (target.os.tag != .linux or !(target.os.versionRange().gnuLibCVersion().?.order(.{ .major = 2, .minor = 18, .patch = 0 }) == .lt))
-                try cflags.append("-DHAVE___CXA_THREAD_ATEXIT_IMPL");
+                cflags.appendAssumeCapacity("-DHAVE___CXA_THREAD_ATEXIT_IMPL");
         }
 
-        try cflags.append("-fvisibility=hidden");
-        try cflags.append("-fvisibility-inlines-hidden");
+        cflags.appendAssumeCapacity("-fvisibility=hidden");
+        cflags.appendAssumeCapacity("-fvisibility-inlines-hidden");
 
-        try cflags.append("-nostdinc++");
-        try cflags.append("-fstrict-aliasing");
-        try cflags.append("-std=c++26");
+        cflags.appendAssumeCapacity("-nostdinc++");
+        cflags.appendAssumeCapacity("-fstrict-aliasing");
+        cflags.appendAssumeCapacity("-std=c++26");
 
         // These depend on only the zig lib directory file path, which is
         // purposefully either in the cache or not in the cache. The decision
         // should not be overridden here.
-        var cache_exempt_flags = std.array_list.Managed([]const u8).init(arena);
-
-        try cache_exempt_flags.append("-I");
-        try cache_exempt_flags.append(cxxabi_include_path);
-
-        try cache_exempt_flags.append("-I");
-        try cache_exempt_flags.append(cxx_include_path);
-
-        try cache_exempt_flags.append("-I");
-        try cache_exempt_flags.append(cxx_src_include_path);
-
+        const cache_exempt_flags = try arena.dupe([]const u8, &.{
+            "-I", cxxabi_include_path,
+            "-I", cxx_include_path,
+            "-I", cxx_src_include_path,
+        });
         c_source_files.appendAssumeCapacity(.{
             .src_path = try comp.dirs.zig_lib.join(arena, &.{ "libcxxabi", cxxabi_src }),
             .extra_flags = cflags.items,
-            .cache_exempt_flags = cache_exempt_flags.items,
+            .cache_exempt_flags = cache_exempt_flags,
             .owner = root_mod,
         });
     }
@@ -473,63 +461,61 @@ pub fn buildLibCxxAbi(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
 
 pub fn addCxxArgs(
     comp: *const Compilation,
-    arena: std.mem.Allocator,
-    cflags: *std.array_list.Managed([]const u8),
-) error{OutOfMemory}!void {
+    arena: Allocator,
+    /// Uses `arena` as its allocator
+    cflags: *std.ArrayList([]const u8),
+) Allocator.Error!void {
     const target = comp.getTarget();
     const optimize_mode = comp.compilerRtOptMode();
 
+    try cflags.ensureUnusedCapacity(arena, 20);
     const abi_version: u2 = if (target.os.tag == .emscripten) 2 else 1;
-    try cflags.append(try std.fmt.allocPrint(arena, "-D_LIBCPP_ABI_VERSION={d}", .{
-        abi_version,
-    }));
-    try cflags.append(try std.fmt.allocPrint(arena, "-D_LIBCPP_ABI_NAMESPACE=__{d}", .{
-        abi_version,
-    }));
-    try cflags.append(try std.fmt.allocPrint(arena, "-D_LIBCPP_HAS_THREADS={d}", .{
-        @as(u1, if (comp.config.any_non_single_threaded) 1 else 0),
-    }));
-    try cflags.append("-D_LIBCPP_HAS_MONOTONIC_CLOCK");
-    try cflags.append("-D_LIBCPP_HAS_TERMINAL");
-    try cflags.append(try std.fmt.allocPrint(arena, "-D_LIBCPP_HAS_MUSL_LIBC={d}", .{
-        @as(u1, if (target.abi.isMusl()) 1 else 0),
-    }));
-    try cflags.append("-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS");
-    try cflags.append("-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS");
-    try cflags.append("-D_LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS=0");
-    try cflags.append("-D_LIBCPP_HAS_FILESYSTEM");
-    try cflags.append("-D_LIBCPP_HAS_RANDOM_DEVICE");
-    try cflags.append("-D_LIBCPP_HAS_LOCALIZATION");
-    try cflags.append("-D_LIBCPP_HAS_UNICODE");
-    try cflags.append("-D_LIBCPP_HAS_WIDE_CHARACTERS");
-    try cflags.append("-D_LIBCPP_HAS_NO_STD_MODULES");
+
+    cflags.appendSliceAssumeCapacity(&.{
+        try std.fmt.allocPrint(arena, "-D_LIBCPP_ABI_VERSION={d}", .{abi_version}),
+        try std.fmt.allocPrint(arena, "-D_LIBCPP_ABI_NAMESPACE=__{d}", .{abi_version}),
+        try std.fmt.allocPrint(arena, "-D_LIBCPP_HAS_THREADS={d}", .{@as(u1, if (comp.config.any_non_single_threaded) 1 else 0)}),
+        "-D_LIBCPP_HAS_MONOTONIC_CLOCK",
+        "-D_LIBCPP_HAS_TERMINAL",
+        try std.fmt.allocPrint(arena, "-D_LIBCPP_HAS_MUSL_LIBC={d}", .{@as(u1, if (target.abi.isMusl()) 1 else 0)}),
+        "-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
+        "-D_LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS=0",
+        "-D_LIBCPP_HAS_FILESYSTEM",
+        "-D_LIBCPP_HAS_RANDOM_DEVICE",
+        "-D_LIBCPP_HAS_LOCALIZATION",
+        "-D_LIBCPP_HAS_UNICODE",
+        "-D_LIBCPP_HAS_WIDE_CHARACTERS",
+        "-D_LIBCPP_HAS_NO_STD_MODULES",
+    });
+
     if (target.os.tag == .linux) {
-        try cflags.append("-D_LIBCPP_HAS_TIME_ZONE_DATABASE");
+        cflags.appendAssumeCapacity("-D_LIBCPP_HAS_TIME_ZONE_DATABASE");
     }
     // See libcxx/include/__algorithm/pstl_backends/cpu_backends/backend.h
     // for potentially enabling some fancy features here, which would
     // require corresponding changes in libcxx.zig, as well as
     // Compilation.addCCArgs. This option makes it use serial backend which
     // is simple and works everywhere.
-    try cflags.append("-D_LIBCPP_PSTL_BACKEND_SERIAL");
+    cflags.appendAssumeCapacity("-D_LIBCPP_PSTL_BACKEND_SERIAL");
     switch (optimize_mode) {
         .debug => {
-            try cflags.append("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG");
-            try cflags.append("-D_LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_ENFORCE");
+            cflags.appendAssumeCapacity("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG");
+            cflags.appendAssumeCapacity("-D_LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_ENFORCE");
         },
         .fast, .small => {
-            try cflags.append("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE");
-            try cflags.append("-D_LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_IGNORE");
+            cflags.appendAssumeCapacity("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE");
+            cflags.appendAssumeCapacity("-D_LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_IGNORE");
         },
         .safe => {
-            try cflags.append("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST");
-            try cflags.append("-D_LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_ENFORCE");
+            cflags.appendAssumeCapacity("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST");
+            cflags.appendAssumeCapacity("-D_LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_ENFORCE");
         },
     }
     if (target.isGnuLibC()) {
         // glibc 2.16 introduced aligned_alloc
         if (target.os.versionRange().gnuLibCVersion().?.order(.{ .major = 2, .minor = 16, .patch = 0 }) == .lt) {
-            try cflags.append("-D_LIBCPP_HAS_LIBRARY_ALIGNED_ALLOCATION=0");
+            cflags.appendAssumeCapacity("-D_LIBCPP_HAS_LIBRARY_ALIGNED_ALLOCATION=0");
         }
     }
 }

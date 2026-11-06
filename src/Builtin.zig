@@ -39,19 +39,19 @@ pub fn hash(opts: @This()) [std.Build.Cache.bin_digest_len]u8 {
     return h.finalResult();
 }
 
-pub fn generate(opts: @This(), allocator: Allocator) Allocator.Error![:0]u8 {
-    var buffer = std.array_list.Managed(u8).init(allocator);
-    try append(opts, &buffer);
-    return buffer.toOwnedSliceSentinel(0);
+pub fn generate(opts: @This(), gpa: Allocator) Allocator.Error![:0]u8 {
+    var buffer: std.ArrayList(u8) = .empty;
+    try opts.append(gpa, &buffer);
+    return buffer.toOwnedSliceSentinel(gpa, 0);
 }
 
-pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Error!void {
+pub fn append(opts: @This(), gpa: Allocator, buffer: *std.ArrayList(u8)) Allocator.Error!void {
     const target = opts.target;
     const arch_family_name = @tagName(target.cpu.arch.family());
     const zig_backend = opts.zig_backend;
 
     @setEvalBranchQuota(4000);
-    try buffer.print(
+    try buffer.print(gpa,
         \\const std = @import("std");
         \\pub const zig_version = std.SemanticVersion.parse(zig_version_string) catch unreachable;
         \\pub const zig_version_string = "{s}";
@@ -89,10 +89,11 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
         const index = @as(std.Target.Cpu.Feature.Set.Index, @intCast(index_usize));
         const is_enabled = target.cpu.features.isEnabled(index);
         if (is_enabled) {
-            try buffer.print("        .{f},\n", .{std.zig.fmtIdPU(feature.name)});
+            try buffer.print(gpa, "        .{f},\n", .{std.zig.fmtIdPU(feature.name)});
         }
     }
     try buffer.print(
+        gpa,
         \\    }}),
         \\}};
         \\/// Deprecated; to be removed in 0.18.0. Use `target.os` instead.
@@ -104,8 +105,8 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
     );
 
     switch (target.os.versionRange()) {
-        .none => try buffer.appendSlice(" .none = {} },\n"),
-        .semver => |semver| try buffer.print(
+        .none => try buffer.appendSlice(gpa, " .none = {} },\n"),
+        .semver => |semver| try buffer.print(gpa,
             \\ .semver = .{{
             \\        .min = .{{
             \\            .major = {},
@@ -128,7 +129,7 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
             semver.max.minor,
             semver.max.patch,
         }),
-        .linux => |linux| try buffer.print(
+        .linux => |linux| try buffer.print(gpa,
             \\ .linux = .{{
             \\        .range = .{{
             \\            .min = .{{
@@ -165,7 +166,7 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
 
             linux.android,
         }),
-        .hurd => |hurd| try buffer.print(
+        .hurd => |hurd| try buffer.print(gpa,
             \\ .hurd = .{{
             \\        .range = .{{
             \\            .min = .{{
@@ -199,7 +200,7 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
             hurd.glibc.minor,
             hurd.glibc.patch,
         }),
-        .windows => |windows| try buffer.print(
+        .windows => |windows| try buffer.print(gpa,
             \\ .windows = .{{
             \\        .min = {f},
             \\        .max = {f},
@@ -207,7 +208,7 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
             \\
         , .{ windows.min, windows.max }),
     }
-    try buffer.appendSlice(
+    try buffer.appendSlice(gpa,
         \\};
         \\pub const target: std.Target = .{
         \\    .cpu = cpu,
@@ -218,13 +219,13 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
     );
 
     if (target.dynamic_linker.get()) |dl| {
-        try buffer.print(
+        try buffer.print(gpa,
             \\    .dynamic_linker = .init("{s}"),
             \\}};
             \\
         , .{dl});
     } else {
-        try buffer.appendSlice(
+        try buffer.appendSlice(gpa,
             \\    .dynamic_linker = .none,
             \\};
             \\
@@ -238,7 +239,7 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
     // knows libc will provide it, and likewise c.zig will not export memcpy.
     const link_libc = opts.link_libc;
 
-    try buffer.print(
+    try buffer.print(gpa,
         \\/// Deprecated; to be removed in 0.18.0. Use `target.ofmt` instead.
         \\pub const object_format: std.Target.ObjectFormat = .{f};
         \\/// Deprecated, to be removed after 0.18.0
@@ -273,14 +274,14 @@ pub fn append(opts: @This(), buffer: *std.array_list.Managed(u8)) Allocator.Erro
     });
 
     if (target.os.tag == .wasi) {
-        try buffer.print(
+        try buffer.print(gpa,
             \\pub const wasi_exec_model: std.lang.WasiExecModel = .{f};
             \\
         , .{std.zig.fmtIdPU(@tagName(opts.wasi_exec_model))});
     }
 
     if (opts.is_test) {
-        try buffer.appendSlice(
+        try buffer.appendSlice(gpa,
             \\pub var test_functions: []const std.lang.TestFn = &.{}; // overwritten later
             \\
         );
