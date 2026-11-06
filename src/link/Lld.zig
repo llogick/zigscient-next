@@ -290,7 +290,7 @@ fn linkAsArchive(lld: *Lld, arena: Allocator) link.Error!void {
     const opt_zcu = comp.zcu;
 
     const zcu_obj_path: ?Cache.Path = if (opt_zcu) |zcu| p: {
-        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object.?.out_bin_basename);
+        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object_basename.?);
     } else null;
 
     log.debug("zcu_obj_path={?f}", .{zcu_obj_path});
@@ -337,13 +337,12 @@ fn linkAsArchive(lld: *Lld, arena: Allocator) link.Error!void {
         std.debug.print("\n", .{});
     }
 
-    const llvm_bindings = @import("../codegen/llvm/bindings.zig");
-    const llvm = @import("../codegen/llvm.zig");
+    const libllvm = @import("../codegen/llvm/lib.zig");
     const target = &comp.root_mod.resolved_target.result;
-    llvm.initializeLLVMTarget(comp.io, target.cpu.arch);
+    libllvm.initializeLLVMTarget(comp.io, target.cpu.arch);
     var err_file_index: usize = undefined;
     var err_msg: [*:0]u8 = undefined;
-    if (llvm_bindings.WriteArchive(
+    if (libllvm.bindings.WriteArchive(
         full_out_path_z,
         object_files.items.ptr,
         object_files.items.len,
@@ -387,7 +386,7 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
     const full_out_path = try directory.join(arena, &[_][]const u8{base.emit.sub_path});
 
     const zcu_obj_path: ?Cache.Path = if (comp.zcu) |zcu| p: {
-        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object.?.out_bin_basename);
+        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object_basename.?);
     } else null;
 
     const is_lib = comp.config.output_mode == .Lib;
@@ -778,7 +777,7 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
     const full_out_path = try directory.join(arena, &[_][]const u8{base.emit.sub_path});
 
     const zcu_obj_path: ?Cache.Path = if (comp.zcu) |zcu| p: {
-        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object.?.out_bin_basename);
+        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object_basename.?);
     } else null;
 
     const output_mode = comp.config.output_mode;
@@ -1390,7 +1389,7 @@ fn wasmLink(lld: *Lld, arena: Allocator) !void {
     const full_out_path = try directory.join(arena, &[_][]const u8{base.emit.sub_path});
 
     const zcu_obj_path: ?Cache.Path = if (comp.zcu) |zcu| p: {
-        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object.?.out_bin_basename);
+        break :p try comp.resolveEmitPathFlush(arena, .temp, zcu.llvm_object_basename.?);
     } else null;
 
     const is_obj = comp.config.output_mode == .Obj;

@@ -540,8 +540,8 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
     const full_out_path = try directory.join(arena, &[_][]const u8{self.base.emit.sub_path});
     const zcu_obj_path: ?[]const u8 = p: {
         const zcu = comp.zcu orelse break :p null;
-        const llvm_object = zcu.llvm_object orelse break :p null;
-        const p = try comp.resolveEmitPathFlush(arena, .temp, llvm_object.out_bin_basename);
+        const basename = zcu.llvm_object_basename orelse break :p null;
+        const p = try comp.resolveEmitPathFlush(arena, .temp, basename);
         break :p try p.toString(arena);
     };
 

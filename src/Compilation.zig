@@ -40,9 +40,10 @@ const libtsan = @import("libs/libtsan.zig");
 const Zir = std.zig.Zir;
 pub const Air = @import("Air.zig");
 const Builtin = @import("Builtin.zig");
-const LlvmObject = @import("codegen/llvm.zig").Object;
 const dev = @import("dev.zig");
 const Module = @import("Module.zig");
+const libllvm = @import("codegen/llvm/lib.zig");
+const debugLogScopeEnabled = @import("main.zig").debugLogScopeEnabled;
 
 pub const Config = @import("Compilation/Config.zig");
 
@@ -2012,6 +2013,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
                 .gpa = gpa,
                 .comp = comp,
                 .llvm_object = null,
+                .llvm_object_basename = null,
 
                 .root_mod = options.root_mod,
                 .main_mod = main_mod,
@@ -3236,12 +3238,55 @@ pub fn resolveEmitPathFlush(
 
 fn flush(comp: *Compilation, arena: Allocator) (Io.Cancelable || Allocator.Error)!void {
     const io = comp.io;
+    const gpa = comp.gpa;
     const tid: Zcu.PerThread.Id = .acquire(io);
     defer tid.release(io);
     if (comp.zcu) |zcu| {
         if (zcu.llvm_object) |llvm_object| {
-            // Emit the ZCU object from LLVM now; it's required to flush the output file.
-            // If there's an output file, it wants to decide where the LLVM object goes!
+            const want_libllvm_emit: bool =
+                zcu.llvm_object_basename != null or
+                comp.emit_asm != null or
+                comp.emit_llvm_ir != null or
+                comp.emit_llvm_bc != null or
+                debugLogScopeEnabled("opt-llvm-ir");
+
+            // `var` so that we can set it to `&.{}` later if we free the bitcode early.
+            var llvm_bitcode: []const u32 = bitcode: {
+                const active = zcu.activate(tid);
+                defer active.deactivate();
+                break :bitcode llvm_object.flush(active.pt, .{
+                    .ir_out_path = if (comp.getTarget().ofmt == .llvmir) comp.bin_file.?.emit else null,
+                    .bc_out_path = if (comp.getTarget().ofmt == .llvmbc) comp.bin_file.?.emit else null,
+                    .want_bitcode = want_libllvm_emit,
+                }) catch |err| switch (err) {
+                    error.AlreadyReported => return,
+                    else => |e| return e,
+                };
+            };
+            defer gpa.free(llvm_bitcode);
+
+            const llvm_triple: [:0]u8 = triple: {
+                const slice = llvm_object.builder.target_triple.slice(&llvm_object.builder).?;
+                break :triple try gpa.dupeSentinel(u8, slice, 0);
+            };
+            defer gpa.free(llvm_triple);
+
+            // At this point we've emitted the IR/bitcode, so unless we're using incremental (where
+            // we need to preserve state for future updates), we are allowed to free `llvm_object`.
+            // We want to do this if possible because it can sometimes significantly reduce peak RSS
+            // during LLVM emit.
+            if (!comp.config.incremental) {
+                llvm_object.deinit();
+                zcu.llvm_object = null;
+            }
+
+            if (!want_libllvm_emit) return;
+
+            if (!build_options.have_llvm or !comp.config.use_lib_llvm) {
+                comp.link_diags.addError("emitting without libllvm not implemented", .{});
+                return;
+            }
+
             const sub_prog_node = comp.link_prog_node.start("LLVM Emit Object", 0);
             defer sub_prog_node.end();
 
@@ -3252,18 +3297,30 @@ fn flush(comp: *Compilation, arena: Allocator) (Io.Cancelable || Allocator.Error
                 comp.time_report.?.stats.real_ns_llvm_emit = ns;
             };
 
-            const zcu_obj_path: ?Cache.Path = switch (comp.getTarget().ofmt) {
-                .llvmbc, .llvmir => null,
-                else => if (comp.bin_file != null)
-                    try comp.resolveEmitPathFlush(arena, .temp, llvm_object.out_bin_basename)
-                else
-                    null,
+            const llvm_context, const llvm_module = libllvm.loadGeneratedBitcode(
+                comp,
+                llvm_bitcode,
+            ) catch |err| switch (err) {
+                error.AlreadyReported => return,
+                else => |e| return e,
             };
+            defer llvm_context.dispose();
 
-            const active = zcu.activate(tid);
-            defer active.deactivate();
-            llvm_object.emit(active.pt, .{
-                .bin_path = if (zcu_obj_path) |p| try p.toStringZ(arena) else null,
+            // At this point we're done with the raw bitcode, so free it now. Like before, we are
+            // doing this to minimize peak RSS during LLVM emit.
+            gpa.free(llvm_bitcode);
+            llvm_bitcode = &.{};
+
+            const zcu_obj_path: ?Cache.Path = if (zcu.llvm_object_basename) |basename| path: {
+                break :path try comp.resolveEmitPathFlush(arena, .temp, basename);
+            } else null;
+
+            libllvm.emit(comp, llvm_context, llvm_module, .{
+                .llvm_triple = llvm_triple,
+                .bin_path = p: {
+                    const p = zcu_obj_path orelse break :p null;
+                    break :p try p.toStringZ(arena);
+                },
                 .asm_path = p: {
                     const raw = comp.emit_asm orelse break :p null;
                     const p = try comp.resolveEmitPathFlush(arena, .artifact, raw);
@@ -3279,16 +3336,9 @@ fn flush(comp: *Compilation, arena: Allocator) (Io.Cancelable || Allocator.Error
                     const p = try comp.resolveEmitPathFlush(arena, .artifact, raw);
                     break :p try p.toStringZ(arena);
                 },
-
-                .is_debug = comp.root_mod.optimize_mode == .debug,
-                .is_small = comp.root_mod.optimize_mode == .small,
-                .time_report = if (comp.time_report) |*p| p else null,
-                .sanitize_thread = comp.config.any_sanitize_thread,
-                .fuzz = comp.config.any_fuzz,
-                .lto = comp.config.lto,
             }) catch |err| switch (err) {
-                error.Canceled, error.OutOfMemory => |e| return e,
-                error.AlreadyReported => {},
+                error.AlreadyReported => return,
+                else => |e| return e,
             };
 
             if (zcu_obj_path) |path| {
@@ -3300,7 +3350,9 @@ fn flush(comp: *Compilation, arena: Allocator) (Io.Cancelable || Allocator.Error
                     error.Canceled, error.OutOfMemory => |e| return e,
                     error.AlreadyReported => return,
                 };
-            } else return;
+            } else {
+                return;
+            }
         }
     }
     if (comp.bin_file) |lf| {

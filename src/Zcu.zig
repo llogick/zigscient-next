@@ -64,6 +64,12 @@ comp: *Compilation,
 /// If the ZCU is emitting an LLVM object (i.e. we are using the LLVM backend), then this is the
 /// `LlvmObject` we are emitting to.
 llvm_object: ?LlvmObject.Ptr,
+/// The basename of the object file which will be emitted by LLVM for the ZCU. Once it is emitted,
+/// this object file is passed to the active linker implementation as an ordinary link input.
+/// Not part of `llvm_object` because that may have been destroyed by the time the linker runs.
+///
+/// For the full path, use `Compilation.resolveEmitPath` with `kind == .temp`.
+llvm_object_basename: ?[]const u8,
 
 /// Pointer to externally managed resource.
 root_mod: *Module,
@@ -3053,7 +3059,21 @@ pub fn reset(zcu: *Zcu, arena: Allocator) Allocator.Error!void {
             }))
     {
         dev.check(.llvm_backend);
-        zcu.llvm_object = try .create(if (comp.config.incremental) comp.arena else arena, zcu);
+        const llvm_arena = if (comp.config.incremental) comp.arena else arena;
+        zcu.llvm_object = try .create(llvm_arena, zcu);
+
+        const target = zcu.getTarget();
+        if (comp.emit_bin != null) switch (target.ofmt) {
+            .llvmbc, .llvmir => {},
+            else => zcu.llvm_object_basename = try std.zig.binNameAlloc(llvm_arena, .{
+                .root_name = try std.fmt.allocPrint(llvm_arena, "{s}_zcu", .{comp.root_name}),
+                .cpu_arch = target.cpu.arch,
+                .os_tag = target.os.tag,
+                .ofmt = target.ofmt,
+                .abi = target.abi,
+                .output_mode = .Obj,
+            }),
+        };
     }
 }
 
