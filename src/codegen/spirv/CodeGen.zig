@@ -5508,13 +5508,8 @@ fn airCall(cg: *CodeGen, inst: Air.Inst.Index, modifier: std.lang.CallModifier) 
 
     const scratch_top = cg.id_scratch.items.len;
     defer cg.id_scratch.shrinkRetainingCapacity(scratch_top);
-    const params = try cg.id_scratch.addManyAsSlice(gpa, args.len);
 
-    var n_params: usize = 0;
     for (args) |arg| {
-        // Note: resolve() might emit instructions, so we need to call it
-        // before starting to emit OpFunctionCall instructions. Hence the
-        // temporary params buffer.
         const arg_ty = cg.typeOf(arg);
         if (!arg_ty.hasRuntimeBits(zcu)) continue;
 
@@ -5527,18 +5522,17 @@ fn airCall(cg: *CodeGen, inst: Air.Inst.Index, modifier: std.lang.CallModifier) 
             // zero-sized types, the source value may not be a variable, so just
             // allocate a dummy one.
             const child_ty_id = try cg.resolveType(arg_ty.childType(zcu), .indirect);
-            params[n_params] = try cg.alloc(child_ty_id, null);
+            try cg.id_scratch.append(gpa, try cg.alloc(child_ty_id, null));
         } else {
-            params[n_params] = try cg.resolve(arg);
+            try cg.id_scratch.append(gpa, try cg.resolve(arg));
         }
-        n_params += 1;
     }
 
     try cg.body.emit(gpa, .OpFunctionCall, .{
         .id_result_type = result_type_id,
         .id_result = result_id,
         .function = callee_id,
-        .id_ref_3 = params[0..n_params],
+        .id_ref_3 = cg.id_scratch.items[scratch_top..],
     });
 
     if (cg.liveness.isUnused(inst) or !Type.fromInterned(return_type).hasRuntimeBits(zcu)) {
