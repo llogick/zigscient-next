@@ -5840,11 +5840,11 @@ fn zirDbgVarPtr(
 
             .uav => |uav| { // comptime-known `const`
                 assert(ptr_key.byte_offset == 0);
-                try sema.addDbgVar(block, .fromIntern(uav.val), .dbg_var_val, name);
+                try sema.addDbgVar(block, .fromIntern(uav.val), .dbg_var_val, name, str_op.tree_data_index);
             },
         }
     } else {
-        try sema.addDbgVar(block, operand, .dbg_var_ptr, name);
+        try sema.addDbgVar(block, operand, .dbg_var_ptr, name, str_op.tree_data_index);
     }
 }
 
@@ -5856,11 +5856,7 @@ fn zirDbgVarVal(
     const str_op = sema.code.instructions.items(.data)[@backingInt(inst)].str_op;
     const operand = sema.resolveInst(str_op.operand);
     const name = str_op.getStr(sema.code);
-<<<<<<< HEAD
     try sema.addDbgVar(block, operand, .dbg_var_val, name, str_op.tree_data_index);
-=======
-    try sema.addDbgVar(block, operand, .dbg_var_val, name);
->>>>>>> 1931d45b0e (Merge pull request 'test: cleanup' (#37543) from jacobly/test-cleanup into master)
 }
 
 fn addDbgVar(
@@ -5873,19 +5869,11 @@ fn addDbgVar(
 ) CompileError!void {
     // if (block.isComptime() or block.ownerModule().strip) return;
 
-<<<<<<< HEAD
     // const pt = sema.pt;
     // const zcu = pt.zcu;
     // if (sema.resolveValue(operand)) |operand_val| {
     //     if (operand_val.canMutateComptimeVarState(zcu)) return;
     // }
-=======
-    const pt = sema.pt;
-    const zcu = pt.zcu;
-    if (sema.resolveValue(operand)) |operand_val| {
-        if (operand_val.canMutateComptimeVarState(zcu)) return;
-    }
->>>>>>> 1931d45b0e (Merge pull request 'test: cleanup' (#37543) from jacobly/test-cleanup into master)
 
     // To ensure the lexical scoping is known to backends, this alloc must be
     // within a real runtime block. We set a flag which communicates information
