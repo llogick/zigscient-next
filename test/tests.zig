@@ -3149,7 +3149,7 @@ pub fn addRunnerTests(
         run.setName(@"test".name);
         run.enableProtocolMode(.{
             // We need more time to compile an entire program than an individual unit test needs.
-            .test_timeout_scale = 3,
+            .test_timeout_scale = 5,
         });
         run.addArg("--log=err"); // don't fill stderr telling us about skipped tests etc
 
