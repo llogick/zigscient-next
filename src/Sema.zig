@@ -1487,12 +1487,12 @@ fn analyzeBodyInner(
                 continue;
             },
             .dbg_var_ptr => {
-                try sema.zirDbgVar(block, inst, .dbg_var_ptr);
+                try sema.zirDbgVarPtr(block, inst);
                 i += 1;
                 continue;
             },
             .dbg_var_val => {
-                try sema.zirDbgVar(block, inst, .dbg_var_val);
+                try sema.zirDbgVarVal(block, inst);
                 i += 1;
                 continue;
             },
@@ -5812,16 +5812,51 @@ fn zirDbgEmptyStmt(_: *Sema, block: *Block, _: Zir.Inst.Index) CompileError!void
     _ = try block.addNoOp(.dbg_empty_stmt);
 }
 
-fn zirDbgVar(
+fn zirDbgVarPtr(
     sema: *Sema,
     block: *Block,
     inst: Zir.Inst.Index,
-    air_tag: Air.Inst.Tag,
+) CompileError!void {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const str_op = sema.code.instructions.items(.data)[@backingInt(inst)].str_op;
+    const operand = sema.resolveInst(str_op.operand);
+    const name = str_op.getStr(sema.code);
+    if (sema.resolveValue(operand)) |comptime_known_ptr| {
+        const ptr_key = zcu.intern_pool.indexToKey(comptime_known_ptr.toIntern()).ptr;
+        switch (ptr_key.base_addr) {
+            .nav => unreachable,
+            .comptime_field => unreachable,
+            .int => unreachable,
+            .eu_payload => unreachable,
+            .opt_payload => unreachable,
+            .field => unreachable,
+            .arr_elem => unreachable,
+
+            .comptime_alloc => { // `comptime var`
+                assert(ptr_key.byte_offset == 0);
+                // The backend mustn't see `comptime var`s (nor `const`s referencing them), so nothing here.
+            },
+
+            .uav => |uav| { // comptime-known `const`
+                assert(ptr_key.byte_offset == 0);
+                try sema.addDbgVar(block, .fromIntern(uav.val), .dbg_var_val, name);
+            },
+        }
+    } else {
+        try sema.addDbgVar(block, operand, .dbg_var_ptr, name);
+    }
+}
+
+fn zirDbgVarVal(
+    sema: *Sema,
+    block: *Block,
+    inst: Zir.Inst.Index,
 ) CompileError!void {
     const str_op = sema.code.instructions.items(.data)[@backingInt(inst)].str_op;
     const operand = sema.resolveInst(str_op.operand);
     const name = str_op.getStr(sema.code);
-    try sema.addDbgVar(block, operand, air_tag, name, str_op.tree_data_index);
+    try sema.addDbgVar(block, operand, .dbg_var_val, name, str_op.tree_data_index);
 }
 
 fn addDbgVar(
@@ -5836,14 +5871,6 @@ fn addDbgVar(
 
     // const pt = sema.pt;
     // const zcu = pt.zcu;
-    // const operand_ty = sema.typeOf(operand);
-    // const val_ty = switch (air_tag) {
-    //     .dbg_var_ptr => operand_ty.childType(zcu),
-    //     .dbg_var_val, .dbg_arg_inline => operand_ty,
-    //     else => unreachable,
-    // };
-    // if (val_ty.comptimeOnly(zcu)) return;
-    // if (!val_ty.hasRuntimeBits(zcu)) return;
     // if (sema.resolveValue(operand)) |operand_val| {
     //     if (operand_val.canMutateComptimeVarState(zcu)) return;
     // }

@@ -118,7 +118,9 @@
 //!
 //!     #require windows
 //!
+//! * `no-matrix` skips all but the first matrix entry.
 //! * `safe-unwind` requires that a safe unwind strategy, like DWARF unwinding, is available.
+//! * `wasm` requires a target cpu arch tag of `.wasm*`.
 //! * `windows` requires a target os tag of `.uefi` or `.windows`.
 //!
 //! The zig command defines the compiler command line arguments that are specific to this case,
@@ -1588,7 +1590,6 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
     }
 }
 const Command = enum { comment, skip, require, zig, write, delete, update, check };
-const Requirement = enum { @"safe-unwind", windows };
 fn handleCommand(
     runner: *Runner,
     update: *Update,
@@ -1653,12 +1654,14 @@ fn handleCommand(
             } else return error.SkipTest;
         },
         .require => {
+            const Requirement = enum { @"no-matrix", @"safe-unwind", wasm, windows };
             const negate, const requirement = if (std.mem.cutPrefix(u8, arg.?, "!")) |requirement|
                 .{ true, requirement }
             else
                 .{ false, arg.? };
             const satisfied = switch (std.meta.stringToEnum(Requirement, requirement) orelse
                 return update.manifest_sr.fail(requirement, "unknown requirement", .{})) {
+                .@"no-matrix" => update.test_index == 0,
                 .@"safe-unwind" => switch (update.target.unwind_tables) {
                     .async => true,
                     .none, .sync => switch (std.debug.FpUsability.of(&update.target.resolved)) {
@@ -1669,6 +1672,7 @@ fn handleCommand(
                         },
                     },
                 },
+                .wasm => update.target.resolved.cpu.arch.isWasm(),
                 .windows => switch (update.target.resolved.os.tag) {
                     else => false,
                     .uefi, .windows => true,
@@ -1834,10 +1838,14 @@ fn handleCommand(
                                     .{ ' ', ' ' },
                                     .{ ':', ':' },
                                 } },
+                                .{ .@"?" = &.{
+                                    .{ .literal = ":" },
+                                } },
                                 .{ .@"*" = &.{
                                     .{ .none = &.{
                                         .{ '\n', '\n' },
                                         .{ '\r', '\r' },
+                                        .{ ':', ':' },
                                     } },
                                 } },
                                 .{ .any = &.{
@@ -1882,10 +1890,14 @@ fn handleCommand(
                                             .{ ' ', ' ' },
                                             .{ ':', ':' },
                                         } },
+                                        .{ .@"?" = &.{
+                                            .{ .literal = ":" },
+                                        } },
                                         .{ .@"*" = &.{
                                             .{ .none = &.{
                                                 .{ '\n', '\n' },
                                                 .{ '\r', '\r' },
+                                                .{ ':', ':' },
                                             } },
                                         } },
                                     } },
@@ -1929,10 +1941,14 @@ fn handleCommand(
                                         .{ ' ', ' ' },
                                         .{ ':', ':' },
                                     } },
+                                    .{ .@"?" = &.{
+                                        .{ .literal = ":" },
+                                    } },
                                     .{ .@"*" = &.{
                                         .{ .none = &.{
                                             .{ '\n', '\n' },
                                             .{ '\r', '\r' },
+                                            .{ ':', ':' },
                                         } },
                                     } },
                                 } },
@@ -2913,10 +2929,14 @@ const Compiler = struct {
                             .{ ' ', ' ' },
                             .{ ':', ':' },
                         } },
+                        .{ .@"?" = &.{
+                            .{ .literal = ":" },
+                        } },
                         .{ .@"*" = &.{
                             .{ .none = &.{
                                 .{ '\n', '\n' },
                                 .{ '\r', '\r' },
+                                .{ ':', ':' },
                             } },
                         } },
                         .{ .any = &.{

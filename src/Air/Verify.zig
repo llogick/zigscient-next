@@ -738,6 +738,15 @@ fn body(verify: *Verify, body_insts: []const Air.Inst.Index) Error!void {
                 const pl_op = data[@backingInt(inst)].pl_op;
                 const operand_ty = air.typeOf(pl_op.operand, ip);
                 if (!operand_ty.isPtrAtRuntime(zcu)) return verify.fail("operand is not a pointer");
+                var operand = pl_op.operand;
+                while (true) {
+                    const operand_inst = operand.toIndex() orelse return verify.fail("operand is not an alloc instruction");
+                    switch (tags[@backingInt(operand_inst)]) {
+                        else => return verify.fail("operand is not an alloc instruction"),
+                        .alloc => break,
+                        .ptr_cast => operand = data[@backingInt(operand_inst)].ty_op.operand,
+                    }
+                }
             },
 
             .dbg_var_val, .dbg_arg_inline => {

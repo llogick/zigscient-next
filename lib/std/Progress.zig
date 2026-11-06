@@ -202,14 +202,6 @@ pub const Node = struct {
             s.estimated_total_count = @byteSwap(s.estimated_total_count);
         }
 
-        fn copyRoot(dest: *Node.Storage, src: *align(1) const Node.Storage) void {
-            dest.* = .{
-                .completed_count = src.completed_count,
-                .estimated_total_count = src.estimated_total_count,
-                .name = if (src.name[0] == 0) dest.name else src.name,
-            };
-        }
-
         comptime {
             assert((@sizeOf(Storage) % 4) == 0);
         }
@@ -1175,7 +1167,10 @@ fn serialize(io: Io, serialized_buffer: *Serialized.Buffer) !Serialized {
                 const start_index = ipc_data.start_index;
                 const nodes_len = @min(ipc_data.nodes_len, node_storage_buffer_len - serialized_len);
 
-                main_storage.copyRoot(&prev_storage[ipc_data.main_index]);
+                const prev_root = &prev_storage[ipc_data.main_index];
+                main_storage.completed_count = prev_root.completed_count;
+                main_storage.estimated_total_count = prev_root.estimated_total_count;
+                if (main_storage.name[0] == 0) main_storage.name = prev_root.name;
                 @memcpy(
                     serialized_buffer.storage[serialized_len..][0..nodes_len],
                     prev_storage[start_index..][0..nodes_len],
@@ -1223,7 +1218,10 @@ fn serialize(io: Io, serialized_buffer: *Serialized.Buffer) !Serialized {
                     };
 
                     // Mount the root here.
-                    main_storage.copyRoot(&storage[0]);
+                    const new_root = &storage[0];
+                    main_storage.completed_count = new_root.completed_count;
+                    main_storage.estimated_total_count = new_root.estimated_total_count;
+                    if (new_root.name[0] != 0) main_storage.name = new_root.name;
                     if (is_big_endian) main_storage.byteSwap();
 
                     // Copy the rest of the tree to the end.
@@ -1457,7 +1455,7 @@ fn computeNode(
     const storage = &serialized.storage[@backingInt(node_index)];
     const estimated_total = storage.estimated_total_count;
     const completed_items = storage.completed_count;
-    const name = if (std.mem.findScalar(u8, &storage.name, 0)) |end| storage.name[0..end] else &storage.name;
+    const name = std.mem.sliceTo(&storage.name, 0);
     const parent = serialized.parents[@backingInt(node_index)];
 
     if (parent != .none) p: {

@@ -1,3 +1,4 @@
+#require no-matrix
 #write test.zig {
 // This tests that switches allow negative values when compiling for SPIR-V.
 // We use i32 to test the one-word OpSwitch literal path, which used to fail.

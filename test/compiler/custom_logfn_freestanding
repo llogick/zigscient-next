@@ -1,3 +1,4 @@
+#require wasm
 #zig build-exe {
 --name test
 -target wasm32-freestanding

@@ -1237,7 +1237,7 @@ fn formatWipMir(data: FormatWipMirData, w: *Writer) Writer.Error!void {
             return;
         },
     }).insts) |lowered_inst| {
-        if (!first) try w.writeAll("\ndebug(wip_mir): ");
+        if (!first) try w.writeAll("\ndebug(wip-mir): ");
         try w.print("  | {f}", .{lowered_inst});
         first = false;
     }
@@ -87888,22 +87888,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                     .dbg_var_ptr => op_ty.childType(zcu),
                     .dbg_var_val, .dbg_arg_inline => op_ty,
                 };
-                var ops = try cg.tempsFromOperands(inst, .{pl_op.operand});
-                var mcv = ops[0].tracking(cg).short;
-                switch (mcv) {
-                    else => {},
-                    .eflags => |cc| switch (cc) {
-                        else => {},
-                        // These values would self destruct. Maybe we make them use their
-                        // turing complete dwarf expression interpreters for once?
-                        .z_and_np, .nz_or_p => {
-                            try cg.spillEflagsIfOccupied();
-                            mcv = ops[0].tracking(cg).short;
-                        },
-                    },
-                }
-
-                try cg.mir_locals.append(cg.gpa, .{
+                const local: Mir.Local = .{
                     .name = switch (air_name) {
                         .none => switch (air_tag) {
                             else => unreachable,
@@ -87912,10 +87897,39 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                         else => try cg.addString(air_name.toSlice(cg.air)),
                     },
                     .type = local_ty.toIntern(),
-                });
+                };
+                if (pl_op.operand.toInterned()) |known| {
+                    try cg.mir_locals.append(cg.gpa, local);
+                    _ = try cg.addInst(.{
+                        .tag = .pseudo,
+                        .ops = switch (air_tag) {
+                            else => unreachable,
+                            .dbg_var_ptr => unreachable, // unexpected comptime-known local pointer
+                            .dbg_var_val => .pseudo_dbg_var_val,
+                            .dbg_arg_inline => .pseudo_dbg_arg_val,
+                        },
+                        .data = .{ .ip_index = known },
+                    });
+                } else {
+                    var ops = try cg.tempsFromOperands(inst, .{pl_op.operand});
+                    var mcv = ops[0].tracking(cg).short;
+                    switch (mcv) {
+                        else => {},
+                        .eflags => |cc| switch (cc) {
+                            else => {},
+                            // These values would self destruct. Maybe we make them use their
+                            // turing complete dwarf expression interpreters for once?
+                            .z_and_np, .nz_or_p => {
+                                try cg.spillEflagsIfOccupied();
+                                mcv = ops[0].tracking(cg).short;
+                            },
+                        },
+                    }
 
-                try cg.genLocalDebugInfo(air_tag, local_ty, ops[0].tracking(cg).short);
-                try ops[0].die(cg);
+                    try cg.mir_locals.append(cg.gpa, local);
+                    try cg.genLocalDebugInfo(air_tag, local_ty, ops[0].tracking(cg).short);
+                    try ops[0].die(cg);
+                }
             },
             .is_null => {
                 const un_op = air_datas[@backingInt(inst)].un_op;

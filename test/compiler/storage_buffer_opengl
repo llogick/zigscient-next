@@ -1,3 +1,4 @@
+#require no-matrix
 #zig build-obj {
 --name test
 -target spirv32-opengl -fno-llvm

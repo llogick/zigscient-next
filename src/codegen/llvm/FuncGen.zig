@@ -2507,16 +2507,17 @@ fn airDbgVarPtr(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Va
     const pt = self.pt;
     const zcu = o.zcu;
     const pl_op = self.air.instructions.items(.data)[@backingInt(inst)].pl_op;
+    const local_ty = self.typeOf(pl_op.operand).childType(zcu);
+    if (local_ty.classify(zcu) != .runtime) return .none;
     const operand = try self.resolveInst(pl_op.operand);
     const name: Air.NullTerminatedString = @fromBackingInt(@intCast(pl_op.payload));
-    const ptr_ty = self.typeOf(pl_op.operand);
 
     const debug_local_var = try o.builder.debugLocalVar(
         try o.builder.metadataString(name.toSlice(self.air)),
         self.file,
         self.scope,
         self.prev_dbg_line,
-        try o.getDebugType(pt, ptr_ty.childType(zcu)),
+        try o.getDebugType(pt, local_ty),
     );
 
     _ = try self.wip.callIntrinsic(
@@ -2538,10 +2539,13 @@ fn airDbgVarPtr(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Va
 fn airDbgVarVal(self: *FuncGen, inst: Air.Inst.Index, is_arg: bool) Allocator.Error!Builder.Value {
     const o = self.object;
     const pt = self.pt;
+    const zcu = o.zcu;
     const pl_op = self.air.instructions.items(.data)[@backingInt(inst)].pl_op;
-    const operand = try self.resolveInst(pl_op.operand);
     const operand_ty = self.typeOf(pl_op.operand);
+    if (operand_ty.classify(zcu) != .runtime) return .none;
+    const operand = try self.resolveInst(pl_op.operand);
     const name: Air.NullTerminatedString = @fromBackingInt(@intCast(pl_op.payload));
+
     const name_slice = name.toSlice(self.air);
     const metadata_name = if (name_slice.len > 0) try o.builder.metadataString(name_slice) else null;
     const debug_local_var = if (is_arg) try o.builder.debugParameter(
@@ -2562,7 +2566,6 @@ fn airDbgVarVal(self: *FuncGen, inst: Air.Inst.Index, is_arg: bool) Allocator.Er
         try o.getDebugType(pt, operand_ty),
     );
 
-    const zcu = o.zcu;
     const owner_mod = self.ownerModule();
     if (isByRef(operand_ty, zcu)) {
         _ = try self.wip.callIntrinsic(
