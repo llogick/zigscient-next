@@ -7516,7 +7516,7 @@ const targets = [_]ArchTarget{
                 .omit = true,
             },
             .{
-                .llvm_name = "goldmont-plus",
+                .llvm_name = "goldmont_plus",
                 .omit = true,
             },
             .{
@@ -7568,15 +7568,15 @@ const targets = [_]ArchTarget{
                 .omit = true,
             },
             .{
-                .llvm_name = "skylake-avx512",
+                .llvm_name = "skylake_avx512",
                 .omit = true,
             },
             .{
-                .llvm_name = "icelake-client",
+                .llvm_name = "icelake_client",
                 .omit = true,
             },
             .{
-                .llvm_name = "icelake-server",
+                .llvm_name = "icelake_server",
                 .omit = true,
             },
             .{
@@ -7680,7 +7680,7 @@ const targets = [_]ArchTarget{
                 .extra_deps = &.{ "smap", "smep" },
             },
             .{
-                .llvm_name = "goldmont_plus",
+                .llvm_name = "goldmont-plus",
                 .extra_deps = &.{ "smap", "smep" },
             },
             .{
@@ -7704,11 +7704,11 @@ const targets = [_]ArchTarget{
                 .extra_deps = &.{"486"},
             },
             .{
-                .llvm_name = "icelake_client",
+                .llvm_name = "icelake-client",
                 .extra_deps = &.{ "smap", "smep" },
             },
             .{
-                .llvm_name = "icelake_server",
+                .llvm_name = "icelake-server",
                 .extra_deps = &.{ "smap", "smep" },
             },
             .{
@@ -7820,7 +7820,7 @@ const targets = [_]ArchTarget{
                 .extra_deps = &.{ "smap", "smep" },
             },
             .{
-                .llvm_name = "skylake_avx512",
+                .llvm_name = "skylake-avx512",
                 .extra_deps = &.{ "smap", "smep" },
             },
             .{

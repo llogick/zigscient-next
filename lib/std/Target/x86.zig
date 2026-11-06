@@ -3262,7 +3262,7 @@ pub const cpu = struct {
     };
     pub const goldmont_plus: CpuModel = .{
         .name = "goldmont_plus",
-        .llvm_name = "goldmont_plus",
+        .llvm_name = "goldmont-plus",
         .features = featureSet(&[_]Feature{
             .@"387",
             .@"64bit",
@@ -3724,7 +3724,7 @@ pub const cpu = struct {
     };
     pub const icelake_client: CpuModel = .{
         .name = "icelake_client",
-        .llvm_name = "icelake_client",
+        .llvm_name = "icelake-client",
         .features = featureSet(&[_]Feature{
             .@"387",
             .@"64bit",
@@ -3788,7 +3788,7 @@ pub const cpu = struct {
     };
     pub const icelake_server: CpuModel = .{
         .name = "icelake_server",
-        .llvm_name = "icelake_server",
+        .llvm_name = "icelake-server",
         .features = featureSet(&[_]Feature{
             .@"387",
             .@"64bit",
@@ -5216,7 +5216,7 @@ pub const cpu = struct {
     };
     pub const skylake_avx512: CpuModel = .{
         .name = "skylake_avx512",
-        .llvm_name = "skylake_avx512",
+        .llvm_name = "skylake-avx512",
         .features = featureSet(&[_]Feature{
             .@"387",
             .@"64bit",
