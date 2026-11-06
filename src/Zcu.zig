@@ -2860,7 +2860,7 @@ pub const LazySrcLoc = struct {
         /// where in semantic analysis the value got set.
         pub const TracedOffset = struct {
             x: Ast.Node.Offset,
-            trace: std.debug.Trace = std.debug.Trace.init,
+            trace: if (want_tracing) std.debug.Trace else void = if (want_tracing) .init,
 
             const want_tracing = false;
         };
