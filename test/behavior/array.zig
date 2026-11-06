@@ -1110,3 +1110,13 @@ test "access element through reference" {
     try comptime S.doTheTest(123);
     try S.doTheTest(123);
 }
+
+test "concat undef OPV arrays" {
+    const a: [1]void = undefined;
+    const b: [2]void = undefined;
+    const c = a ++ b;
+    comptime assert(@TypeOf(c) == [3]void);
+    comptime assert(c[0] == {});
+    comptime assert(c[1] == {});
+    comptime assert(c[2] == {});
+}

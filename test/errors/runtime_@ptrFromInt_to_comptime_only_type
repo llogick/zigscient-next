@@ -17,5 +17,5 @@ export fn callbackFin(id: c_int, arg: ?*anyopaque) void {
 #update
 #check errors {
 test.zig:6:19: error: cannot load comptime-only type '?fn (c_int) callconv(.c) void'
-test.zig:6:20: note: pointer of type '*?fn (c_int) callconv(.c) void' is runtime-known
+test.zig:6:20: note: pointer is runtime-known
 #}

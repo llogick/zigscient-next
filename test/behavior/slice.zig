@@ -1160,6 +1160,22 @@ test "directly deref slice with comptime-known length" {
         comptime assert(array[2] == 3);
         comptime assert(array[3] == 0);
     }
+    {
+        const slice: []const void = &.{ {}, {}, {} };
+        const array = slice.*;
+
+        comptime assert(@TypeOf(array) == [3]void);
+    }
+    {
+        comptime var slice: []const void = &.{ {}, {}, {} };
+        slice.ptr = undefined;
+        const array = slice.*;
+
+        comptime assert(@TypeOf(array) == [3]void);
+        comptime assert(array[0] == {});
+        comptime assert(array[1] == {});
+        comptime assert(array[2] == {});
+    }
 }
 
 test "address of dereferenced slice is array pointer" {
@@ -1181,6 +1197,22 @@ test "address of dereferenced slice is array pointer" {
         comptime assert(array_ptr[1] == 2);
         comptime assert(array_ptr[2] == 3);
         comptime assert(array_ptr[3] == 0);
+    }
+    {
+        const slice: []const void = &.{ {}, {}, {} };
+        const array_ptr = &slice.*;
+
+        comptime assert(@TypeOf(array_ptr) == *const [3]void);
+    }
+    {
+        comptime var slice: []const void = &.{ {}, {}, {} };
+        slice.ptr = undefined;
+        const array_ptr = &slice.*;
+
+        comptime assert(@TypeOf(array_ptr) == *const [3]void);
+        comptime assert(array_ptr[0] == {});
+        comptime assert(array_ptr[1] == {});
+        comptime assert(array_ptr[2] == {});
     }
 }
 
@@ -1209,6 +1241,21 @@ test "coerce slice with comptime-known length to array pointer" {
         comptime assert(array_ptr[0] == 1);
         comptime assert(array_ptr[1] == 2);
         comptime assert(array_ptr[2] == 3);
+    }
+    {
+        const slice: []const void = &.{ {}, {}, {} };
+        const array_ptr: *const [3]void = slice;
+
+        _ = array_ptr;
+    }
+    {
+        comptime var slice: []const void = &.{ {}, {}, {} };
+        slice.ptr = undefined;
+        const array_ptr: *const [3]void = slice;
+
+        comptime assert(array_ptr[0] == {});
+        comptime assert(array_ptr[1] == {});
+        comptime assert(array_ptr[2] == {});
     }
 }
 

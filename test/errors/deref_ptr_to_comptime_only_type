@@ -12,5 +12,5 @@ export fn entry(ptr: *anyopaque) void {
 #update
 #check errors {
 test.zig:3:16: error: cannot load comptime-only type 'type'
-test.zig:3:9: note: pointer of type '*type' is runtime-known
+test.zig:3:9: note: pointer is runtime-known
 #}
