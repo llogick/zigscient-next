@@ -438,7 +438,7 @@ test "asinBinary128.special" {
 }
 
 test "asinBinary128" {
-    if (builtin.cpu.arch.isSPARC()) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSparc()) return error.SkipZigTest;
 
     try testing.expectApproxEqAbs(0x1.87e9c740d7837f8e8fa667988fbep-3, asinBinary128(0x1.85868ce287ca0196b01c25fec5ffp-3), math.floatEpsAt(f128, 0x1.87e9c740d7837f8e8fa667988fbep-3));
     try testing.expectApproxEqAbs(0x1.bd11a474e864213b48e0f005f1f4p-1, asinBinary128(0x1.8718d6d30b4daed08d04ef59f478p-1), math.floatEpsAt(f128, 0x1.bd11a474e864213b48e0f005f1f4p-1));

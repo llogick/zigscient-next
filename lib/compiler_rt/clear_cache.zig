@@ -39,7 +39,7 @@ fn clear_cache(start: usize, end: usize) callconv(.c) void {
         .mips, .mipsel, .mips64, .mips64el => true,
         else => false,
     };
-    const riscv = arch.isRISCV();
+    const riscv = arch.isRiscv();
     const powerpc64 = switch (arch) {
         .powerpc64, .powerpc64le => true,
         else => false,

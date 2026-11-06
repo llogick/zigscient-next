@@ -2698,7 +2698,7 @@ fn addOneModuleTest(
     these_tests.linkage = test_target.linkage;
     these_tests.use_new_linker = test_target.new_linker;
     // https://github.com/llvm/llvm-project/issues/195561
-    if (target.cpu.arch.isPowerPC()) {
+    if (target.cpu.arch.isPowerpc()) {
         these_tests.root_module.stack_protector = false;
     }
     if (options.build_options) |build_options| {
@@ -2850,7 +2850,7 @@ fn addOneModuleTest(
         run.setName(b.fmt("run test {s}", .{qualified_name}));
 
         step.dependOn(&run.step);
-    } else if (target.cpu.arch.isSpirV()) {
+    } else if (target.cpu.arch.isSpirv()) {
         // Don't run spirv binaries
         _ = these_tests.getEmittedBin();
         step.dependOn(&these_tests.step);
@@ -2985,7 +2985,7 @@ pub fn addCAbiTests(b: *std.Build, options: CAbiTestOptions) *Step {
             });
 
             // https://github.com/llvm/llvm-project/issues/195561
-            if (target.cpu.arch.isPowerPC()) {
+            if (target.cpu.arch.isPowerpc()) {
                 test_step.root_module.stack_protector = false;
             }
 

@@ -2564,7 +2564,7 @@ test "fchmodat smoke test" {
     });
     file.close(io);
 
-    if ((builtin.cpu.arch == .riscv32 or builtin.cpu.arch.isLoongArch()) and
+    if ((builtin.cpu.arch == .riscv32 or builtin.cpu.arch.isLoongarch()) and
         builtin.os.tag == .linux and !builtin.link_libc)
     {
         return error.SkipZigTest; // No `fstatat()`.

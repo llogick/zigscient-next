@@ -12,7 +12,7 @@ const elf = std.elf;
 
 const root = @import("root");
 
-const start_sym_name = if (native_arch.isMIPS()) "__start" else "_start";
+const start_sym_name = if (native_arch.isMips()) "__start" else "_start";
 
 comptime {
     // No matter what, we import the root file, so that any export, test, comptime
@@ -211,7 +211,7 @@ fn _start() callconv(.naked) noreturn {
         });
 
     // Move this to the riscv prong below when this is resolved: https://github.com/ziglang/zig/issues/20918
-    if (builtin.cpu.arch.isRISCV() and builtin.zig_backend != .stage2_riscv64) asm volatile (
+    if (builtin.cpu.arch.isRiscv() and builtin.zig_backend != .stage2_riscv64) asm volatile (
         \\ .weak __global_pointer$
         \\ .hidden __global_pointer$
         \\ .option push

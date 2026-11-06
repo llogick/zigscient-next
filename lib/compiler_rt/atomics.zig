@@ -63,11 +63,11 @@ const SpinlockTable = struct {
 
         // Prevent false sharing by providing enough padding between two
         // consecutive spinlock elements
-        v: if (arch.isSPARC()) sparc_lock else other_lock align(cache_line_size) = .Unlocked,
+        v: if (arch.isSparc()) sparc_lock else other_lock align(cache_line_size) = .Unlocked,
 
         fn acquire(self: *@This()) void {
             while (true) {
-                const flag = if (comptime arch.isSPARC()) flag: {
+                const flag = if (comptime arch.isSparc()) flag: {
                     break :flag asm volatile ("ldstub [%[addr]], %[flag]"
                         : [flag] "=r" (-> @TypeOf(self.v)),
                         : [addr] "r" (&self.v),
@@ -83,7 +83,7 @@ const SpinlockTable = struct {
             }
         }
         fn release(self: *@This()) void {
-            if (comptime arch.isSPARC()) {
+            if (comptime arch.isSparc()) {
                 _ = asm volatile ("clrb [%[addr]]"
                     :
                     : [addr] "r" (&self.v),

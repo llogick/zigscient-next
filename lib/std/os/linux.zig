@@ -13,11 +13,11 @@ const dl = @import("../dynamic_library.zig");
 const native_arch = builtin.cpu.arch;
 const native_abi = builtin.abi;
 const native_endian = native_arch.endian();
-const is_loongarch = native_arch.isLoongArch();
-const is_mips = native_arch.isMIPS();
-const is_ppc = native_arch.isPowerPC();
-const is_riscv = native_arch.isRISCV();
-const is_sparc = native_arch.isSPARC();
+const is_loongarch = native_arch.isLoongarch();
+const is_mips = native_arch.isMips();
+const is_ppc = native_arch.isPowerpc();
+const is_riscv = native_arch.isRiscv();
+const is_sparc = native_arch.isSparc();
 const is_hppa = native_arch.isHppa();
 const iovec = std.posix.iovec;
 const iovec_const = std.posix.iovec_const;
@@ -982,8 +982,8 @@ const require_aligned_register_pair =
     builtin.cpu.arch.isArm() or
     builtin.cpu.arch == .csky or
     builtin.cpu.arch == .hexagon or
-    builtin.cpu.arch.isMIPS32() or
-    builtin.cpu.arch.isPowerPC32() or
+    builtin.cpu.arch.isMips32() or
+    builtin.cpu.arch.isPowerpc32() or
     builtin.cpu.arch.isXtensa();
 
 // Split a 64bit value into a {LSB,MSB} pair.
@@ -1081,7 +1081,7 @@ pub fn execveat(dirfd: fd_t, path: [*:0]const u8, argv: [*:null]const ?[*:0]cons
 }
 
 pub fn fork() usize {
-    if (comptime native_arch.isSPARC()) {
+    if (comptime native_arch.isSparc()) {
         return syscall_fork();
     } else if (@hasField(SYS, "fork")) {
         return syscall0(.fork);
@@ -1639,7 +1639,7 @@ pub fn mlock2(address: [*]const u8, length: usize, flags: MLOCK) usize {
     return syscall3(.mlock2, @intFromPtr(address), length, @as(u32, @bitCast(flags)));
 }
 
-pub const MCL = if (native_arch.isSPARC() or native_arch.isPowerPC()) packed struct(u32) {
+pub const MCL = if (native_arch.isSparc() or native_arch.isPowerpc()) packed struct(u32) {
     _0: u13 = 0,
     CURRENT: bool = false,
     FUTURE: bool = false,
@@ -1871,7 +1871,7 @@ pub fn acct(path: [*:0]const u8) usize {
 }
 
 pub fn pipe(fd: *[2]fd_t) usize {
-    if (native_arch.isMIPS() or native_arch.isSPARC()) {
+    if (native_arch.isMips() or native_arch.isSparc()) {
         return syscall_pipe(fd);
     } else if (@hasField(SYS, "pipe")) {
         return syscall1(.pipe, @intFromPtr(fd));
@@ -3328,7 +3328,7 @@ pub fn process_vm_writev(pid: pid_t, local: []const iovec_const, remote: []const
 }
 
 pub fn fadvise(fd: fd_t, offset: i64, len: i64, advice: usize) usize {
-    if (native_arch.isMIPS32()) {
+    if (native_arch.isMips32()) {
         // MIPS O32 weirdly differs from the other architectures that require
         // aligned register pairs for this specific syscall.
 
@@ -9455,7 +9455,7 @@ pub const tpacket_stats_v3 = extern struct {
 };
 
 // doc comments copied from musl
-pub const rlimit_resource = if (native_arch.isMIPS()) enum(c_int) {
+pub const rlimit_resource = if (native_arch.isMips()) enum(c_int) {
     /// Per-process CPU limit, in seconds.
     CPU = 0,
 
@@ -9513,7 +9513,7 @@ pub const rlimit_resource = if (native_arch.isMIPS()) enum(c_int) {
     RTTIME = 15,
 
     _,
-} else if (native_arch.isSPARC()) enum(c_int) {
+} else if (native_arch.isSparc()) enum(c_int) {
     /// Per-process CPU limit, in seconds.
     CPU = 0,
 

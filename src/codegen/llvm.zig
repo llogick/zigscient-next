@@ -72,7 +72,7 @@ fn codeModel(model: std.lang.CodeModel, target: *const std.Target) CodeModel {
         .default => .default,
         .extreme, .large => .large,
         .kernel => .kernel,
-        .medany => if (target.cpu.arch.isRISCV()) .medium else .large,
+        .medany => if (target.cpu.arch.isRiscv()) .medium else .large,
         .medium => .medium,
         .medmid => .medium,
         .normal, .medlow, .small => .small,
@@ -657,7 +657,7 @@ pub const Object = struct {
             .allow_fast_isel = true,
             // LLVM's RISC-V backend for some reason enables the machine outliner by default even
             // though it's clearly not ready and produces multiple miscompilations in our std tests.
-            .allow_machine_outliner = !target.cpu.arch.isRISCV(),
+            .allow_machine_outliner = !target.cpu.arch.isRiscv(),
             .asm_filename = null,
             .bin_filename = if (options.bin_path) |x| x.ptr else null,
             .llvm_ir_filename = if (options.opt_ir_path) |x| x.ptr else null,

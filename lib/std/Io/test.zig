@@ -625,7 +625,7 @@ test "randomSecure" {
 
 test "memory mapping" {
     if (builtin.cpu.arch == .hexagon) return error.SkipZigTest; // mmap returned EINVAL
-    if (builtin.cpu.arch.isSPARC()) return error.SkipZigTest; // mmap returned EINVAL
+    if (builtin.cpu.arch.isSparc()) return error.SkipZigTest; // mmap returned EINVAL
 
     const io = testing.io;
 

@@ -86,13 +86,7 @@ pub const Os = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Check for relevant tags instead.
-        pub inline fn isBSD(tag: Tag) bool {
-            return tag.isDarwin() or switch (tag) {
-                .freebsd, .openbsd, .netbsd, .dragonfly => true,
-                else => false,
-            };
-        }
+        pub const isBSD = @compileError("Deprecated. Check for relevant tags instead");
 
         pub fn exeFileExt(tag: Tag, arch: Cpu.Arch) [:0]const u8 {
             return switch (tag) {
@@ -1524,8 +1518,7 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isAarch64` instead.
-        pub const isAARCH64 = isAarch64;
+        pub const isAARCH64 = @compileError("Renamed to isAarch64");
 
         pub inline fn isAarch64(arch: Arch) bool {
             return switch (arch) {
@@ -1555,8 +1548,7 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isLoongarch` instead.
-        pub const isLoongArch = isLoongarch;
+        pub const isLoongArch = @compileError("Renamed to isLoongarch");
 
         pub inline fn isLoongarch(arch: Arch) bool {
             return switch (arch) {
@@ -1565,8 +1557,7 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isRiscv` instead.
-        pub const isRISCV = isRiscv;
+        pub const isRISCV = @compileError("Renamed to isRiscv");
 
         pub inline fn isRiscv(arch: Arch) bool {
             return arch.isRiscv32() or arch.isRiscv64();
@@ -1593,15 +1584,13 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isMips` instead.
-        pub const isMIPS = isMips;
+        pub const isMIPS = @compileError("Renamed to isMips");
 
         pub inline fn isMips(arch: Arch) bool {
             return arch.isMips32() or arch.isMips64();
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isMips32` instead.
-        pub const isMIPS32 = isMips32;
+        pub const isMIPS32 = @compileError("Renamed to isMips32");
 
         pub inline fn isMips32(arch: Arch) bool {
             return switch (arch) {
@@ -1610,8 +1599,7 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isMips64` instead.
-        pub const isMIPS64 = isMips64;
+        pub const isMIPS64 = @compileError("Renamed to isMips64");
 
         pub inline fn isMips64(arch: Arch) bool {
             return switch (arch) {
@@ -1620,15 +1608,13 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isPowerpc` instead.
-        pub const isPowerPC = isPowerpc;
+        pub const isPowerPC = @compileError("Renamed to isPowerpc");
 
         pub inline fn isPowerpc(arch: Arch) bool {
             return arch.isPowerpc32() or arch.isPowerpc64();
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isPowerpc32` instead.
-        pub const isPowerPC32 = isPowerpc32;
+        pub const isPowerPC32 = @compileError("Renamed to isPowerpc32");
 
         pub inline fn isPowerpc32(arch: Arch) bool {
             return switch (arch) {
@@ -1637,8 +1623,7 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isPowerpc64` instead.
-        pub const isPowerPC64 = isPowerpc64;
+        pub const isPowerPC64 = @compileError("Renamed to isPowerpc64");
 
         pub inline fn isPowerpc64(arch: Arch) bool {
             return switch (arch) {
@@ -1647,8 +1632,7 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isSparc` instead.
-        pub const isSPARC = isSparc;
+        pub const isSPARC = @compileError("Renamed to isSparc");
 
         pub inline fn isSparc(arch: Arch) bool {
             return switch (arch) {
@@ -1657,8 +1641,7 @@ pub const Cpu = struct {
             };
         }
 
-        /// Deprecated; to be removed in 0.18.0. Use `isSpirv` instead.
-        pub const isSpirV = isSpirv;
+        pub const isSpirV = @compileError("Renamed to isSpirv");
 
         pub inline fn isSpirv(arch: Arch) bool {
             return switch (arch) {
@@ -2255,25 +2238,13 @@ pub fn zigTriple(target: *const Target, allocator: Allocator) Allocator.Error![]
     return Query.fromTarget(target).zigTriple(allocator);
 }
 
-/// Deprecated; to be removed in 0.18.0. Use `std.zig.target.hurdTupleSimple` instead.
-pub fn hurdTupleSimple(allocator: Allocator, arch: Cpu.Arch, abi: Abi) ![]u8 {
-    return std.fmt.allocPrint(allocator, "{s}-{s}", .{ @tagName(arch), @tagName(abi) });
-}
+pub const hurdTupleSimple = @compileError("Deprecated. Use `std.zig.target.hurdTupleSimple` instead");
 
-/// Deprecated; to be removed in 0.18.0. Use `std.zig.target.hurdTuple` instead.
-pub fn hurdTuple(target: *const Target, allocator: Allocator) ![]u8 {
-    return hurdTupleSimple(allocator, target.cpu.arch, target.abi);
-}
+pub const hurdTuple = @compileError("Deprecated. Use `std.zig.target.hurdTuple` instead");
 
-/// Deprecated; to be removed in 0.18.0. Use `std.zig.target.linuxTripleSimple` instead.
-pub fn linuxTripleSimple(allocator: Allocator, arch: Cpu.Arch, os_tag: Os.Tag, abi: Abi) ![]u8 {
-    return std.fmt.allocPrint(allocator, "{s}-{s}-{s}", .{ @tagName(arch), @tagName(os_tag), @tagName(abi) });
-}
+pub const linuxTripleSimple = @compileError("Deprecated. Use `std.zig.target.linuxTripleSimple` instead");
 
-/// Deprecated; to be removed in 0.18.0. Use `std.zig.target.linuxTriple` instead.
-pub fn linuxTriple(target: *const Target, allocator: Allocator) ![]u8 {
-    return linuxTripleSimple(allocator, target.cpu.arch, target.os.tag, target.abi);
-}
+pub const linuxTriple = @compileError("Deprecated. Use `std.zig.target.linuxTriple` instead");
 
 pub fn exeFileExt(target: *const Target) [:0]const u8 {
     return target.os.tag.exeFileExt(target.cpu.arch);
@@ -3832,5 +3803,24 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 test {
-    std.testing.refAllDecls(Cpu.Arch);
+    // Reference Cpu.Arch decls but skip decls that are currently compile errors.
+    // Can be replaced with refAllDecls after 0.18.0 is released.
+    const removed_arch_decls = std.StaticStringMap(enum {
+        isAARCH64,
+        isBSD,
+        isLoongArch,
+        isMIPS,
+        isMIPS32,
+        isMIPS64,
+        isPowerPC,
+        isPowerPC32,
+        isPowerPC64,
+        isRISCV,
+        isSPARC,
+        isSpirV,
+    }).initEnum();
+    inline for (comptime std.meta.declarations(Cpu.Arch)) |decl_name| {
+        if (comptime removed_arch_decls.has(decl_name)) continue;
+        _ = &@field(Cpu.Arch, decl_name);
+    }
 }

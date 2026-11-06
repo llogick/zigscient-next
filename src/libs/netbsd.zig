@@ -137,7 +137,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 .{
                     .path = "arch" ++ path.sep_str ++ "aarch64" ++ path.sep_str ++ "crt0.S",
                     .flags = acflags.items,
-                    .condition = target.cpu.arch.isAARCH64(),
+                    .condition = target.cpu.arch.isAarch64(),
                 },
 
                 .{
@@ -149,7 +149,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 .{
                     .path = "arch" ++ path.sep_str ++ "mips" ++ path.sep_str ++ "crt0.S",
                     .flags = acflags.items,
-                    .condition = target.cpu.arch.isMIPS(),
+                    .condition = target.cpu.arch.isMips(),
                 },
 
                 .{
@@ -161,7 +161,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 .{
                     .path = "arch" ++ path.sep_str ++ "riscv" ++ path.sep_str ++ "crt0.S",
                     .flags = acflags.items,
-                    .condition = target.cpu.arch.isRISCV(),
+                    .condition = target.cpu.arch.isRiscv(),
                 },
 
                 .{

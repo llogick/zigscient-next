@@ -679,7 +679,7 @@ test "function pointer @intFromPtr/@ptrFromInt roundtrip" {
 }
 
 test "function pointer align mask" {
-    const int = if (builtin.cpu.arch.isArm() or builtin.cpu.arch.isMIPS()) 0x20202021 else 0x20202020;
+    const int = if (builtin.cpu.arch.isArm() or builtin.cpu.arch.isMips()) 0x20202021 else 0x20202020;
     const unaligned: *const fn () callconv(.c) void = @ptrFromInt(int);
     const aligned: *align(16) const fn () callconv(.c) void = @alignCast(unaligned);
     try expect(@intFromPtr(aligned) == int);

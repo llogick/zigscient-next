@@ -6721,13 +6721,13 @@ pub fn addCCArgs(
         // Clang's integrated Arm assembler doesn't support `-mabi` yet...
         // Clang's FreeBSD driver doesn't support `-mabi` on PPC64 (ELFv2 is used anyway).
         if (!(target.cpu.arch.isArm() and (ext == .assembly or ext == .assembly_with_cpp)) and
-            !(target.cpu.arch.isPowerPC64() and target.os.tag == .freebsd))
+            !(target.cpu.arch.isPowerpc64() and target.os.tag == .freebsd))
         {
             try argv.append(arena, try std.fmt.allocPrint(arena, "-mabi={s}", .{mabi}));
         }
     }
 
-    if (target.cpu.arch.isPowerPC()) {
+    if (target.cpu.arch.isPowerpc()) {
         // We do not -- and probably never will -- support the IBM 128-bit `long double` format.
         // LLVM and Clang also do not have complete support for it, producing wrong values in some
         // cases. So just enforce IEEE `long double` everywhere - either binary64 or binary128

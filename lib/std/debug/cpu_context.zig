@@ -70,7 +70,7 @@ pub fn fromPosixSignalContext(ctx_ptr: ?*const anyopaque) ?Native {
             .r = uc.mcontext.r,
             .xip = uc.mcontext.xip & ~@as(u32, 0b11),
         };
-    } else if (native_arch.isMIPS32() and native_os == .linux) {
+    } else if (native_arch.isMips32() and native_os == .linux) {
         // The O32 kABI uses 64-bit fields for some reason.
         return .{
             .r = s: {
@@ -80,7 +80,7 @@ pub fn fromPosixSignalContext(ctx_ptr: ?*const anyopaque) ?Native {
             },
             .pc = @truncate(uc.mcontext.pc),
         };
-    } else if (native_arch.isSPARC() and native_os == .linux) {
+    } else if (native_arch.isSparc() and native_os == .linux) {
         const SparcStackFrame = extern struct {
             l: [8]usize,
             i: [8]usize,
@@ -1041,7 +1041,7 @@ const Mips = extern struct {
     r: [32]Gpr,
     pc: Gpr,
 
-    pub const Gpr = if (native_arch.isMIPS64()) u64 else u32;
+    pub const Gpr = if (native_arch.isMips64()) u64 else u32;
 
     pub inline fn current() Mips {
         var ctx: Mips = undefined;
@@ -1243,7 +1243,7 @@ const Powerpc = extern struct {
     pc: Gpr,
     lr: Gpr,
 
-    pub const Gpr = if (native_arch.isPowerPC64()) u64 else u32;
+    pub const Gpr = if (native_arch.isPowerpc64()) u64 else u32;
 
     pub inline fn current() Powerpc {
         var ctx: Powerpc = undefined;

@@ -22,7 +22,7 @@ pub fn suggestVectorLengthForCpu(comptime T: type, comptime cpu: std.Target.Cpu)
             if (cpu.hasAny(.x86, &.{ .mmx, .@"3dnow" })) break :blk 64;
         } else if (cpu.arch.isArm()) {
             if (cpu.has(.arm, .neon)) break :blk 128;
-        } else if (cpu.arch.isAARCH64()) {
+        } else if (cpu.arch.isAarch64()) {
             // NVIDIA Grace supports 128-bit SVE
             // AWS Graviton3 supports 256-bit SVE
             // Fujitsu A64FX supports 512-bit SVE
@@ -32,18 +32,18 @@ pub fn suggestVectorLengthForCpu(comptime T: type, comptime cpu: std.Target.Cpu)
         } else if (cpu.arch == .hexagon) {
             if (cpu.has(.hexagon, .hvx_length64b)) break :blk 512;
             if (cpu.has(.hexagon, .hvx)) break :blk 1024;
-        } else if (cpu.arch.isLoongArch()) {
+        } else if (cpu.arch.isLoongarch()) {
             if (cpu.has(.loongarch, .lasx)) break :blk 256;
             if (cpu.has(.loongarch, .lsx)) break :blk 128;
         } else if (cpu.arch == .m88k) {
             if (cpu.has(.m88k, .sfu2)) break :blk 64;
-        } else if (cpu.arch.isMIPS()) {
+        } else if (cpu.arch.isMips()) {
             if (cpu.has(.mips, .msa)) break :blk 128;
             if (cpu.has(.mips, .mips3d)) break :blk 64;
-        } else if (cpu.arch.isPowerPC()) {
+        } else if (cpu.arch.isPowerpc()) {
             if (cpu.has(.powerpc, .vsx)) break :blk 128;
             if (cpu.has(.powerpc, .altivec)) break :blk 128;
-        } else if (cpu.arch.isRISCV()) {
+        } else if (cpu.arch.isRiscv()) {
             // In RISC-V Vector Registers are length agnostic so there's no good way to determine the best size.
             // The usual vector length in most RISC-V cpus is 256 bits, however it can get to multiple kB.
             if (cpu.has(.riscv, .v)) {
@@ -68,7 +68,7 @@ pub fn suggestVectorLengthForCpu(comptime T: type, comptime cpu: std.Target.Cpu)
             }
         } else if (cpu.arch == .s390x) {
             if (cpu.has(.s390x, .vx)) break :blk 128;
-        } else if (cpu.arch.isSPARC()) {
+        } else if (cpu.arch.isSparc()) {
             if (cpu.hasAny(.sparc, &.{ .vis, .vis2, .vis3 })) break :blk 64;
         } else if (cpu.arch == .kvx) {
             break :blk 1024;

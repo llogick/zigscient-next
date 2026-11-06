@@ -10,7 +10,7 @@ test "imaxabs" {
 }
 
 test "imaxdiv" {
-    if (builtin.target.cpu.arch.isPowerPC32()) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isPowerpc32()) return error.SkipZigTest; // TODO
     if (builtin.target.cpu.arch == .s390x) return error.SkipZigTest; // TODO
 
     const expected: c.imaxdiv_t = .{ .quot = 9, .rem = 0 };

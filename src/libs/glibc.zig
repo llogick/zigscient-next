@@ -366,9 +366,9 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
 
 fn start_asm_path(comp: *Compilation, arena: Allocator, basename: []const u8) ![]const u8 {
     const arch = comp.getTarget().cpu.arch;
-    const is_ppc = arch.isPowerPC();
-    const is_aarch64 = arch.isAARCH64();
-    const is_sparc = arch.isSPARC();
+    const is_ppc = arch.isPowerpc();
+    const is_aarch64 = arch.isAarch64();
+    const is_sparc = arch.isSparc();
     const is_64 = comp.getTarget().ptrBitWidth() == 64;
 
     const s = path.sep_str;
@@ -384,7 +384,7 @@ fn start_asm_path(comp: *Compilation, arena: Allocator, basename: []const u8) ![
         }
     } else if (arch.isArm()) {
         try result.appendSlice(arena, "arm");
-    } else if (arch.isMIPS()) {
+    } else if (arch.isMips()) {
         try result.appendSlice(arena, "mips");
     } else if (arch == .x86_64) {
         try result.appendSlice(arena, "x86_64");
@@ -392,7 +392,7 @@ fn start_asm_path(comp: *Compilation, arena: Allocator, basename: []const u8) ![
         try result.appendSlice(arena, "i386");
     } else if (is_aarch64) {
         try result.appendSlice(arena, "aarch64");
-    } else if (arch.isRISCV()) {
+    } else if (arch.isRiscv()) {
         try result.appendSlice(arena, "riscv");
     } else if (is_ppc) {
         if (is_64) {
@@ -402,7 +402,7 @@ fn start_asm_path(comp: *Compilation, arena: Allocator, basename: []const u8) ![
         }
     } else if (arch == .s390x) {
         try result.appendSlice(arena, "s390");
-    } else if (arch.isLoongArch()) {
+    } else if (arch.isLoongarch()) {
         try result.appendSlice(arena, "loongarch");
     } else if (arch == .m68k) {
         try result.appendSlice(arena, "m68k");
@@ -507,9 +507,9 @@ fn add_include_dirs_arch(
 ) error{OutOfMemory}!void {
     const arch = target.cpu.arch;
     const is_x86 = arch.isX86();
-    const is_aarch64 = arch.isAARCH64();
-    const is_ppc = arch.isPowerPC();
-    const is_sparc = arch.isSPARC();
+    const is_aarch64 = arch.isAarch64();
+    const is_ppc = arch.isPowerpc();
+    const is_sparc = arch.isSparc();
     const is_64 = target.ptrBitWidth() == 64;
 
     const s = path.sep_str;
@@ -551,7 +551,7 @@ fn add_include_dirs_arch(
             try args.append(arena, "-I");
             try args.append(arena, try path.join(arena, &.{ dir, "arm" }));
         }
-    } else if (arch.isMIPS()) {
+    } else if (arch.isMips()) {
         if (opt_nptl) |nptl| {
             try args.append(arena, "-I");
             try args.append(arena, try path.join(arena, &.{ dir, "mips", nptl }));
@@ -604,7 +604,7 @@ fn add_include_dirs_arch(
             try args.append(arena, "-I");
             try args.append(arena, try path.join(arena, &.{ dir, "powerpc" }));
         }
-    } else if (arch.isRISCV()) {
+    } else if (arch.isRiscv()) {
         if (opt_nptl) |nptl| {
             try args.append(arena, "-I");
             try args.append(arena, try path.join(arena, &.{ dir, "riscv", nptl }));
@@ -620,7 +620,7 @@ fn add_include_dirs_arch(
             try args.append(arena, "-I");
             try args.append(arena, try path.join(arena, &.{ dir, "s390" }));
         }
-    } else if (arch.isLoongArch()) {
+    } else if (arch.isLoongarch()) {
         try args.append(arena, "-I");
         try args.append(arena, try path.join(arena, &.{ dir, "loongarch" }));
     } else if (arch == .m68k) {

@@ -92,7 +92,7 @@ pub fn requiresPicForDynamicLink(target: *const std.Target, output_mode: std.lan
 pub fn picLevel(target: *const std.Target) u32 {
     // MIPS always uses PIC level 1; other platforms vary in their default PIC levels, but they
     // support both level 1 and 2, in which case we prefer 2.
-    return if (target.cpu.arch.isMIPS()) 1 else 2;
+    return if (target.cpu.arch.isMips()) 1 else 2;
 }
 
 /// This is not whether the target supports Position Independent Code, but whether the -fPIC
@@ -802,9 +802,9 @@ pub fn supportsFunctionAlignment(target: *const std.Target) bool {
 pub fn functionPointerMask(target: *const std.Target) ?u64 {
     // 32-bit Arm uses the LSB to mean that the target function contains Thumb code.
     // MIPS uses the LSB to mean that the target function contains MIPS16/microMIPS code.
-    return if (target.cpu.arch.isArm() or target.cpu.arch.isMIPS32())
+    return if (target.cpu.arch.isArm() or target.cpu.arch.isMips32())
         ~@as(u32, 1)
-    else if (target.cpu.arch.isMIPS64())
+    else if (target.cpu.arch.isMips64())
         ~@as(u64, 1)
     else
         null;
@@ -855,7 +855,7 @@ pub fn compilerRtFloatAbbrev(target: *const std.Target, float_bits: u16) []const
         32 => "s",
         64 => "d",
         80 => "x",
-        128 => if (target.cpu.arch.isPowerPC()) "k" else "t",
+        128 => if (target.cpu.arch.isPowerpc()) "k" else "t",
         else => unreachable,
     };
 }

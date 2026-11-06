@@ -115,7 +115,7 @@ pub fn build(b: *std.Build) void {
 
         if (skip_non_native and !std.zig.target.isNative(&target.query, &target.result, &b.graph.host.result)) continue;
 
-        if (target.result.cpu.arch.isLoongArch()) continue; // https://github.com/Vexu/arocc/issues/1096
+        if (target.result.cpu.arch.isLoongarch()) continue; // https://github.com/Vexu/arocc/issues/1096
 
         const glibc_ver = target.result.os.version_range.linux.glibc;
 

@@ -161,7 +161,7 @@ test "rw constraint (x86_64)" {
 }
 
 test "asm modifiers (AArch64)" {
-    if (!builtin.target.cpu.arch.isAARCH64()) return error.SkipZigTest;
+    if (!builtin.target.cpu.arch.isAarch64()) return error.SkipZigTest;
 
     if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // MSVC doesn't support inline assembly
 
@@ -210,7 +210,7 @@ test "packed output types (x86_64)" {
 }
 
 test "abi register aliases as clobbers (RISC-V)" {
-    if (!builtin.target.cpu.arch.isRISCV()) return error.SkipZigTest;
+    if (!builtin.target.cpu.arch.isRiscv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
     // Verify that ABI alias names are accepted as clobbers for RISC-V.

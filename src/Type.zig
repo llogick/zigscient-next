@@ -991,7 +991,7 @@ pub fn abiAlignment(ty: Type, zcu: *const Zcu) Alignment {
                     const arch = target.cpu.arch;
                     return .fromByteUnits(std.math.ceilPowerOfTwoAssert(
                         u32,
-                        if (arch.isArm() or arch.isAARCH64() or arch == .s390x)
+                        if (arch.isArm() or arch.isAarch64() or arch == .s390x)
                             @min(bytes, target.stackAlignment())
                         else
                             bytes,

@@ -11480,7 +11480,7 @@ pub const wint_t = switch (builtin.target.os.tag) {
 
 pub const wchar_t = switch (builtin.target.os.tag) {
     .windows => u16,
-    else => if ((builtin.target.cpu.arch.isArm() or builtin.target.cpu.arch.isAARCH64()) and !builtin.target.os.tag.isDarwin())
+    else => if ((builtin.target.cpu.arch.isArm() or builtin.target.cpu.arch.isAarch64()) and !builtin.target.os.tag.isDarwin())
         u32
     else
         i32,

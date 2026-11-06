@@ -180,7 +180,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 .{
                     .path = "powerpc64" ++ path.sep_str ++ "crt1_c.c",
                     .flags = cflags.items,
-                    .condition = target.cpu.arch.isPowerPC64(),
+                    .condition = target.cpu.arch.isPowerpc64(),
                 },
 
                 .{

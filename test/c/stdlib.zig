@@ -10,14 +10,14 @@ const expectErrno = @import("../c.zig").expectErrno;
 const expectErrnoAny = @import("../c.zig").expectErrnoAny;
 
 test "abs" {
-    if (builtin.target.cpu.arch.isMIPS64()) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isMips64()) return error.SkipZigTest; // TODO
 
     const val: c_int = -10;
     try testing.expectEqual(10, c.abs(val));
 }
 
 test "labs" {
-    if (builtin.target.cpu.arch.isMIPS64() and @sizeOf(usize) == 4) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isMips64() and @sizeOf(usize) == 4) return error.SkipZigTest; // TODO
 
     const val: c_long = -10;
     try testing.expectEqual(10, c.labs(val));
@@ -29,9 +29,9 @@ test "llabs" {
 }
 
 test "div" {
-    if (builtin.target.cpu.arch.isLoongArch()) return error.SkipZigTest; // TODO
-    if (builtin.target.cpu.arch.isMIPS64()) return error.SkipZigTest; // TODO
-    if (builtin.target.cpu.arch.isPowerPC()) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isLoongarch()) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isMips64()) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isPowerpc()) return error.SkipZigTest; // TODO
     if (builtin.target.cpu.arch.isSparc()) return error.SkipZigTest; // TODO
     if (builtin.target.cpu.arch == .s390x) return error.SkipZigTest; // TODO
     if (builtin.target.cpu.arch == .x86 and builtin.target.os.tag == .windows) return error.SkipZigTest; // TODO
@@ -41,8 +41,8 @@ test "div" {
 }
 
 test "ldiv" {
-    if (builtin.target.cpu.arch.isMIPS64() and @sizeOf(usize) == 4) return error.SkipZigTest; // TODO
-    if (builtin.target.cpu.arch.isPowerPC32()) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isMips64() and @sizeOf(usize) == 4) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isPowerpc32()) return error.SkipZigTest; // TODO
     if (builtin.target.cpu.arch == .s390x) return error.SkipZigTest; // TODO
     if (builtin.target.cpu.arch == .x86 and builtin.target.os.tag == .windows) return error.SkipZigTest; // TODO
 
@@ -51,7 +51,7 @@ test "ldiv" {
 }
 
 test "lldiv" {
-    if (builtin.target.cpu.arch.isPowerPC32()) return error.SkipZigTest; // TODO
+    if (builtin.target.cpu.arch.isPowerpc32()) return error.SkipZigTest; // TODO
     if (builtin.target.cpu.arch == .s390x) return error.SkipZigTest; // TODO
 
     const expected: c.lldiv_t = .{ .quot = 1, .rem = 2 };

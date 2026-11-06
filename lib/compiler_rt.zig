@@ -149,7 +149,7 @@ comptime {
         _ = @import("compiler_rt/stack_probe.zig");
 
         // macOS has these functions inside libSystem.
-        if (builtin.cpu.arch.isAARCH64() and !builtin.os.tag.isDarwin()) {
+        if (builtin.cpu.arch.isAarch64() and !builtin.os.tag.isDarwin()) {
             if (builtin.zig_backend != .stage2_aarch64) _ = @import("compiler_rt/aarch64_outline_atomics.zig");
         }
 
@@ -258,7 +258,7 @@ pub const want_windows_x86_msvc_abi = e: {
     break :e !builtin.link_libc;
 };
 
-pub const want_ppc_abi = builtin.cpu.arch.isPowerPC();
+pub const want_ppc_abi = builtin.cpu.arch.isPowerpc();
 
 pub const want_float_exceptions = !builtin.cpu.arch.isWasm();
 

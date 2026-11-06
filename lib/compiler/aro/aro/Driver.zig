@@ -1819,12 +1819,12 @@ pub fn getPICMode(d: *Driver, lastpic: []const u8) Compilation.Error!struct { ba
         try d.err("embedded and GOT-based position independence are incompatible", .{});
     }
 
-    if (target.cpu.arch.isMIPS()) {
+    if (target.cpu.arch.isMips()) {
         // When targeting the N64 ABI, PIC is the default, except in the case
         // when the -mno-abicalls option is used. In that case we exit
         // at next check regardless of PIC being set below.
         // TODO: implement incomplete!!
-        if (target.cpu.arch.isMIPS64())
+        if (target.cpu.arch.isMips64())
             pic = true;
 
         // When targettng MIPS with -mno-abicalls, it's always static.

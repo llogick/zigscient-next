@@ -1027,7 +1027,7 @@ const StackIterator = union(enum) {
             // Instead, start at the stack pointer so we get the return address from the
             // current frame's save area. The addition of the stack bias cannot fail here
             // since we know we have a valid stack pointer.
-            .fp = if (native_arch.isSPARC()) sp: {
+            .fp = if (native_arch.isSparc()) sp: {
                 flushSparcWindows();
                 break :sp asm (""
                     : [_] "={o6}" (-> usize),
@@ -1157,12 +1157,12 @@ const StackIterator = union(enum) {
         if (native_arch == .hppa64) break :off -1 * @sizeOf(usize);
         // On LoongArch and RISC-V, the frame pointer points to the top of the saved register area,
         // in which the base pointer is the first word.
-        if (native_arch.isLoongArch() or native_arch.isRISCV()) break :off -2 * @sizeOf(usize);
+        if (native_arch.isLoongarch() or native_arch.isRiscv()) break :off -2 * @sizeOf(usize);
         // On OpenRISC, the frame pointer is stored below the return address.
         if (native_arch == .or1k) break :off -2 * @sizeOf(usize);
         // On SPARC, the frame pointer points to the save area which holds 16 slots for the local
         // and incoming registers. The base pointer (i6) is stored in its customary save slot.
-        if (native_arch.isSPARC()) break :off 14 * @sizeOf(usize);
+        if (native_arch.isSparc()) break :off 14 * @sizeOf(usize);
         // Everywhere else, the frame pointer points directly to the location of the base pointer.
         break :off 0;
     };
@@ -1176,16 +1176,16 @@ const StackIterator = union(enum) {
         if (native_arch == .hppa64) break :off -2 * @sizeOf(usize);
         // On LoongArch and RISC-V, the frame pointer points to the top of the saved register area,
         // in which the return address is the second word.
-        if (native_arch.isLoongArch() or native_arch.isRISCV()) break :off -1 * @sizeOf(usize);
+        if (native_arch.isLoongarch() or native_arch.isRiscv()) break :off -1 * @sizeOf(usize);
         // On OpenRISC, the return address is stored below the stack parameter area.
         if (native_arch == .or1k) break :off -1 * @sizeOf(usize);
-        if (native_arch.isPowerPC64()) break :off 2 * @sizeOf(usize);
+        if (native_arch.isPowerpc64()) break :off 2 * @sizeOf(usize);
         // On s390x, r14 is the link register and we need to grab it from its customary slot in the
         // register save area (ELF ABI s390x Supplement §1.2.2.2).
         if (native_arch == .s390x) break :off 14 * @sizeOf(usize);
         // On SPARC, the frame pointer points to the save area which holds 16 slots for the local
         // and incoming registers. The return address (i7) is stored in its customary save slot.
-        if (native_arch.isSPARC()) break :off 15 * @sizeOf(usize);
+        if (native_arch.isSparc()) break :off 15 * @sizeOf(usize);
         break :off @sizeOf(usize);
     };
 
@@ -1199,7 +1199,7 @@ const StackIterator = union(enum) {
     /// On some oddball architectures, a return address points to the call instruction rather than
     /// the instruction following it.
     const ra_call_offset = off: {
-        if (native_arch.isSPARC()) break :off 0;
+        if (native_arch.isSparc()) break :off 0;
         break :off 1;
     };
 
@@ -1219,7 +1219,7 @@ const StackIterator = union(enum) {
 /// all instructions must be align(2). So we want to ensure it's cleared when unwinding to ensure
 /// we can convert a return address to an address within the calling instruction by subtracting 1.
 pub inline fn stripInstructionPtrMarkerBits(ptr: usize) usize {
-    if (native_arch.isAARCH64()) {
+    if (native_arch.isAarch64()) {
         // `hint 0x07` maps to `xpaclri` (or `nop` if the hardware doesn't support it)
         // The save / restore is because `xpaclri` operates on x30 (LR)
         return asm (

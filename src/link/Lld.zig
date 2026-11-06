@@ -811,7 +811,7 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
             target.cpu.arch.isBpf() or
             target.cpu.arch == .lanai or
             target.cpu.arch == .m68k or
-            target.cpu.arch.isSPARC() or
+            target.cpu.arch.isSparc() or
             target.cpu.arch == .ve or
             target.cpu.arch == .xcore or
             target.cpu.arch == .xtensa))

@@ -349,7 +349,7 @@ pub fn relocate(phdrs: []const elf.ElfN.Phdr) void {
     }
 
     // Deal with the GOT relocations that MIPS uses first.
-    if (builtin.cpu.arch.isMIPS()) {
+    if (builtin.cpu.arch.isMips()) {
         const count: elf.Addr = blk: {
             // This is an architecture-specific tag, so not part of `sorted_dynv`.
             var i: usize = 0;

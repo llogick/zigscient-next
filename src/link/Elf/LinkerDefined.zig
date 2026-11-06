@@ -87,7 +87,7 @@ pub fn initSymbols(self: *LinkerDefined, elf_file: *Elf) !void {
     nsyms += 1; // __dso_handle
     nsyms += 1; // __rela_iplt_start
     nsyms += 1; // __rela_iplt_end
-    if (elf_file.getTarget().cpu.arch.isRISCV() and elf_file.isEffectivelyDynLib()) {
+    if (elf_file.getTarget().cpu.arch.isRiscv() and elf_file.isEffectivelyDynLib()) {
         nsyms += 1; // __global_pointer$
     }
 
@@ -122,7 +122,7 @@ pub fn initSymbols(self: *LinkerDefined, elf_file: *Elf) !void {
     self.rela_iplt_start_index = self.newSymbolAssumeCapacity(try self.addString(gpa, "__rela_iplt_start"), elf_file);
     self.rela_iplt_end_index = self.newSymbolAssumeCapacity(try self.addString(gpa, "__rela_iplt_end"), elf_file);
 
-    if (elf_file.getTarget().cpu.arch.isRISCV() and elf_file.isEffectivelyDynLib()) {
+    if (elf_file.getTarget().cpu.arch.isRiscv() and elf_file.isEffectivelyDynLib()) {
         self.global_pointer_index = self.newSymbolAssumeCapacity(try self.addString(gpa, "__global_pointer$"), elf_file);
     }
 }

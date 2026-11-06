@@ -5201,24 +5201,24 @@ fn airAsm(f: *Function, inst: Air.Inst.Index) !CValue {
             const target = &f.dg.mod.resolved_target.result;
             var c_name_buf: [16]u8 = undefined;
             const name =
-                if ((target.cpu.arch.isMIPS() or target.cpu.arch == .alpha) and field_name[0] == 'r') name: {
+                if ((target.cpu.arch.isMips() or target.cpu.arch == .alpha) and field_name[0] == 'r') name: {
                     // Convert "rN" to "$N"
                     const c_name = (&c_name_buf)[0..field_name.len];
                     @memcpy(c_name, field_name);
                     c_name_buf[0] = '$';
                     break :name c_name;
-                } else if ((target.cpu.arch.isMIPS() and (mem.startsWith(u8, field_name, "fcc") or field_name[0] == 'w')) or
-                ((target.cpu.arch.isMIPS() or target.cpu.arch == .alpha) and field_name[0] == 'f') or
+                } else if ((target.cpu.arch.isMips() and (mem.startsWith(u8, field_name, "fcc") or field_name[0] == 'w')) or
+                ((target.cpu.arch.isMips() or target.cpu.arch == .alpha) and field_name[0] == 'f') or
                 (target.cpu.arch == .kvx and !mem.eql(u8, field_name, "memory"))) name: {
                     // "$" prefix for these registers
                     c_name_buf[0] = '$';
                     @memcpy((&c_name_buf)[1..][0..field_name.len], field_name);
                     break :name (&c_name_buf)[0 .. 1 + field_name.len];
-                } else if (target.cpu.arch.isSPARC() and
+                } else if (target.cpu.arch.isSparc() and
                 (mem.eql(u8, field_name, "ccr") or mem.eql(u8, field_name, "icc") or mem.eql(u8, field_name, "xcc"))) name: {
                     // C compilers just use `icc` to encompass all of these.
                     break :name "icc";
-                } else if (target.cpu.arch.isRISCV() and mem.eql(u8, field_name, "fp")) name: {
+                } else if (target.cpu.arch.isRiscv() and mem.eql(u8, field_name, "fp")) name: {
                     break :name "s0";
                 } else field_name;
 
@@ -7397,7 +7397,7 @@ fn compilerRtAbbrev(ty: Type, zcu: *Zcu, target: *const std.Target) []const u8 {
         32 => "sf",
         64 => "df",
         80 => "xf",
-        128 => if (target.cpu.arch.isPowerPC()) "kf" else "tf",
+        128 => if (target.cpu.arch.isPowerpc()) "kf" else "tf",
     } else unreachable;
 }
 
