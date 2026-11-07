@@ -177849,7 +177849,11 @@ const MoveStrategy = union(enum) {
                     .lea => if (dst_reg.size().bitSize(cg.target) >= 32) dst_reg else dst_reg.to32(),
                 }, src_mem);
             },
-            .load_store_x87 => if (dst_reg != .st0 and cg.register_manager.isKnownRegFree(.st7)) {
+            .load_store_x87 => if (dst_reg == .st0) {
+                try cg.asmRegister(.{ .f_, .free }, .st0);
+                try cg.asmOpOnly(.{ .f_cstp, .in });
+                try cg.asmMemory(.{ .f_, .ld }, src_mem);
+            } else if (cg.register_manager.isKnownRegFree(.st7)) {
                 try cg.asmMemory(.{ .f_, .ld }, src_mem);
                 switch (dst_reg) {
                     .st1, .st2, .st3, .st4, .st5, .st6 => try cg.asmRegister(.{ .f_p, .st }, @fromBackingInt(@intCast(@backingInt(dst_reg) + 1))),
@@ -177859,11 +177863,7 @@ const MoveStrategy = union(enum) {
             } else {
                 try cg.asmRegister(.{ .f_p, .st }, dst_reg);
                 try cg.asmMemory(.{ .f_, .ld }, src_mem);
-                switch (dst_reg) {
-                    .st0 => {},
-                    .st1, .st2, .st3, .st4, .st5, .st6, .st7 => try cg.asmRegister(.{ .f_, .xch }, dst_reg),
-                    else => unreachable,
-                }
+                try cg.asmRegister(.{ .f_, .xch }, dst_reg);
             },
             .insert_extract, .insert_or_extract_through_gpr => |ie| {
                 try cg.asmRegisterRegister(.{ .p_, .xor }, dst_reg, dst_reg);
@@ -178595,7 +178595,8 @@ fn genSetReg(
                     .st0 => try cg.asmRegister(.{ .f_, .st }, dst_reg),
                     .st1, .st2, .st3, .st4, .st5, .st6 => switch (dst_reg) {
                         .st0 => {
-                            try cg.asmRegister(.{ .f_p, .st }, .st0);
+                            try cg.asmRegister(.{ .f_, .free }, .st0);
+                            try cg.asmOpOnly(.{ .f_cstp, .in });
                             try cg.asmRegister(.{ .f_, .ld }, @fromBackingInt(@intCast(@backingInt(src_reg) - 1)));
                         },
                         .st2, .st3, .st4, .st5, .st6 => if (cg.register_manager.isKnownRegFree(.st7)) {
