@@ -357,7 +357,8 @@ set(ZIG_STAGE2_SOURCES
     src/codegen/c/type.zig
     src/codegen/c/type/render_defs.zig
     src/codegen/llvm.zig
-    src/codegen/llvm/bindings.zig
+    src/codegen/llvm/lib.zig
+    src/codegen/llvm/lib/bindings.zig
     src/codegen/loongarch/abi.zig
     src/codegen/loongarch/encoding.zig
     src/codegen/loongarch/decode_tree.zon
