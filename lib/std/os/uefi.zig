@@ -32,7 +32,7 @@ pub const Event = *opaque {};
 
 pub const EventRegistration = *const opaque {};
 
-pub const EventType = packed struct(u32) {
+pub const EventType = bitpack struct(u32) {
     lo_context: u8 = 0,
     /// If an event of this type is not already in the signaled state, then
     /// the event’s NotificationFunction will be queued at the event’s NotifyTpl
@@ -158,7 +158,7 @@ pub const Time = extern struct {
     /// The time's offset in minutes from UTC.
     /// Allowed values are -1440 to 1440 or unspecified_timezone
     timezone: i16,
-    daylight: packed struct(u8) {
+    daylight: bitpack struct(u8) {
         /// If true, the time has been adjusted for daylight savings time.
         in_daylight: bool,
 

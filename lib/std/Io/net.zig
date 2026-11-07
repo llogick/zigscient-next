@@ -934,7 +934,7 @@ pub const UnixAddress = struct {
     }
 };
 
-pub const ReceiveFlags = packed struct(u8) {
+pub const ReceiveFlags = bitpack struct(u8) {
     oob: bool = false,
     peek: bool = false,
     trunc: bool = false,
@@ -960,7 +960,7 @@ pub const IncomingMessage = struct {
         .flags = undefined,
     };
 
-    pub const Flags = packed struct(u8) {
+    pub const Flags = bitpack struct(u8) {
         /// indicates end-of-record; the data returned completed a record
         /// (generally used with sockets of type SOCK_SEQPACKET).
         eor: bool,
@@ -988,7 +988,7 @@ pub const OutgoingMessage = struct {
     control: []const u8 = &.{},
 };
 
-pub const SendFlags = packed struct(u8) {
+pub const SendFlags = bitpack struct(u8) {
     confirm: bool = false,
     dont_route: bool = false,
     eor: bool = false,

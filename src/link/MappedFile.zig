@@ -14,7 +14,7 @@ const windows = std.os.windows;
 const tracy = @import("../tracy.zig");
 
 io: Io,
-flags: packed struct {
+flags: bitpack struct {
     block_size: Alignment,
     copy_file_range_unsupported: bool,
     fallocate_punch_hole_unsupported: bool,
@@ -262,7 +262,7 @@ pub const Node = extern struct {
         floating,
     };
 
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         /// While the number of header and footer nodes within a parent node is logically a part of
         /// that parent, we actually store this information on the child nodes for efficiency: this
         /// field indicates whether each child is a header node, a footer node, or a floating node.

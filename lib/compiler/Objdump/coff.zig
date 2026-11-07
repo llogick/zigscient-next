@@ -1172,7 +1172,7 @@ fn dumpHeader(
                         .auto,
                         .@"extern",
                         => try dumpHeader(d, field_type, val, Custom),
-                        .@"packed" => {
+                        .@"bitpack" => {
                             try d.w.print("{x: >16} {s}\n", .{ @as(s_field.backing_integer.?, @bitCast(val.*)), field_name });
                             try dumpFlags(d.w, "| {s}\n", field_type, val, 15);
                         },

@@ -137,8 +137,8 @@ pub const Tag = struct {
     const max_continuations = max_encoded_len - 1;
     const high_tag_marker = std.math.maxInt(u5);
 
-    const FirstTag = packed struct(u8) { number: u5, constructed: bool, class: Tag.Class };
-    const NextTag = packed struct(u8) { number: u7, continues: bool };
+    const FirstTag = bitpack struct(u8) { number: u5, constructed: bool, class: Tag.Class };
+    const NextTag = bitpack struct(u8) { number: u7, continues: bool };
 
     pub fn toExpected(self: Tag) ExpectedTag {
         return ExpectedTag{

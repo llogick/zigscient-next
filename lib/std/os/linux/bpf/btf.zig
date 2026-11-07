@@ -36,7 +36,7 @@ pub const max_vlen = 0xffff;
 
 pub const Type = extern struct {
     name_off: u32,
-    info: packed struct(u32) {
+    info: bitpack struct(u32) {
         /// number of struct's members
         vlen: u16,
 
@@ -81,7 +81,7 @@ pub const Kind = enum(u5) {
 };
 
 /// int kind is followed by this struct
-pub const IntInfo = packed struct(u32) {
+pub const IntInfo = bitpack struct(u32) {
     bits: u8,
     reserved_1: u8,
     offset: u8,
@@ -126,7 +126,7 @@ pub const Member = extern struct {
     /// if the kind_flag is set, offset contains both member bitfield size and
     /// bit offset, the bitfield size is set for bitfield members. If the type
     /// info kind_flag is not set, the offset contains only bit offset
-    offset: packed struct(u32) {
+    offset: bitpack struct(u32) {
         bit: u24,
         bitfield_size: u8,
     },

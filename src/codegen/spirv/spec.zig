@@ -2,13 +2,13 @@
 const std = @import("std");
 
 pub const Word = u32;
-pub const Version = packed struct(Word) {
+pub const Version = bitpack struct(Word) {
     padding: u8 = 0,
     minor: u8,
     major: u8,
     padding0: u8 = 0,
 };
-pub const Generator = packed struct(Word) {
+pub const Generator = bitpack struct(Word) {
     version: u16,
     tool: u16,
 };
@@ -19,7 +19,7 @@ pub const Header = extern struct {
     id_bound: Word,
     schema: Word,
 };
-pub const InstructionHeader = packed struct(Word) {
+pub const InstructionHeader = bitpack struct(Word) {
     opcode: Opcode,
     word_count: u16,
 };
@@ -2856,7 +2856,7 @@ pub const Opcode = enum(u16) {
                     break :blk total;
                 },
                 .@"struct" => |struct_info| {
-                    if (struct_info.layout == .@"packed") return 1;
+                    if (struct_info.layout == .@"bitpack") return 1;
                     var total: usize = 0;
                     inline for (struct_info.field_names, struct_info.field_types) |field_name, field_type| {
                         switch (@typeInfo(field_type)) {
@@ -3475,7 +3475,7 @@ pub const GlslOpcode = enum(u16) {
         };
     }
 };
-pub const ImageOperands = packed struct(Word) {
+pub const ImageOperands = bitpack struct(Word) {
     bias: bool = false,
     lod: bool = false,
     grad: bool = false,
@@ -3516,7 +3516,7 @@ pub const ImageOperands = packed struct(Word) {
         _reserved_bits_17_to_31: u15 = 0,
     };
 };
-pub const FPFastMathMode = packed struct(Word) {
+pub const FPFastMathMode = bitpack struct(Word) {
     not_na_n: bool = false,
     not_inf: bool = false,
     nsz: bool = false,
@@ -3528,12 +3528,12 @@ pub const FPFastMathMode = packed struct(Word) {
     allow_transform: bool = false,
     _reserved_bits_19_to_31: u13 = 0,
 };
-pub const SelectionControl = packed struct(Word) {
+pub const SelectionControl = bitpack struct(Word) {
     flatten: bool = false,
     dont_flatten: bool = false,
     _reserved_bits_2_to_31: u30 = 0,
 };
-pub const LoopControl = packed struct(Word) {
+pub const LoopControl = bitpack struct(Word) {
     unroll: bool = false,
     dont_unroll: bool = false,
     dependency_infinite: bool = false,
@@ -3562,7 +3562,7 @@ pub const LoopControl = packed struct(Word) {
         _reserved_bits_29_to_31: u3 = 0,
     };
 };
-pub const FunctionControl = packed struct(Word) {
+pub const FunctionControl = bitpack struct(Word) {
     @"inline": bool = false,
     dont_inline: bool = false,
     pure: bool = false,
@@ -3571,7 +3571,7 @@ pub const FunctionControl = packed struct(Word) {
     opt_none_ext: bool = false,
     _reserved_bits_17_to_31: u15 = 0,
 };
-pub const MemorySemantics = packed struct(Word) {
+pub const MemorySemantics = bitpack struct(Word) {
     _reserved_bit_0: bool = false,
     acquire: bool = false,
     release: bool = false,
@@ -3590,7 +3590,7 @@ pub const MemorySemantics = packed struct(Word) {
     @"volatile": bool = false,
     _reserved_bits_16_to_31: u16 = 0,
 };
-pub const MemoryAccess = packed struct(Word) {
+pub const MemoryAccess = bitpack struct(Word) {
     @"volatile": bool = false,
     aligned: bool = false,
     nontemporal: bool = false,
@@ -3609,11 +3609,11 @@ pub const MemoryAccess = packed struct(Word) {
         _reserved_bits_6_to_31: u26 = 0,
     };
 };
-pub const KernelProfilingInfo = packed struct(Word) {
+pub const KernelProfilingInfo = bitpack struct(Word) {
     cmd_exec_time: bool = false,
     _reserved_bits_1_to_31: u31 = 0,
 };
-pub const RayFlags = packed struct(Word) {
+pub const RayFlags = bitpack struct(Word) {
     opaque_khr: bool = false,
     no_opaque_khr: bool = false,
     terminate_on_first_hit_khr: bool = false,
@@ -3627,14 +3627,14 @@ pub const RayFlags = packed struct(Word) {
     force_opacity_micromap2state_khr: bool = false,
     _reserved_bits_11_to_31: u21 = 0,
 };
-pub const FragmentShadingRate = packed struct(Word) {
+pub const FragmentShadingRate = bitpack struct(Word) {
     vertical2pixels: bool = false,
     vertical4pixels: bool = false,
     horizontal2pixels: bool = false,
     horizontal4pixels: bool = false,
     _reserved_bits_4_to_31: u28 = 0,
 };
-pub const RawAccessChainOperands = packed struct(Word) {
+pub const RawAccessChainOperands = bitpack struct(Word) {
     _reserved_bits_0_to_31: u32 = 0,
 };
 pub const SourceLanguage = enum(u32) {
@@ -4810,7 +4810,7 @@ pub const RayQueryCandidateIntersectionType = enum(u32) {
 pub const PackedVectorFormat = enum(u32) {
     packed_vector_format4x8bit = 0,
 };
-pub const CooperativeMatrixOperands = packed struct(Word) {
+pub const CooperativeMatrixOperands = bitpack struct(Word) {
     matrix_a_signed_components_khr: bool = false,
     matrix_b_signed_components_khr: bool = false,
     matrix_c_signed_components_khr: bool = false,
@@ -4827,7 +4827,7 @@ pub const CooperativeMatrixUse = enum(u32) {
     matrix_bkhr = 1,
     matrix_accumulator_khr = 2,
 };
-pub const CooperativeMatrixReduce = packed struct(Word) {
+pub const CooperativeMatrixReduce = bitpack struct(Word) {
     row: bool = false,
     column: bool = false,
     @"2x2": bool = false,
@@ -4840,14 +4840,14 @@ pub const TensorClampMode = enum(u32) {
     repeat = 3,
     repeat_mirrored = 4,
 };
-pub const TensorAddressingOperands = packed struct(Word) {
+pub const TensorAddressingOperands = bitpack struct(Word) {
     _reserved_bits_0_to_31: u32 = 0,
 };
 pub const InitializationModeQualifier = enum(u32) {};
 pub const LoadCacheControl = enum(u32) {};
 pub const StoreCacheControl = enum(u32) {};
 pub const NamedMaximumNumberOfRegisters = enum(u32) {};
-pub const MatrixMultiplyAccumulateOperands = packed struct(Word) {
+pub const MatrixMultiplyAccumulateOperands = bitpack struct(Word) {
     matrix_a_signed_components_intel: bool = false,
     matrix_b_signed_components_intel: bool = false,
     matrix_cb_float16intel: bool = false,
@@ -4903,10 +4903,10 @@ pub const GatherModes = enum(u32) {
     gather_h2qcom = 2,
     gather_v2qcom = 3,
 };
-pub const TensorOperands = packed struct(Word) {
+pub const TensorOperands = bitpack struct(Word) {
     _reserved_bits_0_to_31: u32 = 0,
 };
-pub const @"NonSemantic.Shader.DebugInfo.100.DebugInfoFlags" = packed struct(Word) {
+pub const @"NonSemantic.Shader.DebugInfo.100.DebugInfoFlags" = bitpack struct(Word) {
     flag_is_protected: bool = false,
     flag_is_private: bool = false,
     flag_is_local: bool = false,
@@ -4927,7 +4927,7 @@ pub const @"NonSemantic.Shader.DebugInfo.100.DebugInfoFlags" = packed struct(Wor
     flag_unknown_physical_layout: bool = false,
     _reserved_bits_18_to_31: u14 = 0,
 };
-pub const @"NonSemantic.Shader.DebugInfo.100.BuildIdentifierFlags" = packed struct(Word) {
+pub const @"NonSemantic.Shader.DebugInfo.100.BuildIdentifierFlags" = bitpack struct(Word) {
     identifier_possible_duplicates: bool = false,
     _reserved_bits_1_to_31: u31 = 0,
 };

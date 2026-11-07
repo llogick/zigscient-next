@@ -2042,302 +2042,302 @@ pub const Mnemonic = enum {
     @"xxx.unknown.1",
 };
 
-pub const Instruction = packed union {
+pub const Instruction = bitpack union {
     word: u32,
     /// Fields of a `CdFj` instruction.
-    CdFj: packed struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
+    CdFj: bitpack struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
     /// Fields of a `CdFjFk` instruction.
-    CdFjFk: packed struct { rd: u3, funct3: u2, rj: u5, rk: u5, funct15: u17 },
+    CdFjFk: bitpack struct { rd: u3, funct3: u2, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `CdJ` instruction.
-    CdJ: packed struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
+    CdJ: bitpack struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
     /// Fields of a `CdVj` instruction.
-    CdVj: packed struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
+    CdVj: bitpack struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
     /// Fields of a `CdXj` instruction.
-    CdXj: packed struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
+    CdXj: bitpack struct { rd: u3, funct3: u2, rj: u5, funct10: u22 },
     /// Fields of a `CjSd5k16` instruction.
-    CjSd5k16: packed struct { si5: i5, rj: u3, funct8: u2, si16: i16, funct26: u6 },
+    CjSd5k16: bitpack struct { si5: i5, rj: u3, funct8: u2, si16: i16, funct26: u6 },
     /// Fields of a `CjSd5k16ps2` instruction.
-    CjSd5k16ps2: packed struct { si5: i5, rj: u3, funct8: u2, si16: i16, funct26: u6 },
+    CjSd5k16ps2: bitpack struct { si5: i5, rj: u3, funct8: u2, si16: i16, funct26: u6 },
     /// Fields of a `D` instruction.
-    D: packed struct { rd: u5, funct5: u27 },
+    D: bitpack struct { rd: u5, funct5: u27 },
     /// Fields of a `DCj` instruction.
-    DCj: packed struct { rd: u5, rj: u3, funct8: u24 },
+    DCj: bitpack struct { rd: u5, rj: u3, funct8: u24 },
     /// Fields of a `DFj` instruction.
-    DFj: packed struct { rd: u5, rj: u5, funct10: u22 },
+    DFj: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `DJ` instruction.
-    DJ: packed struct { rd: u5, rj: u5, funct10: u22 },
+    DJ: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `DJK` instruction.
-    DJK: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    DJK: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `DJKUa2` instruction.
-    DJKUa2: packed struct { rd: u5, rj: u5, rk: u5, ui2: u2, funct17: u15 },
+    DJKUa2: bitpack struct { rd: u5, rj: u5, rk: u5, ui2: u2, funct17: u15 },
     /// Fields of a `DJKUa2pp1` instruction.
-    DJKUa2pp1: packed struct { rd: u5, rj: u5, rk: u5, ui2: u2, funct17: u15 },
+    DJKUa2pp1: bitpack struct { rd: u5, rj: u5, rk: u5, ui2: u2, funct17: u15 },
     /// Fields of a `DJKUa3` instruction.
-    DJKUa3: packed struct { rd: u5, rj: u5, rk: u5, ui3: u3, funct18: u14 },
+    DJKUa3: bitpack struct { rd: u5, rj: u5, rk: u5, ui3: u3, funct18: u14 },
     /// Fields of a `DJSk12` instruction.
-    DJSk12: packed struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
+    DJSk12: bitpack struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
     /// Fields of a `DJSk14` instruction.
-    DJSk14: packed struct { rd: u5, rj: u5, si14: i14, funct24: u8 },
+    DJSk14: bitpack struct { rd: u5, rj: u5, si14: i14, funct24: u8 },
     /// Fields of a `DJSk14ps2` instruction.
-    DJSk14ps2: packed struct { rd: u5, rj: u5, si14: i14, funct24: u8 },
+    DJSk14ps2: bitpack struct { rd: u5, rj: u5, si14: i14, funct24: u8 },
     /// Fields of a `DJSk16` instruction.
-    DJSk16: packed struct { rd: u5, rj: u5, si16: i16, funct26: u6 },
+    DJSk16: bitpack struct { rd: u5, rj: u5, si16: i16, funct26: u6 },
     /// Fields of a `DJSk16ps2` instruction.
-    DJSk16ps2: packed struct { rd: u5, rj: u5, si16: i16, funct26: u6 },
+    DJSk16ps2: bitpack struct { rd: u5, rj: u5, si16: i16, funct26: u6 },
     /// Fields of a `DJSk5` instruction.
-    DJSk5: packed struct { rd: u5, rj: u5, si5: i5, funct15: u17 },
+    DJSk5: bitpack struct { rd: u5, rj: u5, si5: i5, funct15: u17 },
     /// Fields of a `DJUk12` instruction.
-    DJUk12: packed struct { rd: u5, rj: u5, ui12: u12, funct22: u10 },
+    DJUk12: bitpack struct { rd: u5, rj: u5, ui12: u12, funct22: u10 },
     /// Fields of a `DJUk14` instruction.
-    DJUk14: packed struct { rd: u5, rj: u5, ui14: u14, funct24: u8 },
+    DJUk14: bitpack struct { rd: u5, rj: u5, ui14: u14, funct24: u8 },
     /// Fields of a `DJUk3` instruction.
-    DJUk3: packed struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
+    DJUk3: bitpack struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `DJUk4` instruction.
-    DJUk4: packed struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
+    DJUk4: bitpack struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
     /// Fields of a `DJUk5` instruction.
-    DJUk5: packed struct { rd: u5, rj: u5, ui5: u5, funct15: u17 },
+    DJUk5: bitpack struct { rd: u5, rj: u5, ui5: u5, funct15: u17 },
     /// Fields of a `DJUk5Um5` instruction.
-    DJUk5Um5: packed struct { rd: u5, rj: u5, imm10: u5, funct15: u1, imm16: u5, funct21: u11 },
+    DJUk5Um5: bitpack struct { rd: u5, rj: u5, imm10: u5, funct15: u1, imm16: u5, funct21: u11 },
     /// Fields of a `DJUk6` instruction.
-    DJUk6: packed struct { rd: u5, rj: u5, ui6: u6, funct16: u16 },
+    DJUk6: bitpack struct { rd: u5, rj: u5, ui6: u6, funct16: u16 },
     /// Fields of a `DJUk6Um6` instruction.
-    DJUk6Um6: packed struct { rd: u5, rj: u5, imm10: u6, imm16: u6, funct22: u10 },
+    DJUk6Um6: bitpack struct { rd: u5, rj: u5, imm10: u6, imm16: u6, funct22: u10 },
     /// Fields of a `DJUk8` instruction.
-    DJUk8: packed struct { rd: u5, rj: u5, ui8: u8, funct18: u14 },
+    DJUk8: bitpack struct { rd: u5, rj: u5, ui8: u8, funct18: u14 },
     /// Fields of a `DJUm5Uk5` instruction.
-    DJUm5Uk5: packed struct { rd: u5, rj: u5, imm10: u5, funct15: u1, imm16: u5, funct21: u11 },
+    DJUm5Uk5: bitpack struct { rd: u5, rj: u5, imm10: u5, funct15: u1, imm16: u5, funct21: u11 },
     /// Fields of a `DJUm6Uk6` instruction.
-    DJUm6Uk6: packed struct { rd: u5, rj: u5, imm10: u6, imm16: u6, funct22: u10 },
+    DJUm6Uk6: bitpack struct { rd: u5, rj: u5, imm10: u6, imm16: u6, funct22: u10 },
     /// Fields of a `DKJ` instruction.
-    DKJ: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    DKJ: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `DSj20` instruction.
-    DSj20: packed struct { rd: u5, si20: i20, funct25: u7 },
+    DSj20: bitpack struct { rd: u5, si20: i20, funct25: u7 },
     /// Fields of a `DTj` instruction.
-    DTj: packed struct { rd: u5, rj: u5, funct10: u22 },
+    DTj: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `DUj5` instruction.
-    DUj5: packed struct { rd: u5, ui5: u5, funct10: u22 },
+    DUj5: bitpack struct { rd: u5, ui5: u5, funct10: u22 },
     /// Fields of a `DUj5Uk8` instruction.
-    DUj5Uk8: packed struct { rd: u5, ui5: u5, ui8: u8, funct18: u14 },
+    DUj5Uk8: bitpack struct { rd: u5, ui5: u5, ui8: u8, funct18: u14 },
     /// Fields of a `DUk14` instruction.
-    DUk14: packed struct { rd: u5, funct5: u5, ui14: u14, funct24: u8 },
+    DUk14: bitpack struct { rd: u5, funct5: u5, ui14: u14, funct24: u8 },
     /// Fields of a `DUk4` instruction.
-    DUk4: packed struct { rd: u5, funct5: u5, ui4: u4, funct14: u18 },
+    DUk4: bitpack struct { rd: u5, funct5: u5, ui4: u4, funct14: u18 },
     /// Fields of a `DUk8` instruction.
-    DUk8: packed struct { rd: u5, funct5: u5, ui8: u8, funct18: u14 },
+    DUk8: bitpack struct { rd: u5, funct5: u5, ui8: u8, funct18: u14 },
     /// Fields of a `DVjUk1` instruction.
-    DVjUk1: packed struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
+    DVjUk1: bitpack struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
     /// Fields of a `DVjUk2` instruction.
-    DVjUk2: packed struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
+    DVjUk2: bitpack struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
     /// Fields of a `DVjUk3` instruction.
-    DVjUk3: packed struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
+    DVjUk3: bitpack struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `DVjUk4` instruction.
-    DVjUk4: packed struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
+    DVjUk4: bitpack struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
     /// Fields of a `DXjUk2` instruction.
-    DXjUk2: packed struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
+    DXjUk2: bitpack struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
     /// Fields of a `DXjUk3` instruction.
-    DXjUk3: packed struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
+    DXjUk3: bitpack struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `FdCj` instruction.
-    FdCj: packed struct { rd: u5, rj: u3, funct8: u24 },
+    FdCj: bitpack struct { rd: u5, rj: u3, funct8: u24 },
     /// Fields of a `FdFj` instruction.
-    FdFj: packed struct { rd: u5, rj: u5, funct10: u22 },
+    FdFj: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `FdFjFk` instruction.
-    FdFjFk: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    FdFjFk: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `FdFjFkCa` instruction.
-    FdFjFkCa: packed struct { rd: u5, rj: u5, rk: u5, ra: u3, funct18: u14 },
+    FdFjFkCa: bitpack struct { rd: u5, rj: u5, rk: u5, ra: u3, funct18: u14 },
     /// Fields of a `FdFjFkFa` instruction.
-    FdFjFkFa: packed struct { rd: u5, rj: u5, rk: u5, ra: u5, funct20: u12 },
+    FdFjFkFa: bitpack struct { rd: u5, rj: u5, rk: u5, ra: u5, funct20: u12 },
     /// Fields of a `FdJ` instruction.
-    FdJ: packed struct { rd: u5, rj: u5, funct10: u22 },
+    FdJ: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `FdJK` instruction.
-    FdJK: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    FdJK: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `FdJSk12` instruction.
-    FdJSk12: packed struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
+    FdJSk12: bitpack struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
     /// Fields of a `J` instruction.
-    J: packed struct { funct0: u5, rj: u5, funct10: u22 },
+    J: bitpack struct { funct0: u5, rj: u5, funct10: u22 },
     /// Fields of a `JDSk16ps2` instruction.
-    JDSk16ps2: packed struct { rd: u5, rj: u5, si16: i16, funct26: u6 },
+    JDSk16ps2: bitpack struct { rd: u5, rj: u5, si16: i16, funct26: u6 },
     /// Fields of a `JK` instruction.
-    JK: packed struct { funct0: u5, rj: u5, rk: u5, funct15: u17 },
+    JK: bitpack struct { funct0: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `JKUd4` instruction.
-    JKUd4: packed struct { ui4: u4, funct4: u1, rj: u5, rk: u5, funct15: u17 },
+    JKUd4: bitpack struct { ui4: u4, funct4: u1, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `JKUd5` instruction.
-    JKUd5: packed struct { ui5: u5, rj: u5, rk: u5, funct15: u17 },
+    JKUd5: bitpack struct { ui5: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `JSd5k16` instruction.
-    JSd5k16: packed struct { si5: i5, rj: u5, si16: i16, funct26: u6 },
+    JSd5k16: bitpack struct { si5: i5, rj: u5, si16: i16, funct26: u6 },
     /// Fields of a `JSd5k16ps2` instruction.
-    JSd5k16ps2: packed struct { si5: i5, rj: u5, si16: i16, funct26: u6 },
+    JSd5k16ps2: bitpack struct { si5: i5, rj: u5, si16: i16, funct26: u6 },
     /// Fields of a `JUd4Uk5` instruction.
-    JUd4Uk5: packed struct { ui4: u4, funct4: u1, rj: u5, ui5: u5, funct15: u17 },
+    JUd4Uk5: bitpack struct { ui4: u4, funct4: u1, rj: u5, ui5: u5, funct15: u17 },
     /// Fields of a `JUd5` instruction.
-    JUd5: packed struct { ui5: u5, rj: u5, funct10: u22 },
+    JUd5: bitpack struct { ui5: u5, rj: u5, funct10: u22 },
     /// Fields of a `JUd5Sk12` instruction.
-    JUd5Sk12: packed struct { ui5: u5, rj: u5, si12: i12, funct22: u10 },
+    JUd5Sk12: bitpack struct { ui5: u5, rj: u5, si12: i12, funct22: u10 },
     /// Fields of a `JUk3` instruction.
-    JUk3: packed struct { funct0: u5, rj: u5, ui3: u3, funct13: u19 },
+    JUk3: bitpack struct { funct0: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `JUk4` instruction.
-    JUk4: packed struct { funct0: u5, rj: u5, ui4: u4, funct14: u18 },
+    JUk4: bitpack struct { funct0: u5, rj: u5, ui4: u4, funct14: u18 },
     /// Fields of a `JUk5` instruction.
-    JUk5: packed struct { funct0: u5, rj: u5, ui5: u5, funct15: u17 },
+    JUk5: bitpack struct { funct0: u5, rj: u5, ui5: u5, funct15: u17 },
     /// Fields of a `JUk5Ud4` instruction.
-    JUk5Ud4: packed struct { ui4: u4, funct4: u1, rj: u5, ui5: u5, funct15: u17 },
+    JUk5Ud4: bitpack struct { ui4: u4, funct4: u1, rj: u5, ui5: u5, funct15: u17 },
     /// Fields of a `JUk6` instruction.
-    JUk6: packed struct { funct0: u5, rj: u5, ui6: u6, funct16: u16 },
+    JUk6: bitpack struct { funct0: u5, rj: u5, ui6: u6, funct16: u16 },
     /// Fields of a `JUk8` instruction.
-    JUk8: packed struct { funct0: u5, rj: u5, ui8: u8, funct18: u14 },
+    JUk8: bitpack struct { funct0: u5, rj: u5, ui8: u8, funct18: u14 },
     /// Fields of a `Sd10k16` instruction.
-    Sd10k16: packed struct { si10: i10, si16: i16, funct26: u6 },
+    Sd10k16: bitpack struct { si10: i10, si16: i16, funct26: u6 },
     /// Fields of a `Sd10k16ps2` instruction.
-    Sd10k16ps2: packed struct { si10: i10, si16: i16, funct26: u6 },
+    Sd10k16ps2: bitpack struct { si10: i10, si16: i16, funct26: u6 },
     /// Fields of a `Sd5k16` instruction.
-    Sd5k16: packed struct { si5: i5, funct5: u5, si16: i16, funct26: u6 },
+    Sd5k16: bitpack struct { si5: i5, funct5: u5, si16: i16, funct26: u6 },
     /// Fields of a `Sd5k16ps2` instruction.
-    Sd5k16ps2: packed struct { si5: i5, funct5: u5, si16: i16, funct26: u6 },
+    Sd5k16ps2: bitpack struct { si5: i5, funct5: u5, si16: i16, funct26: u6 },
     /// Fields of a `TdJ` instruction.
-    TdJ: packed struct { rd: u5, rj: u5, funct10: u22 },
+    TdJ: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `Ud15` instruction.
-    Ud15: packed struct { ui15: u15, funct15: u17 },
+    Ud15: bitpack struct { ui15: u15, funct15: u17 },
     /// Fields of a `Ud5JK` instruction.
-    Ud5JK: packed struct { ui5: u5, rj: u5, rk: u5, funct15: u17 },
+    Ud5JK: bitpack struct { ui5: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `Ud5JSk12` instruction.
-    Ud5JSk12: packed struct { ui5: u5, rj: u5, si12: i12, funct22: u10 },
+    Ud5JSk12: bitpack struct { ui5: u5, rj: u5, si12: i12, funct22: u10 },
     /// Fields of a `Uj3` instruction.
-    Uj3: packed struct { funct0: u5, ui3: u3, funct8: u24 },
+    Uj3: bitpack struct { funct0: u5, ui3: u3, funct8: u24 },
     /// Fields of a `VdJ` instruction.
-    VdJ: packed struct { rd: u5, rj: u5, funct10: u22 },
+    VdJ: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `VdJK` instruction.
-    VdJK: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    VdJK: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `VdJSk10` instruction.
-    VdJSk10: packed struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
+    VdJSk10: bitpack struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
     /// Fields of a `VdJSk10ps2` instruction.
-    VdJSk10ps2: packed struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
+    VdJSk10ps2: bitpack struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
     /// Fields of a `VdJSk11` instruction.
-    VdJSk11: packed struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
+    VdJSk11: bitpack struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
     /// Fields of a `VdJSk11ps1` instruction.
-    VdJSk11ps1: packed struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
+    VdJSk11ps1: bitpack struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
     /// Fields of a `VdJSk12` instruction.
-    VdJSk12: packed struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
+    VdJSk12: bitpack struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
     /// Fields of a `VdJSk8Un1` instruction.
-    VdJSk8Un1: packed struct { rd: u5, rj: u5, si8: i8, ui1: u1, funct19: u13 },
+    VdJSk8Un1: bitpack struct { rd: u5, rj: u5, si8: i8, ui1: u1, funct19: u13 },
     /// Fields of a `VdJSk8Un2` instruction.
-    VdJSk8Un2: packed struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
+    VdJSk8Un2: bitpack struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
     /// Fields of a `VdJSk8Un3` instruction.
-    VdJSk8Un3: packed struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
+    VdJSk8Un3: bitpack struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
     /// Fields of a `VdJSk8Un4` instruction.
-    VdJSk8Un4: packed struct { rd: u5, rj: u5, si8: i8, ui4: u4, funct22: u10 },
+    VdJSk8Un4: bitpack struct { rd: u5, rj: u5, si8: i8, ui4: u4, funct22: u10 },
     /// Fields of a `VdJSk8ps1Un3` instruction.
-    VdJSk8ps1Un3: packed struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
+    VdJSk8ps1Un3: bitpack struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
     /// Fields of a `VdJSk8ps2Un2` instruction.
-    VdJSk8ps2Un2: packed struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
+    VdJSk8ps2Un2: bitpack struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
     /// Fields of a `VdJSk8ps3Un1` instruction.
-    VdJSk8ps3Un1: packed struct { rd: u5, rj: u5, si8: i8, ui1: u1, funct19: u13 },
+    VdJSk8ps3Un1: bitpack struct { rd: u5, rj: u5, si8: i8, ui1: u1, funct19: u13 },
     /// Fields of a `VdJSk9` instruction.
-    VdJSk9: packed struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
+    VdJSk9: bitpack struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
     /// Fields of a `VdJSk9ps3` instruction.
-    VdJSk9ps3: packed struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
+    VdJSk9ps3: bitpack struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
     /// Fields of a `VdJUk1` instruction.
-    VdJUk1: packed struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
+    VdJUk1: bitpack struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
     /// Fields of a `VdJUk2` instruction.
-    VdJUk2: packed struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
+    VdJUk2: bitpack struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
     /// Fields of a `VdJUk3` instruction.
-    VdJUk3: packed struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
+    VdJUk3: bitpack struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `VdJUk4` instruction.
-    VdJUk4: packed struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
+    VdJUk4: bitpack struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
     /// Fields of a `VdSj13` instruction.
-    VdSj13: packed struct { rd: u5, si13: i13, funct18: u14 },
+    VdSj13: bitpack struct { rd: u5, si13: i13, funct18: u14 },
     /// Fields of a `VdUj5Uk5` instruction.
-    VdUj5Uk5: packed struct { rd: u5, imm5: u5, imm10: u5, funct15: u17 },
+    VdUj5Uk5: bitpack struct { rd: u5, imm5: u5, imm10: u5, funct15: u17 },
     /// Fields of a `VdVj` instruction.
-    VdVj: packed struct { rd: u5, rj: u5, funct10: u22 },
+    VdVj: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `VdVjK` instruction.
-    VdVjK: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    VdVjK: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `VdVjSk5` instruction.
-    VdVjSk5: packed struct { rd: u5, rj: u5, si5: i5, funct15: u17 },
+    VdVjSk5: bitpack struct { rd: u5, rj: u5, si5: i5, funct15: u17 },
     /// Fields of a `VdVjUk1` instruction.
-    VdVjUk1: packed struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
+    VdVjUk1: bitpack struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
     /// Fields of a `VdVjUk2` instruction.
-    VdVjUk2: packed struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
+    VdVjUk2: bitpack struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
     /// Fields of a `VdVjUk3` instruction.
-    VdVjUk3: packed struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
+    VdVjUk3: bitpack struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `VdVjUk4` instruction.
-    VdVjUk4: packed struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
+    VdVjUk4: bitpack struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
     /// Fields of a `VdVjUk5` instruction.
-    VdVjUk5: packed struct { rd: u5, rj: u5, ui5: u5, funct15: u17 },
+    VdVjUk5: bitpack struct { rd: u5, rj: u5, ui5: u5, funct15: u17 },
     /// Fields of a `VdVjUk6` instruction.
-    VdVjUk6: packed struct { rd: u5, rj: u5, ui6: u6, funct16: u16 },
+    VdVjUk6: bitpack struct { rd: u5, rj: u5, ui6: u6, funct16: u16 },
     /// Fields of a `VdVjUk7` instruction.
-    VdVjUk7: packed struct { rd: u5, rj: u5, ui7: u7, funct17: u15 },
+    VdVjUk7: bitpack struct { rd: u5, rj: u5, ui7: u7, funct17: u15 },
     /// Fields of a `VdVjUk8` instruction.
-    VdVjUk8: packed struct { rd: u5, rj: u5, ui8: u8, funct18: u14 },
+    VdVjUk8: bitpack struct { rd: u5, rj: u5, ui8: u8, funct18: u14 },
     /// Fields of a `VdVjVk` instruction.
-    VdVjVk: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    VdVjVk: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `VdVjVkVa` instruction.
-    VdVjVkVa: packed struct { rd: u5, rj: u5, rk: u5, ra: u5, funct20: u12 },
+    VdVjVkVa: bitpack struct { rd: u5, rj: u5, rk: u5, ra: u5, funct20: u12 },
     /// Fields of a `XdJ` instruction.
-    XdJ: packed struct { rd: u5, rj: u5, funct10: u22 },
+    XdJ: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `XdJK` instruction.
-    XdJK: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    XdJK: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `XdJSk10` instruction.
-    XdJSk10: packed struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
+    XdJSk10: bitpack struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
     /// Fields of a `XdJSk10ps2` instruction.
-    XdJSk10ps2: packed struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
+    XdJSk10ps2: bitpack struct { rd: u5, rj: u5, si10: i10, funct20: u12 },
     /// Fields of a `XdJSk11` instruction.
-    XdJSk11: packed struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
+    XdJSk11: bitpack struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
     /// Fields of a `XdJSk11ps1` instruction.
-    XdJSk11ps1: packed struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
+    XdJSk11ps1: bitpack struct { rd: u5, rj: u5, si11: i11, funct21: u11 },
     /// Fields of a `XdJSk12` instruction.
-    XdJSk12: packed struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
+    XdJSk12: bitpack struct { rd: u5, rj: u5, si12: i12, funct22: u10 },
     /// Fields of a `XdJSk8Un2` instruction.
-    XdJSk8Un2: packed struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
+    XdJSk8Un2: bitpack struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
     /// Fields of a `XdJSk8Un3` instruction.
-    XdJSk8Un3: packed struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
+    XdJSk8Un3: bitpack struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
     /// Fields of a `XdJSk8Un4` instruction.
-    XdJSk8Un4: packed struct { rd: u5, rj: u5, si8: i8, ui4: u4, funct22: u10 },
+    XdJSk8Un4: bitpack struct { rd: u5, rj: u5, si8: i8, ui4: u4, funct22: u10 },
     /// Fields of a `XdJSk8Un5` instruction.
-    XdJSk8Un5: packed struct { rd: u5, rj: u5, si8: i8, ui5: u5, funct23: u9 },
+    XdJSk8Un5: bitpack struct { rd: u5, rj: u5, si8: i8, ui5: u5, funct23: u9 },
     /// Fields of a `XdJSk8ps1Un4` instruction.
-    XdJSk8ps1Un4: packed struct { rd: u5, rj: u5, si8: i8, ui4: u4, funct22: u10 },
+    XdJSk8ps1Un4: bitpack struct { rd: u5, rj: u5, si8: i8, ui4: u4, funct22: u10 },
     /// Fields of a `XdJSk8ps2Un3` instruction.
-    XdJSk8ps2Un3: packed struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
+    XdJSk8ps2Un3: bitpack struct { rd: u5, rj: u5, si8: i8, ui3: u3, funct21: u11 },
     /// Fields of a `XdJSk8ps3Un2` instruction.
-    XdJSk8ps3Un2: packed struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
+    XdJSk8ps3Un2: bitpack struct { rd: u5, rj: u5, si8: i8, ui2: u2, funct20: u12 },
     /// Fields of a `XdJSk9` instruction.
-    XdJSk9: packed struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
+    XdJSk9: bitpack struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
     /// Fields of a `XdJSk9ps3` instruction.
-    XdJSk9ps3: packed struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
+    XdJSk9ps3: bitpack struct { rd: u5, rj: u5, si9: i9, funct19: u13 },
     /// Fields of a `XdJUk2` instruction.
-    XdJUk2: packed struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
+    XdJUk2: bitpack struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
     /// Fields of a `XdJUk3` instruction.
-    XdJUk3: packed struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
+    XdJUk3: bitpack struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `XdSj13` instruction.
-    XdSj13: packed struct { rd: u5, si13: i13, funct18: u14 },
+    XdSj13: bitpack struct { rd: u5, si13: i13, funct18: u14 },
     /// Fields of a `XdUj5Uk5` instruction.
-    XdUj5Uk5: packed struct { rd: u5, imm5: u5, imm10: u5, funct15: u17 },
+    XdUj5Uk5: bitpack struct { rd: u5, imm5: u5, imm10: u5, funct15: u17 },
     /// Fields of a `XdXj` instruction.
-    XdXj: packed struct { rd: u5, rj: u5, funct10: u22 },
+    XdXj: bitpack struct { rd: u5, rj: u5, funct10: u22 },
     /// Fields of a `XdXjK` instruction.
-    XdXjK: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    XdXjK: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `XdXjSk5` instruction.
-    XdXjSk5: packed struct { rd: u5, rj: u5, si5: i5, funct15: u17 },
+    XdXjSk5: bitpack struct { rd: u5, rj: u5, si5: i5, funct15: u17 },
     /// Fields of a `XdXjUk1` instruction.
-    XdXjUk1: packed struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
+    XdXjUk1: bitpack struct { rd: u5, rj: u5, ui1: u1, funct11: u21 },
     /// Fields of a `XdXjUk2` instruction.
-    XdXjUk2: packed struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
+    XdXjUk2: bitpack struct { rd: u5, rj: u5, ui2: u2, funct12: u20 },
     /// Fields of a `XdXjUk3` instruction.
-    XdXjUk3: packed struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
+    XdXjUk3: bitpack struct { rd: u5, rj: u5, ui3: u3, funct13: u19 },
     /// Fields of a `XdXjUk4` instruction.
-    XdXjUk4: packed struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
+    XdXjUk4: bitpack struct { rd: u5, rj: u5, ui4: u4, funct14: u18 },
     /// Fields of a `XdXjUk5` instruction.
-    XdXjUk5: packed struct { rd: u5, rj: u5, ui5: u5, funct15: u17 },
+    XdXjUk5: bitpack struct { rd: u5, rj: u5, ui5: u5, funct15: u17 },
     /// Fields of a `XdXjUk6` instruction.
-    XdXjUk6: packed struct { rd: u5, rj: u5, ui6: u6, funct16: u16 },
+    XdXjUk6: bitpack struct { rd: u5, rj: u5, ui6: u6, funct16: u16 },
     /// Fields of a `XdXjUk7` instruction.
-    XdXjUk7: packed struct { rd: u5, rj: u5, ui7: u7, funct17: u15 },
+    XdXjUk7: bitpack struct { rd: u5, rj: u5, ui7: u7, funct17: u15 },
     /// Fields of a `XdXjUk8` instruction.
-    XdXjUk8: packed struct { rd: u5, rj: u5, ui8: u8, funct18: u14 },
+    XdXjUk8: bitpack struct { rd: u5, rj: u5, ui8: u8, funct18: u14 },
     /// Fields of a `XdXjXk` instruction.
-    XdXjXk: packed struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
+    XdXjXk: bitpack struct { rd: u5, rj: u5, rk: u5, funct15: u17 },
     /// Fields of a `XdXjXkXa` instruction.
-    XdXjXkXa: packed struct { rd: u5, rj: u5, rk: u5, ra: u5, funct20: u12 },
+    XdXjXkXa: bitpack struct { rd: u5, rj: u5, rk: u5, ra: u5, funct20: u12 },
 
     /// Encodes a `CdFj` instruction.
     pub inline fn encodeCdFj(word: u32, p0: Register, p1: Register) Instruction {

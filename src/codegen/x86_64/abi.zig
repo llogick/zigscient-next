@@ -122,7 +122,7 @@ pub fn classifyWindows(init_ty: Type, zcu: *Zcu, target: *const std.Target, ctx:
             1, 2, 4, 8 => .integer,
             else => switch (ty.zigTypeTag(zcu)) {
                 .int => .win_i128,
-                .@"struct", .@"union" => if (ty.containerLayout(zcu) != .@"packed" or
+                .@"struct", .@"union" => if (ty.containerLayout(zcu) != .@"bitpack" or
                     target.abi.float() == .soft) .memory else .win_i128,
                 else => .memory,
             },
@@ -291,7 +291,7 @@ pub fn classifySystemV(ty: Type, zcu: *Zcu, target: *const std.Target, ctx: Cont
             switch (ty.containerLayout(zcu)) {
                 .auto => unreachable,
                 .@"extern" => {},
-                .@"packed" => {
+                .@"bitpack" => {
                     if (ty_size <= 8) return Class.one_integer;
                     if (ty_size <= 16) return Class.two_integers;
                     unreachable; // frontend should not have allowed this type as extern
@@ -370,7 +370,7 @@ fn classifySystemVStruct(
                     byte_offset = classifySystemVStruct(result, byte_offset, field_loaded_struct, zcu, target);
                     continue;
                 },
-                .@"packed" => {},
+                .@"bitpack" => {},
             }
         } else if (zcu.typeToUnion(field_ty)) |field_loaded_union| {
             switch (field_loaded_union.layout) {
@@ -379,7 +379,7 @@ fn classifySystemVStruct(
                     byte_offset = classifySystemVUnion(result, byte_offset, field_loaded_union, zcu, target);
                     continue;
                 },
-                .@"packed" => {},
+                .@"bitpack" => {},
             }
         } else if (field_ty.zigTypeTag(zcu) == .array) {
             byte_offset = classifySystemVArray(result, byte_offset, field_ty, zcu, target);
@@ -412,7 +412,7 @@ fn classifySystemVUnion(
                     _ = classifySystemVStruct(result, starting_byte_offset, field_loaded_struct, zcu, target);
                     continue;
                 },
-                .@"packed" => {},
+                .@"bitpack" => {},
             }
         } else if (zcu.typeToUnion(field_ty)) |field_loaded_union| {
             switch (field_loaded_union.layout) {
@@ -421,7 +421,7 @@ fn classifySystemVUnion(
                     _ = classifySystemVUnion(result, starting_byte_offset, field_loaded_union, zcu, target);
                     continue;
                 },
-                .@"packed" => {},
+                .@"bitpack" => {},
             }
         } else if (field_ty.zigTypeTag(zcu) == .array) {
             _ = classifySystemVArray(result, starting_byte_offset, field_ty, zcu, target);

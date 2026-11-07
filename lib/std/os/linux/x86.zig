@@ -215,7 +215,7 @@ pub const user_desc = extern struct {
     entry_number: u32,
     base_addr: u32,
     limit: u32,
-    flags: packed struct(u32) {
+    flags: bitpack struct(u32) {
         seg_32bit: u1,
         contents: u2,
         read_exec_only: u1,

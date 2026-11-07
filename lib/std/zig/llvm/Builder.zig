@@ -393,7 +393,7 @@ pub const DataLayout = struct {
     struct_pref_align: Alignment,
     string_repr: String,
 
-    const PrimitiveSpec = packed struct(u32) {
+    const PrimitiveSpec = bitpack struct(u32) {
         bit_width: BitWidth,
         abi_align: Alignment,
         pref_align: Alignment,
@@ -416,7 +416,7 @@ pub const DataLayout = struct {
     const PointerSpec = struct {
         bit_width: BitWidth,
         index_bit_width: BitWidth,
-        flags: packed struct(u32) {
+        flags: bitpack struct(u32) {
             abi_align: Alignment,
             pref_align: Alignment,
             has_unstable_repr: bool,
@@ -1107,7 +1107,7 @@ pub const Type = enum(u32) {
         fields_len: u32,
         //fields: [fields_len]Type,
 
-        pub const Kind = enum { normal, @"packed" };
+        pub const Kind = enum { normal, @"bitpack" };
     };
 
     pub const NamedStructure = struct {
@@ -1115,7 +1115,7 @@ pub const Type = enum(u32) {
         body: Type,
     };
 
-    pub const Item = packed struct(u32) {
+    pub const Item = bitpack struct(u32) {
         tag: Tag,
         data: ExtraIndex,
 
@@ -1245,7 +1245,7 @@ pub const Type = enum(u32) {
     pub fn structKind(self: Type, builder: *const Builder) Type.Structure.Kind {
         return switch (self.unnamedTag(builder)) {
             .structure => .normal,
-            .packed_structure => .@"packed",
+            .packed_structure => .@"bitpack",
             else => unreachable,
         };
     }
@@ -2466,7 +2466,7 @@ pub const Attribute = union(Kind) {
         };
     };
 
-    pub const FpClass = packed struct(u32) {
+    pub const FpClass = bitpack struct(u32) {
         signaling_nan: bool = false,
         quiet_nan: bool = false,
         negative_infinity: bool = false,
@@ -2513,14 +2513,14 @@ pub const Attribute = union(Kind) {
         pub const pnorm = FpClass{ .positive_normal = true };
     };
 
-    pub const Captures = packed struct(u32) {
+    pub const Captures = bitpack struct(u32) {
         other: Components = .none,
         ret: Components = .none,
         _: u24 = 0,
 
         pub const none: Captures = .{};
 
-        pub const Components = packed struct(u4) {
+        pub const Components = bitpack struct(u4) {
             address_is_null: bool = false,
             address: bool = false,
             read_provenance: bool = false,
@@ -2536,7 +2536,7 @@ pub const Attribute = union(Kind) {
         };
     };
 
-    pub const AllocKind = packed struct(u32) {
+    pub const AllocKind = bitpack struct(u32) {
         alloc: bool,
         realloc: bool,
         free: bool,
@@ -2546,13 +2546,13 @@ pub const Attribute = union(Kind) {
         _: u26 = 0,
     };
 
-    pub const AllocSize = packed struct(u32) {
+    pub const AllocSize = bitpack struct(u32) {
         elem_size: u16,
         num_elems: u16,
 
         pub const none = maxInt(u16);
 
-        fn toLlvm(self: AllocSize) packed struct(u64) { num_elems: u32, elem_size: u32 } {
+        fn toLlvm(self: AllocSize) bitpack struct(u64) { num_elems: u32, elem_size: u32 } {
             return .{ .num_elems = switch (self.num_elems) {
                 else => self.num_elems,
                 none => maxInt(u32),
@@ -2560,7 +2560,7 @@ pub const Attribute = union(Kind) {
         }
     };
 
-    pub const Memory = packed struct(u32) {
+    pub const Memory = bitpack struct(u32) {
         argmem: Effect = .none,
         inaccessiblemem: Effect = .none,
         other: Effect = .none,
@@ -2581,12 +2581,12 @@ pub const Attribute = union(Kind) {
         pub const default = UwTable.async;
     };
 
-    pub const VScaleRange = packed struct(u32) {
+    pub const VScaleRange = bitpack struct(u32) {
         min: Alignment,
         max: Alignment,
         _: u20 = 0,
 
-        fn toLlvm(self: VScaleRange) packed struct(u64) { max: u32, min: u32 } {
+        fn toLlvm(self: VScaleRange) bitpack struct(u64) { max: u32, min: u32 } {
             return .{
                 .max = @intCast(self.max.toByteUnits() orelse 0),
                 .min = @intCast(self.min.toByteUnits().?),
@@ -6257,7 +6257,7 @@ pub const Function = struct {
             info: Info,
 
             pub const Kind = enum { normal, inalloca };
-            pub const Info = packed struct(u32) {
+            pub const Info = bitpack struct(u32) {
                 alignment: Alignment,
                 addr_space: AddrSpace,
                 _: u2 = undefined,
@@ -6356,7 +6356,7 @@ pub const Function = struct {
                 tail,
                 tail_fast,
             };
-            pub const Info = packed struct(u32) {
+            pub const Info = bitpack struct(u32) {
                 call_conv: CallConv,
                 has_op_bundle_cold: bool,
                 _: u21 = undefined,
@@ -8446,7 +8446,7 @@ pub const AtomicOrdering = enum(u3) {
     }
 };
 
-const MemoryAccessInfo = packed struct(u32) {
+const MemoryAccessInfo = bitpack struct(u32) {
     access_kind: MemoryAccessKind = .normal,
     atomic_rmw_operation: Function.Instruction.AtomicRmw.Operation = .none,
     sync_scope: SyncScope,
@@ -8456,7 +8456,7 @@ const MemoryAccessInfo = packed struct(u32) {
     _: u13 = undefined,
 };
 
-pub const FastMath = packed struct(u8) {
+pub const FastMath = bitpack struct(u8) {
     unsafe_algebra: bool = false, // Legacy
     nnan: bool = false,
     ninf: bool = false,
@@ -8591,7 +8591,7 @@ pub const Constant = enum(u32) {
         const ExtraIndex = u32;
     };
 
-    pub const Integer = packed struct(u64) {
+    pub const Integer = bitpack struct(u64) {
         type: Type,
         limbs_len: u32,
 
@@ -8657,7 +8657,7 @@ pub const Constant = enum(u32) {
 
         pub const Kind = enum { normal, inbounds };
         pub const InRangeIndex = enum(u16) { none = maxInt(u16), _ };
-        pub const Info = packed struct(u32) { indices_len: u16, inrange: InRangeIndex };
+        pub const Info = bitpack struct(u32) { indices_len: u16, inrange: InRangeIndex };
     };
 
     pub const Binary = extern struct {
@@ -8670,7 +8670,7 @@ pub const Constant = enum(u32) {
         assembly: String,
         constraints: String,
 
-        pub const Info = packed struct {
+        pub const Info = bitpack struct {
             sideeffect: bool = false,
             alignstack: bool = false,
             inteldialect: bool = false,
@@ -8934,7 +8934,7 @@ pub const Constant = enum(u32) {
                     .float => {
                         const Float = struct {
                             fn Repr(comptime T: type) type {
-                                return packed struct(@Int(.unsigned, @bitSizeOf(T))) {
+                                return bitpack struct(@Int(.unsigned, @bitSizeOf(T))) {
                                     mantissa: @Int(.unsigned, std.math.floatMantissaBits(T)),
                                     exponent: @Int(.unsigned, std.math.floatExponentBits(T)),
                                     sign: u1,
@@ -9218,7 +9218,7 @@ pub const Value = enum(u32) {
     }
 };
 
-pub const Metadata = packed struct(u32) {
+pub const Metadata = bitpack struct(u32) {
     index: u29,
     kind: Kind,
     unused: enum(u1) { unused = 0 } = .unused,
@@ -9232,7 +9232,7 @@ pub const Metadata = packed struct(u32) {
 
     pub const empty_tuple: Metadata = .{ .kind = .node, .index = 0 };
 
-    pub const Optional = packed struct(u32) {
+    pub const Optional = bitpack struct(u32) {
         index: u29,
         kind: Metadata.Kind,
         is_none: bool,
@@ -9441,7 +9441,7 @@ pub const Metadata = packed struct(u32) {
         const ExtraIndex = u32;
     };
 
-    pub const DIFlags = packed struct(u32) {
+    pub const DIFlags = bitpack struct(u32) {
         Visibility: enum(u2) { Zero, Private, Protected, Public } = .Zero,
         FwdDecl: bool = false,
         AppleBlock: bool = false,
@@ -9521,7 +9521,7 @@ pub const Metadata = packed struct(u32) {
             sp_flags: DISPFlags,
         };
 
-        pub const DISPFlags = packed struct(u32) {
+        pub const DISPFlags = bitpack struct(u32) {
             Virtuality: enum(u2) { Zero, Virtual, PureVirtual } = .Zero,
             LocalToUnit: bool = false,
             Definition: bool = false,
@@ -12281,7 +12281,7 @@ fn structTypeAssumeCapacity(
 ) Type {
     const tag: Type.Tag = switch (kind) {
         .normal => .structure,
-        .@"packed" => .packed_structure,
+        .@"bitpack" => .packed_structure,
     };
     const Adapter = struct {
         builder: *const Builder,

@@ -230,7 +230,7 @@ fn toType(
         .opt,
         .aggregate,
         .un,
-        .bitpack,
+        .@"bitpack",
         // memoization, not types
         .memoized_call,
         => key.typeOf(),

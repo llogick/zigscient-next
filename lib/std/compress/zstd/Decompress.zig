@@ -439,7 +439,7 @@ pub const Frame = struct {
             dictionary_id: ?u32,
             content_size: ?u64,
 
-            pub const Descriptor = packed struct {
+            pub const Descriptor = bitpack struct {
                 dictionary_id_flag: u2,
                 content_checksum_flag: bool,
                 reserved: bool,
@@ -492,7 +492,7 @@ pub const Frame = struct {
         };
 
         pub const Block = struct {
-            pub const Header = packed struct(u24) {
+            pub const Header = bitpack struct(u24) {
                 last: bool,
                 type: Type,
                 size: u21,

@@ -71,7 +71,7 @@ test "pointer subtraction" {
         try expect(b - a == 1);
     }
     comptime {
-        var x: packed struct { a: u1, b: u1 } = undefined;
+        var x: bitpack struct { a: u1, b: u1 } = undefined;
         const a = &x.a;
         const b = &x.b;
         try expect(a - a == 0);

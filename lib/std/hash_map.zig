@@ -585,7 +585,7 @@ fn Custom(
         /// Not using the equality function means we don't have to read into
         /// the entries array, likely avoiding a cache miss and a potentially
         /// costly function call.
-        const Metadata = packed struct {
+        const Metadata = bitpack struct {
             const FingerPrint = u7;
 
             const free: FingerPrint = 0;

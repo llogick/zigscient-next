@@ -33,7 +33,7 @@ const flate = @import("../flate.zig");
 ///
 /// Also, there are no `to` / `from` methods because LLVM 21 does not
 /// optimize away the conversion from and to `?u15`.
-const PackedOptionalU15 = packed struct(u16) {
+const PackedOptionalU15 = bitpack struct(u16) {
     value: u15,
     is_null: bool,
 
@@ -194,7 +194,7 @@ const Hash = u16; // `@Int(.unsigned, lookup_hash_bits)` is not used due to wors
 const seq_bytes = 3; // not intended to be changed
 const Seq = @Int(.unsigned, seq_bytes * 8);
 
-const TokenBufferEntryHeader = packed struct(u16) {
+const TokenBufferEntryHeader = bitpack struct(u16) {
     kind: enum(u1) {
         /// Followed by non-zero `data` byte literals.
         bytes,
@@ -204,7 +204,7 @@ const TokenBufferEntryHeader = packed struct(u16) {
     data: u15,
 };
 
-const BlockHeader = packed struct(u3) {
+const BlockHeader = bitpack struct(u3) {
     final: bool,
     kind: enum(u2) { stored, fixed, dynamic, _ },
 
@@ -212,7 +212,7 @@ const BlockHeader = packed struct(u3) {
         return @bitCast(h);
     }
 
-    pub const Dynamic = packed struct(u17) {
+    pub const Dynamic = bitpack struct(u17) {
         regular: BlockHeader,
         hlit: u5,
         hdist: u5,
@@ -1063,7 +1063,7 @@ const huffman = struct {
     const max_leafs = 286;
     const max_nodes = max_leafs * 2;
 
-    const Node = packed struct(u32) {
+    const Node = bitpack struct(u32) {
         depth: u16,
         freq: u16,
 
@@ -1474,7 +1474,7 @@ fn testingCheckContainerHash(
     }
 }
 
-const PackedContainer = packed struct(u2) {
+const PackedContainer = bitpack struct(u2) {
     raw: bool,
     other: enum(u1) { gzip, zlib },
 
@@ -1987,7 +1987,7 @@ fn testFuzzedRawInput(data_buf: *const [4 * 65536]u8, smith: *std.testing.Smith)
     var vecs_n: usize = 0;
 
     while (true) {
-        const Op = packed struct {
+        const Op = bitpack struct {
             drain: bool = false,
             add_vec: bool = false,
             rebase: enum(u2) { none, rebase, flush } = .none,
@@ -2526,7 +2526,7 @@ fn testFuzzedHuffmanInput(fbufs: *const [2][65536]u8, smith: *std.testing.Smith)
     var vecs_n: usize = 0;
 
     while (true) {
-        const Op = packed struct {
+        const Op = bitpack struct {
             drain: bool = false,
             add_vec: bool = false,
             rebase: enum(u2) { none, rebase, flush } = .none,

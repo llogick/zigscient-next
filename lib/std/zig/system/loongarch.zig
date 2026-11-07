@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 
-const Prid = packed struct(u32) {
+const Prid = bitpack struct(u32) {
     product: u12,
     series: enum(u4) {
         la132 = 0x8,

@@ -166,7 +166,7 @@ test "@backingInt with tagged unions" {
     try comptime static.doTheTest(T1.expected.val, T2.expected.val, T4.expected.val, T5.expected.val);
 }
 
-const S1 = packed struct(u8) {
+const S1 = bitpack struct(u8) {
     a: u4,
     b: i4,
     const expected = .{
@@ -174,7 +174,7 @@ const S1 = packed struct(u8) {
         .int = @as(@typeInfo(S1).@"struct".backing_integer.?, 0b0010_1000),
     };
 };
-const S2 = packed struct(i20) {
+const S2 = bitpack struct(i20) {
     a: u10,
     b: enum(i10) { x, y, z },
     const expected = .{
@@ -182,12 +182,12 @@ const S2 = packed struct(i20) {
         .int = @as(@typeInfo(S2).@"struct".backing_integer.?, 0b0000000010_0011001100),
     };
 };
-const S3 = packed struct(i32) {
-    a: packed struct(u12) {
+const S3 = bitpack struct(i32) {
+    a: bitpack struct(u12) {
         x: u8,
         y: i4,
     },
-    b: packed union(i20) {
+    b: bitpack union(i20) {
         x: i20,
         y: enum(u20) { u, v },
     },
@@ -196,14 +196,14 @@ const S3 = packed struct(i32) {
         .int = @as(@typeInfo(S3).@"struct".backing_integer.?, 0b00000000000000000001_0110_10010001),
     };
 };
-const S4 = packed struct(i200) {
+const S4 = bitpack struct(i200) {
     a: u200,
     const expected = .{
         .val = @as(S4, .{ .a = (1 << 199) + 10 }),
         .int = @as(@typeInfo(S4).@"struct".backing_integer.?, @bitCast(@as(u200, (1 << 199) + 10))),
     };
 };
-const S5 = packed struct(u0) {
+const S5 = bitpack struct(u0) {
     a: u0,
     const expected = .{
         .val = @as(S5, .{ .a = 0 }),
@@ -211,7 +211,7 @@ const S5 = packed struct(u0) {
     };
 };
 
-test "@backingInt with packed structs" {
+test "@backingInt with bitpack structs" {
     if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
 
     const static = struct {
@@ -241,7 +241,7 @@ test "@backingInt with packed structs" {
     try comptime static.doTheTest(S1.expected.val, S2.expected.val, S3.expected.val, S4.expected.val, S5.expected.val);
 }
 
-test "@fromBackingInt with packed structs" {
+test "@fromBackingInt with bitpack structs" {
     if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
 
     const static = struct {
@@ -275,7 +275,7 @@ test "@fromBackingInt with packed structs" {
     try comptime static.doTheTest(S1.expected.int, S2.expected.int, S3.expected.int, S4.expected.int, S5.expected.int);
 }
 
-const U1 = packed union(u8) {
+const U1 = bitpack union(u8) {
     a: u8,
     b: i8,
     const expected = .{
@@ -283,7 +283,7 @@ const U1 = packed union(u8) {
         .int = @as(@typeInfo(U1).@"union".backing_integer.?, @bitCast(@as(i8, -123))),
     };
 };
-const U2 = packed union(i20) {
+const U2 = bitpack union(i20) {
     a: u20,
     b: enum(i20) { x, y, z },
     const expected = .{
@@ -291,12 +291,12 @@ const U2 = packed union(i20) {
         .int = @as(@typeInfo(U2).@"union".backing_integer.?, 0b00000000000000000000000000000010),
     };
 };
-const U3 = packed union(i32) {
-    a: packed struct(u32) {
+const U3 = bitpack union(i32) {
+    a: bitpack struct(u32) {
         x: u18,
         y: i14,
     },
-    b: packed union(u32) {
+    b: bitpack union(u32) {
         x: i32,
         y: enum(u32) { u, v },
     },
@@ -305,14 +305,14 @@ const U3 = packed union(i32) {
         .int = @as(@typeInfo(U3).@"union".backing_integer.?, 0b00000000000000000000000000000001),
     };
 };
-const U4 = packed union(i200) {
+const U4 = bitpack union(i200) {
     a: u200,
     const expected = .{
         .val = @as(U4, .{ .a = (1 << 199) + 10 }),
         .int = @as(@typeInfo(U4).@"union".backing_integer.?, @bitCast(@as(u200, (1 << 199) + 10))),
     };
 };
-const U5 = packed union(u0) {
+const U5 = bitpack union(u0) {
     a: u0,
     const expected = .{
         .val = @as(U5, .{ .a = 0 }),
@@ -320,7 +320,7 @@ const U5 = packed union(u0) {
     };
 };
 
-test "@backingInt with packed unions" {
+test "@backingInt with bitpack unions" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const static = struct {
@@ -350,7 +350,7 @@ test "@backingInt with packed unions" {
     try comptime static.doTheTest(U1.expected.val, U2.expected.val, U3.expected.val, U4.expected.val, U5.expected.val);
 }
 
-test "@fromBackingInt with packed unions" {
+test "@fromBackingInt with bitpack unions" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const static = struct {

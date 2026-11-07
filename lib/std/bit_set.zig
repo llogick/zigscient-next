@@ -57,7 +57,7 @@ pub const IntegerBitSet = Integer;
 /// This set is good for sets with a small size, but may generate
 /// inefficient code for larger sets, especially in debug mode.
 pub fn Integer(comptime size: u16) type {
-    return packed struct(MaskInt) {
+    return bitpack struct(MaskInt) {
         const Self = @This();
 
         // TODO: Make this a comptime field once those are fixed

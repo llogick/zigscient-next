@@ -38,7 +38,7 @@ nodes_need_rl: RlNeededSet = .{},
 
 pub const RlNeededSet = AutoHashMapUnmanaged(Ast.Node.Index, void);
 
-const ResultInfo = packed struct {
+const ResultInfo = bitpack struct {
     /// Do we have a known result type?
     have_type: bool,
     /// Do we (potentially) have a result pointer? Note that this pointer's type

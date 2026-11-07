@@ -2557,7 +2557,13 @@ fn renderContainerDecl(
     const gpa = r.gpa;
 
     if (container_decl.layout_token) |layout_token| {
-        try renderToken(r, layout_token, .space);
+        // Always render "packed" keywords as "bitpack", for zig fmt's sake
+        if (tree.tokenTag(layout_token) == .keyword_packed) {
+            try ais.writeAll("bitpack");
+            try renderSpace(r, layout_token, "packed".len, .space);
+        } else {
+            try renderToken(r, layout_token, .space);
+        }
     }
 
     const container: Container = switch (tree.tokenTag(container_decl.ast.main_token)) {

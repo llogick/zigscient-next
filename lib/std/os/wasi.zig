@@ -220,7 +220,7 @@ pub const exitcode_t = u32;
 
 pub const fd_t = i32;
 
-pub const fdflags_t = packed struct(u16) {
+pub const fdflags_t = bitpack struct(u16) {
     APPEND: bool = false,
     DSYNC: bool = false,
     NONBLOCK: bool = false,
@@ -263,7 +263,7 @@ pub const filetype_t = enum(u8) {
     _,
 };
 
-pub const fstflags_t = packed struct(u16) {
+pub const fstflags_t = bitpack struct(u16) {
     ATIM: bool = false,
     ATIM_NOW: bool = false,
     MTIM: bool = false,
@@ -275,12 +275,12 @@ pub const inode_t = u64;
 
 pub const linkcount_t = u64;
 
-pub const lookupflags_t = packed struct(u32) {
+pub const lookupflags_t = bitpack struct(u32) {
     SYMLINK_FOLLOW: bool = false,
     _: u31 = 0,
 };
 
-pub const oflags_t = packed struct(u16) {
+pub const oflags_t = bitpack struct(u16) {
     CREAT: bool = false,
     DIRECTORY: bool = false,
     EXCL: bool = false,
@@ -315,7 +315,7 @@ pub const SOCK = struct {
     pub const RECV_DATA_TRUNCATED: roflags_t = 0x0001;
 };
 
-pub const rights_t = packed struct(u64) {
+pub const rights_t = bitpack struct(u64) {
     /// The right to invoke fd_datasync. If PATH_OPEN is set, includes the right to invoke
     /// path_open with fdflags_t.dsync.
     FD_DATASYNC: bool = false,
@@ -391,7 +391,7 @@ pub const rights_t = packed struct(u64) {
     _: u34 = 0,
 };
 
-pub const sdflags_t = packed struct(u8) {
+pub const sdflags_t = bitpack struct(u8) {
     RD: bool = false,
     WR: bool = false,
     _: u6 = 0,

@@ -654,7 +654,7 @@ pub const io_uring_sqe = extern struct {
         // off is overloaded with cmd_op, https://github.com/axboe/liburing/blob/e1003e496e66f9b0ae06674869795edf772d5500/src/include/liburing/io_uring.h#L39
         sqe.off = @backingInt(cmd_op);
         // addr is overloaded, https://github.com/axboe/liburing/blob/e1003e496e66f9b0ae06674869795edf772d5500/src/include/liburing/io_uring.h#L46
-        sqe.addr = @bitCast(packed struct {
+        sqe.addr = @bitCast(bitpack struct {
             level: u32,
             optname: u32,
         }{

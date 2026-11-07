@@ -150,7 +150,7 @@ pub fn toType(self: Value) Type {
 pub fn backingInt(val: Value, zcu: *const Zcu) Value {
     return switch (zcu.intern_pool.indexToKey(val.toIntern())) {
         .enum_tag => |enum_tag| .fromInterned(enum_tag.int),
-        .bitpack => |bitpack| .fromInterned(bitpack.backing_int_val),
+        .@"bitpack" => |@"bitpack"| .fromInterned(@"bitpack".backing_int_val),
         else => unreachable,
     };
 }
@@ -163,7 +163,7 @@ pub fn toBigInt(val: Value, space: *BigIntSpace, zcu: *const Zcu) BigIntConst {
     const ip = &zcu.intern_pool;
     const int_key = switch (ip.indexToKey(val.toIntern())) {
         .enum_tag => |enum_tag| ip.indexToKey(enum_tag.int).int,
-        .bitpack => |bitpack| ip.indexToKey(bitpack.backing_int_val).int,
+        .@"bitpack" => |@"bitpack"| ip.indexToKey(@"bitpack".backing_int_val).int,
         .int => |int| int,
         else => unreachable,
     };
@@ -215,7 +215,7 @@ pub fn getUnsignedInt(val: Value, zcu: *const Zcu) ?u64 {
                 else => |payload| Value.fromInterned(payload).getUnsignedInt(zcu),
             },
             .enum_tag => |enum_tag| Value.fromInterned(enum_tag.int).getUnsignedInt(zcu),
-            .bitpack => |bitpack| Value.fromInterned(bitpack.backing_int_val).getUnsignedInt(zcu),
+            .@"bitpack" => |@"bitpack"| Value.fromInterned(@"bitpack".backing_int_val).getUnsignedInt(zcu),
             .err => |err| zcu.intern_pool.getErrorValueIfExists(err.name).?,
             else => null,
         },
@@ -349,8 +349,8 @@ pub fn writeToMemory(val: Value, zcu: *const Zcu, buffer: []u8) error{
                     const struct_size: usize = @intCast(ty.abiSize(zcu));
                     @memset(buffer[last_off..struct_size], 0xAA);
                 },
-                .@"packed" => {
-                    const int_index = ip.indexToKey(val.toIntern()).bitpack.backing_int_val;
+                .@"bitpack" => {
+                    const int_index = ip.indexToKey(val.toIntern()).@"bitpack".backing_int_val;
                     return Value.fromInterned(int_index).writeToMemory(zcu, buffer);
                 },
             }
@@ -364,8 +364,8 @@ pub fn writeToMemory(val: Value, zcu: *const Zcu, buffer: []u8) error{
                 @memset(buffer[payload_size..union_size], 0xAA);
                 return writeToMemory(payload_val, zcu, buffer);
             },
-            .@"packed" => {
-                const int_val: Value = .fromInterned(ip.indexToKey(val.toIntern()).bitpack.backing_int_val);
+            .@"bitpack" => {
+                const int_val: Value = .fromInterned(ip.indexToKey(val.toIntern()).@"bitpack".backing_int_val);
                 return writeToMemory(int_val, zcu, buffer);
             },
         },
@@ -385,7 +385,7 @@ pub fn writeToMemory(val: Value, zcu: *const Zcu, buffer: []u8) error{
 /// Write a Value's contents to `buffer`.
 ///
 /// Both the start and the end of the provided buffer must be tight, since
-/// big-endian packed memory layouts start at the end of the buffer.
+/// big-endian bitpack memory layouts start at the end of the buffer.
 ///
 /// Supports arrays and vectors, for which the value is written in logical bit
 /// order, i.e. with the first element at bit offset 0.
@@ -440,8 +440,8 @@ pub fn writeToPackedMemory(
             else => unreachable,
         },
         .@"struct", .@"union" => {
-            assert(ty.containerLayout(zcu) == .@"packed");
-            const int_val: Value = .fromInterned(ip.indexToKey(val.toIntern()).bitpack.backing_int_val);
+            assert(ty.containerLayout(zcu) == .@"bitpack");
+            const int_val: Value = .fromInterned(ip.indexToKey(val.toIntern()).@"bitpack".backing_int_val);
             int_val.writeToPackedMemory(zcu, buffer, bit_offset);
         },
         .array, .vector => {
@@ -516,7 +516,7 @@ pub fn readIntFromMemory(
 /// Load a Value from the contents of `buffer`.
 ///
 /// Both the start and the end of the provided buffer must be tight, since
-/// big-endian packed memory layouts start at the end of the buffer.
+/// big-endian bitpack memory layouts start at the end of the buffer.
 ///
 /// Supports arrays and vectors, for which the value is read in logical bit
 /// order, i.e. with the first element at bit offset 0.
@@ -585,7 +585,7 @@ pub fn readFromPackedMemory(
             },
         } })),
         .@"struct", .@"union" => {
-            assert(ty.containerLayout(zcu) == .@"packed");
+            assert(ty.containerLayout(zcu) == .@"bitpack");
             const int_val: Value = try .readFromPackedMemory(ty.backingIntType(zcu), pt, buffer, bit_offset);
             return pt.bitpackValue(ty, int_val);
         },
@@ -867,14 +867,14 @@ pub fn fieldValue(val: Value, pt: Zcu.PerThread, index: usize) !Value {
         .un => |un| {
             switch (Type.fromInterned(un.ty).containerLayout(zcu)) {
                 .auto, .@"extern" => {}, // TODO assert the tag is correct
-                .@"packed" => unreachable,
+                .@"bitpack" => unreachable,
             }
             return .fromInterned(un.val);
         },
-        .bitpack => |bitpack| {
-            const ty: Type = .fromInterned(bitpack.ty);
-            assert(ty.containerLayout(zcu) == .@"packed");
-            const int_val: Value = .fromInterned(bitpack.backing_int_val);
+        .@"bitpack" => |@"bitpack"| {
+            const ty: Type = .fromInterned(@"bitpack".ty);
+            assert(ty.containerLayout(zcu) == .@"bitpack");
+            const int_val: Value = .fromInterned(@"bitpack".backing_int_val);
             assert(!int_val.isUndef(zcu));
             const field_ty = ty.fieldType(index, zcu);
             const field_bit_offset: u16 = switch (ty.zigTypeTag(zcu)) {
@@ -888,7 +888,7 @@ pub fn fieldValue(val: Value, pt: Zcu.PerThread, index: usize) !Value {
                 },
                 else => unreachable,
             };
-            // Avoid hitting gpa for accesses to small packed structs
+            // Avoid hitting gpa for accesses to small bitpack structs
             var bfa_buf: [128]u8 = undefined;
             var bfa_state: std.heap.BufferFirstAllocator = .init(&bfa_buf, zcu.comp.gpa);
             const bfa = bfa_state.allocator();
@@ -1769,11 +1769,11 @@ pub fn ptrField(parent_ptr: Value, field_idx: u32, pt: Zcu.PerThread) !Value {
                 field_ptr_ty,
                 pt,
             ),
-            .@"packed" => return pt.getCoerced(parent_ptr, field_ptr_ty),
+            .@"bitpack" => return pt.getCoerced(parent_ptr, field_ptr_ty),
         },
         .@"union" => switch (aggregate_ty.containerLayout(zcu)) {
             .auto => {},
-            .@"packed", .@"extern" => return pt.getCoerced(parent_ptr, field_ptr_ty),
+            .@"bitpack", .@"extern" => return pt.getCoerced(parent_ptr, field_ptr_ty),
         },
         else => unreachable,
     }
@@ -2270,7 +2270,7 @@ pub fn pointerDerivation(ptr_val: Value, arena: Allocator, zcu: *Zcu, opt_sema: 
                 }
             },
             .@"struct" => switch (cur_derive.elem_ty.containerLayout(zcu)) {
-                .auto, .@"packed" => break,
+                .auto, .@"bitpack" => break,
                 .@"extern" => for (0..cur_derive.elem_ty.structFieldCount(zcu)) |field_idx| {
                     const field_ty = cur_derive.elem_ty.fieldType(field_idx, zcu);
                     const start_off = cur_derive.elem_ty.structFieldOffset(field_idx, zcu);

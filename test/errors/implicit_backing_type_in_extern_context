@@ -4,8 +4,8 @@
 #}
 
 #write test.zig {
-const PackedStruct = packed struct { x: u32 };
-const PackedUnion = packed union { x: u32 };
+const BitpackStruct = bitpack struct { x: u32 };
+const BitpackUnion = bitpack union { x: u32 };
 
 /// This enum has 256 fields, so `u8` will be its inferred tag type.
 const Enum = enum {
@@ -29,8 +29,8 @@ const Enum = enum {
     // zig fmt: on
 };
 
-const Extern0 = extern struct { val: PackedStruct };
-const Extern1 = extern struct { val: PackedUnion };
+const Extern0 = extern struct { val: BitpackStruct };
+const Extern1 = extern struct { val: BitpackUnion };
 const Extern2 = extern struct { val: Enum };
 
 comptime {
@@ -45,12 +45,12 @@ comptime {
 #}
 #update
 #check errors {
-test.zig:26:38: error: extern structs cannot contain fields of type 'test.PackedStruct'
-test.zig:26:38: note: inferred backing integer of packed struct has unspecified signedness
-test.zig:1:29: note: struct declared here
-test.zig:27:38: error: extern structs cannot contain fields of type 'test.PackedUnion'
-test.zig:27:38: note: inferred backing integer of packed union has unspecified signedness
-test.zig:2:28: note: union declared here
+test.zig:26:38: error: extern structs cannot contain fields of type 'test.BitpackStruct'
+test.zig:26:38: note: inferred backing integer of bitpack struct has unspecified signedness
+test.zig:1:31: note: struct declared here
+test.zig:27:38: error: extern structs cannot contain fields of type 'test.BitpackUnion'
+test.zig:27:38: note: inferred backing integer of bitpack union has unspecified signedness
+test.zig:2:30: note: union declared here
 test.zig:28:38: error: extern structs cannot contain fields of type 'test.Enum'
 test.zig:5:14: note: integer tag type of enum is inferred
 test.zig:5:14: note: consider explicitly specifying the integer tag type

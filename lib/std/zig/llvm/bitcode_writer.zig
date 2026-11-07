@@ -418,7 +418,7 @@ fn BufType(comptime T: type, comptime min_len: usize) type {
         .bool => u1,
         .@"struct" => |info| switch (info.layout) {
             .auto, .@"extern" => @compileError("Unsupported type: " ++ @typeName(T)),
-            .@"packed" => @Int(.unsigned, @bitSizeOf(T)),
+            .@"bitpack" => @Int(.unsigned, @bitSizeOf(T)),
         },
         else => @compileError("Unsupported type: " ++ @typeName(T)),
     })));

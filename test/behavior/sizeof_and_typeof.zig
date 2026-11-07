@@ -61,7 +61,7 @@ const A = struct {
     i: u7,
 };
 
-const P = packed struct {
+const P = bitpack struct {
     a: u8,
     b: u32,
     c: u8,
@@ -77,7 +77,7 @@ test "@offsetOf" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
-    // Packed structs have fixed memory layout
+    // Bitpack structs have fixed memory layout
     try expect(@offsetOf(P, "a") == 0);
     try expect(@offsetOf(P, "b") == 1);
     try expect(@offsetOf(P, "c") == 5);
@@ -105,7 +105,7 @@ test "@bitOffsetOf" {
     if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
-    // Packed structs have fixed memory layout
+    // Bitpack structs have fixed memory layout
     try expect(@bitOffsetOf(P, "a") == 0);
     try expect(@bitOffsetOf(P, "b") == 8);
     try expect(@bitOffsetOf(P, "c") == 40);
@@ -157,7 +157,7 @@ test "@bitSizeOf" {
 
     try expect(@bitSizeOf(u2) == 2);
     try expect(@bitSizeOf(u8) == @sizeOf(u8) * 8);
-    try expect(@bitSizeOf(packed struct {
+    try expect(@bitSizeOf(bitpack struct {
         a: u2,
     }) == 2);
 }
@@ -279,7 +279,7 @@ test "@sizeOf optional of previously unresolved union" {
 }
 
 test "@offsetOf zero-bit field" {
-    const S = packed struct {
+    const S = bitpack struct {
         a: u32,
         b: u0,
         c: u32,

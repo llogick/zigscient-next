@@ -67,11 +67,11 @@ pub inline fn baselineWeights(T: type) []const Weight {
         .@"struct" => |s| if (s.backing_integer) |B|
             baselineWeights(B)
         else
-            @compileError("non-packed structs cannot be weighted"),
-        .@"union" => |u| if (u.layout == .@"packed")
+            @compileError("non-bitpack structs cannot be weighted"),
+        .@"union" => |u| if (u.layout == .@"bitpack")
             baselineWeights(Backing(T))
         else
-            @compileError("non-packed unions cannot be weighted"),
+            @compileError("non-bitpack unions cannot be weighted"),
         .@"enum" => |e| if (e.mode == .nonexhaustive)
             baselineWeights(e.tag_type)
         else if (e.field_names.len == 0)
@@ -138,12 +138,12 @@ test baselineWeights {
     try std.testing.expectEqualSlices(
         Weight,
         &.{.rangeAtMost(u4, 0, 15, 1)},
-        baselineWeights(packed struct(u4) { _: u4 }),
+        baselineWeights(bitpack struct(u4) { _: u4 }),
     );
     try std.testing.expectEqualSlices(
         Weight,
         &.{.rangeAtMost(u4, 0, 15, 1)},
-        baselineWeights(packed union { _: u4 }),
+        baselineWeights(bitpack union { _: u4 }),
     );
     try std.testing.expectEqualSlices(
         Weight,
@@ -324,13 +324,13 @@ fn weightsContain(int: u64, weights: []const Weight) bool {
     return contains;
 }
 
-/// Asserts `T` can be a member of a packed type
+/// Asserts `T` can be a member of a bitpack type
 //
 // `inline` to propogate the `comptime`ness of the result
 inline fn allBitPatternsValid(T: type) bool {
     return comptime switch (@typeInfo(T)) {
         .void, .bool, .int, .float => true,
-        inline .@"struct", .@"union" => |c| c.layout == .@"packed" and for (c.field_types) |f_type| {
+        inline .@"struct", .@"union" => |c| c.layout == .@"bitpack" and for (c.field_types) |f_type| {
             if (!allBitPatternsValid(f_type)) break false;
         } else true,
         .@"enum" => |e| e.mode == .nonexhaustive,
@@ -339,18 +339,18 @@ inline fn allBitPatternsValid(T: type) bool {
 }
 
 test allBitPatternsValid {
-    try std.testing.expect(allBitPatternsValid(packed struct {
+    try std.testing.expect(allBitPatternsValid(bitpack struct {
         a: void,
         b: u8,
         c: f16,
-        d: packed union {
+        d: bitpack union {
             a: u16,
             b: i16,
             c: f16,
         },
         e: enum(u4) { _ },
     }));
-    try std.testing.expect(!allBitPatternsValid(packed union {
+    try std.testing.expect(!allBitPatternsValid(bitpack union {
         a: i4,
         b: enum(u4) { a },
     }));
@@ -726,14 +726,14 @@ test value {
         vb: @Vector(3, u8) = .{ 22, 44, 99 },
         s: struct { q: u64 } = .{ .q = 1 },
         sz: struct {} = .{},
-        sp: packed struct(u8) { a: u5, b: u3 } = .{ .a = 31, .b = 3 },
-        si: packed struct(u8) { a: u5, b: enum(u3) { a, b } } = .{ .a = 15, .b = .b },
+        sp: bitpack struct(u8) { a: u5, b: u3 } = .{ .a = 31, .b = 3 },
+        si: bitpack struct(u8) { a: u5, b: enum(u3) { a, b } } = .{ .a = 15, .b = .b },
         u: union(enum(u2)) {
             a: u64,
             b: u64,
             c: noreturn,
         } = .{ .b = 777777 },
-        up: packed union {
+        up: bitpack union {
             a: u16,
             b: f16,
         } = .{ .b = std.math.phi },

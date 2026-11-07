@@ -53,7 +53,7 @@ pub const AbsolutePointer = extern struct {
         absolute_max_z: u64,
         attributes: Attributes,
 
-        pub const Attributes = packed struct(u32) {
+        pub const Attributes = bitpack struct(u32) {
             supports_alt_active: bool,
             supports_pressure_as_z: bool,
             _pad: u30 = 0,
@@ -66,7 +66,7 @@ pub const AbsolutePointer = extern struct {
         current_z: u64,
         active_buttons: ActiveButtons,
 
-        pub const ActiveButtons = packed struct(u32) {
+        pub const ActiveButtons = bitpack struct(u32) {
             touch_active: bool,
             alt_active: bool,
             _pad: u30 = 0,

@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const Target = std.Target;
 
 /// Only covers EAX for now.
-const Xcr0 = packed struct(u32) {
+const Xcr0 = bitpack struct(u32) {
     x87: bool,
     sse: bool,
     avx: bool,
@@ -646,7 +646,7 @@ fn detectNativeFeatures(cpu: *Target.Cpu) void {
     }
 }
 
-const CpuidLeaf = packed struct {
+const CpuidLeaf = bitpack struct {
     eax: u32,
     ebx: u32,
     ecx: u32,

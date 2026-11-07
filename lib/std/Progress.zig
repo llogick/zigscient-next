@@ -71,14 +71,14 @@ pub const Status = enum {
     failure_working,
 };
 
-const Freelist = packed struct(u32) {
+const Freelist = bitpack struct(u32) {
     head: Node.OptionalIndex,
     /// Whenever `node_freelist` is added to, this generation is incremented
     /// to avoid ABA bugs when acquiring nodes. Wrapping arithmetic is used.
     generation: u24,
 };
 
-pub const Ipc = packed struct(u32) {
+pub const Ipc = bitpack struct(u32) {
     /// mutex protecting `file` use, only locked by `serializeIpc`
     locked: bool,
     /// when unlocked: whether `file` is defined
@@ -92,7 +92,7 @@ pub const Ipc = packed struct(u32) {
 
     const SlotAtomic = @Int(.unsigned, std.math.ceilPowerOfTwoAssert(usize, @min(@bitSizeOf(Slot), 8)));
 
-    pub const Index = packed struct(u32) {
+    pub const Index = bitpack struct(u32) {
         slot: Slot,
         generation: Generation,
     };

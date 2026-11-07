@@ -904,7 +904,7 @@ const Export = struct {
     name: MachO.String,
     flags: Flags,
 
-    const Flags = packed struct {
+    const Flags = bitpack struct {
         abs: bool = false,
         weak: bool = false,
         tlv: bool = false,

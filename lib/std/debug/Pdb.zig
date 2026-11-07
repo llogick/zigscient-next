@@ -503,7 +503,7 @@ pub const BinaryAnnotation = union(enum) {
                 .change_column_end_delta = try expect(takePackedI32(reader)),
             },
             .change_code_offset_and_line_offset => {
-                const EncodedArgs = packed struct(u32) {
+                const EncodedArgs = bitpack struct(u32) {
                     code_delta: u4,
                     encoded_line_delta: u28,
                 };

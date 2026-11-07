@@ -197,7 +197,7 @@ pub const SimpleTextOutput = extern struct {
     pub const arrow_up: u16 = 0x2591;
     pub const arrow_down: u16 = 0x2593;
 
-    pub const Attribute = packed struct(u8) {
+    pub const Attribute = bitpack struct(u8) {
         foreground: ForegroundColor = .white,
         background: BackgroundColor = .black,
 

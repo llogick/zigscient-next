@@ -2400,8 +2400,8 @@ fn airAggFieldVal(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.
     if (!isByRef(struct_ty, zcu)) {
         // All auto/extern struct/union types are by-ref, unless they have no runtime bits, in which
         // case we shouldn't be seeing this instruction to begin with. Therefore we must be dealing
-        // with a `packed struct` or `packed union`.
-        assert(struct_ty.containerLayout(zcu) == .@"packed");
+        // with a `bitpack struct` or `bitpack union`.
+        assert(struct_ty.containerLayout(zcu) == .@"bitpack");
         assert(!isByRef(field_ty, zcu));
         const field_int_val: Builder.Value = switch (struct_ty.zigTypeTag(zcu)) {
             .@"struct" => field_int_val: {
@@ -6458,12 +6458,12 @@ fn airAggregateInit(fg: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.
             return vector;
         },
         .@"struct" => switch (result_ty.containerLayout(zcu)) {
-            .@"packed" => {
+            .@"bitpack" => {
                 const struct_type = ip.loadStructType(result_ty.toIntern());
-                const backing_int_ty: Type = .fromInterned(struct_type.packed_backing_int_type);
+                const backing_int_ty: Type = .fromInterned(struct_type.bitpack_backing_int_type);
                 const big_bits = backing_int_ty.bitSize(zcu);
                 const int_ty = try o.builder.intType(@intCast(big_bits));
-                comptime assert(Type.packed_struct_layout_version == 2);
+                comptime assert(Type.bitpack_struct_layout_version == 2);
                 var running_int = try o.builder.intValue(int_ty, 0);
                 var running_bits: u16 = 0;
                 for (elements, struct_type.field_types.get(ip)) |elem, field_ty| {
@@ -6543,7 +6543,7 @@ fn airUnionInit(self: *FuncGen, inst: Air.Inst.Index) Allocator.Error!Builder.Va
     const union_ty = self.typeOfIndex(inst);
     const union_obj = zcu.typeToUnion(union_ty).?;
 
-    assert(union_obj.layout != .@"packed");
+    assert(union_obj.layout != .@"bitpack");
 
     const layout = Type.getUnionLayout(union_obj, zcu);
 
@@ -6737,7 +6737,7 @@ fn fieldPtr(
 ) Allocator.Error!Builder.Value {
     const zcu = self.object.zcu;
     const aggregate_ty = aggregate_ptr_ty.childType(zcu);
-    if (aggregate_ty.containerLayout(zcu) == .@"packed") {
+    if (aggregate_ty.containerLayout(zcu) == .@"bitpack") {
         // A pointer to a bitpack field is equivalent to a pointer to the whole bitpack; the
         // bit offset is represented in the pointer *type*.
         return aggregate_ptr;
@@ -6810,9 +6810,9 @@ fn load(
         // Therefore, we handle these memory accesses specially: in this case we will actually load
         // the next-largest "natural" integer type and then truncate to `load_ty`.
         const loaded = try fg.wip.load(access_kind, llvm_access_ty, ptr, llvm_ptr_align, "");
-        // For packed structs, current Zig semantics don't really allow us to make the padding bits
+        // For bitpack structs, current Zig semantics don't really allow us to make the padding bits
         // well-defined. This should be solved once https://github.com/ziglang/zig/issues/24061 is
-        // implemented, but until then, do a normal trunc for packed types.
+        // implemented, but until then, do a normal trunc for bitpack types.
         return fg.wip.cast(switch (load_ty.zigTypeTag(zcu)) {
             .@"struct", .@"union" => .trunc,
             else => switch (signedness) {
@@ -7939,8 +7939,8 @@ fn isScalar(zcu: *Zcu, ty: Type) bool {
         .vector,
         => true,
 
-        .@"struct" => ty.containerLayout(zcu) == .@"packed",
-        .@"union" => ty.containerLayout(zcu) == .@"packed",
+        .@"struct" => ty.containerLayout(zcu) == .@"bitpack",
+        .@"union" => ty.containerLayout(zcu) == .@"bitpack",
         else => false,
     };
 }
@@ -7992,11 +7992,11 @@ pub fn isByRef(ty: Type, zcu: *const Zcu) bool {
         .optional => !ty.optionalReprIsPayload(zcu) and ty.optionalChild(zcu).hasRuntimeBits(zcu),
 
         .@"struct" => switch (ty.containerLayout(zcu)) {
-            .@"packed" => false,
+            .@"bitpack" => false,
             .auto, .@"extern" => ty.hasRuntimeBits(zcu),
         },
         .@"union" => switch (ty.containerLayout(zcu)) {
-            .@"packed" => false,
+            .@"bitpack" => false,
             else => ty.hasRuntimeBits(zcu),
         },
     };

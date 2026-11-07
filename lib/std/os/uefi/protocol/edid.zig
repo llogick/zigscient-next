@@ -74,7 +74,7 @@ pub const Override = extern struct {
         edid: ?[]u8,
     };
 
-    pub const Attributes = packed struct(u32) {
+    pub const Attributes = bitpack struct(u32) {
         dont_override: bool,
         enable_hot_plug: bool,
         _pad: u30 = 0,

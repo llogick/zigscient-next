@@ -449,7 +449,7 @@ pub const Lir = struct {
 /// This is the final form of the instruction. Lir is transformed into
 /// this, which is then bitcast into a u32.
 pub const Instruction = union(Lir.Format) {
-    R: packed struct(u32) {
+    R: bitpack struct(u32) {
         opcode: u7,
         rd: u5,
         funct3: u3,
@@ -457,14 +457,14 @@ pub const Instruction = union(Lir.Format) {
         rs2: u5,
         funct7: u7,
     },
-    I: packed struct(u32) {
+    I: bitpack struct(u32) {
         opcode: u7,
         rd: u5,
         funct3: u3,
         rs1: u5,
         imm0_11: u12,
     },
-    S: packed struct(u32) {
+    S: bitpack struct(u32) {
         opcode: u7,
         imm0_4: u5,
         funct3: u3,
@@ -472,7 +472,7 @@ pub const Instruction = union(Lir.Format) {
         rs2: u5,
         imm5_11: u7,
     },
-    B: packed struct(u32) {
+    B: bitpack struct(u32) {
         opcode: u7,
         imm11: u1,
         imm1_4: u4,
@@ -482,12 +482,12 @@ pub const Instruction = union(Lir.Format) {
         imm5_10: u6,
         imm12: u1,
     },
-    U: packed struct(u32) {
+    U: bitpack struct(u32) {
         opcode: u7,
         rd: u5,
         imm12_31: u20,
     },
-    J: packed struct(u32) {
+    J: bitpack struct(u32) {
         opcode: u7,
         rd: u5,
         imm12_19: u8,

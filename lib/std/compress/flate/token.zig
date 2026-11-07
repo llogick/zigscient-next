@@ -71,7 +71,7 @@ const ShortDistCode = ShortCode(u15, u1, u4, false);
 /// An exception is Length codes, where value 255 is assigned the special zero-bit code 28 or
 /// literal 285.
 fn ShortCode(Value: type, HighBits: type, HighLog2: type, len_special: bool) type {
-    return packed struct(u5) {
+    return bitpack struct(u5) {
         /// Bits preceding high bit or start if none
         high_bits: HighBits,
         /// High bit, 0 means none, otherwise it is at bit `x + high_log2 - 1`
@@ -111,7 +111,7 @@ fn ShortCode(Value: type, HighBits: type, HighLog2: type, len_special: bool) typ
     };
 }
 
-const LookupLenCode = packed struct(u5) {
+const LookupLenCode = bitpack struct(u5) {
     code: ShortLenCode,
 
     const code_table = table: {
@@ -152,7 +152,7 @@ const LookupLenCode = packed struct(u5) {
     }
 };
 
-const LookupDistCode = packed struct(u5) {
+const LookupDistCode = bitpack struct(u5) {
     code: ShortDistCode,
 
     const base_table = table: {

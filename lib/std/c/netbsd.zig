@@ -20,7 +20,7 @@ pub extern "c" fn _lwp_self() lwpid_t;
 
 pub extern "c" fn ___lwp_park60(
     clock_id: clockid_t,
-    flags: packed struct(u32) {
+    flags: bitpack struct(u32) {
         ABSTIME: bool = false,
         unused: u31 = 0,
     },

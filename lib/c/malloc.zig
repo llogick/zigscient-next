@@ -48,7 +48,7 @@ const vtable = switch (builtin.cpu.arch) {
 
 /// Needed because libc memory allocators don't provide old alignment and size
 /// which are required by Zig memory allocators.
-const Header = packed struct(u64) {
+const Header = bitpack struct(u64) {
     alignment: Alignment,
     /// Does not include the extra alignment bytes added.
     size: Size,

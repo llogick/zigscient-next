@@ -2823,7 +2823,7 @@ pub const LazySrcLoc = struct {
             /// The index of the item to point to within this case.
             item_idx: SwitchItem.Index,
 
-            pub const Index = packed struct(u32) {
+            pub const Index = bitpack struct(u32) {
                 kind: enum(u1) { single, range },
                 value: u31,
             };
@@ -4315,7 +4315,7 @@ pub fn atomicPtrAlignment(
     }
     if (switch (ty.zigTypeTag(zcu)) {
         .int, .@"enum" => true,
-        .@"struct" => ty.containerLayout(zcu) == .@"packed",
+        .@"struct" => ty.containerLayout(zcu) == .@"bitpack",
         else => false,
     }) {
         assert(ty.isAbiInt(zcu));
@@ -4343,14 +4343,14 @@ pub fn typeToStruct(zcu: *const Zcu, ty: Type) ?InternPool.LoadedStructType {
     };
 }
 
-pub fn typeToPackedStruct(zcu: *const Zcu, ty: Type) ?InternPool.LoadedStructType {
+pub fn typeToBitpackStruct(zcu: *const Zcu, ty: Type) ?InternPool.LoadedStructType {
     const s = zcu.typeToStruct(ty) orelse return null;
-    if (s.layout != .@"packed") return null;
+    if (s.layout != .@"bitpack") return null;
     return s;
 }
 
 /// https://github.com/ziglang/zig/issues/17178 explored storing these bit offsets
-/// into the packed struct InternPool data rather than computing this on the
+/// into the bitpack struct InternPool data rather than computing this on the
 /// fly, however it was found to perform worse when measured on real world
 /// projects.
 pub fn structPackedFieldBitOffset(
@@ -4359,7 +4359,7 @@ pub fn structPackedFieldBitOffset(
     field_index: u32,
 ) u16 {
     const ip = &zcu.intern_pool;
-    assert(struct_type.layout == .@"packed");
+    assert(struct_type.layout == .@"bitpack");
     var bit_sum: u64 = 0;
     for (0..struct_type.field_types.len) |i| {
         if (i == field_index) {

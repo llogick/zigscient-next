@@ -1,4 +1,4 @@
-pub const Header = packed struct {
+pub const Header = bitpack struct {
     magic: u16,
     version: u8,
     flags: u8,
@@ -11,7 +11,7 @@ pub const Header = packed struct {
     line_info_len: u32,
 };
 
-pub const InfoSec = packed struct {
+pub const InfoSec = bitpack struct {
     sec_name_off: u32,
     num_info: u32,
     // TODO: communicate that there is data here

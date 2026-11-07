@@ -2315,7 +2315,7 @@ pub fn updateComptimeGlobal(
         .opt,
         .aggregate,
         .un,
-        .bitpack,
+        .@"bitpack",
         => try dwarf.genComptimeGlobal(pt, global, &decl),
         .struct_type => {
             const loaded_struct = ip.loadStructType(nav_val.toIntern());
@@ -2885,7 +2885,7 @@ fn updateConstInner(
                 _, const fi = try ui.get(dwarf).getFile(zcu.gpa, ui, src_inst.file);
                 try dwarf.abbrevCode(di_nw, switch (loaded_struct.layout) {
                     .auto => if (is_empty) .empty_file else .file,
-                    .@"extern", .@"packed" => unreachable,
+                    .@"extern", .@"bitpack" => unreachable,
                 });
                 try di_w.writeUleb128(@backingInt(fi));
                 try dwarf.strx(di_nw, loaded_struct.name.toSlice(ip));
@@ -2893,17 +2893,17 @@ fn updateConstInner(
                 try dwarf.abbrevCode(di_nw, switch (loaded_struct.name_nav) {
                     else => if (is_empty) switch (loaded_struct.layout) {
                         .auto, .@"extern" => .decl_instance_empty_struct,
-                        .@"packed" => .decl_instance_empty_packed_struct,
+                        .@"bitpack" => .decl_instance_empty_bitpack_struct,
                     } else switch (loaded_struct.layout) {
                         .auto, .@"extern" => .decl_instance_struct,
-                        .@"packed" => .decl_instance_packed_struct,
+                        .@"bitpack" => .decl_instance_bitpack_struct,
                     },
                     .none => if (is_empty) switch (loaded_struct.layout) {
                         .auto, .@"extern" => .type_decl_instance_empty_struct,
-                        .@"packed" => .type_decl_instance_empty_packed_struct,
+                        .@"bitpack" => .type_decl_instance_empty_bitpack_struct,
                     } else switch (loaded_struct.layout) {
                         .auto, .@"extern" => .type_decl_instance_struct,
-                        .@"packed" => .type_decl_instance_packed_struct,
+                        .@"bitpack" => .type_decl_instance_bitpack_struct,
                     },
                 });
                 try dwarf.refType(pt, di_nw, .fromInterned(ip.namespacePtr(
@@ -2920,10 +2920,10 @@ fn updateConstInner(
                 ).owner_type);
                 try dwarf.abbrevCode(di_nw, if (is_empty) switch (loaded_struct.layout) {
                     .auto, .@"extern" => .decl_empty_struct,
-                    .@"packed" => .decl_empty_packed_struct,
+                    .@"bitpack" => .decl_empty_bitpack_struct,
                 } else switch (loaded_struct.layout) {
                     .auto, .@"extern" => .decl_struct,
-                    .@"packed" => .decl_packed_struct,
+                    .@"bitpack" => .decl_bitpack_struct,
                 });
                 try dwarf.secOffset(di_nw, parent_ni, 0);
                 try di_w.writeInt(u32, decl.src_line + 1, dwarf.endian);
@@ -2937,10 +2937,10 @@ fn updateConstInner(
                 ).owner_type);
                 try dwarf.abbrevCode(di_nw, if (is_empty) switch (loaded_struct.layout) {
                     .auto, .@"extern" => .type_decl_empty_struct,
-                    .@"packed" => .type_decl_empty_packed_struct,
+                    .@"bitpack" => .type_decl_empty_bitpack_struct,
                 } else switch (loaded_struct.layout) {
                     .auto, .@"extern" => .type_decl_struct,
-                    .@"packed" => .type_decl_packed_struct,
+                    .@"bitpack" => .type_decl_bitpack_struct,
                 });
                 try dwarf.secOffset(di_nw, parent_ni, 0);
                 try di_w.writeInt(u32, decl.src_line + 1, dwarf.endian);
@@ -3003,8 +3003,8 @@ fn updateConstInner(
                             try dwarf.refConst(pt, di_nw, .fromInterned(field_default));
                     }
                 },
-                .@"packed" => {
-                    try dwarf.refType(pt, di_nw, .fromInterned(loaded_struct.packed_backing_int_type));
+                .@"bitpack" => {
+                    try dwarf.refType(pt, di_nw, .fromInterned(loaded_struct.bitpack_backing_int_type));
                     try dwarf.genCaptures(pt, di_nw, loaded_struct.captures);
                     var field_bit_offset: u16 = 0;
                     for (0..loaded_struct.field_types.len) |field_index| {
@@ -3033,17 +3033,17 @@ fn updateConstInner(
                 try dwarf.abbrevCode(di_nw, switch (loaded_union.name_nav) {
                     else => if (is_empty) switch (loaded_union.layout) {
                         .auto, .@"extern" => .decl_instance_empty_union,
-                        .@"packed" => .decl_instance_empty_packed_union,
+                        .@"bitpack" => .decl_instance_empty_bitpack_union,
                     } else switch (loaded_union.layout) {
                         .auto, .@"extern" => .decl_instance_union,
-                        .@"packed" => .decl_instance_packed_union,
+                        .@"bitpack" => .decl_instance_bitpack_union,
                     },
                     .none => if (is_empty) switch (loaded_union.layout) {
                         .auto, .@"extern" => .type_decl_instance_empty_union,
-                        .@"packed" => .type_decl_instance_empty_packed_union,
+                        .@"bitpack" => .type_decl_instance_empty_bitpack_union,
                     } else switch (loaded_union.layout) {
                         .auto, .@"extern" => .type_decl_instance_union,
-                        .@"packed" => .type_decl_instance_packed_union,
+                        .@"bitpack" => .type_decl_instance_bitpack_union,
                     },
                 });
                 try dwarf.refType(pt, di_nw, .fromInterned(ip.namespacePtr(
@@ -3060,10 +3060,10 @@ fn updateConstInner(
                 ).owner_type);
                 try dwarf.abbrevCode(di_nw, if (is_empty) switch (loaded_union.layout) {
                     .auto, .@"extern" => .decl_empty_union,
-                    .@"packed" => .decl_empty_packed_union,
+                    .@"bitpack" => .decl_empty_bitpack_union,
                 } else switch (loaded_union.layout) {
                     .auto, .@"extern" => .decl_union,
-                    .@"packed" => .decl_packed_union,
+                    .@"bitpack" => .decl_bitpack_union,
                 });
                 try dwarf.secOffset(di_nw, parent_ni, 0);
                 try di_w.writeInt(u32, decl.src_line + 1, dwarf.endian);
@@ -3077,10 +3077,10 @@ fn updateConstInner(
                 ).owner_type);
                 try dwarf.abbrevCode(di_nw, if (is_empty) switch (loaded_union.layout) {
                     .auto, .@"extern" => .type_decl_empty_union,
-                    .@"packed" => .type_decl_empty_packed_union,
+                    .@"bitpack" => .type_decl_empty_bitpack_union,
                 } else switch (loaded_union.layout) {
                     .auto, .@"extern" => .type_decl_union,
-                    .@"packed" => .type_decl_packed_union,
+                    .@"bitpack" => .type_decl_bitpack_union,
                 });
                 try dwarf.secOffset(di_nw, parent_ni, 0);
                 try di_w.writeInt(u32, decl.src_line + 1, dwarf.endian);
@@ -3148,8 +3148,8 @@ fn updateConstInner(
                             field_ty.abiAlignment(zcu).toByteUnits().?);
                     }
                 },
-                .@"packed" => {
-                    try dwarf.refType(pt, di_nw, .fromInterned(loaded_union.packed_backing_int_type));
+                .@"bitpack" => {
+                    try dwarf.refType(pt, di_nw, .fromInterned(loaded_union.bitpack_backing_int_type));
                     for (0..loaded_union.field_types.len) |field_index| {
                         try dwarf.abbrevCode(di_nw, .packed_field);
                         try dwarf.strx(
@@ -3429,11 +3429,11 @@ fn updateConstInner(
                 Value.fromInterned(@"const").toBigInt(&big_int_space, zcu),
             );
         },
-        .bitpack => |bitpack| {
+        .@"bitpack" => |@"bitpack"| {
             var big_int_space: Value.BigIntSpace = undefined;
-            const backing_int_val: Value = .fromInterned(bitpack.backing_int_val);
+            const backing_int_val: Value = .fromInterned(@"bitpack".backing_int_val);
             try dwarf.abbrevCode(di_nw, .comptime_value);
-            try dwarf.refType(pt, di_nw, .fromInterned(bitpack.ty));
+            try dwarf.refType(pt, di_nw, .fromInterned(@"bitpack".ty));
             try dwarf.bigIntConstValue(
                 di_w,
                 backing_int_val.typeOf(zcu),
@@ -4756,10 +4756,10 @@ pub const AbbrevCode = enum {
     type_decl_incomplete_struct,
     type_decl_empty_struct,
     type_decl_struct,
-    decl_empty_packed_struct,
-    decl_packed_struct,
-    type_decl_empty_packed_struct,
-    type_decl_packed_struct,
+    decl_empty_bitpack_struct,
+    decl_bitpack_struct,
+    type_decl_empty_bitpack_struct,
+    type_decl_bitpack_struct,
     decl_empty_incomplete_union,
     decl_incomplete_union,
     decl_empty_union,
@@ -4768,10 +4768,10 @@ pub const AbbrevCode = enum {
     type_decl_incomplete_union,
     type_decl_empty_union,
     type_decl_union,
-    decl_empty_packed_union,
-    decl_packed_union,
-    type_decl_empty_packed_union,
-    type_decl_packed_union,
+    decl_empty_bitpack_union,
+    decl_bitpack_union,
+    type_decl_empty_bitpack_union,
+    type_decl_bitpack_union,
     decl_type,
     decl_const,
     decl_const_fully_runtime,
@@ -4813,20 +4813,20 @@ pub const AbbrevCode = enum {
     decl_instance_struct,
     type_decl_instance_empty_struct,
     type_decl_instance_struct,
-    decl_instance_empty_packed_struct,
-    decl_instance_packed_struct,
-    type_decl_instance_empty_packed_struct,
-    type_decl_instance_packed_struct,
+    decl_instance_empty_bitpack_struct,
+    decl_instance_bitpack_struct,
+    type_decl_instance_empty_bitpack_struct,
+    type_decl_instance_bitpack_struct,
     decl_instance_empty_incomplete_union,
     decl_instance_incomplete_union,
     decl_instance_empty_union,
     decl_instance_union,
     type_decl_instance_empty_union,
     type_decl_instance_union,
-    decl_instance_empty_packed_union,
-    decl_instance_packed_union,
-    type_decl_instance_empty_packed_union,
-    type_decl_instance_packed_union,
+    decl_instance_empty_bitpack_union,
+    decl_instance_bitpack_union,
+    type_decl_instance_empty_bitpack_union,
+    type_decl_instance_bitpack_union,
     decl_instance_type,
     decl_instance_const,
     decl_instance_const_fully_runtime,
@@ -5071,26 +5071,26 @@ pub const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_empty_packed_struct = .{
+        .decl_empty_bitpack_struct = .{
             .tag = .structure_type,
             .attrs = decl_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .decl_packed_struct = .{
+        .decl_bitpack_struct = .{
             .tag = .structure_type,
             .children = true,
             .attrs = decl_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_empty_packed_struct = .{
+        .type_decl_empty_bitpack_struct = .{
             .tag = .structure_type,
             .attrs = type_decl_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_packed_struct = .{
+        .type_decl_bitpack_struct = .{
             .tag = .structure_type,
             .children = true,
             .attrs = type_decl_attrs ++ .{
@@ -5145,26 +5145,26 @@ pub const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_empty_packed_union = .{
+        .decl_empty_bitpack_union = .{
             .tag = .union_type,
             .attrs = decl_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .decl_packed_union = .{
+        .decl_bitpack_union = .{
             .tag = .union_type,
             .children = true,
             .attrs = decl_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_empty_packed_union = .{
+        .type_decl_empty_bitpack_union = .{
             .tag = .union_type,
             .attrs = type_decl_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_packed_union = .{
+        .type_decl_bitpack_union = .{
             .tag = .union_type,
             .children = true,
             .attrs = type_decl_attrs ++ .{
@@ -5437,26 +5437,26 @@ pub const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_instance_empty_packed_struct = .{
+        .decl_instance_empty_bitpack_struct = .{
             .tag = .structure_type,
             .attrs = decl_instance_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .decl_instance_packed_struct = .{
+        .decl_instance_bitpack_struct = .{
             .tag = .structure_type,
             .children = true,
             .attrs = decl_instance_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_instance_empty_packed_struct = .{
+        .type_decl_instance_empty_bitpack_struct = .{
             .tag = .structure_type,
             .attrs = type_decl_instance_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_instance_packed_struct = .{
+        .type_decl_instance_bitpack_struct = .{
             .tag = .structure_type,
             .children = true,
             .attrs = type_decl_instance_attrs ++ .{
@@ -5502,26 +5502,26 @@ pub const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_instance_empty_packed_union = .{
+        .decl_instance_empty_bitpack_union = .{
             .tag = .union_type,
             .attrs = decl_instance_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .decl_instance_packed_union = .{
+        .decl_instance_bitpack_union = .{
             .tag = .union_type,
             .children = true,
             .attrs = decl_instance_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_instance_empty_packed_union = .{
+        .type_decl_instance_empty_bitpack_union = .{
             .tag = .union_type,
             .attrs = type_decl_instance_attrs ++ .{
                 .{ .type, .ref_addr },
             },
         },
-        .type_decl_instance_packed_union = .{
+        .type_decl_instance_bitpack_union = .{
             .tag = .union_type,
             .children = true,
             .attrs = type_decl_instance_attrs ++ .{

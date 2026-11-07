@@ -22,7 +22,7 @@ export fn d() void {
     _ = x <= y;
 }
 
-const Foo = packed struct {
+const Foo = bitpack struct {
     a: u4 = 10,
     b: u4 = 5,
 };
@@ -30,11 +30,11 @@ const Foo = packed struct {
 #update
 #check errors {
 test.zig:5:11: error: operator > not allowed for type 'test.Foo'
-test.zig:19:20: note: struct declared here
+test.zig:19:21: note: struct declared here
 test.zig:9:11: error: operator < not allowed for type 'test.Foo'
-test.zig:19:20: note: struct declared here
+test.zig:19:21: note: struct declared here
 test.zig:13:11: error: operator >= not allowed for type 'test.Foo'
-test.zig:19:20: note: struct declared here
+test.zig:19:21: note: struct declared here
 test.zig:16:11: error: operator <= not allowed for type 'test.Foo'
-test.zig:19:20: note: struct declared here
+test.zig:19:21: note: struct declared here
 #}

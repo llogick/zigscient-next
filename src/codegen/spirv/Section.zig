@@ -374,7 +374,7 @@ pub fn writeOperand(section: *Section, comptime Operand: type, operand: Operand)
                 }
             },
             .@"struct" => |info| {
-                if (info.layout == .@"packed") {
+                if (info.layout == .@"bitpack") {
                     section.writeWord(@as(Word, @bitCast(operand)));
                 } else {
                     section.writeExtendedMask(Operand, operand);

@@ -40,7 +40,7 @@ pub const Check = enum(u4) {
     _,
 };
 
-pub const StreamFlags = packed struct(u16) {
+pub const StreamFlags = bitpack struct(u16) {
     null: u8 = 0,
     check: Check,
     reserved: u4 = 0,
@@ -200,7 +200,7 @@ fn readBlock(input: *Reader, allocating: *Writer.Allocating) !void {
         const header_seek_start = input.seek;
         input.toss(1);
 
-        const Flags = packed struct(u8) {
+        const Flags = bitpack struct(u8) {
             last_filter_index: u2,
             reserved: u4,
             has_packed_size: bool,

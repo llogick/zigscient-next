@@ -120,7 +120,7 @@ const Allocs = extern struct {
         return @as([*]Entry, @ptrCast(a))[1..][0..s.allocs_entry_count];
     }
 
-    const Entry = packed struct(usize) {
+    const Entry = bitpack struct(usize) {
         kind: Kind,
         ptr_high: @Int(.unsigned, @bitSizeOf(usize) - 2),
 
@@ -194,7 +194,7 @@ const Bucket = struct {
         assert(@alignOf(@This()) >= 8);
     }
 
-    const AllocCount = packed struct(u32) {
+    const AllocCount = bitpack struct(u32) {
         n: u31,
         /// If `true`, this bucket cannot be freed yet.
         filling: bool,
@@ -204,7 +204,7 @@ const Bucket = struct {
         }
     };
 
-    const Fill = packed struct(u32) {
+    const Fill = bitpack struct(u32) {
         at: u31,
         last_is_extended: bool,
     };
@@ -286,7 +286,7 @@ const AllocFooter = struct {
         assert(@alignOf(@This()) >= @max(8, @alignOf(usize)));
     }
 
-    const Data = packed struct(u16) {
+    const Data = bitpack struct(u16) {
         len: Len,
         /// Low bits of the alignment.
         ///
@@ -1797,7 +1797,7 @@ const FuzzMultiThreadedContext = struct {
         i: usize,
         items: []Op,
 
-        const Run = packed struct(u32) {
+        const Run = bitpack struct(u32) {
             n: bool,
             pad: u31 = 0,
 

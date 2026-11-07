@@ -1398,7 +1398,7 @@ pub const CondBr = struct {
     then_body_len: u32,
     else_body_len: u32,
     branch_hints: BranchHints,
-    pub const BranchHints = packed struct(u32) {
+    pub const BranchHints = bitpack struct(u32) {
         true: std.lang.BranchHint = .none,
         false: std.lang.BranchHint = .none,
         then_cov: CoveragePoint = .none,
@@ -1473,7 +1473,7 @@ pub const VectorCmp = struct {
 
 /// Used by `Inst.Tag.shuffle_one`. Represents a mask element which either indexes into a
 /// runtime-known vector, or is a comptime-known value.
-pub const ShuffleOneMask = packed struct(u32) {
+pub const ShuffleOneMask = bitpack struct(u32) {
     index: u31,
     kind: enum(u1) { elem, value },
     pub fn elem(idx: u32) ShuffleOneMask {
@@ -1552,7 +1552,7 @@ pub const Asm = struct {
     clobbers: InternPool.Index,
     flags: Flags,
 
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         outputs_len: u31,
         is_volatile: bool,
     };

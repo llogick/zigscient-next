@@ -421,7 +421,7 @@ pub const AccessError = error{
     ReadOnlyFileSystem,
 } || PathNameError || Io.Cancelable || Io.UnexpectedError;
 
-pub const AccessOptions = packed struct {
+pub const AccessOptions = bitpack struct {
     follow_symlinks: bool = true,
     read: bool = false,
     write: bool = false,

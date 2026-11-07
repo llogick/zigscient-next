@@ -172,7 +172,7 @@ pub const MAP_TYPE = enum(u4) {
 };
 
 pub const MAP = switch (native_arch) {
-    .x86_64, .x86 => packed struct(u32) {
+    .x86_64, .x86 => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         ANONYMOUS: bool = false,
@@ -194,7 +194,7 @@ pub const MAP = switch (native_arch) {
         UNINITIALIZED: bool = false,
         _: u5 = 0,
     },
-    .aarch64, .aarch64_be, .arm, .armeb, .thumb, .thumbeb => packed struct(u32) {
+    .aarch64, .aarch64_be, .arm, .armeb, .thumb, .thumbeb => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         ANONYMOUS: bool = false,
@@ -215,7 +215,7 @@ pub const MAP = switch (native_arch) {
         UNINITIALIZED: bool = false,
         _: u5 = 0,
     },
-    .riscv32, .riscv64, .loongarch32, .loongarch64 => packed struct(u32) {
+    .riscv32, .riscv64, .loongarch32, .loongarch64 => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         ANONYMOUS: bool = false,
@@ -230,7 +230,7 @@ pub const MAP = switch (native_arch) {
         UNINITIALIZED: bool = false,
         _: u5 = 0,
     },
-    .sparc, .sparc64 => packed struct(u32) {
+    .sparc, .sparc64 => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         ANONYMOUS: bool = false,
@@ -252,7 +252,7 @@ pub const MAP = switch (native_arch) {
         UNINITIALIZED: bool = false,
         _: u5 = 0,
     },
-    .mips, .mipsel, .mips64, .mips64el => packed struct(u32) {
+    .mips, .mipsel, .mips64, .mips64el => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         _5: u1 = 0,
@@ -273,7 +273,7 @@ pub const MAP = switch (native_arch) {
         UNINITIALIZED: bool = false,
         _: u5 = 0,
     },
-    .powerpc, .powerpcle, .powerpc64, .powerpc64le => packed struct(u32) {
+    .powerpc, .powerpcle, .powerpc64, .powerpc64le => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         ANONYMOUS: bool = false,
@@ -305,7 +305,7 @@ pub const MAP = switch (native_arch) {
     .s390x,
     .sh,
     .sheb,
-    => packed struct(u32) {
+    => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         ANONYMOUS: bool = false,
@@ -328,7 +328,7 @@ pub const MAP = switch (native_arch) {
         UNINITIALIZED: bool = false,
         _: u5 = 0,
     },
-    .alpha => packed struct(u32) {
+    .alpha => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         ANONYMOUS: bool = false,
         _3: u1 = 0,
@@ -352,7 +352,7 @@ pub const MAP = switch (native_arch) {
         _20: u1 = 0,
         _: u5 = 0,
     },
-    .xtensa, .xtensaeb => packed struct(u32) {
+    .xtensa, .xtensaeb => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         _RENAME: bool = false,
@@ -378,7 +378,7 @@ pub const MAP = switch (native_arch) {
     else => @compileError("missing std.os.linux.MAP constants for this architecture"),
 };
 
-pub const MREMAP = packed struct(u32) {
+pub const MREMAP = bitpack struct(u32) {
     MAYMOVE: bool = false,
     FIXED: bool = false,
     DONTUNMAP: bool = false,
@@ -386,7 +386,7 @@ pub const MREMAP = packed struct(u32) {
 };
 
 pub const O = switch (native_arch) {
-    .x86_64 => packed struct(u32) {
+    .x86_64 => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u4 = 0,
         CREAT: bool = false,
@@ -409,7 +409,7 @@ pub const O = switch (native_arch) {
         TMPFILE: bool = false,
         _23: u9 = 0,
     },
-    .x86, .riscv32, .riscv64, .loongarch32, .loongarch64 => packed struct(u32) {
+    .x86, .riscv32, .riscv64, .loongarch32, .loongarch64 => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u4 = 0,
         CREAT: bool = false,
@@ -432,7 +432,7 @@ pub const O = switch (native_arch) {
         TMPFILE: bool = false,
         _23: u9 = 0,
     },
-    .aarch64, .aarch64_be, .arm, .armeb, .thumb, .thumbeb => packed struct(u32) {
+    .aarch64, .aarch64_be, .arm, .armeb, .thumb, .thumbeb => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u4 = 0,
         CREAT: bool = false,
@@ -455,7 +455,7 @@ pub const O = switch (native_arch) {
         TMPFILE: bool = false,
         _23: u9 = 0,
     },
-    .sparc, .sparc64 => packed struct(u32) {
+    .sparc, .sparc64 => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u1 = 0,
         APPEND: bool = false,
@@ -481,7 +481,7 @@ pub const O = switch (native_arch) {
         TMPFILE: bool = false,
         _27: u6 = 0,
     },
-    .mips, .mipsel, .mips64, .mips64el => packed struct(u32) {
+    .mips, .mipsel, .mips64, .mips64el => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u1 = 0,
         APPEND: bool = false,
@@ -506,7 +506,7 @@ pub const O = switch (native_arch) {
         TMPFILE: bool = false,
         _23: u9 = 0,
     },
-    .powerpc, .powerpcle, .powerpc64, .powerpc64le => packed struct(u32) {
+    .powerpc, .powerpcle, .powerpc64, .powerpc64le => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u4 = 0,
         CREAT: bool = false,
@@ -541,7 +541,7 @@ pub const O = switch (native_arch) {
     .sheb,
     .xtensa,
     .xtensaeb,
-    => packed struct(u32) {
+    => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u4 = 0,
         CREAT: bool = false,
@@ -570,7 +570,7 @@ pub const O = switch (native_arch) {
         // #define O_SYNC     04010000
         // #define O_NDELAY O_NONBLOCK
     },
-    .m68k => packed struct(u32) {
+    .m68k => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u4 = 0,
         CREAT: bool = false,
@@ -591,7 +591,7 @@ pub const O = switch (native_arch) {
         PATH: bool = false,
         _22: u10 = 0,
     },
-    .alpha => packed struct(u32) {
+    .alpha => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         NONBLOCK: bool = false,
         APPEND: bool = false,
@@ -950,7 +950,7 @@ pub const HWCAP = switch (native_arch) {
     else => struct {},
 };
 
-pub const RENAME = packed struct(u32) {
+pub const RENAME = bitpack struct(u32) {
     /// Cannot be set together with `EXCHANGE`.
     NOREPLACE: bool = false,
     /// Cannot be set together with `NOREPLACE`.
@@ -1066,7 +1066,7 @@ pub fn execve(path: [*:0]const u8, argv: [*:null]const ?[*:0]const u8, envp: [*:
     return syscall3(.execve, @intFromPtr(path), @intFromPtr(argv), @intFromPtr(envp));
 }
 
-pub const EXECVEAT = packed struct(u32) {
+pub const EXECVEAT = bitpack struct(u32) {
     _1: u8 = 0, // 0x00000001
     /// Do not follow symbolic links.
     SYMLINK_NOFOLLOW: bool, // 0x00000100
@@ -1421,7 +1421,7 @@ pub fn umount2(special: [*:0]const u8, flags: u32) usize {
     return syscall2(.umount2, @intFromPtr(special), flags);
 }
 
-pub const MOVE_MOUNT = packed struct(u32) {
+pub const MOVE_MOUNT = bitpack struct(u32) {
     /// Follow symlinks on from path.
     F_SYMLINKS: bool, // 0x00000001
     /// Follow automounts on from path.
@@ -1452,7 +1452,7 @@ pub fn move_mount(from_dirfd: fd_t, from_path: [*:0]const u8, to_dirfd: fd_t, to
     );
 }
 
-pub const MOUNT_ATTR = packed struct(u32) {
+pub const MOUNT_ATTR = bitpack struct(u32) {
     /// Update atime relative to mtime/ctime.
     RELATIME: u0, // This is the default ATIME, it's true unless a different ATIME is set.
     /// Mount read-only.
@@ -1484,7 +1484,7 @@ pub fn mount_setattr(dirfd: fd_t, path: [*:0]const u8, flags: MOUNT_ATTR) usize 
     return syscall3(.mount_setattr, @as(u32, @bitCast(dirfd)), @intFromPtr(path), @as(u32, @bitCast(flags)));
 }
 
-pub const FSOPEN = packed struct(u32) {
+pub const FSOPEN = bitpack struct(u32) {
     /// Set CLOEXEC on the new fd.
     CLOEXEC: bool, // 0x00000001
     _: u31 = 0,
@@ -1517,7 +1517,7 @@ pub fn fsconfig(fd: fd_t, cmd: FSCONFIG_CMD, key: ?[*:0]const u8, value: ?[*:0]c
     return syscall5(.fsconfig, @as(u32, @bitCast(fd)), @backingInt(cmd), @intFromPtr(key), @intFromPtr(value), aux);
 }
 
-pub const FSMOUNT = packed struct(u32) {
+pub const FSMOUNT = bitpack struct(u32) {
     /// Set CLOEXEC on the fd.
     CLOEXEC: bool, // 0x00000001
     _31: u31 = 0,
@@ -1527,7 +1527,7 @@ pub fn fsmount(fsfd: fd_t, flags: FSMOUNT, attr_flags: MOUNT_ATTR) usize {
     return syscall3(.fsmount, @as(u32, @bitCast(fsfd)), @as(u32, @bitCast(flags)), @as(u32, @bitCast(attr_flags)));
 }
 
-pub const FSPICK = packed struct(u32) {
+pub const FSPICK = bitpack struct(u32) {
     /// Set CLOEXEC on the new fd.
     CLOEXEC: bool, // 0x00000001
     SYMLINK_NOFOLLOW: bool, // 0x00000002
@@ -1630,7 +1630,7 @@ pub fn munlock(address: [*]const u8, length: usize) usize {
     return syscall2(.munlock, @intFromPtr(address), length);
 }
 
-pub const MLOCK = packed struct(u32) {
+pub const MLOCK = bitpack struct(u32) {
     ONFAULT: bool = false,
     _1: u31 = 0,
 };
@@ -1639,13 +1639,13 @@ pub fn mlock2(address: [*]const u8, length: usize, flags: MLOCK) usize {
     return syscall3(.mlock2, @intFromPtr(address), length, @as(u32, @bitCast(flags)));
 }
 
-pub const MCL = if (native_arch.isSparc() or native_arch.isPowerpc()) packed struct(u32) {
+pub const MCL = if (native_arch.isSparc() or native_arch.isPowerpc()) bitpack struct(u32) {
     _0: u13 = 0,
     CURRENT: bool = false,
     FUTURE: bool = false,
     ONFAULT: bool = false,
     _4: u16 = 0,
-} else packed struct(u32) {
+} else bitpack struct(u32) {
     CURRENT: bool = false,
     FUTURE: bool = false,
     ONFAULT: bool = false,
@@ -2009,7 +2009,7 @@ pub fn close(fd: fd_t) usize {
     return syscall1(.close, @as(u32, @bitCast(fd)));
 }
 
-pub const CLOSE_RANGE = packed struct(u32) {
+pub const CLOSE_RANGE = bitpack struct(u32) {
     _0: u1 = 0,
     /// Unshare the file descriptor table before closing file descriptors.
     UNSHARE: bool, // 0x00000001
@@ -2971,7 +2971,7 @@ pub const sched_param = extern struct {
     priority: i32,
 };
 
-pub const SCHED = packed struct(i32) {
+pub const SCHED = bitpack struct(i32) {
     pub const Mode = enum(u3) {
         /// normal multi-user scheduling
         NORMAL = 0,
@@ -4533,7 +4533,7 @@ pub const FUTEX_COMMAND = enum(u7) {
 };
 
 /// Futex v1 API command and flags for the `futex_op` parameter
-pub const FUTEX_OP = packed struct(u32) {
+pub const FUTEX_OP = bitpack struct(u32) {
     cmd: FUTEX_COMMAND,
     private: bool,
     realtime: bool = false, // realtime clock vs. monotonic clock
@@ -4541,7 +4541,7 @@ pub const FUTEX_OP = packed struct(u32) {
 };
 
 /// Futex v1 FUTEX_WAKE_OP `val3` operation:
-pub const FUTEX_WAKE_OP = packed struct(u32) {
+pub const FUTEX_WAKE_OP = bitpack struct(u32) {
     cmd: FUTEX_WAKE_OP_CMD,
     /// From C API `FUTEX_OP_ARG_SHIFT`:  Use (1 << oparg) as operand
     arg_shift: bool = false,
@@ -4588,18 +4588,18 @@ pub const FUTEX2_SIZE = enum(u2) {
 };
 
 /// As of kernel 6.14 there are no defined flags to futex2_waitv.
-pub const FUTEX2_FLAGS_WAITV = packed struct(u32) {
+pub const FUTEX2_FLAGS_WAITV = bitpack struct(u32) {
     _reserved: u32 = 0,
 };
 
 /// As of kernel 6.14 there are no defined flags to futex2_requeue.
-pub const FUTEX2_FLAGS_REQUEUE = packed struct(u32) {
+pub const FUTEX2_FLAGS_REQUEUE = bitpack struct(u32) {
     _reserved: u32 = 0,
 };
 
 /// Flags for futex v2 APIs (futex2_wait, futex2_wake, futex2_requeue, but
 /// not the futex2_waitv syscall, but also used in the futex2_waitone struct).
-pub const FUTEX2_FLAGS = packed struct(u32) {
+pub const FUTEX2_FLAGS = bitpack struct(u32) {
     size: FUTEX2_SIZE,
     numa: bool = false,
     _reserved: u4 = 0,
@@ -4608,7 +4608,7 @@ pub const FUTEX2_FLAGS = packed struct(u32) {
 };
 
 pub const PROT = switch (native_arch) {
-    .mips, .mipsel, .mips64, .mips64el, .xtensa, .xtensaeb => packed struct(u32) {
+    .mips, .mipsel, .mips64, .mips64el, .xtensa, .xtensaeb => bitpack struct(u32) {
         READ: bool = false,
         WRITE: bool = false,
         EXEC: bool = false,
@@ -4620,7 +4620,7 @@ pub const PROT = switch (native_arch) {
         GROWSUP: bool = false,
         ___: u6 = 0,
     },
-    else => packed struct(u32) {
+    else => bitpack struct(u32) {
         READ: bool = false,
         WRITE: bool = false,
         EXEC: bool = false,
@@ -6572,7 +6572,7 @@ pub const timerfd_clockid_t = enum(u32) {
     _,
 };
 
-pub const TIMER = packed struct(u32) {
+pub const TIMER = bitpack struct(u32) {
     ABSTIME: bool,
     _: u31 = 0,
 };
@@ -6704,7 +6704,7 @@ pub const IN = struct {
 };
 
 pub const fanotify = struct {
-    pub const InitFlags = packed struct(u32) {
+    pub const InitFlags = bitpack struct(u32) {
         CLOEXEC: bool = false,
         NONBLOCK: bool = false,
         CLASS: enum(u2) {
@@ -6724,7 +6724,7 @@ pub const fanotify = struct {
         _: u19 = 0,
     };
 
-    pub const MarkFlags = packed struct(u32) {
+    pub const MarkFlags = bitpack struct(u32) {
         ADD: bool = false,
         REMOVE: bool = false,
         DONT_FOLLOW: bool = false,
@@ -6741,7 +6741,7 @@ pub const fanotify = struct {
         _: u21 = 0,
     };
 
-    pub const MarkMask = packed struct(u64) {
+    pub const MarkMask = bitpack struct(u64) {
         /// File was accessed
         ACCESS: bool = false,
         /// File was modified
@@ -6909,14 +6909,14 @@ pub const S = struct {
     }
 };
 
-const TFD_TIMER = packed struct(u32) {
+const TFD_TIMER = bitpack struct(u32) {
     ABSTIME: bool = false,
     CANCEL_ON_SET: bool = false,
     _: u30 = 0,
 };
 
 pub const TFD = switch (native_arch) {
-    .sparc, .sparc64 => packed struct(u32) {
+    .sparc, .sparc64 => bitpack struct(u32) {
         _0: u14 = 0,
         NONBLOCK: bool = false,
         _15: u7 = 0,
@@ -6925,7 +6925,7 @@ pub const TFD = switch (native_arch) {
 
         pub const TIMER = TFD_TIMER;
     },
-    .mips, .mipsel, .mips64, .mips64el => packed struct(u32) {
+    .mips, .mipsel, .mips64, .mips64el => bitpack struct(u32) {
         _0: u7 = 0,
         NONBLOCK: bool = false,
         _8: u11 = 0,
@@ -6934,7 +6934,7 @@ pub const TFD = switch (native_arch) {
 
         pub const TIMER = TFD_TIMER;
     },
-    .alpha => packed struct(u32) {
+    .alpha => bitpack struct(u32) {
         _0: u2 = 0,
         NONBLOCK: bool = false,
         _3: u18 = 0,
@@ -6943,7 +6943,7 @@ pub const TFD = switch (native_arch) {
 
         pub const TIMER = TFD_TIMER;
     },
-    else => packed struct(u32) {
+    else => bitpack struct(u32) {
         _0: u11 = 0,
         NONBLOCK: bool = false,
         _12: u7 = 0,
@@ -8099,7 +8099,7 @@ pub const io_uring_buf_reg = extern struct {
     flags: Flags,
     resv: [3]u64,
 
-    pub const Flags = packed struct(u16) {
+    pub const Flags = bitpack struct(u16) {
         _0: u1 = 0,
         /// Incremental buffer consumption.
         inc: bool,
@@ -8148,7 +8148,7 @@ pub const utsname = extern struct {
 };
 pub const HOST_NAME_MAX = 64;
 
-pub const STATX = packed struct(u32) {
+pub const STATX = bitpack struct(u32) {
     /// Want `mode & S.IFMT`.
     TYPE: bool = false,
     /// Want `mode & ~S.IFMT`.
@@ -8197,7 +8197,7 @@ pub const STATX = packed struct(u32) {
 /// Flags marked [I] correspond to the `FS_IOC_SETFLAGS` values semantically.
 /// See [FS_IOC_SETFLAGS(2const)](https://man7.org/linux/man-pages/man2/FS_IOC_GETFLAGS.2const.html)
 /// for more.
-pub const STATX_ATTR = packed struct(u64) {
+pub const STATX_ATTR = bitpack struct(u64) {
     __pad1: u3 = 0,
     /// [I] File is compressed by the fs.
     COMPRESSED: bool = false,
@@ -8313,7 +8313,7 @@ pub const addrinfo = extern struct {
     next: ?*addrinfo,
 };
 
-pub const AI = packed struct(u32) {
+pub const AI = bitpack struct(u32) {
     PASSIVE: bool = false,
     CANONNAME: bool = false,
     NUMERICHOST: bool = false,
@@ -8605,7 +8605,7 @@ pub const speed_t = if (is_ppc) enum(c_uint) {
 
 pub const tcflag_t = if (native_arch == .sparc) c_ulong else c_uint;
 
-pub const tc_iflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag_t) {
+pub const tc_iflag_t = if (is_ppc or native_arch == .alpha) bitpack struct(tcflag_t) {
     IGNBRK: bool = false,
     BRKINT: bool = false,
     IGNPAR: bool = false,
@@ -8622,7 +8622,7 @@ pub const tc_iflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag
     IMAXBEL: bool = false,
     IUTF8: bool = false,
     _15: u17 = 0,
-} else packed struct(tcflag_t) {
+} else bitpack struct(tcflag_t) {
     IGNBRK: bool = false,
     BRKINT: bool = false,
     IGNPAR: bool = false,
@@ -8682,7 +8682,7 @@ pub const FFDLY = enum(u1) {
     FF1 = 1,
 };
 
-pub const tc_oflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag_t) {
+pub const tc_oflag_t = if (is_ppc or native_arch == .alpha) bitpack struct(tcflag_t) {
     OPOST: bool = false,
     ONLCR: bool = false,
     OLCUC: bool = false,
@@ -8698,7 +8698,7 @@ pub const tc_oflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag
     BSDLY: BSDLY = .BS0,
     VTDLY: VTDLY = .VT0,
     _17: u15 = 0,
-} else if (is_sparc) packed struct(tcflag_t) {
+} else if (is_sparc) bitpack struct(tcflag_t) {
     OPOST: bool = false,
     OLCUC: bool = false,
     ONLCR: bool = false,
@@ -8716,7 +8716,7 @@ pub const tc_oflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag
     PAGEOUT: bool = false,
     WRAP: bool = false,
     _18: u14 = 0,
-} else packed struct(tcflag_t) {
+} else bitpack struct(tcflag_t) {
     OPOST: bool = false,
     OLCUC: bool = false,
     ONLCR: bool = false,
@@ -8741,7 +8741,7 @@ pub const CSIZE = enum(u2) {
     CS8 = 3,
 };
 
-pub const tc_cflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag_t) {
+pub const tc_cflag_t = if (is_ppc or native_arch == .alpha) bitpack struct(tcflag_t) {
     _0: u8 = 0,
     CSIZE: CSIZE = .CS5,
     CSTOPB: bool = false,
@@ -8754,7 +8754,7 @@ pub const tc_cflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag
     ADDRB: bool = false,
     CMSPAR: bool = false,
     CRTSCTS: bool = false,
-} else packed struct(tcflag_t) {
+} else bitpack struct(tcflag_t) {
     _0: u4 = 0,
     CSIZE: CSIZE = .CS5,
     CSTOPB: bool = false,
@@ -8769,7 +8769,7 @@ pub const tc_cflag_t = if (is_ppc or native_arch == .alpha) packed struct(tcflag
     CRTSCTS: bool = false,
 };
 
-pub const tc_lflag_t = if (is_mips) packed struct(tcflag_t) {
+pub const tc_lflag_t = if (is_mips) bitpack struct(tcflag_t) {
     ISIG: bool = false,
     ICANON: bool = false,
     XCASE: bool = false,
@@ -8788,7 +8788,7 @@ pub const tc_lflag_t = if (is_mips) packed struct(tcflag_t) {
     TOSTOP: bool = false,
     EXTPROC: bool = false,
     _17: u15 = 0,
-} else if (is_ppc or native_arch == .alpha) packed struct(tcflag_t) {
+} else if (is_ppc or native_arch == .alpha) bitpack struct(tcflag_t) {
     ECHOKE: bool = false,
     ECHOE: bool = false,
     ECHOK: bool = false,
@@ -8810,7 +8810,7 @@ pub const tc_lflag_t = if (is_mips) packed struct(tcflag_t) {
     PENDIN: bool = false,
     _30: u1 = 0,
     NOFLSH: bool = false,
-} else if (is_sparc) packed struct(tcflag_t) {
+} else if (is_sparc) bitpack struct(tcflag_t) {
     ISIG: bool = false,
     ICANON: bool = false,
     XCASE: bool = false,
@@ -8829,7 +8829,7 @@ pub const tc_lflag_t = if (is_mips) packed struct(tcflag_t) {
     IEXTEN: bool = false,
     EXTPROC: bool = false,
     _17: u15 = 0,
-} else packed struct(tcflag_t) {
+} else bitpack struct(tcflag_t) {
     ISIG: bool = false,
     ICANON: bool = false,
     XCASE: bool = false,
@@ -9265,7 +9265,7 @@ pub const SIOCPROTOPRIVATE = 0x89E0;
 
 pub const IFNAMESIZE = 16;
 
-pub const IFF = packed struct(u16) {
+pub const IFF = bitpack struct(u16) {
     UP: bool = false,
     BROADCAST: bool = false,
     DEBUG: bool = false,
@@ -9380,7 +9380,7 @@ pub const tpacket_bd_ts = extern struct {
 };
 
 pub const TP_STATUS = extern union {
-    rx: packed struct(u32) {
+    rx: bitpack struct(u32) {
         USER: bool,
         COPY: bool,
         LOSING: bool,
@@ -9395,7 +9395,7 @@ pub const TP_STATUS = extern union {
         TS_SYS_HARDWARE: bool,
         TS_RAW_HARDWARE: bool,
     },
-    tx: packed struct(u32) {
+    tx: bitpack struct(u32) {
         SEND_REQUEST: bool,
         SENDING: bool,
         WRONG_FORMAT: bool,
@@ -10568,7 +10568,7 @@ pub const perf_event_attr = extern struct {
     sample_type: u64 = 0,
     read_format: u64 = 0,
 
-    flags: packed struct(u64) {
+    flags: bitpack struct(u64) {
         /// off by default
         disabled: bool = false,
         /// children inherit it
@@ -10699,7 +10699,7 @@ pub const perf_event_attr = extern struct {
     __reserved_2: u16 = 0,
 
     aux_sample_size: u32 = 0,
-    aux_action: packed struct(u32) {
+    aux_action: bitpack struct(u32) {
         /// start AUX area tracing paused
         start_paused: bool = false,
         /// on overflow, pause AUX area tracing
@@ -10721,17 +10721,17 @@ pub const perf_event_header = extern struct {
     /// Event type: sample/mmap/fork/etc.
     type: PERF.RECORD,
     /// Additional informations on the event: kernel/user/hypervisor/etc.
-    misc: packed struct(u16) {
+    misc: bitpack struct(u16) {
         cpu_mode: PERF.RECORD.MISC.CPU_MODE,
         _: u9,
         PROC_MAP_PARSE_TIMEOUT: bool,
-        bit13: packed union {
+        bit13: bitpack union {
             MMAP_DATA: bool,
             COMM_EXEC: bool,
             FORK_EXEC: bool,
             SWITCH_OUT: bool,
         },
-        bit14: packed union {
+        bit14: bitpack union {
             EXACT_IP: bool,
             SWITCH_OUT_PREEMPT: bool,
             MMAP_BUILD_ID: bool,
@@ -10757,7 +10757,7 @@ pub const perf_event_mmap_page = extern struct {
     time_enabled: u64,
     /// Time the event was running
     time_running: u64,
-    capabilities: packed struct(u64) {
+    capabilities: bitpack struct(u64) {
         /// If kernel version < 3.12
         /// this rapresents both user_rdpmc and user_time (user_rdpmc | user_time)
         /// otherwise deprecated.

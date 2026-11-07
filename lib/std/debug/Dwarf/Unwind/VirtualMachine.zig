@@ -298,8 +298,8 @@ fn takeExprBlock(r: *std.Io.Reader, len: usize) error{ ReadFailed, InvalidOperan
     };
 }
 
-const OpcodeByte = packed struct(u8) {
-    low: packed union {
+const OpcodeByte = bitpack struct(u8) {
+    low: bitpack union {
         operand: u6,
         extended: enum(u6) {
             nop = 0,

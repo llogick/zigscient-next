@@ -109,16 +109,16 @@ test "bitcast generates a temporary value" {
     try expect(y == x);
 }
 
-test "@bitCast packed structs at runtime and comptime" {
+test "@bitCast bitpack structs at runtime and comptime" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
-    const Full = packed struct {
+    const Full = bitpack struct {
         number: u16,
     };
-    const Divided = packed struct {
+    const Divided = bitpack struct {
         half1: u8,
         quarter3: u4,
         quarter4: u4,
@@ -137,13 +137,13 @@ test "@bitCast packed structs at runtime and comptime" {
     try comptime S.doTheTest();
 }
 
-test "bitcast packed struct to integer and back" {
+test "bitcast bitpack struct to integer and back" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
-    const LevelUpMove = packed struct {
+    const LevelUpMove = bitpack struct {
         move_id: u9,
         level: u7,
     };
@@ -178,8 +178,8 @@ test "implicit cast to error union by returning" {
     try comptime S.entry();
 }
 
-test "bitcast packed struct literal to byte" {
-    const Foo = packed struct {
+test "bitcast bitpack struct literal to byte" {
+    const Foo = bitpack struct {
         value: u8,
     };
     const casted = @as(u8, @bitCast(Foo{ .value = 0xF }));
@@ -187,7 +187,7 @@ test "bitcast packed struct literal to byte" {
 }
 
 test "comptime bitcast used in expression has the correct type" {
-    const Foo = packed struct {
+    const Foo = bitpack struct {
         value: u8,
     };
     try expect(@as(u8, @bitCast(Foo{ .value = 0xF })) == 0xf);
@@ -213,21 +213,21 @@ test "triple level result location with bitcast sandwich passed as tuple element
     try S.foo(.{@as(f64, @as(f32, @bitCast(@as(u32, 0x414570A4))))});
 }
 
-test "@bitCast packed struct of floats" {
+test "@bitCast bitpack struct of floats" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
-    const Foo = packed struct {
+    const Foo = bitpack struct {
         a: f16 = 0,
         b: f32 = 1,
         c: f64 = 2,
         d: f128 = 3,
     };
 
-    const Foo2 = packed struct {
+    const Foo2 = bitpack struct {
         a: f16 = 0,
         b: f32 = 1,
         c: f64 = 2,
@@ -249,14 +249,14 @@ test "@bitCast packed struct of floats" {
     try comptime S.doTheTest();
 }
 
-test "comptime @bitCast packed struct to int and back" {
+test "comptime @bitCast bitpack struct to int and back" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
 
-    const S = packed struct {
+    const S = bitpack struct {
         void: void = {},
         uint: u8 = 13,
         uint_bit_aligned: u3 = 2,
@@ -413,13 +413,13 @@ test "bitcast nan float does not modify signaling bit" {
     try expectEqual(snan_u128, bitCastWrapper128(snan_f128_var));
 }
 
-test "@bitCast of packed struct of bools all true" {
+test "@bitCast of bitpack struct of bools all true" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest; // TODO
 
-    const P = packed struct {
+    const P = bitpack struct {
         b0: bool,
         b1: bool,
         b2: bool,
@@ -433,12 +433,12 @@ test "@bitCast of packed struct of bools all true" {
     try expect(@as(u8, @as(u4, @bitCast(p))) == 15);
 }
 
-test "@bitCast of packed struct of bools all false" {
+test "@bitCast of bitpack struct of bools all false" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest; // TODO
 
-    const P = packed struct {
+    const P = bitpack struct {
         b0: bool,
         b1: bool,
         b2: bool,
@@ -452,8 +452,8 @@ test "@bitCast of packed struct of bools all false" {
     try expect(@as(u8, @as(u4, @bitCast(p))) == 0);
 }
 
-test "@bitCast of packed struct with void field to integer" {
-    const S = packed struct(u8) {
+test "@bitCast of bitpack struct with void field to integer" {
+    const S = bitpack struct(u8) {
         v: void,
         x: u8,
 
@@ -468,8 +468,8 @@ test "@bitCast of packed struct with void field to integer" {
     try comptime S.doTheTest(123);
 }
 
-test "@bitCast of packed struct with void field and multiple integers" {
-    const S = packed struct {
+test "@bitCast of bitpack struct with void field and multiple integers" {
+    const S = bitpack struct {
         x: u8,
         v: void,
         y: u8,
@@ -509,10 +509,10 @@ test "@bitCast vector to array with different element size" {
     try comptime static.doTheTest(v);
 }
 
-test "@bitCast packed struct to array of bits" {
+test "@bitCast bitpack struct to array of bits" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
-    const S = packed struct(u16) {
+    const S = bitpack struct(u16) {
         foo: u5,
         bar: i7,
         baz: u3,

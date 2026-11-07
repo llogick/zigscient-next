@@ -1216,7 +1216,7 @@ pub fn takeVarInt(r: *Reader, comptime Int: type, endian: std.builtin.Endian, n:
 /// * `peekStructPointer`
 /// * `takeStruct`
 pub fn takeStructPointer(r: *Reader, comptime T: type) Error!*align(1) T {
-    // Only extern and packed structs have defined in-memory layout.
+    // Only extern and bitpack structs have defined in-memory layout.
     comptime assert(@typeInfo(T).@"struct".layout != .auto);
     return @ptrCast(try r.takeArray(@sizeOf(T)));
 }
@@ -1230,7 +1230,7 @@ pub fn takeStructPointer(r: *Reader, comptime T: type) Error!*align(1) T {
 /// * `takeStructPointer`
 /// * `peekStruct`
 pub fn peekStructPointer(r: *Reader, comptime T: type) Error!*align(1) T {
-    // Only extern and packed structs have defined in-memory layout.
+    // Only extern and bitpack structs have defined in-memory layout.
     comptime assert(@typeInfo(T).@"struct".layout != .auto);
     return @ptrCast(try r.peekArray(@sizeOf(T)));
 }
@@ -1250,7 +1250,7 @@ pub inline fn takeStruct(r: *Reader, comptime T: type, endian: std.builtin.Endia
                 try r.readSliceEndian(T, (&res)[0..1], endian);
                 return res;
             },
-            .@"packed" => {
+            .@"bitpack" => {
                 return @bitCast(try takeInt(r, info.backing_integer.?, endian));
             },
         },
@@ -1275,7 +1275,7 @@ pub inline fn peekStruct(r: *Reader, comptime T: type, endian: std.builtin.Endia
                 if (native_endian != endian) std.mem.byteSwapAllFields(T, &res);
                 return res;
             },
-            .@"packed" => {
+            .@"bitpack" => {
                 return @bitCast(try peekInt(r, info.backing_integer.?, endian));
             },
         },
@@ -1317,7 +1317,7 @@ pub fn takeLeb128(r: *Reader, comptime T: type) TakeLeb128Error!T {
         .int => |info| info,
         else => @compileError(@typeName(T) ++ " not supported"),
     };
-    const Byte = packed struct { bits: u7, more: bool };
+    const Byte = bitpack struct { bits: u7, more: bool };
 
     if (info.bits <= 7) {
         var byte: Byte = undefined;
@@ -1934,9 +1934,9 @@ test "takeDelimiterInclusive on an indirect reader when it rebases" {
     }
 }
 
-test "takeStruct and peekStruct packed" {
+test "takeStruct and peekStruct bitpack" {
     var r: Reader = .fixed(&.{ 0b11110000, 0b00110011 });
-    const S = packed struct(u16) { a: u2, b: u6, c: u7, d: u1 };
+    const S = bitpack struct(u16) { a: u2, b: u6, c: u7, d: u1 };
 
     try testing.expectEqual(@as(S, .{
         .a = 0b11,

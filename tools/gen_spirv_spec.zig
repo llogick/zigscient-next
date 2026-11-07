@@ -180,13 +180,13 @@ fn render(
         \\const std = @import("std");
         \\
         \\pub const Word = u32;
-        \\pub const Version = packed struct(Word) {
+        \\pub const Version = bitpack struct(Word) {
         \\    padding: u8 = 0,
         \\    minor: u8,
         \\    major: u8,
         \\    padding0: u8 = 0,
         \\};
-        \\pub const Generator = packed struct(Word) {
+        \\pub const Generator = bitpack struct(Word) {
         \\    version: u16,
         \\    tool: u16,
         \\};
@@ -197,7 +197,7 @@ fn render(
         \\    id_bound: Word,
         \\    schema: Word,
         \\};
-        \\pub const InstructionHeader = packed struct(Word) {
+        \\pub const InstructionHeader = bitpack struct(Word) {
         \\    opcode: Opcode,
         \\    word_count: u16,
         \\};
@@ -695,7 +695,7 @@ fn renderOpcodes(
             \\                break :blk total;
             \\            },
             \\            .@"struct" => |struct_info| {
-            \\                if (struct_info.layout == .@"packed") return 1;
+            \\                if (struct_info.layout == .@"bitpack") return 1;
             \\                var total: usize = 0;
             \\                inline for (struct_info.field_names, struct_info.field_types) |field_name, field_type| {
             \\                    switch (@typeInfo(field_type)) {
@@ -881,7 +881,7 @@ fn renderBitEnum(
     enumeration: OperandKind,
     extended_structs: ExtendedStructSet,
 ) !void {
-    try writer.print("pub const {f} = packed struct(Word) {{\n", .{std.zig.fmtId(enumeration.kind)});
+    try writer.print("pub const {f} = bitpack struct(Word) {{\n", .{std.zig.fmtId(enumeration.kind)});
 
     var flags_by_bitpos: [32]?usize = @splat(null);
     const enumerants = enumeration.enumerants orelse return error.InvalidRegistry;

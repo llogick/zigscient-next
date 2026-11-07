@@ -102,7 +102,7 @@ pub const MemoryType = enum(u32) {
     }
 };
 
-pub const MemoryDescriptorAttribute = packed struct(u64) {
+pub const MemoryDescriptorAttribute = bitpack struct(u64) {
     uc: bool,
     wc: bool,
     wt: bool,
@@ -182,7 +182,7 @@ pub const LocateSearch = union(LocateSearchType) {
 };
 
 pub const OpenProtocolAttributes = enum(u32) {
-    pub const Bits = packed struct(u32) {
+    pub const Bits = bitpack struct(u32) {
         by_handle_protocol: bool = false,
         get_protocol: bool = false,
         test_protocol: bool = false,

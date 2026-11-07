@@ -1858,7 +1858,7 @@ pub const Memory = struct {
     off: u32,
     extra: u32,
 
-    pub const Info = packed struct(u32) {
+    pub const Info = bitpack struct(u32) {
         base: @typeInfo(bits.Memory.Base).@"union".tag_type.?,
         mod: @typeInfo(bits.Memory.Mod).@"union".tag_type.?,
         size: bits.Memory.Size,

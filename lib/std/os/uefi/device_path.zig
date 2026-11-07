@@ -617,7 +617,7 @@ pub const DevicePath = union(Type) {
         }
 
         pub const InfiniBandDevicePath = extern struct {
-            pub const ResourceFlags = packed struct(u32) {
+            pub const ResourceFlags = bitpack struct(u32) {
                 pub const ControllerType = enum(u1) {
                     ioc = 0,
                     service = 1,

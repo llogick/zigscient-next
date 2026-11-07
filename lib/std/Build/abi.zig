@@ -101,7 +101,7 @@ pub const Hello = extern struct {
     /// each step trails this message.
     steps_len: u32 align(1),
 
-    pub const Flags = packed struct(u16) {
+    pub const Flags = bitpack struct(u16) {
         /// Whether time reporting is enabled.
         time_report: bool,
         _: u15 = 0,
@@ -120,7 +120,7 @@ pub const StatusUpdate = extern struct {
 pub const StepUpdate = extern struct {
     tag: ToClientTag = .step_update,
     step_idx: u32 align(1),
-    bits: packed struct(u8) {
+    bits: bitpack struct(u8) {
         status: Status,
         _: u6 = 0,
     },
@@ -143,7 +143,7 @@ pub const fuzz = struct {
     pub const TestOne = *const fn () callconv(.c) bool;
 
     /// A unique value to identify the related requests across runs
-    pub const Uid = packed struct(u32) {
+    pub const Uid = bitpack struct(u32) {
         kind: enum(u1) { int, bytes },
         hash: u31,
 
@@ -474,7 +474,7 @@ pub const time_report = struct {
         files_len: u32 align(1),
         decls_len: u32 align(1),
 
-        pub const Flags = packed struct(u8) {
+        pub const Flags = bitpack struct(u8) {
             use_llvm: bool,
             _: u7 = 0,
         };

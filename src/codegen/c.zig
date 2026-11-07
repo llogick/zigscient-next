@@ -965,7 +965,7 @@ pub const DeclGen = struct {
         const is_aggregate: bool = switch (ty.zigTypeTag(zcu)) {
             .@"struct", .@"union" => switch (ty.containerLayout(zcu)) {
                 .auto, .@"extern" => true,
-                .@"packed" => false,
+                .@"bitpack" => false,
             },
             .array,
             .vector,
@@ -1326,7 +1326,7 @@ pub const DeclGen = struct {
                 },
                 .struct_type => {
                     const loaded_struct = ip.loadStructType(ty.toIntern());
-                    assert(loaded_struct.layout != .@"packed");
+                    assert(loaded_struct.layout != .@"bitpack");
 
                     if (!location.isInitializer()) {
                         try w.writeByte('(');
@@ -1357,7 +1357,7 @@ pub const DeclGen = struct {
                 },
                 else => unreachable,
             },
-            .bitpack => |bitpack| return dg.renderValue(w, .fromInterned(bitpack.backing_int_val), location),
+            .@"bitpack" => |@"bitpack"| return dg.renderValue(w, .fromInterned(@"bitpack".backing_int_val), location),
             .un => |un| {
                 const loaded_union = ip.loadUnionType(ty.toIntern());
                 if (un.tag == .none) {
@@ -1599,7 +1599,7 @@ pub const DeclGen = struct {
                             }
                             return w.writeByte('}');
                         },
-                        .@"packed" => return dg.renderUndefValue(w, ty.backingIntType(zcu), location),
+                        .@"bitpack" => return dg.renderUndefValue(w, ty.backingIntType(zcu), location),
                     }
                 },
                 .tuple_type => |tuple_info| {
@@ -1659,7 +1659,7 @@ pub const DeclGen = struct {
                             if (loaded_union.has_runtime_tag) try w.writeByte(' ');
                             if (loaded_union.layout == .auto) try w.writeByte('}');
                         },
-                        .@"packed" => return dg.renderUndefValue(w, ty.backingIntType(zcu), location),
+                        .@"bitpack" => return dg.renderUndefValue(w, ty.backingIntType(zcu), location),
                     }
                 },
                 .error_union_type => |error_union| {
@@ -1730,7 +1730,7 @@ pub const DeclGen = struct {
                 .opt,
                 .aggregate,
                 .un,
-                .bitpack,
+                .@"bitpack",
                 .memoized_call,
                 => unreachable, // values, not types
             },
@@ -2066,7 +2066,7 @@ pub const DeclGen = struct {
     }
 };
 
-const CQualifiers = packed struct {
+const CQualifiers = bitpack struct {
     @"const": bool = false,
     @"volatile": bool = false,
     restrict: bool = false,
@@ -2119,7 +2119,7 @@ pub fn genHeader(zcu: *Zcu, w: *Writer) !void {
             => try CType.render_defs.writeStaticAssertTypeLayout(basic_ty, basic_cty, w, zcu),
             .@"fn",
             .@"enum",
-            .bitpack,
+            .@"bitpack",
             .@"struct",
             .union_auto,
             .union_extern,
@@ -3283,9 +3283,9 @@ fn airAlloc(f: *Function, inst: Air.Inst.Index) !CValue {
 
     switch (elem_ty.zigTypeTag(zcu)) {
         .@"struct", .@"union" => switch (elem_ty.containerLayout(zcu)) {
-            .@"packed" => {
+            .@"bitpack" => {
                 // For packed aggregates, we zero-initialize to try and work around a design flaw
-                // related to how `packed`, `undefined`, and RLS interact. See comment in `airStore`
+                // related to how `bitpack`, `undefined`, and RLS interact. See comment in `airStore`
                 // for details.
                 const w = &f.code.writer;
                 try w.print("memset(&t{d}, 0x00, sizeof(", .{local.new_local});
@@ -3317,9 +3317,9 @@ fn airRetPtr(f: *Function, inst: Air.Inst.Index) !CValue {
 
     switch (elem_ty.zigTypeTag(zcu)) {
         .@"struct", .@"union" => switch (elem_ty.containerLayout(zcu)) {
-            .@"packed" => {
-                // For packed aggregates, we zero-initialize to try and work around a design flaw
-                // related to how `packed`, `undefined`, and RLS interact. See comment in `airStore`
+            .@"bitpack" => {
+                // For bit-packed aggregates, we zero-initialize to try and work around a design flaw
+                // related to how `bitpack`, `undefined`, and RLS interact. See comment in `airStore`
                 // for details.
                 const w = &f.code.writer;
                 try w.print("memset(&t{d}, 0x00, sizeof(", .{local.new_local});
@@ -3523,19 +3523,19 @@ fn airStore(f: *Function, inst: Air.Inst.Index, safety: bool) !CValue {
     if (val_is_undef) {
         try reap(f, inst, &.{ bin_op.lhs, bin_op.rhs });
         if (safety and ptr_info.packed_offset.host_size == 0) {
-            // If the thing we're initializing is a packed struct/union, we set to 0 instead of
+            // If the thing we're initializing is a bitpack struct/union, we set to 0 instead of
             // 0xAA. This is a hack to work around a problem with partially-undefined packed
             // aggregates. If we used 0xAA here, then a later initialization through RLS would
             // not zero the high padding bits (for a packed type which is not 8/16/32/64/etc bits),
             // so we would get a miscompilation. Using 0x00 here avoids this bug in some cases. It
-            // is *not* a correct fix; for instance it misses any case where packed structs are
+            // is *not* a correct fix; for instance it misses any case where bitpack structs are
             // nested in other aggregates. A proper fix for this will involve changing the language,
             // such as to remove RLS. This just prevents miscompilations in *some* common cases.
             const byte_str: []const u8 = switch (src_ty.zigTypeTag(zcu)) {
                 else => "0xaa",
                 .@"struct", .@"union" => switch (src_ty.containerLayout(zcu)) {
                     .auto, .@"extern" => "0xaa",
-                    .@"packed" => "0x00",
+                    .@"bitpack" => "0x00",
                 },
             };
             try w.writeAll("memset(");
@@ -3901,7 +3901,7 @@ fn airEquality(
             },
         },
         .bool, .int, .pointer, .@"enum", .error_set => {},
-        .@"struct", .@"union" => assert(operand_ty.containerLayout(zcu) == .@"packed"),
+        .@"struct", .@"union" => assert(operand_ty.containerLayout(zcu) == .@"bitpack"),
         else => unreachable,
     }
 
@@ -5431,7 +5431,7 @@ fn fieldLocation(
                     .{ .byte_offset = loaded_struct.field_offsets.get(ip)[field_index] }
                 else
                     .{ .field = .{ .identifier = loaded_struct.field_names.get(ip)[field_index].toSlice(ip) } },
-                .@"packed" => .begin,
+                .@"bitpack" => .begin,
             };
         },
         .tuple_type => return if (!container_ty.hasRuntimeBits(zcu))
@@ -5456,7 +5456,7 @@ fn fieldLocation(
                     const field_name = ip.loadEnumType(loaded_union.enum_tag_type).field_names.get(ip)[field_index];
                     return .{ .field = .{ .identifier = field_name.toSlice(ip) } };
                 },
-                .@"packed" => return .begin,
+                .@"bitpack" => return .begin,
             }
         },
         .ptr_type => |ptr_info| switch (ptr_info.flags.size) {
@@ -5605,7 +5605,7 @@ fn airAggFieldVal(f: *Function, inst: Air.Inst.Index) !CValue {
     const struct_ty = f.typeOf(extra.struct_operand);
     const w = &f.code.writer;
 
-    assert(struct_ty.containerLayout(zcu) != .@"packed"); // `Air.Legalize.Feature.expand_packed_agg_field_val` handles this case
+    assert(struct_ty.containerLayout(zcu) != .@"bitpack"); // `Air.Legalize.Feature.expand_packed_agg_field_val` handles this case
     const field_name: CValue = switch (ip.indexToKey(struct_ty.toIntern())) {
         .struct_type => .{ .identifier = struct_ty.structFieldName(extra.field_index, zcu).unwrap().?.toSlice(ip) },
         .union_type => name: {
@@ -7093,7 +7093,7 @@ fn airAggregateInit(f: *Function, inst: Air.Inst.Index) !CValue {
                         try f.newline();
                     }
                 },
-                .@"packed" => unreachable, // `Air.Legalize.Feature.expand_packed_struct_init` handles this case
+                .@"bitpack" => unreachable, // `Air.Legalize.Feature.expand_packed_struct_init` handles this case
             }
         },
         .tuple_type => |tuple_info| for (0..tuple_info.types.len) |field_index| {
@@ -7129,7 +7129,7 @@ fn airUnionInit(f: *Function, inst: Air.Inst.Index) !CValue {
     try reap(f, inst, &.{extra.init});
 
     const w = &f.code.writer;
-    if (loaded_union.layout == .@"packed") return f.moveCValue(inst, union_ty, payload);
+    if (loaded_union.layout == .@"bitpack") return f.moveCValue(inst, union_ty, payload);
 
     const local = try f.allocLocal(inst, union_ty);
 
@@ -7149,7 +7149,7 @@ fn airUnionInit(f: *Function, inst: Air.Inst.Index) !CValue {
     switch (loaded_union.layout) {
         .auto => try f.writeCValueMember(w, local, .{ .payload_identifier = field_name_slice }),
         .@"extern" => try f.writeCValueMember(w, local, .{ .identifier = field_name_slice }),
-        .@"packed" => unreachable,
+        .@"bitpack" => unreachable,
     }
     try w.writeAll(" = ");
     try f.writeCValue(w, payload, .other);
@@ -7893,7 +7893,7 @@ fn intLiteralSuffix(cty: CType.Int) []const u8 {
     };
 }
 
-const F80Repr = packed struct {
+const F80Repr = bitpack struct {
     mantissa: u64,
     exponent: u16,
 
@@ -7905,7 +7905,7 @@ const F80Repr = packed struct {
         });
     }
 };
-const F128Repr = packed struct {
+const F128Repr = bitpack struct {
     lo: u64,
     hi: u64,
 

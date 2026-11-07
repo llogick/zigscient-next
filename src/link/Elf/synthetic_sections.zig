@@ -241,7 +241,7 @@ pub const GotSection = struct {
 
     pub const Index = u32;
 
-    const Flags = packed struct {
+    const Flags = bitpack struct {
         needs_rela: bool = false,
         needs_tlsld: bool = false,
     };

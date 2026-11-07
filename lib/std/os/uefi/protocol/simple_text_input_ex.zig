@@ -101,7 +101,7 @@ pub const SimpleTextInputEx = extern struct {
             shift: Shift,
             toggle: Toggle,
 
-            pub const Shift = packed struct(u32) {
+            pub const Shift = bitpack struct(u32) {
                 right_shift_pressed: bool,
                 left_shift_pressed: bool,
                 right_control_pressed: bool,
@@ -116,7 +116,7 @@ pub const SimpleTextInputEx = extern struct {
                 shift_state_valid: bool,
             };
 
-            pub const Toggle = packed struct(u8) {
+            pub const Toggle = bitpack struct(u8) {
                 scroll_lock_active: bool,
                 num_lock_active: bool,
                 caps_lock_active: bool,

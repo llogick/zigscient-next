@@ -9,12 +9,12 @@ export fn entry1(x: u64) E {
     return @fromBackingInt(x);
 }
 
-const S = packed struct(u32) { x: u32 };
+const S = bitpack struct(u32) { x: u32 };
 export fn entry2(x: u64) S {
     return @fromBackingInt(x);
 }
 
-const U = packed union(u32) { x: u32 };
+const U = bitpack union(u32) { x: u32 };
 export fn entry3(x: u64) U {
     return @fromBackingInt(x);
 }

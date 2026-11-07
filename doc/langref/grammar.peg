@@ -213,7 +213,7 @@ PrimaryTypeExpr
      / NUMBERLITERAL
      / STRINGLITERAL
 
-ContainerType <- (KEYWORD_extern / KEYWORD_packed)? ContainerTypeAuto
+ContainerType <- (KEYWORD_extern / KEYWORD_bitpack)? ContainerTypeAuto
 
 ErrorSetDecl <- KEYWORD_error LBRACE IdentifierList RBRACE
 
@@ -673,6 +673,7 @@ KEYWORD_and         <- skip 'and'         end_of_word
 KEYWORD_anyframe    <- skip 'anyframe'    end_of_word
 KEYWORD_anytype     <- skip 'anytype'     end_of_word
 KEYWORD_asm         <- skip 'asm'         end_of_word
+KEYWORD_bitpack     <- skip 'bitpack'     end_of_word
 KEYWORD_break       <- skip 'break'       end_of_word
 KEYWORD_callconv    <- skip 'callconv'    end_of_word
 KEYWORD_catch       <- skip 'catch'       end_of_word
@@ -696,7 +697,6 @@ KEYWORD_noinline    <- skip 'noinline'    end_of_word
 KEYWORD_opaque      <- skip 'opaque'      end_of_word
 KEYWORD_or          <- skip 'or'          end_of_word
 KEYWORD_orelse      <- skip 'orelse'      end_of_word
-KEYWORD_packed      <- skip 'packed'      end_of_word
 KEYWORD_pub         <- skip 'pub'         end_of_word
 KEYWORD_resume      <- skip 'resume'      end_of_word
 KEYWORD_return      <- skip 'return'      end_of_word
@@ -715,12 +715,12 @@ KEYWORD_while       <- skip 'while'       end_of_word
 
 keyword <- KEYWORD_addrspace / KEYWORD_align / KEYWORD_allowzero / KEYWORD_and
          / KEYWORD_anyframe / KEYWORD_anytype / KEYWORD_asm
-         / KEYWORD_break / KEYWORD_callconv / KEYWORD_catch
+         / KEYWORD_bitpack / KEYWORD_break / KEYWORD_callconv / KEYWORD_catch
          / KEYWORD_comptime / KEYWORD_const / KEYWORD_continue / KEYWORD_defer
          / KEYWORD_else / KEYWORD_enum / KEYWORD_errdefer / KEYWORD_error / KEYWORD_export
          / KEYWORD_extern / KEYWORD_fn / KEYWORD_for / KEYWORD_if
          / KEYWORD_inline / KEYWORD_noalias / KEYWORD_nosuspend / KEYWORD_noinline
-         / KEYWORD_opaque / KEYWORD_or / KEYWORD_orelse / KEYWORD_packed
+         / KEYWORD_opaque / KEYWORD_or / KEYWORD_orelse
          / KEYWORD_pub / KEYWORD_resume / KEYWORD_return / KEYWORD_linksection
          / KEYWORD_struct / KEYWORD_suspend / KEYWORD_switch / KEYWORD_test
          / KEYWORD_threadlocal / KEYWORD_try / KEYWORD_union / KEYWORD_unreachable

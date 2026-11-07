@@ -580,7 +580,7 @@ pub const Limits = struct {
     min: u32,
     max: u32,
 
-    pub const Flags = packed struct(u8) {
+    pub const Flags = bitpack struct(u8) {
         has_max: bool,
         is_shared: bool,
         reserved: u6 = 0,

@@ -715,7 +715,7 @@ pub const Instruction = struct {
     }
 };
 
-pub const LegacyPrefixes = packed struct {
+pub const LegacyPrefixes = bitpack struct {
     /// LOCK
     prefix_f0: bool = false,
     /// REPNZ, REPNE, REP, Scalar Double-precision

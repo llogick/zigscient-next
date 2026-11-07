@@ -4,17 +4,17 @@ const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;
 const native_endian = builtin.cpu.arch.endian();
 
-test "packed struct explicit backing integer" {
+test "bitpack struct explicit backing integer" {
     if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
-    const S1 = packed struct { a: u8, b: u8, c: u8 };
+    const S1 = bitpack struct { a: u8, b: u8, c: u8 };
 
-    const S2 = packed struct(i24) { d: u8, e: u8, f: u8 };
+    const S2 = bitpack struct(i24) { d: u8, e: u8, f: u8 };
 
-    const S3 = packed struct { x: S1, y: S2 };
-    const S3Padded = packed struct(u64) { s3: S3, pad: u16 };
+    const S3 = bitpack struct { x: S1, y: S2 };
+    const S3Padded = bitpack struct(u64) { s3: S3, pad: u16 };
 
     try expectEqual(48, @bitSizeOf(S3));
     try expectEqual(@sizeOf(u48), @sizeOf(S3));
@@ -32,9 +32,9 @@ test "packed struct explicit backing integer" {
         try expectEqual(@as(u8, 0xe9), s3.y.f);
     }
 
-    const S4 = packed struct { a: i32, b: i8 };
-    const S5 = packed struct(u80) { a: i32, b: i8, c: S4 };
-    const S6 = packed struct(i80) { a: i32, b: S4, c: i8 };
+    const S4 = bitpack struct { a: i32, b: i8 };
+    const S5 = bitpack struct(u80) { a: i32, b: i8, c: S4 };
+    const S6 = bitpack struct(i80) { a: i32, b: S4, c: i8 };
 
     const expectedBitSize = 80;
     const expectedByteSize = @sizeOf(u80);

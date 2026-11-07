@@ -1086,7 +1086,7 @@ pub const ProtectMemoryError = error{
     OutOfMemory,
 } || Io.UnexpectedError;
 
-pub const MemoryProtection = packed struct(u3) {
+pub const MemoryProtection = bitpack struct(u3) {
     read: bool = false,
     write: bool = false,
     execute: bool = false,

@@ -4,7 +4,7 @@
 #}
 
 #write test.zig {
-const P = packed union(u8) {
+const P = bitpack union(u8) {
     a: u8,
     b: i8,
 };
@@ -68,12 +68,12 @@ export fn entry8() void {
 #}
 #update
 #check errors {
-test.zig:7:30: error: cannot capture tag of packed union
-test.zig:1:18: note: union declared here
-test.zig:1:18: note: consider using a tagged union
-test.zig:13:30: error: cannot capture tag of packed union
-test.zig:1:18: note: union declared here
-test.zig:1:18: note: consider using a tagged union
+test.zig:7:30: error: cannot capture tag of bitpack union
+test.zig:1:19: note: union declared here
+test.zig:1:19: note: consider using a tagged union
+test.zig:13:30: error: cannot capture tag of bitpack union
+test.zig:1:19: note: union declared here
+test.zig:1:19: note: consider using a tagged union
 test.zig:21:19: error: cannot capture tag of non-union type 'test.E'
 test.zig:18:11: note: enum declared here
 test.zig:27:19: error: cannot capture tag of non-union type 'test.E'

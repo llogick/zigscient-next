@@ -2229,7 +2229,7 @@ pub const WipNav = struct {
                     .decl_enum,
                     .decl_namespace_struct,
                     .decl_struct,
-                    .decl_packed_struct,
+                    .decl_bitpack_struct,
                     .decl_union,
                     .decl_var,
                     .decl_const,
@@ -3126,7 +3126,7 @@ fn updateComptimeNavInner(dwarf: *Dwarf, pt: Zcu.PerThread, nav_index: InternPoo
         .opt,
         .aggregate,
         .un,
-        .bitpack,
+        .@"bitpack",
         => if (nav.resolved.?.@"const") .@"const" else .@"var",
 
         .@"extern" => unreachable,
@@ -3962,28 +3962,28 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
                         try diw.writeUleb128(@backingInt(AbbrevCode.null));
                     }
                 },
-                .@"packed" => {
+                .@"bitpack" => {
                     const need_terminator: bool = if (loaded_struct.name_nav.unwrap()) |nav_index| t: {
                         const nav = ip.getNav(nav_index);
                         const decl_inst = nav.srcInst(ip).resolve(ip).?;
                         const decl = zcu.fileByIndex(file).zir.?.getDeclaration(decl_inst);
                         try wip_nav.declCommon(.{
-                            .decl = .decl_packed_struct,
+                            .decl = .decl_bitpack_struct,
                             .decl_specification = .decl_specification_const,
-                            .decl_instance = .decl_instance_packed_struct,
+                            .decl_instance = .decl_instance_bitpack_struct,
                         }, &nav, file, &decl);
                         break :t true;
                     } else t: {
                         const file_gop = try dwarf.getModInfo(unit).files.getOrPut(dwarf.gpa, file);
-                        try wip_nav.abbrevCode(if (loaded_struct.field_types.len > 0) .packed_struct_type else .empty_packed_struct_type);
+                        try wip_nav.abbrevCode(if (loaded_struct.field_types.len > 0) .bitpack_struct_type else .empty_bitpack_struct_type);
                         try diw.writeUleb128(file_gop.index);
                         try wip_nav.strp(loaded_struct.fqn.toSlice(ip));
                         break :t loaded_struct.field_types.len > 0;
                     };
-                    try wip_nav.refType(.fromInterned(loaded_struct.packed_backing_int_type));
+                    try wip_nav.refType(.fromInterned(loaded_struct.bitpack_backing_int_type));
                     var field_bit_offset: u16 = 0;
                     for (0..loaded_struct.field_types.len) |field_index| {
-                        try wip_nav.abbrevCode(.packed_field);
+                        try wip_nav.abbrevCode(.bitpack_field);
                         try wip_nav.strp(loaded_struct.field_names.get(ip)[field_index].toSlice(ip));
                         const field_type: Type = .fromInterned(loaded_struct.field_types.get(ip)[field_index]);
                         try wip_nav.refType(field_type);
@@ -4061,27 +4061,27 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
                     }
                     if (need_terminator) try diw.writeUleb128(@backingInt(AbbrevCode.null));
                 },
-                .@"packed" => {
+                .@"bitpack" => {
                     const need_terminator: bool = if (loaded_union.name_nav.unwrap()) |nav_index| t: {
                         const nav = ip.getNav(nav_index);
                         const decl_inst = nav.srcInst(ip).resolve(ip).?;
                         const decl = zcu.fileByIndex(file).zir.?.getDeclaration(decl_inst);
                         try wip_nav.declCommon(.{
-                            .decl = .decl_packed_union,
+                            .decl = .decl_bitpack_union,
                             .decl_specification = .decl_specification_const,
-                            .decl_instance = .decl_instance_packed_union,
+                            .decl_instance = .decl_instance_bitpack_union,
                         }, &nav, file, &decl);
                         break :t true;
                     } else t: {
                         const file_gop = try dwarf.getModInfo(unit).files.getOrPut(dwarf.gpa, file);
-                        try wip_nav.abbrevCode(if (loaded_union.field_types.len > 0) .packed_union_type else .empty_packed_union_type);
+                        try wip_nav.abbrevCode(if (loaded_union.field_types.len > 0) .bitpack_union_type else .empty_bitpack_union_type);
                         try diw.writeUleb128(file_gop.index);
                         try wip_nav.strp(loaded_union.fqn.toSlice(ip));
                         break :t loaded_union.field_types.len > 0;
                     };
-                    try wip_nav.refType(.fromInterned(loaded_union.packed_backing_int_type));
+                    try wip_nav.refType(.fromInterned(loaded_union.bitpack_backing_int_type));
                     for (0..loaded_union.field_types.len) |field_index| {
-                        try wip_nav.abbrevCode(.packed_field);
+                        try wip_nav.abbrevCode(.bitpack_field);
                         try wip_nav.strp(loaded_tag.field_names.get(ip)[field_index].toSlice(ip));
                         try wip_nav.refType(.fromInterned(loaded_union.field_types.get(ip)[field_index]));
                         try diw.writeUleb128(0);
@@ -4292,10 +4292,10 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
             try wip_nav.refType(.fromInterned(int.ty));
             try wip_nav.bigIntConstValue(.fromInterned(int.ty), Value.fromInterned(value_index).toBigInt(&big_int_space, zcu));
         },
-        .bitpack => |bitpack| {
-            const backing_int_val: Value = .fromInterned(bitpack.backing_int_val);
+        .@"bitpack" => |@"bitpack"| {
+            const backing_int_val: Value = .fromInterned(@"bitpack".backing_int_val);
             try wip_nav.abbrevCode(.comptime_value);
-            try wip_nav.refType(.fromInterned(bitpack.ty));
+            try wip_nav.refType(.fromInterned(@"bitpack".ty));
             try wip_nav.bigIntConstValue(backing_int_val.typeOf(zcu), backing_int_val.toBigInt(&big_int_space, zcu));
         },
         .err => |err| {
@@ -5142,9 +5142,9 @@ const AbbrevCode = enum {
     decl_enum,
     decl_namespace_struct,
     decl_struct,
-    decl_packed_struct,
+    decl_bitpack_struct,
     decl_union,
-    decl_packed_union,
+    decl_bitpack_union,
     decl_var,
     decl_extern_var,
     decl_const,
@@ -5165,9 +5165,9 @@ const AbbrevCode = enum {
     decl_instance_enum,
     decl_instance_namespace_struct,
     decl_instance_struct,
-    decl_instance_packed_struct,
+    decl_instance_bitpack_struct,
     decl_instance_union,
-    decl_instance_packed_union,
+    decl_instance_bitpack_union,
     decl_instance_var,
     decl_instance_extern_var,
     decl_instance_const,
@@ -5195,7 +5195,7 @@ const AbbrevCode = enum {
     field_comptime,
     field_comptime_runtime_bits,
     field_comptime_comptime_state,
-    packed_field,
+    bitpack_field,
     tagged_union,
     tagged_union_field,
     tagged_union_default_field,
@@ -5226,12 +5226,12 @@ const AbbrevCode = enum {
     enum_type,
     empty_struct_type,
     struct_type,
-    empty_packed_struct_type,
-    packed_struct_type,
+    empty_bitpack_struct_type,
+    bitpack_struct_type,
     empty_union_type,
     union_type,
-    empty_packed_union_type,
-    packed_union_type,
+    empty_bitpack_union_type,
+    bitpack_union_type,
     builtin_extern_nullary_func,
     builtin_extern_func,
     builtin_extern_var,
@@ -5338,7 +5338,7 @@ const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_packed_struct = .{
+        .decl_bitpack_struct = .{
             .tag = .structure_type,
             .children = true,
             .attrs = decl_abbrev_common_attrs ++ .{
@@ -5353,7 +5353,7 @@ const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_packed_union = .{
+        .decl_bitpack_union = .{
             .tag = .union_type,
             .children = true,
             .attrs = decl_abbrev_common_attrs ++ .{
@@ -5521,7 +5521,7 @@ const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_instance_packed_struct = .{
+        .decl_instance_bitpack_struct = .{
             .tag = .structure_type,
             .children = true,
             .attrs = decl_instance_abbrev_common_attrs ++ .{
@@ -5536,7 +5536,7 @@ const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .decl_instance_packed_union = .{
+        .decl_instance_bitpack_union = .{
             .tag = .union_type,
             .children = true,
             .attrs = decl_instance_abbrev_common_attrs ++ .{
@@ -5775,7 +5775,7 @@ const AbbrevCode = enum {
                 .{ .ZIG_comptime_value, .ref_addr },
             },
         },
-        .packed_field = .{
+        .bitpack_field = .{
             .tag = .member,
             .attrs = &.{
                 .{ .name, .strp },
@@ -6013,7 +6013,7 @@ const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .empty_packed_struct_type = .{
+        .empty_bitpack_struct_type = .{
             .tag = .structure_type,
             .attrs = &.{
                 .{ .decl_file, .udata },
@@ -6021,7 +6021,7 @@ const AbbrevCode = enum {
                 .{ .type, .ref_addr },
             },
         },
-        .packed_struct_type = .{
+        .bitpack_struct_type = .{
             .tag = .structure_type,
             .children = true,
             .attrs = &.{
@@ -6049,7 +6049,7 @@ const AbbrevCode = enum {
                 .{ .alignment, .udata },
             },
         },
-        .empty_packed_union_type = .{
+        .empty_bitpack_union_type = .{
             .tag = .union_type,
             .attrs = &.{
                 .{ .decl_file, .udata },
@@ -6057,7 +6057,7 @@ const AbbrevCode = enum {
                 .{ .type, .ref_addr },
             },
         },
-        .packed_union_type = .{
+        .bitpack_union_type = .{
             .tag = .union_type,
             .children = true,
             .attrs = &.{

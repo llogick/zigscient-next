@@ -5,7 +5,7 @@
 
 #write test.zig {
 const X = extern opaque {};
-const Y = packed opaque {};
+const Y = bitpack opaque {};
 
 export fn foo(x: *X, y: *Y) void {
     _ = x;
@@ -14,6 +14,6 @@ export fn foo(x: *X, y: *Y) void {
 #}
 #update
 #check errors {
-test.zig:1:11: error: opaque types do not support 'packed' or 'extern'
-test.zig:2:11: error: opaque types do not support 'packed' or 'extern'
+test.zig:1:11: error: opaque types do not support 'bitpack' or 'extern'
+test.zig:2:11: error: opaque types do not support 'bitpack' or 'extern'
 #}

@@ -4,7 +4,7 @@
 #}
 
 #write test.zig {
-const U = packed union {
+const U = bitpack union {
     x: f32,
     y: u8 align(10),
     z: u32,
@@ -12,5 +12,5 @@ const U = packed union {
 #}
 #update
 #check errors {
-test.zig:3:17: error: unable to override alignment of packed union fields
+test.zig:3:17: error: unable to override alignment of bitpack union fields
 #}

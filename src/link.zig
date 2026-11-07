@@ -55,7 +55,7 @@ pub const Diags = struct {
         wasm: File.Wasm.SourceLocation,
     };
 
-    pub const Flags = packed struct {
+    pub const Flags = bitpack struct {
         no_entry_point_found: bool = false,
         missing_libc: bool = false,
         alloc_failure_occurred: bool = false,
@@ -3053,7 +3053,7 @@ pub fn firstObjectInput(inputs: []const Input) ?Input.Object {
     return null;
 }
 
-pub const DarwinSdkVersion = packed struct(u32) {
+pub const DarwinSdkVersion = bitpack struct(u32) {
     patch: u8,
     minor: u8,
     major: u16,

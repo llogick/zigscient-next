@@ -177,12 +177,12 @@ pub fn containerLayout(comptime T: type) Type.ContainerLayout {
 
 test containerLayout {
     const S1 = struct {};
-    const S2 = packed struct {};
+    const S2 = bitpack struct {};
     const S3 = extern struct {};
     const U1 = union {
         a: u8,
     };
-    const U2 = packed union {
+    const U2 = bitpack union {
         a: u8,
     };
     const U3 = extern union {
@@ -190,10 +190,10 @@ test containerLayout {
     };
 
     try testing.expect(containerLayout(S1) == .auto);
-    try testing.expect(containerLayout(S2) == .@"packed");
+    try testing.expect(containerLayout(S2) == .@"bitpack");
     try testing.expect(containerLayout(S3) == .@"extern");
     try testing.expect(containerLayout(U1) == .auto);
-    try testing.expect(containerLayout(U2) == .@"packed");
+    try testing.expect(containerLayout(U2) == .@"bitpack");
     try testing.expect(containerLayout(U3) == .@"extern");
 }
 
@@ -519,31 +519,31 @@ pub fn BareUnion(comptime T: type) type {
     return @Union(u.layout, null, u.field_names, u.field_types[0..], u.field_attrs[0..]);
 }
 
-/// For enums, packed unions and packed structs, returns their backing integer type.
+/// For enums, bitpack unions and bitpack structs, returns their backing integer type.
 /// For tagged unions, returns the backing integer type of their enum tag type.
 pub fn BackingInt(comptime T: type) type {
     switch (@typeInfo(T)) {
         .@"enum" => |info| return info.tag_type,
         .@"struct" => |info| if (info.backing_integer) |Int| return Int,
         .@"union" => |info| switch (info.layout) {
-            .@"packed" => return info.backing_integer.?,
+            .@"bitpack" => return info.backing_integer.?,
             .auto => if (info.tag_type) |EnumTag|
                 return @typeInfo(EnumTag).@"enum".tag_type,
             .@"extern" => {},
         },
         else => {},
     }
-    @compileError("expected enum, tagged union, packed union or packed struct type, found '" ++ @typeName(T) ++ "'");
+    @compileError("expected enum, tagged union, bitpack union or bitpack struct type, found '" ++ @typeName(T) ++ "'");
 }
 
 test BackingInt {
     const E = enum(u8) { a, b, c };
     try testing.expect(BackingInt(E) == u8);
 
-    const S = packed struct(u16) { x: u8, y: i8 };
+    const S = bitpack struct(u16) { x: u8, y: i8 };
     try testing.expect(BackingInt(S) == u16);
 
-    const U = packed union(i32) { a: u32, b: enum(i32) { _ } };
+    const U = bitpack union(i32) { a: u32, b: enum(i32) { _ } };
     try testing.expect(BackingInt(U) == i32);
 
     const T = union(enum(i8)) { a, b, c };
@@ -603,7 +603,7 @@ pub fn eql(a: anytype, b: @TypeOf(a)) bool {
 
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
-            if (info.layout == .@"packed") return a == b;
+            if (info.layout == .@"bitpack") return a == b;
 
             inline for (info.field_names) |field_name| {
                 if (!eql(@field(a, field_name), @field(b, field_name))) return false;
@@ -618,7 +618,7 @@ pub fn eql(a: anytype, b: @TypeOf(a)) bool {
             }
         },
         .@"union" => |info| {
-            if (info.layout == .@"packed") return a == b;
+            if (info.layout == .@"bitpack") return a == b;
             const UnionTag = info.tag_type orelse
                 @compileError("cannot compare untagged union type " ++ @typeName(T));
 
@@ -938,7 +938,7 @@ pub inline fn hasUniqueRepresentation(comptime T: type) bool {
         .array => |info| hasUniqueRepresentation(info.child),
 
         .@"struct" => |info| {
-            if (info.layout == .@"packed") return @sizeOf(T) * 8 == @bitSizeOf(T);
+            if (info.layout == .@"bitpack") return @sizeOf(T) * 8 == @bitSizeOf(T);
 
             var sum_size = @as(usize, 0);
 
@@ -952,7 +952,7 @@ pub inline fn hasUniqueRepresentation(comptime T: type) bool {
         },
 
         .@"union" => |info| {
-            if (info.layout == .@"packed") return @sizeOf(T) * 8 == @bitSizeOf(T);
+            if (info.layout == .@"bitpack") return @sizeOf(T) * 8 == @bitSizeOf(T);
             inline for (info.field_types) |field_type| {
                 if (@sizeOf(field_type) != @sizeOf(T)) return false;
                 if (!hasUniqueRepresentation(field_type)) return false;
@@ -995,7 +995,7 @@ test hasUniqueRepresentation {
 
     try testing.expect(!hasUniqueRepresentation(TestStruct5));
 
-    const TestStruct6 = packed struct(u8) {
+    const TestStruct6 = bitpack struct(u8) {
         @"0": bool,
         @"1": bool,
         @"2": bool,
@@ -1036,14 +1036,14 @@ test hasUniqueRepresentation {
 
     try testing.expect(hasUniqueRepresentation(TestUnion5));
 
-    const TestUnion6 = packed union(u7) {
+    const TestUnion6 = bitpack union(u7) {
         a: u7,
         b: i7,
     };
 
     try testing.expect(!hasUniqueRepresentation(TestUnion6));
 
-    const TestUnion7 = packed union(u8) {
+    const TestUnion7 = bitpack union(u8) {
         a: u8,
         b: i8,
     };

@@ -386,7 +386,7 @@ pub const SimpleNetwork = extern struct {
         media_present: bool,
     };
 
-    pub const ReceiveFilter = packed struct(u32) {
+    pub const ReceiveFilter = bitpack struct(u32) {
         receive_unicast: bool,
         receive_multicast: bool,
         receive_broadcast: bool,
@@ -430,7 +430,7 @@ pub const SimpleNetwork = extern struct {
         tx_retry_frames: u64,
     };
 
-    pub const InterruptStatus = packed struct(u32) {
+    pub const InterruptStatus = bitpack struct(u32) {
         receive_interrupt: bool,
         transmit_interrupt: bool,
         command_interrupt: bool,

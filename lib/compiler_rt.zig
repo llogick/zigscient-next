@@ -332,7 +332,7 @@ pub const @"f80" = switch (std.zig.target.compilerRtFloatAbi(&builtin.target, 80
     .hard => hardFloatAbi(f80),
     .soft => struct {
         pub const Abi = extern struct { mantissa: u64, exponent: u16 };
-        const Repr = packed struct { mantissa: u64, exponent: u16 };
+        const Repr = bitpack struct { mantissa: u64, exponent: u16 };
         pub inline fn toAbi(raw: f80) Abi {
             const repr: Repr = @bitCast(raw);
             return .{ .mantissa = repr.mantissa, .exponent = repr.exponent };
@@ -351,7 +351,7 @@ pub const @"f128" = switch (std.zig.target.compilerRtFloatAbi(&builtin.target, 1
             .big => extern struct { hi: u64, lo: u64 },
             .little => extern struct { lo: u64, hi: u64 },
         };
-        const Repr = packed struct { lo: u64, hi: u64 };
+        const Repr = bitpack struct { lo: u64, hi: u64 };
         pub inline fn toAbi(raw: f128) Abi {
             const repr: Repr = @bitCast(raw);
             return .{ .lo = repr.lo, .hi = repr.hi };

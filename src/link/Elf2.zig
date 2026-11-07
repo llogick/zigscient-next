@@ -1417,7 +1417,7 @@ const SymbolReloc = struct {
     target_symbol: Symbol.Id,
     /// A signed constant used to compute the relocated value. Precise meaning depends on `bits.@"type"`.
     addend: SymbolReloc.Addend,
-    bits: packed struct(u32) {
+    bits: bitpack struct(u32) {
         /// Specifies how to apply the relocation.
         ///
         /// When emitting a relocatable, this field is `undefined`.
@@ -1470,10 +1470,10 @@ const SymbolReloc = struct {
         return shndx;
     }
 
-    const Addend = packed union(u64) {
+    const Addend = bitpack union(u64) {
         normal: i64,
         /// Only valid for `Type.special(.sparc_olo10)`.
-        sparc_olo10: packed struct {
+        sparc_olo10: bitpack struct {
             /// The first addend from `r_addend`.
             a: u10,
             /// The second addend from the upper `r_info` type bits.
@@ -1510,7 +1510,7 @@ const SymbolReloc = struct {
     /// relocations which write multiple sequences of bits or which need to do unusual arithmetic on
     /// a symbol value. The representation is simply a big enum containing all of these exceptional
     /// cases---see `Special`. This representation is in use when `Type.target == .special`.
-    const Type = packed struct(u18) {
+    const Type = bitpack struct(u18) {
         /// Helper function for constructing a "simple" relocation type. This mainly exists to
         /// improve readability in the relocation lowering logic in `addRelocAssumeCapacity`.
         fn simple(target: Target, action: Simple) SymbolReloc.Type {
@@ -1529,7 +1529,7 @@ const SymbolReloc = struct {
         /// If `target == .special`, the `special` field is used.
         ///
         /// Otherwise, the `.simple` field is used.
-        action: packed union {
+        action: bitpack union {
             simple: Simple,
             special: Special,
         },
@@ -1589,7 +1589,7 @@ const SymbolReloc = struct {
 
         /// For a "simple" relocation, after the initial value is computed according to `Target`, a
         /// `Simple` value communicates how to shift, truncate, and store that value into memory.
-        const Simple = packed struct(u13) {
+        const Simple = bitpack struct(u13) {
             /// The field being written to, represented as a sequence of bits in a backing integer
             /// of 8, 16, 32, or 64 bits.
             ///
@@ -1833,7 +1833,7 @@ const SymbolReloc = struct {
                                     return error.RelocationOverflow;
                                 }
                                 const truncated: i21 = @intCast(shifted_jump_offset);
-                                const parts: packed struct { lo16: u16, hi5: u5 } = @bitCast(truncated);
+                                const parts: bitpack struct { lo16: u16, hi5: u5 } = @bitCast(truncated);
                                 const inst: *align(1) link.loongarch.D5K16 = @ptrCast(dest_slice[0..4]);
                                 elf.targetStore(inst, .{
                                     .d5 = parts.hi5,
@@ -1847,7 +1847,7 @@ const SymbolReloc = struct {
                                     return error.RelocationOverflow;
                                 }
                                 const truncated: i26 = @intCast(shifted_jump_offset);
-                                const parts: packed struct { lo16: u16, hi10: u10 } = @bitCast(truncated);
+                                const parts: bitpack struct { lo16: u16, hi10: u10 } = @bitCast(truncated);
                                 const inst: *align(1) link.loongarch.D10K16 = @ptrCast(dest_slice[0..4]);
                                 elf.targetStore(inst, .{
                                     .d10 = parts.hi10,
@@ -1919,7 +1919,7 @@ const SymbolReloc = struct {
                         const addends = addend.sparc_olo10;
                         const lo10: i64 = @as(u10, @truncate(target_sym.value(elf) +% addends.a));
                         const simm13 = std.math.cast(i13, lo10 + addends.o) orelse return error.RelocationOverflow;
-                        const dest_ptr: *align(1) packed struct(u32) {
+                        const dest_ptr: *align(1) bitpack struct(u32) {
                             simm13: u13,
                             b13_31: u19,
                         } = @ptrCast(dest_slice);
@@ -1929,7 +1929,7 @@ const SymbolReloc = struct {
                         });
                     },
                     .sparc_hix22 => {
-                        const dest_ptr: *align(1) packed struct(u32) {
+                        const dest_ptr: *align(1) bitpack struct(u32) {
                             imm22: u22,
                             b22_31: u10,
                         } = @ptrCast(dest_slice);
@@ -1946,7 +1946,7 @@ const SymbolReloc = struct {
                                 break :tls_size elf.targetLoad(&phdr[tls_phndx].memsz);
                             },
                         };
-                        const dest_ptr: *align(1) packed struct(u32) {
+                        const dest_ptr: *align(1) bitpack struct(u32) {
                             imm22: u22,
                             b22_31: u10,
                         } = @ptrCast(dest_slice);
@@ -1968,8 +1968,8 @@ const SymbolReloc = struct {
                                     return error.RelocationOverflow;
                                 }
                                 const truncated: i10 = @intCast(shifted_jump_offset);
-                                const parts: packed struct { lo8: u8, hi2: u2 } = @bitCast(truncated);
-                                const inst: *align(1) packed struct(u32) {
+                                const parts: bitpack struct { lo8: u8, hi2: u2 } = @bitCast(truncated);
+                                const inst: *align(1) bitpack struct(u32) {
                                     b0_4: u5,
                                     disp10: u8,
                                     b13_18: u6,
@@ -1989,8 +1989,8 @@ const SymbolReloc = struct {
                                     return error.RelocationOverflow;
                                 }
                                 const truncated: i16 = @intCast(shifted_jump_offset);
-                                const parts: packed struct { lo14: u14, hi2: u2 } = @bitCast(truncated);
-                                const inst: *align(1) packed struct(u32) {
+                                const parts: bitpack struct { lo14: u14, hi2: u2 } = @bitCast(truncated);
+                                const inst: *align(1) bitpack struct(u32) {
                                     disp14: u14,
                                     b14_19: u6,
                                     d2: u2,
@@ -2009,7 +2009,7 @@ const SymbolReloc = struct {
 
                     .sparc_got_op_lox10 => {
                         const got_offset = elf.got.getIndex(.{ .symbol = target_sym }).? * elf.targetPtrSize();
-                        const dest_ptr: *align(1) packed struct(u32) {
+                        const dest_ptr: *align(1) bitpack struct(u32) {
                             imm13: u13,
                             b13_31: u19,
                         } = @ptrCast(dest_slice);
@@ -2020,7 +2020,7 @@ const SymbolReloc = struct {
                     },
                     .sparc_got_op_hix22 => {
                         const got_offset = elf.got.getIndex(.{ .symbol = target_sym }).? * elf.targetPtrSize();
-                        const dest_ptr: *align(1) packed struct(u32) {
+                        const dest_ptr: *align(1) bitpack struct(u32) {
                             imm22: u22,
                             b22_31: u10,
                         } = @ptrCast(dest_slice);
@@ -4313,7 +4313,7 @@ const Symbol = struct {
     first_target_reloc: SymbolReloc.Index,
 
     const Global = struct {
-        status: packed struct(u8) {
+        status: bitpack struct(u8) {
             /// We cannot reliably recover this information from the symbol table, because symbols
             /// with visibility `STV_HIDDEN` are "demoted" to `STB_LOCAL` binding, yet we must still
             /// consider them strong or weak for the purposes of the link.
@@ -4651,7 +4651,7 @@ const Symbol = struct {
     };
 
     /// Opaque, stable identifier for a symbol. Does not necessarily equal the index into the symtab.
-    const Id = packed struct(u32) {
+    const Id = bitpack struct(u32) {
         kind: enum(u1) { local, global },
         raw: u31,
 
@@ -13356,10 +13356,10 @@ fn ensurePltEntry(elf: *Elf, gsi: Symbol.Global.Index) Error!bool {
                 inline else => |shdr| {
                     assert(elf.targetLoad(&shdr.size) == got_plt_offset);
                     elf.targetStore(&shdr.size, @intCast(got_plt_offset + 32));
-                    const Inst = packed union(u32) {
+                    const Inst = bitpack union(u32) {
                         raw: u32,
-                        imm22: packed struct { imm: u22, op: u10 },
-                        disp19: packed struct { disp: u19, op: u13 },
+                        imm22: bitpack struct { imm: u22, op: u10 },
+                        disp19: bitpack struct { disp: u19, op: u13 },
                     };
                     const plt_slice: []Inst = @ptrCast(@alignCast(plt_ni.slice(&elf.mf)[@intCast(got_plt_offset)..][0..32]));
                     @memcpy(plt_slice, &[8]Inst{
@@ -13914,7 +13914,7 @@ const VerneedAdapter = struct {
     }
     pub fn hash(ctx: VerneedAdapter, key: Key) u32 {
         _ = ctx;
-        const packed_key: packed struct(u65) {
+        const packed_key: bitpack struct(u65) {
             file: String(.dynstr),
             have_version: bool,
             version: String(.dynstr),

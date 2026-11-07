@@ -470,7 +470,7 @@ pub const Helper = enum(i32) {
 // TODO: determine that this is the expected bit layout for both little and big
 // endian systems
 /// a single BPF instruction
-pub const Insn = packed struct {
+pub const Insn = bitpack struct {
     code: u8,
     dst: u4,
     src: u4,

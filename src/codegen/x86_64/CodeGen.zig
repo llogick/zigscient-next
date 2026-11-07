@@ -170,14 +170,14 @@ loop_switches: std.AutoHashMapUnmanaged(Air.Inst.Index, struct {
 next_temp_index: Temp.Index = @fromBackingInt(@intCast(0)),
 temp_type: [Temp.Index.max]Type = undefined,
 
-const MaskInfo = packed struct {
+const MaskInfo = bitpack struct {
     kind: enum(u2) { lsb, msb, zero_extend, sign_extend },
     inverted: bool = false,
     scalar: Memory.Size,
 };
 
 const ArgsInfo = struct {
-    info: packed struct { reg_index: u3, frame_off: i29 },
+    info: bitpack struct { reg_index: u3, frame_off: i29 },
     frame_index: FrameIndex,
 };
 
@@ -80734,7 +80734,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                         switch (ty.zigTypeTag(zcu)) {
                             else => {},
                             .@"struct", .@"union" => {
-                                assert(ty.containerLayout(zcu) == .@"packed");
+                                assert(ty.containerLayout(zcu) == .@"bitpack");
                                 for (&ops) |*op| op.wrapInt(cg) catch |err| switch (err) {
                                     error.SelectFailed => return cg.fail("failed to select {s} wrap {f} {f}", .{
                                         @tagName(air_tag),
@@ -103059,7 +103059,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                 const field_ty = ty_pl.ty;
                 const field_off: u31 = switch (agg_ty.containerLayout(zcu)) {
                     .auto, .@"extern" => @intCast(agg_ty.structFieldOffset(struct_field.field_index, zcu)),
-                    .@"packed" => unreachable,
+                    .@"bitpack" => unreachable,
                 };
                 var ops = try cg.tempsFromOperands(inst, .{struct_field.struct_operand});
                 var res = if (!hack_around_sema_opv_bugs or field_ty.hasRuntimeBits(zcu))
@@ -170967,7 +170967,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
                                     }
                                 }
                             },
-                            .@"packed" => unreachable,
+                            .@"bitpack" => unreachable,
                         }
                     },
                     .tuple_type => |tuple_type| {
@@ -172516,7 +172516,7 @@ fn genBody(cg: *CodeGen, body: []const Air.Inst.Index) InnerError!void {
             .save_err_return_trace_index => {
                 const ty_pl = air_datas[@backingInt(inst)].ty_pl;
                 const agg_ty = ty_pl.ty;
-                assert(agg_ty.containerLayout(zcu) != .@"packed");
+                assert(agg_ty.containerLayout(zcu) != .@"bitpack");
                 var ert: Temp = .{ .index = err_ret_trace_index };
                 var res = try ert.load(.usize, .{ .disp = @intCast(agg_ty.structFieldOffset(ty_pl.payload, zcu)) }, cg);
                 try ert.die(cg);
@@ -179539,7 +179539,7 @@ fn airBitCast(self: *CodeGen, inst: Air.Inst.Index) !void {
 
         switch (dst_ty.zigTypeTag(zcu)) {
             .float, .error_union, .error_set, .vector => break :result dst_mcv,
-            .@"struct", .@"union" => if (dst_ty.containerLayout(zcu) != .@"packed") break :result dst_mcv,
+            .@"struct", .@"union" => if (dst_ty.containerLayout(zcu) != .@"bitpack") break :result dst_mcv,
             .optional, .pointer => if (!dst_ty.isPtrAtRuntime(zcu)) break :result dst_mcv,
             else => {},
         }
@@ -181926,14 +181926,14 @@ fn intInfo(cg: *CodeGen, ty: Type) ?std.lang.Type.Int {
             const loaded_struct = ip.loadStructType(ty_index);
             switch (loaded_struct.layout) {
                 .auto, .@"extern" => return null,
-                .@"packed" => ty_index = loaded_struct.packed_backing_int_type,
+                .@"bitpack" => ty_index = loaded_struct.bitpack_backing_int_type,
             }
         },
         .union_type => {
             const loaded_union = ip.loadUnionType(ty_index);
             switch (loaded_union.layout) {
                 .auto, .@"extern" => return null,
-                .@"packed" => ty_index = loaded_union.packed_backing_int_type,
+                .@"bitpack" => ty_index = loaded_union.bitpack_backing_int_type,
             }
         },
         .enum_type => ty_index = ip.loadEnumType(ty_index).int_tag_type,
@@ -189411,10 +189411,10 @@ const Select = struct {
         src_constraints: [@backingInt(Select.Operand.Ref.none) - @backingInt(Select.Operand.Ref.src0)]Constraint = @splat(.any),
         dst_constraints: [@backingInt(Select.Operand.Ref.src0) - @backingInt(Select.Operand.Ref.dst0)]Constraint = @splat(.any),
         patterns: []const Select.Pattern,
-        call_frame: packed struct(u16) { size: u10 = 0, alignment: InternPool.Alignment } = .{ .size = 0, .alignment = .none },
+        call_frame: bitpack struct(u16) { size: u10 = 0, alignment: InternPool.Alignment } = .{ .size = 0, .alignment = .none },
         extra_temps: [@backingInt(Select.Operand.Ref.dst0) - @backingInt(Select.Operand.Ref.tmp0)]TempSpec = @splat(.unused),
         dst_temps: [@backingInt(Select.Operand.Ref.src0) - @backingInt(Select.Operand.Ref.dst0)]TempSpec.Kind = @splat(.unused),
-        clobbers: packed struct {
+        clobbers: bitpack struct {
             eflags: bool = false,
             caller_preserved: CallConv = .none,
         } = .{},
@@ -190547,11 +190547,11 @@ const Select = struct {
     };
     const Label = enum { @"0:", @"1:", @"2:", @"3:", @"4:", @"_", pseudo };
     const Operand = struct {
-        flags: packed struct(u32) {
+        flags: bitpack struct(u32) {
             tag: Tag,
             adjust: Adjust = .none,
             base: Ref.Sized = .none,
-            index: packed struct(u7) {
+            index: bitpack struct(u7) {
                 ref: Ref,
                 scale: Memory.Scale = .@"1",
             } = .{ .ref = .none },
@@ -190568,7 +190568,7 @@ const Select = struct {
             lea,
             mem,
         };
-        const Adjust = packed struct(u12) {
+        const Adjust = bitpack struct(u12) {
             sign: enum(u1) { neg, pos },
             lhs: enum(u6) {
                 none,
@@ -190715,7 +190715,7 @@ const Select = struct {
             src2,
             none,
 
-            const Sized = packed struct(u9) {
+            const Sized = bitpack struct(u9) {
                 ref: Ref,
                 size: Memory.Size,
 

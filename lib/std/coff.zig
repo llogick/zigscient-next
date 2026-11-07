@@ -35,7 +35,7 @@ pub const Header = extern struct {
     /// The flags that indicate the attributes of the file.
     flags: Header.Flags,
 
-    pub const Flags = packed struct(u16) {
+    pub const Flags = bitpack struct(u16) {
         /// Image only, Windows CE, and Microsoft Windows NT and later.
         /// This indicates that the file does not contain base relocations
         /// and must therefore be loaded at its preferred base address.
@@ -102,7 +102,7 @@ pub const Header = extern struct {
 pub const IMAGE_NT_OPTIONAL_HDR32_MAGIC = @backingInt(OptionalHeader.Magic.PE32);
 pub const IMAGE_NT_OPTIONAL_HDR64_MAGIC = @backingInt(OptionalHeader.Magic.@"PE32+");
 
-pub const DllFlags = packed struct(u16) {
+pub const DllFlags = bitpack struct(u16) {
     _reserved_0: u5 = 0,
 
     /// Image can handle a high entropy 64-bit virtual address space.
@@ -268,7 +268,7 @@ pub const BaseRelocationDirectoryEntry = extern struct {
     block_size: u32,
 };
 
-pub const BaseRelocation = packed struct(u16) {
+pub const BaseRelocation = bitpack struct(u16) {
     /// Stored in the remaining 12 bits of the WORD, an offset from the starting address that was specified in the Page RVA field for the block.
     /// This offset specifies where the base relocation is to be applied.
     offset: u12,
@@ -382,7 +382,7 @@ pub fn TlsDirectoryEntry(comptime magic: std.coff.OptionalHeader.Magic) type {
             tls_index_va: u32,
             callbacks_va: u32,
             size_of_zero_fill: u32,
-            characteristics: packed struct(u32) {
+            characteristics: bitpack struct(u32) {
                 _reserved_0: u19,
                 alignment: SectionHeader.Flags.Align,
                 _reserved_1: u9,
@@ -394,7 +394,7 @@ pub fn TlsDirectoryEntry(comptime magic: std.coff.OptionalHeader.Magic) type {
             tls_index_va: u64,
             callbacks_va: u64,
             size_of_zero_fill: u32,
-            characteristics: packed struct(u32) {
+            characteristics: bitpack struct(u32) {
                 _reserved_0: u19,
                 alignment: SectionHeader.Flags.Align,
                 _reserved_1: u9,
@@ -426,8 +426,8 @@ pub const ImportDirectoryEntry = extern struct {
 };
 
 pub fn ImportLookupTableEntry(comptime magic: std.coff.OptionalHeader.Magic) type {
-    const Payload = packed union(u31) {
-        ordinal: packed struct(u31) {
+    const Payload = bitpack union(u31) {
+        ordinal: bitpack struct(u31) {
             ordinal: u16,
             _: u15 = 0,
         },
@@ -436,11 +436,11 @@ pub fn ImportLookupTableEntry(comptime magic: std.coff.OptionalHeader.Magic) typ
 
     return switch (magic) {
         _ => comptime unreachable,
-        .PE32 => packed struct(u32) {
+        .PE32 => bitpack struct(u32) {
             payload: Payload,
             is_ordinal: bool,
         },
-        .@"PE32+" => packed struct(u64) {
+        .@"PE32+" => bitpack struct(u64) {
             payload: Payload,
             _: u32 = 0,
             is_ordinal: bool,
@@ -546,7 +546,7 @@ pub const SectionHeader = extern struct {
         return self.flags.LNK_COMDAT;
     }
 
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         SCALE_INDEX: bool = false,
 
         unused1: u2 = 0,
@@ -588,7 +588,7 @@ pub const SectionHeader = extern struct {
 
         unused13: u2 = 0,
 
-        union14: packed union {
+        union14: bitpack union {
             mask: u1,
             /// The section contains data referenced through the global pointer (GP).
             GPREL: bool,
@@ -597,7 +597,7 @@ pub const SectionHeader = extern struct {
 
         unused15: u1 = 0,
 
-        union16: packed union {
+        union16: bitpack union {
             mask: u1,
             MEM_PURGEABLE: bool,
             MEM_16BIT: bool,
@@ -710,7 +710,7 @@ pub const SectionNumber = enum(i16) {
     _,
 };
 
-pub const SymType = packed struct(u16) {
+pub const SymType = bitpack struct(u16) {
     complex_type: ComplexType,
     base_type: BaseType,
 };
@@ -1363,7 +1363,7 @@ pub const ImportHeader = extern struct {
     time_date_stamp: u32,
     size_of_data: u32,
     hint: u16,
-    types: packed struct(u16) {
+    types: bitpack struct(u16) {
         type: ImportType,
         name_type: ImportNameType,
         reserved: u11,

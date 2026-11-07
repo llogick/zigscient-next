@@ -30,7 +30,7 @@ pub fn classifyType(ty: Type, zcu: *Zcu, ctx: Context) Class {
     const ip = &zcu.intern_pool;
     switch (ty.zigTypeTag(zcu)) {
         .@"struct" => {
-            if (ty.containerLayout(zcu) == .@"packed") {
+            if (ty.containerLayout(zcu) == .@"bitpack") {
                 if (ty.bitSize(zcu) > 64) return .memory;
                 return .byval;
             }
@@ -53,7 +53,7 @@ pub fn classifyType(ty: Type, zcu: *Zcu, ctx: Context) Class {
         },
         .@"union" => {
             const union_obj = zcu.typeToUnion(ty).?;
-            if (union_obj.layout == .@"packed") {
+            if (union_obj.layout == .@"bitpack") {
                 if (ty.bitSize(zcu) > 64) return .memory;
                 return .byval;
             }

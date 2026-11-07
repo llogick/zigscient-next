@@ -75,7 +75,7 @@ const ZirOrZoir = union(Ast.Mode) {
     zon: std.zig.Zoir,
 };
 
-const Status = packed struct(u32) {
+const Status = bitpack struct(u32) {
     /// `true` if the document has been directly opened by the client i.e. with `textDocument/didOpen`
     /// `false` indicates the document only exists because it is a dependency of another document
     /// or has been closed with `textDocument/didClose`.

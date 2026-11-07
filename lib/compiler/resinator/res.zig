@@ -77,7 +77,7 @@ pub const RT = enum(u8) {
 
 /// https://learn.microsoft.com/en-us/windows/win32/menurc/common-resource-attributes
 /// https://learn.microsoft.com/en-us/windows/win32/menurc/resourceheader
-pub const MemoryFlags = packed struct(u16) {
+pub const MemoryFlags = bitpack struct(u16) {
     value: u16,
 
     pub const MOVEABLE: u16 = 0x10;
@@ -146,7 +146,7 @@ pub const MemoryFlags = packed struct(u16) {
 };
 
 /// https://learn.microsoft.com/en-us/windows/win32/intl/language-identifiers
-pub const Language = packed struct(u16) {
+pub const Language = bitpack struct(u16) {
     // Note: This is the default no matter what locale the current system is set to,
     //       e.g. even if the system's locale is en-GB, en-US will still be the
     //       default language for resources in the Win32 rc compiler.

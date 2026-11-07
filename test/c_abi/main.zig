@@ -17137,50 +17137,50 @@ export fn zig_med_struct_mixed(x: MedStructMixed) void {
     expect(x.c == 1337.0) catch @panic("test failure");
 }
 
-const SmallPackedStruct = packed struct(u8) {
+const SmallBitpackStruct = bitpack struct(u8) {
     a: u2,
     b: u2,
     c: u2,
     d: u2,
 };
-extern fn c_small_packed_struct(SmallPackedStruct) void;
-extern fn c_ret_small_packed_struct() SmallPackedStruct;
+extern fn c_small_bitpack_struct(SmallBitpackStruct) void;
+extern fn c_ret_small_bitpack_struct() SmallBitpackStruct;
 
-export fn zig_small_packed_struct(x: SmallPackedStruct) void {
+export fn zig_small_bitpack_struct(x: SmallBitpackStruct) void {
     expect(x.a == 0) catch @panic("test failure");
     expect(x.b == 1) catch @panic("test failure");
     expect(x.c == 2) catch @panic("test failure");
     expect(x.d == 3) catch @panic("test failure");
 }
 
-test "small packed struct" {
-    const s = SmallPackedStruct{ .a = 0, .b = 1, .c = 2, .d = 3 };
-    c_small_packed_struct(s);
-    const s2 = c_ret_small_packed_struct();
+test "small bitpack struct" {
+    const s = SmallBitpackStruct{ .a = 0, .b = 1, .c = 2, .d = 3 };
+    c_small_bitpack_struct(s);
+    const s2 = c_ret_small_bitpack_struct();
     try expect(s2.a == 0);
     try expect(s2.b == 1);
     try expect(s2.c == 2);
     try expect(s2.d == 3);
 }
 
-const BigPackedStruct = packed struct(u128) {
+const BigBitpackStruct = bitpack struct(u128) {
     a: u64,
     b: u64,
 };
-extern fn c_big_packed_struct(BigPackedStruct) void;
-extern fn c_ret_big_packed_struct() BigPackedStruct;
+extern fn c_big_bitpack_struct(BigBitpackStruct) void;
+extern fn c_ret_big_bitpack_struct() BigBitpackStruct;
 
-export fn zig_big_packed_struct(x: BigPackedStruct) void {
+export fn zig_big_bitpack_struct(x: BigBitpackStruct) void {
     expect(x.a == 1) catch @panic("test failure");
     expect(x.b == 2) catch @panic("test failure");
 }
 
-test "big packed struct" {
+test "big bitpack struct" {
     if (!have_i128) return error.SkipZigTest;
 
-    const s = BigPackedStruct{ .a = 1, .b = 2 };
-    c_big_packed_struct(s);
-    const s2 = c_ret_big_packed_struct();
+    const s = BigBitpackStruct{ .a = 1, .b = 2 };
+    c_big_bitpack_struct(s);
+    const s2 = c_ret_big_bitpack_struct();
     try expect(s2.a == 1);
     try expect(s2.b == 2);
 }

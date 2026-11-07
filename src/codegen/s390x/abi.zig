@@ -70,7 +70,7 @@ pub fn classifyType(ty: Type, context: Context, zcu: *Zcu) Class {
                     return class;
                 },
             },
-            .@"packed" => return classifyType(ty.backingIntType(zcu), context, zcu),
+            .@"bitpack" => return classifyType(ty.backingIntType(zcu), context, zcu),
         },
         .vector => return if (ty.abiSize(zcu) <= 16) .vector else .pointer,
     }

@@ -126,7 +126,7 @@ test "parse format" {
     _ = try Format.parse("DJK");
 }
 
-pub const Slot = packed struct {
+pub const Slot = bitpack struct {
     tag: Slot.Tag,
     payload: Slot.Payload,
 
@@ -134,15 +134,15 @@ pub const Slot = packed struct {
         std.debug.assert(@sizeOf(Slot) == 4);
     }
 
-    const Payload = packed union {
+    const Payload = bitpack union {
         none: u16, // unused number, just for padding
-        imm: packed struct {
+        imm: bitpack struct {
             index: Index,
             length: u5,
             signedness: std.builtin.Signedness,
             post_proc: PostProcess = .none,
         },
-        reg: packed struct {
+        reg: bitpack struct {
             class: enum(u13) { int, fp, fcc, lbt_scratch, lsx, lasx },
             index: Index,
         },
@@ -187,11 +187,11 @@ pub const Slot = packed struct {
     };
 
     /// Post-process operations for disassemblying.
-    pub const PostProcess = packed struct {
+    pub const PostProcess = bitpack struct {
         tag: PostProcess.Tag,
         payload: PostProcess.Payload,
 
-        const Payload = packed union {
+        const Payload = bitpack union {
             /// assembly value = encoded value + N
             add: u5,
             /// assembly value = encoded value << N
@@ -326,7 +326,7 @@ pub const Opcode = struct {
     orig_format: *Format,
     required_features: RequiredFeatures,
 
-    pub const RequiredFeatures = packed struct {
+    pub const RequiredFeatures = bitpack struct {
         @"32bit": bool = false,
         @"32s": bool = false,
         @"64bit": bool = false,

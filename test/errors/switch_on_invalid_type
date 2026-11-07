@@ -92,9 +92,9 @@ test.zig:3:13: error: switch on union with no attached enum
 test.zig:1:19: note: consider 'union(enum)' here
 test.zig:10:13: error: switch on union with no attached enum
 test.zig:8:21: note: consider 'union(enum)' here
-test.zig:17:13: error: switch on non-packed struct
+test.zig:17:13: error: switch on non-bitpack struct
 test.zig:15:20: note: struct declared here
-test.zig:24:13: error: switch on non-packed struct
+test.zig:24:13: error: switch on non-bitpack struct
 test.zig:22:29: note: struct declared here
 test.zig:30:13: error: switch on type '[]const u16'
 test.zig:36:13: error: switch on type '[3]u16'

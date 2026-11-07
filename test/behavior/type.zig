@@ -169,7 +169,7 @@ test "Type.Struct" {
     try testing.expectEqual(@as(bool, false), infoB.is_tuple);
 
     const C = @Struct(
-        .@"packed",
+        .@"bitpack",
         null,
         &.{ "x", "y" },
         &.{ u8, u32 },
@@ -179,7 +179,7 @@ test "Type.Struct" {
         },
     );
     const infoC = @typeInfo(C).@"struct";
-    try testing.expectEqual(Type.ContainerLayout.@"packed", infoC.layout);
+    try testing.expectEqual(Type.ContainerLayout.@"bitpack", infoC.layout);
     try testing.expectEqualSlices(u8, "x", infoC.field_names[0]);
     try testing.expectEqual(u8, infoC.field_types[0]);
     try testing.expectEqual(@as(u8, 3), infoC.field_attrs[0].defaultValue(infoC.field_types[0]).?);
@@ -243,11 +243,11 @@ test "Type.Union" {
     untagged.int = 3;
     try testing.expectEqual(@as(i32, 3), untagged.int);
 
-    const PackedUntagged = @Union(.@"packed", null, &.{ "signed", "unsigned" }, &.{ i32, u32 }, &.{ .{}, .{} });
-    var packed_untagged: PackedUntagged = .{ .signed = -1 };
-    _ = &packed_untagged;
-    try testing.expectEqual(@as(i32, -1), packed_untagged.signed);
-    try testing.expectEqual(~@as(u32, 0), packed_untagged.unsigned);
+    const BitpackUntagged = @Union(.@"bitpack", null, &.{ "signed", "unsigned" }, &.{ i32, u32 }, &.{ .{}, .{} });
+    var bitpack_untagged: BitpackUntagged = .{ .signed = -1 };
+    _ = &bitpack_untagged;
+    try testing.expectEqual(@as(i32, -1), bitpack_untagged.signed);
+    try testing.expectEqual(~@as(u32, 0), bitpack_untagged.unsigned);
 
     const Tag = @Enum(u1, .exhaustive, &.{ "signed", "unsigned" }, &.{ 0, 1 });
     const Tagged = @Union(.auto, Tag, &.{ "signed", "unsigned" }, &.{ i32, u32 }, &.{ .{}, .{} });

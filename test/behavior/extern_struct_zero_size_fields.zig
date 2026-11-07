@@ -11,7 +11,7 @@ const T = extern struct {
     ayy: E = .the_only_possible_value,
     arr: [0]u0 = .{},
     matey: [128]void = @splat({}),
-    running_out_of_ideas: packed struct {} = .{},
+    running_out_of_ideas: bitpack struct {} = .{},
     one_more: [256]S = @splat(.{}),
 };
 

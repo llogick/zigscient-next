@@ -138,7 +138,7 @@ fn ensureLayoutResolvedInner(sema: *Sema, ty: Type, orig_ty: Type, reason: *cons
         .opt,
         .aggregate,
         .un,
-        .bitpack,
+        .@"bitpack",
         // memoization, not types
         .memoized_call,
         => unreachable,
@@ -175,7 +175,7 @@ pub fn ensureStructDefaultsResolved(sema: *Sema, ty: Type, src: LazySrcLoc) Sema
     };
 }
 
-/// Asserts that `struct_ty` is a non-packed non-tuple struct, and that `sema.owner` is that type.
+/// Asserts that `struct_ty` is a non-bitpack non-tuple struct, and that `sema.owner` is that type.
 /// This function *does* register the `src_hash` dependency on the struct.
 pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
     const pt = sema.pt;
@@ -303,8 +303,8 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         }
     }
 
-    if (struct_obj.layout == .@"packed") {
-        return resolvePackedStructLayout(sema, &block, struct_ty, &struct_obj);
+    if (struct_obj.layout == .@"bitpack") {
+        return resolveBitpackStructLayout(sema, &block, struct_ty, &struct_obj);
     }
 
     // Resolve the layout of all fields, and check their types are allowed.
@@ -395,7 +395,7 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
         };
         align_out.* = field_align;
         if (struct_obj.field_is_comptime_bits.get(ip, field_idx)) {
-            assert(struct_obj.layout == .auto); // comptime fields not allowed in extern or packed structs
+            assert(struct_obj.layout == .auto); // comptime fields not allowed in extern or bitpack structs
             struct_obj.field_runtime_order.get(ip)[field_idx] = .omitted; // comptime fields are not in the runtime order
             any_comptime_fields = true;
             continue; // `comptime` fields do not contribute to the struct layout
@@ -427,7 +427,7 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
     switch (struct_obj.layout) {
         .auto => {},
         .@"extern" => assert(class != .no_possible_value), // field types are all extern, so are not NPV
-        .@"packed" => unreachable,
+        .@"bitpack" => unreachable,
     }
 
     if (struct_obj.layout == .auto) {
@@ -498,9 +498,9 @@ pub fn resolveStructLayout(sema: *Sema, struct_ty: Type) CompileError!void {
     );
 }
 
-/// Asserts that `struct_ty` is a packed struct, and that `sema.owner` is that type.
+/// Asserts that `struct_ty` is a bitpack struct, and that `sema.owner` is that type.
 /// This function *does* register the `src_hash` dependency on the struct.
-fn resolvePackedStructLayout(
+fn resolveBitpackStructLayout(
     sema: *Sema,
     block: *Block,
     struct_ty: Type,
@@ -531,7 +531,7 @@ fn resolvePackedStructLayout(
             });
         }
         if (field_ty.unpackable(zcu)) |reason| return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(field_ty_src, "packed structs cannot contain fields of type '{f}'", .{field_ty.fmt(zcu)});
+            const msg = try sema.errMsg(field_ty_src, "bitpack structs cannot contain fields of type '{f}'", .{field_ty.fmt(zcu)});
             errdefer msg.destroy(gpa);
             try sema.explainWhyTypeIsUnpackable(msg, field_ty_src, reason);
             break :msg msg;
@@ -548,8 +548,8 @@ fn resolvePackedStructLayout(
     const backing_int_ty_src = block.src(.container_arg);
 
     const explicit_backing_int_ty: ?Type = if (struct_obj.is_reified) ty: {
-        break :ty switch (struct_obj.packed_backing_mode) {
-            .explicit => .fromInterned(struct_obj.packed_backing_int_type),
+        break :ty switch (struct_obj.bitpack_backing_mode) {
+            .explicit => .fromInterned(struct_obj.bitpack_backing_int_type),
             .auto => null,
         };
     } else ty: {
@@ -563,10 +563,10 @@ fn resolvePackedStructLayout(
         defer block.src_baseline.node = .main;
         block.comptime_reason = .{ .reason = .{
             .src = backing_int_ty_src,
-            .r = .{ .simple = .packed_struct_backing_int_type },
+            .r = .{ .simple = .bitpack_struct_backing_int_type },
         } };
         const type_ref = try sema.resolveInlineBody(block, backing_int_type_body, zir_index);
-        break :ty try sema.analyzeAsType(block, backing_int_ty_src, .packed_struct_backing_int_type, type_ref);
+        break :ty try sema.analyzeAsType(block, backing_int_ty_src, .bitpack_struct_backing_int_type, type_ref);
     };
 
     // Finally, either validate or infer the backing int type.
@@ -596,12 +596,12 @@ fn resolvePackedStructLayout(
         const backing_int_bits = std.math.cast(u16, field_bits) orelse return sema.fail(
             block,
             struct_ty.srcLoc(zcu),
-            "packed struct bit width '{d}' exceeds maximum bit width of 65535",
+            "bitpack struct bit width '{d}' exceeds maximum bit width of 65535",
             .{field_bits},
         );
         break :ty try pt.intType(.unsigned, backing_int_bits);
     };
-    ip.resolvePackedStructLayout(
+    ip.resolveBitpackStructLayout(
         io,
         struct_ty.toIntern(),
         backing_int_ty.toIntern(),
@@ -935,8 +935,8 @@ pub fn resolveUnionLayout(sema: *Sema, union_ty: Type) CompileError!void {
         }
     }
 
-    if (union_obj.layout == .@"packed") {
-        return resolvePackedUnionLayout(sema, &block, union_ty, &union_obj, enum_tag_ty);
+    if (union_obj.layout == .@"bitpack") {
+        return resolveBitpackUnionLayout(sema, &block, union_ty, &union_obj, enum_tag_ty);
     }
 
     // Resolve the layout of all fields, and check their types are allowed.
@@ -1126,7 +1126,7 @@ fn failUnionFieldMismatch(sema: *Sema, block: *Block, union_field_names: []const
     }
     unreachable; // we already determined that *something* is wrong
 }
-fn resolvePackedUnionLayout(
+fn resolveBitpackUnionLayout(
     sema: *Sema,
     block: *Block,
     union_ty: Type,
@@ -1140,9 +1140,9 @@ fn resolvePackedUnionLayout(
     const gpa = comp.gpa;
     const ip = &zcu.intern_pool;
 
-    // Uninstantiable `packed union`s don't make sense; disallow them.
+    // Uninstantiable `bitpack union`s don't make sense; disallow them.
     if (union_obj.field_types.len == 0) {
-        return sema.fail(block, union_ty.srcLoc(zcu), "packed union has no fields", .{});
+        return sema.fail(block, union_ty.srcLoc(zcu), "bitpack union has no fields", .{});
     }
 
     // Resolve the layout of all fields, and check their types are allowed.
@@ -1161,7 +1161,7 @@ fn resolvePackedUnionLayout(
             });
         }
         if (field_ty.unpackable(zcu)) |reason| return sema.failWithOwnedErrorMsg(block, msg: {
-            const msg = try sema.errMsg(field_ty_src, "packed unions cannot contain fields of type '{f}'", .{field_ty.fmt(zcu)});
+            const msg = try sema.errMsg(field_ty_src, "bitpack unions cannot contain fields of type '{f}'", .{field_ty.fmt(zcu)});
             errdefer msg.destroy(gpa);
             try sema.explainWhyTypeIsUnpackable(msg, field_ty_src, reason);
             break :msg msg;
@@ -1172,8 +1172,8 @@ fn resolvePackedUnionLayout(
     const backing_int_ty_src = block.src(.container_arg);
 
     const explicit_backing_int_ty: ?Type = if (union_obj.is_reified) ty: {
-        switch (union_obj.packed_backing_mode) {
-            .explicit => break :ty .fromInterned(union_obj.packed_backing_int_type),
+        switch (union_obj.bitpack_backing_mode) {
+            .explicit => break :ty .fromInterned(union_obj.bitpack_backing_int_type),
             .auto => break :ty null,
         }
     } else ty: {
@@ -1187,10 +1187,10 @@ fn resolvePackedUnionLayout(
         defer block.src_baseline.node = .main;
         block.comptime_reason = .{ .reason = .{
             .src = backing_int_ty_src,
-            .r = .{ .simple = .packed_union_backing_int_type },
+            .r = .{ .simple = .bitpack_struct_backing_int_type },
         } };
         const type_ref = try sema.resolveInlineBody(block, backing_int_type_body, zir_index);
-        break :ty try sema.analyzeAsType(block, backing_int_ty_src, .packed_union_backing_int_type, type_ref);
+        break :ty try sema.analyzeAsType(block, backing_int_ty_src, .bitpack_struct_backing_int_type, type_ref);
     };
 
     // Finally, either validate or infer the backing int type.
@@ -1216,7 +1216,7 @@ fn resolvePackedUnionLayout(
                     "backing integer '{f}' has bit width '{d}'",
                     .{ backing_ty.fmt(zcu), backing_int_bits },
                 );
-                try sema.errNote(field_ty_src, msg, "all fields in a packed union must have the same bit width", .{});
+                try sema.errNote(field_ty_src, msg, "all fields in a bitpack union must have the same bit width", .{});
                 break :msg msg;
             });
         }
@@ -1235,19 +1235,19 @@ fn resolvePackedUnionLayout(
                 errdefer msg.destroy(gpa);
                 try sema.errNote(field_ty_src, msg, "field type '{f}' has bit width '{d}'", .{ field_type.fmt(zcu), field_bits });
                 try sema.errNote(first_field_ty_src, msg, "other field type '{f}' has bit width '{d}'", .{ first_field_type.fmt(zcu), first_field_bits });
-                try sema.errNote(field_ty_src, msg, "all fields in a packed union must have the same bit width", .{});
+                try sema.errNote(field_ty_src, msg, "all fields in a bitpack union must have the same bit width", .{});
                 break :msg msg;
             });
         }
         const backing_int_bits = std.math.cast(u16, first_field_bits) orelse return sema.fail(
             block,
             union_ty.srcLoc(zcu),
-            "packed union bit width '{d}' exceeds maximum bit width of 65535",
+            "bitpack union bit width '{d}' exceeds maximum bit width of 65535",
             .{first_field_bits},
         );
         break :ty try pt.intType(.unsigned, backing_int_bits);
     };
-    ip.resolvePackedUnionLayout(
+    ip.resolveBitpackUnionLayout(
         io,
         union_ty.toIntern(),
         enum_tag_ty.toIntern(),

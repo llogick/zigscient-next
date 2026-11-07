@@ -166,6 +166,10 @@ test "comment before variadic" {
     try checkAgainstOracle("fn f(\n/// x\n...) void;");
 }
 
+test "packed keyword" {
+    try checkAgainstOracle("const T = packed struct{};");
+}
+
 fn checkAgainstOracle(source: [:0]const u8) !void {
     var fba_buf: [1 << 18]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&fba_buf);

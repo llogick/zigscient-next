@@ -1818,7 +1818,7 @@ pub const Condition = struct {
     /// Incremented whenever the condition is signaled
     epoch: std.atomic.Value(u32),
 
-    const State = packed struct(u32) {
+    const State = bitpack struct(u32) {
         waiters: u16,
         signals: u16,
     };

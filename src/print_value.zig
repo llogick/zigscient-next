@@ -168,20 +168,20 @@ pub fn print(
                 try writer.writeAll(" }");
             }
         },
-        .bitpack => |bitpack| {
+        .@"bitpack" => |@"bitpack"| {
             if (level == 0) {
                 return writer.writeAll(".{ ... }");
             }
-            const ty: Type = .fromInterned(bitpack.ty);
+            const ty: Type = .fromInterned(@"bitpack".ty);
             switch (ty.backingIntMode(zcu)) {
                 .auto => {
                     try writer.print("@bitCast(@as({f}, ", .{ty.backingIntType(zcu).fmt(zcu)});
-                    try print(.fromInterned(bitpack.backing_int_val), writer, level - 1, zcu, opt_sema);
+                    try print(.fromInterned(@"bitpack".backing_int_val), writer, level - 1, zcu, opt_sema);
                     try writer.writeAll("))");
                 },
                 .explicit => {
                     try writer.writeAll("@fromBackingInt(");
-                    try print(.fromInterned(bitpack.backing_int_val), writer, level - 1, zcu, opt_sema);
+                    try print(.fromInterned(@"bitpack".backing_int_val), writer, level - 1, zcu, opt_sema);
                     try writer.writeAll(")");
                 },
             }

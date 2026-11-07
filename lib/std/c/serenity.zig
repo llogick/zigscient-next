@@ -27,7 +27,7 @@ pub const FUTEX = struct {
 };
 
 // https://github.com/SerenityOS/serenity/blob/54e79aa1d90bbcb69014255a59afb085802719d3/Kernel/API/POSIX/serenity.h#L18-L36
-pub const PERF_EVENT = packed struct(c_int) {
+pub const PERF_EVENT = bitpack struct(c_int) {
     SAMPLE: bool = false,
     MALLOC: bool = false,
     FREE: bool = false,

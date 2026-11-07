@@ -84,7 +84,7 @@ pub const Node = struct {
             children: ExtraIndex,
         },
         table_cell: struct {
-            info: packed struct {
+            info: bitpack struct {
                 alignment: TableCellAlignment,
                 header: bool,
             },

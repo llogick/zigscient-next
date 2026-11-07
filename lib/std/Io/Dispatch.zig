@@ -110,7 +110,7 @@ const Fiber = struct {
 
     var next_name: u64 = 0;
 
-    const CancelStatus = packed struct(usize) {
+    const CancelStatus = bitpack struct(usize) {
         requested: bool,
         awaiting: Awaiting,
 
@@ -150,7 +150,7 @@ const Fiber = struct {
         }
     };
 
-    const CancelProtection = packed struct {
+    const CancelProtection = bitpack struct {
         user: Io.CancelProtection,
         acknowledged: bool,
 
@@ -234,13 +234,13 @@ const Fiber = struct {
     const Queue = struct { head: *Fiber, tail: *Fiber };
 
     /// Like a `*Fiber`, but 2 bits smaller than a pointer (because the LSBs are always 0 due to
-    /// alignment) so that those two bits can be used in a `packed struct`.
+    /// alignment) so that those two bits can be used in a `bitpack struct`.
     const PackedPtr = enum(@Int(.unsigned, @bitSizeOf(usize) - 2)) {
         null = 0,
         all_ones = std.math.maxInt(@Int(.unsigned, @bitSizeOf(usize) - 2)),
         _,
 
-        const Split = packed struct(usize) { low: u2, high: PackedPtr };
+        const Split = bitpack struct(usize) { low: u2, high: PackedPtr };
         fn pack(ptr: ?*Fiber) PackedPtr {
             const split: Split = @bitCast(@intFromPtr(ptr));
             assert(split.low == 0);
@@ -812,7 +812,7 @@ const Mutex = struct {
     queue: c.dispatch.queue_t,
     waiters: std.DoublyLinkedList,
 
-    const State = packed struct(usize) {
+    const State = bitpack struct(usize) {
         locked: bool,
         num_waiters: NumWaiters,
 
@@ -1126,7 +1126,7 @@ fn cancel(
 const Group = struct {
     ptr: *Io.Group,
 
-    const List = packed struct(usize) {
+    const List = bitpack struct(usize) {
         cancel_requested: bool,
         awaiter_delayed: bool,
         fibers: Fiber.PackedPtr,
@@ -1135,7 +1135,7 @@ const Group = struct {
         return @ptrCast(&group.ptr.token);
     }
 
-    const Mutex = packed struct(u32) {
+    const Mutex = bitpack struct(u32) {
         locked: bool,
         contended: bool,
         shared2: u30,
@@ -1149,7 +1149,7 @@ const Group = struct {
         };
     }
 
-    const Awaiter = packed struct(usize) {
+    const Awaiter = bitpack struct(usize) {
         locked: bool,
         contended: bool,
         awaiter: Fiber.PackedPtr,

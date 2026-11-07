@@ -380,13 +380,13 @@ test "atomics with different types" {
     try testAtomicsWithType(enum(u32) { x = 1234, y = 5678 }, .x, .y);
     try testAtomicsWithType(enum(u19) { x = 1234, y = 5678 }, .x, .y);
 
-    try testAtomicsWithPackedStruct(
-        packed struct { x: u7, y: u24, z: bool },
+    try testAtomicsWithBitpackStruct(
+        bitpack struct { x: u7, y: u24, z: bool },
         .{ .x = 1, .y = 2, .z = true },
         .{ .x = 3, .y = 4, .z = false },
     );
-    try testAtomicsWithPackedStruct(
-        packed struct { x: u19, y: bool },
+    try testAtomicsWithBitpackStruct(
+        bitpack struct { x: u19, y: bool },
         .{ .x = 1, .y = true },
         .{ .x = 3, .y = false },
     );
@@ -403,7 +403,7 @@ fn testAtomicsWithType(comptime T: type, a: T, b: T) !void {
         try expect(@cmpxchgStrong(T, &x, b, a, .seq_cst, .seq_cst).? == a);
 }
 
-fn testAtomicsWithPackedStruct(comptime T: type, a: T, b: T) !void {
+fn testAtomicsWithBitpackStruct(comptime T: type, a: T, b: T) !void {
     const BackingInt = @typeInfo(T).@"struct".backing_integer.?;
     var x: T = b;
     @atomicStore(T, &x, a, .seq_cst);

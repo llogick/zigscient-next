@@ -256,7 +256,7 @@ pub fn nameFromUniqueIndex(index: u16, buf: []u8) []u8 {
     return w.buffered();
 }
 
-const Node = packed struct {
+const Node = bitpack struct {
     char: u8,
     /// Nodes are numbered with "an integer which gives the number of words that
     /// would be accepted by the automaton starting from that state." This numbering

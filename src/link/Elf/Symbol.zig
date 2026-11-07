@@ -24,7 +24,7 @@ esym_index: Index = 0,
 /// If the symbol is unversioned it will have either VER_NDX_LOCAL or VER_NDX_GLOBAL.
 version_index: elf.Versym = .LOCAL,
 
-/// Misc flags for the symbol packaged as packed struct for compression.
+/// Misc flags for the symbol packaged as bitpack struct for compression.
 flags: Flags = .{},
 
 extra_index: u32 = 0,
@@ -389,7 +389,7 @@ pub fn fmt(symbol: Symbol, elf_file: *Elf) std.fmt.Alt(Format, Format.default) {
     } };
 }
 
-pub const Flags = packed struct {
+pub const Flags = bitpack struct {
     /// Whether the symbol is imported at runtime.
     import: bool = false,
 

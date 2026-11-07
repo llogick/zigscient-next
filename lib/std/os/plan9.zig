@@ -338,7 +338,7 @@ pub const AccessMode = enum(u2) {
     EXEC,
 };
 
-pub const O = packed struct(u32) {
+pub const O = bitpack struct(u32) {
     access: AccessMode,
     _2: u2 = 0,
     TRUNC: bool = false,

@@ -18,7 +18,7 @@ pub fn classifyType(ty: Type, zcu: *Zcu) Class {
 
     switch (ty.zigTypeTag(zcu)) {
         .@"struct" => {
-            if (ty.containerLayout(zcu) == .@"packed") return .byval;
+            if (ty.containerLayout(zcu) == .@"bitpack") return .byval;
             if (countFloats(ty, zcu)) |float| return .{ .float_array = float.count };
 
             const bit_size = ty.abiSize(zcu) * 8;
@@ -27,7 +27,7 @@ pub fn classifyType(ty: Type, zcu: *Zcu) Class {
             return .integer;
         },
         .@"union" => {
-            if (ty.containerLayout(zcu) == .@"packed") return .byval;
+            if (ty.containerLayout(zcu) == .@"bitpack") return .byval;
             if (countFloats(ty, zcu)) |float| return .{ .float_array = float.count };
 
             const bit_size = ty.abiSize(zcu) * 8;

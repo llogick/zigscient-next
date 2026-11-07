@@ -5,7 +5,7 @@
 
 #write test.zig {
 export fn entry1() void {
-    const U = packed union {
+    const U = bitpack union {
         a: u1,
         b: u2,
     };
@@ -17,5 +17,5 @@ export fn entry1() void {
 test.zig:4:12: error: field bit width does not match earlier field
 test.zig:4:12: note: field type 'u2' has bit width '2'
 test.zig:3:12: note: other field type 'u1' has bit width '1'
-test.zig:4:12: note: all fields in a packed union must have the same bit width
+test.zig:4:12: note: all fields in a bitpack union must have the same bit width
 #}

@@ -1,8 +1,8 @@
 const std = @import("std");
 const expectEqual = std.testing.expectEqual;
 
-test "packed struct equality" {
-    const S = packed struct {
+test "bitpack struct equality" {
+    const S = bitpack struct {
         a: u4,
         b: u4,
     };

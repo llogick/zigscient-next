@@ -585,16 +585,16 @@ test "@fieldParentPtr extern struct last zero-bit field" {
     }
 }
 
-test "@fieldParentPtr unaligned packed struct" {
+test "@fieldParentPtr unaligned bitpack struct" {
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
-    const C = packed struct {
+    const C = bitpack struct {
         a: bool = true,
         b: f32 = 3.14,
-        c: packed struct { x: u8 } = .{ .x = 42 },
+        c: bitpack struct { x: u8 } = .{ .x = 42 },
         d: i32 = 12345,
     };
 
@@ -723,16 +723,16 @@ test "@fieldParentPtr unaligned packed struct" {
     }
 }
 
-test "@fieldParentPtr aligned packed struct" {
+test "@fieldParentPtr aligned bitpack struct" {
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
-    const C = packed struct {
+    const C = bitpack struct {
         a: f32 = 3.14,
         b: i32 = 12345,
-        c: packed struct { x: u8 } = .{ .x = 42 },
+        c: bitpack struct { x: u8 } = .{ .x = 42 },
         d: bool = true,
     };
 
@@ -861,18 +861,18 @@ test "@fieldParentPtr aligned packed struct" {
     }
 }
 
-test "@fieldParentPtr nested packed struct" {
+test "@fieldParentPtr nested bitpack struct" {
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
     {
-        const C = packed struct {
+        const C = bitpack struct {
             a: u8,
-            b: packed struct {
+            b: bitpack struct {
                 a: u8,
-                b: packed struct {
+                b: bitpack struct {
                     a: u8,
                 },
             },
@@ -907,11 +907,11 @@ test "@fieldParentPtr nested packed struct" {
     }
 
     {
-        const C = packed struct {
+        const C = bitpack struct {
             a: u8,
-            b: packed struct {
+            b: bitpack struct {
                 a: u9,
-                b: packed struct {
+                b: bitpack struct {
                     a: u8,
                 },
             },
@@ -946,11 +946,11 @@ test "@fieldParentPtr nested packed struct" {
     }
 
     {
-        const C = packed struct {
+        const C = bitpack struct {
             a: u9,
-            b: packed struct {
+            b: bitpack struct {
                 a: u7,
-                b: packed struct {
+                b: bitpack struct {
                     a: u8,
                 },
             },
@@ -985,11 +985,11 @@ test "@fieldParentPtr nested packed struct" {
     }
 
     {
-        const C = packed struct {
+        const C = bitpack struct {
             a: u9,
-            b: packed struct {
+            b: bitpack struct {
                 a: u8,
-                b: packed struct {
+                b: bitpack struct {
                     a: u8,
                 },
             },
@@ -1024,13 +1024,13 @@ test "@fieldParentPtr nested packed struct" {
     }
 }
 
-test "@fieldParentPtr packed struct first zero-bit field" {
+test "@fieldParentPtr bitpack struct first zero-bit field" {
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
-    const C = packed struct {
+    const C = bitpack struct {
         a: u0 = 0,
         b: f32 = 3.14,
         c: i32 = 12345,
@@ -1130,13 +1130,13 @@ test "@fieldParentPtr packed struct first zero-bit field" {
     }
 }
 
-test "@fieldParentPtr packed struct middle zero-bit field" {
+test "@fieldParentPtr bitpack struct middle zero-bit field" {
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
-    const C = packed struct {
+    const C = bitpack struct {
         a: f32 = 3.14,
         b: u0 = 0,
         c: i32 = 12345,
@@ -1236,13 +1236,13 @@ test "@fieldParentPtr packed struct middle zero-bit field" {
     }
 }
 
-test "@fieldParentPtr packed struct last zero-bit field" {
+test "@fieldParentPtr bitpack struct last zero-bit field" {
     if (builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
-    const C = packed struct {
+    const C = bitpack struct {
         a: f32 = 3.14,
         b: i32 = 12345,
         c: u0 = 0,
@@ -1751,18 +1751,18 @@ test "@fieldParentPtr extern union" {
     }
 }
 
-test "@fieldParentPtr packed union" {
+test "@fieldParentPtr bitpack union" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
 
-    const C = packed union {
-        a: packed struct(u32) {
+    const C = bitpack union {
+        a: bitpack struct(u32) {
             a: bool,
             b: u31 = 0,
         },
         b: f32,
-        c: packed struct(u32) {
+        c: bitpack struct(u32) {
             x: u8,
             b: u24 = 0,
         },

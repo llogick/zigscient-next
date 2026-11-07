@@ -43,7 +43,7 @@ export fn entry6() void {
     }
 }
 
-const U = packed union { a: u1, b: i1 };
+const U = bitpack union { a: u1, b: i1 };
 export fn entry7() void {
     switch (U{ .a = 0 }) {
         .{ .a = 0 } => {},
@@ -56,7 +56,7 @@ export fn entry8() void {
     }
 }
 
-const S = packed struct { a: u1 };
+const S = bitpack struct { a: u1 };
 export fn entry9() void {
     switch (S{ .a = 0 }) {
         .{ .a = 0 } => {},

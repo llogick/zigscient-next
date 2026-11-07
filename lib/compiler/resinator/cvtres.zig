@@ -410,8 +410,8 @@ pub const ResourceDirectoryTable = extern struct {
 };
 
 pub const ResourceDirectoryEntry = extern struct {
-    entry: packed union(u32) {
-        name_offset: packed struct(u32) {
+    entry: bitpack union(u32) {
+        name_offset: bitpack struct(u32) {
             address: u31,
             /// This is undocumented in the PE/COFF spec, but the high bit
             /// is set by cvtres.exe for string addresses
@@ -419,7 +419,7 @@ pub const ResourceDirectoryEntry = extern struct {
         },
         integer_id: u32,
     },
-    offset: packed struct(u32) {
+    offset: bitpack struct(u32) {
         address: u31,
         to_subdirectory: bool,
     },

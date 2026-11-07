@@ -146,7 +146,7 @@ pub const hex = struct {
 /// (best-effort) constant time base64 encoding and decoding.
 pub const base64 = struct {
     /// The base64 variant to use.
-    pub const Variant = packed struct {
+    pub const Variant = bitpack struct {
         /// Use the URL-safe alphabet instead of the standard alphabet.
         urlsafe_alphabet: bool = false,
         /// Enable padding with '=' characters.

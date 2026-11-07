@@ -101,7 +101,7 @@ export fn message_end() void {
 const String = Slice(u8);
 
 pub fn Slice(T: type) type {
-    return packed struct(u64) {
+    return bitpack struct(u64) {
         ptr: u32,
         len: u32,
 

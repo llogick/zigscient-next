@@ -479,7 +479,7 @@ const FSEventStreamEventId = enum(u64) {
     since_now = std.math.maxInt(u64),
     _,
 };
-const FSEventStreamCreateFlags = packed struct(u32) {
+const FSEventStreamCreateFlags = bitpack struct(u32) {
     use_cf_types: bool = false,
     no_defer: bool = false,
     watch_root: bool = false,
@@ -487,7 +487,7 @@ const FSEventStreamCreateFlags = packed struct(u32) {
     file_events: bool = false,
     _: u27 = 0,
 };
-const FSEventStreamEventFlags = packed struct(u32) {
+const FSEventStreamEventFlags = bitpack struct(u32) {
     must_scan_sub_dirs: bool,
     user_dropped: bool,
     kernel_dropped: bool,

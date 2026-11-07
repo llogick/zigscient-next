@@ -1,4 +1,4 @@
-pub const GpioRegister = packed struct(u8) {
+pub const GpioRegister = bitpack struct(u8) {
     GPIO0: bool,
     GPIO1: bool,
     GPIO2: bool,

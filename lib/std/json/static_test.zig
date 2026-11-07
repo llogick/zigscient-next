@@ -214,7 +214,7 @@ const strings_0_doc_1 =
 ;
 
 const Subnamespaces = struct {
-    packed_struct: packed struct { a: u32, b: u32 },
+    bitpack_struct: bitpack struct { a: u32, b: u32 },
     union_enum: union(enum) { i: i32, s: []const u8, v },
     inferred_enum: enum { a, b },
     explicit_enum: enum(u8) { a = 0, b = 1 },
@@ -268,7 +268,7 @@ const Subnamespaces = struct {
 };
 
 const subnamespaces_0 = Subnamespaces{
-    .packed_struct = .{ .a = 0, .b = 0 },
+    .bitpack_struct = .{ .a = 0, .b = 0 },
     .union_enum = .{ .i = 0 },
     .inferred_enum = .a,
     .explicit_enum = .a,
@@ -278,7 +278,7 @@ const subnamespaces_0 = Subnamespaces{
 };
 const subnamespaces_0_doc =
     \\{
-    \\  "packed_struct": {"a": 0, "b": 0},
+    \\  "bitpack_struct": {"a": 0, "b": 0},
     \\  "union_enum": {"i": 0},
     \\  "inferred_enum": "a",
     \\  "explicit_enum": "a",

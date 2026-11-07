@@ -417,7 +417,7 @@ pub const RuntimeServices = extern struct {
     }
 
     pub const DebugDisposition = enum(usize) {
-        const Bits = packed struct(usize) {
+        const Bits = bitpack struct(usize) {
             optional_ptr: bool = false,
             _pad: @Int(.unsigned, @bitSizeOf(usize) - 1) = 0,
         };
@@ -432,7 +432,7 @@ pub const RuntimeServices = extern struct {
         optional: ?*anyopaque,
     };
 
-    pub const VariableAttributes = packed struct(u32) {
+    pub const VariableAttributes = bitpack struct(u32) {
         non_volatile: bool = false,
         bootservice_access: bool = false,
         runtime_access: bool = false,
@@ -463,7 +463,7 @@ pub const RuntimeServices = extern struct {
             return ptr[@sizeOf(VariableAuthentication3)..self.metadata_size];
         }
 
-        pub const Flags = packed struct(u32) {
+        pub const Flags = bitpack struct(u32) {
             update_cert: bool = false,
             _pad: u31 = 0,
         };

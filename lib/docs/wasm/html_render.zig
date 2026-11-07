@@ -116,6 +116,7 @@ pub fn fileSourceHtml(
             .keyword_align,
             .keyword_and,
             .keyword_asm,
+            .keyword_bitpack,
             .keyword_break,
             .keyword_catch,
             .keyword_comptime,

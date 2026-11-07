@@ -1,11 +1,11 @@
 const std = @import("std");
 const expectEqual = std.testing.expectEqual;
 
-const S = packed struct {
+const S = bitpack struct {
     a: u32,
     b: u32,
 };
-test "overaligned pointer to packed struct" {
+test "overaligned pointer to bitpack struct" {
     var foo: S align(4) = .{ .a = 1, .b = 2 };
     const ptr: *align(4) S = &foo;
     const ptr_to_b = &ptr.b;

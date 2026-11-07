@@ -652,7 +652,7 @@ pub const Payload = struct {
     pub const Container = struct {
         base: Payload,
         data: struct {
-            layout: enum { @"packed", @"extern", none },
+            layout: enum { @"bitpack", @"extern", none },
             fields: []Field,
             decls: []Node,
         },
@@ -2214,8 +2214,8 @@ fn renderNode(c: *Context, node: Node) Allocator.Error!NodeIndex {
 
 fn renderContainer(c: *Context, node: Node) !NodeIndex {
     const payload = @as(*Payload.Container, @alignCast(@fieldParentPtr("base", node.ptr_otherwise))).data;
-    if (payload.layout == .@"packed")
-        _ = try c.addToken(.keyword_packed, "packed")
+    if (payload.layout == .@"bitpack")
+        _ = try c.addToken(.keyword_bitpack, "bitpack")
     else if (payload.layout == .@"extern")
         _ = try c.addToken(.keyword_extern, "extern");
     const kind_tok = if (node.tag() == .@"struct")

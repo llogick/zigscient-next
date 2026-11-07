@@ -40,7 +40,7 @@ pub const Prologue = extern struct {
     stack_size: u32,
     bottom_stack_local: u32,
 
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         stack_alignment: Alignment,
         padding: u26 = 0,
     };

@@ -197,9 +197,9 @@ pub const Feature = enum {
     /// Currently assumes little endian and a specific integer layout where the lsb of every integer is the lsb of the
     /// first byte of memory until bit pointers know their backing type.
     expand_packed_store,
-    /// Replace `agg_field_val` of a packed field with a `bit_cast` to integer, `shr`, `trunc`, and `bit_cast` to field type.
+    /// Replace `agg_field_val` of a bitpack field with a `bit_cast` to integer, `shr`, `trunc`, and `bit_cast` to field type.
     expand_packed_agg_field_val,
-    /// Replace `aggregate_init` of a packed struct with a sequence of `shl_exact`, `bit_cast`, `int_cast`, and `bit_or`.
+    /// Replace `aggregate_init` of a bitpack struct with a sequence of `shl_exact`, `bit_cast`, `int_cast`, and `bit_or`.
     expand_packed_aggregate_init,
 
     /// Replace `splat` of an array with an `aggregate_init`.
@@ -889,7 +889,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                 const extra = l.extraData(Air.StructField, ty_pl.payload).data;
                 switch (l.typeOf(extra.struct_operand).containerLayout(zcu)) {
                     .auto, .@"extern" => {},
-                    .@"packed" => continue :inst l.replaceInst(inst, .block, try l.packedStructFieldValBlockPayload(inst)),
+                    .@"bitpack" => continue :inst l.replaceInst(inst, .block, try l.packedStructFieldValBlockPayload(inst)),
                 }
             },
             .set_union_tag,
@@ -1011,7 +1011,7 @@ fn legalizeBody(l: *Legalize, body_start: usize, body_len: usize) Error!void {
                     .@"union" => unreachable,
                     .@"struct" => switch (agg_ty.containerLayout(zcu)) {
                         .auto, .@"extern" => {},
-                        .@"packed" => {
+                        .@"bitpack" => {
                             // If any field accounts for the full bit size of the struct, this init
                             // is just equivalent to a bitcast of that field. This usually means the
                             // field count is 1, but not always, as there could be zero-bit fields.

@@ -5,9 +5,9 @@ pub fn main() void {
 
     const tuple = .{ 1, 2, 3 };
 
-    x, var y : u32, const z = tuple;
+    x, var y: u32, const z = tuple;
 
-    print("x = {}, y = {}, z = {}\n", .{x, y, z});
+    print("x = {}, y = {}, z = {}\n", .{ x, y, z });
 
     // y is mutable
     y = 100;

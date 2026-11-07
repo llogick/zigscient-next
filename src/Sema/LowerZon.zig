@@ -141,7 +141,7 @@ fn lowerExprAnonResTy(self: *LowerZon, node: Zoir.Node.Index) CompileError!Inter
                 .any_comptime_fields = true,
                 .any_field_defaults = true,
                 .any_field_aligns = false,
-                .packed_backing_int_type = .none,
+                .bitpack_backing_int_type = .none,
             })) {
                 .existing => |ty| .fromInterned(ty),
                 .wip => |wip| ty: {
@@ -812,7 +812,7 @@ fn lowerStruct(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool
 
     const result: Value = switch (struct_info.layout) {
         .auto, .@"extern" => try pt.aggregateValue(res_ty, field_values),
-        .@"packed" => result: {
+        .@"bitpack" => result: {
             const arena = self.sema.arena;
             const buf = try arena.alloc(u8, @intCast((res_ty.bitSize(zcu) + 7) / 8));
             @memset(buf, 0);
@@ -976,7 +976,7 @@ fn lowerUnion(self: *LowerZon, node: Zoir.Node.Index, res_ty: Type) !InternPool.
     };
     const result: Value = switch (union_info.layout) {
         .auto, .@"extern" => try pt.unionValue(res_ty, tag, val),
-        .@"packed" => try self.sema.bitCastVal(val, res_ty),
+        .@"bitpack" => try self.sema.bitCastVal(val, res_ty),
     };
     return result.toIntern();
 }

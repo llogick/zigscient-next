@@ -266,7 +266,7 @@ pub const Symbol = struct {
     sym_index: link.File.SymbolId,
 };
 
-pub const VType = packed struct(u8) {
+pub const VType = bitpack struct(u8) {
     vlmul: VlMul,
     vsew: VSew,
     vta: bool,

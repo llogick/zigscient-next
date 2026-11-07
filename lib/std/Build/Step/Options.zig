@@ -333,7 +333,7 @@ fn printStruct(
 
     switch (val.layout) {
         .@"extern" => try out.appendSlice(gpa, "extern struct"),
-        .@"packed" => try out.appendSlice(gpa, "packed struct"),
+        .@"bitpack" => try out.appendSlice(gpa, "bitpack struct"),
         else => try out.appendSlice(gpa, "struct"),
     }
 

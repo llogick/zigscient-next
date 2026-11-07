@@ -29,7 +29,7 @@ pub const ExtraHeader = enum(u16) {
     _,
 };
 
-const GeneralPurposeFlags = packed struct(u16) {
+const GeneralPurposeFlags = bitpack struct(u16) {
     encrypted: bool,
     _: u15,
 };

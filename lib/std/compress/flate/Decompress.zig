@@ -282,7 +282,7 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
                 const Header = extern struct {
                     magic: u16 align(1),
                     method: u8,
-                    flags: packed struct(u8) {
+                    flags: bitpack struct(u8) {
                         text: bool,
                         hcrc: bool,
                         extra: bool,
@@ -314,7 +314,7 @@ fn streamInner(d: *Decompress, w: *Writer, limit: std.Io.Limit) (Error || Reader
             },
             .zlib => {
                 const header = try in.takeArray(2);
-                const cmf: packed struct(u8) { cm: u4, cinfo: u4 } = @bitCast(header[0]);
+                const cmf: bitpack struct(u8) { cm: u4, cinfo: u4 } = @bitCast(header[0]);
                 if (cmf.cm != 8 or cmf.cinfo > 7) return error.BadZlibHeader;
                 continue :sw .block_header;
             },
@@ -632,7 +632,7 @@ fn readFixedCode(d: *Decompress) !u16 {
     };
 }
 
-pub const Symbol = packed struct(u16) {
+pub const Symbol = bitpack struct(u16) {
     value: u12 = 0,
     code_bits: u4 = 0, // number of bits in code 0-15
 };

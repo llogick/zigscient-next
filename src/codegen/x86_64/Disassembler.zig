@@ -415,7 +415,7 @@ fn parseOffset(dis: *Disassembler) !u64 {
     return reader.takeInt(u64, .little);
 }
 
-const ModRm = packed struct {
+const ModRm = bitpack struct {
     mod: u2,
     op1: u3,
     op2: u3,
@@ -452,7 +452,7 @@ fn segmentRegister(prefixes: LegacyPrefixes) Register {
     return .ds;
 }
 
-const Sib = packed struct {
+const Sib = bitpack struct {
     scale: u2,
     index: u3,
     base: u3,

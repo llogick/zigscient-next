@@ -125,12 +125,12 @@ pub fn fwdDecl(ty: Type, w: *Writer, zcu: *const Zcu) Writer.Error!void {
     const name_cty: CType = switch (ty.zigTypeTag(zcu)) {
         .@"struct" => switch (ty.containerLayout(zcu)) {
             .auto, .@"extern" => .{ .@"struct" = ty },
-            .@"packed" => return,
+            .@"bitpack" => return,
         },
         .@"union" => switch (ty.containerLayout(zcu)) {
             .auto => .{ .union_auto = ty },
             .@"extern" => .{ .union_extern = ty },
-            .@"packed" => return,
+            .@"bitpack" => return,
         },
         .pointer => if (ty.isSlice(zcu)) .{ .slice = ty } else return,
         .optional => .{ .opt = ty },
@@ -151,7 +151,7 @@ pub fn defineIncomplete(ty: Type, w: *Writer, pt: Zcu.PerThread) Writer.Error!vo
         .@"enum" => .{ .@"enum" = ty },
         .@"struct", .@"union" => switch (ty.containerLayout(zcu)) {
             .auto, .@"extern" => return,
-            .@"packed" => .{ .bitpack = ty },
+            .@"bitpack" => .{ .@"bitpack" = ty },
         },
         else => return,
     };
@@ -241,12 +241,12 @@ pub fn defineComplete(
             if (ty.hasRuntimeBits(zcu)) try defineTuple(ty, deps, arena, w, pt) else return
         else switch (ty.containerLayout(zcu)) {
             .auto, .@"extern" => if (ty.hasRuntimeBits(zcu)) try defineStruct(ty, deps, arena, w, pt) else return,
-            .@"packed" => try defineBitpack(ty, deps, arena, w, pt),
+            .@"bitpack" => try defineBitpack(ty, deps, arena, w, pt),
         },
         .@"union" => switch (ty.containerLayout(zcu)) {
             .auto => if (ty.hasRuntimeBits(zcu)) try defineUnionAuto(ty, deps, arena, w, pt) else return,
             .@"extern" => if (ty.hasRuntimeBits(zcu)) try defineUnionExtern(ty, deps, arena, w, pt) else return,
-            .@"packed" => try defineBitpack(ty, deps, arena, w, pt),
+            .@"bitpack" => try defineBitpack(ty, deps, arena, w, pt),
         },
         .pointer => if (ty.isSlice(zcu)) {
             const name_cty: CType = .{ .slice = ty };
@@ -350,7 +350,7 @@ fn defineBitpack(
     pt: Zcu.PerThread,
 ) (Allocator.Error || Writer.Error)!?CType {
     const zcu = pt.zcu;
-    const name_cty: CType = .{ .bitpack = ty };
+    const name_cty: CType = .{ .@"bitpack" = ty };
     const cty: CType = try .lower(ty.backingIntType(zcu), deps, arena, zcu);
     try w.print("typedef {f}{f}{f};", .{
         cty.fmtDeclaratorPrefix(zcu),

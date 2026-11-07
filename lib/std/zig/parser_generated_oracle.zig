@@ -262,6 +262,7 @@ const Def = enum {
     defKEYWORD_anyframe,
     defKEYWORD_anytype,
     defKEYWORD_asm,
+    defKEYWORD_bitpack,
     defKEYWORD_break,
     defKEYWORD_callconv,
     defKEYWORD_catch,
@@ -285,7 +286,6 @@ const Def = enum {
     defKEYWORD_opaque,
     defKEYWORD_or,
     defKEYWORD_orelse,
-    defKEYWORD_packed,
     defKEYWORD_pub,
     defKEYWORD_resume,
     defKEYWORD_return,
@@ -1839,7 +1839,7 @@ const Parser = struct {
                 const pos_3 = p.i;
                 if (try p.parseKEYWORD_extern()) break :blk_3 true;
                 p.i = pos_3;
-                if (try p.parseKEYWORD_packed()) break :blk_3 true;
+                if (try p.parseKEYWORD_bitpack()) break :blk_3 true;
                 p.i = pos_3;
                 break :blk_3 false;
             } or true) and try p.parseContainerTypeAuto()) break :blk_0 true;
@@ -6155,6 +6155,24 @@ const Parser = struct {
             break :blk_0 false;
         };
     }
+    pub fn parseKEYWORD_bitpack(p: *Parser) Error!bool {
+        const def_index = @backingInt(Def.defKEYWORD_bitpack);
+        if (p.depths[def_index] > max_depth) return error.MaxDepth;
+        p.depths[def_index] += 1;
+        defer p.depths[def_index] -= 1;
+        return blk_0: {
+            const pos_0 = p.i;
+            if (try p.parseskip() and blk_1: {
+                if (std.mem.startsWith(u8, p.source[p.i..], "bitpack")) {
+                    p.i += 7;
+                    break :blk_1 true;
+                }
+                break :blk_1 false;
+            } and try p.parseend_of_word()) break :blk_0 true;
+            p.i = pos_0;
+            break :blk_0 false;
+        };
+    }
     pub fn parseKEYWORD_break(p: *Parser) Error!bool {
         const def_index = @backingInt(Def.defKEYWORD_break);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
@@ -6569,24 +6587,6 @@ const Parser = struct {
             break :blk_0 false;
         };
     }
-    pub fn parseKEYWORD_packed(p: *Parser) Error!bool {
-        const def_index = @backingInt(Def.defKEYWORD_packed);
-        if (p.depths[def_index] > max_depth) return error.MaxDepth;
-        p.depths[def_index] += 1;
-        defer p.depths[def_index] -= 1;
-        return blk_0: {
-            const pos_0 = p.i;
-            if (try p.parseskip() and blk_1: {
-                if (std.mem.startsWith(u8, p.source[p.i..], "packed")) {
-                    p.i += 6;
-                    break :blk_1 true;
-                }
-                break :blk_1 false;
-            } and try p.parseend_of_word()) break :blk_0 true;
-            p.i = pos_0;
-            break :blk_0 false;
-        };
-    }
     pub fn parseKEYWORD_pub(p: *Parser) Error!bool {
         const def_index = @backingInt(Def.defKEYWORD_pub);
         if (p.depths[def_index] > max_depth) return error.MaxDepth;
@@ -6878,6 +6878,8 @@ const Parser = struct {
             p.i = pos_0;
             if (try p.parseKEYWORD_asm()) break :blk_0 true;
             p.i = pos_0;
+            if (try p.parseKEYWORD_bitpack()) break :blk_0 true;
+            p.i = pos_0;
             if (try p.parseKEYWORD_break()) break :blk_0 true;
             p.i = pos_0;
             if (try p.parseKEYWORD_callconv()) break :blk_0 true;
@@ -6923,8 +6925,6 @@ const Parser = struct {
             if (try p.parseKEYWORD_or()) break :blk_0 true;
             p.i = pos_0;
             if (try p.parseKEYWORD_orelse()) break :blk_0 true;
-            p.i = pos_0;
-            if (try p.parseKEYWORD_packed()) break :blk_0 true;
             p.i = pos_0;
             if (try p.parseKEYWORD_pub()) break :blk_0 true;
             p.i = pos_0;

@@ -438,7 +438,7 @@ pub const InputArchive = struct {
                 name_type: std.coff.ImportNameType,
             },
         },
-        flags: packed struct {
+        flags: bitpack struct {
             // Set if an attempt was made to load this member
             is_loaded: bool,
         },
@@ -893,7 +893,7 @@ pub const Symbol = struct {
     rva: u32,
     value: std.meta.BareUnion(Symbol.Value),
     extra: std.meta.BareUnion(Symbol.Extra),
-    flags: packed struct(u16) {
+    flags: bitpack struct(u16) {
         value_tag: ValueTag,
         extra_tag: ExtraTag,
         type: Symbol.Type,
@@ -1170,7 +1170,7 @@ pub const Reloc = extern struct {
     next: Reloc.Index,
     loc: Symbol.Index,
     target: Symbol.Index,
-    flags: packed struct(u8) {
+    flags: bitpack struct(u8) {
         /// Indicates the addend is not known and should be recovered from the location itself.
         /// COFF relocation tables don't encode the addend, only the location.
         recover_addend: bool,
@@ -3454,7 +3454,7 @@ fn addSection(coff: *Coff, name: String, flags: std.coff.SectionHeader.Flags) !S
     return si;
 }
 
-const ObjectSectionAttributes = packed struct {
+const ObjectSectionAttributes = bitpack struct {
     read: bool = false,
     write: bool = false,
     execute: bool = false,

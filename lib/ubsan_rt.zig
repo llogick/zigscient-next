@@ -25,7 +25,7 @@ const TypeDescriptor = extern struct {
     };
 
     const Info = extern union {
-        integer: packed struct(u16) {
+        integer: bitpack struct(u16) {
             signed: bool,
             bit_width: u15,
         },

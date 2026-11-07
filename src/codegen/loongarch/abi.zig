@@ -115,12 +115,12 @@ const Classifier = struct {
                     }
                     if (class != .address) return class;
                 },
-                .@"packed" => return c.classifyType(ty.backingIntType(c.zcu)),
+                .@"bitpack" => return c.classifyType(ty.backingIntType(c.zcu)),
             },
             .@"union" => switch (ty.containerLayout(c.zcu)) {
                 .auto => unreachable,
                 .@"extern" => {},
-                .@"packed" => return c.classifyType(ty.backingIntType(c.zcu)),
+                .@"bitpack" => return c.classifyType(ty.backingIntType(c.zcu)),
             },
             .vector => {},
         }

@@ -450,7 +450,7 @@ pub const Manifest = struct {
         /// Terminated by zero byte, then followed by padding until 8-byte aligned.
         path_start: [0]u8 align(1),
 
-        pub const Flags = packed struct(u8) {
+        pub const Flags = bitpack struct(u8) {
             is_directory: bool,
             metadata_only: bool,
             exists: bool,

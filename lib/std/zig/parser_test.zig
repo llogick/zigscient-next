@@ -1120,7 +1120,7 @@ test "zig fmt: empty enum decls" {
         \\const A = enum {};
         \\const B = enum(u32) {};
         \\const C = extern enum(c_int) {};
-        \\const D = packed enum(noreturn) {};
+        \\const D = bitpack enum(noreturn) {};
         \\
     );
 }
@@ -1131,7 +1131,7 @@ test "zig fmt: empty union decls" {
         \\const B = union(enum) {};
         \\const C = union(Foo) {};
         \\const D = extern union {};
-        \\const E = packed union {};
+        \\const E = bitpack union {};
         \\
     );
 }
@@ -3242,14 +3242,14 @@ test "zig fmt: struct declaration" {
         \\    }
         \\};
         \\
-        \\const Ps = packed struct {
+        \\const Ps = bitpack struct {
         \\    a: u8,
         \\    b: u8,
         \\
         \\    c: u8,
         \\};
         \\
-        \\const Ps = packed struct(u32) {
+        \\const Ps = bitpack struct(u32) {
         \\    a: u1,
         \\    b: u2,
         \\
@@ -3285,7 +3285,7 @@ test "zig fmt: enum declaration" {
         \\    SomethingThird,
         \\};
         \\
-        \\const Ep = packed enum {
+        \\const Ep = bitpack enum {
         \\    Ok,
         \\    SomethingElse,
         \\    SomethingThird,

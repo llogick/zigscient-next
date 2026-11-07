@@ -4,7 +4,7 @@ const assert = std.debug.assert;
 pub const Fetch = @import("Fetch.zig");
 pub const Manifest = @import("Package/Manifest.zig");
 
-pub const Fingerprint = packed struct(u64) {
+pub const Fingerprint = bitpack struct(u64) {
     id: u32,
     checksum: u32,
 

@@ -228,7 +228,7 @@ const Node = struct {
     /// accessing it.
     next: ?*Node,
 
-    const Size = packed struct(usize) {
+    const Size = bitpack struct(usize) {
         resizing: bool,
         _: @Int(.unsigned, @bitSizeOf(usize) - 1) = 0,
 
@@ -821,7 +821,7 @@ const FuzzContext = struct {
     const Alloc = struct {
         control_ptr: [*]u8,
         sample_ptr: [*]u8,
-        common: packed struct(usize) {
+        common: bitpack struct(usize) {
             len: Len,
             alignment: Alignment,
             _: @Int(.unsigned, padding_bits) = 0,

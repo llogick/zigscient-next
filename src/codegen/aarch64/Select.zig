@@ -5842,8 +5842,8 @@ pub fn body(isel: *Select, air_body: []const Air.Inst.Index) codegen.Error!void 
                         8 * field_ty.abiSize(zcu),
                         false,
                     },
-                    .@"packed" => .{
-                        if (zcu.typeToPackedStruct(agg_ty)) |loaded_struct|
+                    .@"bitpack" => .{
+                        if (zcu.typeToBitpackStruct(agg_ty)) |loaded_struct|
                             zcu.structPackedFieldBitOffset(loaded_struct, extra.field_index)
                         else
                             0,
@@ -8902,7 +8902,7 @@ pub const Value = struct {
         if (!std.debug.runtime_safety) assert(@sizeOf(Value) == 32);
     }
 
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         alignment: InternPool.Alignment,
         parent_tag: Parent.Tag,
         location_tag: Location.Tag,
@@ -8943,7 +8943,7 @@ pub const Value = struct {
         };
     };
 
-    pub const Indirect = packed struct(u32) {
+    pub const Indirect = bitpack struct(u32) {
         base: Register.Alias,
         offset: i25,
 
@@ -10400,8 +10400,8 @@ pub const Value = struct {
                         const loaded_struct = ip.loadStructType(ty.toIntern());
                         switch (loaded_struct.layout) {
                             .auto, .@"extern" => {},
-                            .@"packed" => continue :type_key .{
-                                .int_type = ip.indexToKey(loaded_struct.packed_backing_int_type).int_type,
+                            .@"bitpack" => continue :type_key .{
+                                .int_type = ip.indexToKey(loaded_struct.bitpack_backing_int_type).int_type,
                             },
                         }
                         const min_part_log2_stride: u5 = if (size > 16) 4 else if (size > 8) 3 else 0;
@@ -10516,7 +10516,7 @@ pub const Value = struct {
                         const loaded_union = ip.loadUnionType(ty.toIntern());
                         switch (loaded_union.layout) {
                             .auto, .@"extern" => {},
-                            .@"packed" => continue :type_key .{ .int_type = .{
+                            .@"bitpack" => continue :type_key .{ .int_type = .{
                                 .signedness = .unsigned,
                                 .bits = @intCast(ty.bitSize(zcu)),
                             } },
@@ -11105,7 +11105,7 @@ pub const Value = struct {
                                                     field_offset += field_size;
                                                 }
                                             },
-                                            .@"extern", .@"packed" => {},
+                                            .@"extern", .@"bitpack" => {},
                                         }
                                     },
                                     .tuple_type => |tuple_type| {
@@ -11491,7 +11491,7 @@ fn writeKeyToMemory(isel: *Select, constant_key: InternPool.Key, buffer: []u8) e
                             field_offset += field_size;
                         }
                     },
-                    .@"extern", .@"packed" => return false,
+                    .@"extern", .@"bitpack" => return false,
                 }
             },
             .tuple_type => |tuple_type| {
@@ -12183,7 +12183,7 @@ pub const CallAbiIterator = struct {
                 const loaded_struct = ip.loadStructType(ty.toIntern());
                 switch (loaded_struct.layout) {
                     .auto, .@"extern" => {},
-                    .@"packed" => continue :type_key ip.indexToKey(loaded_struct.packed_backing_int_type),
+                    .@"bitpack" => continue :type_key ip.indexToKey(loaded_struct.bitpack_backing_int_type),
                 }
                 const size = wip_vi.size(isel);
                 if (size <= 16 * 4) homogeneous_aggregate: {
@@ -12274,7 +12274,7 @@ pub const CallAbiIterator = struct {
                 const loaded_union = ip.loadUnionType(ty.toIntern());
                 switch (loaded_union.layout) {
                     .auto, .@"extern" => {},
-                    .@"packed" => continue :type_key .{ .int_type = .{
+                    .@"bitpack" => continue :type_key .{ .int_type = .{
                         .signedness = .unsigned,
                         .bits = @intCast(ty.bitSize(zcu)),
                     } },

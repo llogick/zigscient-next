@@ -29,7 +29,7 @@ pub const ENCODING = enum(u16) {
     NDR = 0x0002,
     _,
 
-    pub const TYPE = packed struct(DWORD) {
+    pub const TYPE = bitpack struct(DWORD) {
         CERT: ENCODING = .UNSPECIFIED,
         CMSG: ENCODING = .UNSPECIFIED,
     };
@@ -77,7 +77,7 @@ pub const CERT_STORE = struct {
         }
     };
 
-    pub const FLAG = packed struct(DWORD) {
+    pub const FLAG = bitpack struct(DWORD) {
         NO_CRYPT_RELEASE: bool = false,
         SET_LOCALIZED_NAME: bool = false,
         DEFER_CLOSE_UNTIL_LAST_FREE: bool = false,
@@ -117,7 +117,7 @@ pub extern "crypt32" fn CertOpenStore(
     pvPara: ?*const anyopaque,
 ) callconv(.winapi) ?HCERTSTORE;
 
-pub const CERT_CLOSE_STORE_FLAG = packed struct(DWORD) {
+pub const CERT_CLOSE_STORE_FLAG = bitpack struct(DWORD) {
     FORCE: bool = false,
     CHECK: bool = false,
     Reserved2: u30 = 0,
@@ -163,7 +163,7 @@ pub const HCERTCHAINENGINE = enum(usize) {
     }
 };
 
-pub const CERT_CHAIN = packed struct(DWORD) {
+pub const CERT_CHAIN = bitpack struct(DWORD) {
     CACHE_END_CERT: bool = false,
     THREAD_STORE_SYNC: bool = false,
     CACHE_ONLY_URL_RETRIEVAL: bool = false,
@@ -227,7 +227,7 @@ pub const CERT_CHAIN = packed struct(DWORD) {
             pvExtraPolicyStatus: ?*anyopaque,
         };
 
-        pub const FLAG = packed struct(DWORD) {
+        pub const FLAG = bitpack struct(DWORD) {
             IGNORE_NOT_TIME_VALID: bool = false,
             IGNORE_CTL_NOT_TIME_VALID: bool = false,
             IGNORE_NOT_TIME_NESTED: bool = false,

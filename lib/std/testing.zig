@@ -133,7 +133,7 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
         .@"union" => |@"union"| if (@"union".backing_integer) |Int| {
             try expectEqual(@as(Int, @bitCast(expected)), @as(Int, @bitCast(actual)));
         } else switch (@"union".layout) {
-            .@"packed" => {
+            .@"bitpack" => {
                 const Int = @Int(.unsigned, @bitSizeOf(T));
                 try expectEqual(@as(Int, @bitCast(expected)), @as(Int, @bitCast(actual)));
             },
@@ -153,7 +153,7 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
                 );
             },
             .auto => {
-                const Tag = @"union".tag_type orelse @compileError("byteSwapAllFields expects packed, extern, or tagged union");
+                const Tag = @"union".tag_type orelse @compileError("byteSwapAllFields expects bitpack, extern, or tagged union");
 
                 try expectEqual(@as(Tag, expected), @as(Tag, actual));
                 switch (expected) {

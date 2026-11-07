@@ -31,7 +31,7 @@ pub const Scope = enum(u32) {
     shader_call_khr = 6,
 };
 
-pub const MemorySemantics = packed struct(u32) {
+pub const MemorySemantics = bitpack struct(u32) {
     _reserved_bit_0: bool = false,
     acquire: bool = false,
     release: bool = false,

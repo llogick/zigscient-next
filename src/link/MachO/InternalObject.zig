@@ -883,7 +883,7 @@ const Section = struct {
     relocs: std.ArrayList(Relocation) = .empty,
     extra: Extra = .{},
 
-    const Extra = packed struct {
+    const Extra = bitpack struct {
         is_objc_methname: bool = false,
         is_objc_selref: bool = false,
     };

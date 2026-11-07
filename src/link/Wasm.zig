@@ -646,7 +646,7 @@ pub const SourceLocation = enum(u32) {
 /// The lower bits of this ABI-match the flags here:
 /// https://github.com/WebAssembly/tool-conventions/blob/df8d737539eb8a8f446ba5eab9dc670c40dfb81e/Linking.md#symbol-table-subsection
 /// The upper bits are used for nefarious purposes.
-pub const SymbolFlags = packed struct(u32) {
+pub const SymbolFlags = bitpack struct(u32) {
     binding: Binding = .strong,
     /// Indicating that this is a hidden symbol. Hidden symbols are not to be
     /// exported when performing the final link, but may be linked to other
@@ -752,7 +752,7 @@ pub const SymbolFlags = packed struct(u32) {
     }
 };
 
-pub const GlobalType4 = packed struct(u4) {
+pub const GlobalType4 = bitpack struct(u4) {
     valtype: Valtype3,
     mutable: bool,
 
@@ -1703,7 +1703,7 @@ pub const ObjectDataSegment = extern struct {
     offset: u32,
     object_index: ObjectIndex,
 
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         alive: bool = false,
         is_passive: bool = false,
         alignment: Alignment = .none,
@@ -3182,7 +3182,7 @@ pub const Comdat = struct {
 };
 
 /// Stored as a u8 so it can reuse the string table mechanism.
-pub const Feature = packed struct(u8) {
+pub const Feature = bitpack struct(u8) {
     prefix: Prefix,
     /// Type of the feature, must be unique in the sequence of features.
     tag: Tag,

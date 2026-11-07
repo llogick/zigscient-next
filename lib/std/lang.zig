@@ -750,7 +750,7 @@ pub const Type = union(enum) {
     pub const ContainerLayout = enum(u2) {
         auto,
         @"extern",
-        @"packed",
+        @"bitpack",
     };
 
     /// This data structure is used by the Zig language code generation and
@@ -758,7 +758,7 @@ pub const Type = union(enum) {
     pub const Struct = struct {
         is_tuple: bool,
         layout: ContainerLayout,
-        /// Always `null` if `layout != .@"packed"`.
+        /// Always `null` if `layout != .@"bitpack"`.
         backing_integer: ?type,
 
         field_names: []const [:0]const u8,
@@ -832,7 +832,7 @@ pub const Type = union(enum) {
     pub const Union = struct {
         layout: ContainerLayout,
         tag_type: ?type,
-        /// Always `null` if `layout != .@"packed"`.
+        /// Always `null` if `layout != .@"bitpack"`.
         backing_integer: ?type,
 
         field_names: []const [:0]const u8,

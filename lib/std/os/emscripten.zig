@@ -315,7 +315,7 @@ pub const POLL = struct {
     pub const RDBAND = 0x080;
 };
 
-pub const PROT = packed struct(u32) {
+pub const PROT = bitpack struct(u32) {
     READ: bool = false,
     WRITE: bool = false,
     EXEC: bool = false,

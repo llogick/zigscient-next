@@ -713,7 +713,7 @@ test "containsValidAddressRange" {
     try std.testing.expect(containsValidAddressRange(&buf));
 }
 
-const SectionFlags = packed struct {
+const SectionFlags = bitpack struct {
     alloc: bool = false,
     contents: bool = false,
     load: bool = false,

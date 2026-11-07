@@ -1,4 +1,4 @@
-pub const PE = packed struct(u8) {
+pub const PE = bitpack struct(u8) {
     type: Type,
     rel: Rel,
     /// Undocumented GCC extension

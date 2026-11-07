@@ -172,20 +172,20 @@ pub const SOURCE_TYPE_SIGNAL = &_dispatch_source_type_signal;
 pub const SOURCE_TYPE_TIMER = &_dispatch_source_type_timer;
 pub const SOURCE_TYPE_VNODE = &_dispatch_source_type_vnode;
 pub const SOURCE_TYPE_WRITE = &_dispatch_source_type_write;
-pub const source_mach_send_flags_t = packed struct(usize) {
+pub const source_mach_send_flags_t = bitpack struct(usize) {
     DEAD: bool = false,
     unused1: @Int(.unsigned, @bitSizeOf(usize) - 1) = 0,
 };
-pub const source_mach_recv_flags_t = packed struct(usize) {
+pub const source_mach_recv_flags_t = bitpack struct(usize) {
     unused0: @Int(.unsigned, @bitSizeOf(usize) - 0) = 0,
 };
-pub const source_memorypressure_flags_t = packed struct(usize) {
+pub const source_memorypressure_flags_t = bitpack struct(usize) {
     NORMAL: bool = false,
     WARN: bool = false,
     CRITICAL: bool = false,
     unused3: @Int(.unsigned, @bitSizeOf(usize) - 3) = 0,
 };
-pub const source_proc_flags_t = packed struct(usize) {
+pub const source_proc_flags_t = bitpack struct(usize) {
     unused0: u27 = 0,
     SIGNAL: bool = false,
     unused28: u1 = 0,
@@ -194,7 +194,7 @@ pub const source_proc_flags_t = packed struct(usize) {
     EXIT: bool = false,
     unused32: @Int(.unsigned, @bitSizeOf(usize) - 32) = 0,
 };
-pub const source_vnode_flags_t = packed struct(usize) {
+pub const source_vnode_flags_t = bitpack struct(usize) {
     DELETE: bool = false,
     WRITE: bool = false,
     EXTEND: bool = false,
@@ -206,11 +206,11 @@ pub const source_vnode_flags_t = packed struct(usize) {
     FUNLOCK: bool = false,
     unused9: @Int(.unsigned, @bitSizeOf(usize) - 9) = 0,
 };
-pub const source_timer_flags_t = packed struct(usize) {
+pub const source_timer_flags_t = bitpack struct(usize) {
     STRICT: bool = false,
     unused1: @Int(.unsigned, @bitSizeOf(usize) - 1) = 0,
 };
-pub const source_flags_t = packed union(usize) {
+pub const source_flags_t = bitpack union(usize) {
     raw: usize,
     MACH_SEND: source_mach_send_flags_t,
     MACH_RECV: source_mach_recv_flags_t,

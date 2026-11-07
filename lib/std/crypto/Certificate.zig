@@ -935,7 +935,7 @@ pub const der = struct {
         constructed,
     };
 
-    pub const Identifier = packed struct(u8) {
+    pub const Identifier = bitpack struct(u8) {
         tag: Tag,
         pc: PC,
         class: Class,

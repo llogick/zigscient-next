@@ -647,6 +647,7 @@ fn tokenizeAndPrint(arena: Allocator, out: *Writer, raw_src: []const u8) !void {
             .keyword_align,
             .keyword_and,
             .keyword_asm,
+            .keyword_bitpack,
             .keyword_break,
             .keyword_catch,
             .keyword_comptime,
@@ -1515,7 +1516,7 @@ test "printShell" {
         // intentional space after "--build-option1 \"
         const shell_out =
             \\$ zig build test.zig \
-            \\ --build-option1 \ 
+            \\ --build-option1 \
             \\ --build-option2
             \\$ ./test
         ;

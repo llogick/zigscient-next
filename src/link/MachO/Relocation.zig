@@ -3,7 +3,7 @@ offset: u32,
 target: u32,
 addend: i64,
 type: Type,
-meta: packed struct {
+meta: bitpack struct {
     pcrel: bool,
     has_subtractor: bool,
     length: u2,

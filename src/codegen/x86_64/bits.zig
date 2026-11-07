@@ -179,7 +179,7 @@ pub const Condition = enum(u5) {
 };
 
 /// The immediate operand of vroundss/vroundps/vcvtps2ph/round??.
-pub const RoundMode = packed struct(u4) {
+pub const RoundMode = bitpack struct(u4) {
     direction: Direction = .mxcsr,
     precision: enum(u1) {
         normal = 0b0,

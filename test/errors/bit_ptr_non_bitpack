@@ -22,10 +22,10 @@ export fn entry3() void {
 #update
 #check errors {
 test.zig:3:23: error: bit-pointer cannot refer to value of type 'test.entry1.S'
-test.zig:3:23: note: non-packed structs do not have a bit-packed representation
+test.zig:3:23: note: non-bitpack structs do not have a bit-packed representation
 test.zig:2:22: note: struct declared here
 test.zig:8:36: error: bit-pointer cannot refer to value of type 'test.entry2.S'
-test.zig:8:36: note: non-packed structs do not have a bit-packed representation
+test.zig:8:36: note: non-bitpack structs do not have a bit-packed representation
 test.zig:7:15: note: struct declared here
 test.zig:13:23: error: bit-pointer cannot refer to value of type 'test.entry3.E'
 test.zig:12:15: note: integer tag type of enum is inferred

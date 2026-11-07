@@ -18,7 +18,7 @@ pub fn classifyType(ty: Type, zcu: *Zcu, ctx: Context) Class {
     const max_direct_size = target.ptrBitWidth() * 2;
     switch (ty.zigTypeTag(zcu)) {
         .@"struct" => {
-            if (ty.containerLayout(zcu) == .@"packed") {
+            if (ty.containerLayout(zcu) == .@"bitpack") {
                 if (ty.bitSize(zcu) > max_direct_size) return .memory;
                 return .byval;
             }
@@ -29,7 +29,7 @@ pub fn classifyType(ty: Type, zcu: *Zcu, ctx: Context) Class {
             return .{ .i32_array = count };
         },
         .@"union" => {
-            if (ty.containerLayout(zcu) == .@"packed") {
+            if (ty.containerLayout(zcu) == .@"bitpack") {
                 if (ty.bitSize(zcu) > max_direct_size) return .memory;
                 return .byval;
             }

@@ -60,7 +60,7 @@ pub const SegmentInfo = struct {
     flags: Flags,
 
     /// Matches the ABI.
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         /// Signals that the segment contains only null terminated strings allowing
         /// the linker to perform merging.
         strings: bool,

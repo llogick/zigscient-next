@@ -156,12 +156,12 @@ pub const ErrorDetails = struct {
         language,
     };
 
-    pub const StringAndLanguage = packed struct(u32) {
+    pub const StringAndLanguage = bitpack struct(u32) {
         id: u16,
         language: res.Language,
     };
 
-    pub const FileOpenError = packed struct(u32) {
+    pub const FileOpenError = bitpack struct(u32) {
         err: FileOpenErrorEnum,
         filename_string_index: FilenameStringIndex,
 
@@ -175,7 +175,7 @@ pub const ErrorDetails = struct {
         }
     };
 
-    pub const IconReadError = packed struct(u32) {
+    pub const IconReadError = bitpack struct(u32) {
         err: IconReadErrorEnum,
         icon_type: enum(u1) { cursor, icon },
         filename_string_index: FilenameStringIndex,
@@ -190,7 +190,7 @@ pub const ErrorDetails = struct {
         }
     };
 
-    pub const IconDirContext = packed struct(u32) {
+    pub const IconDirContext = bitpack struct(u32) {
         icon_type: enum(u1) { cursor, icon },
         icon_format: ico.ImageFormat,
         index: u16,
@@ -200,7 +200,7 @@ pub const ErrorDetails = struct {
         pub const Padding = @Int(.unsigned, 15 - @bitSizeOf(ico.BitmapHeader.Version) - @bitSizeOf(ico.ImageFormat));
     };
 
-    pub const BitmapReadError = packed struct(u32) {
+    pub const BitmapReadError = bitpack struct(u32) {
         err: BitmapReadErrorEnum,
         filename_string_index: FilenameStringIndex,
 
@@ -214,14 +214,14 @@ pub const ErrorDetails = struct {
         }
     };
 
-    pub const BitmapUnsupportedDIB = packed struct(u32) {
+    pub const BitmapUnsupportedDIB = bitpack struct(u32) {
         dib_version: ico.BitmapHeader.Version,
         filename_string_index: FilenameStringIndex,
 
         pub const FilenameStringIndex = @Int(.unsigned, 32 - @bitSizeOf(ico.BitmapHeader.Version));
     };
 
-    pub const AcceleratorError = packed struct(u32) {
+    pub const AcceleratorError = bitpack struct(u32) {
         err: AcceleratorErrorEnum,
         _: Padding = 0,
 
@@ -235,7 +235,7 @@ pub const ErrorDetails = struct {
         }
     };
 
-    pub const ExpectedTypes = packed struct(u32) {
+    pub const ExpectedTypes = bitpack struct(u32) {
         number: bool = false,
         number_expression: bool = false,
         string_literal: bool = false,

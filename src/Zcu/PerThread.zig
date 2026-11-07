@@ -1086,7 +1086,7 @@ pub fn ensureFilePopulated(pt: Zcu.PerThread, file_index: Zcu.File.Index) (Alloc
         .any_comptime_fields = struct_decl.field_comptime_bits != null,
         .any_field_defaults = struct_decl.field_default_body_lens != null,
         .any_field_aligns = struct_decl.field_align_body_lens != null,
-        .packed_backing_mode = if (struct_decl.backing_int_type_body != null) .explicit else .auto,
+        .bitpack_backing_mode = if (struct_decl.backing_int_type_body != null) .explicit else .auto,
     })) {
         .existing => unreachable, // it would have been set as `zcu.fileRootType` already
         .wip => |wip| wip,
@@ -4281,10 +4281,10 @@ pub fn floatValue(pt: Zcu.PerThread, ty: Type, x: anytype) Allocator.Error!Value
     } }));
 }
 
-/// Create a value whose type is a `packed struct` or `packed union`, from the backing integer value.
+/// Create a value whose type is a `bitpack struct` or `bitpack union`, from the backing integer value.
 pub fn bitpackValue(pt: Zcu.PerThread, ty: Type, backing_int_val: Value) Allocator.Error!Value {
     assert(backing_int_val.typeOf(pt.zcu).toIntern() == ty.backingIntType(pt.zcu).toIntern());
-    return .fromInterned(try pt.intern(.{ .bitpack = .{
+    return .fromInterned(try pt.intern(.{ .@"bitpack" = .{
         .ty = ty.toIntern(),
         .backing_int_val = backing_int_val.toIntern(),
     } }));

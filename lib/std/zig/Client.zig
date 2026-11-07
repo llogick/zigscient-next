@@ -104,7 +104,7 @@ pub const Message = struct {
         step_count: u32,
         flags: Flags,
 
-        pub const Flags = packed struct(u32) {
+        pub const Flags = bitpack struct(u32) {
             /// Can only be enabled when the server declared support for file
             /// watching.
             watch: bool,

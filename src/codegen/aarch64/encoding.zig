@@ -63,7 +63,7 @@ pub const Register = struct {
         @"4h" = @bitCast(Unwrapped{ .size = .double, .elem_size = .half }),
         @"8b" = @bitCast(Unwrapped{ .size = .double, .elem_size = .byte }),
 
-        pub const Unwrapped = packed struct {
+        pub const Unwrapped = bitpack struct {
             size: Instruction.DataProcessingVector.Q,
             elem_size: Instruction.DataProcessingVector.Size,
         };
@@ -872,7 +872,7 @@ pub const Register = struct {
         return .{ .reg = reg, .case = case };
     }
 
-    pub const System = packed struct(u16) {
+    pub const System = bitpack struct(u16) {
         op2: u3,
         CRm: u4,
         CRn: u4,
@@ -1368,7 +1368,7 @@ pub const ConditionCode = enum(u4) {
 };
 
 /// C4.1 A64 instruction set encoding
-pub const Instruction = packed union {
+pub const Instruction = bitpack union {
     group: Group,
     reserved: Reserved,
     sme: Sme,
@@ -1380,7 +1380,7 @@ pub const Instruction = packed union {
     data_processing_vector: DataProcessingVector,
 
     /// Table C4-1 Main encoding table for the A64 instruction set
-    pub const Group = packed struct {
+    pub const Group = bitpack struct {
         encoded0: u25,
         op1: u4,
         encoded29: u2,
@@ -1388,12 +1388,12 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.1 Reserved
-    pub const Reserved = packed union {
+    pub const Reserved = bitpack union {
         group: @This().Group,
         udf: Udf,
 
         /// Table C4-2 Encoding table for the Reserved group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             encoded0: u16,
             op1: u9,
             decoded25: u4 = 0b0000,
@@ -1402,7 +1402,7 @@ pub const Instruction = packed union {
         };
 
         /// C6.2.387 UDF
-        pub const Udf = packed struct {
+        pub const Udf = bitpack struct {
             imm16: u16,
             decoded16: u16 = 0b0000000000000000,
         };
@@ -1423,11 +1423,11 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.2 SME encodings
-    pub const Sme = packed union {
+    pub const Sme = bitpack union {
         group: @This().Group,
 
         /// Table C4-3 Encodings table for the SME encodings group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             encoded0: u2,
             op2: u3,
             encoded5: u5,
@@ -1439,11 +1439,11 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.30 SVE encodings
-    pub const Sve = packed union {
+    pub const Sve = bitpack union {
         group: @This().Group,
 
         /// Table C4-31 Encoding table for the SVE encodings group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             encoded0: u4,
             op2: u1,
             encoded5: u5,
@@ -1454,7 +1454,7 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.86 Data Processing -- Immediate
-    pub const DataProcessingImmediate = packed union {
+    pub const DataProcessingImmediate = bitpack union {
         group: @This().Group,
         pc_relative_addressing: PcRelativeAddressing,
         add_subtract_immediate: AddSubtractImmediate,
@@ -1465,7 +1465,7 @@ pub const Instruction = packed union {
         extract: Extract,
 
         /// Table C4-87 Encoding table for the Data Processing -- Immediate group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             encoded0: u23,
             op0: u3,
             decoded26: u3 = 0b100,
@@ -1473,12 +1473,12 @@ pub const Instruction = packed union {
         };
 
         /// PC-rel. addressing
-        pub const PcRelativeAddressing = packed union {
+        pub const PcRelativeAddressing = bitpack union {
             group: @This().Group,
             adr: Adr,
             adrp: Adrp,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 immhi: i19,
                 decoded24: u5 = 0b10000,
@@ -1487,7 +1487,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.10 ADR
-            pub const Adr = packed struct {
+            pub const Adr = bitpack struct {
                 Rd: Register.Encoded,
                 immhi: i19,
                 decoded24: u5 = 0b10000,
@@ -1496,7 +1496,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.11 ADRP
-            pub const Adrp = packed struct {
+            pub const Adrp = bitpack struct {
                 Rd: Register.Encoded,
                 immhi: i19,
                 decoded24: u5 = 0b10000,
@@ -1522,14 +1522,14 @@ pub const Instruction = packed union {
         };
 
         /// Add/subtract (immediate)
-        pub const AddSubtractImmediate = packed union {
+        pub const AddSubtractImmediate = bitpack union {
             group: @This().Group,
             add: Add,
             adds: Adds,
             sub: Sub,
             subs: Subs,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm12: u12,
@@ -1541,7 +1541,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.4 ADD (immediate)
-            pub const Add = packed struct {
+            pub const Add = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm12: u12,
@@ -1553,7 +1553,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.8 ADDS (immediate)
-            pub const Adds = packed struct {
+            pub const Adds = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm12: u12,
@@ -1565,7 +1565,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.357 SUB (immediate)
-            pub const Sub = packed struct {
+            pub const Sub = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm12: u12,
@@ -1577,7 +1577,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.363 SUBS (immediate)
-            pub const Subs = packed struct {
+            pub const Subs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm12: u12,
@@ -1614,12 +1614,12 @@ pub const Instruction = packed union {
         };
 
         /// Add/subtract (immediate, with tags)
-        pub const AddSubtractImmediateWithTags = packed union {
+        pub const AddSubtractImmediateWithTags = bitpack union {
             group: @This().Group,
             addg: Addg,
             subg: Subg,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 uimm4: u4,
@@ -1633,7 +1633,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.6 ADDG
-            pub const Addg = packed struct {
+            pub const Addg = bitpack struct {
                 Xd: Register.Encoded,
                 Xn: Register.Encoded,
                 uimm4: u4,
@@ -1647,7 +1647,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.359 SUBG
-            pub const Subg = packed struct {
+            pub const Subg = bitpack struct {
                 Xd: Register.Encoded,
                 Xn: Register.Encoded,
                 uimm4: u4,
@@ -1683,14 +1683,14 @@ pub const Instruction = packed union {
         };
 
         /// Logical (immediate)
-        pub const LogicalImmediate = packed union {
+        pub const LogicalImmediate = bitpack union {
             group: @This().Group,
             @"and": And,
             orr: Orr,
             eor: Eor,
             ands: Ands,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1700,7 +1700,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.12 AND (immediate)
-            pub const And = packed struct {
+            pub const And = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1710,7 +1710,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.240 ORR (immediate)
-            pub const Orr = packed struct {
+            pub const Orr = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1720,7 +1720,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.119 EOR (immediate)
-            pub const Eor = packed struct {
+            pub const Eor = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1730,7 +1730,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.14 ANDS (immediate)
-            pub const Ands = packed struct {
+            pub const Ands = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1759,13 +1759,13 @@ pub const Instruction = packed union {
         };
 
         /// Move wide (immediate)
-        pub const MoveWideImmediate = packed union {
+        pub const MoveWideImmediate = bitpack union {
             group: @This().Group,
             movn: Movn,
             movz: Movz,
             movk: Movk,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 imm16: u16,
                 hw: Hw,
@@ -1775,7 +1775,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.226 MOVN
-            pub const Movn = packed struct {
+            pub const Movn = bitpack struct {
                 Rd: Register.Encoded,
                 imm16: u16,
                 hw: Hw,
@@ -1785,7 +1785,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.227 MOVZ
-            pub const Movz = packed struct {
+            pub const Movz = bitpack struct {
                 Rd: Register.Encoded,
                 imm16: u16,
                 hw: Hw,
@@ -1795,7 +1795,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.225 MOVK
-            pub const Movk = packed struct {
+            pub const Movk = bitpack struct {
                 Rd: Register.Encoded,
                 imm16: u16,
                 hw: Hw,
@@ -1853,13 +1853,13 @@ pub const Instruction = packed union {
         };
 
         /// Bitfield
-        pub const Bitfield = packed union {
+        pub const Bitfield = bitpack union {
             group: @This().Group,
             sbfm: Sbfm,
             bfm: Bfm,
             ubfm: Ubfm,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1868,7 +1868,7 @@ pub const Instruction = packed union {
                 sf: Register.GeneralSize,
             };
 
-            pub const Sbfm = packed struct {
+            pub const Sbfm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1877,7 +1877,7 @@ pub const Instruction = packed union {
                 sf: Register.GeneralSize,
             };
 
-            pub const Bfm = packed struct {
+            pub const Bfm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1886,7 +1886,7 @@ pub const Instruction = packed union {
                 sf: Register.GeneralSize,
             };
 
-            pub const Ubfm = packed struct {
+            pub const Ubfm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm: Bitmask,
@@ -1921,11 +1921,11 @@ pub const Instruction = packed union {
         };
 
         /// Extract
-        pub const Extract = packed union {
+        pub const Extract = bitpack union {
             group: @This().Group,
             extr: Extr,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imms: u6,
@@ -1937,7 +1937,7 @@ pub const Instruction = packed union {
                 sf: Register.GeneralSize,
             };
 
-            pub const Extr = packed struct {
+            pub const Extr = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imms: u6,
@@ -1968,13 +1968,13 @@ pub const Instruction = packed union {
             }
         };
 
-        pub const Bitmask = packed struct {
+        pub const Bitmask = bitpack struct {
             imms: u6,
             immr: u6,
             N: Register.GeneralSize,
 
             fn lenHsb(bitmask: Bitmask) u7 {
-                return @bitCast(packed struct {
+                return @bitCast(bitpack struct {
                     not_imms: u6,
                     N: Register.GeneralSize,
                 }{ .not_imms = ~bitmask.imms, .N = bitmask.N });
@@ -2062,7 +2062,7 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.87 Branches, Exception Generating and System instructions
-    pub const BranchExceptionGeneratingSystem = packed union {
+    pub const BranchExceptionGeneratingSystem = bitpack union {
         group: @This().Group,
         conditional_branch_immediate: ConditionalBranchImmediate,
         exception_generating: ExceptionGenerating,
@@ -2079,7 +2079,7 @@ pub const Instruction = packed union {
         test_branch_immediate: TestBranchImmediate,
 
         /// Table C4-88 Encoding table for the Branches, Exception Generating and System instructions group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             op2: u5,
             encoded5: u7,
             op1: u14,
@@ -2088,12 +2088,12 @@ pub const Instruction = packed union {
         };
 
         /// Conditional branch (immediate)
-        pub const ConditionalBranchImmediate = packed union {
+        pub const ConditionalBranchImmediate = bitpack union {
             group: @This().Group,
             b: B,
             bc: Bc,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 cond: ConditionCode,
                 o0: u1,
                 imm19: i19,
@@ -2102,7 +2102,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.26 B.cond
-            pub const B = packed struct {
+            pub const B = bitpack struct {
                 cond: ConditionCode,
                 o0: u1 = 0b0,
                 imm19: i19,
@@ -2111,7 +2111,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.27 BC.cond
-            pub const Bc = packed struct {
+            pub const Bc = bitpack struct {
                 cond: ConditionCode,
                 o0: u1 = 0b1,
                 imm19: i19,
@@ -2136,7 +2136,7 @@ pub const Instruction = packed union {
         };
 
         /// Exception generating
-        pub const ExceptionGenerating = packed union {
+        pub const ExceptionGenerating = bitpack union {
             group: @This().Group,
             svc: Svc,
             hvc: Hvc,
@@ -2148,7 +2148,7 @@ pub const Instruction = packed union {
             dcps2: Dcps2,
             dcps3: Dcps3,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 LL: u2,
                 op2: u3,
                 imm16: u16,
@@ -2157,7 +2157,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.365 SVC
-            pub const Svc = packed struct {
+            pub const Svc = bitpack struct {
                 decoded0: u2 = 0b01,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2166,7 +2166,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.128 HVC
-            pub const Hvc = packed struct {
+            pub const Hvc = bitpack struct {
                 decoded0: u2 = 0b10,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2175,7 +2175,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.283 SMC
-            pub const Smc = packed struct {
+            pub const Smc = bitpack struct {
                 decoded0: u2 = 0b11,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2184,7 +2184,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.40 BRK
-            pub const Brk = packed struct {
+            pub const Brk = bitpack struct {
                 decoded0: u2 = 0b00,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2193,7 +2193,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.127 HLT
-            pub const Hlt = packed struct {
+            pub const Hlt = bitpack struct {
                 decoded0: u2 = 0b00,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2202,7 +2202,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.376 TCANCEL
-            pub const Tcancel = packed struct {
+            pub const Tcancel = bitpack struct {
                 decoded0: u2 = 0b00,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2211,7 +2211,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.110 DCPS1
-            pub const Dcps1 = packed struct {
+            pub const Dcps1 = bitpack struct {
                 LL: u2 = 0b01,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2220,7 +2220,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.110 DCPS2
-            pub const Dcps2 = packed struct {
+            pub const Dcps2 = bitpack struct {
                 LL: u2 = 0b10,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2229,7 +2229,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.110 DCPS3
-            pub const Dcps3 = packed struct {
+            pub const Dcps3 = bitpack struct {
                 LL: u2 = 0b11,
                 decoded2: u3 = 0b000,
                 imm16: u16,
@@ -2291,7 +2291,7 @@ pub const Instruction = packed union {
         };
 
         /// System instructions with register argument
-        pub const SystemRegisterArgument = packed struct {
+        pub const SystemRegisterArgument = bitpack struct {
             Rt: Register.Encoded,
             op2: u3,
             CRm: u4,
@@ -2299,7 +2299,7 @@ pub const Instruction = packed union {
         };
 
         /// Hints
-        pub const Hints = packed union {
+        pub const Hints = bitpack union {
             group: @This().Group,
             hint: Hint,
             nop: Nop,
@@ -2309,7 +2309,7 @@ pub const Instruction = packed union {
             sev: Sev,
             sevl: Sevl,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3,
                 CRm: u4,
@@ -2317,7 +2317,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.126 HINT
-            pub const Hint = packed struct {
+            pub const Hint = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3,
                 CRm: u4,
@@ -2329,7 +2329,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.238 NOP
-            pub const Nop = packed struct {
+            pub const Nop = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3 = 0b000,
                 CRm: u4 = 0b0000,
@@ -2341,7 +2341,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.402 YIELD
-            pub const Yield = packed struct {
+            pub const Yield = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3 = 0b001,
                 CRm: u4 = 0b0000,
@@ -2353,7 +2353,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.396 WFE
-            pub const Wfe = packed struct {
+            pub const Wfe = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3 = 0b010,
                 CRm: u4 = 0b0000,
@@ -2365,7 +2365,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.398 WFI
-            pub const Wfi = packed struct {
+            pub const Wfi = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3 = 0b011,
                 CRm: u4 = 0b0000,
@@ -2377,7 +2377,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.280 SEV
-            pub const Sev = packed struct {
+            pub const Sev = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3 = 0b100,
                 CRm: u4 = 0b0000,
@@ -2389,7 +2389,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.280 SEVL
-            pub const Sevl = packed struct {
+            pub const Sevl = bitpack struct {
                 decoded0: u5 = 0b11111,
                 op2: u3 = 0b101,
                 CRm: u4 = 0b0000,
@@ -2426,7 +2426,7 @@ pub const Instruction = packed union {
         };
 
         /// Barriers
-        pub const Barriers = packed union {
+        pub const Barriers = bitpack union {
             group: @This().Group,
             clrex: Clrex,
             dsb: Dsb,
@@ -2434,7 +2434,7 @@ pub const Instruction = packed union {
             isb: Isb,
             sb: Sb,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 op2: u3,
                 CRm: u4,
@@ -2446,7 +2446,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.56 CLREX
-            pub const Clrex = packed struct {
+            pub const Clrex = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 op2: u3 = 0b010,
                 CRm: u4,
@@ -2458,7 +2458,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.116 DSB
-            pub const Dsb = packed struct {
+            pub const Dsb = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 opc: u2 = 0b00,
                 decoded7: u1 = 0b1,
@@ -2471,7 +2471,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.114 DMB
-            pub const Dmb = packed struct {
+            pub const Dmb = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 opc: u2 = 0b01,
                 decoded7: u1 = 0b1,
@@ -2484,7 +2484,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.131 ISB
-            pub const Isb = packed struct {
+            pub const Isb = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 opc: u2 = 0b10,
                 decoded7: u1 = 0b1,
@@ -2497,7 +2497,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.264 SB
-            pub const Sb = packed struct {
+            pub const Sb = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 opc: u2 = 0b11,
                 decoded7: u1 = 0b1,
@@ -2561,14 +2561,14 @@ pub const Instruction = packed union {
         };
 
         /// PSTATE
-        pub const Pstate = packed union {
+        pub const Pstate = bitpack union {
             group: @This().Group,
             msr: Msr,
             cfinv: Cfinv,
             xaflag: Xaflag,
             axflag: Axflag,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 op2: u3,
                 CRm: u4,
@@ -2578,7 +2578,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.229 MSR (immediate)
-            pub const Msr = packed struct {
+            pub const Msr = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 op2: u3,
                 CRm: u4,
@@ -2588,7 +2588,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.52 CFINV
-            pub const Cfinv = packed struct {
+            pub const Cfinv = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 op2: u3 = 0b000,
                 CRm: u4 = 0b0000,
@@ -2598,7 +2598,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.400 XAFLAG
-            pub const Xaflag = packed struct {
+            pub const Xaflag = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 op2: u3 = 0b001,
                 CRm: u4 = 0b0000,
@@ -2608,7 +2608,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.24 AXFLAG
-            pub const Axflag = packed struct {
+            pub const Axflag = bitpack struct {
                 Rt: Register.Encoded = no_reg,
                 op2: u3 = 0b010,
                 CRm: u4 = 0b0000,
@@ -2641,7 +2641,7 @@ pub const Instruction = packed union {
         };
 
         /// System with result
-        pub const SystemResult = packed struct {
+        pub const SystemResult = bitpack struct {
             Rt: Register.Encoded,
             op2: u3,
             CRm: u4,
@@ -2651,12 +2651,12 @@ pub const Instruction = packed union {
         };
 
         /// System instructions
-        pub const System = packed union {
+        pub const System = bitpack union {
             group: @This().Group,
             sys: Sys,
             sysl: Sysl,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 op2: u3,
                 CRm: u4,
@@ -2668,7 +2668,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.372 SYS
-            pub const Sys = packed struct {
+            pub const Sys = bitpack struct {
                 Rt: Register.Encoded,
                 op2: u3,
                 CRm: u4,
@@ -2680,7 +2680,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.373 SYSL
-            pub const Sysl = packed struct {
+            pub const Sysl = bitpack struct {
                 Rt: Register.Encoded,
                 op2: u3,
                 CRm: u4,
@@ -2709,12 +2709,12 @@ pub const Instruction = packed union {
         };
 
         /// System register move
-        pub const SystemRegisterMove = packed union {
+        pub const SystemRegisterMove = bitpack union {
             group: @This().Group,
             msr: Msr,
             mrs: Mrs,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 systemreg: Register.System,
                 L: L,
@@ -2722,7 +2722,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.230 MSR (register)
-            pub const Msr = packed struct {
+            pub const Msr = bitpack struct {
                 Rt: Register.Encoded,
                 systemreg: Register.System,
                 L: L = .msr,
@@ -2730,7 +2730,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.228 MRS
-            pub const Mrs = packed struct {
+            pub const Mrs = bitpack struct {
                 Rt: Register.Encoded,
                 systemreg: Register.System,
                 L: L = .mrs,
@@ -2755,13 +2755,13 @@ pub const Instruction = packed union {
         };
 
         /// Unconditional branch (register)
-        pub const UnconditionalBranchRegister = packed union {
+        pub const UnconditionalBranchRegister = bitpack union {
             group: @This().Group,
             br: Br,
             blr: Blr,
             ret: Ret,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 op4: u5,
                 Rn: Register.Encoded,
                 op3: u6,
@@ -2771,7 +2771,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.37 BR
-            pub const Br = packed struct {
+            pub const Br = bitpack struct {
                 Rm: Register.Encoded = @fromBackingInt(@intCast(0)),
                 Rn: Register.Encoded,
                 M: bool = false,
@@ -2785,7 +2785,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.35 BLR
-            pub const Blr = packed struct {
+            pub const Blr = bitpack struct {
                 Rm: Register.Encoded = @fromBackingInt(@intCast(0)),
                 Rn: Register.Encoded,
                 M: bool = false,
@@ -2799,7 +2799,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.254 RET
-            pub const Ret = packed struct {
+            pub const Ret = bitpack struct {
                 Rm: Register.Encoded = @fromBackingInt(@intCast(0)),
                 Rn: Register.Encoded,
                 M: bool = false,
@@ -2841,26 +2841,26 @@ pub const Instruction = packed union {
         };
 
         /// Unconditional branch (immediate)
-        pub const UnconditionalBranchImmediate = packed union {
+        pub const UnconditionalBranchImmediate = bitpack union {
             group: @This().Group,
             b: B,
             bl: Bl,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 imm26: i26,
                 decoded26: u5 = 0b00101,
                 op: Op,
             };
 
             /// C6.2.25 B
-            pub const B = packed struct {
+            pub const B = bitpack struct {
                 imm26: i26,
                 decoded26: u5 = 0b00101,
                 op: Op = .b,
             };
 
             /// C6.2.34 BL
-            pub const Bl = packed struct {
+            pub const Bl = bitpack struct {
                 imm26: i26,
                 decoded26: u5 = 0b00101,
                 op: Op = .bl,
@@ -2884,12 +2884,12 @@ pub const Instruction = packed union {
         };
 
         /// Compare and branch (immediate)
-        pub const CompareBranchImmediate = packed union {
+        pub const CompareBranchImmediate = bitpack union {
             group: @This().Group,
             cbz: Cbz,
             cbnz: Cbnz,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 imm19: i19,
                 op: Op,
@@ -2898,7 +2898,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.47 CBZ
-            pub const Cbz = packed struct {
+            pub const Cbz = bitpack struct {
                 Rt: Register.Encoded,
                 imm19: i19,
                 op: Op = .cbz,
@@ -2907,7 +2907,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.46 CBNZ
-            pub const Cbnz = packed struct {
+            pub const Cbnz = bitpack struct {
                 Rt: Register.Encoded,
                 imm19: i19,
                 op: Op = .cbnz,
@@ -2933,12 +2933,12 @@ pub const Instruction = packed union {
         };
 
         /// Test and branch (immediate)
-        pub const TestBranchImmediate = packed union {
+        pub const TestBranchImmediate = bitpack union {
             group: @This().Group,
             tbz: Tbz,
             tbnz: Tbnz,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 imm14: i14,
                 b40: u5,
@@ -2948,7 +2948,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.375 TBZ
-            pub const Tbz = packed struct {
+            pub const Tbz = bitpack struct {
                 Rt: Register.Encoded,
                 imm14: i14,
                 b40: u5,
@@ -2958,7 +2958,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.374 TBNZ
-            pub const Tbnz = packed struct {
+            pub const Tbnz = bitpack struct {
                 Rt: Register.Encoded,
                 imm14: i14,
                 b40: u5,
@@ -3042,7 +3042,7 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.88 Loads and Stores
-    pub const LoadStore = packed union {
+    pub const LoadStore = bitpack union {
         group: @This().Group,
         register_literal: RegisterLiteral,
         memory: Memory,
@@ -3058,7 +3058,7 @@ pub const Instruction = packed union {
         register_unsigned_immediate: RegisterUnsignedImmediate,
 
         /// Table C4-89 Encoding table for the Loads and Stores group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             encoded0: u10,
             op4: u2,
             encoded12: u4,
@@ -3072,12 +3072,12 @@ pub const Instruction = packed union {
         };
 
         /// Load register (literal)
-        pub const RegisterLiteral = packed union {
+        pub const RegisterLiteral = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 imm19: i19,
                 decoded24: u2 = 0b00,
@@ -3086,13 +3086,13 @@ pub const Instruction = packed union {
                 opc: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 ldr: Ldr,
                 ldrsw: Ldrsw,
                 prfm: Prfm,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     imm19: i19,
                     decoded24: u2 = 0b00,
@@ -3102,7 +3102,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.167 LDR (literal)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     imm19: i19,
                     decoded24: u2 = 0b00,
@@ -3113,7 +3113,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.179 LDRSW (literal)
-                pub const Ldrsw = packed struct {
+                pub const Ldrsw = bitpack struct {
                     Rt: Register.Encoded,
                     imm19: i19,
                     decoded24: u2 = 0b00,
@@ -3123,7 +3123,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.248 PRFM (literal)
-                pub const Prfm = packed struct {
+                pub const Prfm = bitpack struct {
                     prfop: PrfOp,
                     imm19: i19,
                     decoded24: u2 = 0b00,
@@ -3133,11 +3133,11 @@ pub const Instruction = packed union {
                 };
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 ldr: Ldr,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     imm19: i19,
                     decoded24: u2 = 0b00,
@@ -3147,7 +3147,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.192 LDR (literal, SIMD&FP)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     imm19: i19,
                     decoded24: u2 = 0b00,
@@ -3170,7 +3170,7 @@ pub const Instruction = packed union {
         };
 
         /// Memory Copy and Memory Set
-        pub const Memory = packed struct {
+        pub const Memory = bitpack struct {
             Rd: Register.Encoded,
             Rn: Register.Encoded,
             decoded10: u2 = 0b01,
@@ -3185,7 +3185,7 @@ pub const Instruction = packed union {
         };
 
         /// Load/store no-allocate pair (offset)
-        pub const NoAllocatePairOffset = packed struct {
+        pub const NoAllocatePairOffset = bitpack struct {
             Rt: Register.Encoded,
             Rn: Register.Encoded,
             Rt2: Register.Encoded,
@@ -3198,12 +3198,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register pair (post-indexed)
-        pub const RegisterPairPostIndexed = packed union {
+        pub const RegisterPairPostIndexed = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 Rt2: Register.Encoded,
@@ -3215,13 +3215,13 @@ pub const Instruction = packed union {
                 opc: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 stp: Stp,
                 ldp: Ldp,
                 ldpsw: Ldpsw,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3234,7 +3234,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.321 STP
-                pub const Stp = packed struct {
+                pub const Stp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3248,7 +3248,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.164 LDP
-                pub const Ldp = packed struct {
+                pub const Ldp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3262,7 +3262,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.165 LDPSW
-                pub const Ldpsw = packed struct {
+                pub const Ldpsw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3295,12 +3295,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 stp: Stp,
                 ldp: Ldp,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3313,7 +3313,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.330 STP (SIMD&FP)
-                pub const Stp = packed struct {
+                pub const Stp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3326,7 +3326,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.190 LDP (SIMD&FP)
-                pub const Ldp = packed struct {
+                pub const Ldp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3367,12 +3367,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register pair (offset)
-        pub const RegisterPairOffset = packed union {
+        pub const RegisterPairOffset = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 Rt2: Register.Encoded,
@@ -3384,13 +3384,13 @@ pub const Instruction = packed union {
                 opc: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 stp: Stp,
                 ldp: Ldp,
                 ldpsw: Ldpsw,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3403,7 +3403,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.321 STP
-                pub const Stp = packed struct {
+                pub const Stp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3417,7 +3417,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.164 LDP
-                pub const Ldp = packed struct {
+                pub const Ldp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3431,7 +3431,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.165 LDPSW
-                pub const Ldpsw = packed struct {
+                pub const Ldpsw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3464,12 +3464,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 stp: Stp,
                 ldp: Ldp,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3482,7 +3482,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.330 STP (SIMD&FP)
-                pub const Stp = packed struct {
+                pub const Stp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3495,7 +3495,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.190 LDP (SIMD&FP)
-                pub const Ldp = packed struct {
+                pub const Ldp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3536,12 +3536,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register pair (pre-indexed)
-        pub const RegisterPairPreIndexed = packed union {
+        pub const RegisterPairPreIndexed = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 Rt2: Register.Encoded,
@@ -3553,13 +3553,13 @@ pub const Instruction = packed union {
                 opc: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 stp: Stp,
                 ldp: Ldp,
                 ldpsw: Ldpsw,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3572,7 +3572,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.321 STP
-                pub const Stp = packed struct {
+                pub const Stp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3586,7 +3586,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.164 LDP
-                pub const Ldp = packed struct {
+                pub const Ldp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3600,7 +3600,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.165 LDPSW
-                pub const Ldpsw = packed struct {
+                pub const Ldpsw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3633,12 +3633,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 stp: Stp,
                 ldp: Ldp,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3651,7 +3651,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.330 STP (SIMD&FP)
-                pub const Stp = packed struct {
+                pub const Stp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3664,7 +3664,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.190 LDP (SIMD&FP)
-                pub const Ldp = packed struct {
+                pub const Ldp = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     Rt2: Register.Encoded,
@@ -3705,12 +3705,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register (unscaled immediate)
-        pub const RegisterUnscaledImmediate = packed union {
+        pub const RegisterUnscaledImmediate = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b00,
@@ -3723,7 +3723,7 @@ pub const Instruction = packed union {
                 size: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 sturb: Sturb,
                 ldurb: Ldurb,
@@ -3736,7 +3736,7 @@ pub const Instruction = packed union {
                 ldursw: Ldursw,
                 prfum: Prfum,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3750,7 +3750,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.347 STURB
-                pub const Sturb = packed struct {
+                pub const Sturb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3764,7 +3764,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.203 LDURB
-                pub const Ldurb = packed struct {
+                pub const Ldurb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3778,7 +3778,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.205 LDURSB
-                pub const Ldursb = packed struct {
+                pub const Ldursb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3793,7 +3793,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.348 STURH
-                pub const Sturh = packed struct {
+                pub const Sturh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3807,7 +3807,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.204 LDURH
-                pub const Ldurh = packed struct {
+                pub const Ldurh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3821,7 +3821,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.206 LDURSH
-                pub const Ldursh = packed struct {
+                pub const Ldursh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3836,7 +3836,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.346 STUR
-                pub const Stur = packed struct {
+                pub const Stur = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3851,7 +3851,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.202 LDUR
-                pub const Ldur = packed struct {
+                pub const Ldur = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3866,7 +3866,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.207 LDURSW
-                pub const Ldursw = packed struct {
+                pub const Ldursw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3880,7 +3880,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.250 PRFUM
-                pub const Prfum = packed struct {
+                pub const Prfum = bitpack struct {
                     prfop: PrfOp,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3946,12 +3946,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 stur: Stur,
                 ldur: Ldur,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3966,7 +3966,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.333 STUR (SIMD&FP)
-                pub const Stur = packed struct {
+                pub const Stur = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3981,7 +3981,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.194 LDUR (SIMD&FP)
-                pub const Ldur = packed struct {
+                pub const Ldur = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b00,
@@ -3995,7 +3995,7 @@ pub const Instruction = packed union {
                     size: Vector.Size,
                 };
 
-                pub const Opc1 = packed struct {
+                pub const Opc1 = bitpack struct {
                     encoded: u1,
 
                     pub fn encode(ss: Register.ScalarSize) Opc1 {
@@ -4027,7 +4027,7 @@ pub const Instruction = packed union {
                     }
                 };
 
-                pub const Size = packed struct {
+                pub const Size = bitpack struct {
                     encoded: u2,
 
                     pub fn encode(ss: Register.ScalarSize) Vector.Size {
@@ -4075,12 +4075,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register (immediate post-indexed)
-        pub const RegisterImmediatePostIndexed = packed union {
+        pub const RegisterImmediatePostIndexed = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b01,
@@ -4093,7 +4093,7 @@ pub const Instruction = packed union {
                 size: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 strb: Strb,
                 ldrb: Ldrb,
@@ -4105,7 +4105,7 @@ pub const Instruction = packed union {
                 ldr: Ldr,
                 ldrsw: Ldrsw,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4119,7 +4119,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.324 STRB (immediate)
-                pub const Strb = packed struct {
+                pub const Strb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4133,7 +4133,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.170 LDRB (immediate)
-                pub const Ldrb = packed struct {
+                pub const Ldrb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4147,7 +4147,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.174 LDRSB (immediate)
-                pub const Ldrsb = packed struct {
+                pub const Ldrsb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4162,7 +4162,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.326 STRH (immediate)
-                pub const Strh = packed struct {
+                pub const Strh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4176,7 +4176,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.172 LDRH (immediate)
-                pub const Ldrh = packed struct {
+                pub const Ldrh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4190,7 +4190,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.176 LDRSH (immediate)
-                pub const Ldrsh = packed struct {
+                pub const Ldrsh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4205,7 +4205,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.322 STR (immediate)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4220,7 +4220,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.166 LDR (immediate)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4235,7 +4235,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.178 LDRSW (immediate)
-                pub const Ldrsw = packed struct {
+                pub const Ldrsw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4299,12 +4299,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 str: Str,
                 ldr: Ldr,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4319,7 +4319,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.331 STR (immediate, SIMD&FP)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4334,7 +4334,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.191 LDR (immediate, SIMD&FP)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b01,
@@ -4348,7 +4348,7 @@ pub const Instruction = packed union {
                     size: Vector.Size,
                 };
 
-                pub const Opc1 = packed struct {
+                pub const Opc1 = bitpack struct {
                     encoded: u1,
 
                     pub fn encode(ss: Register.ScalarSize) Opc1 {
@@ -4380,7 +4380,7 @@ pub const Instruction = packed union {
                     }
                 };
 
-                pub const Size = packed struct {
+                pub const Size = bitpack struct {
                     encoded: u2,
 
                     pub fn encode(ss: Register.ScalarSize) Vector.Size {
@@ -4428,7 +4428,7 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register (unprivileged)
-        pub const RegisterUnprivileged = packed struct {
+        pub const RegisterUnprivileged = bitpack struct {
             Rt: Register.Encoded,
             Rn: Register.Encoded,
             decoded10: u2 = 0b10,
@@ -4442,12 +4442,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register (immediate pre-indexed)
-        pub const RegisterImmediatePreIndexed = packed union {
+        pub const RegisterImmediatePreIndexed = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b11,
@@ -4460,7 +4460,7 @@ pub const Instruction = packed union {
                 size: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 strb: Strb,
                 ldrb: Ldrb,
@@ -4472,7 +4472,7 @@ pub const Instruction = packed union {
                 ldr: Ldr,
                 ldrsw: Ldrsw,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4486,7 +4486,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.324 STRB (immediate)
-                pub const Strb = packed struct {
+                pub const Strb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4500,7 +4500,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.170 LDRB (immediate)
-                pub const Ldrb = packed struct {
+                pub const Ldrb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4514,7 +4514,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.174 LDRSB (immediate)
-                pub const Ldrsb = packed struct {
+                pub const Ldrsb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4529,7 +4529,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.326 STRH (immediate)
-                pub const Strh = packed struct {
+                pub const Strh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4543,7 +4543,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.172 LDRH (immediate)
-                pub const Ldrh = packed struct {
+                pub const Ldrh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4557,7 +4557,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.176 LDRSH (immediate)
-                pub const Ldrsh = packed struct {
+                pub const Ldrsh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4572,7 +4572,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.322 STR (immediate)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4587,7 +4587,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.166 LDR (immediate)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4602,7 +4602,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.178 LDRSW (immediate)
-                pub const Ldrsw = packed struct {
+                pub const Ldrsw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4654,12 +4654,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 str: Str,
                 ldr: Ldr,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4674,7 +4674,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.331 STR (immediate, SIMD&FP)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4689,7 +4689,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.191 LDR (immediate, SIMD&FP)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b11,
@@ -4703,7 +4703,7 @@ pub const Instruction = packed union {
                     size: Vector.Size,
                 };
 
-                pub const Opc1 = packed struct {
+                pub const Opc1 = bitpack struct {
                     encoded: u1,
 
                     pub fn encode(ss: Register.ScalarSize) Opc1 {
@@ -4735,7 +4735,7 @@ pub const Instruction = packed union {
                     }
                 };
 
-                pub const Size = packed struct {
+                pub const Size = bitpack struct {
                     encoded: u2,
 
                     pub fn encode(ss: Register.ScalarSize) Vector.Size {
@@ -4783,12 +4783,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register (register offset)
-        pub const RegisterRegisterOffset = packed union {
+        pub const RegisterRegisterOffset = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -4803,7 +4803,7 @@ pub const Instruction = packed union {
                 size: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 strb: Strb,
                 ldrb: Ldrb,
@@ -4816,7 +4816,7 @@ pub const Instruction = packed union {
                 ldrsw: Ldrsw,
                 prfm: Prfm,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4832,7 +4832,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.325 STRB (register)
-                pub const Strb = packed struct {
+                pub const Strb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4848,7 +4848,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.171 LDRB (register)
-                pub const Ldrb = packed struct {
+                pub const Ldrb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4864,7 +4864,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.175 LDRSB (register)
-                pub const Ldrsb = packed struct {
+                pub const Ldrsb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4881,7 +4881,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.327 STRH (register)
-                pub const Strh = packed struct {
+                pub const Strh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4897,7 +4897,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.173 LDRH (register)
-                pub const Ldrh = packed struct {
+                pub const Ldrh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4913,7 +4913,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.177 LDRSH (register)
-                pub const Ldrsh = packed struct {
+                pub const Ldrsh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4930,7 +4930,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.323 STR (register)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4947,7 +4947,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.168 LDR (register)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4964,7 +4964,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.180 LDRSW (register)
-                pub const Ldrsw = packed struct {
+                pub const Ldrsw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -4980,7 +4980,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.249 PRFM (register)
-                pub const Prfm = packed struct {
+                pub const Prfm = bitpack struct {
                     prfop: PrfOp,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -5048,12 +5048,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 str: Str,
                 ldr: Ldr,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -5069,7 +5069,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.332 STR (register, SIMD&FP)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -5086,7 +5086,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.193 LDR (register, SIMD&FP)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     decoded10: u2 = 0b10,
@@ -5102,7 +5102,7 @@ pub const Instruction = packed union {
                     size: Vector.Size,
                 };
 
-                pub const Opc1 = packed struct {
+                pub const Opc1 = bitpack struct {
                     encoded: u1,
 
                     pub fn encode(ss: Register.ScalarSize) Opc1 {
@@ -5134,7 +5134,7 @@ pub const Instruction = packed union {
                     }
                 };
 
-                pub const Size = packed struct {
+                pub const Size = bitpack struct {
                     encoded: u2,
 
                     pub fn encode(ss: Register.ScalarSize) Vector.Size {
@@ -5186,12 +5186,12 @@ pub const Instruction = packed union {
         };
 
         /// Load/store register (unsigned immediate)
-        pub const RegisterUnsignedImmediate = packed union {
+        pub const RegisterUnsignedImmediate = bitpack union {
             group: @This().Group,
             integer: Integer,
             vector: Vector,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rt: Register.Encoded,
                 Rn: Register.Encoded,
                 imm12: u12,
@@ -5202,7 +5202,7 @@ pub const Instruction = packed union {
                 size: u2,
             };
 
-            pub const Integer = packed union {
+            pub const Integer = bitpack union {
                 group: @This().Group,
                 strb: Strb,
                 ldrb: Ldrb,
@@ -5215,7 +5215,7 @@ pub const Instruction = packed union {
                 ldrsw: Ldrsw,
                 prfm: Prfm,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5227,7 +5227,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.324 STRB (immediate)
-                pub const Strb = packed struct {
+                pub const Strb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5239,7 +5239,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.170 LDRB (immediate)
-                pub const Ldrb = packed struct {
+                pub const Ldrb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5251,7 +5251,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.174 LDRSB (immediate)
-                pub const Ldrsb = packed struct {
+                pub const Ldrsb = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5264,7 +5264,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.326 STRH (immediate)
-                pub const Strh = packed struct {
+                pub const Strh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5276,7 +5276,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.172 LDRH (immediate)
-                pub const Ldrh = packed struct {
+                pub const Ldrh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5288,7 +5288,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.176 LDRSH (immediate)
-                pub const Ldrsh = packed struct {
+                pub const Ldrsh = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5301,7 +5301,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.322 STR (immediate)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5314,7 +5314,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.166 LDR (immediate)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5327,7 +5327,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.178 LDRSW (immediate)
-                pub const Ldrsw = packed struct {
+                pub const Ldrsw = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5339,7 +5339,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C6.2.247 PRFM (immediate)
-                pub const Prfm = packed struct {
+                pub const Prfm = bitpack struct {
                     prfop: PrfOp,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5403,12 +5403,12 @@ pub const Instruction = packed union {
                 }
             };
 
-            pub const Vector = packed union {
+            pub const Vector = bitpack union {
                 group: @This().Group,
                 str: Str,
                 ldr: Ldr,
 
-                pub const Group = packed struct {
+                pub const Group = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5421,7 +5421,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.331 STR (immediate, SIMD&FP)
-                pub const Str = packed struct {
+                pub const Str = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5434,7 +5434,7 @@ pub const Instruction = packed union {
                 };
 
                 /// C7.2.191 LDR (immediate, SIMD&FP)
-                pub const Ldr = packed struct {
+                pub const Ldr = bitpack struct {
                     Rt: Register.Encoded,
                     Rn: Register.Encoded,
                     imm12: u12,
@@ -5446,7 +5446,7 @@ pub const Instruction = packed union {
                     size: Vector.Size,
                 };
 
-                pub const Opc1 = packed struct {
+                pub const Opc1 = bitpack struct {
                     encoded: u1,
 
                     pub fn encode(ss: Register.ScalarSize) Opc1 {
@@ -5478,7 +5478,7 @@ pub const Instruction = packed union {
                     }
                 };
 
-                pub const Size = packed struct {
+                pub const Size = bitpack struct {
                     encoded: u2,
 
                     pub fn encode(ss: Register.ScalarSize) Vector.Size {
@@ -5562,7 +5562,7 @@ pub const Instruction = packed union {
             }
         };
 
-        pub const PrfOp = packed struct {
+        pub const PrfOp = bitpack struct {
             policy: Policy,
             target: Target,
             type: Type,
@@ -5651,7 +5651,7 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.89 Data Processing -- Register
-    pub const DataProcessingRegister = packed union {
+    pub const DataProcessingRegister = bitpack union {
         group: @This().Group,
         data_processing_two_source: DataProcessingTwoSource,
         data_processing_one_source: DataProcessingOneSource,
@@ -5667,7 +5667,7 @@ pub const Instruction = packed union {
         data_processing_three_source: DataProcessingThreeSource,
 
         /// Table C4-90 Encoding table for the Data Processing -- Register group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             encoded0: u10,
             op3: u6,
             encoded16: u5,
@@ -5680,7 +5680,7 @@ pub const Instruction = packed union {
         };
 
         /// Data-processing (2 source)
-        pub const DataProcessingTwoSource = packed union {
+        pub const DataProcessingTwoSource = bitpack union {
             group: @This().Group,
             udiv: Udiv,
             sdiv: Sdiv,
@@ -5689,7 +5689,7 @@ pub const Instruction = packed union {
             asrv: Asrv,
             rorv: Rorv,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 opcode: u6,
@@ -5701,7 +5701,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.388 UDIV
-            pub const Udiv = packed struct {
+            pub const Udiv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 o1: DivOp = .udiv,
@@ -5714,7 +5714,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.270 SDIV
-            pub const Sdiv = packed struct {
+            pub const Sdiv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 o1: DivOp = .sdiv,
@@ -5727,7 +5727,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.214 LSLV
-            pub const Lslv = packed struct {
+            pub const Lslv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: ShiftOp = .lslv,
@@ -5740,7 +5740,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.217 LSRV
-            pub const Lsrv = packed struct {
+            pub const Lsrv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: ShiftOp = .lsrv,
@@ -5753,7 +5753,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.18 ASRV
-            pub const Asrv = packed struct {
+            pub const Asrv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: ShiftOp = .asrv,
@@ -5766,7 +5766,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.263 RORV
-            pub const Rorv = packed struct {
+            pub const Rorv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: ShiftOp = .rorv,
@@ -5816,7 +5816,7 @@ pub const Instruction = packed union {
         };
 
         /// Data-processing (1 source)
-        pub const DataProcessingOneSource = packed union {
+        pub const DataProcessingOneSource = bitpack union {
             group: @This().Group,
             rbit: Rbit,
             rev16: Rev16,
@@ -5825,7 +5825,7 @@ pub const Instruction = packed union {
             clz: Clz,
             cls: Cls,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 opcode: u6,
@@ -5837,7 +5837,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.253 RBIT
-            pub const Rbit = packed struct {
+            pub const Rbit = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b00,
@@ -5850,7 +5850,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.257 REV16
-            pub const Rev16 = packed struct {
+            pub const Rev16 = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 opc: u2 = 0b01,
@@ -5863,7 +5863,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.258 REV32
-            pub const Rev32 = packed struct {
+            pub const Rev32 = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 opc: u2 = 0b10,
@@ -5876,7 +5876,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.256 REV
-            pub const Rev = packed struct {
+            pub const Rev = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 opc0: Register.GeneralSize,
@@ -5890,7 +5890,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.58 CLZ
-            pub const Clz = packed struct {
+            pub const Clz = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op: u1 = 0b0,
@@ -5903,7 +5903,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.57 CLS
-            pub const Cls = packed struct {
+            pub const Cls = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op: u1 = 0b1,
@@ -5950,7 +5950,7 @@ pub const Instruction = packed union {
         };
 
         /// Logical (shifted register)
-        pub const LogicalShiftedRegister = packed union {
+        pub const LogicalShiftedRegister = bitpack union {
             group: @This().Group,
             @"and": And,
             bic: Bic,
@@ -5961,7 +5961,7 @@ pub const Instruction = packed union {
             ands: Ands,
             bics: Bics,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -5974,7 +5974,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.13 AND (shifted register)
-            pub const And = packed struct {
+            pub const And = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -5987,7 +5987,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.32 BIC (shifted register)
-            pub const Bic = packed struct {
+            pub const Bic = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6000,7 +6000,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.241 ORR (shifted register)
-            pub const Orr = packed struct {
+            pub const Orr = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6013,7 +6013,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.239 ORN (shifted register)
-            pub const Orn = packed struct {
+            pub const Orn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6026,7 +6026,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.120 EOR (shifted register)
-            pub const Eor = packed struct {
+            pub const Eor = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6039,7 +6039,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.118 EON (shifted register)
-            pub const Eon = packed struct {
+            pub const Eon = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6052,7 +6052,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.15 ANDS (shifted register)
-            pub const Ands = packed struct {
+            pub const Ands = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6065,7 +6065,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.33 BICS (shifted register)
-            pub const Bics = packed struct {
+            pub const Bics = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6113,14 +6113,14 @@ pub const Instruction = packed union {
         };
 
         /// Add/subtract (shifted register)
-        pub const AddSubtractShiftedRegister = packed union {
+        pub const AddSubtractShiftedRegister = bitpack union {
             group: @This().Group,
             add: Add,
             adds: Adds,
             sub: Sub,
             subs: Subs,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6134,7 +6134,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.5 ADD (shifted register)
-            pub const Add = packed struct {
+            pub const Add = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6148,7 +6148,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.9 ADDS (shifted register)
-            pub const Adds = packed struct {
+            pub const Adds = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6162,7 +6162,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.5 SUB (shifted register)
-            pub const Sub = packed struct {
+            pub const Sub = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6176,7 +6176,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.9 SUBS (shifted register)
-            pub const Subs = packed struct {
+            pub const Subs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm6: Shift.Amount,
@@ -6216,14 +6216,14 @@ pub const Instruction = packed union {
         };
 
         /// Add/subtract (extended register)
-        pub const AddSubtractExtendedRegister = packed union {
+        pub const AddSubtractExtendedRegister = bitpack union {
             group: @This().Group,
             add: Add,
             adds: Adds,
             sub: Sub,
             subs: Subs,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm3: Extend.Amount,
@@ -6238,7 +6238,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.3 ADD (extended register)
-            pub const Add = packed struct {
+            pub const Add = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm3: Extend.Amount,
@@ -6253,7 +6253,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.7 ADDS (extended register)
-            pub const Adds = packed struct {
+            pub const Adds = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm3: Extend.Amount,
@@ -6268,7 +6268,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.356 SUB (extended register)
-            pub const Sub = packed struct {
+            pub const Sub = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm3: Extend.Amount,
@@ -6283,7 +6283,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.362 SUBS (extended register)
-            pub const Subs = packed struct {
+            pub const Subs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 imm3: Extend.Amount,
@@ -6358,14 +6358,14 @@ pub const Instruction = packed union {
         };
 
         /// Add/subtract (with carry)
-        pub const AddSubtractWithCarry = packed union {
+        pub const AddSubtractWithCarry = bitpack union {
             group: @This().Group,
             adc: Adc,
             adcs: Adcs,
             sbc: Sbc,
             sbcs: Sbcs,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -6377,7 +6377,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.1 ADC
-            pub const Adc = packed struct {
+            pub const Adc = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -6389,7 +6389,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.2 ADCS
-            pub const Adcs = packed struct {
+            pub const Adcs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -6401,7 +6401,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.265 SBC
-            pub const Sbc = packed struct {
+            pub const Sbc = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -6413,7 +6413,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.266 SBCS
-            pub const Sbcs = packed struct {
+            pub const Sbcs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -6450,10 +6450,10 @@ pub const Instruction = packed union {
         };
 
         /// Rotate right into flags
-        pub const RotateRightIntoFlags = packed union {
+        pub const RotateRightIntoFlags = bitpack union {
             group: @This().Group,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 mask: Nzcv,
                 o2: u1,
                 Rn: Register.Encoded,
@@ -6467,10 +6467,10 @@ pub const Instruction = packed union {
         };
 
         /// Evaluate into flags
-        pub const EvaluateIntoFlags = packed union {
+        pub const EvaluateIntoFlags = bitpack union {
             group: @This().Group,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 mask: Nzcv,
                 o3: u1,
                 Rn: Register.Encoded,
@@ -6488,12 +6488,12 @@ pub const Instruction = packed union {
         };
 
         /// Conditional compare (register)
-        pub const ConditionalCompareRegister = packed union {
+        pub const ConditionalCompareRegister = bitpack union {
             group: @This().Group,
             ccmn: Ccmn,
             ccmp: Ccmp,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 nzcv: Nzcv,
                 o3: u1,
                 Rn: Register.Encoded,
@@ -6508,7 +6508,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.49 CCMN (register)
-            pub const Ccmn = packed struct {
+            pub const Ccmn = bitpack struct {
                 nzcv: Nzcv,
                 o3: u1 = 0b0,
                 Rn: Register.Encoded,
@@ -6523,7 +6523,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.51 CCMP (register)
-            pub const Ccmp = packed struct {
+            pub const Ccmp = bitpack struct {
                 nzcv: Nzcv,
                 o3: u1 = 0b0,
                 Rn: Register.Encoded,
@@ -6544,12 +6544,12 @@ pub const Instruction = packed union {
         };
 
         /// Conditional compare (immediate)
-        pub const ConditionalCompareImmediate = packed union {
+        pub const ConditionalCompareImmediate = bitpack union {
             group: @This().Group,
             ccmn: Ccmn,
             ccmp: Ccmp,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 nzcv: Nzcv,
                 o3: u1,
                 Rn: Register.Encoded,
@@ -6564,7 +6564,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.48 CCMN (immediate)
-            pub const Ccmn = packed struct {
+            pub const Ccmn = bitpack struct {
                 nzcv: Nzcv,
                 o3: u1 = 0b0,
                 Rn: Register.Encoded,
@@ -6579,7 +6579,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.50 CCMP (immediate)
-            pub const Ccmp = packed struct {
+            pub const Ccmp = bitpack struct {
                 nzcv: Nzcv,
                 o3: u1 = 0b0,
                 Rn: Register.Encoded,
@@ -6600,14 +6600,14 @@ pub const Instruction = packed union {
         };
 
         /// Conditional select
-        pub const ConditionalSelect = packed union {
+        pub const ConditionalSelect = bitpack union {
             group: @This().Group,
             csel: Csel,
             csinc: Csinc,
             csinv: Csinv,
             csneg: Csneg,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: u2,
@@ -6620,7 +6620,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.103 CSEL
-            pub const Csel = packed struct {
+            pub const Csel = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: u2 = 0b00,
@@ -6633,7 +6633,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.106 CSINC
-            pub const Csinc = packed struct {
+            pub const Csinc = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: u2 = 0b01,
@@ -6646,7 +6646,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.107 CSINV
-            pub const Csinv = packed struct {
+            pub const Csinv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: u2 = 0b00,
@@ -6659,7 +6659,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.108 CSNEG
-            pub const Csneg = packed struct {
+            pub const Csneg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 op2: u2 = 0b01,
@@ -6698,7 +6698,7 @@ pub const Instruction = packed union {
         };
 
         /// Data-processing (3 source)
-        pub const DataProcessingThreeSource = packed union {
+        pub const DataProcessingThreeSource = bitpack union {
             group: @This().Group,
             madd: Madd,
             msub: Msub,
@@ -6709,7 +6709,7 @@ pub const Instruction = packed union {
             umsubl: Umsubl,
             umulh: Umulh,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -6722,7 +6722,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.218 MADD
-            pub const Madd = packed struct {
+            pub const Madd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -6735,7 +6735,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.231 MSUB
-            pub const Msub = packed struct {
+            pub const Msub = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -6748,7 +6748,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.282 SMADDL
-            pub const Smaddl = packed struct {
+            pub const Smaddl = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -6762,7 +6762,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.287 SMSUBL
-            pub const Smsubl = packed struct {
+            pub const Smsubl = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -6776,7 +6776,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.288 SMULH
-            pub const Smulh = packed struct {
+            pub const Smulh = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded = Register.Alias.zr.encode(.{}),
@@ -6790,7 +6790,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.389 UMADDL
-            pub const Umaddl = packed struct {
+            pub const Umaddl = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -6804,7 +6804,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.391 UMSUBL
-            pub const Umsubl = packed struct {
+            pub const Umsubl = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -6818,7 +6818,7 @@ pub const Instruction = packed union {
             };
 
             /// C6.2.392 UMULH
-            pub const Umulh = packed struct {
+            pub const Umulh = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded = Register.Alias.zr.encode(.{}),
@@ -6943,7 +6943,7 @@ pub const Instruction = packed union {
     };
 
     /// C4.1.90 Data Processing -- Scalar Floating-Point and Advanced SIMD
-    pub const DataProcessingVector = packed union {
+    pub const DataProcessingVector = bitpack union {
         group: @This().Group,
         simd_scalar_copy: SimdScalarCopy,
         simd_scalar_two_register_miscellaneous_fp16: SimdScalarTwoRegisterMiscellaneousFp16,
@@ -6966,7 +6966,7 @@ pub const Instruction = packed union {
         float_data_processing_three_source: FloatDataProcessingThreeSource,
 
         /// Table C4-91 Encoding table for the Data Processing -- Scalar Floating-Point and Advanced SIMD group
-        pub const Group = packed struct {
+        pub const Group = bitpack struct {
             encoded0: u10,
             op3: u9,
             op2: u4,
@@ -6976,11 +6976,11 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD scalar copy
-        pub const SimdScalarCopy = packed union {
+        pub const SimdScalarCopy = bitpack union {
             group: @This().Group,
             dup: Dup,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -6993,7 +6993,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.39 DUP (element)
-            pub const Dup = packed struct {
+            pub const Dup = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -7021,7 +7021,7 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD scalar two-register miscellaneous FP16
-        pub const SimdScalarTwoRegisterMiscellaneousFp16 = packed union {
+        pub const SimdScalarTwoRegisterMiscellaneousFp16 = bitpack union {
             group: @This().Group,
             fcvtns: Fcvtns,
             fcvtms: Fcvtms,
@@ -7044,7 +7044,7 @@ pub const Instruction = packed union {
             fcvtzu: Fcvtzu,
             frsqrte: Frsqrte,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7057,7 +7057,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.80 FCVTNS (vector)
-            pub const Fcvtns = packed struct {
+            pub const Fcvtns = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7070,7 +7070,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.75 FCVTMS (vector)
-            pub const Fcvtms = packed struct {
+            pub const Fcvtms = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7083,7 +7083,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.70 FCVTAS (vector)
-            pub const Fcvtas = packed struct {
+            pub const Fcvtas = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7096,7 +7096,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.234 SCVTF (vector, integer)
-            pub const Scvtf = packed struct {
+            pub const Scvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7109,7 +7109,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.61 FCMGT (zero)
-            pub const Fcmgt = packed struct {
+            pub const Fcmgt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7122,7 +7122,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.57 FCMEQ (zero)
-            pub const Fcmeq = packed struct {
+            pub const Fcmeq = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7135,7 +7135,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.65 FCMLT (zero)
-            pub const Fcmlt = packed struct {
+            pub const Fcmlt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7148,7 +7148,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.84 FCVTPS (vector)
-            pub const Fcvtps = packed struct {
+            pub const Fcvtps = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7161,7 +7161,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.90 FCVTZS (vector, integer)
-            pub const Fcvtzs = packed struct {
+            pub const Fcvtzs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7174,7 +7174,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.144 FRECPE
-            pub const Frecpe = packed struct {
+            pub const Frecpe = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7187,7 +7187,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.146 FRECPX
-            pub const Frecpx = packed struct {
+            pub const Frecpx = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7200,7 +7200,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.82 FCVTNU (vector)
-            pub const Fcvtnu = packed struct {
+            pub const Fcvtnu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7213,7 +7213,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.77 FCVTMU (vector)
-            pub const Fcvtmu = packed struct {
+            pub const Fcvtmu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7226,7 +7226,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.72 FCVTAU (vector)
-            pub const Fcvtau = packed struct {
+            pub const Fcvtau = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7239,7 +7239,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.353 UCVTF (vector, integer)
-            pub const Ucvtf = packed struct {
+            pub const Ucvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7252,7 +7252,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.59 FCMGE (zero)
-            pub const Fcmge = packed struct {
+            pub const Fcmge = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7265,7 +7265,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.64 FCMLE (zero)
-            pub const Fcmle = packed struct {
+            pub const Fcmle = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7278,7 +7278,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.86 FCVTPU (vector)
-            pub const Fcvtpu = packed struct {
+            pub const Fcvtpu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7291,7 +7291,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.94 FCVTZU (vector, integer)
-            pub const Fcvtzu = packed struct {
+            pub const Fcvtzu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7304,7 +7304,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.169 FRSQRTE
-            pub const Frsqrte = packed struct {
+            pub const Frsqrte = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7382,7 +7382,7 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD scalar two-register miscellaneous
-        pub const SimdScalarTwoRegisterMiscellaneous = packed union {
+        pub const SimdScalarTwoRegisterMiscellaneous = bitpack union {
             group: @This().Group,
             suqadd: Suqadd,
             sqabs: Sqabs,
@@ -7420,7 +7420,7 @@ pub const Instruction = packed union {
             fcvtzu: Fcvtzu,
             frsqrte: Frsqrte,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7433,7 +7433,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.337 SUQADD
-            pub const Suqadd = packed struct {
+            pub const Suqadd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7446,7 +7446,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.282 SQABS
-            pub const Sqabs = packed struct {
+            pub const Sqabs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7459,7 +7459,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.32 CMGT (zero)
-            pub const Cmgt = packed struct {
+            pub const Cmgt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7472,7 +7472,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.28 CMEQ (zero)
-            pub const Cmeq = packed struct {
+            pub const Cmeq = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7485,7 +7485,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.36 CMLT (zero)
-            pub const Cmlt = packed struct {
+            pub const Cmlt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7498,7 +7498,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.1 ABS
-            pub const Abs = packed struct {
+            pub const Abs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7511,7 +7511,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.308 SQXTN
-            pub const Sqxtn = packed struct {
+            pub const Sqxtn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7524,7 +7524,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.80 FCVTNS (vector)
-            pub const Fcvtns = packed struct {
+            pub const Fcvtns = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7538,7 +7538,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.75 FCVTMS (vector)
-            pub const Fcvtms = packed struct {
+            pub const Fcvtms = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7552,7 +7552,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.70 FCVTAS (vector)
-            pub const Fcvtas = packed struct {
+            pub const Fcvtas = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7566,7 +7566,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.234 SCVTF (vector, integer)
-            pub const Scvtf = packed struct {
+            pub const Scvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7580,7 +7580,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.61 FCMGT (zero)
-            pub const Fcmgt = packed struct {
+            pub const Fcmgt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7594,7 +7594,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.57 FCMEQ (zero)
-            pub const Fcmeq = packed struct {
+            pub const Fcmeq = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7608,7 +7608,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.65 FCMLT (zero)
-            pub const Fcmlt = packed struct {
+            pub const Fcmlt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7622,7 +7622,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.84 FCVTPS (vector)
-            pub const Fcvtps = packed struct {
+            pub const Fcvtps = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7636,7 +7636,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.90 FCVTZS (vector, integer)
-            pub const Fcvtzs = packed struct {
+            pub const Fcvtzs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7650,7 +7650,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.144 FRECPE
-            pub const Frecpe = packed struct {
+            pub const Frecpe = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7664,7 +7664,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.146 FRECPX
-            pub const Frecpx = packed struct {
+            pub const Frecpx = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7678,7 +7678,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.394 USQADD
-            pub const Usqadd = packed struct {
+            pub const Usqadd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7691,7 +7691,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.292 SQNEG
-            pub const Sqneg = packed struct {
+            pub const Sqneg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7704,7 +7704,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.30 CMGE (zero)
-            pub const Cmge = packed struct {
+            pub const Cmge = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7717,7 +7717,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.35 CMLE (zero)
-            pub const Cmle = packed struct {
+            pub const Cmle = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7730,7 +7730,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.209 NEG (vector)
-            pub const Neg = packed struct {
+            pub const Neg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7743,7 +7743,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.309 SQXTUN
-            pub const Sqxtun = packed struct {
+            pub const Sqxtun = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7756,7 +7756,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.381 UQXTN
-            pub const Uqxtn = packed struct {
+            pub const Uqxtn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7769,7 +7769,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.88 FCVTXN
-            pub const Fcvtxn = packed struct {
+            pub const Fcvtxn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7783,7 +7783,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.82 FCVTNU (vector)
-            pub const Fcvtnu = packed struct {
+            pub const Fcvtnu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7797,7 +7797,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.77 FCVTMU (vector)
-            pub const Fcvtmu = packed struct {
+            pub const Fcvtmu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7811,7 +7811,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.72 FCVTAU (vector)
-            pub const Fcvtau = packed struct {
+            pub const Fcvtau = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7825,7 +7825,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.353 UCVTF (vector, integer)
-            pub const Ucvtf = packed struct {
+            pub const Ucvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7839,7 +7839,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.59 FCMGE (zero)
-            pub const Fcmge = packed struct {
+            pub const Fcmge = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7853,7 +7853,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.64 FCMLE (zero)
-            pub const Fcmle = packed struct {
+            pub const Fcmle = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7867,7 +7867,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.86 FCVTPU (vector)
-            pub const Fcvtpu = packed struct {
+            pub const Fcvtpu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7881,7 +7881,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.94 FCVTZU (vector, integer)
-            pub const Fcvtzu = packed struct {
+            pub const Fcvtzu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -7895,7 +7895,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.169 FRSQRTE
-            pub const Frsqrte = packed struct {
+            pub const Frsqrte = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8033,11 +8033,11 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD scalar pairwise
-        pub const SimdScalarPairwise = packed union {
+        pub const SimdScalarPairwise = bitpack union {
             group: @This().Group,
             addp: Addp,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8050,7 +8050,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.4 ADDP (scalar)
-            pub const Addp = packed struct {
+            pub const Addp = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8078,14 +8078,14 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD copy
-        pub const SimdCopy = packed union {
+        pub const SimdCopy = bitpack union {
             group: @This().Group,
             dup: Dup,
             smov: Smov,
             umov: Umov,
             ins: Ins,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -8100,7 +8100,7 @@ pub const Instruction = packed union {
 
             /// C7.2.39 DUP (element)
             /// C7.2.40 DUP (general)
-            pub const Dup = packed struct {
+            pub const Dup = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -8120,7 +8120,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.279 SMOV
-            pub const Smov = packed struct {
+            pub const Smov = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -8134,7 +8134,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.371 UMOV
-            pub const Umov = packed struct {
+            pub const Umov = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -8149,7 +8149,7 @@ pub const Instruction = packed union {
 
             /// C7.2.175 INS (element)
             /// C7.2.176 INS (general)
-            pub const Ins = packed struct {
+            pub const Ins = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -8161,7 +8161,7 @@ pub const Instruction = packed union {
                 Q: u1 = 0b1,
                 decoded31: u1 = 0b0,
 
-                pub const Imm4 = packed union {
+                pub const Imm4 = bitpack union {
                     element: u4,
                     general: General,
 
@@ -8222,7 +8222,7 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD two-register miscellaneous (FP16)
-        pub const SimdTwoRegisterMiscellaneousFp16 = packed union {
+        pub const SimdTwoRegisterMiscellaneousFp16 = bitpack union {
             group: @This().Group,
             frintn: Frintn,
             frintm: Frintm,
@@ -8254,7 +8254,7 @@ pub const Instruction = packed union {
             frsqrte: Frsqrte,
             fsqrt: Fsqrt,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8268,7 +8268,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.161 FRINTN (vector)
-            pub const Frintn = packed struct {
+            pub const Frintn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8282,7 +8282,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.159 FRINTM (vector)
-            pub const Frintm = packed struct {
+            pub const Frintm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8296,7 +8296,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.80 FCVTNS (vector)
-            pub const Fcvtns = packed struct {
+            pub const Fcvtns = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8310,7 +8310,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.75 FCVTMS (vector)
-            pub const Fcvtms = packed struct {
+            pub const Fcvtms = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8324,7 +8324,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.70 FCVTAS (vector)
-            pub const Fcvtas = packed struct {
+            pub const Fcvtas = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8338,7 +8338,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.234 SCVTF (vector, integer)
-            pub const Scvtf = packed struct {
+            pub const Scvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8352,7 +8352,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.61 FCMGT (zero)
-            pub const Fcmgt = packed struct {
+            pub const Fcmgt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8366,7 +8366,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.57 FCMEQ (zero)
-            pub const Fcmeq = packed struct {
+            pub const Fcmeq = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8380,7 +8380,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.65 FCMLT (zero)
-            pub const Fcmlt = packed struct {
+            pub const Fcmlt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8394,7 +8394,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.45 FABS (vector)
-            pub const Fabs = packed struct {
+            pub const Fabs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8408,7 +8408,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.163 FRINTP (vector)
-            pub const Frintp = packed struct {
+            pub const Frintp = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8422,7 +8422,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.167 FRINTZ (vector)
-            pub const Frintz = packed struct {
+            pub const Frintz = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8436,7 +8436,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.84 FCVTPS (vector)
-            pub const Fcvtps = packed struct {
+            pub const Fcvtps = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8450,7 +8450,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.90 FCVTZS (vector, integer)
-            pub const Fcvtzs = packed struct {
+            pub const Fcvtzs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8464,7 +8464,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.144 FRECPE
-            pub const Frecpe = packed struct {
+            pub const Frecpe = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8478,7 +8478,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.155 FRINTA (vector)
-            pub const Frinta = packed struct {
+            pub const Frinta = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8492,7 +8492,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.159 FRINTX (vector)
-            pub const Frintx = packed struct {
+            pub const Frintx = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8506,7 +8506,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.82 FCVTNU (vector)
-            pub const Fcvtnu = packed struct {
+            pub const Fcvtnu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8520,7 +8520,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.77 FCVTMU (vector)
-            pub const Fcvtmu = packed struct {
+            pub const Fcvtmu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8534,7 +8534,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.72 FCVTAU (vector)
-            pub const Fcvtau = packed struct {
+            pub const Fcvtau = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8548,7 +8548,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.353 UCVTF (vector, integer)
-            pub const Ucvtf = packed struct {
+            pub const Ucvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8562,7 +8562,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.59 FCMGE (zero)
-            pub const Fcmge = packed struct {
+            pub const Fcmge = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8576,7 +8576,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.64 FCMLE (zero)
-            pub const Fcmle = packed struct {
+            pub const Fcmle = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8590,7 +8590,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.139 FNEG (vector)
-            pub const Fneg = packed struct {
+            pub const Fneg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8604,7 +8604,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.157 FRINTI (vector)
-            pub const Frinti = packed struct {
+            pub const Frinti = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8618,7 +8618,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.86 FCVTPU (vector)
-            pub const Fcvtpu = packed struct {
+            pub const Fcvtpu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8632,7 +8632,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.94 FCVTZU (vector, integer)
-            pub const Fcvtzu = packed struct {
+            pub const Fcvtzu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8646,7 +8646,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.169 FRSQRTE
-            pub const Frsqrte = packed struct {
+            pub const Frsqrte = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8660,7 +8660,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.171 FSQRT
-            pub const Fsqrt = packed struct {
+            pub const Fsqrt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8757,7 +8757,7 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD two-register miscellaneous
-        pub const SimdTwoRegisterMiscellaneous = packed union {
+        pub const SimdTwoRegisterMiscellaneous = bitpack union {
             group: @This().Group,
             suqadd: Suqadd,
             cnt: Cnt,
@@ -8806,7 +8806,7 @@ pub const Instruction = packed union {
             frsqrte: Frsqrte,
             fsqrt: Fsqrt,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8820,7 +8820,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.337 SUQADD
-            pub const Suqadd = packed struct {
+            pub const Suqadd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8834,7 +8834,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.38 CNT
-            pub const Cnt = packed struct {
+            pub const Cnt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8848,7 +8848,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.282 SQABS
-            pub const Sqabs = packed struct {
+            pub const Sqabs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8862,7 +8862,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.32 CMGT (zero)
-            pub const Cmgt = packed struct {
+            pub const Cmgt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8876,7 +8876,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.28 CMEQ (zero)
-            pub const Cmeq = packed struct {
+            pub const Cmeq = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8890,7 +8890,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.36 CMLT (zero)
-            pub const Cmlt = packed struct {
+            pub const Cmlt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8904,7 +8904,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.1 ABS
-            pub const Abs = packed struct {
+            pub const Abs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8918,7 +8918,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.308 SQXTN, SQXTN2
-            pub const Sqxtn = packed struct {
+            pub const Sqxtn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8932,7 +8932,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.161 FRINTN (vector)
-            pub const Frintn = packed struct {
+            pub const Frintn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8947,7 +8947,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.159 FRINTM (vector)
-            pub const Frintm = packed struct {
+            pub const Frintm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8962,7 +8962,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.80 FCVTNS (vector)
-            pub const Fcvtns = packed struct {
+            pub const Fcvtns = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8977,7 +8977,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.75 FCVTMS (vector)
-            pub const Fcvtms = packed struct {
+            pub const Fcvtms = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -8992,7 +8992,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.70 FCVTAS (vector)
-            pub const Fcvtas = packed struct {
+            pub const Fcvtas = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9007,7 +9007,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.234 SCVTF (vector, integer)
-            pub const Scvtf = packed struct {
+            pub const Scvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9022,7 +9022,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.61 FCMGT (zero)
-            pub const Fcmgt = packed struct {
+            pub const Fcmgt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9037,7 +9037,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.57 FCMEQ (zero)
-            pub const Fcmeq = packed struct {
+            pub const Fcmeq = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9052,7 +9052,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.65 FCMLT (zero)
-            pub const Fcmlt = packed struct {
+            pub const Fcmlt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9067,7 +9067,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.45 FABS (vector)
-            pub const Fabs = packed struct {
+            pub const Fabs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9082,7 +9082,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.163 FRINTP (vector)
-            pub const Frintp = packed struct {
+            pub const Frintp = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9097,7 +9097,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.167 FRINTZ (vector)
-            pub const Frintz = packed struct {
+            pub const Frintz = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9112,7 +9112,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.84 FCVTPS (vector)
-            pub const Fcvtps = packed struct {
+            pub const Fcvtps = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9127,7 +9127,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.90 FCVTZS (vector, integer)
-            pub const Fcvtzs = packed struct {
+            pub const Fcvtzs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9142,7 +9142,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.144 FRECPE
-            pub const Frecpe = packed struct {
+            pub const Frecpe = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9157,7 +9157,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.394 USQADD
-            pub const Usqadd = packed struct {
+            pub const Usqadd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9171,7 +9171,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.292 SQNEG
-            pub const Sqneg = packed struct {
+            pub const Sqneg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9185,7 +9185,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.30 CMGE (zero)
-            pub const Cmge = packed struct {
+            pub const Cmge = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9199,7 +9199,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.35 CMLE (zero)
-            pub const Cmle = packed struct {
+            pub const Cmle = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9213,7 +9213,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.209 NEG (vector)
-            pub const Neg = packed struct {
+            pub const Neg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9227,7 +9227,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.309 SQXTUN
-            pub const Sqxtun = packed struct {
+            pub const Sqxtun = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9241,7 +9241,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.381 UQXTN
-            pub const Uqxtn = packed struct {
+            pub const Uqxtn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9255,7 +9255,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.88 FCVTXN
-            pub const Fcvtxn = packed struct {
+            pub const Fcvtxn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9270,7 +9270,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.155 FRINTA (vector)
-            pub const Frinta = packed struct {
+            pub const Frinta = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9285,7 +9285,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.165 FRINTX (vector)
-            pub const Frintx = packed struct {
+            pub const Frintx = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9300,7 +9300,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.82 FCVTNU (vector)
-            pub const Fcvtnu = packed struct {
+            pub const Fcvtnu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9315,7 +9315,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.77 FCVTMU (vector)
-            pub const Fcvtmu = packed struct {
+            pub const Fcvtmu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9330,7 +9330,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.72 FCVTAU (vector)
-            pub const Fcvtau = packed struct {
+            pub const Fcvtau = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9345,7 +9345,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.353 UCVTF (vector, integer)
-            pub const Ucvtf = packed struct {
+            pub const Ucvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9360,7 +9360,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.210 NOT
-            pub const Not = packed struct {
+            pub const Not = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9374,7 +9374,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.59 FCMGE (zero)
-            pub const Fcmge = packed struct {
+            pub const Fcmge = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9389,7 +9389,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.64 FCMLE (zero)
-            pub const Fcmle = packed struct {
+            pub const Fcmle = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9404,7 +9404,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.139 FNEG (vector)
-            pub const Fneg = packed struct {
+            pub const Fneg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9419,7 +9419,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.157 FRINTI (vector)
-            pub const Frinti = packed struct {
+            pub const Frinti = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9434,7 +9434,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.86 FCVTPU (vector)
-            pub const Fcvtpu = packed struct {
+            pub const Fcvtpu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9449,7 +9449,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.94 FCVTZU (vector, integer)
-            pub const Fcvtzu = packed struct {
+            pub const Fcvtzu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9464,7 +9464,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.169 FRSQRTE
-            pub const Frsqrte = packed struct {
+            pub const Frsqrte = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9479,7 +9479,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.171 FSQRT (vector)
-            pub const Fsqrt = packed struct {
+            pub const Fsqrt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9658,11 +9658,11 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD across lanes
-        pub const SimdAcrossLanes = packed union {
+        pub const SimdAcrossLanes = bitpack union {
             group: @This().Group,
             addv: Addv,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9676,7 +9676,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.6 ADDV
-            pub const Addv = packed struct {
+            pub const Addv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -9705,7 +9705,7 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD three same
-        pub const SimdThreeSame = packed union {
+        pub const SimdThreeSame = bitpack union {
             group: @This().Group,
             addp: Addp,
             @"and": And,
@@ -9717,7 +9717,7 @@ pub const Instruction = packed union {
             bit: Bit,
             bif: Bif,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9732,7 +9732,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.5 ADDP (vector)
-            pub const Addp = packed struct {
+            pub const Addp = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9747,7 +9747,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.11 AND (vector)
-            pub const And = packed struct {
+            pub const And = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9762,7 +9762,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.21 BIC (vector, register)
-            pub const Bic = packed struct {
+            pub const Bic = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9777,7 +9777,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.213 ORR (vector, register)
-            pub const Orr = packed struct {
+            pub const Orr = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9792,7 +9792,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.211 ORN (vector)
-            pub const Orn = packed struct {
+            pub const Orn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9807,7 +9807,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.41 EOR (vector)
-            pub const Eor = packed struct {
+            pub const Eor = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9822,7 +9822,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.24 BSL
-            pub const Bsl = packed struct {
+            pub const Bsl = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9837,7 +9837,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.23 BIT
-            pub const Bit = packed struct {
+            pub const Bit = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9852,7 +9852,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.22 BIF
-            pub const Bif = packed struct {
+            pub const Bif = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u1 = 0b1,
@@ -9904,7 +9904,7 @@ pub const Instruction = packed union {
         };
 
         /// Advanced SIMD modified immediate
-        pub const SimdModifiedImmediate = packed union {
+        pub const SimdModifiedImmediate = bitpack union {
             group: @This().Group,
             movi: Movi,
             orr: Orr,
@@ -9912,7 +9912,7 @@ pub const Instruction = packed union {
             mvni: Mvni,
             bic: Bic,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5,
                 decoded10: u1 = 0b1,
@@ -9926,7 +9926,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.204 MOVI
-            pub const Movi = packed struct {
+            pub const Movi = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5,
                 decoded10: u1 = 0b1,
@@ -9940,7 +9940,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.212 ORR (vector, immediate)
-            pub const Orr = packed struct {
+            pub const Orr = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5,
                 decoded10: u1 = 0b1,
@@ -9955,7 +9955,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.129 FMOV (vector, immediate)
-            pub const Fmov = packed struct {
+            pub const Fmov = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5,
                 decoded10: u1 = 0b1,
@@ -9969,7 +9969,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.208 MVNI
-            pub const Mvni = packed struct {
+            pub const Mvni = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5,
                 decoded10: u1 = 0b1,
@@ -9983,7 +9983,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.20 BIC (vector, immediate)
-            pub const Bic = packed struct {
+            pub const Bic = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5,
                 decoded10: u1 = 0b1,
@@ -10019,10 +10019,10 @@ pub const Instruction = packed union {
         };
 
         /// Conversion between floating-point and fixed-point
-        pub const ConvertFloatFixed = packed union {
+        pub const ConvertFloatFixed = bitpack union {
             group: @This().Group,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 scale: u6,
@@ -10038,7 +10038,7 @@ pub const Instruction = packed union {
         };
 
         /// Conversion between floating-point and integer
-        pub const ConvertFloatInteger = packed union {
+        pub const ConvertFloatInteger = bitpack union {
             group: @This().Group,
             fcvtns: Fcvtns,
             fcvtnu: Fcvtnu,
@@ -10055,7 +10055,7 @@ pub const Instruction = packed union {
             fcvtzu: Fcvtzu,
             fjcvtzs: Fjcvtzs,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10070,7 +10070,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.81 FCVTNS (scalar)
-            pub const Fcvtns = packed struct {
+            pub const Fcvtns = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10085,7 +10085,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.83 FCVTNU (scalar)
-            pub const Fcvtnu = packed struct {
+            pub const Fcvtnu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10100,7 +10100,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.236 SCVTF (scalar, integer)
-            pub const Scvtf = packed struct {
+            pub const Scvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10115,7 +10115,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.355 UCVTF (scalar, integer)
-            pub const Ucvtf = packed struct {
+            pub const Ucvtf = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10130,7 +10130,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.71 FCVTAS (scalar)
-            pub const Fcvtas = packed struct {
+            pub const Fcvtas = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10145,7 +10145,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.73 FCVTAU (scalar)
-            pub const Fcvtau = packed struct {
+            pub const Fcvtau = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10160,7 +10160,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.131 FMOV (general)
-            pub const Fmov = packed struct {
+            pub const Fmov = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10187,7 +10187,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.85 FCVTPS (scalar)
-            pub const Fcvtps = packed struct {
+            pub const Fcvtps = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10202,7 +10202,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.87 FCVTPU (scalar)
-            pub const Fcvtpu = packed struct {
+            pub const Fcvtpu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10217,7 +10217,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.76 FCVTMS (scalar)
-            pub const Fcvtms = packed struct {
+            pub const Fcvtms = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10232,7 +10232,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.78 FCVTMU (scalar)
-            pub const Fcvtmu = packed struct {
+            pub const Fcvtmu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10247,7 +10247,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.92 FCVTZS (scalar, integer)
-            pub const Fcvtzs = packed struct {
+            pub const Fcvtzs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10262,7 +10262,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.96 FCVTZU (scalar, integer)
-            pub const Fcvtzu = packed struct {
+            pub const Fcvtzu = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10277,7 +10277,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.99 FJCVTZS
-            pub const Fjcvtzs = packed struct {
+            pub const Fjcvtzs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u6 = 0b000000,
@@ -10382,7 +10382,7 @@ pub const Instruction = packed union {
         };
 
         /// Floating-point data-processing (1 source)
-        pub const FloatDataProcessingOneSource = packed union {
+        pub const FloatDataProcessingOneSource = bitpack union {
             group: @This().Group,
             fmov: Fmov,
             fabs: Fabs,
@@ -10397,7 +10397,7 @@ pub const Instruction = packed union {
             frintx: Frintx,
             frinti: Frinti,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10411,7 +10411,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.130 FMOV (register)
-            pub const Fmov = packed struct {
+            pub const Fmov = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10426,7 +10426,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.46 FABS (scalar)
-            pub const Fabs = packed struct {
+            pub const Fabs = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10441,7 +10441,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.140 FNEG (scalar)
-            pub const Fneg = packed struct {
+            pub const Fneg = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10456,7 +10456,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.172 FSQRT (scalar)
-            pub const Fsqrt = packed struct {
+            pub const Fsqrt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10471,7 +10471,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.69 FCVT
-            pub const Fcvt = packed struct {
+            pub const Fcvt = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10486,7 +10486,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.162 FRINTN (scalar)
-            pub const Frintn = packed struct {
+            pub const Frintn = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10501,7 +10501,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.164 FRINTP (scalar)
-            pub const Frintp = packed struct {
+            pub const Frintp = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10516,7 +10516,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.160 FRINTM (scalar)
-            pub const Frintm = packed struct {
+            pub const Frintm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10531,7 +10531,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.168 FRINTZ (scalar)
-            pub const Frintz = packed struct {
+            pub const Frintz = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10546,7 +10546,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.156 FRINTA (scalar)
-            pub const Frinta = packed struct {
+            pub const Frinta = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10561,7 +10561,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.166 FRINTX (scalar)
-            pub const Frintx = packed struct {
+            pub const Frintx = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10576,7 +10576,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.158 FRINTI (scalar)
-            pub const Frinti = packed struct {
+            pub const Frinti = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u5 = 0b10000,
@@ -10652,12 +10652,12 @@ pub const Instruction = packed union {
         };
 
         /// Floating-point compare
-        pub const FloatCompare = packed union {
+        pub const FloatCompare = bitpack union {
             group: @This().Group,
             fcmp: Fcmp,
             fcmpe: Fcmpe,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 opcode2: u5,
                 Rn: Register.Encoded,
                 decoded10: u4 = 0b1000,
@@ -10672,7 +10672,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.66 FCMP
-            pub const Fcmp = packed struct {
+            pub const Fcmp = bitpack struct {
                 decoded0: u3 = 0b000,
                 opc0: Opc0,
                 opc1: u1 = 0b0,
@@ -10689,7 +10689,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.67 FCMPE
-            pub const Fcmpe = packed struct {
+            pub const Fcmpe = bitpack struct {
                 decoded0: u3 = 0b000,
                 opc0: Opc0,
                 opc1: u1 = 0b1,
@@ -10712,11 +10712,11 @@ pub const Instruction = packed union {
         };
 
         /// Floating-point immediate
-        pub const FloatImmediate = packed union {
+        pub const FloatImmediate = bitpack union {
             group: @This().Group,
             fmov: Fmov,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5,
                 decoded10: u3 = 0b100,
@@ -10730,7 +10730,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.132 FMOV (scalar, immediate)
-            pub const Fmov = packed struct {
+            pub const Fmov = bitpack struct {
                 Rd: Register.Encoded,
                 imm5: u5 = 0b00000,
                 decoded10: u3 = 0b100,
@@ -10742,12 +10742,12 @@ pub const Instruction = packed union {
                 decoded30: u1 = 0b0,
                 M: u1 = 0b0,
 
-                pub const Imm8 = packed struct(u8) {
+                pub const Imm8 = bitpack struct(u8) {
                     mantissa: u4,
                     exponent: i3,
                     sign: std.math.Sign,
 
-                    pub const Modified = packed struct(u8) { imm5: u5, imm3: u3 };
+                    pub const Modified = bitpack struct(u8) { imm5: u5, imm3: u3 };
 
                     pub fn fromModified(mod: Modified) Imm8 {
                         return @bitCast(mod);
@@ -10789,10 +10789,10 @@ pub const Instruction = packed union {
         };
 
         /// Floating-point conditional compare
-        pub const FloatConditionalCompare = packed union {
+        pub const FloatConditionalCompare = bitpack union {
             group: @This().Group,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 nzcv: Nzcv,
                 op: u1,
                 Rn: Register.Encoded,
@@ -10809,7 +10809,7 @@ pub const Instruction = packed union {
         };
 
         /// Floating-point data-processing (2 source)
-        pub const FloatDataProcessingTwoSource = packed union {
+        pub const FloatDataProcessingTwoSource = bitpack union {
             group: @This().Group,
             fmul: Fmul,
             fdiv: Fdiv,
@@ -10821,7 +10821,7 @@ pub const Instruction = packed union {
             fminnm: Fminnm,
             fnmul: Fnmul,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10836,7 +10836,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.136 FMUL (scalar)
-            pub const Fmul = packed struct {
+            pub const Fmul = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10851,7 +10851,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.98 FDIV (scalar)
-            pub const Fdiv = packed struct {
+            pub const Fdiv = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10866,7 +10866,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.50 FADD (scalar)
-            pub const Fadd = packed struct {
+            pub const Fadd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10881,7 +10881,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.174 FSUB (scalar)
-            pub const Fsub = packed struct {
+            pub const Fsub = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10896,7 +10896,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.102 FMAX (scalar)
-            pub const Fmax = packed struct {
+            pub const Fmax = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10911,7 +10911,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.112 FMIN (scalar)
-            pub const Fmin = packed struct {
+            pub const Fmin = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10926,7 +10926,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.104 FMAXNM (scalar)
-            pub const Fmaxnm = packed struct {
+            pub const Fmaxnm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10941,7 +10941,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.114 FMINNM (scalar)
-            pub const Fminnm = packed struct {
+            pub const Fminnm = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10956,7 +10956,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.143 FNMUL (scalar)
-            pub const Fnmul = packed struct {
+            pub const Fnmul = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b10,
@@ -10985,11 +10985,11 @@ pub const Instruction = packed union {
         };
 
         /// Floating-point conditional select
-        pub const FloatConditionalSelect = packed union {
+        pub const FloatConditionalSelect = bitpack union {
             group: @This().Group,
             fcsel: Fcsel,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b11,
@@ -11004,7 +11004,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.68 FCSEL
-            pub const Fcsel = packed struct {
+            pub const Fcsel = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 decoded10: u2 = 0b11,
@@ -11037,14 +11037,14 @@ pub const Instruction = packed union {
         };
 
         /// Floating-point data-processing (3 source)
-        pub const FloatDataProcessingThreeSource = packed union {
+        pub const FloatDataProcessingThreeSource = bitpack union {
             group: @This().Group,
             fmadd: Fmadd,
             fmsub: Fmsub,
             fnmadd: Fnmadd,
             fnmsub: Fnmsub,
 
-            pub const Group = packed struct {
+            pub const Group = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -11059,7 +11059,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.100 FMADD
-            pub const Fmadd = packed struct {
+            pub const Fmadd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -11074,7 +11074,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.133 FMSUB
-            pub const Fmsub = packed struct {
+            pub const Fmsub = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -11089,7 +11089,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.141 FNMADD
-            pub const Fnmadd = packed struct {
+            pub const Fnmadd = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -11104,7 +11104,7 @@ pub const Instruction = packed union {
             };
 
             /// C7.2.142 FNMSUB
-            pub const Fnmsub = packed struct {
+            pub const Fnmsub = bitpack struct {
                 Rd: Register.Encoded,
                 Rn: Register.Encoded,
                 Ra: Register.Encoded,
@@ -11316,7 +11316,7 @@ pub const Instruction = packed union {
         ands = 0b11,
     };
 
-    pub const Nzcv = packed struct { v: bool, c: bool, z: bool, n: bool };
+    pub const Nzcv = bitpack struct { v: bool, c: bool, z: bool, n: bool };
 
     pub const Decoded = union(enum) {
         unallocated,
@@ -16558,13 +16558,13 @@ pub const Instruction = packed union {
     fn verify(name: []const u8, Type: type) void {
         switch (@typeInfo(Type)) {
             .@"union" => |info| {
-                if (info.layout != .@"packed" or @bitSizeOf(Type) != @bitSizeOf(Backing)) {
+                if (info.layout != .@"bitpack" or @bitSizeOf(Type) != @bitSizeOf(Backing)) {
                     @compileLog(name ++ " should have u32 abi");
                 }
                 for (info.field_names, info.field_types) |field_name, field_type| verify(name ++ "." ++ field_name, field_type);
             },
             .@"struct" => |info| {
-                if (info.layout != .@"packed" or info.backing_integer != Backing) {
+                if (info.layout != .@"bitpack" or info.backing_integer != Backing) {
                     @compileLog(name ++ " should have u32 abi");
                 }
                 var bit_offset = 0;

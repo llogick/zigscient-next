@@ -1,7 +1,7 @@
 const print = @import("std").debug.print;
 
 pub fn main() void {
-    const digits = [_]i8 { 3, 8, 9, 0, 7, 4, 1 };
+    const digits = [_]i8{ 3, 8, 9, 0, 7, 4, 1 };
 
     const min, const max = blk: {
         var min: i8 = 127;
@@ -15,8 +15,8 @@ pub fn main() void {
         break :blk .{ min, max };
     };
 
-    print("min = {}\n", .{ min });
-    print("max = {}\n", .{ max });
+    print("min = {}\n", .{min});
+    print("max = {}\n", .{max});
 }
 
 // exe=succeed

@@ -478,7 +478,7 @@ const Group = struct {
         return @ptrCast(&g.ptr.state);
     }
 
-    const Status = packed struct(usize) {
+    const Status = bitpack struct(usize) {
         num_running: @Int(.unsigned, @bitSizeOf(usize) - 2),
         have_awaiter: bool,
         canceled: bool,
@@ -642,7 +642,7 @@ const Future = struct {
     result_offset: usize,
     alloc_len: usize,
 
-    const Status = packed struct(usize) {
+    const Status = bitpack struct(usize) {
         /// The values of this enum are chosen so that await/cancel can just OR with 0b01 and 0b11
         /// respectively. That *does* clobber `.done`, but that's actually fine, because if the tag
         /// is `.done` then only the awaiter is referencing this `Future` anyway.
@@ -808,7 +808,7 @@ const AwaitableId = enum(@Int(.unsigned, @bitSizeOf(usize) - 3)) {
     null = 0,
     all_ones = std.math.maxInt(@Int(.unsigned, @bitSizeOf(usize) - 3)),
     _,
-    const Split = packed struct(usize) { low: u3, high: AwaitableId };
+    const Split = bitpack struct(usize) { low: u3, high: AwaitableId };
     fn fromGroup(g: *Io.Group) AwaitableId {
         const split: Split = @bitCast(@intFromPtr(g));
         return split.high;
@@ -841,7 +841,7 @@ const Thread = struct {
         break :Handle void;
     };
 
-    const Status = packed struct(usize) {
+    const Status = bitpack struct(usize) {
         /// The specific values of these enum fields are chosen to simplify the implementation of
         /// the transformations we need to apply to this state.
         cancelation: enum(u3) {
@@ -1367,13 +1367,13 @@ const Thread = struct {
     }
 
     /// Like a `*Thread`, but 2 bits smaller than a pointer (because the LSBs are always 0 due to
-    /// alignment) so that those two bits can be used in a `packed struct`.
+    /// alignment) so that those two bits can be used in a `bitpack struct`.
     const PackedPtr = enum(@Int(.unsigned, @bitSizeOf(usize) - 2)) {
         null = 0,
         all_ones = std.math.maxInt(@Int(.unsigned, @bitSizeOf(usize) - 2)),
         _,
 
-        const Split = packed struct(usize) { low: u2, high: PackedPtr };
+        const Split = bitpack struct(usize) { low: u2, high: PackedPtr };
         fn pack(ptr: *Thread) PackedPtr {
             const split: Split = @bitCast(@intFromPtr(ptr));
             assert(split.low == 0);

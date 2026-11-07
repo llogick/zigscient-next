@@ -80,7 +80,7 @@ pub fn main(init: std.process.Init) !void {
         {
             try writer.print(
                 \\
-                \\pub const Instruction = packed union {{
+                \\pub const Instruction = bitpack union {{
                 \\    word: u32,
                 \\
             , .{});
@@ -179,7 +179,7 @@ fn printFormatStruct(writer: *Writer, name: []const u8, format: *const OpcodeDes
     if (format.slots[0].tag == .none) return; // skips EMPTY format
 
     try writer.print("    /// Fields of a `{s}` instruction.", .{name});
-    try writer.print("\n    {s}: packed struct {{ ", .{name});
+    try writer.print("\n    {s}: bitpack struct {{ ", .{name});
     const Field = union(enum) {
         funct: struct { width: u5 },
         immediate: struct {

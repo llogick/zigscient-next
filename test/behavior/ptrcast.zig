@@ -281,10 +281,10 @@ test "@ptrCast undefined value at comptime" {
     }
 }
 
-test "comptime @ptrCast with packed struct leaves value unmodified" {
+test "comptime @ptrCast with bitpack struct leaves value unmodified" {
     if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
 
-    const S = packed struct { three: u3 };
+    const S = bitpack struct { three: u3 };
     const st: S = .{ .three = 6 };
     try expect(st.three == 6);
     const p: *const [1]u3 = @ptrCast(&st);
@@ -512,10 +512,10 @@ test "@ptrCast slice of zero-bit type to different slice" {
     };
     try S.doTheTest(void, &.{ {}, {}, {} });
     try S.doTheTest(u0, &.{ 0, 0, 0, 0 });
-    try S.doTheTest(packed struct(u0) {}, &.{ .{}, .{} });
+    try S.doTheTest(bitpack struct(u0) {}, &.{ .{}, .{} });
     try comptime S.doTheTest(void, &.{ {}, {}, {} });
     try comptime S.doTheTest(u0, &.{ 0, 0, 0, 0 });
-    try comptime S.doTheTest(packed struct(u0) {}, &.{ .{}, .{} });
+    try comptime S.doTheTest(bitpack struct(u0) {}, &.{ .{}, .{} });
 }
 
 test "@ptrCast single-item pointer to slice with length 1" {
@@ -569,7 +569,7 @@ test "@ptrCast array pointer removing sentinel" {
 }
 
 test "@ptrcast larger type to smaller one" {
-    const T = packed struct { x: u17 };
+    const T = bitpack struct { x: u17 };
     const a: u32 = 0;
     const b: *const T = @ptrCast(&a);
     const c = b.x;

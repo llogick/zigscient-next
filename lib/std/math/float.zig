@@ -70,7 +70,7 @@ pub const long_double = struct {
 pub fn FloatRepr(comptime Float: type) type {
     const fractional_bits = floatFractionalBits(Float);
     const exponent_bits = floatExponentBits(Float);
-    return packed struct {
+    return bitpack struct {
         const Repr = @This();
 
         mantissa: StoredMantissa,

@@ -73,7 +73,7 @@ pub fn classifyTypeForLlvm(ty: Type, zcu: *const Zcu) LlvmClass {
             const struct_type = zcu.typeToStruct(ty).?;
             switch (struct_type.layout) {
                 .auto => unreachable,
-                .@"packed" => return .{ .direct = ty },
+                .@"bitpack" => return .{ .direct = ty },
                 .@"extern" => {},
             }
             var opt_single_field_ty: ?Type = null;
@@ -103,7 +103,7 @@ pub fn classifyTypeForLlvm(ty: Type, zcu: *const Zcu) LlvmClass {
         },
         .@"union" => {
             const union_obj = zcu.typeToUnion(ty).?;
-            if (union_obj.layout == .@"packed") {
+            if (union_obj.layout == .@"bitpack") {
                 return .{ .direct = ty };
             }
             const layout = ty.unionGetLayout(zcu);

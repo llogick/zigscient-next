@@ -1218,7 +1218,7 @@ const A = enum(u3) { One, Two, Three, Four, One2, Two2, Three2, Four2 };
 const B = enum(u3) { One3, Two3, Three3, Four3, One23, Two23, Three23, Four23 };
 const C = enum(u2) { One4, Two4, Three4, Four4 };
 
-const BitFieldOfEnums = packed struct {
+const BitFieldOfEnums = bitpack struct {
     a: A,
     b: B,
     c: C,
@@ -1395,7 +1395,7 @@ test "lazy initialized field" {
 }
 
 fn getLazyInitialized(param: enum(u8) {
-    a = @bitCast(packed struct(u8) { a: u8 }{ .a = @alignOf(struct {}) }),
+    a = @bitCast(bitpack struct(u8) { a: u8 }{ .a = @alignOf(struct {}) }),
 }) u8 {
     return @backingInt(param);
 }

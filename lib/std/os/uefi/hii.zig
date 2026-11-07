@@ -4,7 +4,7 @@ const Guid = uefi.Guid;
 pub const Handle = *opaque {};
 
 /// The header found at the start of each package.
-pub const PackageHeader = packed struct(u32) {
+pub const PackageHeader = bitpack struct(u32) {
     length: u24,
     type: u8,
 
@@ -43,7 +43,7 @@ pub const SimplifiedFontPackage = extern struct {
     }
 };
 
-pub const NarrowGlyphAttributes = packed struct(u8) {
+pub const NarrowGlyphAttributes = bitpack struct(u8) {
     non_spacing: bool,
     wide: bool,
     _pad: u6 = 0,
@@ -55,7 +55,7 @@ pub const NarrowGlyph = extern struct {
     glyph_col_1: [19]u8,
 };
 
-pub const WideGlyphAttributes = packed struct(u8) {
+pub const WideGlyphAttributes = bitpack struct(u8) {
     non_spacing: bool,
     wide: bool,
     _pad: u6 = 0,

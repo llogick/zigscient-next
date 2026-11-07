@@ -103,7 +103,7 @@ define ... @test.entry2(..., ptr ... %slice.ptr, isize ... %slice.len) ... {
 #}
 
 #write test.zig {
-const S = packed struct(u16) { a: u2, b: u8, c: u6 };
+const S = bitpack struct(u16) { a: u2, b: u8, c: u6 };
 export fn entry(ptr: *volatile S) void {
     _ = ptr.b;
 }

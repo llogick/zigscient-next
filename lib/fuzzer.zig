@@ -307,7 +307,7 @@ const Fuzzer = struct {
         i: [4]u32,
         /// For mutations which are a sequential mutation, the state is stored here.
         seq: [4]struct {
-            kind: packed struct {
+            kind: bitpack struct {
                 class: enum(u1) { replace, insert },
                 copy: bool,
                 /// If set then `.copy = true` and `.class = .replace`
@@ -388,7 +388,7 @@ const Fuzzer = struct {
             .inputs = .empty,
         };
 
-        pub const State = packed struct(u32) {
+        pub const State = bitpack struct(u32) {
             pending: bool,
             read_lock: bool,
             /// If set in conjucation with `read_lock`, then there is a waiter on state.
@@ -559,7 +559,7 @@ const Fuzzer = struct {
             /// * req.bytes
             pub const Quality = struct {
                 n_pcs: u32,
-                req: packed struct(u64) {
+                req: bitpack struct(u64) {
                     bytes: u32,
                     values: u32,
 
@@ -1568,7 +1568,7 @@ const Fuzzer = struct {
             return null; // All fuzz tests have used up their limit
         }
 
-        const rng: packed struct(u64) {
+        const rng: bitpack struct(u64) {
             idx_rng: u32,
             from_new: u3,
             from_latest_find: u2,
@@ -1716,7 +1716,7 @@ const Fuzzer = struct {
             new_seq: {
                 if (!seq.kind.none) break :new_seq;
 
-                var opts: packed struct(u6) {
+                var opts: bitpack struct(u6) {
                     // Matches layout as `mut_data.seq.kind`
                     insert: bool,
                     copy: bool,
@@ -1832,7 +1832,7 @@ const Fuzzer = struct {
             break;
         }
 
-        const opts: packed struct(u10) {
+        const opts: bitpack struct(u10) {
             copy: u2,
             fresh: u2,
             splice: bool,
@@ -1967,7 +1967,7 @@ const Fuzzer = struct {
         var rem_copy = in;
         while (rem_out.len != 0 and muts != 0) {
             muts -= 1;
-            const opts: packed struct(u4) {
+            const opts: bitpack struct(u4) {
                 kind: enum(u2) {
                     random,
                     stream_copy,
@@ -2104,7 +2104,7 @@ const Fuzzer = struct {
             .mutate => |u| {
                 if (u.bytes.len == 0) continue :so .fresh;
                 const len: u32 = len: {
-                    const offseted: packed struct {
+                    const offseted: bitpack struct {
                         is: u3,
                         sub: bool,
                         by: u3,

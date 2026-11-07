@@ -338,7 +338,7 @@ pub const DT = enum(u32) {
     };
 
     /// The value type of a dynamic entry with tag `.FLAGS`.
-    pub const Flags = packed struct(u32) {
+    pub const Flags = bitpack struct(u32) {
         ORIGIN: bool = false,
         SYMBOLIC: bool = false,
         TEXTREL: bool = false,
@@ -348,7 +348,7 @@ pub const DT = enum(u32) {
     };
 
     /// The value type of a dynamic entry with tag `.FLAGS1`.
-    pub const Flags1 = packed struct(u32) {
+    pub const Flags1 = bitpack struct(u32) {
         NOW: bool = false,
         GLOBAL: bool = false,
         GROUP: bool = false,
@@ -801,7 +801,7 @@ pub const DF_1_STUB = 0x04000000;
 /// Deprecated; use `DT.Flags1`.
 pub const DF_1_PIE = 0x08000000;
 
-pub const Versym = packed struct(u16) {
+pub const Versym = bitpack struct(u16) {
     VERSION: u15,
     HIDDEN: bool,
 
@@ -1572,7 +1572,7 @@ pub const Elf32 = struct {
     pub const Shdr = extern struct {
         name: Word,
         type: SHT,
-        flags: packed struct(Word) { shf: SHF },
+        flags: bitpack struct(Word) { shf: SHF },
         addr: Elf32.Addr,
         offset: Elf32.Off,
         size: Word,
@@ -1594,12 +1594,12 @@ pub const Elf32 = struct {
         other: Other,
         shndx: Section,
 
-        pub const Info = packed struct(u8) {
+        pub const Info = bitpack struct(u8) {
             type: STT,
             bind: STB,
         };
 
-        pub const Other = packed struct(u8) {
+        pub const Other = bitpack struct(u8) {
             visibility: STV,
             unused: u5 = 0,
         };
@@ -1609,7 +1609,7 @@ pub const Elf32 = struct {
         info: Info,
         addend: u0 = 0,
 
-        pub const Info = packed struct(u32) {
+        pub const Info = bitpack struct(u32) {
             type: u8,
             sym: u24,
         };
@@ -1621,8 +1621,8 @@ pub const Elf32 = struct {
 
         pub const Info = Elf32.Rel.Info;
     };
-    pub const Relr = packed union(Word) {
-        info: packed struct {
+    pub const Relr = bitpack union(Word) {
+        info: bitpack struct {
             tag: enum(u1) { address = 0, chain = 1 },
             /// Only valid if `info.tag == .chain`.
             chain: u31,
@@ -1631,7 +1631,7 @@ pub const Elf32 = struct {
         address: u32,
     };
     pub const Dyn = extern struct {
-        tag: packed struct(Sword) { dt: DT },
+        tag: bitpack struct(Sword) { dt: DT },
         val: u32,
     };
     comptime {
@@ -1676,7 +1676,7 @@ pub const Elf64 = struct {
     pub const Shdr = extern struct {
         name: Word,
         type: SHT,
-        flags: packed struct(Xword) { shf: SHF, unused: Word = 0 },
+        flags: bitpack struct(Xword) { shf: SHF, unused: Word = 0 },
         addr: Elf64.Addr,
         offset: Elf64.Off,
         size: Xword,
@@ -1707,7 +1707,7 @@ pub const Elf64 = struct {
         info: Info,
         addend: u0 = 0,
 
-        pub const Info = packed struct(u64) {
+        pub const Info = bitpack struct(u64) {
             type: u32,
             sym: u32,
         };
@@ -1719,8 +1719,8 @@ pub const Elf64 = struct {
 
         pub const Info = Elf64.Rel.Info;
     };
-    pub const Relr = packed union(Xword) {
-        info: packed struct {
+    pub const Relr = bitpack union(Xword) {
+        info: bitpack struct {
             tag: enum(u1) { address = 0, chain = 1 },
             /// Only valid if `info.tag == .chain`.
             chain: u63,
@@ -1729,7 +1729,7 @@ pub const Elf64 = struct {
         address: u64,
     };
     pub const Dyn = extern struct {
-        tag: packed struct(Sxword) { dt: DT, unused: u32 = 0 },
+        tag: bitpack struct(Sxword) { dt: DT, unused: u32 = 0 },
         val: u64,
     };
     comptime {
@@ -2828,7 +2828,7 @@ pub const SHF_MIPS_STRING = 0x80000000;
 /// Make code section unreadable when in execute-only mode
 pub const SHF_ARM_PURECODE = 0x2000000;
 
-pub const SHF = packed struct(Word) {
+pub const SHF = bitpack struct(Word) {
     /// Section data should be writable during execution.
     WRITE: bool = false,
     /// Section occupies memory during program execution.
@@ -2853,15 +2853,15 @@ pub const SHF = packed struct(Word) {
     /// Identifies a section containing compressed data.
     COMPRESSED: bool = false,
     unused12: u8 = 0,
-    OS: packed union {
+    OS: bitpack union {
         MASK: u8,
-        GNU: packed struct(u8) {
+        GNU: bitpack struct(u8) {
             unused0: u1 = 0,
             /// Not to be GCed by the linker
             RETAIN: bool = false,
             unused2: u6 = 0,
         },
-        MIPS: packed struct(u8) {
+        MIPS: bitpack struct(u8) {
             unused0: u4 = 0,
             /// Section contains text/data which may be replicated in other sections.
             /// Linker must retain only one copy.
@@ -2873,16 +2873,16 @@ pub const SHF = packed struct(Word) {
             /// Do not strip this section.
             NOSTRIP: bool = false,
         },
-        ARM: packed struct(u8) {
+        ARM: bitpack struct(u8) {
             unused0: u5 = 0,
             /// Make code section unreadable when in execute-only mode
             PURECODE: bool = false,
             unused6: u2 = 0,
         },
     } = .{ .MASK = 0 },
-    PROC: packed union {
+    PROC: bitpack union {
         MASK: u4,
-        XCORE: packed struct(u4) {
+        XCORE: bitpack struct(u4) {
             /// All sections with the "d" flag are grouped together by the linker to form
             /// the data section and the dp register is set to the start of the section by
             /// the boot code.
@@ -2895,7 +2895,7 @@ pub const SHF = packed struct(Word) {
             /// This section is excluded from the final executable or shared library.
             EXCLUDE: bool = false,
         },
-        X86_64: packed struct(u4) {
+        X86_64: bitpack struct(u4) {
             /// If an object file section does not have this flag set, then it may not hold
             /// more than 2GB and can be freely referred to in objects using smaller code
             /// models. Otherwise, only objects using larger code models can refer to them.
@@ -2908,7 +2908,7 @@ pub const SHF = packed struct(Word) {
             /// This section is excluded from the final executable or shared library.
             EXCLUDE: bool = false,
         },
-        HEX: packed struct(u4) {
+        HEX: bitpack struct(u4) {
             /// All sections with the GPREL flag are grouped into a global data area
             /// for faster accesses
             GPREL: bool = false,
@@ -2916,7 +2916,7 @@ pub const SHF = packed struct(Word) {
             /// This section is excluded from the final executable or shared library.
             EXCLUDE: bool = false,
         },
-        MIPS: packed struct(u4) {
+        MIPS: bitpack struct(u4) {
             /// All sections with the GPREL flag are grouped into a global data area
             /// for faster accesses
             GPREL: bool = false,
@@ -2945,15 +2945,15 @@ pub const PF_MASKOS = 0x0ff00000;
 /// Bits for processor-specific semantics.
 pub const PF_MASKPROC = 0xf0000000;
 
-pub const PF = packed struct(Word) {
+pub const PF = bitpack struct(Word) {
     X: bool = false,
     W: bool = false,
     R: bool = false,
     unused3: u17 = 0,
-    OS: packed union {
+    OS: bitpack union {
         MASK: u8,
     } = .{ .MASK = 0 },
-    PROC: packed union {
+    PROC: bitpack union {
         MASK: u4,
     } = .{ .MASK = 0 },
 };
@@ -3858,7 +3858,7 @@ pub const gnu_hash = struct {
         bloom_shift: u32,
     };
 
-    pub const ChainEntry = packed struct(u32) {
+    pub const ChainEntry = bitpack struct(u32) {
         end_of_chain: bool,
         /// Contains the top bits of the hash value.
         hash: u31,
@@ -3928,12 +3928,12 @@ pub const hash = struct {
     };
 };
 
-pub const EhdrFlags = packed union(Word) {
+pub const EhdrFlags = bitpack union(Word) {
     int: u32,
     loongarch: Loongarch,
     sparc: Sparc,
 
-    pub const Loongarch = packed struct(u32) {
+    pub const Loongarch = bitpack struct(u32) {
         base_abi_modifier: BaseAbiModifier,
         abi_extension: AbiExtension,
         abi_version: u2,
@@ -3948,7 +3948,7 @@ pub const EhdrFlags = packed union(Word) {
         pub const AbiExtension = enum(u3) { base = 0, _ };
     };
 
-    pub const Sparc = packed struct(u32) {
+    pub const Sparc = bitpack struct(u32) {
         mm: MemoryModel,
         _reserved1: u6 = 0,
         ext: Extensions,
@@ -3963,7 +3963,7 @@ pub const EhdrFlags = packed union(Word) {
             rmo = 2,
         };
 
-        pub const Extensions = packed struct(u16) {
+        pub const Extensions = bitpack struct(u16) {
             /// Uses SPARC v8 ABI (w/ 32-bit pointers) on SPARC v9. Also known as v8+.
             @"32plus": bool,
             /// Uses Sun UltraSPARC extensions.

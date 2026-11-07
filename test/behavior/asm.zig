@@ -174,11 +174,11 @@ test "asm modifiers (AArch64)" {
     try expectEqual(2 * x, double);
 }
 
-test "packed output types (x86_64)" {
+test "bitpack output types (x86_64)" {
     if (builtin.target.cpu.arch != .x86_64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // MSVC doesn't support inline assembly
 
-    const S = packed struct(u32) { x: u32 };
+    const S = bitpack struct(u32) { x: u32 };
     {
         const s: S = asm volatile ("mov $123, %[ret]"
             : [ret] "=r" (-> S),
@@ -193,7 +193,7 @@ test "packed output types (x86_64)" {
         try expect(s.x == 123);
     }
 
-    const U = packed union(u32) { x: u32 };
+    const U = bitpack union(u32) { x: u32 };
     {
         const u: U = asm volatile ("mov $123, %[ret]"
             : [ret] "=r" (-> U),

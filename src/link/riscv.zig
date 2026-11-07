@@ -94,7 +94,7 @@ fn bitSlice(
     return @truncate((value >> low) & ((1 << (high - low + 1)) - 1));
 }
 
-pub const Eflags = packed struct(u32) {
+pub const Eflags = bitpack struct(u32) {
     rvc: bool,
     fabi: FloatAbi,
     rve: bool,

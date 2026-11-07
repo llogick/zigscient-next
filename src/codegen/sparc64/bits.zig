@@ -163,11 +163,11 @@ pub const Instruction = union(enum) {
     // name them with letters since there's no official naming scheme.
     // TODO: need to rename the minor formats to a more descriptive name.
 
-    // I am using regular structs instead of packed ones to avoid
+    // I am using regular structs instead of bitpack ones to avoid
     // endianness-dependent behavior when constructing the actual
     // assembly instructions.
     // See also: https://github.com/ziglang/zig/issues/10113
-    // TODO: change it back to packed structs once the issue is resolved.
+    // TODO: change it back to bitpack structs once the issue is resolved.
 
     // Format 1 (op = 1): CALL
     format_1: struct {
@@ -513,14 +513,14 @@ pub const Instruction = union(enum) {
         shift64,
     };
 
-    pub const MemOrderingConstraint = packed struct {
+    pub const MemOrderingConstraint = bitpack struct {
         store_store: bool = false,
         load_store: bool = false,
         store_load: bool = false,
         load_load: bool = false,
     };
 
-    pub const MemCompletionConstraint = packed struct {
+    pub const MemCompletionConstraint = bitpack struct {
         sync: bool = false,
         mem_issue: bool = false,
         lookaside: bool = false,
@@ -711,7 +711,7 @@ pub const Instruction = union(enum) {
     };
 
     pub fn toU32(self: Instruction) u32 {
-        // TODO: Remove this once packed structs work.
+        // TODO: Remove this once bitpack structs work.
         return switch (self) {
             .format_1 => |v| (@as(u32, v.op) << 30) | @as(u32, v.disp30),
             .format_2a => |v| (@as(u32, v.op) << 30) | (@as(u32, v.rd) << 25) | (@as(u32, v.op2) << 22) | @as(u32, v.imm22),
@@ -1481,7 +1481,7 @@ test "Serialize formats" {
     };
 
     // Note that the testcases might or might not be a valid instruction
-    // This is mostly just to check the behavior of the format packed structs
+    // This is mostly just to check the behavior of the format bitpack structs
     // since currently stage1 doesn't properly implement it in all cases
     const testcases = [_]Testcase{
         .{

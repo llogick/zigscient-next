@@ -4,13 +4,13 @@
     .version = "0.18.0-dev",
     // The minimum Zig version that is required to compile and test this project.
     // Must be a Zig version that is downloadable from https://ziglang.org/download/ or a mirror.
-    .minimum_zig_version = "0.18.0-dev.895+940eab93a",
+    .minimum_zig_version = "0.18.0-dev.973+78ee94268",
     // The minimum Zig version that the server's build_runner can handle:
     // A breaking change to the Zig Build System should be handled by updating the server's build runner (see src/build_runner)
-    .minimum_runtime_zig_version = "0.18.0-dev.895+940eab93a",
+    .minimum_runtime_zig_version = "0.18.0-dev.973+78ee94268",
     // Would like to be accurate even during a dev cycle,
     // but there isn't an easy way to automate this based on the last cherry-picked commit
-    .compiler_internals_version = "0.18.0-dev.895+940eab93a",
+    .compiler_internals_version = "0.18.0-dev.973+78ee94268",
     // The integrated langref version. A valid Zig release version or "master"
     // Used in links to documentation, ie https://ziglang.org/documentation/0.16.0/
     .langref_version = "master",
@@ -31,9 +31,9 @@
             // .path = "../../../lws-lsp-kit",
         },
         .extended_zccs = .{
-            .url = "https://github.com/llogick/extended-zccs/archive/4b13433466dfbbe52ca2f599153fdd6ae2224cb5.tar.gz",
-            .hash = "extended_zccs-0.17.0-dev-zEaUNhCJDgDjv2u9f1pp2T9S0gxzZvFrrfbfZIpgO2Fp",
-            // .path = "../../../extended-zccs",
+            .url = "https://github.com/llogick/extended-zccs/archive/e0251a7d4cd481f7701014caf04ae2077f820e9a.tar.gz",
+            .hash = "extended_zccs-0.17.0-dev-zEaUNpWVDgBGVmgNgurJXlljD9bELbsRfeVZ8-CfdDsU",
+            //.path = "../../../extended-zccs",
         },
         .tracy = .{
             .url = "https://github.com/wolfpld/tracy/archive/refs/tags/v0.13.1.tar.gz",
