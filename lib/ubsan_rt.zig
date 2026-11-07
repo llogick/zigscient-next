@@ -22,6 +22,7 @@ const TypeDescriptor = extern struct {
         integer = 0x0000,
         float = 0x0001,
         unknown = 0xFFFF,
+        _,
     };
 
     const Info = extern union {
@@ -133,7 +134,7 @@ const Value = extern struct {
                 }
             },
             .float => try writer.print("{d}", .{value.getFloat()}),
-            .unknown => try writer.writeAll("(unknown)"),
+            .unknown, _ => try writer.writeAll("(unknown)"),
         }
     }
 };
@@ -422,6 +423,7 @@ const TypeMismatchData = extern struct {
         upcast_to_virtual_base,
         nonnull_assign,
         dynamic_operation,
+        _,
 
         fn getName(kind: @This()) []const u8 {
             return switch (kind) {
@@ -436,6 +438,7 @@ const TypeMismatchData = extern struct {
                 .upcast_to_virtual_base => "cast to virtual base of",
                 .nonnull_assign => "_Nonnull binding to",
                 .dynamic_operation => "dynamic operation on",
+                _ => "(unknown)",
             };
         }
     },
@@ -544,18 +547,25 @@ const InvalidBuiltinData = extern struct {
     kind: enum(u8) {
         ctz,
         clz,
+        assume,
+        _,
     },
 };
+
 fn invalidBuiltinAbort(data: *const InvalidBuiltinData) callconv(.c) noreturn {
     invalidBuiltin(data);
 }
 
 fn invalidBuiltin(data: *const InvalidBuiltinData) callconv(.c) noreturn {
-    panic(
-        @returnAddress(),
-        "passing zero to {s}(), which is not a valid argument",
-        .{@tagName(data.kind)},
-    );
+    switch (data.kind) {
+        .ctz, .clz => panic(
+            @returnAddress(),
+            "passing zero to {s}(), which is not a valid argument",
+            .{@tagName(data.kind)},
+        ),
+        .assume => panic(@returnAddress(), "assumption is violated during execution", .{}),
+        _ => panic(@returnAddress(), "invalid usage of builtin", .{}),
+    }
 }
 
 const VlaBoundNotPositive = extern struct {
