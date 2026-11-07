@@ -5665,13 +5665,12 @@ fn cmpxchgWeakButNotAtomic(comptime T: type, ptr: *T, expected_value: T, new_val
       Not every operator is available for every vector element type:
       </p>
       <ul>
-          <li>Every operator is available for {#link|integer|Integers#} vectors.</li>
-          <li>{#syntax#}.And{#endsyntax#}, {#syntax#}.Or{#endsyntax#},
-            {#syntax#}.Xor{#endsyntax#} are additionally available for
-            {#syntax#}bool{#endsyntax#} vectors,</li>
-          <li>{#syntax#}.Min{#endsyntax#}, {#syntax#}.Max{#endsyntax#},
-            {#syntax#}.Add{#endsyntax#}, {#syntax#}.Mul{#endsyntax#} are
-            additionally available for {#link|floating point|Floats#} vectors,</li>
+          <li>{#link|Integer|Integers#} vectors support all operators.</li>
+          <li>{#syntax#}bool{#endsyntax#} vectors support the {#syntax#}.And{#endsyntax#},
+          {#syntax#}.Or{#endsyntax#}, and {#syntax#}.Xor{#endsyntax#} operators.</li>
+          <li>{#link|Floating point|Floats#} vectors support the {#syntax#}.Min{#endsyntax#},
+          {#syntax#}.Max{#endsyntax#}, {#syntax#}.Add{#endsyntax#}, and {#syntax#}.Mul{#endsyntax#}
+          operators.</li>
       </ul>
       <p>
       Note that {#syntax#}.Add{#endsyntax#} and {#syntax#}.Mul{#endsyntax#}
