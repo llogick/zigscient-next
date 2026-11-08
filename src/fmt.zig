@@ -142,6 +142,9 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
         };
         defer tree.deinit(gpa);
 
+        var fixups = try fixupTree(gpa, &tree, fix_precedence);
+        defer fixups.deinit(gpa);
+
         if (check_ast_flag) {
             if (!force_zon) {
                 var zir = try std.zig.AstGen.generate(gpa, tree);
@@ -174,8 +177,13 @@ pub fn run(gpa: Allocator, arena: Allocator, io: Io, args: []const []const u8) !
             std.zig.printAstErrorsToStderr(gpa, io, tree, "<stdin>", color) catch {};
             process.exit(2);
         }
-        const formatted = try tree.renderAlloc(gpa);
-        defer gpa.free(formatted);
+
+        var aw: std.Io.Writer.Allocating = .init(gpa);
+        defer aw.deinit();
+        tree.render(gpa, &aw.writer, fixups) catch |err| switch (err) {
+            error.WriteFailed, error.OutOfMemory => return error.OutOfMemory,
+        };
+        const formatted = aw.written();
 
         if (check_flag) {
             const code: u8 = @intFromBool(!mem.eql(u8, formatted, source_code));
@@ -392,91 +400,8 @@ fn fmtPathFile(
     var tree = try std.zig.Ast.parse(gpa, source_code, .{ .mode = mode });
     defer tree.deinit(gpa);
 
-    var fixups: std.zig.Ast.Render.Fixups = .{};
+    var fixups = try fixupTree(gpa, &tree, fmt.fix_precedence);
     defer fixups.deinit(gpa);
-
-    fix: {
-        if (!fmt.fix_precedence) break :fix;
-
-        var operators_to_fix: std.AutoHashMapUnmanaged(std.zig.Ast.TokenIndex, void) = .empty;
-        defer operators_to_fix.deinit(gpa);
-
-        // Gather ambiguous operator precedence error tokens for quick lookup later
-        var remaining_errors: usize = tree.errors.len;
-        for (tree.errors) |err| {
-            switch (err.tag) {
-                .hint_operator_precedence_left => {
-                    try operators_to_fix.put(gpa, err.token - @as(u32, @intCast(err.extra.offset)), {});
-                    remaining_errors -= 1;
-                },
-                .hint_operator_precedence_right => {
-                    try operators_to_fix.put(gpa, err.token, {});
-                    remaining_errors -= 1;
-                },
-                .ambiguous_operator_precedence,
-                .illegal_chained_operators,
-                .previous_ambiguous_operator,
-                => remaining_errors -= 1,
-                else => continue,
-            }
-        }
-
-        if (operators_to_fix.count() == 0) break :fix;
-
-        // Build a new error list without the ambiguous operator precedence errors/notes
-        var fixed_errors: std.ArrayList(std.zig.Ast.Error) = try .initCapacity(gpa, remaining_errors);
-        for (tree.errors) |err| {
-            switch (err.tag) {
-                .ambiguous_operator_precedence,
-                .illegal_chained_operators,
-                .previous_ambiguous_operator,
-                .hint_operator_precedence_left,
-                .hint_operator_precedence_right,
-                => continue,
-                else => {
-                    fixed_errors.appendAssumeCapacity(err);
-                },
-            }
-        }
-        gpa.free(tree.errors);
-        tree.errors = fixed_errors.toOwnedSliceAssert();
-
-        // Find the nodes we need to add parens to and add them to the list
-        for (tree.nodes.items(.tag), 0..) |tag, i| {
-            switch (tag) {
-                .merge_error_sets,
-                .mul,
-                .div,
-                .mod,
-                .mul_wrap,
-                .mul_sat,
-                .add,
-                .sub,
-                .array_cat,
-                .add_wrap,
-                .sub_wrap,
-                .add_sat,
-                .sub_sat,
-                .shl,
-                .shl_sat,
-                .shr,
-                .bit_and,
-                .bit_xor,
-                .bit_or,
-                .@"orelse",
-                .@"catch",
-                .bool_and,
-                .bool_or,
-                => {
-                    const main_tok = tree.nodes.get(i).main_token;
-                    if (operators_to_fix.contains(main_tok)) {
-                        try fixups.insert_parentheses.put(gpa, @fromBackingInt(@intCast(i)), {});
-                    }
-                },
-                else => {},
-            }
-        }
-    }
 
     if (tree.errors.len != 0) {
         try std.zig.printAstErrorsToStderr(gpa, io, tree, file_path, fmt.color);
@@ -606,6 +531,124 @@ fn fmtPathFile(
     }
 
     if (fmt.stats != null) try zon_struct.end();
+}
+
+/// Make any modifications to the tree and/or define any necessary fixups.
+/// This function is ad hoc and can be changed/removed when modifications/fixups are made obsolete.
+fn fixupTree(gpa: Allocator, tree: *std.zig.Ast, fix_precedence: bool) Allocator.Error!std.zig.Ast.Render.Fixups {
+    // Remove packed keyword errors because they will be fixed during rendering.
+    // This block can be removed at the same time that the packed keyword is removed.
+    packed_to_bitpack: {
+        var indexes_to_remove: std.bit_set.Dynamic = try .initEmpty(gpa, tree.errors.len);
+        defer indexes_to_remove.deinit(gpa);
+        for (tree.errors, 0..) |err, i| {
+            switch (err.tag) {
+                .expected_token => if (tree.tokenTag(err.token) == .keyword_packed and err.extra.expected_tag == .keyword_bitpack) {
+                    indexes_to_remove.set(i);
+                },
+                else => {},
+            }
+        }
+
+        const count = indexes_to_remove.count();
+        if (count == 0) break :packed_to_bitpack;
+
+        var remaining_errors: std.ArrayList(std.zig.Ast.Error) = try .initCapacity(gpa, tree.errors.len - count);
+        for (tree.errors, 0..) |err, i| {
+            if (indexes_to_remove.isSet(i)) continue;
+            remaining_errors.appendAssumeCapacity(err);
+        }
+        gpa.free(tree.errors);
+        tree.errors = remaining_errors.toOwnedSliceAssert();
+    }
+
+    var fixups: std.zig.Ast.Render.Fixups = .{};
+    errdefer fixups.deinit(gpa);
+
+    fix: {
+        if (!fix_precedence) break :fix;
+
+        var operators_to_fix: std.AutoHashMapUnmanaged(std.zig.Ast.TokenIndex, void) = .empty;
+        defer operators_to_fix.deinit(gpa);
+
+        // Gather ambiguous operator precedence error tokens for quick lookup later
+        var remaining_errors: usize = tree.errors.len;
+        for (tree.errors) |err| {
+            switch (err.tag) {
+                .hint_operator_precedence_left => {
+                    try operators_to_fix.put(gpa, err.token - @as(u32, @intCast(err.extra.offset)), {});
+                    remaining_errors -= 1;
+                },
+                .hint_operator_precedence_right => {
+                    try operators_to_fix.put(gpa, err.token, {});
+                    remaining_errors -= 1;
+                },
+                .ambiguous_operator_precedence,
+                .illegal_chained_operators,
+                .previous_ambiguous_operator,
+                => remaining_errors -= 1,
+                else => continue,
+            }
+        }
+
+        if (operators_to_fix.count() == 0) break :fix;
+
+        // Build a new error list without the ambiguous operator precedence errors/notes
+        var fixed_errors: std.ArrayList(std.zig.Ast.Error) = try .initCapacity(gpa, remaining_errors);
+        for (tree.errors) |err| {
+            switch (err.tag) {
+                .ambiguous_operator_precedence,
+                .illegal_chained_operators,
+                .previous_ambiguous_operator,
+                .hint_operator_precedence_left,
+                .hint_operator_precedence_right,
+                => continue,
+                else => {
+                    fixed_errors.appendAssumeCapacity(err);
+                },
+            }
+        }
+        gpa.free(tree.errors);
+        tree.errors = fixed_errors.toOwnedSliceAssert();
+
+        // Find the nodes we need to add parens to and add them to the list
+        for (tree.nodes.items(.tag), 0..) |tag, i| {
+            switch (tag) {
+                .merge_error_sets,
+                .mul,
+                .div,
+                .mod,
+                .mul_wrap,
+                .mul_sat,
+                .add,
+                .sub,
+                .array_cat,
+                .add_wrap,
+                .sub_wrap,
+                .add_sat,
+                .sub_sat,
+                .shl,
+                .shl_sat,
+                .shr,
+                .bit_and,
+                .bit_xor,
+                .bit_or,
+                .@"orelse",
+                .@"catch",
+                .bool_and,
+                .bool_or,
+                => {
+                    const main_tok = tree.nodes.get(i).main_token;
+                    if (operators_to_fix.contains(main_tok)) {
+                        try fixups.insert_parentheses.put(gpa, @fromBackingInt(@intCast(i)), {});
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    return fixups;
 }
 
 const SortContext = struct {
