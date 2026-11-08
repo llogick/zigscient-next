@@ -482,6 +482,9 @@ pub fn resolve(options: Options) ResolveError!Config {
 
         if (target_util.preferNewLinkerOverLld(target)) break :b true;
 
+        // Legacy ELF linker does not support LoongArch
+        if (target.cpu.arch.isLoongarch() and target.ofmt == .elf) break :b true;
+
         break :b options.incremental;
     };
 

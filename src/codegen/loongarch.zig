@@ -55,6 +55,7 @@ pub fn generate(
         .opt_mode = mod.optimize_mode,
         .air = air.*,
         .nav_index = zcu.funcInfo(func_index).owner_nav,
+        .no_builtin = mod.no_builtin,
     };
     defer isel.deinit();
     assert(try isel.active_blocks.fetchPut(gpa, Select.Block.main, .{ .target_label = 0 }) == null);
