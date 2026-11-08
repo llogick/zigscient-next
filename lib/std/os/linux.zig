@@ -7485,7 +7485,7 @@ pub const cap_t = extern struct {
 
 pub const cap_user_header_t = extern struct {
     version: u32,
-    pid: usize,
+    pid: pid_t,
 };
 
 pub const cap_user_data_t = extern struct {

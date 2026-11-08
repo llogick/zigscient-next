@@ -184,6 +184,18 @@ test "sigemptyset" {
     }
 }
 
+test "capget" {
+    // _LINUX_CAPABILITY_VERSION_3, for which the kernel writes two cap_user_data_t
+    const version = 0x20080522;
+    var data: [2]linux.cap_user_data_t = undefined;
+    var header: linux.cap_user_header_t = .{ .version = version, .pid = linux.getpid() };
+    try expectEqual(.SUCCESS, linux.errno(linux.capget(&header, &data[0])));
+
+    // Above the kernel's pid limit, so no such process exists
+    header = .{ .version = version, .pid = std.math.maxInt(linux.pid_t) };
+    try expectEqual(.SRCH, linux.errno(linux.capget(&header, &data[0])));
+}
+
 test "sysinfo" {
     var info: linux.Sysinfo = undefined;
     const result: usize = linux.sysinfo(&info);
