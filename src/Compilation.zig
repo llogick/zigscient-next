@@ -2758,32 +2758,30 @@ fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
         }
     }
     switch (comp.cache_use) {
-        .none => |none| {
-            if (none.tmp_artifact_directory) |*tmp_dir| {
-                tmp_dir.handle.close(io);
-                none.tmp_artifact_directory = null;
-                if (dev.env == .bootstrap) {
-                    // zig1 uses `CacheMode.none`, but it doesn't need to know how to delete
-                    // temporary directories; it doesn't have a real cache directory anyway.
-                    return;
-                }
-                // Usually, we want to delete the temporary directory. However, if we are emitting
-                // an unstripped Mach-O binary with the LLVM backend, then the temporary directory
-                // contains the ZCU object file emitted by LLVM, which contains debug symbols not
-                // replicated in the output binary (the output instead contains a reference to that
-                // file which debug tooling can look through). So, in that particular case, we need
-                // to keep this directory around so that the output binary can be debugged.
-                if (comp.bin_file == null or comp.getTarget().ofmt != .macho or comp.config.debug_format == .strip) {
-                    const tmp_dir_sub_path = "tmp" ++ fs.path.sep_str ++ std.fmt.hex(tmp_dir_rand_int);
-                    comp.dirs.local_cache.handle.deleteTree(io, tmp_dir_sub_path) catch |err| {
-                        log.warn("failed to delete temporary directory '{s}{c}{s}': {t}", .{
-                            comp.dirs.local_cache.path orelse ".", fs.path.sep, tmp_dir_sub_path, err,
-                        });
-                    };
-                }
+        .none => |none| if (none.tmp_artifact_directory) |*tmp_dir| {
+            tmp_dir.handle.close(io);
+            none.tmp_artifact_directory = null;
+            if (dev.env == .bootstrap) {
+                // zig1 uses `CacheMode.none`, but it doesn't need to know how to delete
+                // temporary directories; it doesn't have a real cache directory anyway.
+                return;
+            }
+            // Usually, we want to delete the temporary directory. However, if we are emitting
+            // an unstripped Mach-O binary with the LLVM backend, then the temporary directory
+            // contains the ZCU object file emitted by LLVM, which contains debug symbols not
+            // replicated in the output binary (the output instead contains a reference to that
+            // file which debug tooling can look through). So, in that particular case, we need
+            // to keep this directory around so that the output binary can be debugged.
+            if (comp.bin_file == null or comp.getTarget().ofmt != .macho or comp.config.debug_format == .strip) {
+                const tmp_dir_sub_path = "tmp" ++ fs.path.sep_str ++ std.fmt.hex(tmp_dir_rand_int);
+                comp.dirs.local_cache.handle.deleteTree(io, tmp_dir_sub_path) catch |err| {
+                    log.warn("failed to delete temporary directory '{s}{c}{s}': {t}", .{
+                        comp.dirs.local_cache.path orelse ".", fs.path.sep, tmp_dir_sub_path, err,
+                    });
+                };
             }
         },
-        .incremental => return,
+        .incremental => {},
         .whole => |whole| {
             if (whole.cache_manifest) |man| {
                 man.deinit();
@@ -2801,11 +2799,12 @@ fn cleanupAfterUpdate(comp: *Compilation, tmp_dir_rand_int: u64) void {
             }
         },
     }
-    // assert(!comp.config.incremental); // always uses incremental cache mode
-    if (comp.zcu) |zcu| {
-        if (zcu.llvm_object) |llvm_object| {
-            llvm_object.deinit();
-            zcu.llvm_object = null;
+    if (!comp.config.incremental) {
+        if (comp.zcu) |zcu| {
+            if (zcu.llvm_object) |llvm_object| {
+                llvm_object.deinit();
+                zcu.llvm_object = null;
+            }
         }
     }
 }

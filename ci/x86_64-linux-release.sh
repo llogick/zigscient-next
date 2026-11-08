@@ -67,7 +67,7 @@ stage3-release/bin/zig build install test docs \
   -Denable-llvm \
   -Dno-lib \
   -Denable-superhtml \
-  -Dlldb="$HOME/deps/lldb-zig/Release-9441ed5ae1/bin/lldb" \
+  -Dlldb="$HOME/deps/lldb-zig/Release-c003e86788/bin/lldb" \
   -Dlibc-test-path="$HOME/deps/libc-test-b95fe84"
 
 # Ensure that the fuzzer at least compiles.

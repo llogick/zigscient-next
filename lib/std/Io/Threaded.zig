@@ -65,9 +65,6 @@ stderr_writer: File.Writer = .{
 },
 stderr_mode: Io.Terminal.Mode = .no_color,
 stderr_writer_initialized: bool = false,
-stderr_mutex: Io.Mutex = .init,
-stderr_mutex_locker: std.Thread.Id = Thread.invalid_id,
-stderr_mutex_lock_count: usize = 0,
 
 argv0: Argv0,
 /// Protected by `mutex`. Determines whether `environ` has been
@@ -91,6 +88,17 @@ const SystemBasicInformation = if (!is_windows) struct {} else struct {
     buffer: windows.SYSTEM.BASIC_INFORMATION = undefined,
     initialized: std.atomic.Value(bool) = .{ .raw = false },
 };
+
+// These are global to allow the shared stderr file to be coordinated across multiple `Io.Threaded`
+// instances. This is a workaround for the fact that it is currently normal for there to be multiple
+// instances of `Io.Threaded`---one in the application proper, and one used by `std.debug`---which
+// means that if the lock is per-instance, then e.g. `std.Progress` output would clobber panic stack
+// traces because they could both hold a lock simultaneously. Ultimately that problem should instead
+// be solved either by somehow making the stderr lock truly global across all `Io` instances, or by
+// removing the separate "debug" `Io` instance in favour of using the application's instance.
+var stderr_mutex: Io.Mutex = .init;
+var stderr_mutex_locker: std.Thread.Id = Thread.invalid_id;
+var stderr_mutex_lock_count: usize = 0;
 
 const Dl = switch (native_os) {
     .windows => struct {
@@ -14305,12 +14313,12 @@ fn lockStderr(userdata: ?*anyopaque, terminal_mode: ?Io.Terminal.Mode) Io.Cancel
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     const current_thread_id = Thread.currentId();
 
-    if (@atomicLoad(std.Thread.Id, &t.stderr_mutex_locker, .unordered) != current_thread_id) {
-        try mutexLock(&t.stderr_mutex);
-        assert(t.stderr_mutex_lock_count == 0);
-        @atomicStore(std.Thread.Id, &t.stderr_mutex_locker, current_thread_id, .unordered);
+    if (@atomicLoad(std.Thread.Id, &stderr_mutex_locker, .unordered) != current_thread_id) {
+        try mutexLock(&stderr_mutex);
+        assert(stderr_mutex_lock_count == 0);
+        @atomicStore(std.Thread.Id, &stderr_mutex_locker, current_thread_id, .unordered);
     }
-    t.stderr_mutex_lock_count += 1;
+    stderr_mutex_lock_count += 1;
 
     return initLockedStderr(t, terminal_mode);
 }
@@ -14319,12 +14327,12 @@ fn tryLockStderr(userdata: ?*anyopaque, terminal_mode: ?Io.Terminal.Mode) Io.Can
     const t: *Threaded = @ptrCast(@alignCast(userdata));
     const current_thread_id = Thread.currentId();
 
-    if (@atomicLoad(std.Thread.Id, &t.stderr_mutex_locker, .unordered) != current_thread_id) {
-        if (!t.stderr_mutex.tryLock()) return null;
-        assert(t.stderr_mutex_lock_count == 0);
-        @atomicStore(std.Thread.Id, &t.stderr_mutex_locker, current_thread_id, .unordered);
+    if (@atomicLoad(std.Thread.Id, &stderr_mutex_locker, .unordered) != current_thread_id) {
+        if (!stderr_mutex.tryLock()) return null;
+        assert(stderr_mutex_lock_count == 0);
+        @atomicStore(std.Thread.Id, &stderr_mutex_locker, current_thread_id, .unordered);
     }
-    t.stderr_mutex_lock_count += 1;
+    stderr_mutex_lock_count += 1;
 
     return try initLockedStderr(t, terminal_mode);
 }
@@ -14359,10 +14367,10 @@ fn unlockStderr(userdata: ?*anyopaque) void {
     t.stderr_writer.interface.end = 0;
     t.stderr_writer.interface.buffer = &.{};
 
-    t.stderr_mutex_lock_count -= 1;
-    if (t.stderr_mutex_lock_count == 0) {
-        @atomicStore(std.Thread.Id, &t.stderr_mutex_locker, Thread.invalid_id, .unordered);
-        mutexUnlock(&t.stderr_mutex);
+    stderr_mutex_lock_count -= 1;
+    if (stderr_mutex_lock_count == 0) {
+        @atomicStore(std.Thread.Id, &stderr_mutex_locker, Thread.invalid_id, .unordered);
+        mutexUnlock(&stderr_mutex);
     }
 }
 

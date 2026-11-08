@@ -2678,7 +2678,7 @@ const NodeReloc = struct {
             // Ensure the output relocation is up-to-date.
             const rela_shndx = elf.getNodeShndx(reloc.node.unwrap().?).get(elf).rela.shndx;
             rela_shndx.relaSetOffset(elf, rela_index, elf.getNodeVAddr(node) + reloc.offset);
-            rela_shndx.relaSetAddend(elf, rela_index, elf.getNodeVAddr(node) +% @as(u64, @bitCast(reloc.addend)));
+            rela_shndx.relaSetAddend(elf, rela_index, elf.getNodeVAddr(reloc.target) +% @as(u64, @bitCast(reloc.addend)));
         } else {
             assert(elf.ehdrType() != .REL);
             if (node.hasMoved(&elf.mf) or reloc.target.hasMoved(&elf.mf)) {
@@ -10655,11 +10655,10 @@ fn addNodeRelocAssumeCapacity(
                 .rela_index = .none,
                 .result = .ok,
             });
-
-            // Actually apply the new relocation!
-            ri.get(elf).apply(elf);
         },
     }
+
+    ri.get(elf).apply(elf);
 }
 fn updateGotEntry(elf: *Elf, got_index: usize) void {
     assert(elf.ehdrType() != .REL);

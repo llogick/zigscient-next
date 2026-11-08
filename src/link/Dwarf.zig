@@ -1526,9 +1526,9 @@ pub const WipNav = struct {
     }
 
     pub fn genDebugFrame(wip_nav: *WipNav, loc: u32, cfa: Cfa) UpdateError!void {
-        return wip_nav.genDebugFrameWriterError(loc, cfa) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+        wip_nav.genDebugFrameWriterError(loc, cfa) catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn genDebugFrameWriterError(wip_nav: *WipNav, loc: u32, cfa: Cfa) (UpdateError || Writer.Error)!void {
@@ -1547,9 +1547,9 @@ pub const WipNav = struct {
         ty: Type,
         loc: Loc,
     ) UpdateError!void {
-        return wip_nav.genLocalVarDebugInfoWriterError(tag, opt_name, ty, loc) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+        wip_nav.genLocalVarDebugInfoWriterError(tag, opt_name, ty, loc) catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn genLocalVarDebugInfoWriterError(
@@ -1577,9 +1577,9 @@ pub const WipNav = struct {
         opt_name: ?[]const u8,
         val: Value,
     ) UpdateError!void {
-        return wip_nav.genLocalConstDebugInfoWriterError(tag, opt_name, val) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+        wip_nav.genLocalConstDebugInfoWriterError(tag, opt_name, val) catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn genLocalConstDebugInfoWriterError(
@@ -1615,9 +1615,9 @@ pub const WipNav = struct {
     }
 
     pub fn genVarArgsDebugInfo(wip_nav: *WipNav) UpdateError!void {
-        return wip_nav.genVarArgsDebugInfoWriterError() catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+        wip_nav.genVarArgsDebugInfoWriterError() catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn genVarArgsDebugInfoWriterError(wip_nav: *WipNav) (UpdateError || Writer.Error)!void {
@@ -1632,12 +1632,8 @@ pub const WipNav = struct {
         delta_pc: u64,
         end: bool,
     ) Allocator.Error!void {
-        return wip_nav.advanceLineAndPcWriterError(
-            delta_line,
-            delta_pc,
-            end,
-        ) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
+        wip_nav.advanceLineAndPcWriterError(delta_line, delta_pc, end) catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
         };
     }
     fn advanceLineAndPcWriterError(
@@ -1691,8 +1687,8 @@ pub const WipNav = struct {
     }
 
     pub fn setColumn(wip_nav: *WipNav, column: u32) Allocator.Error!void {
-        return wip_nav.setColumnWriterError(column) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
+        wip_nav.setColumnWriterError(column) catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
         };
     }
     fn setColumnWriterError(wip_nav: *WipNav, column: u32) Writer.Error!void {
@@ -1702,8 +1698,8 @@ pub const WipNav = struct {
     }
 
     pub fn negateStmt(wip_nav: *WipNav) Allocator.Error!void {
-        return wip_nav.negateStmtWriterError() catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
+        wip_nav.negateStmtWriterError() catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
         };
     }
     fn negateStmtWriterError(wip_nav: *WipNav) Writer.Error!void {
@@ -1711,8 +1707,8 @@ pub const WipNav = struct {
     }
 
     pub fn setPrologueEnd(wip_nav: *WipNav) Allocator.Error!void {
-        return wip_nav.setPrologueEndWriterError() catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
+        wip_nav.setPrologueEndWriterError() catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
         };
     }
     fn setPrologueEndWriterError(wip_nav: *WipNav) Writer.Error!void {
@@ -1720,8 +1716,8 @@ pub const WipNav = struct {
     }
 
     pub fn setEpilogueBegin(wip_nav: *WipNav) Allocator.Error!void {
-        return wip_nav.setEpilogueBeginWriterError() catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
+        wip_nav.setEpilogueBeginWriterError() catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
         };
     }
     fn setEpilogueBeginWriterError(wip_nav: *WipNav) Writer.Error!void {
@@ -1729,9 +1725,9 @@ pub const WipNav = struct {
     }
 
     pub fn enterBlock(wip_nav: *WipNav, code_off: u64) UpdateError!void {
-        return wip_nav.enterBlockWriterError(code_off) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+        wip_nav.enterBlockWriterError(code_off) catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn enterBlockWriterError(wip_nav: *WipNav, code_off: u64) (UpdateError || Writer.Error)!void {
@@ -1749,9 +1745,9 @@ pub const WipNav = struct {
     }
 
     pub fn leaveBlock(wip_nav: *WipNav, code_off: u64) UpdateError!void {
-        return wip_nav.leaveBlockWriterError(code_off) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+        wip_nav.leaveBlockWriterError(code_off) catch |err| switch (err) {
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn leaveBlockWriterError(wip_nav: *WipNav, code_off: u64) (UpdateError || Writer.Error)!void {
@@ -1765,7 +1761,12 @@ pub const WipNav = struct {
                 wip_nav.debug_info.written()[block.abbrev_code..][0..block_bytes],
                 @intCast(try wip_nav.dwarf.refAbbrevCode(.empty_block)),
             );
-        std.mem.writeInt(u32, wip_nav.debug_info.written()[block.high_pc..][0..4], @intCast(code_off - block.low_pc_off), wip_nav.dwarf.endian);
+        std.mem.writeInt(
+            u32,
+            wip_nav.debug_info.written()[block.high_pc..][0..4],
+            @intCast(code_off - block.low_pc_off),
+            wip_nav.dwarf.endian,
+        );
         wip_nav.any_children = true;
     }
 
@@ -1775,10 +1776,10 @@ pub const WipNav = struct {
         code_off: u64,
         line: u32,
         column: u32,
-    ) UpdateError!void {
+    ) UpdateError!bool {
         return wip_nav.enterInlineFuncWriterError(func, code_off, line, column) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn enterInlineFuncWriterError(
@@ -1787,7 +1788,7 @@ pub const WipNav = struct {
         code_off: u64,
         line: u32,
         column: u32,
-    ) (UpdateError || Writer.Error)!void {
+    ) (UpdateError || Writer.Error)!bool {
         const dwarf = wip_nav.dwarf;
         const zcu = wip_nav.pt.zcu;
         const diw = &wip_nav.debug_info.writer;
@@ -1802,21 +1803,21 @@ pub const WipNav = struct {
         try wip_nav.infoAddrSym(wip_nav.func_sym_index, code_off);
         block.high_pc = @intCast(diw.end);
         try diw.writeInt(u32, 0, dwarf.endian);
-        try wip_nav.setInlineFunc(func);
         wip_nav.any_children = false;
+        return wip_nav.setInlineFunc(func);
     }
 
-    pub fn leaveInlineFunc(wip_nav: *WipNav, func: InternPool.Index, code_off: u64) UpdateError!void {
+    pub fn leaveInlineFunc(wip_nav: *WipNav, func: InternPool.Index, code_off: u64) UpdateError!bool {
         return wip_nav.leaveInlineFuncWriterError(func, code_off) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
     fn leaveInlineFuncWriterError(
         wip_nav: *WipNav,
         func: InternPool.Index,
         code_off: u64,
-    ) (UpdateError || Writer.Error)!void {
+    ) (UpdateError || Writer.Error)!bool {
         const inlined_func_bytes = comptime uleb128Bytes(@backingInt(AbbrevCode.inlined_func));
         const block = wip_nav.blocks.pop().?;
         if (wip_nav.any_children)
@@ -1827,21 +1828,28 @@ pub const WipNav = struct {
                 wip_nav.debug_info.written()[block.abbrev_code..][0..inlined_func_bytes],
                 @intCast(try wip_nav.dwarf.refAbbrevCode(.empty_inlined_func)),
             );
-        std.mem.writeInt(u32, wip_nav.debug_info.written()[block.high_pc..][0..4], @intCast(code_off - block.low_pc_off), wip_nav.dwarf.endian);
-        try wip_nav.setInlineFunc(func);
+        std.mem.writeInt(
+            u32,
+            wip_nav.debug_info.written()[block.high_pc..][0..4],
+            @intCast(code_off - block.low_pc_off),
+            wip_nav.dwarf.endian,
+        );
         wip_nav.any_children = true;
+        return wip_nav.setInlineFunc(func);
     }
 
-    pub fn setInlineFunc(wip_nav: *WipNav, func: InternPool.Index) UpdateError!void {
+    pub fn setInlineFunc(wip_nav: *WipNav, func: InternPool.Index) UpdateError!bool {
         return wip_nav.setInlineFuncWriterError(func) catch |err| switch (err) {
-            error.WriteFailed => error.OutOfMemory,
-            else => |e| e,
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
         };
     }
-    fn setInlineFuncWriterError(wip_nav: *WipNav, func: InternPool.Index) (UpdateError || Writer.Error)!void {
+    fn setInlineFuncWriterError(wip_nav: *WipNav, func: InternPool.Index) (UpdateError || Writer.Error)!bool {
         const zcu = wip_nav.pt.zcu;
         const dwarf = wip_nav.dwarf;
-        if (wip_nav.func == func) return;
+        const old_func = wip_nav.func;
+        if (old_func == func) return false;
+        wip_nav.func = func;
 
         const new_func_info = zcu.funcInfo(func);
         const new_file = zcu.navFileScopeIndex(new_func_info.owner_nav);
@@ -1855,7 +1863,7 @@ pub const WipNav = struct {
 
             try dlw.writeByte(DW.LNS.extended_op);
             try dlw.writeUleb128(1 + dwarf.sectionOffsetBytes());
-            try dlw.writeByte(DW.LNE.ZIG_set_decl);
+            try dlw.writeByte(DW.LNE.ZIG_set_source_decl);
             try dwarf.debug_line.section.getUnit(wip_nav.unit).getEntry(wip_nav.entry).cross_section_relocs.append(dwarf.gpa, .{
                 .source_off = @intCast(dlw.end),
                 .target_sec = .debug_info,
@@ -1863,10 +1871,10 @@ pub const WipNav = struct {
                 .target_entry = new_nav_gop.value_ptr.toOptional(),
             });
             try dlw.splatByteAll(0, dwarf.sectionOffsetBytes());
-            return;
+            return true;
         }
 
-        const old_func_info = zcu.funcInfo(wip_nav.func);
+        const old_func_info = zcu.funcInfo(old_func);
         const old_file = zcu.navFileScopeIndex(old_func_info.owner_nav);
         if (old_file != new_file) {
             const mod_info = dwarf.getModInfo(wip_nav.unit);
@@ -1883,8 +1891,7 @@ pub const WipNav = struct {
             try dlw.writeByte(DW.LNS.advance_line);
             try dlw.writeSleb128(new_src_line - old_src_line);
         }
-
-        wip_nav.func = func;
+        return false;
     }
 
     fn externalReloc(wip_nav: *WipNav, sec: *Section, reloc: ExternalReloc) Allocator.Error!void {
@@ -2878,9 +2885,9 @@ pub fn finishWipNavFunc(
     code_size: u64,
     wip_nav: *WipNav,
 ) UpdateError!void {
-    return dwarf.finishWipNavFuncWriterError(pt, nav_index, code_size, wip_nav) catch |err| switch (err) {
-        error.WriteFailed => error.OutOfMemory,
-        else => |e| e,
+    dwarf.finishWipNavFuncWriterError(pt, nav_index, code_size, wip_nav) catch |err| switch (err) {
+        error.WriteFailed => return error.OutOfMemory,
+        else => |e| return e,
     };
 }
 fn finishWipNavFuncWriterError(
@@ -2994,9 +3001,9 @@ pub fn finishWipNav(
     nav_index: InternPool.Nav.Index,
     wip_nav: *WipNav,
 ) UpdateError!void {
-    return dwarf.finishWipNavWriterError(pt, nav_index, wip_nav) catch |err| switch (err) {
-        error.WriteFailed => error.OutOfMemory,
-        else => |e| e,
+    dwarf.finishWipNavWriterError(pt, nav_index, wip_nav) catch |err| switch (err) {
+        error.WriteFailed => return error.OutOfMemory,
+        else => |e| return e,
     };
 }
 fn finishWipNavWriterError(
@@ -4708,9 +4715,9 @@ fn refAbbrevCode(
 }
 
 pub fn flush(dwarf: *Dwarf, pt: Zcu.PerThread) UpdateError!void {
-    return dwarf.flushWriterError(pt) catch |err| switch (err) {
-        error.WriteFailed => error.OutOfMemory,
-        else => |e| e,
+    dwarf.flushWriterError(pt) catch |err| switch (err) {
+        error.WriteFailed => return error.OutOfMemory,
+        else => |e| return e,
     };
 }
 fn flushWriterError(dwarf: *Dwarf, pt: Zcu.PerThread) (UpdateError || Writer.Error)!void {

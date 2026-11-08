@@ -1,0 +1,38 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() void {
+    foo(true);
+}
+fn foo(comptime x: bool) void {
+    if (x) {
+        bar();
+    } else {
+        comptime unreachable;
+    }
+}
+fn bar() void {
+    std.debug.assert(false);
+}
+const std = @import("std");
+#}
+#update
+#check panic {
+thread ? panic: reached unreachable code
+lib/std/debug.zig:?:?: 0x? in assert (std*)
+    if (!ok) unreachable; // assertion failure
+             ^
+test.zig:12:21: 0x? in bar (test*)
+    std.debug.assert(false);
+                    ^
+test.zig:6:12: 0x? in foo[__func_?] (test*)
+        bar();
+           ^
+test.zig:2:8: 0x? in main (test*)
+    foo(true);
+       ^
+...
+#}

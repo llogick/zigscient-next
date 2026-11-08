@@ -99,6 +99,7 @@ pub const LNE = struct {
 
     // Zig extensions
     pub const ZIG_set_decl = 0xec;
+    pub const ZIG_set_source_decl = 0xed;
 };
 
 pub const UT = struct {

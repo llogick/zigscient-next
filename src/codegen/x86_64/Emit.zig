@@ -513,7 +513,10 @@ pub fn emitMir(emit: *Emit) Error!void {
                         log.debug("mirDbgEnterInline (line={d}, col={d})", .{
                             emit.prev_di_loc.line, emit.prev_di_loc.column,
                         });
-                        try dwarf.enterInlineFunc(mir_inst.data.ip_index, emit.w.end, emit.prev_di_loc.line, emit.prev_di_loc.column);
+                        if (try dwarf.enterInlineFunc(mir_inst.data.ip_index, emit.w.end, emit.prev_di_loc.line, emit.prev_di_loc.column)) {
+                            emit.prev_di_loc.line = 0;
+                            emit.prev_di_loc.column = 0;
+                        }
                     },
                     .eh_frame, .none => {},
                 },
@@ -522,7 +525,10 @@ pub fn emitMir(emit: *Emit) Error!void {
                         log.debug("mirDbgLeaveInline (line={d}, col={d})", .{
                             emit.prev_di_loc.line, emit.prev_di_loc.column,
                         });
-                        try dwarf.leaveInlineFunc(mir_inst.data.ip_index, emit.w.end);
+                        if (try dwarf.leaveInlineFunc(mir_inst.data.ip_index, emit.w.end)) {
+                            emit.prev_di_loc.line = 0;
+                            emit.prev_di_loc.column = 0;
+                        }
                     },
                     .eh_frame, .none => {},
                 },
@@ -600,8 +606,7 @@ pub fn emitMir(emit: *Emit) Error!void {
                                                 try emit.bin_file.uavSymbol(
                                                     emit.pt,
                                                     uav.val,
-                                                    Type.fromInterned(uav.orig_ty)
-                                                        .ptrAlignment(emit.pt.zcu),
+                                                    Type.fromInterned(uav.orig_ty).ptrAlignment(emit.pt.zcu),
                                                 ),
                                             ),
                                             .lazy_sym, .extern_func => unreachable,

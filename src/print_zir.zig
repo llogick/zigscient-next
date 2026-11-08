@@ -529,7 +529,7 @@ const Writer = struct {
             .builtin_src => {
                 try stream.writeAll("))");
                 const inst_data = self.code.extraData(Zir.Inst.LineColumn, extended.operand).data;
-                try stream.print(":{d}:{d}", .{ inst_data.line + 1, inst_data.column + 1 });
+                try stream.print(":{d}:{d}", .{ inst_data.line, inst_data.column });
             },
 
             .@"asm" => try self.writeAsm(stream, extended, false),
@@ -1458,7 +1458,7 @@ const Writer = struct {
         self.parent_decl_node = struct_decl.src_node;
         defer self.parent_decl_node = prev_parent_decl_node;
 
-        try stream.print(":{d}:{d} ", .{ struct_decl.src_line + 1, struct_decl.src_column + 1 });
+        try stream.print(":{d}:{d} ", .{ struct_decl.src_line, struct_decl.src_column });
 
         const fields_hash = self.code.getAssociatedSrcHash(inst).?;
         try stream.print("hash({x}) ", .{&fields_hash});
@@ -1522,7 +1522,7 @@ const Writer = struct {
         self.parent_decl_node = union_decl.src_node;
         defer self.parent_decl_node = prev_parent_decl_node;
 
-        try stream.print(":{d}:{d} ", .{ union_decl.src_line + 1, union_decl.src_column + 1 });
+        try stream.print(":{d}:{d} ", .{ union_decl.src_line, union_decl.src_column });
 
         const fields_hash = self.code.getAssociatedSrcHash(inst).?;
         try stream.print("hash({x}) ", .{&fields_hash});
@@ -1600,7 +1600,7 @@ const Writer = struct {
         self.parent_decl_node = enum_decl.src_node;
         defer self.parent_decl_node = prev_parent_decl_node;
 
-        try stream.print(":{d}:{d} ", .{ enum_decl.src_line + 1, enum_decl.src_column + 1 });
+        try stream.print(":{d}:{d} ", .{ enum_decl.src_line, enum_decl.src_column });
 
         const fields_hash = self.code.getAssociatedSrcHash(inst).?;
         try stream.print("hash({x}) ", .{&fields_hash});
@@ -1649,7 +1649,7 @@ const Writer = struct {
         self.parent_decl_node = opaque_decl.src_node;
         defer self.parent_decl_node = prev_parent_decl_node;
 
-        try stream.print(":{d}:{d} ", .{ opaque_decl.src_line + 1, opaque_decl.src_column + 1 });
+        try stream.print(":{d}:{d} ", .{ opaque_decl.src_line, opaque_decl.src_column });
 
         try stream.print("{s}, ", .{@tagName(opaque_decl.name_strategy)});
         try self.writeCaptures(stream, opaque_decl.captures, opaque_decl.capture_names);
@@ -2191,8 +2191,8 @@ const Writer = struct {
         try stream.writeAll(") ");
         if (body.len != 0) {
             try stream.print("(lbrace={d}:{d},rbrace={d}:{d}) ", .{
-                src_locs.lbrace_line + 1, @as(u16, @truncate(src_locs.columns)) + 1,
-                src_locs.rbrace_line + 1, @as(u16, @truncate(src_locs.columns >> 16)) + 1,
+                src_locs.lbrace_line, @as(u16, @truncate(src_locs.columns)),
+                src_locs.rbrace_line, @as(u16, @truncate(src_locs.columns >> 16)),
             });
         }
         try self.writeSrcNode(stream, src_node);
@@ -2200,7 +2200,7 @@ const Writer = struct {
 
     fn writeDbgStmt(self: *Writer, stream: *std.Io.Writer, inst: Zir.Inst.Index) !void {
         const inst_data = self.code.instructions.items(.data)[@backingInt(inst)].dbg_stmt;
-        try stream.print("{d}, {d})", .{ inst_data.line + 1, inst_data.column + 1 });
+        try stream.print("{d}, {d})", .{ inst_data.line, inst_data.column });
     }
 
     fn writeDefer(self: *Writer, stream: *std.Io.Writer, inst: Zir.Inst.Index) !void {
@@ -2217,7 +2217,7 @@ const Writer = struct {
         defer self.parent_decl_node = prev_parent_decl_node;
         self.parent_decl_node = decl.src_node;
 
-        try stream.print(":{d}:{d} ", .{ decl.src_line + 1, decl.src_column + 1 });
+        try stream.print(":{d}:{d} ", .{ decl.src_line, decl.src_column });
 
         if (decl.is_pub) try stream.writeAll("pub ");
         switch (decl.linkage) {
@@ -2381,8 +2381,8 @@ const Writer = struct {
         const start = self.line_col_cursor.find(tree.source, src_span.start);
         const end = self.line_col_cursor.find(tree.source, src_span.end);
         try stream.print("node_offset:{d}:{d} to :{d}:{d}", .{
-            start.line + 1, start.column + 1,
-            end.line + 1,   end.column + 1,
+            start.line, start.column,
+            end.line,   end.column,
         });
     }
 
@@ -2394,8 +2394,8 @@ const Writer = struct {
         const start = self.line_col_cursor.find(tree.source, span_start);
         const end = self.line_col_cursor.find(tree.source, span_end);
         try stream.print("token_offset:{d}:{d} to :{d}:{d}", .{
-            start.line + 1, start.column + 1,
-            end.line + 1,   end.column + 1,
+            start.line, start.column,
+            end.line,   end.column,
         });
     }
 
@@ -2406,8 +2406,8 @@ const Writer = struct {
         const start = self.line_col_cursor.find(tree.source, span_start);
         const end = self.line_col_cursor.find(tree.source, span_end);
         try stream.print("token_abs:{d}:{d} to :{d}:{d}", .{
-            start.line + 1, start.column + 1,
-            end.line + 1,   end.column + 1,
+            start.line, start.column,
+            end.line,   end.column,
         });
     }
 
