@@ -229,7 +229,7 @@ pub fn createEmpty(
             const index: File.Index = @intCast(try self.files.addOne(gpa));
             self.files.set(index, .{ .zig_object = .{
                 .index = index,
-                .basename = try std.fmt.allocPrint(arena, "{s}.o", .{
+                .basename = try arena.print("{s}.o", .{
                     fs.path.stem(zcu.main_mod.root_src_path),
                 }),
             } });
@@ -589,16 +589,16 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
 
         try argv.append(arena, "-platform_version");
         try argv.append(arena, @tagName(self.platform.os_tag));
-        try argv.append(arena, try std.fmt.allocPrint(arena, "{d}.{d}.{d}", .{
+        try argv.append(arena, try arena.print("{d}.{d}.{d}", .{
             self.platform.version.major,
             self.platform.version.minor,
             self.platform.version.patch,
         }));
 
         if (self.sdk_version) |ver| {
-            try argv.append(arena, try std.fmt.allocPrint(arena, "{d}.{d}", .{ ver.major, ver.minor }));
+            try argv.append(arena, try arena.print("{d}.{d}", .{ ver.major, ver.minor }));
         } else {
-            try argv.append(arena, try std.fmt.allocPrint(arena, "{d}.{d}.{d}", .{
+            try argv.append(arena, try arena.print("{d}.{d}.{d}", .{
                 self.platform.version.major,
                 self.platform.version.minor,
                 self.platform.version.patch,
@@ -615,12 +615,12 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
 
         if (self.pagezero_size) |size| {
             try argv.append(arena, "-pagezero_size");
-            try argv.append(arena, try std.fmt.allocPrint(arena, "0x{x}", .{size}));
+            try argv.append(arena, try arena.print("0x{x}", .{size}));
         }
 
         if (self.headerpad_size) |size| {
             try argv.append(arena, "-headerpad_size");
-            try argv.append(arena, try std.fmt.allocPrint(arena, "0x{x}", .{size}));
+            try argv.append(arena, try arena.print("0x{x}", .{size}));
         }
 
         if (self.headerpad_max_install_names) {
@@ -681,7 +681,7 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
 
         for (self.lib_directories) |lib_directory| {
             // TODO delete this, directories must instead be resolved by the frontend
-            const arg = try std.fmt.allocPrint(arena, "-L{s}", .{lib_directory.path orelse "."});
+            const arg = try arena.print("-L{s}", .{lib_directory.path orelse "."});
             try argv.append(arena, arg);
         }
 
@@ -3191,8 +3191,7 @@ pub fn reopenDebugInfo(self: *MachO) !void {
     const io = comp.io;
     const gpa = comp.gpa;
     const sep = fs.path.sep_str;
-    const d_sym_path = try std.fmt.allocPrint(
-        gpa,
+    const d_sym_path = try gpa.print(
         "{s}.dSYM" ++ sep ++ "Contents" ++ sep ++ "Resources" ++ sep ++ "DWARF",
         .{self.base.emit.sub_path},
     );

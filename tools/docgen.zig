@@ -1063,7 +1063,7 @@ fn genHtml(
                 try printSourceBlock(allocator, tokenizer, out, syntax_block, null);
             },
             .Code => |code| {
-                const out_basename = try std.fmt.allocPrint(allocator, "{s}.out", .{
+                const out_basename = try allocator.print("{s}.out", .{
                     Dir.path.stem(code.name),
                 });
                 defer allocator.free(out_basename);

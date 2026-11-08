@@ -472,12 +472,12 @@ pub fn addCxxArgs(
     const abi_version: u2 = if (target.os.tag == .emscripten) 2 else 1;
 
     cflags.appendSliceAssumeCapacity(&.{
-        try std.fmt.allocPrint(arena, "-D_LIBCPP_ABI_VERSION={d}", .{abi_version}),
-        try std.fmt.allocPrint(arena, "-D_LIBCPP_ABI_NAMESPACE=__{d}", .{abi_version}),
-        try std.fmt.allocPrint(arena, "-D_LIBCPP_HAS_THREADS={d}", .{@as(u1, if (comp.config.any_non_single_threaded) 1 else 0)}),
+        try arena.print("-D_LIBCPP_ABI_VERSION={d}", .{abi_version}),
+        try arena.print("-D_LIBCPP_ABI_NAMESPACE=__{d}", .{abi_version}),
+        try arena.print("-D_LIBCPP_HAS_THREADS={d}", .{@as(u1, if (comp.config.any_non_single_threaded) 1 else 0)}),
         "-D_LIBCPP_HAS_MONOTONIC_CLOCK",
         "-D_LIBCPP_HAS_TERMINAL",
-        try std.fmt.allocPrint(arena, "-D_LIBCPP_HAS_MUSL_LIBC={d}", .{@as(u1, if (target.abi.isMusl()) 1 else 0)}),
+        try arena.print("-D_LIBCPP_HAS_MUSL_LIBC={d}", .{@as(u1, if (target.abi.isMusl()) 1 else 0)}),
         "-D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
         "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
         "-D_LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS=0",

@@ -157,13 +157,13 @@ pub const Block = struct {
         const arena = block.translator.arena;
         const name_copy = try arena.dupe(u8, name);
         const alias_base = if (prefix_opt) |prefix|
-            try std.fmt.allocPrint(arena, "{s}_{s}", .{ prefix, name })
+            try arena.print("{s}_{s}", .{ prefix, name })
         else
             name;
         var proposed_name = alias_base;
         while (block.contains(proposed_name)) {
             block.mangle_count += 1;
-            proposed_name = try std.fmt.allocPrint(arena, "{s}_{d}", .{ alias_base, block.mangle_count });
+            proposed_name = try arena.print("{s}_{d}", .{ alias_base, block.mangle_count });
         }
         const new_mangle = try block.variables.addOne(block.translator.gpa);
         if (reservation) {

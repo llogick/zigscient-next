@@ -293,7 +293,7 @@ pub fn main(init: std.process.Init) !void {
     var sections: std.array_hash_map.String(void) = .empty;
 
     for (arches) |arch| {
-        const libc_so_path = try std.fmt.allocPrint(arena, "{t}/lib/libc.so", .{arch});
+        const libc_so_path = try arena.print("{t}/lib/libc.so", .{arch});
 
         // Read the ELF header.
         const elf_bytes = build_all_dir.readFileAllocOptions(

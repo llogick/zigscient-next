@@ -709,16 +709,16 @@ pub const Session = struct {
 
         fn init(arena: Allocator, uri: std.Uri) !Location {
             const scheme = try arena.dupe(u8, uri.scheme);
-            const user = if (uri.user) |user| try std.fmt.allocPrint(arena, "{f}", .{
+            const user = if (uri.user) |user| try arena.print("{f}", .{
                 std.fmt.alt(user, .formatUser),
             }) else null;
-            const password = if (uri.password) |password| try std.fmt.allocPrint(arena, "{f}", .{
+            const password = if (uri.password) |password| try arena.print("{f}", .{
                 std.fmt.alt(password, .formatPassword),
             }) else null;
-            const host = if (uri.host) |host| try std.fmt.allocPrint(arena, "{f}", .{
+            const host = if (uri.host) |host| try arena.print("{f}", .{
                 std.fmt.alt(host, .formatHost),
             }) else null;
-            const path = try std.fmt.allocPrint(arena, "{f}", .{
+            const path = try arena.print("{f}", .{
                 std.fmt.alt(uri.path, .formatPath),
             });
             // The query and fragment are not used as part of the base server URI.
@@ -744,7 +744,7 @@ pub const Session = struct {
         assert(response_buffer.len >= Packet.max_data_length);
         var info_refs_uri = session.location.uri;
         {
-            const session_uri_path = try std.fmt.allocPrint(arena, "{f}", .{
+            const session_uri_path = try arena.print("{f}", .{
                 std.fmt.alt(session.location.uri.path, .formatPath),
             });
             info_refs_uri.path = .{ .percent_encoded = try std.fs.path.resolvePosix(arena, &.{
@@ -774,7 +774,7 @@ pub const Session = struct {
         if (response.head.status != .ok) return error.ProtocolError;
         const any_redirects_occurred = request.redirect_behavior.remaining() < max_redirects;
         if (any_redirects_occurred) {
-            const request_uri_path = try std.fmt.allocPrint(arena, "{f}", .{
+            const request_uri_path = try arena.print("{f}", .{
                 std.fmt.alt(request.uri.path, .formatPath),
             });
             if (!mem.endsWith(u8, request_uri_path, "/info/refs")) return error.UnparseableRedirect;
@@ -864,7 +864,7 @@ pub const Session = struct {
         assert(options.buffer.len >= Packet.max_data_length);
         var upload_pack_uri = session.location.uri;
         {
-            const session_uri_path = try std.fmt.allocPrint(arena, "{f}", .{
+            const session_uri_path = try arena.print("{f}", .{
                 std.fmt.alt(session.location.uri.path, .formatPath),
             });
             upload_pack_uri.path = .{ .percent_encoded = try std.fs.path.resolvePosix(arena, &.{ "/", session_uri_path, "git-upload-pack" }) };
@@ -878,14 +878,14 @@ pub const Session = struct {
             try Packet.write(.{ .data = agent_capability }, &body);
         }
         {
-            const object_format_packet = try std.fmt.allocPrint(arena, "object-format={t}\n", .{
+            const object_format_packet = try arena.print("object-format={t}\n", .{
                 session.object_format,
             });
             try Packet.write(.{ .data = object_format_packet }, &body);
         }
         try Packet.write(.delimiter, &body);
         for (options.ref_prefixes) |ref_prefix| {
-            const ref_prefix_packet = try std.fmt.allocPrint(arena, "ref-prefix {s}\n", .{ref_prefix});
+            const ref_prefix_packet = try arena.print("ref-prefix {s}\n", .{ref_prefix});
             try Packet.write(.{ .data = ref_prefix_packet }, &body);
         }
         if (options.include_symrefs) {
@@ -981,7 +981,7 @@ pub const Session = struct {
         assert(response_buffer.len >= Packet.max_data_length);
         var upload_pack_uri = session.location.uri;
         {
-            const session_uri_path = try std.fmt.allocPrint(arena, "{f}", .{
+            const session_uri_path = try arena.print("{f}", .{
                 std.fmt.alt(session.location.uri.path, .formatPath),
             });
             upload_pack_uri.path = .{ .percent_encoded = try std.fs.path.resolvePosix(arena, &.{ "/", session_uri_path, "git-upload-pack" }) };
@@ -995,7 +995,7 @@ pub const Session = struct {
             try Packet.write(.{ .data = agent_capability }, &body);
         }
         {
-            const object_format_packet = try std.fmt.allocPrint(arena, "object-format={s}\n", .{@tagName(session.object_format)});
+            const object_format_packet = try arena.print("object-format={s}\n", .{@tagName(session.object_format)});
             try Packet.write(.{ .data = object_format_packet }, &body);
         }
         try Packet.write(.delimiter, &body);

@@ -359,7 +359,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
             );
             d.limited_reader = &limited_reader;
             d.seek_base = member_off;
-            d.input_name = try std.fmt.allocPrint(arena, "{s}({s})", .{
+            d.input_name = try arena.print("{s}({s})", .{
                 archive_input_name,
                 object_name,
             });
@@ -377,7 +377,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
             };
             ptr.* = .{
                 .size = size,
-                .name = try std.fmt.allocPrint(arena, "{s}({s})", .{
+                .name = try arena.print("{s}({s})", .{
                     archive_input_name,
                     object_name,
                 }),

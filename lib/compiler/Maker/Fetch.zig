@@ -653,7 +653,7 @@ pub fn run(f: *Fetch) RunError!void {
         }
 
         // Check global cache before remote fetch.
-        const cached_tarball_sub_path = try std.fmt.allocPrint(arena, "p/{s}.tar.gz", .{expected_hash.toSlice()});
+        const cached_tarball_sub_path = try arena.print("p/{s}.tar.gz", .{expected_hash.toSlice()});
         const cached_tarball_path: Path = .{
             .root_dir = job_queue.global_cache,
             .sub_path = cached_tarball_sub_path,
@@ -1300,8 +1300,8 @@ fn initResource(f: *Fetch, uri: std.Uri, resource: *Resource, reader_buffer: []u
                 if (uri.fragment) |fragment| try fragment.toRawMaybeAlloc(arena) else "HEAD";
             if (git.Oid.parseAny(want_ref)) |oid| break :want_oid oid else |_| {}
 
-            const want_ref_head = try std.fmt.allocPrint(arena, "refs/heads/{s}", .{want_ref});
-            const want_ref_tag = try std.fmt.allocPrint(arena, "refs/tags/{s}", .{want_ref});
+            const want_ref_head = try arena.print("refs/heads/{s}", .{want_ref});
+            const want_ref_tag = try arena.print("refs/tags/{s}", .{want_ref});
 
             var ref_iterator: git.Session.RefIterator = undefined;
             session.listRefs(&ref_iterator, .{

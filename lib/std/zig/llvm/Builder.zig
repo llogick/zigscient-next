@@ -14707,7 +14707,7 @@ pub fn toBitcode(self: *Builder, allocator: Allocator, producer: Producer) bitco
         const IdentificationBlock = ir.IdentificationBlock;
         var identification_block = try bitcode.enterTopBlock(IdentificationBlock);
 
-        const producer_str = try std.fmt.allocPrint(self.gpa, "{s} {d}.{d}.{d}", .{
+        const producer_str = try self.gpa.print("{s} {d}.{d}.{d}", .{
             producer.name,
             producer.version.major,
             producer.version.minor,

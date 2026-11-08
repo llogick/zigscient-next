@@ -19,16 +19,16 @@ pub fn main(init: std.process.Init) !void {
     }
 
     const alt_drive_letter = try getAltDriveLetter(cwd_path);
-    const alt_drive_cwd_key = try std.fmt.allocPrint(arena, "={c}:", .{alt_drive_letter});
-    const alt_drive_cwd = try std.fmt.allocPrint(arena, "{c}:\\baz", .{alt_drive_letter});
+    const alt_drive_cwd_key = try arena.print("={c}:", .{alt_drive_letter});
+    const alt_drive_cwd = try arena.print("{c}:\\baz", .{alt_drive_letter});
     var alt_drive_env_map = std.process.Environ.Map.init(arena);
     try alt_drive_env_map.put(alt_drive_cwd_key, alt_drive_cwd);
 
     const empty_env = std.process.Environ.Map.init(arena);
 
     {
-        const drive_rel = try std.fmt.allocPrint(arena, "{c}:foo", .{alt_drive_letter});
-        const drive_abs = try std.fmt.allocPrint(arena, "{c}:\\bar", .{alt_drive_letter});
+        const drive_rel = try arena.print("{c}:foo", .{alt_drive_letter});
+        const drive_abs = try arena.print("{c}:\\bar", .{alt_drive_letter});
 
         // With the special =X: environment variable set, drive-relative paths that
         // don't match the CWD's drive letter are resolved against that env var.
@@ -60,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (parsed_cwd_path.kind == .unc_absolute) {
-        const drive_abs_path = try std.fmt.allocPrint(arena, "{c}:\\foo\\bar", .{alt_drive_letter});
+        const drive_abs_path = try arena.print("{c}:\\foo\\bar", .{alt_drive_letter});
 
         {
             try checkRelative(arena, io, drive_abs_path, &.{ exe_path, cwd_path, drive_abs_path }, &empty_env);
@@ -69,7 +69,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (parsed_cwd_path.kind == .drive_absolute) {
         const cur_drive_letter = parsed_cwd_path.root[0];
         const path_beyond_root = cwd_path[3..];
-        const unc_cwd = try std.fmt.allocPrint(arena, "\\\\127.0.0.1\\{c}$\\{s}", .{ cur_drive_letter, path_beyond_root });
+        const unc_cwd = try arena.print("\\\\127.0.0.1\\{c}$\\{s}", .{ cur_drive_letter, path_beyond_root });
 
         {
             try checkRelative(arena, io, cwd_path, &.{ exe_path, unc_cwd, cwd_path }, &empty_env);

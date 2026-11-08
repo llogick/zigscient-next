@@ -801,7 +801,7 @@ pub fn updateFunc(
 
         // Create a trampoline to the new location at `old_rva`.
         if (!self.symbols.items[sym_index].flags.trampoline) {
-            const name = try std.fmt.allocPrint(gpa, "{s}$trampoline", .{
+            const name = try gpa.print("{s}$trampoline", .{
                 self.symbols.items[sym_index].getName(macho_file),
             });
             defer gpa.free(name);
@@ -936,7 +936,7 @@ fn updateNavCode(
     sym.out_n_sect = sect_index;
     atom.out_n_sect = sect_index;
 
-    const sym_name = try std.fmt.allocPrintSentinel(gpa, "_{s}", .{nav.fqn.toSlice(ip)}, 0);
+    const sym_name = try gpa.printSentinel("_{s}", .{nav.fqn.toSlice(ip)}, 0);
     defer gpa.free(sym_name);
     sym.name = try self.addString(gpa, sym_name);
     atom.setAlive(true);
@@ -1024,7 +1024,7 @@ fn createTlvInitializer(
     code: []const u8,
 ) !Symbol.Index {
     const gpa = macho_file.base.comp.gpa;
-    const sym_name = try std.fmt.allocPrint(gpa, "{s}$tlv$init", .{name});
+    const sym_name = try gpa.print("{s}$tlv$init", .{name});
     defer gpa.free(sym_name);
     const string = try self.addString(gpa, sym_name);
 
@@ -1328,7 +1328,7 @@ fn updateLazySymbol(
     defer aw.deinit();
 
     const name_str = blk: {
-        const name = try std.fmt.allocPrint(gpa, "__lazy_{s}_{f}", .{
+        const name = try gpa.print("__lazy_{s}_{f}", .{
             @tagName(lazy_sym.kind),
             Type.fromInterned(lazy_sym.ty).fmt(zcu),
         });
@@ -1393,7 +1393,7 @@ pub fn updateLineNumber(self: *ZigObject, pt: Zcu.PerThread, ti_id: InternPool.T
 pub fn getGlobalSymbol(self: *ZigObject, macho_file: *MachO, name: []const u8, lib_name: ?[]const u8) !u32 {
     _ = lib_name;
     const gpa = macho_file.base.comp.gpa;
-    const sym_name = try std.fmt.allocPrint(gpa, "_{s}", .{name});
+    const sym_name = try gpa.print("_{s}", .{name});
     defer gpa.free(sym_name);
     const name_str = try self.addString(gpa, sym_name);
     const lookup_gop = try self.globals_lookup.getOrPut(gpa, name_str.pos);

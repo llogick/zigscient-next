@@ -408,7 +408,7 @@ pub const Map = struct {
         }
 
         if (zig_progress_action == .add) {
-            envp[envp_len] = try std.fmt.allocPrintSentinel(gpa, "ZIG_PROGRESS={d}", .{options.zig_progress_fd.?}, 0);
+            envp[envp_len] = try gpa.printSentinel("ZIG_PROGRESS={d}", .{options.zig_progress_fd.?}, 0);
             envp_len += 1;
         }
 
@@ -417,7 +417,7 @@ pub const Map = struct {
                 .add => unreachable,
                 .delete => continue,
                 .edit => {
-                    envp[envp_len] = try std.fmt.allocPrintSentinel(gpa, "{s}={d}", .{
+                    envp[envp_len] = try gpa.printSentinel("{s}={d}", .{
                         key, options.zig_progress_fd.?,
                     }, 0);
                     envp_len += 1;
@@ -426,7 +426,7 @@ pub const Map = struct {
                 .nothing => {},
             };
 
-            envp[envp_len] = try std.fmt.allocPrintSentinel(gpa, "{s}={s}", .{ key, value }, 0);
+            envp[envp_len] = try gpa.printSentinel("{s}={s}", .{ key, value }, 0);
             envp_len += 1;
         }
 
@@ -759,7 +759,7 @@ pub fn createPosixBlock(
         PosixBlock.deinit(.{ .slice = envp[0..envp_len :null] }, gpa);
     }
     if (zig_progress_action == .add) {
-        envp[envp_len] = try std.fmt.allocPrintSentinel(gpa, "ZIG_PROGRESS={d}", .{options.zig_progress_fd.?}, 0);
+        envp[envp_len] = try gpa.printSentinel("ZIG_PROGRESS={d}", .{options.zig_progress_fd.?}, 0);
         envp_len += 1;
     }
 
@@ -769,7 +769,7 @@ pub fn createPosixBlock(
             .add => unreachable,
             .delete => continue,
             .edit => {
-                envp[envp_len] = try std.fmt.allocPrintSentinel(gpa, "ZIG_PROGRESS={d}", .{options.zig_progress_fd.?}, 0);
+                envp[envp_len] = try gpa.printSentinel("ZIG_PROGRESS={d}", .{options.zig_progress_fd.?}, 0);
                 envp_len += 1;
                 continue;
             },

@@ -47,7 +47,7 @@ pub fn cmdTargets(
         {
             var libc_obj = try root_obj.beginTupleField("libc", .{});
             for (std.zig.target.available_libcs) |libc| {
-                const tmp = try std.fmt.allocPrint(allocator, "{t}-{t}-{t}", .{ libc.arch, libc.os, libc.abi });
+                const tmp = try allocator.print("{t}-{t}-{t}", .{ libc.arch, libc.os, libc.abi });
                 defer allocator.free(tmp);
                 try libc_obj.field(tmp, .{});
             }
@@ -57,7 +57,7 @@ pub fn cmdTargets(
         {
             var glibc_obj = try root_obj.beginTupleField("glibc", .{});
             for (glibc_abi.all_versions) |ver| {
-                const tmp = try std.fmt.allocPrint(allocator, "{f}", .{ver});
+                const tmp = try allocator.print("{f}", .{ver});
                 defer allocator.free(tmp);
                 try glibc_obj.field(tmp, .{});
             }

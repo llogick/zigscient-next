@@ -489,7 +489,7 @@ pub fn addOutputDirectoryArg2(
     run.argv.append(arena, .{ .output_directory = output }) catch @panic("OOM");
 
     if (run.rename_step_with_output_arg) {
-        run.setName(std.fmt.allocPrint(arena, "{s} ({s})", .{ run.step.name, basename }) catch @panic("OOM"));
+        run.setName(arena.print("{s} ({s})", .{ run.step.name, basename }) catch @panic("OOM"));
     }
 
     return .{ .generated = .{ .index = output.generated_file } };

@@ -590,7 +590,7 @@ fn ccPrintFileName(gpa: Allocator, io: Io, args: CCPrintFileNameOptions) ![]u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
 
-    const arg1 = try std.fmt.allocPrint(gpa, "-print-file-name={s}", .{args.search_basename});
+    const arg1 = try gpa.print("-print-file-name={s}", .{args.search_basename});
     defer gpa.free(arg1);
 
     try appendCcExe(gpa, &argv, skip_cc_env_var, &environ_map);

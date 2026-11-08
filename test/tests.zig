@@ -3071,7 +3071,8 @@ pub fn addLinkTests(b: *std.Build, options: LinkTestOptions) *Step {
                 .step = step,
                 .optimize = optimize_mode,
                 .target = resolved_target,
-                .target_desc = std.fmt.allocPrint(b.allocator, "{s}-{t}{s}{s}{s}{s}", .{
+
+                .target_desc = b.allocator.print("{s}-{t}{s}{s}{s}{s}", .{
                     target.zigTriple(b.allocator) catch @panic("OOM"),
                     optimize_mode,
                     if (link_target.use_llvm) "-llvm" else "",

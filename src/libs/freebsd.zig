@@ -88,7 +88,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
             try acflags.appendSlice(arena, &.{
                 "-DLOCORE",
                 // See `Compilation.addCCArgs`.
-                try std.fmt.allocPrint(arena, "-D__FreeBSD_version={d}", .{target.os.version_range.semver.min.major * 100_000 + 500}),
+                try arena.print("-D__FreeBSD_version={d}", .{target.os.version_range.semver.min.major * 100_000 + 500}),
             });
 
             inline for (.{ &cflags, &acflags }) |flags| {
@@ -96,7 +96,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                     "-DPIC",
                     "-DSTRIP_FBSDID",
                     "-I",
-                    try includePath(comp, arena, try std.fmt.allocPrint(arena, "{s}-{s}-{s}", .{
+                    try includePath(comp, arena, try arena.print("{s}-{s}-{s}", .{
                         std.zig.target.freebsdArchNameHeaders(target.cpu.arch),
                         @tagName(target.os.tag),
                         @tagName(target.abi),
@@ -656,8 +656,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                     // .symver _Exit_1_0, _Exit@@FBSD_1.0, remove
                     // _Exit_1_0: .long 0
                     const ver = metadata.all_versions[ver_index];
-                    const sym_plus_ver = try std.fmt.allocPrint(
-                        arena,
+                    const sym_plus_ver = try arena.print(
                         "{s}_FBSD_{d}_{d}",
                         .{ sym_name, ver.major, ver.minor },
                     );
@@ -812,8 +811,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                     // .symver malloc_conf_1_3, malloc_conf@@FBSD_1.3
                     // malloc_conf_1_3: .fill 4, 1, 0
                     const ver = metadata.all_versions[ver_index];
-                    const sym_plus_ver = try std.fmt.allocPrint(
-                        arena,
+                    const sym_plus_ver = try arena.print(
                         "{s}_FBSD_{d}_{d}",
                         .{ sym_name, ver.major, ver.minor },
                     );
@@ -950,8 +948,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                     // .symver _ThreadRuneLocale_1_3, _ThreadRuneLocale@@FBSD_1.3
                     // _ThreadRuneLocale_1_3: .fill 4, 1, 0
                     const ver = metadata.all_versions[ver_index];
-                    const sym_plus_ver = try std.fmt.allocPrint(
-                        arena,
+                    const sym_plus_ver = try arena.print(
                         "{s}_FBSD_{d}_{d}",
                         .{ sym_name, ver.major, ver.minor },
                     );
@@ -1023,7 +1020,7 @@ fn queueSharedObjects(comp: *Compilation, so_files: BuiltSharedObjects) std.Io.C
 
             const so_path: Path = .{
                 .root_dir = so_files.dir_path.root_dir,
-                .sub_path = std.fmt.allocPrint(comp.arena, "{s}{c}lib{s}.so.{d}", .{
+                .sub_path = comp.arena.print("{s}{c}lib{s}.so.{d}", .{
                     so_files.dir_path.sub_path, path.sep, lib.name, lib.getSoVersion(&target.os),
                 }) catch return comp.setAllocFailure(),
             };
@@ -1050,7 +1047,7 @@ fn buildSharedLib(
 
     const io = comp.io;
     const sover = lib.getSoVersion(&target.os);
-    const basename = try std.fmt.allocPrint(arena, "lib{s}.so.{d}", .{ lib.name, sover });
+    const basename = try arena.print("lib{s}.so.{d}", .{ lib.name, sover });
     const version: Version = .{ .major = sover, .minor = 0, .patch = 0 };
     const ld_basename = path.basename(target.standardDynamicLinkerPath().get().?);
     const soname = if (mem.eql(u8, lib.name, "ld")) ld_basename else basename;

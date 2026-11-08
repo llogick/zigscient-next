@@ -221,7 +221,7 @@ fn scanSections(
         const shdr = try r.peekStruct(ElfN.Shdr, endian);
         try r.discardAll64(ehdr.shentsize);
         section.* = .{
-            .name = try std.fmt.allocPrint(arena, "(section {d})", .{shndx}),
+            .name = try arena.print("(section {d})", .{shndx}),
             .name_offset = shdr.name,
             .type = shdr.type,
             .flags = shdr.flags.shf,

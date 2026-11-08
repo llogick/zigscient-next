@@ -303,7 +303,7 @@ pub fn main(init: std.process.Init) !void {
                 .specific => |a| @tagName(a),
                 else => @tagName(dest_target.arch),
             };
-            const out_subpath = try std.fmt.allocPrint(arena, "{s}-linux-any", .{arch_name});
+            const out_subpath = try arena.print("{s}-linux-any", .{arch_name});
             const full_path = try Dir.path.join(arena, &[_][]const u8{ out_dir, out_subpath, path_kv.key_ptr.* });
             try Dir.cwd().createDirPath(io, Dir.path.dirname(full_path).?);
             try Dir.cwd().writeFile(io, .{ .sub_path = full_path, .data = contents.bytes });

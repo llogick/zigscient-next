@@ -231,7 +231,7 @@ pub fn printSteps(sc: *const ScannedConfig, graph: *Graph, w: *Writer) !void {
     for (sc.top_level_steps.keys(), sc.top_level_steps.values()) |name, step_index| {
         const step = step_index.ptr(c);
         const decorated_name = if (step_index == c.default_step)
-            try std.fmt.allocPrint(arena, "{s} (default)", .{name})
+            try arena.print("{s} (default)", .{name})
         else
             name;
         const top_level = step.extended.get(c.extra).top_level;
@@ -275,7 +275,7 @@ pub fn printUsage(sc: *const ScannedConfig, graph: *Graph, w: *Writer) !void {
         for (available_options) |option| {
             const name = option.name.slice(&sc.configuration);
             const description = option.description.slice(&sc.configuration);
-            const help = try std.fmt.allocPrint(arena, "  -D{s}=[{t}]", .{ name, option.type });
+            const help = try arena.print("  -D{s}=[{t}]", .{ name, option.type });
             try w.print("{s:<30} {s}\n", .{ help, description });
             if (option.enum_options.slice(&sc.configuration)) |enum_options| {
                 const padding: [33]u8 = @splat(' ');

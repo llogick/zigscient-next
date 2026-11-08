@@ -146,7 +146,7 @@ pub fn hurdTupleSimple(
     arch: std.Target.Cpu.Arch,
     abi: std.Target.Abi,
 ) ![]u8 {
-    return std.fmt.allocPrint(allocator, "{s}-{s}", .{ @tagName(arch), @tagName(abi) });
+    return allocator.print("{s}-{s}", .{ @tagName(arch), @tagName(abi) });
 }
 
 pub fn hurdTuple(allocator: Allocator, target: *const std.Target) ![]u8 {
@@ -159,7 +159,7 @@ pub fn linuxTripleSimple(
     os_tag: std.Target.Os.Tag,
     abi: std.Target.Abi,
 ) ![]u8 {
-    return std.fmt.allocPrint(allocator, "{s}-{s}-{s}", .{ @tagName(arch), @tagName(os_tag), @tagName(abi) });
+    return allocator.print("{s}-{s}-{s}", .{ @tagName(arch), @tagName(os_tag), @tagName(abi) });
 }
 
 pub fn linuxTriple(allocator: Allocator, target: *const std.Target) ![]u8 {

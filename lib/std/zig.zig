@@ -183,7 +183,7 @@ pub fn binNameAlloc(allocator: Allocator, options: BinNameOptions) error{OutOfMe
     const root_name = options.root_name;
     switch (options.ofmt) {
         .coff => switch (options.output_mode) {
-            .Exe => return std.fmt.allocPrint(allocator, "{s}{s}", .{
+            .Exe => return allocator.print("{s}{s}", .{
                 root_name,
                 options.os_tag.exeFileExt(options.cpu_arch),
             }),
@@ -192,81 +192,81 @@ pub fn binNameAlloc(allocator: Allocator, options: BinNameOptions) error{OutOfMe
                     .static => ".lib",
                     .dynamic => ".dll",
                 };
-                return std.fmt.allocPrint(allocator, "{s}{s}", .{ root_name, suffix });
+                return allocator.print("{s}{s}", .{ root_name, suffix });
             },
-            .Obj => return std.fmt.allocPrint(allocator, "{s}.obj", .{root_name}),
+            .Obj => return allocator.print("{s}.obj", .{root_name}),
         },
         .elf => switch (options.output_mode) {
             .Exe => return allocator.dupe(u8, root_name),
             .Lib => {
                 switch (options.link_mode orelse .static) {
-                    .static => return std.fmt.allocPrint(allocator, "{s}{s}.a", .{
+                    .static => return allocator.print("{s}{s}.a", .{
                         options.os_tag.libPrefix(options.abi), root_name,
                     }),
                     .dynamic => {
                         if (options.version) |ver| {
-                            return std.fmt.allocPrint(allocator, "{s}{s}.so.{d}.{d}.{d}", .{
+                            return allocator.print("{s}{s}.so.{d}.{d}.{d}", .{
                                 options.os_tag.libPrefix(options.abi), root_name, ver.major, ver.minor, ver.patch,
                             });
                         } else {
-                            return std.fmt.allocPrint(allocator, "{s}{s}.so", .{
+                            return allocator.print("{s}{s}.so", .{
                                 options.os_tag.libPrefix(options.abi), root_name,
                             });
                         }
                     },
                 }
             },
-            .Obj => return std.fmt.allocPrint(allocator, "{s}.o", .{root_name}),
+            .Obj => return allocator.print("{s}.o", .{root_name}),
         },
-        .llvmbc => return std.fmt.allocPrint(allocator, "{s}.bc", .{root_name}),
-        .llvmir => return std.fmt.allocPrint(allocator, "{s}.ll", .{root_name}),
+        .llvmbc => return allocator.print("{s}.bc", .{root_name}),
+        .llvmir => return allocator.print("{s}.ll", .{root_name}),
         .macho => switch (options.output_mode) {
             .Exe => return allocator.dupe(u8, root_name),
             .Lib => {
                 switch (options.link_mode orelse .static) {
-                    .static => return std.fmt.allocPrint(allocator, "{s}{s}.a", .{
+                    .static => return allocator.print("{s}{s}.a", .{
                         options.os_tag.libPrefix(options.abi), root_name,
                     }),
                     .dynamic => {
                         if (options.version) |ver| {
-                            return std.fmt.allocPrint(allocator, "{s}{s}.{d}.{d}.{d}.dylib", .{
+                            return allocator.print("{s}{s}.{d}.{d}.{d}.dylib", .{
                                 options.os_tag.libPrefix(options.abi), root_name, ver.major, ver.minor, ver.patch,
                             });
                         } else {
-                            return std.fmt.allocPrint(allocator, "{s}{s}.dylib", .{
+                            return allocator.print("{s}{s}.dylib", .{
                                 options.os_tag.libPrefix(options.abi), root_name,
                             });
                         }
                     },
                 }
             },
-            .Obj => return std.fmt.allocPrint(allocator, "{s}.o", .{root_name}),
+            .Obj => return allocator.print("{s}.o", .{root_name}),
         },
         .wasm => switch (options.output_mode) {
-            .Exe => return std.fmt.allocPrint(allocator, "{s}{s}", .{
+            .Exe => return allocator.print("{s}{s}", .{
                 root_name,
                 options.os_tag.exeFileExt(options.cpu_arch),
             }),
             .Lib => {
                 switch (options.link_mode orelse .static) {
-                    .static => return std.fmt.allocPrint(allocator, "{s}{s}.a", .{
+                    .static => return allocator.print("{s}{s}.a", .{
                         options.os_tag.libPrefix(options.abi), root_name,
                     }),
-                    .dynamic => return std.fmt.allocPrint(allocator, "{s}.wasm", .{root_name}),
+                    .dynamic => return allocator.print("{s}.wasm", .{root_name}),
                 }
             },
-            .Obj => return std.fmt.allocPrint(allocator, "{s}.o", .{root_name}),
+            .Obj => return allocator.print("{s}.o", .{root_name}),
         },
-        .c => return std.fmt.allocPrint(allocator, "{s}.c", .{root_name}),
-        .spirv => return std.fmt.allocPrint(allocator, "{s}.spv", .{root_name}),
-        .hex => return std.fmt.allocPrint(allocator, "{s}.ihex", .{root_name}),
-        .raw => return std.fmt.allocPrint(allocator, "{s}.bin", .{root_name}),
+        .c => return allocator.print("{s}.c", .{root_name}),
+        .spirv => return allocator.print("{s}.spv", .{root_name}),
+        .hex => return allocator.print("{s}.ihex", .{root_name}),
+        .raw => return allocator.print("{s}.bin", .{root_name}),
         .plan9 => switch (options.output_mode) {
             .Exe => return allocator.dupe(u8, root_name),
-            .Obj => return std.fmt.allocPrint(allocator, "{s}{s}", .{
+            .Obj => return allocator.print("{s}{s}", .{
                 root_name, options.ofmt.fileExt(options.cpu_arch),
             }),
-            .Lib => return std.fmt.allocPrint(allocator, "{s}{s}.a", .{
+            .Lib => return allocator.print("{s}{s}.a", .{
                 options.os_tag.libPrefix(options.abi), root_name,
             }),
         },
@@ -1205,7 +1205,7 @@ pub const EmitArtifact = enum {
             .pdb => ".pdb",
             .h => ".h",
         };
-        return std.fmt.allocPrint(gpa, "{s}{s}", .{ opts.root_name, suffix });
+        return gpa.print("{s}{s}", .{ opts.root_name, suffix });
     }
 };
 

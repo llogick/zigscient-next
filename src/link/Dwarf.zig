@@ -1956,7 +1956,7 @@ pub const WipNav = struct {
     }
 
     fn strpFmt(wip_nav: *WipNav, comptime fmt: []const u8, args: anytype) (UpdateError || Writer.Error)!void {
-        const str = try std.fmt.allocPrint(wip_nav.dwarf.gpa, fmt, args);
+        const str = try wip_nav.dwarf.gpa.print(fmt, args);
         defer wip_nav.dwarf.gpa.free(str);
         return wip_nav.strp(str);
     }

@@ -955,7 +955,7 @@ pub fn resolveMergeSubsections(self: *Object, elf_file: *Elf) error{
 
             const sym_index = try self.addSymbol(gpa);
             const sym = &self.symbols.items[sym_index];
-            const name = try std.fmt.allocPrint(gpa, "{s}$subsection{d}", .{ msec.name(elf_file), res.msub_index });
+            const name = try gpa.print("{s}$subsection{d}", .{ msec.name(elf_file), res.msub_index });
             defer gpa.free(name);
             sym.* = .{
                 .value = @bitCast(@as(i64, @intCast(res.offset)) - rel.r_addend),

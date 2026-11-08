@@ -187,7 +187,7 @@ pub fn main(init: std.process.Init) !void {
 
             const gop = try failures.getOrPut(arena, signature);
             if (!gop.found_existing) gop.value_ptr.* = .empty;
-            const failed_test = try std.fmt.allocPrint(arena, "{s} :: {s}", .{ basename, candidate.name });
+            const failed_test = try arena.print("{s} :: {s}", .{ basename, candidate.name });
             try gop.value_ptr.append(arena, failed_test);
         }
 

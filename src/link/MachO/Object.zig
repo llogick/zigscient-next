@@ -338,7 +338,7 @@ fn initSubsections(self: *Object, allocator: Allocator, nlists: anytype) !void {
         } else nlists.len;
 
         if (nlist_start == nlist_end or nlists[nlist_start].nlist.n_value > sect.addr) {
-            const name = try std.fmt.allocPrintSentinel(allocator, "{s}${s}$begin", .{
+            const name = try allocator.printSentinel("{s}${s}$begin", .{
                 sect.segName(), sect.sectName(),
             }, 0);
             defer allocator.free(name);
@@ -413,7 +413,7 @@ fn initSubsections(self: *Object, allocator: Allocator, nlists: anytype) !void {
         // which cannot be contained in any non-zero atom (since then this atom
         // would exceed section boundaries). In order to facilitate this behaviour,
         // we create a dummy zero-sized atom at section end (addr + size).
-        const name = try std.fmt.allocPrintSentinel(allocator, "{s}${s}$end", .{
+        const name = try allocator.printSentinel("{s}${s}$end", .{
             sect.segName(), sect.sectName(),
         }, 0);
         defer allocator.free(name);
@@ -445,7 +445,7 @@ fn initSections(self: *Object, allocator: Allocator, nlists: anytype) !void {
         if (isFixedSizeLiteral(sect)) continue;
         if (isPtrLiteral(sect)) continue;
 
-        const name = try std.fmt.allocPrintSentinel(allocator, "{s}${s}", .{ sect.segName(), sect.sectName() }, 0);
+        const name = try allocator.printSentinel("{s}${s}", .{ sect.segName(), sect.sectName() }, 0);
         defer allocator.free(name);
 
         const atom_index = try self.addAtom(allocator, .{
@@ -515,7 +515,7 @@ fn initCstringLiterals(self: *Object, allocator: Allocator, file: File.Handle, m
             }
             end += 1;
 
-            const name = try std.fmt.allocPrintSentinel(allocator, "l._str{d}", .{count}, 0);
+            const name = try allocator.printSentinel("l._str{d}", .{count}, 0);
             defer allocator.free(name);
             const name_str = try self.addString(allocator, name);
 
@@ -582,7 +582,7 @@ fn initFixedSizeLiterals(self: *Object, allocator: Allocator, macho_file: *MachO
             pos += rec_size;
             count += 1;
         }) {
-            const name = try std.fmt.allocPrintSentinel(allocator, "l._literal{d}", .{count}, 0);
+            const name = try allocator.printSentinel("l._literal{d}", .{count}, 0);
             defer allocator.free(name);
             const name_str = try self.addString(allocator, name);
 
@@ -640,7 +640,7 @@ fn initPointerLiterals(self: *Object, allocator: Allocator, macho_file: *MachO) 
         for (0..num_ptrs) |i| {
             const pos: u32 = @as(u32, @intCast(i)) * rec_size;
 
-            const name = try std.fmt.allocPrintSentinel(allocator, "l._ptr{d}", .{i}, 0);
+            const name = try allocator.printSentinel("l._ptr{d}", .{i}, 0);
             defer allocator.free(name);
             const name_str = try self.addString(allocator, name);
 
@@ -1668,7 +1668,7 @@ pub fn convertTentativeDefinitions(self: *Object, macho_file: *MachO) !void {
         const nlist = &self.symtab.items(.nlist)[nlist_idx];
         const nlist_atom = &self.symtab.items(.atom)[nlist_idx];
 
-        const name = try std.fmt.allocPrintSentinel(gpa, "__DATA$__common${s}", .{sym.getName(macho_file)}, 0);
+        const name = try gpa.printSentinel("__DATA$__common${s}", .{sym.getName(macho_file)}, 0);
         defer gpa.free(name);
 
         const alignment = (@as(u16, @bitCast(nlist.n_desc)) >> 8) & 0x0f;

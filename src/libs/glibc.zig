@@ -477,7 +477,7 @@ fn add_include_dirs(
         "-I", try lib_path(comp, arena, lib_libc_glibc ++ "sysdeps" ++ s ++ "generic"),
         "-I", try path.join(arena, &.{ comp.dirs.zig_lib.path orelse ".", lib_libc ++ "glibc" }),
         "-I",
-        try std.fmt.allocPrint(arena, "{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-{s}-{s}", .{
+        try arena.print("{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-{s}-{s}", .{
             comp.dirs.zig_lib.path orelse ".",
             std.zig.target.glibcArchNameHeaders(target.cpu.arch),
             @tagName(target.os.tag),
@@ -489,7 +489,7 @@ fn add_include_dirs(
     const arch_name = std.zig.target.osArchName(target);
     try args.appendSlice(arena, &.{
         "-I",
-        try std.fmt.allocPrint(arena, "{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-linux-any", .{
+        try arena.print("{s}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-linux-any", .{
             comp.dirs.zig_lib.path orelse ".", arch_name,
         }),
         "-I",
@@ -909,8 +909,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                     const want_default = chosen_def_ver_index != 255 and ver_index == chosen_def_ver_index;
                     const at_sign_str: []const u8 = if (want_default) "@@" else "@";
                     if (ver.patch == 0) {
-                        const sym_plus_ver = try std.fmt.allocPrint(
-                            arena,
+                        const sym_plus_ver = try arena.print(
                             "{s}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor },
                         );
@@ -934,8 +933,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                             wordDirective(target),
                         });
                     } else {
-                        const sym_plus_ver = try std.fmt.allocPrint(
-                            arena,
+                        const sym_plus_ver = try arena.print(
                             "{s}_{d}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor, ver.patch },
                         );
@@ -1086,8 +1084,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                     const want_default = chosen_def_ver_index != 255 and ver_index == chosen_def_ver_index;
                     const at_sign_str: []const u8 = if (want_default) "@@" else "@";
                     if (ver.patch == 0) {
-                        const sym_plus_ver = try std.fmt.allocPrint(
-                            arena,
+                        const sym_plus_ver = try arena.print(
                             "{s}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor },
                         );
@@ -1114,8 +1111,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                             sizes[ver_index],
                         });
                     } else {
-                        const sym_plus_ver = try std.fmt.allocPrint(
-                            arena,
+                        const sym_plus_ver = try arena.print(
                             "{s}_{d}_{d}_{d}",
                             .{ sym_name, ver.major, ver.minor, ver.patch },
                         );
@@ -1184,7 +1180,7 @@ fn queueSharedObjects(comp: *Compilation, so_files: BuiltSharedObjects) std.Io.C
             }
             const so_path: Path = .{
                 .root_dir = so_files.dir_path.root_dir,
-                .sub_path = std.fmt.allocPrint(comp.arena, "{s}{c}lib{s}.so.{d}", .{
+                .sub_path = comp.arena.print("{s}{c}lib{s}.so.{d}", .{
                     so_files.dir_path.sub_path, path.sep, lib.name, lib.sover,
                 }) catch return comp.setAllocFailure(),
             };
@@ -1208,7 +1204,7 @@ fn buildSharedLib(
     defer tracy.end();
 
     const io = comp.io;
-    const basename = try std.fmt.allocPrint(arena, "lib{s}.so.{d}", .{ lib.name, lib.sover });
+    const basename = try arena.print("lib{s}.so.{d}", .{ lib.name, lib.sover });
     const version: Version = .{ .major = lib.sover, .minor = 0, .patch = 0 };
     const ld_basename = path.basename(comp.getTarget().standardDynamicLinkerPath().get().?);
     const soname = if (mem.eql(u8, lib.name, "ld")) ld_basename else basename;

@@ -208,7 +208,7 @@ pub fn addIncludeDir(self: *NativePaths, s: []const u8) !void {
 }
 
 pub fn addIncludeDirFmt(self: *NativePaths, comptime fmt: []const u8, args: anytype) !void {
-    const item = try std.fmt.allocPrint(self.arena, fmt, args);
+    const item = try self.arena.print(fmt, args);
     try self.include_dirs.append(self.arena, item);
 }
 
@@ -217,7 +217,7 @@ pub fn addLibDir(self: *NativePaths, s: []const u8) !void {
 }
 
 pub fn addLibDirFmt(self: *NativePaths, comptime fmt: []const u8, args: anytype) !void {
-    const item = try std.fmt.allocPrint(self.arena, fmt, args);
+    const item = try self.arena.print(fmt, args);
     try self.lib_dirs.append(self.arena, item);
 }
 
@@ -230,12 +230,12 @@ pub fn addFrameworkDir(self: *NativePaths, s: []const u8) !void {
 }
 
 pub fn addFrameworkDirFmt(self: *NativePaths, comptime fmt: []const u8, args: anytype) !void {
-    const item = try std.fmt.allocPrint(self.arena, fmt, args);
+    const item = try self.arena.print(fmt, args);
     try self.framework_dirs.append(self.arena, item);
 }
 
 pub fn addWarningFmt(self: *NativePaths, comptime fmt: []const u8, args: anytype) !void {
-    const item = try std.fmt.allocPrint(self.arena, fmt, args);
+    const item = try self.arena.print(fmt, args);
     try self.warnings.append(self.arena, item);
 }
 

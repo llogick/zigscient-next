@@ -171,7 +171,7 @@ pub fn transMacro(mt: *MacroTranslator) ParseError!void {
             const block = try ZigTag.block_single.create(mt.t.arena, return_expr);
 
             const loc_str = try mt.t.locStr(mt.macro.loc);
-            const value = try std.fmt.allocPrint(mt.t.arena, "\n// {s}: warning: macro '{s}' contains a runtime value, translated to function", .{ loc_str, mt.name });
+            const value = try mt.t.arena.print("\n// {s}: warning: macro '{s}' contains a runtime value, translated to function", .{ loc_str, mt.name });
             try scope.appendNode(try ZigTag.warning.create(mt.t.arena, value));
 
             break :node try ZigTag.pub_inline_fn.create(mt.t.arena, .{
@@ -623,7 +623,7 @@ fn parseCPrimaryExpr(mt: *MacroTranslator, scope: *Scope) ParseError!ZigNode {
             } else {
                 mt.i += 1;
 
-                const str = try std.fmt.allocPrint(arena, "0x{x}", .{slice[1 .. slice.len - 1]});
+                const str = try arena.print("0x{x}", .{slice[1 .. slice.len - 1]});
                 return ZigTag.integer_literal.create(arena, str);
             }
         },
@@ -1061,7 +1061,7 @@ fn parseCSpecifierQualifierList(mt: *MacroTranslator, scope: *Scope) ParseError!
             const identifier = mt.tokSlice();
             try mt.expect(.identifier);
 
-            const name = try std.fmt.allocPrint(mt.t.arena, "{s}_{s}", .{ tag_name, identifier });
+            const name = try mt.t.arena.print("{s}_{s}", .{ tag_name, identifier });
             if (!mt.t.global_scope.contains(name)) {
                 try mt.fail("unable to translate C expr: '{s}' not found", .{name});
                 return error.ParseError;

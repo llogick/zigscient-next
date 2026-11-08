@@ -90,7 +90,7 @@ pub const Tbd = union(enum) {
             .v3 => |v3| {
                 try out.ensureTotalCapacityPrecise(gpa, v3.archs.len);
                 for (v3.archs) |arch| {
-                    const target = try std.fmt.allocPrint(gpa, "{s}-{s}", .{ arch, v3.platform });
+                    const target = try gpa.print("{s}-{s}", .{ arch, v3.platform });
                     out.appendAssumeCapacity(target);
                 }
             },

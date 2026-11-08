@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) !void {
     const bat_files = b.addWriteFiles();
     {
         const echo_args_basename = "echo-args.exe";
-        const preamble = std.fmt.allocPrint(b.allocator,
+        const preamble = b.allocator.print(
             \\@echo off
             \\"{s}"
         , .{echo_args_basename}) catch @panic("OOM");
@@ -61,14 +61,14 @@ pub fn build(b: *std.Build) !void {
     });
 
     const fuzz_max_iterations = b.option(u64, "iterations", "The max fuzz iterations (default: 100)") orelse 100;
-    const fuzz_iterations_arg = std.fmt.allocPrint(b.allocator, "{}", .{fuzz_max_iterations}) catch @panic("oom");
+    const fuzz_iterations_arg = b.allocator.print("{}", .{fuzz_max_iterations}) catch @panic("oom");
 
     const fuzz_seed = b.option(u64, "seed", "Seed to use for the PRNG (default: random)") orelse seed: {
         var buf: [8]u8 = undefined;
         b.graph.io.random(&buf);
         break :seed std.mem.readInt(u64, &buf, builtin.cpu.arch.endian());
     };
-    const fuzz_seed_arg = std.fmt.allocPrint(b.allocator, "{}", .{fuzz_seed}) catch @panic("oom");
+    const fuzz_seed_arg = b.allocator.print("{}", .{fuzz_seed}) catch @panic("oom");
 
     const fuzz_run = b.addRunArtifact(fuzz);
     fuzz_run.setCwd(bat_files.getDirectory());

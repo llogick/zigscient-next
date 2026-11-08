@@ -1086,7 +1086,7 @@ const Parser = struct {
         try self.errors.append(self.arena, .init(self.ast, .{
             .token = .fromToken(token),
             .node_or_offset = offset,
-            .msg = try std.fmt.allocPrint(self.arena, fmt, args),
+            .msg = try self.arena.print(fmt, args),
             .notes = notes,
         }));
         return error.ParseZon;

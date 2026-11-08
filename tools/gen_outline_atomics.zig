@@ -45,7 +45,7 @@ pub fn main(init: std.process.Init) !void {
             for ([_]AtomicOp{ .cas, .swp, .ldadd, .ldclr, .ldeor, .ldset }) |op| {
                 if (n == .sixteen and op != .cas) continue;
 
-                const name = try std.fmt.allocPrint(arena, "__aarch64_{s}{d}_{s}", .{
+                const name = try arena.print("__aarch64_{s}{d}_{s}", .{
                     @tagName(op), n.toBytes(), @tagName(order),
                 });
                 try writeFunction(arena, w, name, op, n, order);
@@ -77,8 +77,7 @@ fn writeFunction(
         .ldeor => try generateLd(arena, n, order, .ldeor),
         .ldset => try generateLd(arena, n, order, .ldset),
     };
-    const fn_sig = try std.fmt.allocPrint(
-        arena,
+    const fn_sig = try arena.print(
         "fn {[name]s}() align(16) callconv(.naked) void {{",
         .{ .name = name },
     );
@@ -214,11 +213,11 @@ fn generateCas(arena: Allocator, n: N, order: Ordering) ![]const u8 {
     const reg = n.register();
 
     if (@backingInt(n) < 16) {
-        const cas = try std.fmt.allocPrint(arena, ".inst 0x08a07c41 + {s} + {s}", .{ s_def.b, o_def.m });
-        const ldxr = try std.fmt.allocPrint(arena, "ld{s}xr{s}", .{ o_def.a, s_def.s });
-        const stxr = try std.fmt.allocPrint(arena, "st{s}xr{s}", .{ o_def.l, s_def.s });
+        const cas = try arena.print(".inst 0x08a07c41 + {s} + {s}", .{ s_def.b, o_def.m });
+        const ldxr = try arena.print("ld{s}xr{s}", .{ o_def.a, s_def.s });
+        const stxr = try arena.print("st{s}xr{s}", .{ o_def.l, s_def.s });
 
-        return try std.fmt.allocPrint(arena,
+        return try arena.print(
             \\        cbz     w16, 8f
             \\        {[cas]s}
             \\        ret
@@ -240,11 +239,11 @@ fn generateCas(arena: Allocator, n: N, order: Ordering) ![]const u8 {
             .reg = reg,
         });
     } else {
-        const casp = try std.fmt.allocPrint(arena, ".inst 0x48207c82 + {s}", .{o_def.m});
-        const ldxp = try std.fmt.allocPrint(arena, "ld{s}xp", .{o_def.a});
-        const stxp = try std.fmt.allocPrint(arena, "st{s}xp", .{o_def.l});
+        const casp = try arena.print(".inst 0x48207c82 + {s}", .{o_def.m});
+        const ldxp = try arena.print("ld{s}xp", .{o_def.a});
+        const stxp = try arena.print("st{s}xp", .{o_def.l});
 
-        return try std.fmt.allocPrint(arena,
+        return try arena.print(
             \\        cbz     w16, 8f
             \\        {[casp]s}
             \\        ret
@@ -273,7 +272,7 @@ fn generateSwp(arena: Allocator, n: N, order: Ordering) ![]const u8 {
     const o_def = order.defines();
     const reg = n.register();
 
-    return try std.fmt.allocPrint(arena,
+    return try arena.print(
         \\        cbz     w16, 8f
         \\        .inst 0x38208020 + {[b]s} + {[n]s}
         \\        ret
@@ -313,7 +312,7 @@ fn generateLd(arena: Allocator, n: N, order: Ordering, ld: LdName) ![]const u8 {
 
     const reg = n.register();
 
-    return try std.fmt.allocPrint(arena,
+    return try arena.print(
         \\        cbz     w16, 8f
         \\        .inst 0x38200020 + {[op_n]s} + {[b]s} + {[n]s}
         \\        ret

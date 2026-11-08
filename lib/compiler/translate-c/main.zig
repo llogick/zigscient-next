@@ -264,7 +264,7 @@ fn translate(
     if (link_libc) {
         if (target.isGnuLibC()) {
             const target_version = target.os.versionRange().gnuLibCVersion().?;
-            const glibc_minor_define = try std.fmt.allocPrint(arena, "-D__GLIBC_MINOR__={d}", .{
+            const glibc_minor_define = try arena.print("-D__GLIBC_MINOR__={d}", .{
                 target_version.minor,
             });
             try aro_args.append(arena, glibc_minor_define);
@@ -274,7 +274,7 @@ fn translate(
             const minver: u16 = @truncate(@backingInt(target.os.versionRange().windows.min) >> 16);
             try aro_args.append(
                 arena,
-                try std.fmt.allocPrint(arena, "-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
+                try arena.print("-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
             );
 
             // MinGW-w64's inline functions in headers (e.g. `fabs`), which are emitted with `linkonce_odr`
@@ -286,7 +286,7 @@ fn translate(
         } else if (target.isFreeBSDLibC()) {
             // https://docs.freebsd.org/en/books/porters-handbook/versions
             const min_ver = target.os.version_range.semver.min;
-            try aro_args.append(arena, try std.fmt.allocPrint(arena, "-D__FreeBSD_version={d}", .{
+            try aro_args.append(arena, try arena.print("-D__FreeBSD_version={d}", .{
                 // We don't currently respect the minor and patch components. This wouldn't be particularly
                 // helpful because our abilists file only tracks major FreeBSD releases, so the link-time stub
                 // symbols would be inconsistent with header declarations.
@@ -294,7 +294,7 @@ fn translate(
             }));
         } else if (target.isNetBSDLibC()) {
             const min_ver = target.os.version_range.semver.min;
-            try aro_args.append(arena, try std.fmt.allocPrint(arena, "-D__NetBSD_Version__={d}", .{
+            try aro_args.append(arena, try arena.print("-D__NetBSD_Version__={d}", .{
                 // We don't currently respect the patch component. This wouldn't be particularly helpful because
                 // our abilists file only tracks major and minor NetBSD releases, so the link-time stub symbols
                 // would be inconsistent with header declarations.
@@ -305,13 +305,13 @@ fn translate(
             // The macro in sys/param.h doesn't have the leading underscores, but we don't want to pollute the
             // global namespace in all compilation units. So we use leading underscores and modify sys/param.h
             // to just alias this one.
-            try aro_args.append(arena, try std.fmt.allocPrint(arena, "-D___OpenBSD={d}", .{
+            try aro_args.append(arena, try arena.print("-D___OpenBSD={d}", .{
                 // Brilliantly, OpenBSD defines this macro to the year and month of the release, so we need to
                 // maintain a manual mapping here whenever we update the headers.
                 202510,
             }));
             // We can't avoid pollution for this one...
-            try aro_args.append(arena, try std.fmt.allocPrint(arena, "-DOpenBSD{d}_{d}", .{
+            try aro_args.append(arena, try arena.print("-DOpenBSD{d}_{d}", .{
                 min_ver.major,
                 min_ver.minor,
             }));

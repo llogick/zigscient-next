@@ -522,7 +522,7 @@ const Parse = struct {
         args: anytype,
     ) Allocator.Error!void {
         try p.errors.append(p.gpa, .{
-            .msg = try std.fmt.allocPrint(p.arena, fmt, args),
+            .msg = try p.arena.print(fmt, args),
             .tok = tok,
             .off = byte_offset,
         });

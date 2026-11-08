@@ -34,7 +34,7 @@ const Target = struct {
     abi: Abi = .none,
 
     fn name(self: Target, allocator: Allocator) ![]const u8 {
-        return std.fmt.allocPrint(allocator, "{s}-{s}-{s}", .{
+        return allocator.print("{s}-{s}-{s}", .{
             @tagName(self.arch),
             @tagName(self.os),
             @tagName(self.abi),
@@ -42,7 +42,7 @@ const Target = struct {
     }
 
     fn fullName(self: Target, allocator: Allocator) ![]const u8 {
-        return std.fmt.allocPrint(allocator, "{s}-{s}.{d}-{s}", .{
+        return allocator.print("{s}-{s}.{d}-{s}", .{
             @tagName(self.arch),
             @tagName(self.os),
             @backingInt(self.os_ver),
@@ -127,7 +127,7 @@ fn fetchTarget(
     const tmp_file_path = try Dir.path.join(arena, &[_][]const u8{ tmp_path, tmp_filename });
     const headers_list_path = try Dir.path.join(arena, &[_][]const u8{ tmp_path, headers_list_filename });
 
-    const macos_version = try std.fmt.allocPrint(arena, "-mmacosx-version-min={d}.{d}", .{
+    const macos_version = try arena.print("-mmacosx-version-min={d}.{d}", .{
         ver.major,
         ver.minor,
     });

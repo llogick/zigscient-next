@@ -405,7 +405,7 @@ test dumpHexFallible {
     defer aw.deinit();
 
     try dumpHexFallible(.{ .writer = &aw.writer, .mode = .no_color }, bytes);
-    const expected = try std.fmt.allocPrint(gpa,
+    const expected = try gpa.print(
         \\{x:0>[2]}  00 11 22 33 44 55 66 77  88 99 AA BB CC DD EE FF  .."3DUfw........
         \\{x:0>[2]}  01 12 13                                          ...
         \\

@@ -374,7 +374,7 @@ fn walk(arena: Allocator, io: Io, tokenizer: *Tokenizer, out_dir: Dir, w: anytyp
                         _ = try eatToken(tokenizer, .bracket_close);
                     };
 
-                    const basename = try std.fmt.allocPrint(arena, "{s}.zig", .{name});
+                    const basename = try arena.print("{s}.zig", .{name});
 
                     var file = out_dir.createFile(io, basename, .{ .exclusive = true }) catch |err| {
                         fatal("unable to create file '{s}': {s}", .{ name, @errorName(err) });

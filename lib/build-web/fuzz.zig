@@ -277,7 +277,7 @@ fn updateStats() error{OutOfMemory}!void {
         break :speed n_runs / (ns_elapsed / std.time.ns_per_s);
     };
 
-    const html = try std.fmt.allocPrint(gpa,
+    const html = try gpa.print(
         \\<span slot="stat-total-runs">{d}</span>
         \\<span slot="stat-unique-runs">{d} ({d:.1}%)</span>
         \\<span slot="stat-coverage">{d} / {d} ({d:.1}%)</span>

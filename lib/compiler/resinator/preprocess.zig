@@ -127,7 +127,7 @@ pub fn appendAroArgs(arena: Allocator, argv: *std.ArrayList([]const u8), options
         switch (entry.value_ptr.*) {
             .define => |value| {
                 try argv.append(arena, "-D");
-                const define_arg = try std.fmt.allocPrint(arena, "{s}={s}", .{ entry.key_ptr.*, value });
+                const define_arg = try arena.print("{s}={s}", .{ entry.key_ptr.*, value });
                 try argv.append(arena, define_arg);
             },
             .undefine => {

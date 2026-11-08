@@ -161,7 +161,7 @@ pub fn locStr(t: *Translator, loc: aro.Source.Location) ![]const u8 {
     const line = expanded.line_no;
     const col = expanded.col;
 
-    return std.fmt.allocPrint(t.arena, "{s}:{d}:{d}", .{ filename, line, col });
+    return t.arena.print("{s}:{d}:{d}", .{ filename, line, col });
 }
 
 fn maybeSuppressResult(t: *Translator, used: ResultUsed, result: ZigNode) TransError!ZigNode {
@@ -209,7 +209,7 @@ pub fn failDeclExtra(
 ) Error!void {
     // location
     // pub const name = @compileError(msg);
-    const fail_msg = try std.fmt.allocPrint(t.arena, format, args);
+    const fail_msg = try t.arena.print(format, args);
     const fail_decl = try ZigTag.fail_decl.create(t.arena, .{
         .actual = name,
         .mangled = fail_msg,
@@ -217,7 +217,7 @@ pub fn failDeclExtra(
     });
 
     const str = try t.locStr(loc);
-    const location_comment = try std.fmt.allocPrint(t.arena, "// {s}", .{str});
+    const location_comment = try t.arena.print("// {s}", .{str});
     const loc_node = try ZigTag.warning.create(t.arena, location_comment);
 
     if (scope.id == .root) {
@@ -235,7 +235,7 @@ pub fn failDeclExtra(
 fn warn(t: *Translator, scope: *Scope, tok_idx: TokenIndex, comptime format: []const u8, args: anytype) !void {
     const loc = t.tree.tokens.items(.loc)[tok_idx];
     const str = try t.locStr(loc);
-    const value = try std.fmt.allocPrint(t.arena, "// {s}: warning: " ++ format, .{str} ++ args);
+    const value = try t.arena.print("// {s}: warning: " ++ format, .{str} ++ args);
     try scope.appendNode(try ZigTag.warning.create(t.arena, value));
 }
 
@@ -367,7 +367,7 @@ fn prepopulateGlobalNameTable(t: *Translator) !void {
                     .@"enum" => |enum_ty| .{ "enum", enum_ty.name.lookup(t.comp) },
                     else => unreachable,
                 };
-                const prefixed_name = try std.fmt.allocPrint(t.arena, "{s}_{s}", .{ prefix, name });
+                const prefixed_name = try t.arena.print("{s}_{s}", .{ prefix, name });
                 // `name` and `prefixed_name` are the preferred names for this type.
                 // However, we can name it anything else if necessary, so these are "weak names".
                 try t.weak_global_names.ensureUnusedCapacity(t.gpa, 2);
@@ -546,11 +546,11 @@ fn mangleWeakGlobalName(t: *Translator, want_name: []const u8) Error![]const u8 
     if (!t.weak_global_names.contains(want_name)) {
         // This type wasn't noticed by the name detection pass, so nothing has been treating this as
         // a weak global name. We must mangle it to avoid conflicts with locals.
-        cur_name = try std.fmt.allocPrint(t.arena, "{s}_{d}", .{ want_name, t.getMangle() });
+        cur_name = try t.arena.print("{s}_{d}", .{ want_name, t.getMangle() });
     }
 
     while (t.global_names.contains(cur_name)) {
-        cur_name = try std.fmt.allocPrint(t.arena, "{s}_{d}", .{ want_name, t.getMangle() });
+        cur_name = try t.arena.print("{s}_{d}", .{ want_name, t.getMangle() });
     }
     return cur_name;
 }
@@ -580,10 +580,10 @@ fn transRecordDecl(t: *Translator, scope: *Scope, record_qt: QualType) Error!voi
         name = typedef_name;
     } else {
         if (record_ty.isAnonymous(t.comp)) {
-            bare_name = try std.fmt.allocPrint(t.arena, "unnamed_{d}", .{t.getMangle()});
+            bare_name = try t.arena.print("unnamed_{d}", .{t.getMangle()});
             is_unnamed = true;
         }
-        name = try std.fmt.allocPrint(t.arena, "{s}_{s}", .{ container_kind_name, bare_name });
+        name = try t.arena.print("{s}_{s}", .{ container_kind_name, bare_name });
         if (toplevel and !is_unnamed) {
             name = try t.mangleWeakGlobalName(name);
         }
@@ -619,7 +619,7 @@ fn transRecordDecl(t: *Translator, scope: *Scope, record_qt: QualType) Error!voi
 
             var field_name = field.name.lookup(t.comp);
             if (field.name_tok == 0) {
-                field_name = try std.fmt.allocPrint(t.arena, "unnamed_{d}", .{unnamed_field_count});
+                field_name = try t.arena.print("unnamed_{d}", .{unnamed_field_count});
                 unnamed_field_count += 1;
                 try t.anonymous_record_field_names.put(t.gpa, .{
                     .parent = base.qt,
@@ -645,7 +645,7 @@ fn transRecordDecl(t: *Translator, scope: *Scope, record_qt: QualType) Error!voi
                     const backing_array = try ZigTag.array_type.create(t.arena, .{ .len = backing_array_len, .elem_type = elem_type });
 
                     const member_name = field_name;
-                    field_name = try std.fmt.allocPrint(t.arena, "_{s}", .{field_name});
+                    field_name = try t.arena.print("_{s}", .{field_name});
 
                     const member = try t.createFlexibleMemberFn(member_name, field_name);
                     try functions.append(t.gpa, member);
@@ -699,7 +699,7 @@ fn transRecordDecl(t: *Translator, scope: *Scope, record_qt: QualType) Error!voi
 
             try fields.append(t.gpa, .{
                 .name = "_padding",
-                .type = try ZigTag.type.create(t.arena, try std.fmt.allocPrint(t.arena, "u{d}", .{padding_bits})),
+                .type = try ZigTag.type.create(t.arena, try t.arena.print("u{d}", .{padding_bits})),
                 .alignment = @divExact(alignment_bits, 8),
                 .default_value = if (t.default_init and container_kind == .@"struct")
                     ZigTag.zero_literal.init()
@@ -826,7 +826,7 @@ fn transFnDecl(t: *Translator, scope: *Scope, function: Node.Function, decl_node
         param.name = mangled_param_name;
 
         if (!is_const) {
-            const bare_arg_name = try std.fmt.allocPrint(t.arena, "arg_{s}", .{mangled_param_name});
+            const bare_arg_name = try t.arena.print("arg_{s}", .{mangled_param_name});
             const arg_name = try block_scope.makeMangledName(bare_arg_name);
             param.name = arg_name;
 
@@ -928,7 +928,7 @@ fn transVarDecl(t: *Translator, scope: *Scope, variable: Node.Variable, decl_nod
                 is_extern = false;
                 is_const = true;
 
-                const name_str = try std.fmt.allocPrint(t.arena, "\"{s}\"", .{base_name});
+                const name_str = try t.arena.print("\"{s}\"", .{base_name});
                 break :init try ZigTag.builtin_extern.create(t.arena, .{
                     .type = type_node,
                     .name = try ZigTag.string_literal.create(t.arena, name_str),
@@ -1026,10 +1026,10 @@ fn transEnumDecl(t: *Translator, scope: *Scope, enum_qt: QualType) Error!void {
         name = typedef_name;
     } else {
         if (enum_ty.isAnonymous(t.comp)) {
-            bare_name = try std.fmt.allocPrint(t.arena, "unnamed_{d}", .{t.getMangle()});
+            bare_name = try t.arena.print("unnamed_{d}", .{t.getMangle()});
             is_unnamed = true;
         }
-        name = try std.fmt.allocPrint(t.arena, "enum_{s}", .{bare_name});
+        name = try t.arena.print("enum_{s}", .{bare_name});
     }
     if (!toplevel) name = try bs.makeMangledName(name);
     try t.container_types.putNoClobber(t.gpa, base.qt.unqualified(), name);
@@ -1531,7 +1531,7 @@ fn transTypeIntWidthOf(t: *Translator, qt: QualType, is_signed: bool) TypeError!
             .int128, .uint128 => if (is_signed) "i128" else "u128",
             .int24, .uint24 => if (is_signed) "i24" else "u24",
         },
-        .bit_int => |bit_int_ty| try std.fmt.allocPrint(t.arena, "{s}{d}", .{
+        .bit_int => |bit_int_ty| try t.arena.print("{s}{d}", .{
             if (is_signed) "i" else "u",
             bit_int_ty.bits,
         }),
@@ -3283,7 +3283,7 @@ fn transMemberAccess(
                 switch (flex_array_mode) {
                     .accessor => return ZigTag.call.create(t.arena, .{ .lhs = field_access, .args = &.{} }),
                     .backing => {
-                        const backing_name = try std.fmt.allocPrint(t.arena, "_{s}", .{field_name});
+                        const backing_name = try t.arena.print("_{s}", .{field_name});
                         return ZigTag.field_access.create(t.arena, .{ .lhs = lhs, .field_name = backing_name });
                     },
                 }
@@ -3666,7 +3666,7 @@ fn transStringLiteral(
     switch (literal.kind) {
         .ascii, .utf8 => return t.transNarrowStringLiteral(expr, literal),
         .utf16, .utf32, .wide => {
-            const name = try std.fmt.allocPrint(t.arena, "{s}_string_{d}", .{ @tagName(literal.kind), t.getMangle() });
+            const name = try t.arena.print("{s}_string_{d}", .{ @tagName(literal.kind), t.getMangle() });
 
             const array_type = try t.transTypeInit(scope, literal.qt, expr, literal.literal_tok);
             const lit_array = try t.transStringLiteralInitializer(expr, literal, array_type);
@@ -4178,15 +4178,15 @@ fn createIntNode(t: *Translator, int: aro.Value) !ZigNode {
 }
 
 fn createNumberNode(t: *Translator, num: anytype) !ZigNode {
-    const str = try std.fmt.allocPrint(t.arena, "{d}", .{num});
+    const str = try t.arena.print("{d}", .{num});
     return ZigTag.integer_literal.create(t.arena, str);
 }
 
 fn createCharLiteralNode(t: *Translator, narrow: bool, val: u32) TransError!ZigNode {
     return ZigTag.char_literal.create(t.arena, if (narrow)
-        try std.fmt.allocPrint(t.arena, "'{f}'", .{std.zig.fmtChar(@as(u8, @intCast(val)))})
+        try t.arena.print("'{f}'", .{std.zig.fmtChar(@as(u8, @intCast(val)))})
     else
-        try std.fmt.allocPrint(t.arena, "'\\u{{{x}}}'", .{val}));
+        try t.arena.print("'\\u{{{x}}}'", .{val}));
 }
 
 fn createBinOpNode(

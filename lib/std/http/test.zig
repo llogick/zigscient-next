@@ -80,7 +80,7 @@ test "trailers" {
     var client: http.Client = .{ .allocator = gpa, .io = io };
     defer client.deinit();
 
-    const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/trailer", .{
+    const location = try gpa.print("http://127.0.0.1:{d}/trailer", .{
         test_server.port(),
     });
     defer gpa.free(location);
@@ -525,7 +525,7 @@ test "general client/server API coverage" {
                     },
                 });
             } else if (mem.eql(u8, target, "/redirect/3")) {
-                const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/redirect/2", .{
+                const location = try gpa.print("http://127.0.0.1:{d}/redirect/2", .{
                     listen_port,
                 });
                 defer gpa.free(location);
@@ -554,7 +554,7 @@ test "general client/server API coverage" {
                 try request.respond("Encoded redirect successful!\n", .{});
             } else if (mem.eql(u8, target, "/redirect/invalid")) {
                 const invalid_port = try getUnusedTcpPort();
-                const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}", .{invalid_port});
+                const location = try gpa.print("http://127.0.0.1:{d}", .{invalid_port});
                 defer gpa.free(location);
 
                 try request.respond("", .{
@@ -592,7 +592,7 @@ test "general client/server API coverage" {
     const port = test_server.port();
 
     { // read content-length response
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/get", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/get", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -616,7 +616,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // read large content-length response
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/large", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/large", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -638,7 +638,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // send head request and not read chunked
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/get", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/get", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -663,7 +663,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // read chunked response
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/get?chunked", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/get?chunked", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -687,7 +687,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // send head request and not read chunked
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/get?chunked", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/get?chunked", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -712,7 +712,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // read content-length response with connection close
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/get", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/get", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -738,7 +738,7 @@ test "general client/server API coverage" {
     try expect(client.connection_pool.free_len == 0);
 
     { // handle empty header field value
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/empty", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/empty", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -782,7 +782,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // relative redirect
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/redirect/1", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/redirect/1", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -804,7 +804,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // redirect from root
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/redirect/2", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/redirect/2", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -826,7 +826,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // absolute redirect
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/redirect/3", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/redirect/3", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -848,7 +848,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // too many redirects
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/redirect/4", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/redirect/4", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -867,7 +867,7 @@ test "general client/server API coverage" {
     }
 
     { // redirect to encoded url
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/redirect/5", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/redirect/5", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -889,7 +889,7 @@ test "general client/server API coverage" {
     try expect(client.http_proxy != null or client.connection_pool.free_len == 1);
 
     { // check client without segfault by connection error after redirection
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/redirect/invalid", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/redirect/invalid", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -987,7 +987,7 @@ fn echoTests(client: *http.Client, port: u16) !void {
     var location_buffer: [100]u8 = undefined;
 
     { // send content-length request
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/echo-content", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/echo-content", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -1052,7 +1052,7 @@ fn echoTests(client: *http.Client, port: u16) !void {
 
     { // Client.fetch()
 
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/echo-content#fetch", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/echo-content#fetch", .{port});
         defer gpa.free(location);
 
         var body: std.Io.Writer.Allocating = .init(gpa);
@@ -1073,7 +1073,7 @@ fn echoTests(client: *http.Client, port: u16) !void {
     }
 
     { // expect: 100-continue
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/echo-content#expect-100", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/echo-content#expect-100", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -1103,7 +1103,7 @@ fn echoTests(client: *http.Client, port: u16) !void {
     }
 
     { // expect: garbage
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/echo-content#expect-garbage", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/echo-content#expect-garbage", .{port});
         defer gpa.free(location);
         const uri = try std.Uri.parse(location);
 
@@ -1126,7 +1126,7 @@ fn echoTests(client: *http.Client, port: u16) !void {
     }
 
     { // Send GET with body
-        const location = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/echo-content#get-with-body", .{port});
+        const location = try gpa.print("http://127.0.0.1:{d}/echo-content#get-with-body", .{port});
         defer gpa.free(location);
 
         var body: std.Io.Writer.Allocating = .init(gpa);
@@ -1385,11 +1385,11 @@ test "send and discard or echo empty bodies" {
 
     const port = test_server.port();
 
-    const location_discard = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/discard", .{port});
+    const location_discard = try gpa.print("http://127.0.0.1:{d}/discard", .{port});
     defer gpa.free(location_discard);
     const uri_discard = try std.Uri.parse(location_discard);
 
-    const location_echo = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/echo", .{port});
+    const location_echo = try gpa.print("http://127.0.0.1:{d}/echo", .{port});
     defer gpa.free(location_echo);
     const uri_echo = try std.Uri.parse(location_echo);
 

@@ -2745,7 +2745,7 @@ fn reparentOwnedErrorMsg(
     comptime format: []const u8,
     args: anytype,
 ) !void {
-    const msg_str = try std.fmt.allocPrint(sema.gpa, format, args);
+    const msg_str = try sema.gpa.print(format, args);
 
     const orig_notes = msg.notes.len;
     msg.notes = try sema.gpa.realloc(msg.notes, orig_notes + 1);
@@ -34800,7 +34800,7 @@ fn notePathToComptimeAllocPtr(
 
     var second_path_aw: std.Io.Writer.Allocating = .init(arena);
     defer second_path_aw.deinit();
-    const inter_name = try std.fmt.allocPrint(arena, "v{d}", .{intermediate_value_count});
+    const inter_name = try arena.print("v{d}", .{intermediate_value_count});
     const deriv_start = @import("print_value.zig").printPtrDerivation(
         derivation,
         &second_path_aw.writer,

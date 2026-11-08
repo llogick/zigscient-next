@@ -183,7 +183,7 @@ pub fn main(init: std.process.Init) !void {
         usageAndExit(args[0]);
     };
 
-    const generic_name = try std.fmt.allocPrint(arena, "generic-{s}", .{abi_name});
+    const generic_name = try arena.print("generic-{s}", .{abi_name});
     const libc_targets = switch (vendor) {
         .glibc => &glibc_targets,
         .musl => &musl_targets,
@@ -250,7 +250,7 @@ pub fn main(init: std.process.Init) !void {
             },
         };
 
-        const dest_target = if (libc_target.dest) |dest| dest else try std.fmt.allocPrint(arena, "{s}-{s}-{s}", .{
+        const dest_target = if (libc_target.dest) |dest| dest else try arena.print("{s}-{s}-{s}", .{
             @tagName(libc_target.arch),
             switch (vendor) {
                 .musl, .glibc => "linux",

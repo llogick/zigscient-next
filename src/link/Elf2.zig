@@ -5767,7 +5767,7 @@ fn initHeaders(
             .ar_size = undefined, // populated by `flushResized` for the `.elf` node
             .ar_fmag = std.elf.ARFMAG.*,
         };
-        const zcu_member_name = try std.fmt.allocPrint(gpa, "{s}_zcu.o", .{comp.root_name});
+        const zcu_member_name = try gpa.print("{s}_zcu.o", .{comp.root_name});
         defer gpa.free(zcu_member_name);
         // After this call returns, `elf_ar_hdr` is invalidated.
         try elf.populateArchiveMemberName(elf_ar_hdr, zcu_member_name);
@@ -9465,7 +9465,7 @@ fn prelinkInner(elf: *Elf) Error!void {
             // Self-hosted codegen is logically emitting a relocatable which is then immediately
             // being linked into the output file, so add that fictional Zig object file input.
             try elf.inputs.ensureUnusedCapacity(gpa, 1);
-            const zcu_name = try std.fmt.allocPrint(gpa, "{s}_zcu", .{comp.root_name});
+            const zcu_name = try gpa.print("{s}_zcu", .{comp.root_name});
             defer gpa.free(zcu_name);
             const zcu_file_symbol = try elf.addLocalSymbol(.{
                 .node = .none,
@@ -9990,7 +9990,7 @@ fn ensureUnusedRelocCapacity(elf: *Elf, node: MappedFile.Node.Index, len: usize)
                 var bfa: std.heap.BufferFirstAllocator = .init(&bfa_buf, gpa);
                 const allocator = bfa.allocator();
 
-                const rela_name = try std.fmt.allocPrint(allocator, ".rela{s}", .{shndx.name(elf).slice(elf)});
+                const rela_name = try allocator.print(".rela{s}", .{shndx.name(elf).slice(elf)});
                 defer allocator.free(rela_name);
 
                 assert(elf.section_by_name.count() == elf.shdrs.items.len);

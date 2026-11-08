@@ -89,7 +89,7 @@ const ErrorMsg = struct {
 
 fn addError(ass: *Assembler, offset: u32, comptime fmt: []const u8, args: anytype) !void {
     const gpa = ass.cg.gpa;
-    const msg = try std.fmt.allocPrint(gpa, fmt, args);
+    const msg = try gpa.print(fmt, args);
     errdefer gpa.free(msg);
     try ass.errors.append(gpa, .{
         .byte_offset = offset,

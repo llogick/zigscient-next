@@ -3675,7 +3675,7 @@ pub fn updateNav(wasm: *Wasm, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index
                 _ = try wasm.internString(lib_name);
                 // match llvm backend behavior
                 if (mem.eql(u8, lib_name, "c")) break :symbol_name name;
-                const qualified_name = try std.fmt.allocPrint(gpa, "{s}|{s}", .{ name_slice, lib_name });
+                const qualified_name = try gpa.print("{s}|{s}", .{ name_slice, lib_name });
                 defer gpa.free(qualified_name);
                 break :symbol_name try wasm.internString(qualified_name);
             } else name;

@@ -70,12 +70,12 @@ pub fn handleVerbose(
     argv: []const []const u8,
 ) error{OutOfMemory}!void {
     if (!graph.verbose) return;
-    const arena = graph.arena;
-    const text = try std.zig.allocPrintCmd(arena, argv, .{
-        .cwd = cwd,
-        .parent_env = &graph.environ_map,
-        .child_env = opt_env,
+    std.log.scoped(.verbose).info("{f}", .{
+        std.zig.SubprocessCommand{
+            .argv = argv,
+            .cwd = cwd,
+            .child_env = opt_env,
+            .parent_env = &graph.environ_map,
+        },
     });
-    defer arena.free(text);
-    std.log.scoped(.verbose).info("{s}", .{text});
 }

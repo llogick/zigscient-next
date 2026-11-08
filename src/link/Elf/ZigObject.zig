@@ -803,7 +803,7 @@ pub fn initRelaSections(self: *ZigObject, elf_file: *Elf) !void {
         const out_shndx = atom_ptr.output_section_index;
         const out_shdr = elf_file.sections.items(.shdr)[out_shndx];
         if (out_shdr.sh_type == elf.SHT_NOBITS) continue;
-        const rela_sect_name = try std.fmt.allocPrintSentinel(gpa, ".rela{s}", .{
+        const rela_sect_name = try gpa.printSentinel(".rela{s}", .{
             elf_file.getShString(out_shdr.sh_name),
         }, 0);
         defer gpa.free(rela_sect_name);
@@ -824,7 +824,7 @@ pub fn addAtomsToRelaSections(self: *ZigObject, elf_file: *Elf) !void {
         const out_shndx = atom_ptr.output_section_index;
         const out_shdr = elf_file.sections.items(.shdr)[out_shndx];
         if (out_shdr.sh_type == elf.SHT_NOBITS) continue;
-        const rela_sect_name = try std.fmt.allocPrintSentinel(gpa, ".rela{s}", .{
+        const rela_sect_name = try gpa.printSentinel(".rela{s}", .{
             elf_file.getShString(out_shdr.sh_name),
         }, 0);
         defer gpa.free(rela_sect_name);
@@ -1572,7 +1572,7 @@ pub fn updateFunc(
 
         // Create a trampoline to the new location at `old_rva`.
         if (!self.symbol(sym_index).flags.has_trampoline) {
-            const name = try std.fmt.allocPrint(gpa, "{s}$trampoline", .{
+            const name = try gpa.print("{s}$trampoline", .{
                 self.symbol(sym_index).name(elf_file),
             });
             defer gpa.free(name);
@@ -1718,7 +1718,7 @@ fn updateLazySymbol(
     defer aw.deinit();
 
     const name_str_index = blk: {
-        const name = try std.fmt.allocPrint(gpa, "__lazy_{s}_{f}", .{
+        const name = try gpa.print("__lazy_{s}_{f}", .{
             @tagName(sym.kind),
             Type.fromInterned(sym.ty).fmt(zcu),
         });

@@ -549,7 +549,7 @@ pub const Path = struct {
 
         // We need to make an absolute path. Because `resolved` came from `introspect.resolvePath`, we can just
         // join the paths with a simple format string.
-        const abs_path = try std.fmt.allocPrint(gpa, "{s}{c}{s}", .{ dirs.cwd, fs.path.sep, resolved });
+        const abs_path = try gpa.print("{s}{c}{s}", .{ dirs.cwd, fs.path.sep, resolved });
         gpa.free(resolved);
         return .{ .root = .none, .sub_path = abs_path };
     }
@@ -3611,7 +3611,7 @@ fn emitFromCObject(
     };
     const src_path: Cache.Path = .{
         .root_dir = c_obj_path.root_dir,
-        .sub_path = try std.fmt.allocPrint(arena, "{s}{s}", .{ c_obj_dir_and_stem, new_ext }),
+        .sub_path = try arena.print("{s}{s}", .{ c_obj_dir_and_stem, new_ext }),
     };
     const emit_path = comp.resolveEmitPath(unresolved_emit_path);
 
@@ -4053,7 +4053,7 @@ pub fn getAllErrorsAlloc(comp: *Compilation) Allocator.Error!ErrorBundle {
                     try unableToLoadZcuFile(zcu, &bundle, file, err);
                     continue;
                 };
-                const path = try std.fmt.allocPrint(gpa, "{f}", .{file.path.fmt(comp)});
+                const path = try gpa.print("{f}", .{file.path.fmt(comp)});
                 defer gpa.free(path);
                 if (file.zir != null) {
                     try bundle.addZirErrorMessages(file.zir.?, file.tree.?, file.source.?, path);
@@ -5137,7 +5137,7 @@ pub fn translateC(
     const out_dep_path: ?[]const u8 = blk: {
         if (comp.disable_c_depfile) break :blk null;
         const c_src_basename = fs.path.basename(source_path);
-        const dep_basename = try std.fmt.allocPrint(arena, "{s}.d", .{c_src_basename});
+        const dep_basename = try arena.print("{s}.d", .{c_src_basename});
         const out_dep_path = try comp.dirs.local_cache.join(arena, &.{ tmp_sub_path, dep_basename });
         break :blk out_dep_path;
     };
@@ -5633,7 +5633,7 @@ fn updateCObject(
 
             break :e o_ext;
         };
-        const o_basename = try std.fmt.allocPrint(arena, "{s}{s}", .{ o_basename_noext, out_ext });
+        const o_basename = try arena.print("{s}{s}", .{ o_basename_noext, out_ext });
         const ext = c_object.src.ext orelse classifyFileExt(c_object.src.src_path);
 
         try argv.appendSlice(arena, &.{ self_exe_path, "clang" });
@@ -5713,11 +5713,11 @@ fn updateCObject(
         const out_diag_path = if (comp.clang_passthrough_mode or !ext.clangSupportsDiagnostics())
             null
         else
-            try std.fmt.allocPrint(arena, "{s}.diag", .{out_obj_path});
+            try arena.print("{s}.diag", .{out_obj_path});
         const out_dep_path = if (comp.disable_c_depfile or !ext.clangSupportsDepFile())
             null
         else
-            try std.fmt.allocPrint(arena, "{s}.d", .{out_obj_path});
+            try arena.print("{s}.d", .{out_obj_path});
 
         try comp.addCCArgs(arena, &argv, ext, out_dep_path, c_object.src.owner);
         try argv.appendSlice(arena, c_object.src.extra_flags);
@@ -5978,7 +5978,7 @@ fn updateCObject(
             log.warn("failed to write cache manifest when compiling {q}: {t}", .{ c_object.src.src_path, err });
     }
 
-    const o_basename = try std.fmt.allocPrint(arena, "{s}{s}", .{ o_basename_noext, o_ext });
+    const o_basename = try arena.print("{s}{s}", .{ o_basename_noext, o_ext });
 
     c_object.status = .{
         .success = .{
@@ -6039,8 +6039,8 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
     if (win32_resource.src == .manifest) {
         _ = try man.addInputPath(.initCwd(src_path), .{});
 
-        const rc_basename = try std.fmt.allocPrint(arena, "{s}.rc", .{src_basename});
-        const res_basename = try std.fmt.allocPrint(arena, "{s}.res", .{src_basename});
+        const rc_basename = try arena.print("{s}.rc", .{src_basename});
+        const res_basename = try arena.print("{s}.res", .{src_basename});
 
         var diag: Cache.Manifest.CheckDiagnostic = undefined;
         const status = man.check(&diag, child_progress_node) catch |err| switch (err) {
@@ -6090,7 +6090,7 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
             // 24 is RT_MANIFEST
             const resource_type = 24;
 
-            const input = try std.fmt.allocPrint(arena, "{d} {d} \"{f}\"", .{
+            const input = try arena.print("{d} {d} \"{f}\"", .{
                 resource_id, resource_type, fmtRcEscape(src_path),
             });
 
@@ -6154,7 +6154,7 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
         var zig_cache_tmp_dir = try comp.dirs.local_cache.handle.createDirPathOpen(io, "tmp", .{});
         defer zig_cache_tmp_dir.close(io);
 
-        const res_filename = try std.fmt.allocPrint(arena, "{s}.res", .{rc_basename_noext});
+        const res_filename = try arena.print("{s}.res", .{rc_basename_noext});
 
         // We can't know the digest until we do the compilation,
         // so we need a temporary filename.
@@ -6163,7 +6163,7 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
         var argv: std.ArrayList([]const u8) = .empty;
         defer argv.deinit(comp.gpa);
 
-        const depfile_filename = try std.fmt.allocPrint(arena, "{s}.d.json", .{rc_basename_noext});
+        const depfile_filename = try arena.print("{s}.d.json", .{rc_basename_noext});
         const out_dep_path = try comp.tmpFilePath(arena, depfile_filename);
         try argv.appendSlice(comp.gpa, &.{
             self_exe_path,
@@ -6241,7 +6241,7 @@ fn updateWin32Resource(comp: *Compilation, win32_resource: *Win32Resource, win32
         };
     }
 
-    const res_basename = try std.fmt.allocPrint(arena, "{s}.res", .{rc_basename_noext});
+    const res_basename = try arena.print("{s}.res", .{rc_basename_noext});
 
     win32_resource.status = .{
         .success = .{
@@ -6358,9 +6358,9 @@ pub fn tmpFilePath(comp: Compilation, ally: Allocator, suffix: []const u8) error
     };
     const s = fs.path.sep_str;
     if (comp.dirs.local_cache.path) |p| {
-        return std.fmt.allocPrint(ally, "{s}" ++ s ++ "tmp" ++ s ++ "{x}-{s}", .{ p, rand_int, suffix });
+        return ally.print("{s}" ++ s ++ "tmp" ++ s ++ "{x}-{s}", .{ p, rand_int, suffix });
     } else {
-        return std.fmt.allocPrint(ally, "tmp" ++ s ++ "{x}-{s}", .{ rand_int, suffix });
+        return ally.print("tmp" ++ s ++ "{x}-{s}", .{ rand_int, suffix });
     }
 }
 
@@ -6390,7 +6390,7 @@ fn addCommonCCArgs(
             try argv.ensureUnusedCapacity(arena, 2);
             // Pass the proper -m<os>-version-min argument for darwin.
             const ver = target.os.version_range.semver.min;
-            argv.appendAssumeCapacity(try std.fmt.allocPrint(arena, "-m{s}{s}-version-min={d}.{d}.{d}", .{
+            argv.appendAssumeCapacity(try arena.print("-m{s}{s}-version-min={d}.{d}.{d}", .{
                 switch (os) {
                     .maccatalyst => "ios",
                     else => @tagName(os),
@@ -6486,7 +6486,7 @@ fn addCommonCCArgs(
             if (comp.config.link_libc) {
                 if (target.isGnuLibC()) {
                     const target_version = target.os.versionRange().gnuLibCVersion().?;
-                    const glibc_minor_define = try std.fmt.allocPrint(arena, "-D__GLIBC_MINOR__={d}", .{
+                    const glibc_minor_define = try arena.print("-D__GLIBC_MINOR__={d}", .{
                         target_version.minor,
                     });
                     try argv.append(arena, glibc_minor_define);
@@ -6496,7 +6496,7 @@ fn addCommonCCArgs(
                     const minver: u16 = @truncate(@backingInt(target.os.versionRange().windows.min) >> 16);
                     try argv.append(
                         arena,
-                        try std.fmt.allocPrint(arena, "-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
+                        try arena.print("-D_WIN32_WINNT=0x{x:0>4}", .{minver}),
                     );
 
                     // MinGW-w64's inline functions in headers (e.g. `fabs`), which are emitted with `linkonce_odr`
@@ -6508,7 +6508,7 @@ fn addCommonCCArgs(
                 } else if (target.isFreeBSDLibC()) {
                     // https://docs.freebsd.org/en/books/porters-handbook/versions
                     const min_ver = target.os.version_range.semver.min;
-                    try argv.append(arena, try std.fmt.allocPrint(arena, "-D__FreeBSD_version={d}", .{
+                    try argv.append(arena, try arena.print("-D__FreeBSD_version={d}", .{
                         // We don't currently respect the minor and patch components. This wouldn't be particularly
                         // helpful because our abilists file only tracks major FreeBSD releases, so the link-time stub
                         // symbols would be inconsistent with header declarations.
@@ -6516,7 +6516,7 @@ fn addCommonCCArgs(
                     }));
                 } else if (target.isNetBSDLibC()) {
                     const min_ver = target.os.version_range.semver.min;
-                    try argv.append(arena, try std.fmt.allocPrint(arena, "-D__NetBSD_Version__={d}", .{
+                    try argv.append(arena, try arena.print("-D__NetBSD_Version__={d}", .{
                         // We don't currently respect the patch component. This wouldn't be particularly helpful because
                         // our abilists file only tracks major and minor NetBSD releases, so the link-time stub symbols
                         // would be inconsistent with header declarations.
@@ -6527,13 +6527,13 @@ fn addCommonCCArgs(
                     // The macro in sys/param.h doesn't have the leading underscores, but we don't want to pollute the
                     // global namespace in all compilation units. So we use leading underscores and modify sys/param.h
                     // to just alias this one.
-                    try argv.append(arena, try std.fmt.allocPrint(arena, "-D___OpenBSD={d}", .{
+                    try argv.append(arena, try arena.print("-D___OpenBSD={d}", .{
                         // Brilliantly, OpenBSD defines this macro to the year and month of the release, so we need to
                         // maintain a manual mapping here whenever we update the headers.
                         202510,
                     }));
                     // We can't avoid pollution for this one...
-                    try argv.append(arena, try std.fmt.allocPrint(arena, "-DOpenBSD{d}_{d}", .{
+                    try argv.append(arena, try arena.print("-DOpenBSD{d}_{d}", .{
                         min_ver.major,
                         min_ver.minor,
                     }));
@@ -6635,7 +6635,7 @@ fn addCommonCCArgs(
         .bc,
         => {
             if (mod.code_model != .default) {
-                try argv.append(arena, try std.fmt.allocPrint(arena, "-mcmodel={s}", .{@tagName(mod.code_model)}));
+                try argv.append(arena, try arena.print("-mcmodel={s}", .{@tagName(mod.code_model)}));
             }
 
             if (is_clang) {
@@ -6775,7 +6775,7 @@ pub fn addCCArgs(
         if (!(target.cpu.arch.isArm() and (ext == .assembly or ext == .assembly_with_cpp)) and
             !(target.cpu.arch.isPowerpc64() and target.os.tag == .freebsd))
         {
-            try argv.append(arena, try std.fmt.allocPrint(arena, "-mabi={s}", .{mabi}));
+            try argv.append(arena, try arena.print("-mabi={s}", .{mabi}));
         }
     }
 
@@ -6802,8 +6802,8 @@ pub fn addCCArgs(
 
         try argv.append(arena, switch (target.cpu.arch) {
             // For whatever reason, Clang doesn't support `-mfloat-abi` for s390x.
-            .s390x => try std.fmt.allocPrint(arena, "-m{s}-float", .{@tagName(fabi)}),
-            else => try std.fmt.allocPrint(arena, "-mfloat-abi={s}", .{@tagName(fabi)}),
+            .s390x => try arena.print("-m{s}-float", .{@tagName(fabi)}),
+            else => try arena.print("-mfloat-abi={s}", .{@tagName(fabi)}),
         });
 
         if (target.cpu.arch.isMips() and fabi == .hard) {
@@ -6826,7 +6826,7 @@ pub fn addCCArgs(
 
     if (mod.patchable_function_entry > 0) {
         const pf = mod.patchable_function_entry;
-        try argv.append(arena, try std.fmt.allocPrint(arena, "-fpatchable-function-entry={}", .{pf}));
+        try argv.append(arena, try arena.print("-fpatchable-function-entry={}", .{pf}));
     }
 
     if (target.cpu.arch.isMips()) {
@@ -6864,7 +6864,7 @@ pub fn addCCArgs(
             try argv.appendSlice(arena, &.{
                 "-fstack-protector-strong",
                 "--param",
-                try std.fmt.allocPrint(arena, "ssp-buffer-size={d}", .{ssp_buf_size}),
+                try arena.print("ssp-buffer-size={d}", .{ssp_buf_size}),
             });
         } else {
             try argv.append(arena, "-fno-stack-protector");
@@ -6933,7 +6933,7 @@ pub fn addCCArgs(
                         continue;
 
                     const plus_or_minus = "-+"[@intFromBool(is_enabled)];
-                    const arg = try std.fmt.allocPrint(arena, "{c}{s}", .{ plus_or_minus, llvm_name });
+                    const arg = try arena.print("{c}{s}", .{ plus_or_minus, llvm_name });
                     for (xclang_flags) |xclang| {
                         argv.appendSliceAssumeCapacity(&.{ xclang, "-target-feature", xclang, arg });
                     }
@@ -7006,7 +7006,7 @@ fn failCObj(
         diag_bundle.diags = try comp.gpa.alloc(CObject.Diag, 1);
         diag_bundle.diags[0] = .{};
         diag_bundle.diags[0].level = 3;
-        diag_bundle.diags[0].msg = try std.fmt.allocPrint(comp.gpa, format, args);
+        diag_bundle.diags[0].msg = try comp.gpa.print(format, args);
         diag_bundle.diags[0].src_loc.file = 1;
         break :blk diag_bundle;
     };
@@ -7403,7 +7403,7 @@ pub fn setMiscFailure(
     args: anytype,
 ) void {
     comp.misc_failures.ensureUnusedCapacity(comp.gpa, 1) catch return comp.setAllocFailure();
-    const msg = std.fmt.allocPrint(comp.gpa, format, args) catch return comp.setAllocFailure();
+    const msg = comp.gpa.print(format, args) catch return comp.setAllocFailure();
     const gop = comp.misc_failures.getOrPutAssumeCapacity(tag);
     if (gop.found_existing) {
         gop.value_ptr.deinit(comp.gpa);
@@ -7475,7 +7475,7 @@ pub fn updateSubCompilation(
         defer parent_comp.mutex.unlock(parent_comp.io);
         try parent_comp.misc_failures.ensureUnusedCapacity(gpa, 1);
         parent_comp.misc_failures.putAssumeCapacityNoClobber(misc_task, .{
-            .msg = try std.fmt.allocPrint(gpa, "sub-compilation of {t} failed", .{misc_task}),
+            .msg = try gpa.print("sub-compilation of {t} failed", .{misc_task}),
             .children = errors,
         });
         errors = .empty; // ownership moved to the failures map

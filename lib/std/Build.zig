@@ -474,7 +474,7 @@ fn addPackageOptionFromArg(
         },
         std.zig.BuildId => return if (maybe_value) |v| {
             map.putAssumeCapacity(field_name, .{
-                .scalar = std.fmt.allocPrint(arena, "{f}", .{v}) catch @panic("OOM"),
+                .scalar = arena.print("{f}", .{v}) catch @panic("OOM"),
             });
         },
         LazyPath => return if (maybe_value) |v| {
@@ -504,12 +504,12 @@ fn addPackageOptionFromArg(
             },
             .comptime_int, .int => return if (maybe_value) |v| {
                 map.putAssumeCapacity(field_name, .{
-                    .scalar = std.fmt.allocPrint(arena, "{d}", .{v}) catch @panic("OOM"),
+                    .scalar = arena.print("{d}", .{v}) catch @panic("OOM"),
                 });
             },
             .comptime_float, .float => return if (maybe_value) |v| {
                 map.putAssumeCapacity(field_name, .{
-                    .scalar = std.fmt.allocPrint(arena, "{x}", .{v}) catch @panic("OOM"),
+                    .scalar = arena.print("{x}", .{v}) catch @panic("OOM"),
                 });
             },
             .pointer => |ptr_info| switch (ptr_info.size) {
@@ -1572,7 +1572,7 @@ pub fn pathResolve(b: *Build, paths: []const []const u8) []u8 {
 pub fn fmt(b: *Build, comptime format: []const u8, args: anytype) []u8 {
     const graph = b.graph;
     const arena = graph.arena;
-    return std.fmt.allocPrint(arena, format, args) catch @panic("OOM");
+    return arena.print(format, args) catch @panic("OOM");
 }
 
 /// Creates an anonymous `Step` that searches for an executable on the host that
@@ -1763,19 +1763,17 @@ pub fn runFallible(b: *Build, argv: []const []const u8, options: RunOptions) Run
     const io = graph.io;
     const arena = graph.arena;
 
-    const print_opts: std.zig.AllocPrintCmdOptions = .{
-        .cwd = switch (options.cwd) {
-            .inherit => null,
-            .path => |p| p,
-            .dir => null, // Unknown without changing function signature of runFallible.
-        },
-        .child_env = options.environ_map,
-        .parent_env = &graph.environ_map,
-    };
-
     if (graph.verbose) {
-        const text = std.zig.allocPrintCmd(arena, argv, print_opts) catch @panic("OOM");
-        std.log.scoped(.verbose).info("{s}", .{text});
+        std.log.scoped(.verbose).info("{f}", .{std.zig.SubprocessCommand{
+            .argv = argv,
+            .cwd = switch (options.cwd) {
+                .inherit => null,
+                .path => |p| p,
+                .dir => null, // Unknown without changing function signature of runFallible.
+            },
+            .child_env = options.environ_map,
+            .parent_env = &graph.environ_map,
+        }});
     }
 
     var child = process.spawn(io, .{
@@ -1813,21 +1811,22 @@ pub fn runFallible(b: *Build, argv: []const []const u8, options: RunOptions) Run
 /// See also:
 /// * `runFallible`.
 pub fn run(b: *Build, argv: []const []const u8) []u8 {
-    const graph = b.graph;
-    const arena = graph.arena;
     switch (b.runFallible(argv, .{
         .stderr_behavior = .inherit,
     })) {
         .success => |stdout| return stdout,
-        .spawn_failed => |err| fatal("the following command failed with {t}:\n{s}", .{
-            err, std.zig.allocPrintCmd(arena, argv, .{}) catch @panic("OOM"),
-        }),
-        .bad_exit_code => |code| fatal("the following command exited with code {d}:\n{s}", .{
-            code, std.zig.allocPrintCmd(arena, argv, .{}) catch @panic("OOM"),
-        }),
-        .crashed => fatal("the following command crashed:\n{s}", .{
-            std.zig.allocPrintCmd(arena, argv, .{}) catch @panic("OOM"),
-        }),
+        .spawn_failed => |err| fatal(
+            "the following command failed with {t}:\n{f}",
+            .{ err, std.zig.SubprocessCommand{ .argv = argv } },
+        ),
+        .bad_exit_code => |code| fatal(
+            "the following command exited with code {d}:\n{f}",
+            .{ code, std.zig.SubprocessCommand{ .argv = argv } },
+        ),
+        .crashed => fatal(
+            "the following command crashed:\n{f}",
+            .{std.zig.SubprocessCommand{ .argv = argv }},
+        ),
     }
 }
 

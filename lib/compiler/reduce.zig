@@ -366,7 +366,7 @@ fn transformationsToFixups(
                 // ambiguous reference error.
                 var i: u32 = 2;
                 const mangled = while (true) : (i += 1) {
-                    const mangled = try std.fmt.allocPrint(gpa, "{s}{d}", .{ name, i });
+                    const mangled = try gpa.print("{s}{d}", .{ name, i });
                     if (!inline_imported_file.in_scope_names.contains(mangled))
                         break mangled;
                     gpa.free(mangled);

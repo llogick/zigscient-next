@@ -414,7 +414,7 @@ fn generateFileName(gpa: Allocator, io: Io, base_name: []const u8) ![]const u8 {
     io.random(&random_bytes);
     var sub_path: [sub_path_len]u8 = undefined;
     _ = std.base64.url_safe.Encoder.encode(&sub_path, &random_bytes);
-    return std.fmt.allocPrint(gpa, "{s}-{s}", .{ sub_path[0..], base_name });
+    return gpa.print("{s}-{s}", .{ sub_path[0..], base_name });
 }
 
 test "decompress compressed DNS name" {

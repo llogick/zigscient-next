@@ -640,10 +640,10 @@ fn buildClientWasm(ws: *WebServer, arena: Allocator, optimize: std.builtin.Optim
         "-fsingle-threaded", //
         "--dep", "Walk", //
         "--dep", "html_render", //
-        try std.fmt.allocPrint(arena, "-Mroot={f}", .{main_src_path}), //
-        try std.fmt.allocPrint(arena, "-MWalk={f}", .{walk_src_path}), //
+        try arena.print("-Mroot={f}", .{main_src_path}), //
+        try arena.print("-MWalk={f}", .{walk_src_path}), //
         "--dep", "Walk", //
-        try std.fmt.allocPrint(arena, "-Mhtml_render={f}", .{html_render_src_path}), //
+        try arena.print("-Mhtml_render={f}", .{html_render_src_path}), //
         "--listen=-",
     });
 

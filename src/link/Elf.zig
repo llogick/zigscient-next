@@ -378,7 +378,7 @@ pub fn createEmpty(
             self.zig_object = zig_object;
             zig_object.* = .{
                 .index = index,
-                .basename = try std.fmt.allocPrint(arena, "{s}.o", .{
+                .basename = try arena.print("{s}.o", .{
                     fs.path.stem(zcu.main_mod.root_src_path),
                 }),
             };
@@ -980,10 +980,10 @@ fn dumpArgvInit(self: *Elf, arena: Allocator) !void {
 
         try argv.appendSlice(gpa, &.{
             "-z",
-            try std.fmt.allocPrint(arena, "stack-size={d}", .{self.base.stack_size}),
+            try arena.print("stack-size={d}", .{self.base.stack_size}),
         });
 
-        try argv.append(gpa, try std.fmt.allocPrint(arena, "--image-base={d}", .{self.image_base}));
+        try argv.append(gpa, try arena.print("--image-base={d}", .{self.image_base}));
 
         if (self.base.gc_sections) {
             try argv.append(gpa, "--gc-sections");

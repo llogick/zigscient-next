@@ -3912,7 +3912,7 @@ pub fn reportRetryableFileError(
 
     file.status = .retryable_failure;
 
-    const msg = try std.fmt.allocPrint(gpa, format, args);
+    const msg = try gpa.print(format, args);
     errdefer gpa.free(msg);
 
     const old_msg: ?[]u8 = old_msg: {

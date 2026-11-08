@@ -3849,7 +3849,7 @@ test "(BigInt) positive" {
 
     try testing.expectFmt("(BigInt)", "{d}", .{a});
 
-    const b_fmt = try std.fmt.allocPrint(testing.allocator, "{d}", .{b});
+    const b_fmt = try testing.allocator.print("{d}", .{b});
     defer testing.allocator.free(b_fmt);
     try testing.expect(!mem.eql(u8, "(BigInt)", b_fmt));
 }
@@ -3869,10 +3869,10 @@ test "(BigInt) negative" {
     a.negate();
     try b.add(&a, &c);
 
-    const a_fmt = try std.fmt.allocPrint(testing.allocator, "{d}", .{a});
+    const a_fmt = try testing.allocator.print("{d}", .{a});
     defer testing.allocator.free(a_fmt);
 
-    const b_fmt = try std.fmt.allocPrint(testing.allocator, "{d}", .{b});
+    const b_fmt = try testing.allocator.print("{d}", .{b});
     defer testing.allocator.free(b_fmt);
 
     try testing.expectEqualSlices(u8, "(BigInt)", a_fmt);

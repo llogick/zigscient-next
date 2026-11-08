@@ -662,7 +662,7 @@ pub fn expectFmt(expected: []const u8, comptime template: []const u8, args: anyt
         var buffer: [std.fmt.count(template, args)]u8 = undefined;
         return expectEqualStrings(expected, try std.mem.print(&buffer, template, args));
     }
-    const actual = try std.fmt.allocPrint(allocator, template, args);
+    const actual = try allocator.print(template, args);
     defer allocator.free(actual);
     return expectEqualStrings(expected, actual);
 }

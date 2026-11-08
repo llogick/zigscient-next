@@ -123,12 +123,12 @@ pub const Diags = struct {
         ) Allocator.Error!void {
             const gpa = err.diags.gpa;
             const err_msg = &err.diags.msgs.items[err.index];
-            err_msg.msg = try std.fmt.allocPrint(gpa, format, args);
+            err_msg.msg = try gpa.print(format, args);
         }
 
         pub fn addNote(err: *ErrorWithNotes, comptime format: []const u8, args: anytype) void {
             const gpa = err.diags.gpa;
-            const msg = std.fmt.allocPrint(gpa, format, args) catch return err.diags.setAllocFailure();
+            const msg = gpa.print(format, args) catch return err.diags.setAllocFailure();
             const err_msg = &err.diags.msgs.items[err.index];
             assert(err.note_slot < err_msg.notes.len);
             err_msg.notes[err.note_slot] = .{ .msg = msg };
@@ -197,7 +197,7 @@ pub const Diags = struct {
 
                 try diags.lld.ensureUnusedCapacity(gpa, 1);
 
-                const duped_msg = try std.fmt.allocPrint(gpa, "{s}: {s}", .{ prefix, split.rest() });
+                const duped_msg = try gpa.print("{s}: {s}", .{ prefix, split.rest() });
 
                 current_err = diags.lld.addOneAssumeCapacity();
                 current_err.?.* = .{ .msg = duped_msg };
@@ -241,7 +241,7 @@ pub const Diags = struct {
         @branchHint(.cold);
         const gpa = diags.gpa;
         const io = diags.io;
-        const eu_main_msg = std.fmt.allocPrint(gpa, format, args);
+        const eu_main_msg = gpa.print(format, args);
         diags.mutex.lockUncancelable(io);
         defer diags.mutex.unlock(io);
         addErrorLockedFallible(diags, sl, eu_main_msg) catch |err| switch (err) {
@@ -293,7 +293,7 @@ pub const Diags = struct {
         @branchHint(.cold);
         const gpa = diags.gpa;
         const io = diags.io;
-        const eu_main_msg = std.fmt.allocPrint(gpa, format, args);
+        const eu_main_msg = gpa.print(format, args);
         diags.mutex.lockUncancelable(io);
         defer diags.mutex.unlock(io);
         addMissingLibraryErrorLockedFallible(diags, checked_paths, eu_main_msg) catch |err| switch (err) {
@@ -313,7 +313,7 @@ pub const Diags = struct {
         const notes = try gpa.alloc(Msg, checked_paths.len);
         errdefer gpa.free(notes);
         for (checked_paths, notes) |path, *note| {
-            note.* = .{ .msg = try std.fmt.allocPrint(gpa, "tried {s}", .{path}) };
+            note.* = .{ .msg = try gpa.print("tried {s}", .{path}) };
         }
         diags.msgs.appendAssumeCapacity(.{
             .msg = main_msg,
@@ -330,7 +330,7 @@ pub const Diags = struct {
         @branchHint(.cold);
         const gpa = diags.gpa;
         const io = diags.io;
-        const eu_main_msg = std.fmt.allocPrint(gpa, format, args);
+        const eu_main_msg = gpa.print(format, args);
         diags.mutex.lockUncancelable(io);
         defer diags.mutex.unlock(io);
         addParseErrorLockedFallible(diags, path, eu_main_msg) catch |err| switch (err) {
@@ -343,7 +343,7 @@ pub const Diags = struct {
         const main_msg = try m;
         errdefer gpa.free(main_msg);
         try diags.msgs.ensureUnusedCapacity(gpa, 1);
-        const note = try std.fmt.allocPrint(gpa, "while parsing {f}", .{path});
+        const note = try gpa.print("while parsing {f}", .{path});
         errdefer gpa.free(note);
         const notes = try gpa.create([1]Msg);
         errdefer gpa.destroy(notes);
@@ -642,7 +642,7 @@ pub const File = struct {
                             io.random(@ptrCast(&x));
                             break :r x;
                         };
-                        const tmp_sub_path = try std.fmt.allocPrint(gpa, "{s}-{x}", .{
+                        const tmp_sub_path = try gpa.print("{s}-{x}", .{
                             emit.sub_path, random_integer,
                         });
                         defer gpa.free(tmp_sub_path);
@@ -1611,8 +1611,7 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
                     .dynamic => loaded: {
                         if (target.os.tag.isDarwin()) {
                             // Prefer .tbd over .dylib.
-                            const tbd_path: Path = .initCwd(std.fmt.allocPrint(
-                                comp.arena,
+                            const tbd_path: Path = .initCwd(comp.arena.print(
                                 "{s}" ++ sep ++ "{s}{s}.tbd",
                                 .{ crt_dir, target.libPrefix(), lib_name },
                             ) catch return diags.setAllocFailure());
@@ -1638,8 +1637,7 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
                         }
 
                         // Try dynamic library.
-                        const dso_path: Path = .initCwd(std.fmt.allocPrint(
-                            comp.arena,
+                        const dso_path: Path = .initCwd(comp.arena.print(
                             "{s}" ++ sep ++ "{s}{s}{s}",
                             .{ crt_dir, target.libPrefix(), lib_name, target.dynamicLibSuffix() },
                         ) catch return diags.setAllocFailure());
@@ -1657,7 +1655,7 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
 
                         // Also try static.
                         const archive_path = Path.initCwd(
-                            std.fmt.allocPrint(comp.arena, "{s}" ++ sep ++ "{s}{s}{s}", .{
+                            comp.arena.print("{s}" ++ sep ++ "{s}{s}{s}", .{
                                 crt_dir, target.libPrefix(), lib_name, target.staticLibSuffix(),
                             }) catch return diags.setAllocFailure(),
                         );
@@ -1677,7 +1675,7 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
                     },
                     .static => {
                         const path = Path.initCwd(
-                            std.fmt.allocPrint(comp.arena, "{s}" ++ sep ++ "{s}{s}{s}", .{
+                            comp.arena.print("{s}" ++ sep ++ "{s}{s}{s}", .{
                                 crt_dir, target.libPrefix(), lib_name, target.staticLibSuffix(),
                             }) catch return diags.setAllocFailure(),
                         );
@@ -1694,8 +1692,7 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
             }
 
             if (target.os.tag.isDarwin()) {
-                const sdk_settings_path: Path = .initCwd(std.fmt.allocPrint(
-                    comp.arena,
+                const sdk_settings_path: Path = .initCwd(comp.arena.print(
                     "{s}" ++ sep ++ "SDKSettings.json",
                     .{libc_installation.darwin_sdk_dir.?},
                 ) catch return diags.setAllocFailure());
@@ -1731,7 +1728,7 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
 
                 for (inputs) |lib| {
                     const path = Path.initCwd(
-                        std.fmt.allocPrint(comp.arena, "{s}" ++ sep ++ "{s}", .{
+                        comp.arena.print("{s}" ++ sep ++ "{s}", .{
                             switch (lib.dir) {
                                 .crt => crt_dir,
                                 .msvc_lib => libc_installation.msvc_lib_dir.?,
@@ -2457,7 +2454,7 @@ fn resolveLibInput(
         // Prefer .tbd over .dylib.
         const test_path: Path = .{
             .root_dir = lib_directory,
-            .sub_path = try std.fmt.allocPrint(arena, "lib{s}.tbd", .{lib_name}),
+            .sub_path = try arena.print("lib{s}.tbd", .{lib_name}),
         };
         try checked_paths.print(gpa, "\n  {f}", .{test_path});
         var file = test_path.root_dir.handle.openFile(io, test_path.sub_path, .{}) catch |err| switch (err) {
@@ -2478,7 +2475,7 @@ fn resolveLibInput(
     {
         const test_path: Path = .{
             .root_dir = lib_directory,
-            .sub_path = if (name_query.name_done) lib_name else try std.fmt.allocPrint(arena, "{s}{s}{s}", .{
+            .sub_path = if (name_query.name_done) lib_name else try arena.print("{s}{s}{s}", .{
                 target.libPrefix(),
                 lib_name,
                 switch (link_mode) {
@@ -2502,7 +2499,7 @@ fn resolveLibInput(
     if (target.os.tag.isDarwin() and link_mode == .dynamic and !name_query.name_done) so: {
         const test_path: Path = .{
             .root_dir = lib_directory,
-            .sub_path = try std.fmt.allocPrint(arena, "lib{s}.so", .{lib_name}),
+            .sub_path = try arena.print("lib{s}.so", .{lib_name}),
         };
         try checked_paths.print(gpa, "\n  {f}", .{test_path});
         var file = test_path.root_dir.handle.openFile(io, test_path.sub_path, .{}) catch |err| switch (err) {
@@ -2526,7 +2523,7 @@ fn resolveLibInput(
     if (target.isMinGW() and link_mode == .static and !name_query.name_done) mingw: {
         const test_path: Path = .{
             .root_dir = lib_directory,
-            .sub_path = try std.fmt.allocPrint(arena, "lib{s}.a", .{lib_name}),
+            .sub_path = try arena.print("lib{s}.a", .{lib_name}),
         };
         try checked_paths.print(gpa, "\n  {f}", .{test_path});
         var file = test_path.root_dir.handle.openFile(io, test_path.sub_path, .{}) catch |err| switch (err) {
@@ -2547,7 +2544,7 @@ fn resolveLibInput(
     // unversioned symlinks. OpenBSD patches LLD to select the highest-versioned
     // shared library, and this code is intended to match that upstream behavior.
     if (target.isOpenBSDLibC() and link_mode == .dynamic and !name_query.name_done) versioned: {
-        const prefix = try std.fmt.allocPrint(arena, "lib{s}.so.", .{lib_name});
+        const prefix = try arena.print("lib{s}.so.", .{lib_name});
 
         var dir = lib_directory.handle.openDir(io, ".", .{ .iterate = true }) catch |err| switch (err) {
             error.NotDir, error.FileNotFound => break :versioned,
@@ -2625,8 +2622,7 @@ fn resolveFrameworkInput(
     tbd: {
         const test_path: Path = .{
             .root_dir = framework_directory,
-            .sub_path = try std.fmt.allocPrint(
-                arena,
+            .sub_path = try arena.print(
                 "{s}.framework" ++ sep ++ "{s}.tbd",
                 .{ framework_query.name, framework_query.name },
             ),
@@ -2650,8 +2646,7 @@ fn resolveFrameworkInput(
     dylib: {
         const test_path: Path = .{
             .root_dir = framework_directory,
-            .sub_path = try std.fmt.allocPrint(
-                arena,
+            .sub_path = try arena.print(
                 "{s}.framework" ++ sep ++ "{s}.dylib",
                 .{ framework_query.name, framework_query.name },
             ),
@@ -2676,8 +2671,7 @@ fn resolveFrameworkInput(
     ambiguous: {
         const test_path: Path = .{
             .root_dir = framework_directory,
-            .sub_path = try std.fmt.allocPrint(
-                arena,
+            .sub_path = try arena.print(
                 "{s}.framework" ++ sep ++ "{s}",
                 .{ framework_query.name, framework_query.name },
             ),

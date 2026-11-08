@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
     var random_integer: u64 = undefined;
     io.random(@ptrCast(&random_integer));
 
-    const tmp_dir_path = try std.fmt.allocPrint(arena, "{s}/tmp/{x}", .{ cache_root, random_integer });
+    const tmp_dir_path = try arena.print("{s}/tmp/{x}", .{ cache_root, random_integer });
     Dir.cwd().createDirPath(io, tmp_dir_path) catch |err|
         fatal("unable to create tmp dir '{s}': {t}", .{ tmp_dir_path, err });
     defer Dir.cwd().deleteTree(io, tmp_dir_path) catch |err| std.log.err("unable to delete '{s}': {t}", .{
@@ -163,7 +163,7 @@ fn printOutput(
                 },
             }
             for (code.link_objects) |link_object| {
-                const name_with_ext = try std.fmt.allocPrint(arena, "{s}{s}", .{ link_object, obj_ext });
+                const name_with_ext = try arena.print("{s}{s}", .{ link_object, obj_ext });
                 try build_args.append(arena, name_with_ext);
                 try shell_out.print("{s} ", .{name_with_ext});
             }
@@ -236,7 +236,7 @@ fn printOutput(
             });
             const target = try std.zig.system.resolveTargetQuery(io, target_query);
 
-            const path_to_exe = try std.fmt.allocPrint(arena, "./{s}{s}", .{
+            const path_to_exe = try arena.print("./{s}{s}", .{
                 code_name, target.exeFileExt(),
             });
             const run_args = &[_][]const u8{path_to_exe};
@@ -452,7 +452,7 @@ fn printOutput(
             });
         },
         .obj => |maybe_error_match| {
-            const name_plus_obj_ext = try std.fmt.allocPrint(arena, "{s}{s}", .{ code_name, obj_ext });
+            const name_plus_obj_ext = try arena.print("{s}{s}", .{ code_name, obj_ext });
             var build_args: std.ArrayList([]const u8) = .empty;
             defer build_args.deinit(arena);
 
@@ -460,7 +460,7 @@ fn printOutput(
                 zig_exe,    "build-obj",
                 "--color",  "on",
                 "--name",   code_name,
-                input_path, try std.fmt.allocPrint(arena, "-femit-bin={s}", .{name_plus_obj_ext}),
+                input_path, try arena.print("-femit-bin={s}", .{name_plus_obj_ext}),
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
                 try build_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });
@@ -541,7 +541,7 @@ fn printOutput(
 
             try test_args.appendSlice(arena, &[_][]const u8{
                 zig_exe,    "build-lib",
-                input_path, try std.fmt.allocPrint(arena, "-femit-bin={s}", .{bin_basename}),
+                input_path, try arena.print("-femit-bin={s}", .{bin_basename}),
             });
             if (opt_zig_lib_dir) |zig_lib_dir| {
                 try test_args.appendSlice(arena, &.{ "--zig-lib-dir", zig_lib_dir });

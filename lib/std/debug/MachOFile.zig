@@ -391,8 +391,7 @@ fn loadAdjacentDsym(
     uuid: Uuid,
 ) Error!?DsymFile {
     const s = std.fs.path.sep_str;
-    const dsym_path = try std.fmt.allocPrint(
-        gpa,
+    const dsym_path = try gpa.print(
         "{s}.dSYM" ++ s ++ "Contents" ++ s ++ "Resources" ++ s ++ "DWARF" ++ s ++ "{s}",
         .{ binary_path, std.fs.path.basename(binary_path) },
     );

@@ -221,7 +221,7 @@ test "GUID formatting" {
     const bytes: [16]u8 = .{ 137, 60, 203, 50, 128, 128, 124, 66, 186, 19, 80, 73, 135, 59, 194, 135 };
     const guid: Guid = @bitCast(bytes);
 
-    const str = try std.fmt.allocPrint(std.testing.allocator, "{f}", .{guid});
+    const str = try std.testing.allocator.print("{f}", .{guid});
     defer std.testing.allocator.free(str);
 
     try std.testing.expectEqualStrings(str, "32cb3c89-8080-427c-ba13-5049873bc287");

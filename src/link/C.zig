@@ -1116,8 +1116,7 @@ pub fn flush(c: *C, arena: Allocator, tid: Zcu.PerThread.Id, prog_node: std.Prog
             arena,
             zcu,
         );
-        const slice_const_u8_sentinel_0_name = try std.fmt.allocPrint(
-            arena,
+        const slice_const_u8_sentinel_0_name = try arena.print(
             "{f}",
             .{slice_const_u8_sentinel_0_cty.fmtTypeName(zcu)},
         );
@@ -1137,7 +1136,7 @@ pub fn flush(c: *C, arena: Allocator, tid: Zcu.PerThread.Id, prog_node: std.Prog
                 &lazy_decls_aw.writer,
                 slice_const_u8_sentinel_0_name,
                 enum_ty,
-                try std.fmt.allocPrint(arena, "{f}", .{enum_cty.fmtTypeName(zcu)}),
+                try arena.print("{f}", .{enum_cty.fmtTypeName(zcu)}),
             ) catch |err| switch (err) {
                 error.WriteFailed => return error.OutOfMemory,
             };

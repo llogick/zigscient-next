@@ -2294,7 +2294,7 @@ fn failUnimplemented(isel: *Select, comptime format: []const u8, args: anytype) 
     if (debug_trap_unimplemented_code) {
         const gpa = isel.pt.zcu.gpa;
 
-        const msg = try std.fmt.allocPrintSentinel(gpa, format, args, 0);
+        const msg = try gpa.printSentinel(format, args, 0);
         defer gpa.free(msg);
         wip_mir_log.err("{s}", .{msg});
         try isel.emit(.@"break"(0xaa));

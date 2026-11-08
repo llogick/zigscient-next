@@ -40,7 +40,7 @@ pub fn genericResultMessage(msg_bytes: []u8) error{OutOfMemory}!void {
     if (msg_bytes.len != @sizeOf(abi.GenericResult)) @panic("malformed GenericResult message");
     const msg: *const abi.GenericResult = @ptrCast(msg_bytes);
     if (msg.step_idx >= step_list.*.len) @panic("malformed GenericResult message");
-    const inner_html = try std.fmt.allocPrint(gpa,
+    const inner_html = try gpa.print(
         \\<code slot="step-name">{[step_name]f}</code>
         \\<span slot="stat-total-time">{[stat_total_time]f}</span>
     , .{
@@ -133,7 +133,7 @@ pub fn compileResultMessage(msg_bytes: []u8) error{ OutOfMemory, WriteFailed }!v
     std.mem.sort(DeclTimeReport, slowest_decls, {}, S.declLessThan);
 
     const stats = hdr.stats;
-    const inner_html = try std.fmt.allocPrint(gpa,
+    const inner_html = try gpa.print(
         \\<code slot="step-name">{[step_name]f}</code>
         \\<span slot="stat-reachable-files">{[stat_reachable_files]d}</span>
         \\<span slot="stat-imported-files">{[stat_imported_files]d}</span>

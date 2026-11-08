@@ -250,7 +250,7 @@ pub fn buildImportLib(comp: *Compilation, lib_name: []const u8, prog_node: std.P
 
     _ = try man.addInputPath(def_file_path, .{});
 
-    const final_lib_basename = try std.fmt.allocPrint(gpa, "{s}.lib", .{lib_name});
+    const final_lib_basename = try gpa.print("{s}.lib", .{lib_name});
     errdefer gpa.free(final_lib_basename);
 
     var diag: Cache.Manifest.CheckDiagnostic = undefined;

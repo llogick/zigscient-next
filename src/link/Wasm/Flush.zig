@@ -1736,7 +1736,7 @@ pub fn finish(f: *Flush, wasm: *Wasm) !void {
 
         // TODO: pass ZCU data and symbols to write, so reparsing not needed
         if (comp.zcu != null) {
-            const name = try std.fmt.allocPrint(gpa, "{s}_zcu.o", .{comp.root_name});
+            const name = try gpa.print("{s}_zcu.o", .{comp.root_name});
             defer gpa.free(name);
             try builder.append(gpa, name, binary_bytes.items);
         }

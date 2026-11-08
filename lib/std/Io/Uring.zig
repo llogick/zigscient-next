@@ -1487,8 +1487,7 @@ fn concurrent(
             const thread: *Thread = .current();
             var name_arena = thread.name_arena.promote(std.heap.page_allocator);
             defer thread.name_arena = name_arena.state;
-            break :name std.fmt.allocPrintSentinel(
-                name_arena.allocator(),
+            break :name name_arena.allocator().printSentinel(
                 "task {d}",
                 .{@atomicRmw(u64, &Fiber.next_name, .Add, 1, .monotonic)},
                 0,
@@ -1851,8 +1850,7 @@ fn groupConcurrent(
             const thread: *Thread = .current();
             var name_arena = thread.name_arena.promote(std.heap.page_allocator);
             defer thread.name_arena = name_arena.state;
-            break :name std.fmt.allocPrintSentinel(
-                name_arena.allocator(),
+            break :name name_arena.allocator().printSentinel(
                 "group task {d}",
                 .{@atomicRmw(u64, &Fiber.next_name, .Add, 1, .monotonic)},
                 0,

@@ -20,7 +20,7 @@ pub fn main(init: std.process.Init) !void {
     const freebsd_src_path = args[1];
     const zig_src_path = args[2];
 
-    const dest_dir_path = try std.fmt.allocPrint(arena, "{s}/lib/libc/freebsd", .{zig_src_path});
+    const dest_dir_path = try arena.print("{s}/lib/libc/freebsd", .{zig_src_path});
 
     var dest_dir = Io.Dir.cwd().openDir(io, dest_dir_path, .{ .iterate = true }) catch |err| {
         std.log.err("unable to open destination directory '{s}': {t}", .{ dest_dir_path, err });
