@@ -724,10 +724,6 @@ fn Custom(
             self.pointer_stability.unlockShared();
         }
 
-        fn isUnderMaxLoadPercentage(size: Size, cap: Size) bool {
-            return size * 100 < max_load_percentage * cap;
-        }
-
         pub fn deinit(self: *Self, allocator: Allocator) void {
             self.pointer_stability.assertUnlocked();
             self.deallocate(allocator);
