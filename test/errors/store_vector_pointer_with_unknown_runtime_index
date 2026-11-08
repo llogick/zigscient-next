@@ -18,5 +18,6 @@ fn storev(ptr: anytype, val: i31) void {
 #}
 #update
 #check errors {
-test.zig:6:15: error: vector index not comptime known
+test.zig:6:15: error: unable to resolve comptime value
+test.zig:6:15: note: vector index must be comptime-known
 #}

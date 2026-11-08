@@ -14,6 +14,9 @@ test "Basic vector usage" {
     try expectEqual(8, c[1]);
     try expectEqual(10, c[2]);
     try expectEqual(12, c[3]);
+
+    // The length of a vector can be accessed using ".len"
+    try expectEqual(4, a.len);
 }
 
 test "Conversion between vectors, arrays, and slices" {

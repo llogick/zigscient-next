@@ -1,0 +1,36 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn badFieldNameValue() void {
+    const v: @Vector(3, f32) = .{ 25, 75, 5 };
+    _ = v.foo;
+}
+export fn badFieldNamePointer() void {
+    const v: @Vector(3, f32) = .{ 25, 75, 5 };
+    _ = (&v).foo;
+}
+export fn indexZeroLen() void {
+    const v: @Vector(0, f32) = .{};
+    _ = v[0];
+}
+export fn runtimeIndex(i: usize) void {
+    const v: @Vector(3, f32) = .{ 1, 2, 3 };
+    _ = v[i];
+}
+export fn oobIndex() void {
+    const v: @Vector(3, f32) = .{ 1, 2, 3 };
+    _ = v[3];
+}
+#}
+#update
+#check errors {
+test.zig:3:11: error: no member named "foo" in "@Vector(3, f32)"
+test.zig:7:14: error: no member named "foo" in "*const @Vector(3, f32)"
+test.zig:11:10: error: index into empty vector
+test.zig:15:11: error: unable to resolve comptime value
+test.zig:15:11: note: vector index must be comptime-known
+test.zig:19:11: error: index 3 outside vector of length 3
+#}

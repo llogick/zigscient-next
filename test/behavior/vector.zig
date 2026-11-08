@@ -1907,3 +1907,31 @@ test "runtime index into comptime-known array of aggregates holding a vector" {
     try S.doTheTest();
     try comptime S.doTheTest();
 }
+
+test "len" {
+    const S = struct {
+        fn testValue() !void {
+            const c: @Vector(4, f32) = .{ 10, 11, 12, 13 };
+            try expect(c.len == 4);
+            inline for (c, 10..) |x, i| {
+                try expect(x == i);
+            }
+        }
+
+        fn testPointer() !void {
+            var v: @Vector(4, f32) = undefined;
+            v = .{ 10, 11, 12, 13 };
+            try expect(v.len == 4);
+            inline for (v, 10..) |x, i| {
+                try expect(x == i);
+            }
+        }
+
+        fn runAllTests() !void {
+            try testValue();
+            try testPointer();
+        }
+    };
+    try S.runAllTests();
+    try comptime S.runAllTests();
+}

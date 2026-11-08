@@ -1,0 +1,18 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo() void {
+    const v0: @Vector(3, u8) = .{ 1, 2, 3 };
+    for (0..3) |i| {
+        _ = v0[i];
+    }
+}
+#}
+#update
+#check errors {
+test.zig:4:16: error: unable to resolve comptime value
+test.zig:4:16: note: vector index must be comptime-known
+#}

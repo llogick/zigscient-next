@@ -18,5 +18,6 @@ fn loadv(ptr: anytype) i31 {
 #}
 #update
 #check errors {
-test.zig:5:22: error: vector index not comptime known
+test.zig:5:22: error: unable to resolve comptime value
+test.zig:5:22: note: vector index must be comptime-known
 #}

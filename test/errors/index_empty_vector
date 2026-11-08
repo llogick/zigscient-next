@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn pointer() void {
+    const v0: @Vector(0, f32) = .{};
+    _ = (&v0)[0];
+}
+export fn value() void {
+    const v0: @Vector(0, f32) = .{};
+    _ = v0[0];
+}
+#}
+#update
+#check errors {
+test.zig:3:14: error: index into empty vector
+test.zig:7:11: error: index into empty vector
+#}
