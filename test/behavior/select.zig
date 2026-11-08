@@ -80,7 +80,6 @@ fn selectArrays() !void {
 test "@select compare result" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
 
     const S = struct {
         fn min(comptime V: type, lhs: V, rhs: V) V {

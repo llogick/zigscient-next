@@ -767,7 +767,6 @@ test "@intCast on vector" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
 
     const S = struct {
         fn doTheTest() !void {
@@ -3085,7 +3084,6 @@ test "@intCast vector of signed integer" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
 
     var x: @Vector(4, i32) = .{ 1, 2, 3, 4 };
     _ = &x;

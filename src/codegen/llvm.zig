@@ -27,6 +27,17 @@ const ccAbiPromoteInt = FuncGen.ccAbiPromoteInt;
 const log = std.log.scoped(.codegen);
 
 pub fn legalizeFeatures(target: *const std.Target) ?*const Air.Legalize.Features {
+    // LLVM miscompiles reductions and bitcasts of bool vectors on Hexagon, so do them one element at a time.
+    // https://github.com/llvm/llvm-project/issues/237727
+    if (target.cpu.arch == .hexagon) return comptime &.init(.{
+        .expand_int_from_float_safe = true,
+        .expand_int_from_float_optimized_safe = true,
+        .scalarize_bit_cast_array = true,
+
+        .expand_int_cast_safe = true,
+        .scalarize_bit_cast_vector_non_elementwise = true,
+        .scalarize_reduce = true,
+    });
     return switch (target.cpu.arch.endian()) {
         inline else => |endian| comptime &.init(.{
             .expand_int_from_float_safe = true,

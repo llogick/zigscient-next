@@ -219,7 +219,6 @@ test "vector cmp f16" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
 
     try testCmpVector(f16);
     try comptime testCmpVector(f16);
@@ -231,7 +230,6 @@ test "vector cmp f32" {
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch.isArm()) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
 
     try testCmpVector(f32);
     try comptime testCmpVector(f32);
@@ -241,7 +239,6 @@ test "vector cmp f64" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest; // Fails on lavapipe
 
     try testCmpVector(f64);
@@ -253,7 +250,6 @@ test "vector cmp f128" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
 
     try testCmpVector(f128);
     try comptime testCmpVector(f128);
@@ -261,7 +257,6 @@ test "vector cmp f128" {
 
 test "vector cmp f80/c_longdouble" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and builtin.cpu.arch == .hexagon) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
