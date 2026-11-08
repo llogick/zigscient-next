@@ -153,7 +153,7 @@ fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
                 );
             },
             .auto => {
-                const Tag = @"union".tag_type orelse @compileError("byteSwapAllFields expects bitpack, extern, or tagged union");
+                const Tag = @"union".tag_type orelse @compileError("expectEqual expects bitpack, extern, or tagged union");
 
                 try expectEqual(@as(Tag, expected), @as(Tag, actual));
                 switch (expected) {

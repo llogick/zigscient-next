@@ -394,7 +394,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
 
                 @memcpy(std.mem.asBytes(&symbol)[0..symbol_size], symbol_bytes);
                 if (std.lang.Endian.native != .little)
-                    std.mem.byteSwapAllFields(std.coff.Symbol, &symbol);
+                    std.mem.byteSwap(std.coff.Symbol, &symbol);
 
                 const aux_symbols = if (symbol.number_of_aux_symbols > 0)
                     try r.take(symbol_size * symbol.number_of_aux_symbols)
@@ -480,7 +480,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
                         var weak_external: std.coff.WeakExternalDefinition = undefined;
                         @memcpy(std.mem.asBytes(&weak_external)[0..symbol_size], aux_symbols[0..symbol_size]);
                         if (std.lang.Endian.native != .little)
-                            std.mem.byteSwapAllFields(std.coff.WeakExternalDefinition, &weak_external);
+                            std.mem.byteSwap(std.coff.WeakExternalDefinition, &weak_external);
 
                         if (weak_external.tag_index >= header.number_of_symbols)
                             return d.fail(
@@ -529,7 +529,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
                         var section_def: std.coff.SectionDefinition = undefined;
                         @memcpy(std.mem.asBytes(&section_def)[0..symbol_size], aux_symbols[0..symbol_size]);
                         if (std.lang.Endian.native != .little)
-                            std.mem.byteSwapAllFields(std.coff.SectionDefinition, &section_def);
+                            std.mem.byteSwap(std.coff.SectionDefinition, &section_def);
 
                         const section = &sections.items[section_i];
                         if (section_def.number_of_relocations != section.header.number_of_relocations) {
@@ -595,7 +595,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
                 var reloc: std.coff.Relocation = undefined;
                 @memcpy(std.mem.asBytes(&reloc)[0..relocation_size], try r.take(relocation_size));
                 if (std.lang.Endian.native != .little)
-                    std.mem.byteSwapAllFields(std.coff.Relocation, &reloc);
+                    std.mem.byteSwap(std.coff.Relocation, &reloc);
 
                 const sym = &symbols.items[reloc.symbol_table_index];
                 if (!filterMatches(d.opts.symbol_filters, sym.name))

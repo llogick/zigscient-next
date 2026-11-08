@@ -206,7 +206,7 @@ pub fn readAlloc(
     const extra = try r.readSliceEndianAlloc(gpa, u32, extra_len, .little);
     errdefer gpa.free(extra);
 
-    const string_bytes = try r.readAlloc(gpa, string_bytes_len);
+    const string_bytes = try r.readAllocAll(gpa, string_bytes_len);
     errdefer gpa.free(string_bytes);
 
     return .{

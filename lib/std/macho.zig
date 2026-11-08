@@ -1945,7 +1945,7 @@ pub const LoadCommandIterator = struct {
             if (lc.data.len < @sizeOf(Cmd)) return null;
             const ptr: *align(1) const Cmd = @ptrCast(lc.data.ptr);
             var cmd = ptr.*;
-            if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(Cmd, &cmd);
+            if (builtin.cpu.arch.endian() != .little) std.mem.byteSwap(Cmd, &cmd);
             return cmd;
         }
 

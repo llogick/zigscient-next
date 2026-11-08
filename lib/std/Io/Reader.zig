@@ -745,7 +745,7 @@ pub inline fn readSliceEndianAlloc(
 }
 
 /// Deprecated; use readAllocAll. to be removed after 0.17.
-pub const readAlloc = readAllocAll;
+pub const readAlloc = @compileError("Deprecated; use readAllocAll");
 
 /// Shortcut for calling `readSliceAll` with a buffer provided by `allocator`.
 pub fn readAllocAll(r: *Reader, allocator: Allocator, len: usize) ReadAllocError![]u8 {
@@ -1235,7 +1235,7 @@ pub fn peekStructPointer(r: *Reader, comptime T: type) Error!*align(1) T {
     return @ptrCast(try r.peekArray(@sizeOf(T)));
 }
 
-/// This function is inline to avoid referencing `std.mem.byteSwapAllFields`
+/// This function is inline to avoid referencing `std.mem.byteSwap`
 /// when `endian` is comptime-known and matches the host endianness.
 ///
 /// See also:
@@ -1260,7 +1260,7 @@ pub inline fn takeStruct(r: *Reader, comptime T: type, endian: std.builtin.Endia
 
 /// Asserts the buffer was initialized with a capacity at least `@sizeOf(T)`.
 ///
-/// This function is inline to avoid referencing `std.mem.byteSwapAllFields`
+/// This function is inline to avoid referencing `std.mem.byteSwap`
 /// when `endian` is comptime-known and matches the host endianness.
 ///
 /// See also:
@@ -1272,7 +1272,7 @@ pub inline fn peekStruct(r: *Reader, comptime T: type, endian: std.builtin.Endia
             .auto => @compileError("ill-defined memory layout"),
             .@"extern" => {
                 var res = (try r.peekStructPointer(T)).*;
-                if (native_endian != endian) std.mem.byteSwapAllFields(T, &res);
+                if (native_endian != endian) std.mem.byteSwap(T, &res);
                 return res;
             },
             .@"bitpack" => {

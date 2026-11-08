@@ -113,7 +113,7 @@ pub const EndRecord = extern struct {
         if (pos + @sizeOf(EndRecord) > buffer.len) return error.EndOfStream;
         const record_ptr: *EndRecord = @ptrCast(buffer[pos..][0..@sizeOf(EndRecord)]);
         var record = record_ptr.*;
-        if (!is_le) std.mem.byteSwapAllFields(EndRecord, &record);
+        if (!is_le) std.mem.byteSwap(EndRecord, &record);
         return record;
     }
 
@@ -153,7 +153,7 @@ pub const EndRecord = extern struct {
                 std.mem.readInt(u16, record_bytes[20..22], .little) == comment_len)
             {
                 const record: *align(1) EndRecord = @ptrCast(record_bytes.ptr);
-                if (!is_le) std.mem.byteSwapAllFields(EndRecord, record);
+                if (!is_le) std.mem.byteSwap(EndRecord, record);
                 return record.*;
             }
 

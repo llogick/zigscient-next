@@ -1957,7 +1957,7 @@ fn initHeaders(
                 .DLL = comp.config.output_mode == .Lib and comp.config.link_mode == .dynamic,
             },
         };
-        if (target_endian != native_endian) std.mem.byteSwapAllFields(std.coff.Header, coff_header);
+        if (target_endian != native_endian) std.mem.byteSwap(std.coff.Header, coff_header);
     }
 
     const optional_header_ni = Node.known.optional_header;
@@ -2017,7 +2017,7 @@ fn initHeaders(
                     .number_of_rva_and_sizes = std.coff.IMAGE.DIRECTORY_ENTRY.len,
                 };
                 if (target_endian != native_endian)
-                    std.mem.byteSwapAllFields(std.coff.OptionalHeader.PE32, optional_header);
+                    std.mem.byteSwap(std.coff.OptionalHeader.PE32, optional_header);
             },
             .@"PE32+" => |optional_header| {
                 optional_header.* = .{
@@ -2066,7 +2066,7 @@ fn initHeaders(
                     .number_of_rva_and_sizes = std.coff.IMAGE.DIRECTORY_ENTRY.len,
                 };
                 if (target_endian != native_endian)
-                    std.mem.byteSwapAllFields(std.coff.OptionalHeader.@"PE32+", optional_header);
+                    std.mem.byteSwap(std.coff.OptionalHeader.@"PE32+", optional_header);
             },
         }
     }
@@ -2080,7 +2080,7 @@ fn initHeaders(
     if (is_image) {
         const data_directories = coff.dataDirectorySlice();
         @memset(data_directories, .{ .virtual_address = 0, .size = 0 });
-        if (target_endian != native_endian) std.mem.byteSwapAllFields(
+        if (target_endian != native_endian) std.mem.byteSwap(
             [std.coff.IMAGE.DIRECTORY_ENTRY.len]std.coff.ImageDataDirectory,
             data_directories,
         );
@@ -2226,7 +2226,7 @@ fn initHeaders(
             .ordinal_table_rva = 0,
         };
         if (target_endian != native_endian)
-            std.mem.byteSwapAllFields(std.coff.ExportDirectoryTable, export_directory_table);
+            std.mem.byteSwap(std.coff.ExportDirectoryTable, export_directory_table);
     }
 
     if (comp.config.any_non_single_threaded) {
@@ -3250,7 +3250,7 @@ fn flushSymbolTableEntry(coff: *Coff, index: u32) !void {
 
         entry.number_of_aux_symbols = num_aux_symbols;
         if (coff.targetEndian() != native_endian)
-            std.mem.byteSwapAllFieldsAligned(std.coff.Symbol, .@"2", entry);
+            std.mem.byteSwapAligned(std.coff.Symbol, .@"2", entry);
 
         if (num_aux_symbols > 0) aux_init: {
             if (sym.gmi != .none) {
@@ -3271,7 +3271,7 @@ fn flushSymbolTableEntry(coff: *Coff, index: u32) !void {
                     .unused = @splat(0),
                 };
                 if (coff.targetEndian() != native_endian)
-                    std.mem.byteSwapAllFieldsAligned(std.coff.WeakExternalDefinition, .@"2", aux_ptr);
+                    std.mem.byteSwapAligned(std.coff.WeakExternalDefinition, .@"2", aux_ptr);
 
                 break :aux_init;
             } else switch (coff.getNode(sym.ni.unwrap().?)) {
@@ -3289,7 +3289,7 @@ fn flushSymbolTableEntry(coff: *Coff, index: u32) !void {
                         .unused = @splat(0),
                     };
                     if (coff.targetEndian() != native_endian)
-                        std.mem.byteSwapAllFieldsAligned(std.coff.SectionDefinition, .@"2", aux_ptr);
+                        std.mem.byteSwapAligned(std.coff.SectionDefinition, .@"2", aux_ptr);
 
                     break :aux_init;
                 },
@@ -3434,7 +3434,7 @@ fn addSection(coff: *Coff, name: String, flags: std.coff.SectionHeader.Flags) !S
         .flags = flags,
     };
     if (coff.targetEndian() != native_endian)
-        std.mem.byteSwapAllFields(std.coff.SectionHeader, section);
+        std.mem.byteSwap(std.coff.SectionHeader, section);
 
     if (coff.isImage()) {
         const name_slice = name.toSlice(coff);
@@ -4201,7 +4201,7 @@ fn loadObject(
         var symbol: std.coff.Symbol = undefined;
         @memcpy(std.mem.asBytes(&symbol)[0..symbol_size], try r.take(symbol_size));
         if (target_endian != native_endian)
-            std.mem.byteSwapAllFields(std.coff.Symbol, &symbol);
+            std.mem.byteSwap(std.coff.Symbol, &symbol);
 
         const aux_symbols = if (symbol.number_of_aux_symbols > 0)
             try r.take(symbol_size * symbol.number_of_aux_symbols)
@@ -4265,7 +4265,7 @@ fn loadObject(
                         var section_def: std.coff.SectionDefinition = undefined;
                         @memcpy(std.mem.asBytes(&section_def)[0..symbol_size], aux_symbols[0..symbol_size]);
                         if (target_endian != native_endian)
-                            std.mem.byteSwapAllFields(std.coff.SectionDefinition, &section_def);
+                            std.mem.byteSwap(std.coff.SectionDefinition, &section_def);
 
                         if (section_def.number_of_relocations != section.header.number_of_relocations)
                             return diags.failParse(
@@ -4318,7 +4318,7 @@ fn loadObject(
                     var weak_external: std.coff.WeakExternalDefinition = undefined;
                     @memcpy(std.mem.asBytes(&weak_external)[0..symbol_size], aux_symbols[0..symbol_size]);
                     if (target_endian != native_endian)
-                        std.mem.byteSwapAllFields(std.coff.WeakExternalDefinition, &weak_external);
+                        std.mem.byteSwap(std.coff.WeakExternalDefinition, &weak_external);
 
                     if (weak_external.tag_index >= header.number_of_symbols)
                         return diags.failParse(
@@ -4918,7 +4918,7 @@ fn loadObject(
             var reloc: std.coff.Relocation = undefined;
             @memcpy(std.mem.asBytes(&reloc)[0..relocation_size], try r.take(relocation_size));
             if (target_endian != native_endian)
-                std.mem.byteSwapAllFields(std.coff.Relocation, &reloc);
+                std.mem.byteSwap(std.coff.Relocation, &reloc);
 
             const symbol = pending_symbols.getPtr(reloc.symbol_table_index) orelse
                 return diags.failParse(
@@ -6579,7 +6579,7 @@ fn flushGlobal(coff: *Coff, gmi: Node.GlobalMapIndex) !bool {
             .import_address_table_rva = 0,
         } };
         if (target_endian != native_endian)
-            std.mem.byteSwapAllFields([2]std.coff.ImportDirectoryEntry, import_directory_entries);
+            std.mem.byteSwap([2]std.coff.ImportDirectoryEntry, import_directory_entries);
     }
 
     log.debug(
@@ -6641,7 +6641,7 @@ fn flushGlobal(coff: *Coff, gmi: Node.GlobalMapIndex) !bool {
                     @bitCast(@as(@typeInfo(Entry).@"struct".backing_integer.?, 0)),
                 };
                 if (native_endian != target_endian)
-                    for (&import_hint_name_rvas) |*v| std.mem.byteSwapAllFields(Entry, v);
+                    for (&import_hint_name_rvas) |*v| std.mem.byteSwap(Entry, v);
 
                 import_lookup_table[import_symbol_index..][0..2].* = import_hint_name_rvas;
                 import_address_table[import_symbol_index..][0..2].* = import_hint_name_rvas;
@@ -6794,7 +6794,7 @@ fn flushSpecialSymbol(coff: *Coff, pending: SpecialSymbol) !SpecialSymbol {
                     },
                 };
                 if (coff.targetEndian() != native_endian)
-                    std.mem.byteSwapAllFields(std.coff.ImageDataDirectory, tls_directory);
+                    std.mem.byteSwap(std.coff.ImageDataDirectory, tls_directory);
 
                 try coff.symbols.ensureUnusedCapacity(gpa, 1);
                 const data_dir_si = coff.addSymbolAssumeCapacity();

@@ -19,7 +19,7 @@ fn readFatHeaderGeneric(io: Io, comptime Hdr: type, file: Io.File, offset: usize
     const nread = try file.readPositionalAll(io, &buffer, offset);
     if (nread != buffer.len) return error.InputOutput;
     var hdr = @as(*align(1) const Hdr, @ptrCast(&buffer)).*;
-    mem.byteSwapAllFields(Hdr, &hdr);
+    mem.byteSwap(Hdr, &hdr);
     return hdr;
 }
 

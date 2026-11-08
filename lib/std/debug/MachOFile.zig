@@ -266,7 +266,7 @@ pub fn getDwarfForAddress(mf: *MachOFile, gpa: Allocator, io: Io, vaddr: u64) !s
 
     const symbol_ofile_vaddr = vaddr: {
         var sym = of.symtab_raw[symbol_index];
-        if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(macho.nlist_64, &sym);
+        if (builtin.cpu.arch.endian() != .little) std.mem.byteSwap(macho.nlist_64, &sym);
         break :vaddr sym.n_value;
     };
 
@@ -296,7 +296,7 @@ const OFile = struct {
         pub fn eql(ctx: SymbolAdapter, a_sym_name: []const u8, b_sym_index: u32, b_index: usize) bool {
             _ = b_index;
             var b_sym = ctx.symtab_raw[b_sym_index];
-            if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(macho.nlist_64, &b_sym);
+            if (builtin.cpu.arch.endian() != .little) std.mem.byteSwap(macho.nlist_64, &b_sym);
             const b_sym_name = std.mem.sliceTo(ctx.strtab[b_sym.n_strx..], 0);
             return mem.eql(u8, a_sym_name, b_sym_name);
         }
@@ -537,7 +537,7 @@ fn loadOFile(gpa: Allocator, io: Io, o_file_name: []const u8) !OFile {
     try symbols_by_name.ensureUnusedCapacity(gpa, @intCast(symtab_raw.len));
     for (symtab_raw, 0..) |sym_raw, sym_index| {
         var sym = sym_raw;
-        if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(macho.nlist_64, &sym);
+        if (builtin.cpu.arch.endian() != .little) std.mem.byteSwap(macho.nlist_64, &sym);
         if (sym.n_strx == 0) continue;
         switch (sym.n_type.bits.type) {
             .undf => continue, // includes tentative symbols
@@ -572,7 +572,7 @@ fn loadDwarfFromSections(
     var sections: Dwarf.SectionArray = @splat(null);
     for (section_headers) |sect_raw| {
         var sect = sect_raw;
-        if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(macho.section_64, &sect);
+        if (builtin.cpu.arch.endian() != .little) std.mem.byteSwap(macho.section_64, &sect);
 
         if (!std.mem.eql(u8, "__DWARF", sect.segName())) continue;
 

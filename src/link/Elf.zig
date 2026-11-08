@@ -1447,7 +1447,7 @@ pub fn writeShdrTable(self: *Elf) !void {
                 assert(self.sections.items(.shdr)[i].sh_offset != math.maxInt(u64));
                 shdr.* = shdrTo32(self.sections.items(.shdr)[i]);
                 if (foreign_endian) {
-                    mem.byteSwapAllFields(elf.Elf32_Shdr, shdr);
+                    mem.byteSwap(elf.Elf32_Shdr, shdr);
                 }
             }
             try self.pwriteAll(@ptrCast(buf), self.shdr_table_offset.?);
@@ -1460,7 +1460,7 @@ pub fn writeShdrTable(self: *Elf) !void {
                 assert(self.sections.items(.shdr)[i].sh_offset != math.maxInt(u64));
                 shdr.* = self.sections.items(.shdr)[i];
                 if (foreign_endian) {
-                    mem.byteSwapAllFields(elf.Elf64_Shdr, shdr);
+                    mem.byteSwap(elf.Elf64_Shdr, shdr);
                 }
             }
             try self.pwriteAll(@ptrCast(buf), self.shdr_table_offset.?);
@@ -1487,7 +1487,7 @@ fn writePhdrTable(self: *Elf) !void {
             for (buf, 0..) |*phdr, i| {
                 phdr.* = phdrTo32(self.phdrs.items[i]);
                 if (foreign_endian) {
-                    mem.byteSwapAllFields(elf.Elf32.Phdr, phdr);
+                    mem.byteSwap(elf.Elf32.Phdr, phdr);
                 }
             }
             try self.pwriteAll(@ptrCast(buf), phdr_table.offset);
@@ -1499,7 +1499,7 @@ fn writePhdrTable(self: *Elf) !void {
             for (buf, 0..) |*phdr, i| {
                 phdr.* = self.phdrs.items[i];
                 if (foreign_endian) {
-                    mem.byteSwapAllFields(elf.Elf64.Phdr, phdr);
+                    mem.byteSwap(elf.Elf64.Phdr, phdr);
                 }
             }
             try self.pwriteAll(@ptrCast(buf), phdr_table.offset);
@@ -3306,13 +3306,13 @@ pub fn writeSymtab(self: *Elf) !void {
                     .st_value = @intCast(sym.st_value),
                     .st_size = @intCast(sym.st_size),
                 };
-                if (foreign_endian) mem.byteSwapAllFields(elf.Elf32_Sym, out);
+                if (foreign_endian) mem.byteSwap(elf.Elf32_Sym, out);
             }
             try self.pwriteAll(@ptrCast(buf), symtab_shdr.sh_offset);
         },
         .p64 => {
             if (foreign_endian) {
-                for (self.symtab.items) |*sym| mem.byteSwapAllFields(elf.Elf64_Sym, sym);
+                for (self.symtab.items) |*sym| mem.byteSwap(elf.Elf64_Sym, sym);
             }
             try self.pwriteAll(@ptrCast(self.symtab.items), symtab_shdr.sh_offset);
         },

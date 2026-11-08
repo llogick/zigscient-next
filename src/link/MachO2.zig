@@ -852,7 +852,7 @@ fn initInner(macho: *MachO) !void {
         .flags = std.macho.MH_DYLDLINK | std.macho.MH_PIE,
     };
     if (macho.targetEndian() != std.lang.Endian.native) {
-        std.mem.byteSwapAllFields(mach_header_64, mach_header);
+        std.mem.byteSwap(mach_header_64, mach_header);
     }
 
     // The "__LINKEDIT" segment is special in that it needs to be at the end of the Mach-O file, so
@@ -1022,7 +1022,7 @@ fn initInner(macho: *MachO) !void {
             .symbols_format = .uncompressed,
         };
         if (macho.targetEndian() != std.lang.Endian.native) {
-            std.mem.byteSwapAllFields(std.macho.dyld_chained_fixups_header, chained_fixups_hdr);
+            std.mem.byteSwap(std.macho.dyld_chained_fixups_header, chained_fixups_hdr);
         }
     }
 
@@ -1074,7 +1074,7 @@ fn initInner(macho: *MachO) !void {
                 .page_count = 0,
             };
             if (macho.targetEndian() != std.lang.Endian.native) {
-                std.mem.byteSwapAllFields(std.macho.dyld_chained_starts_in_segment, starts_hdr);
+                std.mem.byteSwap(std.macho.dyld_chained_starts_in_segment, starts_hdr);
             }
         }
     }
@@ -1260,7 +1260,7 @@ fn addInternalSymbol(macho: *MachO, opts: struct {
         },
     };
     if (macho.targetEndian() != std.lang.Endian.native) {
-        std.mem.byteSwapAllFields(std.macho.nlist_64, sym_index.nlist(macho));
+        std.mem.byteSwap(std.macho.nlist_64, sym_index.nlist(macho));
     }
 
     return sym_index;
@@ -1390,7 +1390,7 @@ fn addGlobalSymbol(macho: *MachO, opts: struct {
         .n_value = 0,
     };
     if (macho.targetEndian() != std.lang.Endian.native) {
-        std.mem.byteSwapAllFields(std.macho.nlist_64, symbol.nlist(macho));
+        std.mem.byteSwap(std.macho.nlist_64, symbol.nlist(macho));
     }
 
     try macho.setGlobalSymbolValue(symbol, .{
@@ -1761,7 +1761,7 @@ fn appendLoadCommand(
     const cmd_ptr: *Cmd = @ptrCast(cmd_slice[0..@sizeOf(Cmd)]);
     cmd_ptr.* = cmd;
     if (macho.targetEndian() != std.lang.Endian.native) {
-        std.mem.byteSwapAllFields(Cmd, cmd_ptr);
+        std.mem.byteSwap(Cmd, cmd_ptr);
     }
 
     const lc: LoadCommand = @fromBackingInt(@intCast(macho.lc.offsets.items.len));
@@ -1907,7 +1907,7 @@ fn addSection(macho: *MachO, opts: struct {
         .reserved2 = opts.reserved2,
     };
     if (macho.targetEndian() != std.lang.Endian.native) {
-        std.mem.byteSwapAllFields(section_64, section_cmd);
+        std.mem.byteSwap(section_64, section_cmd);
     }
 
     return section;
@@ -3815,7 +3815,7 @@ fn appendImportEntry(macho: *MachO, old_len: u64, symbol_index: Symbol.Index) Er
         .addend = 0,
     };
     if (macho.targetEndian() != std.lang.Endian.native) {
-        std.mem.byteSwapAllFields(std.macho.dyld_chained_import_addend64, &imports[@intCast(old_len)]);
+        std.mem.byteSwap(std.macho.dyld_chained_import_addend64, &imports[@intCast(old_len)]);
     }
 }
 

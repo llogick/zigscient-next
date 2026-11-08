@@ -1032,7 +1032,7 @@ const FuzzTestRunner = struct {
             const header_ptr: *InHeader = @ptrCast(instance.message.items);
             var header = header_ptr.*;
             if (std.builtin.Endian.native != .little) {
-                std.mem.byteSwapAllFields(InHeader, &header);
+                std.mem.byteSwap(InHeader, &header);
             }
             return header;
         }
@@ -1489,7 +1489,7 @@ const FuzzTestRunner = struct {
             .bytes_len = @intCast(bytes.len),
         };
         if (std.builtin.Endian.native != .little) {
-            std.mem.byteSwapAllFields(OutHeader, &out_header);
+            std.mem.byteSwap(OutHeader, &out_header);
         }
         try f.broadcast.ensureTotalCapacity(gpa, @sizeOf(OutHeader) + bytes.len);
         f.broadcast.appendSliceAssumeCapacity(@ptrCast(&out_header));

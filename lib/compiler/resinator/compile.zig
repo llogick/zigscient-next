@@ -782,7 +782,7 @@ pub const Compiler = struct {
                             .dib => {
                                 const bitmap_header: *ico.BitmapHeader = @ptrCast(@alignCast(&header_bytes));
                                 if (native_endian == .big) {
-                                    std.mem.byteSwapAllFields(ico.BitmapHeader, bitmap_header);
+                                    std.mem.byteSwap(ico.BitmapHeader, bitmap_header);
                                 }
                                 const bitmap_version = ico.BitmapHeader.Version.get(bitmap_header.bcSize);
 

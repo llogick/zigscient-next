@@ -969,7 +969,7 @@ pub inline fn writeStruct(w: *Writer, value: anytype, endian: std.lang.Endian) E
                     return w.writeAll(@ptrCast((&value)[0..1]));
                 } else {
                     var copy = value;
-                    std.mem.byteSwapAllFields(@TypeOf(value), &copy);
+                    std.mem.byteSwap(@TypeOf(value), &copy);
                     return w.writeAll(@ptrCast((&copy)[0..1]));
                 }
             },
@@ -1002,7 +1002,7 @@ pub inline fn writeSliceEndian(
 pub fn writeSliceSwap(w: *Writer, Elem: type, slice: []const Elem) Error!void {
     for (slice) |elem| {
         var tmp = elem;
-        std.mem.byteSwapAllFields(Elem, &tmp);
+        std.mem.byteSwap(Elem, &tmp);
         try w.writeAll(@ptrCast(&tmp));
     }
 }

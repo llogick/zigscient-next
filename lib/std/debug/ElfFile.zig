@@ -279,7 +279,7 @@ pub fn searchSymtab(ef: *ElfFile, gpa: Allocator, vaddr: u64) error{
                     // the target address is after the *end* of this symbol. This synchronizes with
                     // the logic in `buildSymbolSearchTable` which sorts by *end* address.
                     var sym = ctx.symbols[sym_index];
-                    if (ctx.swap_endian) std.mem.byteSwapAllFields(Sym, &sym);
+                    if (ctx.swap_endian) std.mem.byteSwap(Sym, &sym);
                     const sym_end = sym.st_value + sym.st_size;
                     return ctx.target >= sym_end;
                 }
@@ -291,7 +291,7 @@ pub fn searchSymtab(ef: *ElfFile, gpa: Allocator, vaddr: u64) error{
             }), SearchContext.predicate);
             if (sym_index_index == search_table.len) return .unknown;
             var sym = symbols[search_table[sym_index_index]];
-            if (swap_endian) std.mem.byteSwapAllFields(Sym, &sym);
+            if (swap_endian) std.mem.byteSwap(Sym, &sym);
             if (vaddr < sym.st_value or vaddr >= sym.st_value + sym.st_size) return .unknown;
             return .{
                 .name = std.mem.sliceTo(strtab[sym.st_name..], 0),
@@ -313,7 +313,7 @@ fn buildSymbolSearchTable(gpa: Allocator, endian: Endian, comptime Sym: type, sy
 
     for (symbols, 0..) |sym_orig, sym_index| {
         var sym = sym_orig;
-        if (swap_endian) std.mem.byteSwapAllFields(Sym, &sym);
+        if (swap_endian) std.mem.byteSwap(Sym, &sym);
         if (sym.st_name == 0) continue;
         if (sym.st_shndx == elf.SHN_UNDEF) continue;
         try result.append(gpa, sym_index);
@@ -327,8 +327,8 @@ fn buildSymbolSearchTable(gpa: Allocator, endian: Endian, comptime Sym: type, sy
             var lhs_sym = ctx.symbols[lhs_sym_index];
             var rhs_sym = ctx.symbols[rhs_sym_index];
             if (ctx.swap_endian) {
-                std.mem.byteSwapAllFields(Sym, &lhs_sym);
-                std.mem.byteSwapAllFields(Sym, &rhs_sym);
+                std.mem.byteSwap(Sym, &lhs_sym);
+                std.mem.byteSwap(Sym, &rhs_sym);
             }
             const lhs_val = lhs_sym.st_value + lhs_sym.st_size;
             const rhs_val = rhs_sym.st_value + rhs_sym.st_size;
