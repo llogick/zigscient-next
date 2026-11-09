@@ -149,9 +149,7 @@ pub fn kill(child: *Child, io: Io) void {
     assert(child.id == null);
 }
 
-pub const WaitError = error{
-    AccessDenied,
-} || Io.Cancelable || Io.UnexpectedError;
+pub const WaitError = Io.Cancelable || Io.UnexpectedError;
 
 /// Blocks until child process terminates and then cleans up all resources.
 pub fn wait(child: *Child, io: Io) WaitError!Term {
