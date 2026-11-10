@@ -565,6 +565,7 @@ fn bitslicedOperation(
         const hi = lo + n * 16;
         var buf: [w * 16]u8 = undefined;
         @memcpy(buf[0 .. n * 16], src[lo..hi]);
+        @memset(buf[n * 16 ..], 0);
         if (operation == .decrypt) {
             bitsliced.Wide.decrypt(rounds, keys, &buf);
         } else {
