@@ -1339,8 +1339,8 @@ fn scanPhdrs(
         if (phdr.@"align" != 0) {
             if (!std.math.isPowerOfTwo(phdr.@"align")) {
                 try d.warn(
-                    "phdr '{d}' alignment is neither zero nor a power of two",
-                    .{phndx},
+                    "phdr '{d}' alignment '0x{x}' is neither zero nor a power of two",
+                    .{ phndx, phdr.@"align" },
                 );
             } else if (phdr.offset % phdr.@"align" != phdr.vaddr % phdr.@"align") {
                 try d.warn(

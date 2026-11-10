@@ -4688,7 +4688,7 @@ pub fn addRunnerTests(
         }
         run.addPrefixedFileArg("--zig=", .zig_exe);
         run.addPrefixedDirectoryArg("--lib=", .zig_lib);
-        _ = run.addPrefixedOutputDirectoryArg("--src=", "src");
+        run.addPrefixedDirectoryArg("--src=", b.tmpPath());
 
         for (matrix) |test_target| {
             const target_str = b.fmt("{f}", .{test_target});

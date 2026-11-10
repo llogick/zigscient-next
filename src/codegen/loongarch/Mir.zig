@@ -175,7 +175,7 @@ fn emitReloc(
     addend: i64,
 ) !void {
     if (lf.cast(.elf2)) |ef| {
-        try ef.addReloc(atom_index, offset, sym_index, addend, .{ .LARCH = reloc_type });
+        try ef.addAtomReloc(atom_index, offset, sym_index, addend, .{ .LARCH = reloc_type });
     } else if (lf.cast(.elf)) |ef| {
         const zo = ef.zigObjectPtr().?;
         const atom = zo.symbol(@backingInt(atom_index)).atom(ef).?;

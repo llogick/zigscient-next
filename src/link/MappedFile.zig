@@ -900,14 +900,15 @@ fn addNode(mf: *MappedFile, gpa: Allocator, opts: struct {
     try mf.nodes.ensureUnusedCapacity(gpa, 1);
     try mf.large.ensureUnusedCapacity(gpa, 2);
 
-    const new_ni: Node.Index = new: {
+    const new_ni: Node.Index, const updated = new: {
         if (mf.free_ni.unwrap()) |free_ni| {
-            mf.free_ni = free_ni.get(mf).next;
-            break :new free_ni;
+            const free_node = free_ni.get(mf);
+            mf.free_ni = free_node.next;
+            break :new .{ free_ni, free_node.flags.updated };
         }
         const new_ni: Node.Index = @fromBackingInt(@intCast(mf.nodes.items.len));
         _ = mf.nodes.addOneAssumeCapacity();
-        break :new new_ni;
+        break :new .{ new_ni, false };
     };
 
     const next_oni: Node.Index.Optional = if (opts.prev.unwrap()) |prev_ni| next: {
@@ -981,7 +982,7 @@ fn addNode(mf: *MappedFile, gpa: Allocator, opts: struct {
             .resized = false,
             .next_moved = false,
             .has_content = false,
-            .updated = false,
+            .updated = updated,
         },
         .location_payload = switch (location) {
             .small => |small| .{ .small = small },

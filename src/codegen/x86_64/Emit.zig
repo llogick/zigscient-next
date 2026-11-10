@@ -711,7 +711,7 @@ pub fn emitMir(emit: *Emit) Error!void {
             }
             try emit.w.splatByteAll(0, table_offset - emit.w.end);
         } else if (emit.bin_file.cast(.elf2)) |elf| {
-            for (emit.table_relocs.items) |table_reloc| try elf.addReloc(
+            for (emit.table_relocs.items) |table_reloc| try elf.addAtomReloc(
                 emit.atom_id,
                 table_reloc.source_offset,
                 elf.symbolForAtom(emit.atom_id),
@@ -719,7 +719,7 @@ pub fn emitMir(emit: *Emit) Error!void {
                 .{ .X86_64 = .@"32S" },
             );
             for (emit.lower.mir.table) |entry| {
-                try elf.addReloc(
+                try elf.addAtomReloc(
                     emit.atom_id,
                     table_offset,
                     elf.symbolForAtom(emit.atom_id),
@@ -836,7 +836,7 @@ fn encodeInst(emit: *Emit, lowered_inst: Instruction, reloc_info: []const RelocI
                     .symbolnum = @intCast(@backingInt(target.symbol)),
                 },
             });
-        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addReloc(
+        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addAtomReloc(
             emit.atom_id,
             end_offset - 4,
             target.symbol,
@@ -862,7 +862,7 @@ fn encodeInst(emit: *Emit, lowered_inst: Instruction, reloc_info: []const RelocI
                 .r_info = (@as(u64, @backingInt(target.symbol)) << 32) | @backingInt(r_type),
                 .r_addend = reloc.off - 4,
             }, zo);
-        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addReloc(
+        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addAtomReloc(
             emit.atom_id,
             end_offset - 4,
             target.symbol,
@@ -902,7 +902,7 @@ fn encodeInst(emit: *Emit, lowered_inst: Instruction, reloc_info: []const RelocI
                 .r_info = (@as(u64, @backingInt(target_symbol)) << 32) | @backingInt(r_type),
                 .r_addend = reloc.off - 4,
             }, zo);
-        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addReloc(
+        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addAtomReloc(
             emit.atom_id,
             end_offset - 4,
             target_symbol,
@@ -920,7 +920,7 @@ fn encodeInst(emit: *Emit, lowered_inst: Instruction, reloc_info: []const RelocI
                 .r_info = (@as(u64, @backingInt(target.symbol)) << 32) | @backingInt(r_type),
                 .r_addend = reloc.off,
             }, zo);
-        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addReloc(
+        } else if (emit.bin_file.cast(.elf2)) |elf| try elf.addAtomReloc(
             emit.atom_id,
             end_offset - 4,
             target.symbol,

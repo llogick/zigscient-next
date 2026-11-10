@@ -43,11 +43,11 @@ pub const Unit = struct {
     pub const Index = enum(u32) {
         _,
 
-        pub fn mod(ui: Unit.Index, dwarf: *Dwarf) *Module {
+        pub fn mod(ui: Unit.Index, dwarf: *const Dwarf) *Module {
             return dwarf.lf.comp.zcu.?.module_roots.keys()[@backingInt(ui)];
         }
 
-        pub fn get(ui: Unit.Index, dwarf: *Dwarf) *Unit {
+        pub fn ptr(ui: Unit.Index, dwarf: *const Dwarf) *Unit {
             return &dwarf.units[@backingInt(ui)];
         }
     };
@@ -100,7 +100,7 @@ pub const Unit = struct {
 pub const Const = struct {
     debug_info_ni: link.MappedFile.Node.Index.Optional,
 
-    pub fn get(cpi: link.ConstPool.Index, dwarf: *Dwarf) *Const {
+    pub fn ptr(cpi: link.ConstPool.Index, dwarf: *const Dwarf) *Const {
         return &dwarf.consts.items[@backingInt(cpi)];
     }
 };
@@ -111,11 +111,11 @@ pub const Global = struct {
     pub const Index = enum(u32) {
         _,
 
-        pub fn nav(gi: Global.Index, dwarf: *Dwarf) InternPool.Nav.Index {
+        pub fn nav(gi: Global.Index, dwarf: *const Dwarf) InternPool.Nav.Index {
             return dwarf.globals.keys()[@backingInt(gi)];
         }
 
-        pub fn get(gi: Global.Index, dwarf: *Dwarf) *Global {
+        pub fn ptr(gi: Global.Index, dwarf: *const Dwarf) *Global {
             return &dwarf.globals.values()[@backingInt(gi)];
         }
     };
@@ -132,11 +132,11 @@ pub const Func = struct {
     pub const Index = enum(u32) {
         _,
 
-        pub fn nav(fi: Func.Index, dwarf: *Dwarf) InternPool.Nav.Index {
+        pub fn nav(fi: Func.Index, dwarf: *const Dwarf) InternPool.Nav.Index {
             return dwarf.funcs.keys()[@backingInt(fi)];
         }
 
-        pub fn get(fi: Func.Index, dwarf: *Dwarf) *Func {
+        pub fn ptr(fi: Func.Index, dwarf: *const Dwarf) *Func {
             return &dwarf.funcs.values()[@backingInt(fi)];
         }
     };
@@ -148,11 +148,11 @@ pub const Decl = struct {
     pub const Index = enum(u32) {
         _,
 
-        pub fn srcInst(di: Decl.Index, dwarf: *Dwarf) InternPool.TrackedInst.Index {
+        pub fn srcInst(di: Decl.Index, dwarf: *const Dwarf) InternPool.TrackedInst.Index {
             return dwarf.decls.keys()[@backingInt(di)];
         }
 
-        pub fn get(di: Decl.Index, dwarf: *Dwarf) *Decl {
+        pub fn ptr(di: Decl.Index, dwarf: *const Dwarf) *Decl {
             return &dwarf.decls.values()[@backingInt(di)];
         }
     };
@@ -193,11 +193,11 @@ pub const Addr = struct {
         return gop.index;
     }
 
-    fn tableOffset(dwarf: *Dwarf) usize {
+    fn tableOffset(dwarf: *const Dwarf) usize {
         return dwarf.unitLengthSize() + 2 + 1 + 1;
     }
 
-    pub fn size(a: *Addr, dwarf: *Dwarf) usize {
+    pub fn size(a: *Addr, dwarf: *const Dwarf) usize {
         return tableOffset(dwarf) + @backingInt(dwarf.address_size) * a.pending_index;
     }
 
@@ -275,12 +275,12 @@ pub const Str = struct {
 };
 
 pub const Rnglists = struct {
-    fn tableOffset(dwarf: *Dwarf) usize {
+    fn tableOffset(dwarf: *const Dwarf) usize {
         return dwarf.unitLengthSize() + 2 + 1 + 1 + 4;
     }
 
-    pub fn size(dwarf: *Dwarf, ui: Unit.Index) usize {
-        return ui.get(dwarf).debug_rnglists_end + 1;
+    pub fn size(dwarf: *const Dwarf, ui: Unit.Index) usize {
+        return ui.ptr(dwarf).debug_rnglists_end + 1;
     }
 };
 
@@ -834,7 +834,7 @@ pub const WipFunc = struct {
                 try dwarf.addrSym(dl_nw, debug.wip_func.func_si, 0);
 
                 const ui = dwarf.getUnit(zf.mod.?);
-                _, const fi = try ui.get(dwarf).getFile(zcu.gpa, ui, inst_info.file);
+                _, const fi = try ui.ptr(dwarf).getFile(zcu.gpa, ui, inst_info.file);
                 try dl_w.writeByte(DW.LNS.set_file);
                 try dl_w.writeUleb128(@backingInt(fi));
 
@@ -1225,7 +1225,7 @@ pub const WipFunc = struct {
                 try dl_w.writeByte(DW.LNS.extended_op);
                 try dl_w.writeUleb128(1 + dwarf.secOffsetSize());
                 try dl_w.writeByte(DW.LNE.ZIG_set_source_decl);
-                try dwarf.secOffset(dl_nw, new_func.get(dwarf).debug_info_ni.unwrap().?, 0);
+                try dwarf.secOffset(dl_nw, new_func.ptr(dwarf).debug_info_ni.unwrap().?, 0);
                 return true;
             }
 
@@ -1237,7 +1237,7 @@ pub const WipFunc = struct {
             if (old_inst_info.file != new_inst_info.file) {
                 const new_ui = dwarf.getUnit(new_zf.mod.?);
                 _, const new_fi =
-                    try debug.wip_func.unit.get(dwarf).getFile(zcu.gpa, new_ui, new_inst_info.file);
+                    try debug.wip_func.unit.ptr(dwarf).getFile(zcu.gpa, new_ui, new_inst_info.file);
 
                 try dl_w.writeByte(DW.LNS.set_file);
                 try dl_w.writeUleb128(@backingInt(new_fi));
@@ -1276,9 +1276,9 @@ pub const WipFunc = struct {
                     const offset = df_w.end;
                     try df_w.writeInt(u32, 0, dwarf.endian);
                     if (dwarf.lf.cast(.elf2)) |elf| try elf.addReloc(
-                        @bitCast(df_nw.ni),
+                        df_nw.ni,
                         offset,
-                        wip_func.func_si,
+                        .{ .symbol = .fromTypeErased(wip_func.func_si) },
                         0,
                         .rel32(elf),
                     ) else unreachable;
@@ -1288,7 +1288,7 @@ pub const WipFunc = struct {
                 try df_w.writeUleb128(0);
             },
             .debug_frame => {
-                try dwarf.secOffset(df_nw, wip_func.unit.get(dwarf).cie_ni.unwrap().?, 0);
+                try dwarf.secOffset(df_nw, wip_func.unit.ptr(dwarf).cie_ni.unwrap().?, 0);
                 try dwarf.addrSym(df_nw, wip_func.func_si, 0);
                 wip_func.frame_func_length = .{ .offset = df_w.end, .size = dwarf.address_size };
                 try dwarf.addrPlaceholder(df_w);
@@ -1499,10 +1499,9 @@ pub fn getGlobal(dwarf: *Dwarf, nav: InternPool.Nav.Index) link.Error!Global.Ind
         try elf.nodes.ensureUnusedCapacity(comp.gpa, 1);
         try elf.dwarf_globals.append(comp.gpa, .{
             .debug_info_first_target_reloc = .none,
-            .debug_info_first_node_reloc = .none,
-            .debug_info_first_symbol_reloc = .none,
+            .debug_info_first_reloc = .none,
         });
-        const unit = dwarf.getUnit(mod).get(dwarf);
+        const unit = dwarf.getUnit(mod).ptr(dwarf);
         global_gop.value_ptr.debug_info_ni = .wrap(elf.addNodeAssumeCapacity(
             unit.debug_info_ni.unwrap().?.addFloatingChild(comp.gpa, &elf.mf, .{
                 .enable_next_moved = true,
@@ -1537,16 +1536,13 @@ pub fn getFunc(dwarf: *Dwarf, nav: InternPool.Nav.Index) link.Error!Func.Index {
     if (dwarf.lf.cast(.elf2)) |elf| {
         try elf.nodes.ensureUnusedCapacity(gpa, 1);
         try elf.dwarf_funcs.append(gpa, .{
-            .frame_fde_first_symbol_reloc = .none,
-            .frame_fde_first_node_reloc = .none,
+            .frame_fde_first_reloc = .none,
             .debug_info_first_target_reloc = .none,
-            .debug_info_first_symbol_reloc = .none,
-            .debug_info_first_node_reloc = .none,
-            .debug_line_first_symbol_reloc = .none,
-            .debug_line_first_node_reloc = .none,
+            .debug_info_first_reloc = .none,
+            .debug_line_first_reloc = .none,
         });
         if (mod.strip) return fi;
-        const unit = dwarf.getUnit(mod).get(dwarf);
+        const unit = dwarf.getUnit(mod).ptr(dwarf);
         func_gop.value_ptr.debug_info_ni = .wrap(elf.addNodeAssumeCapacity(
             unit.debug_info_ni.unwrap().?.addFloatingChild(gpa, &elf.mf, .{
                 .enable_next_moved = true,
@@ -1628,7 +1624,7 @@ pub fn getConstDecl(
     switch (dwarf.getConstDeclInst(instance_const)) {
         .@"const" => |@"const"| {
             const cpi = try dwarf.getConst(pt, .fromInterned(@"const"));
-            return Const.get(cpi, dwarf).debug_info_ni.unwrap().?;
+            return Const.ptr(cpi, dwarf).debug_info_ni.unwrap().?;
         },
         .src_inst => |src_inst| return dwarf.getDecl(pt, src_inst, .{ .@"const" = instance_const }),
     }
@@ -1662,9 +1658,9 @@ fn getDecl(
         try elf.nodes.ensureUnusedCapacity(gpa, 1);
         try elf.dwarf_decls.putNoClobber(gpa, di, .{
             .debug_info_first_target_reloc = .none,
-            .debug_info_first_node_reloc = .none,
+            .debug_info_first_reloc = .none,
         });
-        const unit = dwarf.getUnit(zcu.fileByIndex(di.srcInst(dwarf).resolveFile(ip)).mod.?).get(dwarf);
+        const unit = dwarf.getUnit(zcu.fileByIndex(di.srcInst(dwarf).resolveFile(ip)).mod.?).ptr(dwarf);
         const debug_info_ni = elf.addNodeAssumeCapacity(
             unit.debug_info_ni.unwrap().?.addFloatingChild(gpa, &elf.mf, .{
                 .enable_next_moved = true,
@@ -1685,7 +1681,7 @@ pub fn getDeclIfExists(dwarf: *Dwarf, inst: InternPool.TrackedInst.Index) ?Decl.
     return @fromBackingInt(@intCast(dwarf.decls.getIndex(inst) orelse return null));
 }
 
-pub fn unitLengthSize(dwarf: *Dwarf) usize {
+pub fn unitLengthSize(dwarf: *const Dwarf) usize {
     return switch (dwarf.format) {
         .@"32" => 4,
         .@"64" => 4 + 8,
@@ -1736,28 +1732,15 @@ pub const EhFrameHdr = extern struct {
     fde_count_enc: std.dwarf.EH.PE,
     table_enc: std.dwarf.EH.PE,
     eh_frame_ptr: u32,
-};
-pub fn genEhFrameHdr(
-    dwarf: *Dwarf,
-    eh_frame_hdr_ai: link.File.AtomId,
-    eh_frame_hdr: *EhFrameHdr,
-    eh_frame_si: link.File.SymbolId,
-) link.Error!void {
-    eh_frame_hdr.* = .{
+
+    pub const omit_table: EhFrameHdr = .{
         .version = 1,
         .eh_frame_ptr_enc = .{ .type = .sdata4, .rel = .pcrel },
         .fde_count_enc = .omit,
         .table_enc = .omit,
         .eh_frame_ptr = undefined,
     };
-    if (dwarf.lf.cast(.elf2)) |elf| try elf.addReloc(
-        eh_frame_hdr_ai,
-        @offsetOf(EhFrameHdr, "eh_frame_ptr"),
-        eh_frame_si,
-        0,
-        .rel32(elf),
-    ) else unreachable;
-}
+};
 
 pub fn genDebugFrameCie(
     dwarf: *Dwarf,
@@ -1839,7 +1822,7 @@ pub fn genDebugInfoHeader(
     try dih_w.writeByte(DW.LANG.Zig);
     try dwarf.secOffset(
         dih_nw,
-        dwarf.getUnit(zcu.root_mod).get(dwarf).debug_info_header_ni.unwrap().?,
+        dwarf.getUnit(zcu.root_mod).ptr(dwarf).debug_info_header_ni.unwrap().?,
         compile_unit_offset,
     );
     try dwarf.secOffset(dih_nw, unit.debug_line_header_ni.unwrap().?, 0);
@@ -1874,7 +1857,7 @@ fn genModuleDependency(
     dep: *Module,
     module_offset: usize,
 ) link.EmitError!void {
-    const dep_unit = dwarf.getUnit(dep).get(dwarf);
+    const dep_unit = dwarf.getUnit(dep).ptr(dwarf);
     if (!dep_unit.alive) return;
     try dwarf.abbrevCode(di_nw, .module_dependency);
     try dwarf.strx(di_nw, name);
@@ -2357,7 +2340,7 @@ fn genComptimeGlobal(
 ) link.Error!void {
     const gpa = pt.zcu.gpa;
     const gi = try dwarf.getGlobal(global);
-    const debug_info_ni = gi.get(dwarf).debug_info_ni.unwrap().?;
+    const debug_info_ni = gi.ptr(dwarf).debug_info_ni.unwrap().?;
     var di_nw: link.MappedFile.Node.Writer = undefined;
     if (dwarf.lf.cast(.elf2)) |elf| {
         try debug_info_ni.moved(gpa, &elf.mf);
@@ -2466,11 +2449,11 @@ pub fn addConst(
             else => try addConstNode(dwarf.lf, dwarf.getUnit(zcu.root_mod), cpi),
             .func => |func| {
                 const fi = try dwarf.getFunc(func.owner_nav);
-                break :debug_info_ni fi.get(dwarf).debug_info_ni.unwrap().?;
+                break :debug_info_ni fi.ptr(dwarf).debug_info_ni.unwrap().?;
             },
             .@"extern" => |@"extern"| {
                 const gi = try dwarf.getGlobal(@"extern".owner_nav);
-                break :debug_info_ni gi.get(dwarf).debug_info_ni.unwrap().?;
+                break :debug_info_ni gi.ptr(dwarf).debug_info_ni.unwrap().?;
             },
             .struct_type, .union_type, .enum_type, .opaque_type => |_, tag| {
                 if (switch (tag) {
@@ -2481,7 +2464,7 @@ pub fn addConst(
                     .opaque_type => ip.loadOpaqueType(val).name_nav,
                 }.unwrap()) |name_nav| {
                     const name_gi = try dwarf.getGlobal(name_nav);
-                    break :debug_info_ni name_gi.get(dwarf).debug_info_ni.unwrap().?;
+                    break :debug_info_ni name_gi.ptr(dwarf).debug_info_ni.unwrap().?;
                 }
                 const mod = zcu.fileByIndex(
                     Type.fromInterned(val).typeDeclInstAllowGeneratedTag(zcu).?.resolveFile(ip),
@@ -2883,7 +2866,7 @@ fn updateConstInner(
             if (src_inst.inst == .main_struct_inst) {
                 assert(loaded_struct.captures.len == 0);
                 const ui = dwarf.getUnit(zf.mod.?);
-                _, const fi = try ui.get(dwarf).getFile(zcu.gpa, ui, src_inst.file);
+                _, const fi = try ui.ptr(dwarf).getFile(zcu.gpa, ui, src_inst.file);
                 try dwarf.abbrevCode(di_nw, switch (loaded_struct.layout) {
                     .auto => if (is_empty) .empty_file else .file,
                     .@"extern", .@"bitpack" => unreachable,
@@ -3349,7 +3332,7 @@ fn updateConstInner(
             try dwarf.refType(pt, di_nw, switch (ies: {
                 const fi = dwarf.getFuncIfExists(ip.indexToKey(func).func.owner_nav) orelse
                     break :ies .none;
-                break :ies switch (fi.get(dwarf).state) {
+                break :ies switch (fi.ptr(dwarf).state) {
                     .unresolved => .none,
                     .resolved => ip.funcIesResolvedUnordered(func),
                 };
@@ -3554,7 +3537,7 @@ fn updateConstInner(
                 var byte_offset = ptr.byte_offset;
                 const base_ni = while (true) {
                     const base_ptr, const access: Access = base_ptr_access: switch (base_addr) {
-                        .nav => |ni| break (try dwarf.getGlobal(ni)).get(dwarf).debug_info_ni,
+                        .nav => |ni| break (try dwarf.getGlobal(ni)).ptr(dwarf).debug_info_ni,
                         .comptime_alloc, .comptime_field => unreachable,
                         .uav => |uav| {
                             const uav_ty: Type = .fromInterned(ip.typeOf(uav.val));
@@ -3569,7 +3552,7 @@ fn updateConstInner(
                                     .ptr_type.flags.alignment.toByteUnits() orelse
                                     uav_ty.abiAlignment(zcu).toByteUnits().?);
                                 break :location;
-                            } else break Const.get(try dwarf.getConst(pt, .fromInterned(
+                            } else break Const.ptr(try dwarf.getConst(pt, .fromInterned(
                                 uav.val,
                             )), dwarf).debug_info_ni;
                         },
@@ -3874,7 +3857,7 @@ fn updateConstIncompleteInner(
                 switch (src_inst.inst) {
                     .main_struct_inst => {
                         const ui = dwarf.getUnit(zf.mod.?);
-                        _, const fi = try ui.get(dwarf).getFile(zcu.gpa, ui, src_inst.file);
+                        _, const fi = try ui.ptr(dwarf).getFile(zcu.gpa, ui, src_inst.file);
                         try dwarf.abbrevCode(di_nw, .empty_file);
                         try di_w.writeUleb128(@backingInt(fi));
                         try dwarf.strx(di_nw, loaded_struct.name.toSlice(ip));
@@ -4105,14 +4088,14 @@ fn genCaptures(
             const gi = try dwarf.getGlobal(capture_nav);
             try dwarf.abbrevCode(di_nw, .nav_capture);
             try dwarf.exprLoc(di_nw, .{ .implicit_pointer = .{
-                .node = gi.get(dwarf).debug_info_ni.unwrap().?,
+                .node = gi.ptr(dwarf).debug_info_ni.unwrap().?,
             } });
         },
         .nav_ref => |capture_nav| {
             const gi = try dwarf.getGlobal(capture_nav);
             try dwarf.abbrevCode(di_nw, .nav_capture);
             try dwarf.exprLoc(di_nw, .{ .stack_value = &.{ .implicit_pointer = .{
-                .node = gi.get(dwarf).debug_info_ni.unwrap().?,
+                .node = gi.ptr(dwarf).debug_info_ni.unwrap().?,
             } } });
         },
     };
@@ -4401,7 +4384,7 @@ pub fn updateLineNumber(
     line: u32,
 ) void {
     const di = dwarf.getDeclIfExists(inst) orelse return;
-    const decl_ni = di.get(dwarf).debug_info_ni.unwrap().?;
+    const decl_ni = di.ptr(dwarf).debug_info_ni.unwrap().?;
     comptime assert(AbbrevCode.common_decl_attrs[0][1] == .ref_addr);
     comptime assert(AbbrevCode.common_decl_attrs[1][0] == .decl_line);
     comptime assert(AbbrevCode.common_decl_attrs[1][1] == .data4);
@@ -4502,14 +4485,14 @@ fn secOffsetFinish(
     target_ni: link.MappedFile.Node.Index,
     addend: usize,
 ) link.Error!void {
-    if (dwarf.lf.cast(.elf2)) |elf| try elf.addNodeReloc(
+    if (dwarf.lf.cast(.elf2)) |elf| try elf.addReloc(
         nw.ni,
         offset,
-        target_ni,
+        .{ .node = target_ni },
         @bitCast(@as(u64, addend)),
         switch (dwarf.format) {
-            .@"32" => .abs32,
-            .@"64" => .abs64,
+            .@"32" => .abs32(elf),
+            .@"64" => .abs64(elf),
         },
     ) else unreachable;
 }
@@ -4526,9 +4509,9 @@ fn addrSym(
     const offset = nw.interface.end;
     try dwarf.addrPlaceholder(&nw.interface);
     if (dwarf.lf.cast(.elf2)) |elf| try elf.addReloc(
-        @bitCast(nw.ni),
+        nw.ni,
         offset,
-        target_si,
+        .{ .symbol = .fromTypeErased(target_si) },
         @bitCast(@as(u64, addend)),
         .absAddr(elf),
     ) else unreachable;
@@ -4579,7 +4562,7 @@ fn refConst(
     nw: *link.MappedFile.Node.Writer,
     val: Value,
 ) link.EmitError!void {
-    try dwarf.secOffset(nw, Const.get(try dwarf.getConst(pt, val), dwarf).debug_info_ni.unwrap().?, 0);
+    try dwarf.secOffset(nw, Const.ptr(try dwarf.getConst(pt, val), dwarf).debug_info_ni.unwrap().?, 0);
 }
 
 fn bigIntConstValue(
