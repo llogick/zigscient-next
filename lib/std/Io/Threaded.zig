@@ -14966,8 +14966,8 @@ fn lookupDns(
             const recv_err, const recv_n = socket.receiveManyTimeout(t_io, &message_buffer, buf, .{}, timeout);
             for (message_buffer[0..recv_n]) |*received_message| {
                 const reply = received_message.data;
-                // Ignore non-identifiable packets.
-                if (reply.len < 4) continue;
+                // Ignore non-identifiable or truncated packets.
+                if (reply.len < 4 or received_message.flags.trunc) continue;
 
                 // Ignore replies from addresses we didn't send to.
                 const ns = for (mapped_nameservers) |*ns| {
@@ -14988,7 +14988,9 @@ fn lookupDns(
                 // server failure, and ignore all other codes such as refusal.
                 switch (reply[3] & 15) {
                     0, 3 => {
-                        answer.* = reply;
+                        const saved = answer_buffer[answer_buffer_i..][0..reply.len];
+                        @memmove(saved, reply);
+                        answer.* = saved;
                         answer_buffer_i += reply.len;
                         answers_remaining -= 1;
                         if (answer_buffer.len - answer_buffer_i == 0) break :send;
