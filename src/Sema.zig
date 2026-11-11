@@ -6708,6 +6708,10 @@ fn analyzeCall(
 
     // These values are undefined if `func_val == null`.
     const fn_nav: InternPool.Nav, const fn_zir: Zir, const fn_tracked_inst: InternPool.TrackedInst.Index, const fn_zir_inst: Zir.Inst.Index, const fn_zir_info: Zir.FnInfo = if (func_val) |f| b: {
+        // A function value can reach us through a comptime parameter rather than a
+        // declaration lookup. Resolve its owner before reading the body tracking.
+        try sema.ensureNavResolved(block, func_src, ip.indexToKey(f.toIntern()).func.owner_nav, .fully);
+
         const info = ip.indexToKey(f.toIntern()).func;
         const nav = ip.getNav(info.owner_nav);
         const resolved_func_inst = info.zir_body_inst.resolveFull(ip) orelse {

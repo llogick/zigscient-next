@@ -1,0 +1,69 @@
+#zig build-exe {
+--name test
+-Mroot=test.zig
+#}
+
+#write test.zig {
+pub fn main() !void {
+    bar(foo);
+}
+
+fn foo() comptime_int {
+    // something;
+    return undefined;
+}
+
+pub fn bar(function: fn () comptime_int) void {
+    struct {
+        fn start() void {
+            _ = function();
+        }
+    }.start();
+}
+#}
+#update
+#check errors
+
+#write test.zig {
+pub fn main() !void {
+    bar(foo);
+}
+
+fn foo() comptime_int {
+    something;
+    return undefined;
+}
+
+pub fn bar(function: fn () comptime_int) void {
+    struct {
+        fn start() void {
+            _ = function();
+        }
+    }.start();
+}
+#}
+#update "add an error in the callee"
+#check errors {
+test.zig:6:5: error: use of undeclared identifier 'something'
+#}
+
+#write test.zig {
+pub fn main() !void {
+    bar(foo);
+}
+
+fn foo() comptime_int {
+    // something;
+    return undefined;
+}
+
+pub fn bar(function: fn () comptime_int) void {
+    struct {
+        fn start() void {
+            _ = function();
+        }
+    }.start();
+}
+#}
+#update "fix the error"
+#check errors
