@@ -48,8 +48,8 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
     var sysv_long_names: ?[]u8 = null;
 
     // Key is file offset of header. Allocated into `d.gpa`.
-    var coff_sorted_members: std.array_hash_map.Auto(u64, CoffSortedMember) = .empty;
-    defer coff_sorted_members.deinit(d.gpa);
+    var coff_members: std.array_hash_map.Auto(u64, CoffMember) = .empty;
+    defer coff_members.deinit(d.gpa);
 
     while (true) {
         const header_off = d.logicalPos();
@@ -68,23 +68,6 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
 
         const name_in_header = std.mem.trimEnd(u8, &hdr.ar_name, " ");
         const kind: Kind = kind: {
-            if (std.mem.eql(u8, name_in_header, std.macho.SYMDEF) or
-                std.mem.eql(u8, name_in_header, std.macho.SYMDEF_SORTED) or
-                std.mem.eql(u8, name_in_header, std.macho.SYMDEF64) or
-                std.mem.eql(u8, name_in_header, std.macho.SYMDEF64_SORTED))
-            {
-                if (seen_sysv_symbols) {
-                    try d.warn("conflicting symbol table types in archive", .{});
-                } else if (seen_bsd_symbols) {
-                    try d.warn("duplicate symbol table in archive", .{});
-                } else if (seen_object) {
-                    try d.warn("symbol table after object file in archive", .{});
-                } else if (sysv_long_names != null) {
-                    try d.warn("symbol table after file name table in archive", .{});
-                }
-                break :kind .bsd_symbols;
-            }
-
             if (std.mem.eql(u8, name_in_header, "/")) {
                 if (seen_bsd_symbols) {
                     try d.warn("conflicting symbol table types in archive", .{});
@@ -128,21 +111,6 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
                 break :kind .sysv_long_names;
             }
 
-            if (std.mem.startsWith(u8, name_in_header, "#1/")) {
-                if (std.fmt.parseUnsigned(u32, name_in_header[3..], 10)) |len| {
-                    if (sysv_long_names != null) {
-                        try d.warn("BSD-style long file name after string table in archive", .{});
-                    }
-                    const name = r.readAllocAll(arena, len) catch |err| switch (err) {
-                        error.EndOfStream => return d.fail("unexpected eof in archive member name", .{}),
-                        else => |e| return e,
-                    };
-                    break :kind .{ .object = std.mem.sliceTo(name, 0) };
-                } else |err| switch (err) {
-                    error.Overflow, error.InvalidCharacter => {},
-                }
-            }
-
             if (std.mem.startsWith(u8, name_in_header, "/")) {
                 if (std.fmt.parseUnsigned(u32, name_in_header[1..], 10)) |offset| {
                     const strtab = sysv_long_names orelse return d.fail(
@@ -166,13 +134,51 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
                 }
             }
 
-            break :kind .{ .object = std.mem.sliceTo(name_in_header, '/') };
+            const short_or_bsd_long_name: []const u8 = name: {
+                if (std.mem.startsWith(u8, name_in_header, "#1/")) {
+                    if (std.fmt.parseUnsigned(u32, name_in_header[3..], 10)) |len| {
+                        if (sysv_long_names != null) {
+                            try d.warn("BSD-style long file name after string table in archive", .{});
+                        }
+                        const name = r.readAllocAll(arena, len) catch |err| switch (err) {
+                            error.EndOfStream => return d.fail("unexpected eof in archive member name", .{}),
+                            else => |e| return e,
+                        };
+                        break :name std.mem.sliceTo(name, 0);
+                    } else |err| switch (err) {
+                        error.Overflow, error.InvalidCharacter => {},
+                    }
+                }
+                break :name std.mem.sliceTo(name_in_header, '/');
+            };
+
+            if (std.mem.eql(u8, short_or_bsd_long_name, std.macho.SYMDEF) or
+                std.mem.eql(u8, short_or_bsd_long_name, std.macho.SYMDEF_SORTED) or
+                std.mem.eql(u8, short_or_bsd_long_name, std.macho.SYMDEF64) or
+                std.mem.eql(u8, short_or_bsd_long_name, std.macho.SYMDEF64_SORTED))
+            {
+                if (seen_sysv_symbols) {
+                    try d.warn("conflicting symbol table types in archive", .{});
+                } else if (seen_bsd_symbols) {
+                    try d.warn("duplicate symbol table in archive", .{});
+                } else if (seen_object) {
+                    try d.warn("symbol table after object file in archive", .{});
+                } else if (sysv_long_names != null) {
+                    try d.warn("symbol table after file name table in archive", .{});
+                }
+                break :kind .bsd_symbols;
+            }
+
+            break :kind .{ .object = short_or_bsd_long_name };
         };
 
         const member_off = d.logicalPos();
 
         // The size field needs to parse successfully so that we know how long the member is!
-        const size = hdr.size() catch |err| switch (err) {
+        const size: u64 = if (hdr.size()) |hdr_size| size: {
+            const long_name_size = member_off - (header_off + @sizeOf(std.elf.ar_hdr));
+            break :size hdr_size - long_name_size;
+        } else |err| switch (err) {
             error.Overflow, error.InvalidCharacter => |e| return d.fail(
                 "invalid size {q} in ar header: {t}",
                 .{ std.mem.trimEnd(u8, &hdr.ar_size, " "), e },
@@ -182,7 +188,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
         const full_object_name: []const u8 = switch (kind) {
             .bsd_symbols => {
                 seen_bsd_symbols = true;
-                if (d.opts.archive_symbols) {
+                if (d.opts.archive_symbol_tables) {
                     try w.writeAll("TODO: dump symbols in BSD-style archive\n");
                 }
                 try d.seekTo(std.mem.alignForward(u64, member_off + size, 2));
@@ -190,7 +196,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
             },
             .sysv_symbols => |symtab_kind| {
                 seen_sysv_symbols = true;
-                if (d.opts.archive_symbols) {
+                if (d.opts.archive_symbol_tables) {
                     assert(d.limited_reader == null);
                     assert(d.seek_base == 0);
                     defer {
@@ -225,7 +231,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
             },
             .windows_second_symbols => {
                 seen_windows_second_symbols = true;
-                if (d.opts.archive_symbols or d.opts.exports) {
+                if (d.opts.archive_symbol_tables or d.opts.tables.coff.get(.exports) != null) {
                     assert(d.limited_reader == null);
                     assert(d.seek_base == 0);
                     defer {
@@ -242,7 +248,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
                     d.limited_reader = &limited_reader;
                     d.seek_base = member_off;
                     d.input_name = "second archive symbol table";
-                    parseWindowsSecondSymbolTable(d, &coff_sorted_members) catch |err| switch (err) {
+                    parseWindowsSecondSymbolTable(d, &coff_members) catch |err| switch (err) {
                         error.AlreadyReported => {},
                         error.EndOfStream => switch (d.fail("contents truncated", .{})) {
                             error.AlreadyReported => {},
@@ -343,7 +349,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
             try w.writeByte('\n');
         }
 
-        if (coff_sorted_members.count() == 0) {
+        if (coff_members.count() == 0) {
             assert(d.limited_reader == null);
             assert(d.seek_base == 0);
             defer {
@@ -368,25 +374,17 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
                 // If parsing this archive member failed, that's fine; we can still do the next one.
                 error.AlreadyReported => {},
             };
-        } else {
-            const ptr = coff_sorted_members.getPtr(header_off) orelse {
-                return d.fail(
-                    "member offset '{d}' does not exist in second archive symbol table",
-                    .{header_off},
-                );
-            };
-            ptr.* = .{
-                .size = size,
-                .name = try arena.print("{s}({s})", .{
-                    archive_input_name,
-                    object_name,
-                }),
-            };
+        } else if (coff_members.getPtr(header_off)) |ptr| {
+            ptr.size = size;
+            ptr.name = try arena.print("{s}({s})", .{
+                archive_input_name,
+                object_name,
+            });
         }
         try d.seekTo(std.mem.alignForward(u64, member_off + size, 2));
     }
 
-    for (coff_sorted_members.keys(), coff_sorted_members.values()) |header_offset, member| {
+    for (coff_members.keys(), coff_members.values()) |header_offset, *member| {
         const member_offset = header_offset + @sizeOf(std.elf.ar_hdr);
         try d.seekTo(member_offset);
         assert(d.limited_reader == null);
@@ -448,9 +446,9 @@ fn parseSysVSymbolTable(d: *Objdump, comptime Int: type) (Objdump.Error || error
             ),
             else => |e| return e,
         };
-        for (d.opts.symbol_filters) |filter| {
+        for (d.opts.archive_symbol_filters) |filter| {
             if (std.mem.find(u8, name, filter) != null) break;
-        } else if (d.opts.symbol_filters.len > 0) {
+        } else if (d.opts.archive_symbol_filters.len > 0) {
             continue;
         }
         try w.print("  {x:0>16}  {s}\n", .{
@@ -464,7 +462,7 @@ fn parseSysVSymbolTable(d: *Objdump, comptime Int: type) (Objdump.Error || error
 
 fn parseWindowsSecondSymbolTable(
     d: *Objdump,
-    sorted_members: *std.array_hash_map.Auto(u64, CoffSortedMember),
+    members_out: *std.array_hash_map.Auto(u64, CoffMember),
 ) (Objdump.Error || error{EndOfStream})!void {
     const gpa = d.gpa;
     const r = d.reader();
@@ -484,8 +482,8 @@ fn parseWindowsSecondSymbolTable(
     const symbol_member_indices = try r.readSliceEndianAlloc(gpa, u16, num_symbols, .little);
     defer gpa.free(symbol_member_indices);
 
-    if (d.opts.exports_sort) {
-        try sorted_members.ensureUnusedCapacity(gpa, member_offsets.len);
+    if (d.opts.tables.coff.get(.exports) != null) {
+        try members_out.ensureUnusedCapacity(gpa, member_offsets.len);
     }
 
     try w.print("  {s: >6}  {s: ^18}  {s}\n", .{ "member", "member offset", "symbol name" });
@@ -500,13 +498,13 @@ fn parseWindowsSecondSymbolTable(
         if (member_index == 0 or member_index > num_members) {
             return d.fail("symbol {q} has out-of-range member index '{d}'", .{ name, member_index });
         }
-        if (d.opts.exports_sort) {
-            sorted_members.putAssumeCapacity(member_offsets[member_index - 1], .init);
-        }
-        for (d.opts.symbol_filters) |filter| {
+        for (d.opts.archive_symbol_filters) |filter| {
             if (std.mem.find(u8, name, filter) != null) break;
-        } else if (d.opts.symbol_filters.len > 0) {
+        } else if (d.opts.archive_symbol_filters.len > 0) {
             continue;
+        }
+        if (d.opts.tables.coff.get(.exports) != null) {
+            members_out.putAssumeCapacity(member_offsets[member_index - 1], .init);
         }
         try w.print("  {d: >6}  {x:0>16}  {s}\n", .{
             d.fmtIntField(member_index, .index),
@@ -516,19 +514,12 @@ fn parseWindowsSecondSymbolTable(
     }
 
     try w.writeByte('\n');
-
-    if (d.opts.exports_sort) {
-        // If any members were empty, they were never added to `sorted_members`; do that now.
-        for (member_offsets) |member_offset| {
-            sorted_members.putAssumeCapacity(member_offset, .init);
-        }
-    }
 }
 
-const CoffSortedMember = struct {
+const CoffMember = struct {
     size: u64,
     name: []const u8,
-    const init: CoffSortedMember = .{ .size = 0, .name = "" };
+    const init: CoffMember = .{ .size = 0, .name = "" };
 };
 
 const std = @import("std");

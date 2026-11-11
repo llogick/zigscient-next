@@ -42,7 +42,7 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(lib.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=foo",
+            "--filter=name ~ \"foo\"",
         }, .{ .use_llvm = true });
 
         const exe = case.addExecutable(.{
@@ -88,8 +88,7 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(obj.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=threadlocal",
-            "--only-symbol=tls",
+            "--filter=name ~ \"threadlocal\" or name ~ \"tls\"",
         }, .{ .use_llvm = true });
 
         const exe = case.addExecutable(.{
@@ -135,14 +134,16 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(lib.getEmittedBin(), &.{
             "-s",
             "--exports",
-            "--only-symbol=foo",
+            "--filter=name ~ \"foo\"",
         }, .{ .os = true });
 
         if (ctx.target.result.os.tag == .windows) {
             case.verifyObjdump(lib.getEmittedImplib(), &.{
                 "-s",
-                "--exports=sort",
-                "--only-symbol=foo",
+                "--exports",
+                "--sort=name",
+                "--filter=name ~ \"foo\"",
+                "--archive-symbol-filter=foo",
             }, .{ .sub_name = "implib", .os = true, .arch = true });
         }
 
@@ -180,14 +181,16 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(lib.getEmittedBin(), &.{
             "-s",
             "--exports",
-            "--only-symbol=foo",
+            "--filter=name ~ \"foo\"",
         }, .{});
 
         if (ctx.target.result.os.tag == .windows) {
             case.verifyObjdump(lib.getEmittedImplib(), &.{
                 "-s",
-                "--exports=sort",
-                "--only-symbol=foo",
+                "--exports",
+                "--sort=name",
+                "--filter=name ~ \"foo\"",
+                "--archive-symbol-filter=foo",
             }, .{ .sub_name = "implib", .os = true, .arch = true });
         }
 

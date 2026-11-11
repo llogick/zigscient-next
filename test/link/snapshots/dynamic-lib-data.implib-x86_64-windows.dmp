@@ -6,10 +6,6 @@ dynamic-lib-data-lib.lib: ar archive (static library)
   ??????  0x????????????????  __imp_foo_strong
   ??????  0x????????????????  __imp_foo_strong_alias
 
-dynamic-lib-data-lib.lib(dynamic-lib-data-lib.dll): COFF object
-
-dynamic-lib-data-lib.lib(dynamic-lib-data-lib.dll): COFF object
-
 dynamic-lib-data-lib.lib(dynamic-lib-data-lib.dll): COFF import
 
                0 version
@@ -48,6 +44,4 @@ xxxxxxxxxxxxxxxx hint
      symbol name | foo_strong_alias
      import name | foo_strong_alias
              dll | dynamic-lib-data-lib.dll
-
-dynamic-lib-data-lib.lib(dynamic-lib-data-lib.dll): COFF object
 

@@ -1,3 +1,176 @@
+pub const Table = enum {
+    sections,
+    phdrs,
+    symbols,
+    @"symbol-versions",
+    @"version-definitions",
+    relocs,
+    dynamic,
+
+    pub fn cliDescription(t: Table) []const u8 {
+        return switch (t) {
+            .sections => "Dump section headers",
+            .phdrs => "Dump program headers",
+            .symbols => "Dump symbol tables",
+            .@"symbol-versions" => "Dump GNU symbol versioning tables",
+            .@"version-definitions" => "Dump GNU symbol version definitions and requirements",
+            .relocs => "Dump relocations",
+            .dynamic => "Dump dynamic entries",
+        };
+    }
+
+    pub fn Property(comptime t: Table) type {
+        return switch (t) {
+            .sections => enum(u32) {
+                index,
+                name,
+                type,
+                offset,
+                addr,
+                size,
+                entsize,
+                addralign,
+                link,
+                info,
+                @"flags.A",
+                @"flags.W",
+                @"flags.X",
+                @"flags.T",
+                @"flags.M",
+                @"flags.S",
+                @"flags.G",
+                @"flags.C",
+                @"flags.I",
+                @"flags.L",
+                @"flags.O",
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .index = .int,
+                    .name = .string,
+                    .type = .string,
+                    .offset = .int,
+                    .addr = .int,
+                    .size = .int,
+                    .entsize = .int,
+                    .addralign = .int,
+                    .link = .int,
+                    .info = .int,
+                    .@"flags.A" = .bool,
+                    .@"flags.W" = .bool,
+                    .@"flags.X" = .bool,
+                    .@"flags.T" = .bool,
+                    .@"flags.M" = .bool,
+                    .@"flags.S" = .bool,
+                    .@"flags.G" = .bool,
+                    .@"flags.C" = .bool,
+                    .@"flags.I" = .bool,
+                    .@"flags.L" = .bool,
+                    .@"flags.O" = .bool,
+                });
+            },
+
+            .phdrs => enum(u32) {
+                index,
+                type,
+                offset,
+                filesz,
+                paddr,
+                vaddr,
+                memsz,
+                @"align",
+                @"flags.R",
+                @"flags.W",
+                @"flags.X",
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .index = .int,
+                    .type = .string,
+                    .offset = .int,
+                    .filesz = .int,
+                    .paddr = .int,
+                    .vaddr = .int,
+                    .memsz = .int,
+                    .@"align" = .int,
+                    .@"flags.R" = .bool,
+                    .@"flags.W" = .bool,
+                    .@"flags.X" = .bool,
+                });
+            },
+
+            .symbols => enum(u32) {
+                is_dynsym,
+                index,
+                name,
+                type,
+                bind,
+                visibility,
+                shndx,
+                value,
+                size,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .is_dynsym = .bool,
+                    .index = .int,
+                    .name = .string,
+                    .type = .string,
+                    .bind = .string,
+                    .visibility = .string,
+                    .shndx = .int,
+                    .value = .int,
+                    .size = .int,
+                });
+            },
+
+            .@"symbol-versions" => enum(u32) {
+                sym_index,
+                sym_name,
+                ver_ndx,
+                ver_name,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .sym_index = .int,
+                    .sym_name = .string,
+                    .ver_ndx = .int,
+                    .ver_name = .string,
+                });
+            },
+
+            .@"version-definitions" => enum(u32) {
+                ver_ndx,
+                name,
+                file,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .ver_ndx = .int,
+                    .name = .string,
+                    .file = .string,
+                });
+            },
+
+            .relocs => enum(u32) {
+                reloc_section_name,
+                index,
+                offset,
+                target_symbol_index,
+                target_symbol_name,
+                addend,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .reloc_section_name = .string,
+                    .index = .int,
+                    .offset = .int,
+                    .target_symbol_index = .int,
+                    .target_symbol_name = .string,
+                    .addend = .int,
+                });
+            },
+
+            .dynamic => enum(u32) {
+                index,
+                type,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .index = .int,
+                    .type = .string,
+                });
+            },
+        };
+    }
+};
+
 pub fn identify(r: *Io.Reader) error{ReadFailed}!bool {
     const magic = r.peek(std.elf.MAGIC.len) catch |err| switch (err) {
         error.EndOfStream => return false,
@@ -102,30 +275,43 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
                 else => |e| return e,
             };
 
+            const phdrs: []const std.elf.Elf64.Phdr = scanPhdrs(
+                d,
+                arena,
+                class,
+                endian,
+                &ehdr,
+            ) catch |err| switch (err) {
+                error.EndOfStream => phdrs: {
+                    try d.warn("failed to read phdrs: unexpected eof", .{});
+                    break :phdrs &.{};
+                },
+                else => |e| return e,
+            };
+
             const versions: []const ?AvailableSymbolVersion = try collectVersions(d, arena, sections);
             try validateSymbolVersions(d, sections, versions);
 
-            if (d.opts.sections) {
-                try dumpSections(d, sections);
+            if (d.opts.tables.elf.get(.sections)) |conf| {
+                try dumpSections(d, conf, sections);
             }
-            scanAndDumpPhdrs(d, sections, class, endian, &ehdr) catch |err| switch (err) {
-                error.EndOfStream => try d.warn("failed to read phdrs: unexpected eof", .{}),
-                else => |e| return e,
-            };
-            if (d.opts.symbols or d.opts.dyn_syms) {
-                try dumpSymbols(d, sections);
+            if (d.opts.tables.elf.get(.phdrs)) |conf| {
+                try dumpPhdrs(d, conf, sections, phdrs);
             }
-            if (d.opts.symbol_versions) {
-                try dumpSymbolVersions(d, sections, versions);
+            if (d.opts.tables.elf.get(.symbols)) |conf| {
+                try dumpSymbols(d, conf, sections);
             }
-            if (d.opts.version_definitions) {
-                try dumpVersionDefinitions(d, sections);
+            if (d.opts.tables.elf.get(.@"symbol-versions")) |conf| {
+                try dumpSymbolVersions(d, conf, sections, versions);
             }
-            if (d.opts.relocs) {
-                try dumpRelocations(d, ehdr.machine, sections);
+            if (d.opts.tables.elf.get(.@"version-definitions")) |conf| {
+                try dumpVersionDefinitions(d, conf, sections);
             }
-            if (d.opts.dynamic) {
-                try dumpDynamic(d, sections);
+            if (d.opts.tables.elf.get(.relocs)) |conf| {
+                try dumpRelocations(d, conf, ehdr.machine, sections);
+            }
+            if (d.opts.tables.elf.get(.dynamic)) |conf| {
+                try dumpDynamic(d, conf, sections);
             }
         },
     }
@@ -1116,6 +1302,58 @@ fn scanVerneedSection(
     }
 }
 
+fn scanPhdrs(
+    d: *Objdump,
+    arena: Allocator,
+    comptime class: std.elf.CLASS,
+    endian: std.lang.Endian,
+    ehdr: *const class.ElfN().Ehdr,
+) (Objdump.Error || error{EndOfStream})![]const std.elf.Elf64.Phdr {
+    const ElfN = class.ElfN();
+    const r = d.reader();
+
+    if (ehdr.phnum == 0) return &.{};
+
+    if (ehdr.phentsize < @sizeOf(ElfN.Phdr)) {
+        try d.warn("failed to read phdrs: invalid phentsize '0x{x}'", .{ehdr.phentsize});
+        return &.{};
+    }
+
+    const phdrs = try arena.alloc(std.elf.Elf64.Phdr, ehdr.phnum);
+
+    try d.seekTo(ehdr.phoff);
+    for (phdrs, 0..) |*phdr_out, phndx| {
+        const phdr = try r.peekStruct(ElfN.Phdr, endian);
+        try r.discardAll64(ehdr.phentsize);
+        phdr_out.* = .{
+            .type = phdr.type,
+            .flags = phdr.flags,
+            .offset = phdr.offset,
+            .vaddr = phdr.vaddr,
+            .paddr = phdr.paddr,
+            .filesz = phdr.filesz,
+            .memsz = phdr.memsz,
+            .@"align" = phdr.@"align",
+        };
+
+        if (phdr.@"align" != 0) {
+            if (!std.math.isPowerOfTwo(phdr.@"align")) {
+                try d.warn(
+                    "phdr '{d}' alignment is neither zero nor a power of two",
+                    .{phndx},
+                );
+            } else if (phdr.offset % phdr.@"align" != phdr.vaddr % phdr.@"align") {
+                try d.warn(
+                    "phdr '{d}' vaddr != offset modulo alignment",
+                    .{phndx},
+                );
+            }
+        }
+    }
+
+    return phdrs;
+}
+
 fn collectVersions(
     d: *Objdump,
     arena: Allocator,
@@ -1250,10 +1488,49 @@ fn validateSymbolVersions(
     }
 }
 
-fn dumpSections(d: *const Objdump, sections: []const Section) Objdump.Error!void {
+fn dumpSections(
+    d: *const Objdump,
+    conf: Objdump.Table.Config,
+    sections: []const Section,
+) Objdump.Error!void {
     const w = d.w;
 
     if (sections.len == 0) return;
+
+    var row_it = try conf.iterateRows(d, .{ .elf = .sections }, sections.len, struct {
+        sections: []const Section,
+        pub fn property(
+            ctx: @This(),
+            index: u64,
+            comptime prop: Table.sections.Property(),
+        ) Table.sections.Property().types.get(prop).ZigType() {
+            const section = &ctx.sections[index];
+            return switch (prop) {
+                .index => index,
+                .name => section.name,
+                .type => sectionTypeString(section.type),
+                .offset => section.offset,
+                .addr => section.addr,
+                .size => section.size,
+                .entsize => section.entsize,
+                .addralign => section.addralign,
+                .link => section.link,
+                .info => section.info,
+                .@"flags.A" => section.flags.ALLOC,
+                .@"flags.W" => section.flags.WRITE,
+                .@"flags.X" => section.flags.EXECINSTR,
+                .@"flags.T" => section.flags.TLS,
+                .@"flags.M" => section.flags.MERGE,
+                .@"flags.S" => section.flags.STRINGS,
+                .@"flags.G" => section.flags.GROUP,
+                .@"flags.C" => section.flags.COMPRESSED,
+                .@"flags.I" => section.flags.INFO_LINK,
+                .@"flags.L" => section.flags.LINK_ORDER,
+                .@"flags.O" => section.flags.OS_NONCONFORMING,
+            };
+        }
+    }, &.{ .sections = sections });
+    defer row_it.deinit(d);
 
     try w.print("{d} section headers\n", .{d.fmtIntField(sections.len, .size)});
     try w.print("  {[index]s: >5}  {[type]s: <13}  {[flags]s: ^12}  {[offset]s: ^10}  {[address]s: ^18}  {[size]s: ^18}  {[entsize]s: ^10}  {[addralign]s: ^10}  {[link]s: >6}  {[info]s: >6}  {[name]s}\n", .{
@@ -1269,12 +1546,8 @@ fn dumpSections(d: *const Objdump, sections: []const Section) Objdump.Error!void
         .info = "info",
         .name = "name",
     });
-    for (sections, 0..) |section, shndx| {
-        for (d.opts.section_filters) |filter| {
-            if (std.mem.find(u8, section.name, filter) != null) break;
-        } else if (d.opts.section_filters.len > 0) {
-            continue;
-        }
+    while (row_it.next()) |shndx| {
+        const section = &sections[shndx];
         try w.print("  {d: >5}  {s: <13}  {f}  {x:0>8}  {x:0>16}  {x:0>16}  {x:0>8}  {x:0>8}  {d: >6}  {d: >6}  {s}\n", .{
             d.fmtIntField(shndx, .index),
             sectionTypeString(section.type),
@@ -1301,135 +1574,146 @@ fn dumpSections(d: *const Objdump, sections: []const Section) Objdump.Error!void
     );
 }
 
-/// Because we don't need to store phdrs for anything, we don't bother allocating a buffer for
-/// them. Instead, if `--phdrs` was passed, we dump phdrs *while* scanning them for errors.
-fn scanAndDumpPhdrs(
-    d: *Objdump,
+fn dumpPhdrs(
+    d: *const Objdump,
+    conf: Objdump.Table.Config,
     sections: []const Section,
-    comptime class: std.elf.CLASS,
-    endian: std.lang.Endian,
-    ehdr: *const class.ElfN().Ehdr,
-) (Objdump.Error || error{EndOfStream})!void {
-    const ElfN = class.ElfN();
-    const r = d.reader();
+    phdrs: []const std.elf.Elf64.Phdr,
+) Objdump.Error!void {
     const w = d.w;
 
-    if (ehdr.phnum == 0) return;
+    var row_it = try conf.iterateRows(d, .{ .elf = .phdrs }, phdrs.len, struct {
+        phdrs: []const std.elf.Elf64.Phdr,
+        pub fn property(
+            ctx: @This(),
+            index: u64,
+            comptime prop: Table.phdrs.Property(),
+        ) Table.phdrs.Property().types.get(prop).ZigType() {
+            const phdr = &ctx.phdrs[index];
+            return switch (prop) {
+                .index => index,
+                .type => phdrTypeString(phdr.type),
+                .offset => phdr.offset,
+                .filesz => phdr.filesz,
+                .paddr => phdr.paddr,
+                .vaddr => phdr.vaddr,
+                .memsz => phdr.memsz,
+                .@"align" => phdr.@"align",
+                .@"flags.R" => phdr.flags.R,
+                .@"flags.W" => phdr.flags.W,
+                .@"flags.X" => phdr.flags.X,
+            };
+        }
+    }, &.{ .phdrs = phdrs });
+    defer row_it.deinit(d);
 
-    if (ehdr.phentsize < @sizeOf(ElfN.Phdr)) {
-        try d.warn("failed to read phdrs: invalid phentsize '0x{x}'", .{ehdr.phentsize});
-        return;
-    }
+    try w.print("{d} program headers\n", .{d.fmtIntField(phdrs.len, .size)});
+    try w.print("  {[index]s: >5}  {[type]s: <13}  {[flags]s: ^5}  {[offset]s: ^10}  {[filesz]s: ^18}  {[paddr]s: ^18}  {[vaddr]s: ^18}  {[memsz]s: ^18}  {[align]s: ^10}  {[sections]s}\n", .{
+        .index = "index",
+        .type = "type",
+        .flags = "flags",
+        .offset = "offset",
+        .filesz = "filesz",
+        .paddr = "paddr",
+        .vaddr = "vaddr",
+        .memsz = "memsz",
+        .@"align" = "align",
+        .sections = "sections",
+    });
+    while (row_it.next()) |phndx| {
+        const phdr = &phdrs[phndx];
 
-    try d.seekTo(ehdr.phoff);
-    if (d.opts.phdrs) {
-        try w.print("{d} program headers\n", .{d.fmtIntField(ehdr.phnum, .size)});
-        try w.print("  {[index]s: >5}  {[type]s: <13}  {[flags]s: ^5}  {[offset]s: ^10}  {[filesz]s: ^18}  {[paddr]s: ^18}  {[vaddr]s: ^18}  {[memsz]s: ^18}  {[align]s: ^10}  {[sections]s}\n", .{
-            .index = "index",
-            .type = "type",
-            .flags = "flags",
-            .offset = "offset",
-            .filesz = "filesz",
-            .paddr = "paddr",
-            .vaddr = "vaddr",
-            .memsz = "memsz",
-            .@"align" = "align",
-            .sections = "sections",
+        try w.print("  {d: >5}  {s: <13}  {f}   {x:0>8}  {x:0>16}  {x:0>16}  {x:0>16}  {x:0>16}  {x:0>8} ", .{
+            d.fmtIntField(phndx, .index),
+            phdrTypeString(phdr.type),
+            fmtPhdrFlags(d, phdr.flags),
+            d.fmtIntField(phdr.offset, .offset),
+            d.fmtIntField(phdr.filesz, .size),
+            d.fmtIntField(phdr.paddr, .address),
+            d.fmtIntField(phdr.vaddr, .address),
+            d.fmtIntField(phdr.memsz, .size),
+            d.fmtIntField(phdr.@"align", .@"align"),
         });
-    }
-    for (0..ehdr.phnum) |phndx| {
-        const phdr = try r.peekStruct(ElfN.Phdr, endian);
-        try r.discardAll64(ehdr.phentsize);
-
-        if (phdr.@"align" != 0) {
-            if (!std.math.isPowerOfTwo(phdr.@"align")) {
-                try d.warn(
-                    "phdr '{d}' alignment is neither zero nor a power of two",
-                    .{phndx},
-                );
-            } else if (phdr.offset % phdr.@"align" != phdr.vaddr % phdr.@"align") {
-                try d.warn(
-                    "phdr '{d}' vaddr != offset modulo alignment",
-                    .{phndx},
-                );
-            }
+        switch (phdr.type) {
+            // GNU_STACK segments don't correspond to any address range so do not have any
+            // corresponding sections; showing any would be bogus.
+            .GNU_STACK => {},
+            else => for (sections) |section| {
+                if (!section.flags.ALLOC) continue;
+                // In TLS phdrs, `memsz` is actually the size of each dynamically-initialized
+                // TLS block, so when computing segment overlap, consider the `filesz` instead.
+                // An exception is made for TLS sections, since they are supposed to exist in
+                // each dynamically-initialized TLS block.
+                // don't exist in memory normally, and are only populated when the dynamic TLS
+                // blocks are initialized, so we actually care about those fake addresses, not
+                // the address of the TLS template.
+                const effective_memsz: u64 = switch (phdr.type) {
+                    else => phdr.memsz,
+                    .TLS => if (section.flags.TLS) phdr.memsz else phdr.filesz,
+                };
+                if (section.type == .NOBITS) {
+                    // NOBITS sections are meaningful if they appear in the range [filesz,memsz)
+                    // in the segment (i.e. in the segment's "zero-fill" range).
+                    if (section.addr < phdr.vaddr + phdr.filesz) continue;
+                    if (section.addr >= phdr.vaddr + effective_memsz) continue;
+                } else {
+                    // Other segments are meaningful if they appear in the range (0,memsz) in
+                    // the segment (i.e. anywhere within it, but not in the boundary).
+                    if (section.addr + section.size <= phdr.vaddr) continue;
+                    if (section.addr >= phdr.vaddr + effective_memsz) continue;
+                }
+                try w.print(" {s}", .{section.name});
+            },
         }
-
-        if (d.opts.phdrs) {
-            try w.print("  {d: >5}  {s: <13}  {f}   {x:0>8}  {x:0>16}  {x:0>16}  {x:0>16}  {x:0>16}  {x:0>8} ", .{
-                d.fmtIntField(phndx, .index),
-                phdrTypeString(phdr.type),
-                fmtPhdrFlags(d, phdr.flags),
-                d.fmtIntField(phdr.offset, .offset),
-                d.fmtIntField(phdr.filesz, .size),
-                d.fmtIntField(phdr.paddr, .address),
-                d.fmtIntField(phdr.vaddr, .address),
-                d.fmtIntField(phdr.memsz, .size),
-                d.fmtIntField(phdr.@"align", .@"align"),
-            });
-            switch (phdr.type) {
-                // GNU_STACK segments don't correspond to any address range so do not have any
-                // corresponding sections; showing any would be bogus.
-                .GNU_STACK => {},
-                else => for (sections) |section| {
-                    if (!section.flags.ALLOC) continue;
-                    // In TLS phdrs, `memsz` is actually the size of each dynamically-initialized
-                    // TLS block, so when computing segment overlap, consider the `filesz` instead.
-                    // An exception is made for TLS sections, since they are supposed to exist in
-                    // each dynamically-initialized TLS block.
-                    // don't exist in memory normally, and are only populated when the dynamic TLS
-                    // blocks are initialized, so we actually care about those fake addresses, not
-                    // the address of the TLS template.
-                    const effective_memsz: u64 = switch (phdr.type) {
-                        else => phdr.memsz,
-                        .TLS => if (section.flags.TLS) phdr.memsz else phdr.filesz,
-                    };
-                    if (section.type == .NOBITS) {
-                        // NOBITS sections are meaningful if they appear in the range [filesz,memsz)
-                        // in the segment (i.e. in the segment's "zero-fill" range).
-                        if (section.addr < phdr.vaddr + phdr.filesz) continue;
-                        if (section.addr >= phdr.vaddr + effective_memsz) continue;
-                    } else {
-                        // Other segments are meaningful if they appear in the range (0,memsz) in
-                        // the segment (i.e. anywhere within it, but not in the boundary).
-                        if (section.addr + section.size <= phdr.vaddr) continue;
-                        if (section.addr >= phdr.vaddr + effective_memsz) continue;
-                    }
-                    try w.print(" {s}", .{section.name});
-                },
-            }
-            try w.writeByte('\n');
-        }
+        try w.writeByte('\n');
     }
-
-    if (d.opts.phdrs) try w.writeByte('\n');
+    try w.writeByte('\n');
 }
 
 fn dumpSymbols(
     d: *const Objdump,
+    conf: Objdump.Table.Config,
     sections: []const Section,
 ) Objdump.Error!void {
     const w = d.w;
-
-    assert(d.opts.symbols or d.opts.dyn_syms);
 
     for (sections) |symtab_section| {
         const symbols = switch (symtab_section.contents) {
             .symtab => |symtab| symtab,
             else => continue,
         };
-        // If only `--dyn-syms` was passed, ignore `SHT_SYMTAB` sections
-        switch (symtab_section.type) {
-            .SYMTAB => if (!d.opts.symbols) continue,
-            .DYNSYM => {},
-            else => unreachable,
-        }
 
-        for (d.opts.section_filters) |filter| {
-            if (std.mem.find(u8, symtab_section.name, filter) != null) break;
-        } else if (d.opts.section_filters.len > 0) {
-            continue;
-        }
+        var row_it = try conf.iterateRows(d, .{ .elf = .symbols }, symbols.len, struct {
+            is_dynsym: bool,
+            symbols: []const std.elf.Elf64.Sym,
+            strtab: []const u8,
+
+            pub fn property(
+                ctx: @This(),
+                index: u64,
+                comptime prop: Table.symbols.Property(),
+            ) Table.symbols.Property().types.get(prop).ZigType() {
+                const symbol = &ctx.symbols[index];
+                return switch (prop) {
+                    .is_dynsym => ctx.is_dynsym,
+                    .index => index,
+                    .name => std.mem.sliceTo(ctx.strtab[@min(symbol.name, ctx.strtab.len)..], 0),
+                    .type => symbolTypeString(symbol.info.type),
+                    .bind => symbolBindString(symbol.info.bind),
+                    .visibility => @tagName(symbol.other.visibility),
+                    .shndx => symbol.shndx,
+                    .value => symbol.value,
+                    .size => symbol.size,
+                };
+            }
+        }, &.{
+            .is_dynsym = symtab_section.type == .DYNSYM,
+            .symbols = symbols,
+            .strtab = symtab_section.linkedContents(.strtab, sections) orelse "",
+        });
+        defer row_it.deinit(d);
+
+        if (row_it.empty()) continue;
 
         const symbol_kind_str: []const u8 = switch (symtab_section.type) {
             .SYMTAB => "symbols",
@@ -1453,17 +1737,8 @@ fn dumpSymbols(
             .size = "size",
             .name = "name",
         });
-        for (symbols, 0..) |symbol, symbol_index| {
-            const sym_name: []const u8 = name: {
-                const strtab = symtab_section.linkedContents(.strtab, sections) orelse break :name "";
-                if (symbol.name >= strtab.len) break :name "";
-                break :name std.mem.sliceTo(strtab[symbol.name..], 0);
-            };
-            for (d.opts.symbol_filters) |filter| {
-                if (std.mem.find(u8, sym_name, filter) != null) break;
-            } else if (d.opts.symbol_filters.len > 0) {
-                continue;
-            }
+        while (row_it.next()) |symbol_index| {
+            const symbol = &symbols[symbol_index];
             try w.print("  {d: >5}  {s: <10}  {s: <10}  {t: <10}  {d: >6}  {s: <14}  {x:0>16}  {x:0>16}  {s}\n", .{
                 d.fmtIntField(symbol_index, .index),
                 symbolTypeString(symbol.info.type),
@@ -1501,7 +1776,11 @@ fn dumpSymbols(
                         else => .size,
                     },
                 }),
-                sym_name,
+                name: {
+                    const strtab = symtab_section.linkedContents(.strtab, sections) orelse break :name "";
+                    if (symbol.name >= strtab.len) break :name "";
+                    break :name std.mem.sliceTo(strtab[symbol.name..], 0);
+                },
             });
         }
         try w.writeByte('\n');
@@ -1510,6 +1789,7 @@ fn dumpSymbols(
 
 fn dumpSymbolVersions(
     d: *const Objdump,
+    conf: Objdump.Table.Config,
     sections: []const Section,
     available_versions: []const ?AvailableSymbolVersion,
 ) Objdump.Error!void {
@@ -1523,6 +1803,44 @@ fn dumpSymbolVersions(
         const symtab = versym_section.linkedContents(.symtab, sections) orelse continue;
         if (symtab.len != versym.len) continue;
 
+        var row_it = try conf.iterateRows(d, .{ .elf = .@"symbol-versions" }, versym.len, struct {
+            symtab: []const std.elf.Elf64.Sym,
+            versym: []const std.elf.Versym,
+            strtab: []const u8,
+            available_versions: []const ?AvailableSymbolVersion,
+            pub fn property(
+                ctx: @This(),
+                index: u64,
+                comptime prop: Table.@"symbol-versions".Property(),
+            ) Table.@"symbol-versions".Property().types.get(prop).ZigType() {
+                const symbol = ctx.symtab[index];
+                const version = ctx.versym[index];
+                const ver_ndx: std.elf.VER_NDX = @fromBackingInt(version.VERSION);
+                return switch (prop) {
+                    .sym_index => index,
+                    .sym_name => std.mem.sliceTo(ctx.strtab[@min(symbol.name, ctx.strtab.len)..], 0),
+                    .ver_ndx => @backingInt(ver_ndx),
+                    .ver_name => switch (ver_ndx) {
+                        .LOCAL => "LOCAL",
+                        .GLOBAL => "GLOBAL",
+                        else => name: {
+                            if (@backingInt(ver_ndx) >= ctx.available_versions.len) break :name "";
+                            const v = ctx.available_versions[@backingInt(ver_ndx)] orelse break :name "";
+                            break :name v.name;
+                        },
+                    },
+                };
+            }
+        }, &.{
+            .symtab = symtab,
+            .versym = versym,
+            .strtab = sections[versym_section.link].linkedContents(.strtab, sections) orelse "",
+            .available_versions = available_versions,
+        });
+        defer row_it.deinit(d);
+
+        if (row_it.empty()) continue;
+
         try w.print("{d} symbol versions in section {q}\n", .{
             d.fmtIntField(versym.len, .size),
             versym_section.name,
@@ -1534,7 +1852,21 @@ fn dumpSymbolVersions(
             .ver_name = "ver_name",
             .sym_name = "sym_name",
         });
-        for (symtab, versym, 0..) |symbol, version, symbol_index| {
+        while (row_it.next()) |symbol_index| {
+            const symbol = symtab[symbol_index];
+            const version = versym[symbol_index];
+            const ver_ndx: std.elf.VER_NDX = @fromBackingInt(version.VERSION);
+            const ver_name: []const u8 = switch (ver_ndx) {
+                .LOCAL, .GLOBAL => "",
+                else => name: {
+                    if (@backingInt(ver_ndx) >= available_versions.len) break :name "";
+                    if (available_versions[@backingInt(ver_ndx)]) |version_info| {
+                        break :name version_info.name;
+                    } else {
+                        break :name "";
+                    }
+                },
+            };
             const sym_name: []const u8 = name: {
                 const strtab = sections[versym_section.link].linkedContents(
                     .strtab,
@@ -1542,23 +1874,6 @@ fn dumpSymbolVersions(
                 ) orelse break :name "";
                 if (symbol.name >= strtab.len) break :name "";
                 break :name std.mem.sliceTo(strtab[symbol.name..], 0);
-            };
-            for (d.opts.symbol_filters) |filter| {
-                if (std.mem.find(u8, sym_name, filter) != null) break;
-            } else if (d.opts.symbol_filters.len > 0) {
-                continue;
-            }
-            const ver_ndx: std.elf.VER_NDX = @fromBackingInt(version.VERSION);
-            const ver_name: []const u8 = switch (ver_ndx) {
-                .LOCAL, .GLOBAL => "",
-                else => name: {
-                    if (@backingInt(ver_ndx) >= available_versions.len) break :name "<invalid>";
-                    if (available_versions[@backingInt(ver_ndx)]) |version_info| {
-                        break :name version_info.name;
-                    } else {
-                        break :name "<invalid>";
-                    }
-                },
             };
             try w.print("  {d: >7}  {d: >7}  {s: ^6}  {s: <24}  {s}\n", .{
                 d.fmtIntField(symbol_index, .index),
@@ -1574,6 +1889,7 @@ fn dumpSymbolVersions(
 
 fn dumpVersionDefinitions(
     d: *const Objdump,
+    conf: Objdump.Table.Config,
     sections: []const Section,
 ) Objdump.Error!void {
     const w = d.w;
@@ -1581,11 +1897,30 @@ fn dumpVersionDefinitions(
     for (sections) |section| switch (section.contents) {
         else => {},
         .verdef => |versions| {
-            for (d.opts.section_filters) |filter| {
-                if (std.mem.find(u8, section.name, filter) != null) break;
-            } else if (d.opts.section_filters.len > 0) {
-                continue;
-            }
+            var row_it = try conf.iterateRows(d, .{ .elf = .@"version-definitions" }, versions.len, struct {
+                versions: []const Section.Contents.Verdef,
+                strtab: []const u8,
+                pub fn property(
+                    ctx: @This(),
+                    slice_index: u64,
+                    comptime prop: Table.@"version-definitions".Property(),
+                ) Table.@"version-definitions".Property().types.get(prop).ZigType() {
+                    const version = ctx.versions[slice_index];
+                    return switch (prop) {
+                        .ver_ndx => @backingInt(version.ver_ndx),
+                        .name => if (version.name) |offset| std.mem.sliceTo(
+                            ctx.strtab[@min(offset, ctx.strtab.len)..],
+                            0,
+                        ) else "",
+                        .file => "",
+                    };
+                }
+            }, &.{
+                .versions = versions,
+                .strtab = section.linkedContents(.strtab, sections) orelse "",
+            });
+            defer row_it.deinit(d);
+            if (row_it.empty()) continue;
             try w.print("{d} version definitions in section {q}\n", .{
                 d.fmtIntField(versions.len, .size),
                 section.name,
@@ -1595,27 +1930,44 @@ fn dumpVersionDefinitions(
                 .aux_cnt = "aux_cnt",
                 .name = "name",
             });
-            for (versions) |version| {
-                const name: []const u8 = name: {
-                    const name_off = version.name orelse break :name "";
-                    const strtab = section.linkedContents(.strtab, sections) orelse break :name "";
-                    if (name_off >= strtab.len) break :name "";
-                    break :name std.mem.sliceTo(strtab[name_off..], 0);
-                };
+            while (row_it.next()) |slice_index| {
+                const version = versions[slice_index];
                 try w.print("  {d: >7}  {d: >7}  {s}\n", .{
                     fmtVerNdx(d, version.ver_ndx),
                     version.aux_cnt,
-                    name,
+                    name: {
+                        const name_off = version.name orelse break :name "";
+                        const strtab = section.linkedContents(.strtab, sections) orelse break :name "";
+                        if (name_off >= strtab.len) break :name "";
+                        break :name std.mem.sliceTo(strtab[name_off..], 0);
+                    },
                 });
             }
             try w.writeByte('\n');
         },
         .verneed => |versions| {
-            for (d.opts.section_filters) |filter| {
-                if (std.mem.find(u8, section.name, filter) != null) break;
-            } else if (d.opts.section_filters.len > 0) {
-                continue;
-            }
+            const strtab: []const u8 = section.linkedContents(.strtab, sections) orelse "";
+            var row_it = try conf.iterateRows(d, .{ .elf = .@"version-definitions" }, versions.len, struct {
+                versions: []const Section.Contents.Verneed,
+                strtab: []const u8,
+                pub fn property(
+                    ctx: @This(),
+                    slice_index: u64,
+                    comptime prop: Table.@"version-definitions".Property(),
+                ) Table.@"version-definitions".Property().types.get(prop).ZigType() {
+                    const version = ctx.versions[slice_index];
+                    return switch (prop) {
+                        .ver_ndx => @backingInt(version.ver_ndx),
+                        .name => std.mem.sliceTo(ctx.strtab[@min(version.name, ctx.strtab.len)..], 0),
+                        .file => std.mem.sliceTo(ctx.strtab[@min(version.file, ctx.strtab.len)..], 0),
+                    };
+                }
+            }, &.{
+                .versions = versions,
+                .strtab = strtab,
+            });
+            defer row_it.deinit(d);
+            if (row_it.empty()) continue;
             try w.print("{d} version requirements in section {q}\n", .{
                 d.fmtIntField(versions.len, .size),
                 section.name,
@@ -1626,22 +1978,13 @@ fn dumpVersionDefinitions(
                 .name = "name",
                 .file = "file",
             });
-            for (versions) |version| {
-                const file_name: []const u8 = name: {
-                    const strtab = section.linkedContents(.strtab, sections) orelse break :name "";
-                    if (version.file >= strtab.len) break :name "";
-                    break :name std.mem.sliceTo(strtab[version.file..], 0);
-                };
-                const ver_name: []const u8 = name: {
-                    const strtab = section.linkedContents(.strtab, sections) orelse break :name "";
-                    if (version.name >= strtab.len) break :name "";
-                    break :name std.mem.sliceTo(strtab[version.name..], 0);
-                };
+            while (row_it.next()) |slice_index| {
+                const version = versions[slice_index];
                 try w.print("  {d: >7}  {s: <5}  {s: <24}  {s}\n", .{
                     fmtVerNdx(d, version.ver_ndx),
                     if (version.weak) "WEAK" else "",
-                    ver_name,
-                    file_name,
+                    std.mem.sliceTo(strtab[@min(version.name, strtab.len)..], 0),
+                    std.mem.sliceTo(strtab[@min(version.file, strtab.len)..], 0),
                 });
             }
             try w.writeByte('\n');
@@ -1651,6 +1994,7 @@ fn dumpVersionDefinitions(
 
 fn dumpRelocations(
     d: *const Objdump,
+    conf: Objdump.Table.Config,
     machine: std.elf.EM,
     sections: []const Section,
 ) Objdump.Error!void {
@@ -1660,12 +2004,29 @@ fn dumpRelocations(
         const relocs = switch (relocs_section.contents) {
             .relocs => |relocs| relocs,
             .relr => |reloc_addrs| {
-                for (d.opts.section_filters) |filter| {
-                    if (std.mem.find(u8, relocs_section.name, filter) != null) break;
-                } else if (d.opts.section_filters.len > 0) {
-                    continue;
-                }
-
+                var row_it = try conf.iterateRows(d, .{ .elf = .relocs }, reloc_addrs.len, struct {
+                    reloc_section_name: []const u8,
+                    reloc_addrs: []const u64,
+                    pub fn property(
+                        ctx: @This(),
+                        index: u64,
+                        comptime prop: Table.relocs.Property(),
+                    ) Table.relocs.Property().types.get(prop).ZigType() {
+                        return switch (prop) {
+                            .reloc_section_name => ctx.reloc_section_name,
+                            .index => index,
+                            .offset => ctx.reloc_addrs[index],
+                            .target_symbol_index => 0,
+                            .target_symbol_name => "",
+                            .addend => 0,
+                        };
+                    }
+                }, &.{
+                    .reloc_section_name = relocs_section.name,
+                    .reloc_addrs = reloc_addrs,
+                });
+                defer row_it.deinit(d);
+                if (row_it.empty()) continue;
                 try w.print("{d} relative relocations in section {q}\n", .{
                     d.fmtIntField(reloc_addrs.len, .size),
                     relocs_section.name,
@@ -1674,10 +2035,10 @@ fn dumpRelocations(
                     .index = "index",
                     .offset = "offset",
                 });
-                for (reloc_addrs, 0..) |reloc_addr, reloc_index| {
+                while (row_it.next()) |reloc_index| {
                     try w.print("  {d: >5}  {x:0>16}\n", .{
                         reloc_index,
-                        d.fmtIntField(reloc_addr, .address),
+                        d.fmtIntField(reloc_addrs[reloc_index], .address),
                     });
                 }
                 try w.writeByte('\n');
@@ -1686,37 +2047,65 @@ fn dumpRelocations(
             else => continue,
         };
 
-        for (d.opts.section_filters) |filter| {
-            if (std.mem.find(u8, relocs_section.name, filter) != null) break;
-        } else if (d.opts.section_filters.len > 0) {
-            continue;
-        }
+        const symtab: []const std.elf.Elf64.Sym, const strtab: []const u8 = symtab: {
+            const symtab = relocs_section.linkedContents(.symtab, sections) orelse {
+                break :symtab .{ &.{}, &.{} };
+            };
+            break :symtab .{
+                symtab,
+                sections[relocs_section.link].linkedContents(.strtab, sections) orelse &.{},
+            };
+        };
+
+        var row_it = try conf.iterateRows(d, .{ .elf = .relocs }, relocs.len, struct {
+            reloc_section_name: []const u8,
+            sections: []const Section,
+            relocs: []const std.elf.Elf64.Rela,
+            symtab: []const std.elf.Elf64.Sym,
+            strtab: []const u8,
+            pub fn property(
+                ctx: @This(),
+                index: u64,
+                comptime prop: Table.relocs.Property(),
+            ) Table.relocs.Property().types.get(prop).ZigType() {
+                const reloc = ctx.relocs[index];
+                return switch (prop) {
+                    .reloc_section_name => ctx.reloc_section_name,
+                    .index => index,
+                    .offset => reloc.offset,
+                    .target_symbol_index => reloc.info.sym,
+                    .target_symbol_name => {
+                        if (reloc.info.sym == 0) return "";
+                        if (reloc.info.sym >= ctx.symtab.len) return "";
+                        const sym = &ctx.symtab[reloc.info.sym];
+                        if (sym.info.type == .SECTION and
+                            sym.shndx != std.elf.SHN_UNDEF and
+                            sym.shndx < ctx.sections.len)
+                        {
+                            return ctx.sections[sym.shndx].name;
+                        }
+                        return std.mem.sliceTo(ctx.strtab[@min(sym.name, ctx.strtab.len)..], 0);
+                    },
+                    .addend => @bitCast(reloc.addend),
+                };
+            }
+        }, &.{
+            .reloc_section_name = relocs_section.name,
+            .sections = sections,
+            .relocs = relocs,
+            .symtab = symtab,
+            .strtab = strtab,
+        });
+        defer row_it.deinit(d);
+        if (row_it.empty()) continue;
 
         var type_col_width: usize = 4;
-        for (relocs) |reloc| {
-            if (d.opts.symbol_filters.len > 0) {
-                if (reloc.info.sym == 0) continue;
-                const symtab = relocs_section.linkedContents(.symtab, sections) orelse continue;
-                if (reloc.info.sym >= symtab.len) continue;
-                const sym = &symtab[reloc.info.sym];
-                const sym_name: []const u8 = if (sym.info.type == .SECTION and
-                    sym.shndx != std.elf.SHN_UNDEF and
-                    sym.shndx < sections.len)
-                name: {
-                    break :name sections[sym.shndx].name;
-                } else name: {
-                    const strtab = sections[relocs_section.link].linkedContents(.strtab, sections) orelse continue;
-                    if (sym.name >= strtab.len) continue;
-                    break :name std.mem.sliceTo(strtab[sym.name..], 0);
-                };
-                if (sym_name.len == 0) continue;
-                for (d.opts.symbol_filters) |filter| {
-                    if (std.mem.find(u8, sym_name, filter) != null) break;
-                } else continue;
-            }
-            const reloc_type_str = relocTypeString(machine, reloc.info.type);
+        while (row_it.next()) |reloc_index| {
+            const reloc_type_str = relocTypeString(machine, relocs[reloc_index].info.type);
             type_col_width = @max(type_col_width, reloc_type_str.len);
         }
+
+        row_it.reset();
 
         if (relocs_section.info != 0 and relocs_section.info < sections.len) {
             try w.print("{d} relocations against section {q} in section {q}\n", .{
@@ -1739,33 +2128,8 @@ fn dumpRelocations(
             .target = "target",
         });
 
-        for (relocs, 0..) |reloc, reloc_index| {
-            const target_sym_name: []const u8 = target_name: {
-                if (reloc.info.sym == 0) break :target_name "";
-                const symtab = relocs_section.linkedContents(.symtab, sections) orelse {
-                    break :target_name "<invalid>";
-                };
-                if (reloc.info.sym >= symtab.len) break :target_name "<invalid>";
-                const sym = &symtab[reloc.info.sym];
-                if (sym.info.type == .SECTION and
-                    sym.shndx != std.elf.SHN_UNDEF and
-                    sym.shndx < sections.len)
-                {
-                    break :target_name sections[sym.shndx].name;
-                }
-                const strtab = sections[relocs_section.link].linkedContents(.strtab, sections) orelse {
-                    break :target_name "<invalid>";
-                };
-                if (sym.name >= strtab.len) break :target_name "<invalid>";
-                const name = std.mem.sliceTo(strtab[sym.name..], 0);
-                if (name.len == 0) break :target_name "<unnamed>";
-                break :target_name name;
-            };
-            for (d.opts.symbol_filters) |filter| {
-                if (std.mem.find(u8, target_sym_name, filter) != null) break;
-            } else if (d.opts.symbol_filters.len > 0) {
-                continue;
-            }
+        while (row_it.next()) |reloc_index| {
+            const reloc = relocs[reloc_index];
             try w.print("  {[index]d: >5}  {[offset]x:0>16}  {[type]s: <[type_col_width]}  {[sym]d: >6}  ", .{
                 .index = d.fmtIntField(reloc_index, .index),
                 .offset = d.fmtIntField(reloc.offset, .offset),
@@ -1777,7 +2141,20 @@ fn dumpRelocations(
                 if (reloc.addend < 0) try w.writeByte('-');
                 try w.print("{x}", .{d.fmtIntField(@abs(reloc.addend), null)});
             } else {
-                try w.writeAll(target_sym_name);
+                try w.writeAll(target_sym_name: {
+                    if (reloc.info.sym >= symtab.len) break :target_sym_name "";
+                    const sym = &symtab[reloc.info.sym];
+                    if (sym.info.type == .SECTION and
+                        sym.shndx != std.elf.SHN_UNDEF and
+                        sym.shndx < sections.len)
+                    {
+                        break :target_sym_name sections[sym.shndx].name;
+                    }
+                    break :target_sym_name std.mem.sliceTo(
+                        strtab[@min(sym.name, strtab.len)..],
+                        0,
+                    );
+                });
                 if (reloc.addend != 0) {
                     const sign: u8 = if (reloc.addend < 0) '-' else '+';
                     try w.print(" {c} {x}", .{ sign, d.fmtIntField(@abs(reloc.addend), null) });
@@ -1789,7 +2166,11 @@ fn dumpRelocations(
     }
 }
 
-fn dumpDynamic(d: *const Objdump, sections: []const Section) Objdump.Error!void {
+fn dumpDynamic(
+    d: *const Objdump,
+    conf: Objdump.Table.Config,
+    sections: []const Section,
+) Objdump.Error!void {
     const w = d.w;
 
     for (sections) |dynamic_section| {
@@ -1798,11 +2179,23 @@ fn dumpDynamic(d: *const Objdump, sections: []const Section) Objdump.Error!void 
             else => continue,
         };
 
-        for (d.opts.section_filters) |filter| {
-            if (std.mem.find(u8, dynamic_section.name, filter) != null) break;
-        } else if (d.opts.section_filters.len > 0) {
-            continue;
-        }
+        var row_it = try conf.iterateRows(d, .{ .elf = .dynamic }, dynamic.len, struct {
+            dynamic: []const std.elf.Elf64.Dyn,
+            pub fn property(
+                ctx: @This(),
+                index: u64,
+                comptime prop: Table.dynamic.Property(),
+            ) Table.dynamic.Property().types.get(prop).ZigType() {
+                const dyn = ctx.dynamic[index];
+                return switch (prop) {
+                    .index => index,
+                    .type => std.enums.tagName(std.elf.DT, dyn.tag.dt) orelse "",
+                };
+            }
+        }, &.{ .dynamic = dynamic });
+        defer row_it.deinit(d);
+
+        if (row_it.empty()) continue;
 
         try w.print("{d} dynamic entries in section {q}\n", .{
             d.fmtIntField(dynamic.len, .size),
@@ -1813,7 +2206,8 @@ fn dumpDynamic(d: *const Objdump, sections: []const Section) Objdump.Error!void 
             .type = "type",
             .value = "value",
         });
-        for (dynamic, 0..) |entry, entry_index| {
+        while (row_it.next()) |entry_index| {
+            const entry = dynamic[entry_index];
             const field_kind: ?Objdump.FieldKind = switch (entry.tag.dt.valueType()) {
                 .none => null,
                 .flags => null,

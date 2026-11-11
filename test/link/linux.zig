@@ -29,8 +29,10 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(obj.getEmittedBin(), &.{
             "-s",
             "--symbols",
+            "--sort=name",
+            "--filter=name ~ \"foo_\"",
             "--relocs",
-            "--only-symbol=foo_",
+            "--filter=target_symbol_name ~ \"foo_\"",
         }, .{ .sub_name = "obj" });
 
         const lib = case.addLibrary(.dynamic, .{
@@ -40,8 +42,10 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(lib.getEmittedBin(), &.{
             "-s",
             "--symbols",
+            "--sort=name",
+            "--filter=name ~ \"foo_\"",
             "--relocs",
-            "--only-symbol=foo_",
+            "--filter=target_symbol_name ~ \"foo_\"",
         }, .{ .sub_name = "lib" });
     }
 
@@ -82,10 +86,10 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(exe.getEmittedBin(), &.{
             "-s",
             "--symbols",
+            "--sort=name",
+            "--filter=is_dynsym and name ~ \"my_favourite_number\"",
             "--relocs",
-            "--only-symbol=my_favourite_number",
-            "--only-section=.dynsym",
-            "--only-section=.rela.dyn",
+            "--filter=reloc_section_name == \".rela.dyn\" and target_symbol_name ~ \"my_favourite_number\"",
         }, .{});
 
         const run = case.addRunArtifact(exe);
@@ -131,8 +135,8 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(exe.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=get_a_number",
-            "--only-section=.dynsym",
+            "--sort=name",
+            "--filter=is_dynsym and name ~ \"get_a_number\"",
         }, .{});
 
         const run = case.addRunArtifact(exe);
@@ -162,8 +166,9 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(bar.getEmittedBin(), &.{
             "-s",
             "--dynamic",
+            "--filter=type == \"TEXTREL\"",
             "--relocs",
-            "--only-symbol=my_favourite_number",
+            "--filter=target_symbol_name ~ \"my_favourite_number\"",
         }, .{ .abi = true });
     }
 
@@ -179,7 +184,7 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(lib.getEmittedBin(), &.{
             "-s",
             "--relocs",
-            "--only-symbol=interesting_symbol",
+            "--filter=target_symbol_name ~ \"interesting_symbol\"",
         }, .{ .sub_name = "lib" });
 
         if (!ctx.link_libc) break :case;
@@ -197,7 +202,7 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(exe.getEmittedBin(), &.{
             "-s",
             "--relocs",
-            "--only-symbol=interesting_symbol",
+            "--filter=target_symbol_name ~ \"interesting_symbol\"",
         }, .{ .sub_name = "exe" });
     }
 
@@ -216,7 +221,8 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(libfoo.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=do_stuff",
+            "--sort=name",
+            "--filter=name ~ \"do_stuff\"",
         }, .{ .sub_name = "lib" });
 
         const call = case.addExecutable(.{
@@ -264,9 +270,10 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(libfoo.getEmittedBin(), &.{
             "-s",
             "--symbols",
+            "--sort=name",
+            "--filter=is_dynsym and name ~ \"do_stuff\"",
             "--symbol-versions",
-            "--only-section=.dynsym",
-            "--only-symbol=do_stuff",
+            "--filter=sym_name ~ \"do_stuff\"",
         }, .{ .sub_name = "lib" });
 
         const call_default = case.addExecutable(.{
@@ -286,9 +293,10 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(call_default.getEmittedBin(), &.{
             "-s",
             "--symbols",
+            "--sort=name",
+            "--filter=is_dynsym and name ~ \"do_stuff\"",
             "--symbol-versions",
-            "--only-section=.dynsym",
-            "--only-symbol=do_stuff",
+            "--filter=sym_name ~ \"do_stuff\"",
         }, .{ .sub_name = "call_default" });
         const run_call_default = case.addRunArtifact(call_default);
         run_call_default.expectStdErrEqual("default: 3\n");
@@ -314,9 +322,10 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(call_explicit.getEmittedBin(), &.{
             "-s",
             "--symbols",
+            "--sort=name",
+            "--filter=is_dynsym and name ~ \"do_stuff\"",
             "--symbol-versions",
-            "--only-section=.dynsym",
-            "--only-symbol=do_stuff",
+            "--filter=sym_name ~ \"do_stuff\"",
         }, .{ .sub_name = "call_explicit" });
         const run_call_explicit = case.addRunArtifact(call_explicit);
         if (ctx.target.result.abi.isMusl()) {
@@ -360,9 +369,10 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(call_both.getEmittedBin(), &.{
             "-s",
             "--symbols",
+            "--sort=name",
+            "--filter=is_dynsym and name ~ \"do_stuff\"",
             "--symbol-versions",
-            "--only-section=.dynsym",
-            "--only-symbol=do_stuff",
+            "--filter=sym_name ~ \"do_stuff\"",
         }, .{ .sub_name = "call_both" });
         const run_call_both = case.addRunArtifact(call_both);
         if (ctx.target.result.abi.isMusl()) {
@@ -419,7 +429,8 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(combined_obj.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=something",
+            "--sort=name",
+            "--filter=name ~ \"something\"",
         }, .{ .sub_name = "obj" });
 
         const combined_dynlib = case.addLibrary(.dynamic, .{ .name = "combined" });
@@ -429,7 +440,8 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(combined_dynlib.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=something",
+            "--sort=name",
+            "--filter=name ~ \"something\"",
         }, .{ .sub_name = "dynlib" });
     }
 
@@ -465,7 +477,8 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(combined_obj.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=something",
+            "--sort=name",
+            "--filter=name ~ \"something\"",
         }, .{ .sub_name = "obj" });
 
         const combined_dynlib = case.addLibrary(.dynamic, .{ .name = "combined" });
@@ -475,7 +488,8 @@ pub fn addCases(ctx: *LinkContext) void {
         case.verifyObjdump(combined_dynlib.getEmittedBin(), &.{
             "-s",
             "--symbols",
-            "--only-symbol=something",
+            "--sort=name",
+            "--filter=name ~ \"something\"",
         }, .{ .sub_name = "dynlib" });
     }
 

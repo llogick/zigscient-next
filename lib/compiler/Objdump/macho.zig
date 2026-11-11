@@ -1,3 +1,5 @@
+pub const Table = enum {};
+
 pub fn identify(r: *Io.Reader) error{ReadFailed}!bool {
     const magic = r.peekInt(u32, .little) catch |err| switch (err) {
         error.EndOfStream => return false,

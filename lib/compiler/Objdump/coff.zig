@@ -4,6 +4,74 @@ const DIRECTORY_ENTRY = std.coff.IMAGE.DIRECTORY_ENTRY;
 
 const Objdump = @import("../Objdump.zig");
 
+pub const Table = enum {
+    sections,
+    symbols,
+    relocs,
+    imports,
+    exports,
+    strings,
+    tls,
+
+    pub fn cliDescription(t: Table) []const u8 {
+        return switch (t) {
+            .sections => "Dump section headers",
+            .symbols => "Dump symbol tables",
+            .relocs => "Dump relocations",
+            .imports => "Dump imported symbols",
+            .exports => "Dump exported symbols (for implibs, dump symbol list and import headers)",
+            .strings => "Dump string tables",
+            .tls => "Dump TLS information",
+        };
+    }
+
+    pub fn Property(comptime t: Table) type {
+        return switch (t) {
+            .sections => enum(u32) {
+                index,
+                name,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .index = .int,
+                    .name = .string,
+                });
+            },
+            .symbols => enum(u32) {
+                index,
+                name,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .index = .int,
+                    .name = .string,
+                });
+            },
+            .relocs => enum(u32) {
+                index,
+                symbol_name,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .index = .int,
+                    .symbol_name = .string,
+                });
+            },
+            .imports => enum(noreturn) {
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{});
+            },
+            .exports => enum(u32) {
+                index,
+                name,
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
+                    .index = .int,
+                    .name = .string,
+                });
+            },
+            .strings => enum(noreturn) {
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{});
+            },
+            .tls => enum(noreturn) {
+                pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{});
+            },
+        };
+    }
+};
+
 pub fn identifyImage(r: *Io.Reader) error{ReadFailed}!bool {
     const dos_magic = r.peek(2) catch |err| switch (err) {
         error.EndOfStream => return false,
@@ -94,12 +162,6 @@ pub fn dumpImport(d: *Objdump) Objdump.Error!void {
         else => |e| return e,
     };
 
-    if (!d.opts.exports or
-        !filterMatches(d.opts.symbol_filters, sym_name))
-    {
-        return;
-    }
-
     try w.print("{s}: COFF import\n\n", .{d.input_name});
 
     try dumpHeader(d, std.coff.ImportHeader, &imp_header, struct {
@@ -154,9 +216,9 @@ fn dump(d: *Objdump, is_image: bool) !void {
 
     var known_dirs: [DIRECTORY_ENTRY.len]std.coff.ImageDataDirectory = undefined;
     const needs_data_dirs =
-        d.opts.exports or
-        d.opts.imports or
-        d.opts.tls;
+        d.opts.tables.coff.get(.exports) != null or
+        d.opts.tables.coff.get(.imports) != null or
+        d.opts.tables.coff.get(.tls) != null;
 
     const ImageInfo = struct {
         data_dirs: []const std.coff.ImageDataDirectory,
@@ -260,7 +322,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
     } else null;
 
     // Section names in images don't use the string table, as they must fit inline in the header
-    const load_string_table = (d.opts.strings or !is_image) and header.pointer_to_symbol_table > 0;
+    const load_string_table = (d.opts.tables.coff.get(.strings) != null or !is_image) and header.pointer_to_symbol_table > 0;
     const string_table = if (load_string_table) string_table: {
         const pos = d.logicalPos();
         d.seekTo(file_location + header.pointer_to_symbol_table + header.number_of_symbols * std.coff.Symbol.sizeOf()) catch |err|
@@ -277,7 +339,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
     } else &.{};
     defer gpa.free(string_table);
 
-    if (d.opts.strings) {
+    if (d.opts.tables.coff.get(.strings) != null) {
         if (string_table.len > 0) {
             try w.print(
                 \\String Table (0x{x} bytes):
@@ -299,19 +361,12 @@ fn dump(d: *Objdump, is_image: bool) !void {
     var sections_with_data: u16 = 0;
 
     const load_sections =
-        d.opts.sections or
-        d.opts.symbols or
-        d.opts.relocs or
+        d.opts.tables.coff.get(.sections) != null or
+        d.opts.tables.coff.get(.symbols) != null or
+        d.opts.tables.coff.get(.relocs) != null or
         needs_data_dirs;
 
     if (load_sections) {
-        if (d.opts.sections)
-            try w.print(
-                \\Sections in '{s}':
-                \\Num Name          RVA Virt Size Data Size   & Data & Relocs  & Lines # Relocs  # Lines    Flags
-                \\
-            , .{d.input_name});
-
         try sections.resize(gpa, header.number_of_sections);
         for (sections.items, 0..) |*section, section_i| {
             section.header = r.takeStruct(std.coff.SectionHeader, .little) catch |err|
@@ -330,13 +385,35 @@ fn dump(d: *Objdump, is_image: bool) !void {
             };
 
             sections_with_data += @intFromBool(section.header.size_of_raw_data > 0);
-            if (d.opts.sections) {
-                if (!filterMatches(d.opts.section_filters, section.name)) continue;
+        }
+
+        if (d.opts.tables.coff.get(.sections)) |conf| {
+            var row_it = try conf.iterateRows(d, .{ .coff = .sections }, sections.items.len, struct {
+                sections: []const Section,
+                pub fn property(
+                    ctx: @This(),
+                    index: u64,
+                    comptime prop: Table.sections.Property(),
+                ) Table.sections.Property().types.get(prop).ZigType() {
+                    return switch (prop) {
+                        .index => index,
+                        .name => ctx.sections[index].name,
+                    };
+                }
+            }, &.{ .sections = sections.items });
+            defer row_it.deinit(d);
+            try w.print(
+                \\Sections in '{s}':
+                \\Num Name          RVA Virt Size Data Size   & Data & Relocs  & Lines # Relocs  # Lines    Flags
+                \\
+            , .{d.input_name});
+            while (row_it.next()) |section_index| {
+                const section = &sections.items[section_index];
                 const raw_name = std.mem.sliceTo(&section.header.name, 0);
                 try w.print(
                     "{x: >3} {s: <8} {f} {f} {f} {f} {f} {f} {f} {f} {x:0>8} |",
                     .{
-                        section_i + 1,
+                        section_index + 1,
                         raw_name,
                         fmtIntField(d, section.header.virtual_address, .{ .kind = .address }),
                         fmtIntField(d, section.header.virtual_size, .{ .kind = .size, .width = .{ .explicit = 9 } }),
@@ -349,45 +426,42 @@ fn dump(d: *Objdump, is_image: bool) !void {
                         @as(u32, @bitCast(section.header.flags)),
                     },
                 );
-
                 try dumpFlags(w, "{s}", std.coff.SectionHeader.Flags, &section.header.flags, 1);
                 if (section.name.len > 8)
                     try w.print("\n  | {s}", .{section.name});
 
                 try w.writeByte('\n');
             }
+            try w.writeByte('\n');
         }
-
-        if (d.opts.sections) try w.writeByte('\n');
     }
 
-    var symbols: std.ArrayList(struct {
+    const Symbol = struct {
+        is_aux: bool,
         name: []const u8,
         section_number: std.coff.SectionNumber,
-    }) = .empty;
+        value: u32,
+        type: std.coff.SymType,
+        storage_class: std.coff.StorageClass,
+        aux_bytes: []const u8,
+    };
+    var symbols: std.ArrayList(Symbol) = .empty;
     defer symbols.deinit(gpa);
 
-    var name_arena: std.heap.ArenaAllocator = .init(gpa);
-    defer name_arena.deinit();
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
 
-    if (d.opts.relocs)
+    if (d.opts.tables.coff.get(.symbols) != null or d.opts.tables.coff.get(.relocs) != null) {
         try symbols.ensureUnusedCapacity(gpa, header.number_of_symbols);
 
-    if (d.opts.symbols or d.opts.relocs) {
         if (header.pointer_to_symbol_table > 0) {
             d.seekTo(file_location + header.pointer_to_symbol_table) catch |err|
                 return d.fail("unable to seek to symbol table: {t}", .{err});
 
-            if (d.opts.symbols)
-                try w.print(
-                    \\Symbols in '{s}':
-                    \\ Ord    Value  Sect Type           Storage   Name
-                    \\
-                , .{d.input_name});
-
             const symbol_size = std.coff.Symbol.sizeOf();
-            var symbol_i: u32 = 0;
-            while (symbol_i < header.number_of_symbols) {
+            while (symbols.items.len < header.number_of_symbols) {
+                const symbol_i = symbols.items.len;
+
                 var symbol: std.coff.Symbol = undefined;
                 const symbol_bytes = r.take(symbol_size) catch |err|
                     return d.fail("unable to read symbol {x}: {t}", .{ symbol_i, err });
@@ -396,11 +470,10 @@ fn dump(d: *Objdump, is_image: bool) !void {
                 if (std.lang.Endian.native != .little)
                     std.mem.byteSwap(std.coff.Symbol, &symbol);
 
-                const aux_symbols = if (symbol.number_of_aux_symbols > 0)
-                    try r.take(symbol_size * symbol.number_of_aux_symbols)
+                const aux_bytes = if (symbol.number_of_aux_symbols > 0)
+                    try r.readAllocAll(arena.allocator(), symbol_size * symbol.number_of_aux_symbols)
                 else
                     &.{};
-                defer symbol_i += symbol.number_of_aux_symbols + 1;
 
                 const name = if (std.mem.eql(u8, symbol.name[0..4], "\x00\x00\x00\x00")) name: {
                     const index = std.mem.readInt(u32, symbol.name[4..], .little);
@@ -411,48 +484,85 @@ fn dump(d: *Objdump, is_image: bool) !void {
                             string_table.len,
                         });
                     break :name std.mem.sliceTo(string_table[index..], 0);
-                } else try name_arena.allocator().dupe(u8, std.mem.sliceTo(&symbol.name, 0));
+                } else try arena.allocator().dupe(u8, std.mem.sliceTo(&symbol.name, 0));
 
-                if (d.opts.relocs)
-                    symbols.appendNTimesAssumeCapacity(.{
-                        .name = name,
-                        .section_number = symbol.section_number,
-                    }, 1 + symbol.number_of_aux_symbols);
-
-                if (!d.opts.symbols or !filterMatches(d.opts.symbol_filters, name))
-                    continue;
-
-                try w.print("{f} {x:0>8} ", .{
-                    fmtIntField(d, @as(u16, @intCast(symbol_i)), .{ .kind = .index }),
-                    symbol.value,
+                symbols.appendAssumeCapacity(.{
+                    .is_aux = false,
+                    .name = name,
+                    .section_number = symbol.section_number,
+                    .value = symbol.value,
+                    .type = symbol.type,
+                    .storage_class = symbol.storage_class,
+                    .aux_bytes = aux_bytes,
                 });
-                try switch (symbol.section_number) {
-                    .UNDEFINED => w.writeAll("UNDEF"),
-                    .ABSOLUTE => w.writeAll("  ABS"),
-                    .DEBUG => w.writeAll("DEBUG"),
-                    else => |v| {
-                        const backing = @backingInt(v);
-                        const fmt = "{x: >5}";
-                        if (backing >= 0)
-                            try w.print(fmt, .{@as(u15, @intCast(backing))})
-                        else
-                            try w.print(fmt, .{backing});
-                    },
-                };
+                symbols.appendNTimesAssumeCapacity(.{
+                    .is_aux = true,
+                    .name = name,
+                    .section_number = symbol.section_number,
+                    .value = symbol.value,
+                    .type = symbol.type,
+                    .storage_class = symbol.storage_class,
+                    .aux_bytes = aux_bytes,
+                }, symbol.number_of_aux_symbols);
+            }
 
-                try w.print("{t: >5}", .{symbol.type.base_type});
-                if (switch (symbol.type.complex_type) {
-                    .NULL => "  ",
-                    .POINTER => "* ",
-                    .FUNCTION => "()",
-                    .ARRAY => "[]",
-                    else => null,
-                }) |suffix| try w.writeAll(suffix) else try w.print("{x}", .{symbol.type.complex_type});
+            if (d.opts.tables.coff.get(.symbols)) |conf| {
+                var row_it = try conf.iterateRows(d, .{ .coff = .symbols }, symbols.items.len, struct {
+                    symbols: []const Symbol,
+                    pub fn property(
+                        ctx: @This(),
+                        index: u64,
+                        comptime prop: Table.symbols.Property(),
+                    ) Table.symbols.Property().types.get(prop).ZigType() {
+                        return switch (prop) {
+                            .index => index,
+                            .name => ctx.symbols[index].name,
+                        };
+                    }
+                }, &.{ .symbols = symbols.items });
+                defer row_it.deinit(d);
 
-                try w.print("{t: >16} | {s}\n", .{ symbol.storage_class, name });
+                try w.print(
+                    \\Symbols in '{s}':
+                    \\ Ord    Value  Sect Type           Storage   Name
+                    \\
+                , .{d.input_name});
 
-                for (0..symbol.number_of_aux_symbols) |aux_i| {
-                    _ = aux_i;
+                while (row_it.next()) |symbol_i| {
+                    const symbol = &symbols.items[symbol_i];
+
+                    if (symbol.is_aux) continue;
+
+                    try w.print("{f} {x:0>8} ", .{
+                        fmtIntField(d, @as(u16, @intCast(symbol_i)), .{ .kind = .index }),
+                        symbol.value,
+                    });
+                    try switch (symbol.section_number) {
+                        .UNDEFINED => w.writeAll("UNDEF"),
+                        .ABSOLUTE => w.writeAll("  ABS"),
+                        .DEBUG => w.writeAll("DEBUG"),
+                        else => |v| {
+                            const backing = @backingInt(v);
+                            const fmt = "{x: >5}";
+                            if (backing >= 0)
+                                try w.print(fmt, .{@as(u15, @intCast(backing))})
+                            else
+                                try w.print(fmt, .{backing});
+                        },
+                    };
+
+                    try w.print("{t: >5}", .{symbol.type.base_type});
+                    if (switch (symbol.type.complex_type) {
+                        .NULL => "  ",
+                        .POINTER => "* ",
+                        .FUNCTION => "()",
+                        .ARRAY => "[]",
+                        else => null,
+                    }) |suffix| try w.writeAll(suffix) else try w.print("{x}", .{symbol.type.complex_type});
+
+                    try w.print("{t: >16} | {s}\n", .{ symbol.storage_class, symbol.name });
+
+                    if (symbol.aux_bytes.len == 0) continue;
                     try w.writeAll("   |");
 
                     if (symbol.storage_class == .EXTERNAL and
@@ -467,7 +577,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
                         .complex_type = .FUNCTION,
                         .base_type = .NULL,
                     } and
-                        (std.mem.eql(u8, name, ".bf") or std.mem.eql(u8, name, ".ef")))
+                        (std.mem.eql(u8, symbol.name, ".bf") or std.mem.eql(u8, symbol.name, ".ef")))
                     {
                         try w.writeAll("TODO bf / ef aux symbol");
                     } else if (symbol.storage_class == .WEAK_EXTERNAL and symbol.section_number == .UNDEFINED) {
@@ -478,7 +588,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
                             );
 
                         var weak_external: std.coff.WeakExternalDefinition = undefined;
-                        @memcpy(std.mem.asBytes(&weak_external)[0..symbol_size], aux_symbols[0..symbol_size]);
+                        @memcpy(std.mem.asBytes(&weak_external)[0..symbol_size], symbol.aux_bytes[0..symbol_size]);
                         if (std.lang.Endian.native != .little)
                             std.mem.byteSwap(std.coff.WeakExternalDefinition, &weak_external);
 
@@ -490,7 +600,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
 
                         if (d.opts.redact.contains(.index))
                             try w.print("  Weak External [falls back to relative ordinal {x:0>8} via {t}]", .{
-                                @as(i64, weak_external.tag_index) - symbol_i,
+                                @as(i64, weak_external.tag_index) - @as(i64, @intCast(symbol_i)),
                                 weak_external.flag,
                             })
                         else
@@ -499,12 +609,12 @@ fn dump(d: *Objdump, is_image: bool) !void {
                                 weak_external.flag,
                             });
                     } else if (symbol.storage_class == .FILE) {
-                        if (!std.mem.eql(u8, name, ".file")) {
-                            try w.print(" !! unexpected symbol name '{s}' for file symbol 0x{x}", .{ name, symbol_i });
+                        if (!std.mem.eql(u8, symbol.name, ".file")) {
+                            try w.print(" !! unexpected symbol name '{s}' for file symbol 0x{x}", .{ symbol.name, symbol_i });
                             continue;
                         }
 
-                        const filename = std.mem.sliceTo(aux_symbols, 0);
+                        const filename = std.mem.sliceTo(symbol.aux_bytes, 0);
                         try w.print("     File       '{s}'", .{filename});
                         break;
                     } else if (symbol.storage_class == .STATIC and
@@ -527,7 +637,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
                         }
 
                         var section_def: std.coff.SectionDefinition = undefined;
-                        @memcpy(std.mem.asBytes(&section_def)[0..symbol_size], aux_symbols[0..symbol_size]);
+                        @memcpy(std.mem.asBytes(&section_def)[0..symbol_size], symbol.aux_bytes[0..symbol_size]);
                         if (std.lang.Endian.native != .little)
                             std.mem.byteSwap(std.coff.SectionDefinition, &section_def);
 
@@ -568,19 +678,51 @@ fn dump(d: *Objdump, is_image: bool) !void {
 
                     try w.writeByte('\n');
                 }
-            }
 
-            if (d.opts.symbols) try w.writeByte('\n');
-        } else if (d.opts.symbols) {
+                try w.writeByte('\n');
+            }
+        } else if (d.opts.tables.coff.get(.symbols) != null) {
             try w.writeAll("No symbol table found\n\n");
         }
     }
 
-    if (d.opts.relocs) {
+    if (d.opts.tables.coff.get(.relocs)) |relocs_conf| {
         const relocation_size = std.coff.Relocation.sizeOf();
 
         for (sections.items, 0..) |section, section_i| {
             if (section.header.pointer_to_relocations == 0) continue;
+
+            const relocs = try gpa.alloc(std.coff.Relocation, section.header.number_of_relocations);
+            defer gpa.free(relocs);
+
+            d.seekTo(file_location + section.header.pointer_to_relocations) catch |err|
+                return d.fail("unable to seek to section {x} relocation table: {t}", .{ section_i + 1, err });
+
+            for (relocs) |*reloc| {
+                @memcpy(std.mem.asBytes(reloc)[0..relocation_size], try r.take(relocation_size));
+                if (std.lang.Endian.native != .little)
+                    std.mem.byteSwap(std.coff.Relocation, reloc);
+            }
+
+            var row_it = try relocs_conf.iterateRows(d, .{ .coff = .relocs }, relocs.len, struct {
+                symbols: []const Symbol,
+                relocs: []const std.coff.Relocation,
+                pub fn property(
+                    ctx: @This(),
+                    index: u64,
+                    comptime prop: Table.relocs.Property(),
+                ) Table.relocs.Property().types.get(prop).ZigType() {
+                    return switch (prop) {
+                        .index => index,
+                        .symbol_name => {
+                            const sym_index = ctx.relocs[index].symbol_table_index;
+                            if (sym_index >= ctx.symbols.len) return "";
+                            return ctx.symbols[sym_index].name;
+                        },
+                    };
+                }
+            }, &.{ .symbols = symbols.items, .relocs = relocs });
+            defer row_it.deinit(d);
 
             try w.print(
                 \\Relocs for section {x} '{s}' in {s}:
@@ -588,18 +730,9 @@ fn dump(d: *Objdump, is_image: bool) !void {
                 \\
             , .{ section_i + 1, section.name, d.input_name });
 
-            d.seekTo(file_location + section.header.pointer_to_relocations) catch |err|
-                return d.fail("unable to seek to section {x} relocation table: {t}", .{ section_i + 1, err });
-
-            for (0..section.header.number_of_relocations) |reloc_i| {
-                var reloc: std.coff.Relocation = undefined;
-                @memcpy(std.mem.asBytes(&reloc)[0..relocation_size], try r.take(relocation_size));
-                if (std.lang.Endian.native != .little)
-                    std.mem.byteSwap(std.coff.Relocation, &reloc);
-
+            while (row_it.next()) |reloc_i| {
+                const reloc = &relocs[reloc_i];
                 const sym = &symbols.items[reloc.symbol_table_index];
-                if (!filterMatches(d.opts.symbol_filters, sym.name))
-                    continue;
 
                 try w.print("{f} ", .{
                     fmtIntField(d, reloc.virtual_address, .{ .kind = .address, .zero_fill = true }),
@@ -664,7 +797,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
     } else &.{};
     defer gpa.free(rva_index);
 
-    if (d.opts.exports) exports: {
+    if (d.opts.tables.coff.get(.exports)) |exports_conf| exports: {
         if (try seekToDataDirectory(
             d,
             rva_index,
@@ -717,6 +850,36 @@ fn dump(d: *Objdump, is_image: bool) !void {
             defer gpa.free(dir_slice);
 
             const dll_name = std.mem.sliceTo(dir_slice[@intCast(name_loc - dir_loc)..], 0);
+
+            const name_pointers = dir_slice[@intCast(name_pointer_loc - dir_loc)..][0 .. export_dir.number_of_names * @sizeOf(u32)];
+            const ords = dir_slice[@intCast(ord_loc - dir_loc)..][0 .. export_dir.number_of_names * @sizeOf(u16)];
+            const addrs = dir_slice[@intCast(eat_loc - dir_loc)..][0 .. export_dir.number_of_entries * @sizeOf(u32)];
+            const name_rva_to_offset = dir.virtual_address + @sizeOf(std.coff.ExportDirectoryTable);
+
+            var row_it = try exports_conf.iterateRows(d, .{ .coff = .exports }, export_dir.number_of_names, struct {
+                dir_slice: []const u8,
+                name_pointers: []const u8,
+                name_rva_to_offset: u32,
+                pub fn property(
+                    ctx: @This(),
+                    index: u64,
+                    comptime prop: Table.exports.Property(),
+                ) Table.exports.Property().types.get(prop).ZigType() {
+                    return switch (prop) {
+                        .index => index,
+                        .name => {
+                            const name_rva = std.mem.readInt(u32, ctx.name_pointers[index * @sizeOf(u32) ..][0..@sizeOf(u32)], .little);
+                            return std.mem.sliceTo(ctx.dir_slice[name_rva - ctx.name_rva_to_offset ..], 0);
+                        },
+                    };
+                }
+            }, &.{
+                .dir_slice = dir_slice,
+                .name_pointers = name_pointers,
+                .name_rva_to_offset = name_rva_to_offset,
+            });
+            defer row_it.deinit(d);
+
             try w.print(
                 \\
                 \\Exports from {s}:
@@ -724,16 +887,9 @@ fn dump(d: *Objdump, is_image: bool) !void {
                 \\
             , .{dll_name});
 
-            const name_pointers = dir_slice[@intCast(name_pointer_loc - dir_loc)..][0 .. export_dir.number_of_names * @sizeOf(u32)];
-            const ords = dir_slice[@intCast(ord_loc - dir_loc)..][0 .. export_dir.number_of_names * @sizeOf(u16)];
-            const addrs = dir_slice[@intCast(eat_loc - dir_loc)..][0 .. export_dir.number_of_entries * @sizeOf(u32)];
-            const name_rva_to_offset = dir.virtual_address + @sizeOf(std.coff.ExportDirectoryTable);
-            for (0..export_dir.number_of_names) |name_i| {
+            while (row_it.next()) |name_i| {
                 const name_rva = std.mem.readInt(u32, name_pointers[name_i * @sizeOf(u32) ..][0..@sizeOf(u32)], .little);
                 const name = std.mem.sliceTo(dir_slice[name_rva - name_rva_to_offset ..], 0);
-                if (!filterMatches(d.opts.symbol_filters, name))
-                    continue;
-
                 const ord = std.mem.readInt(u16, ords[name_i * @sizeOf(u16) ..][0..@sizeOf(u16)], .little);
                 const addr = std.mem.readInt(u32, addrs[@as(u32, ord) * @sizeOf(u32) ..][0..@sizeOf(u32)], .little);
 
@@ -757,7 +913,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
         }
     }
 
-    if (d.opts.imports) imports: {
+    if (d.opts.tables.coff.get(.imports) != null) imports: {
         if (try seekToDataDirectory(
             d,
             rva_index,
@@ -892,7 +1048,7 @@ fn dump(d: *Objdump, is_image: bool) !void {
         }
     }
 
-    if (d.opts.tls) tls: {
+    if (d.opts.tables.coff.get(.tls) != null) tls: {
         if (try seekToDataDirectory(
             d,
             rva_index,
@@ -1194,10 +1350,4 @@ fn dumpRvaField(d: *const Objdump, name: []const u8, rva: u64, base: u64) !void 
         name,
         fmtIntField(d, base + rva, .{ .kind = .address }),
     });
-}
-
-fn filterMatches(filters: []const []const u8, val: []const u8) bool {
-    return for (filters) |filter| {
-        if (std.mem.containsAtLeast(u8, val, 1, filter)) break true;
-    } else filters.len == 0;
 }

@@ -7,10 +7,6 @@ dynamic-lib-code-lib.lib: ar archive (static library)
   ??????  0x????????????????  foo1
   ??????  0x????????????????  foo2
 
-dynamic-lib-code-lib.lib(dynamic-lib-code-lib.dll): COFF object
-
-dynamic-lib-code-lib.lib(dynamic-lib-code-lib.dll): COFF object
-
 dynamic-lib-code-lib.lib(dynamic-lib-code-lib.dll): COFF import
 
                0 version
@@ -36,6 +32,4 @@ xxxxxxxxxxxxxxxx hint
      symbol name | foo2
      import name | foo2
              dll | dynamic-lib-code-lib.dll
-
-dynamic-lib-code-lib.lib(dynamic-lib-code-lib.dll): COFF object
 
