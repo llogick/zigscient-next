@@ -285,7 +285,9 @@ fn setThreadPointer(addr: usize) void {
 
     switch (native_arch) {
         .x86 => {
-            const gdt_sel = asm volatile ("movw %%gs, %[sel]" : [sel] "=r" (-> u16));
+            const gdt_sel = asm volatile ("movw %%gs, %[sel]"
+                : [sel] "=r" (-> u16),
+            );
             var user_desc: linux.user_desc = .{
                 .entry_number = if (gdt_sel == 0) @bitCast(@as(i32, -1)) else gdt_sel >> 3,
                 .base_addr = addr,
@@ -302,7 +304,10 @@ fn setThreadPointer(addr: usize) void {
             assert(@call(.always_inline, linux.syscall1, .{ .set_thread_area, @intFromPtr(&user_desc) }) == 0);
 
             // Update the %gs selector
-            asm volatile ("movl %[gs_val], %%gs" :: [gs_val] "r" ((user_desc.entry_number << 3) | 3));
+            asm volatile ("movl %[gs_val], %%gs"
+                :
+                : [gs_val] "r" ((user_desc.entry_number << 3) | 3),
+            );
         },
         .x86_64 => {
             const rc = @call(.always_inline, linux.syscall2, .{ .arch_prctl, linux.ARCH.SET_FS, addr });

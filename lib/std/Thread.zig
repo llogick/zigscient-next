@@ -1533,7 +1533,9 @@ const LinuxThreadImpl = struct {
         if (target.cpu.arch == .x86) {
             defer tls_ptr = @intFromPtr(&user_desc);
             user_desc = .{
-                .entry_number = asm volatile ("movw %%gs, %[sel]" : [sel] "=r" (-> u16)) >> 3,
+                .entry_number = asm volatile ("movw %%gs, %[sel]"
+                    : [sel] "=r" (-> u16),
+                ) >> 3,
                 .base_addr = tls_ptr,
                 .limit = 0xfffff,
                 .flags = .{
