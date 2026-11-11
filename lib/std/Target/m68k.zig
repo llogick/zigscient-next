@@ -55,7 +55,6 @@ pub const all_features = blk: {
         .description = "Is M68040 ISA supported",
         .dependencies = featureSet(&[_]Feature{
             .isa_68030,
-            .isa_68882,
         }),
     };
     result[@backingInt(Feature.isa_68060)] = .{
@@ -121,6 +120,7 @@ pub const cpu = struct {
         .llvm_name = "M68040",
         .features = featureSet(&[_]Feature{
             .isa_68040,
+            .isa_68881,
         }),
     };
     pub const m68060: CpuModel = .{
@@ -128,6 +128,7 @@ pub const cpu = struct {
         .llvm_name = "M68060",
         .features = featureSet(&[_]Feature{
             .isa_68060,
+            .isa_68881,
         }),
     };
     pub const m68ec040: CpuModel = .{

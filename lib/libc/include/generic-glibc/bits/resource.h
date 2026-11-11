@@ -1,4 +1,4 @@
-/* Bit values & structures for resource limits.  Linux version.
+/* Bit values & structures for resource limits.  Linux/MIPS version.
    Copyright (C) 1994-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -13,7 +13,7 @@
    Lesser General Public License for more details.
 
    You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
+   License along with the GNU C Library.  If not, see
    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _SYS_RESOURCE_H
@@ -54,25 +54,25 @@ enum __rlimit_resource
      This affects swapping; processes that are exceeding their
      resident set size will be more likely to have physical memory
      taken from them.  */
-  __RLIMIT_RSS = 5,
+  __RLIMIT_RSS = 7,
 #define	RLIMIT_RSS __RLIMIT_RSS
 
   /* Number of open files.  */
-  RLIMIT_NOFILE = 7,
+  RLIMIT_NOFILE = 5,
   __RLIMIT_OFILE = RLIMIT_NOFILE, /* BSD name for same.  */
 #define RLIMIT_NOFILE RLIMIT_NOFILE
 #define RLIMIT_OFILE __RLIMIT_OFILE
 
-  /* Address space limit.  */
-  RLIMIT_AS = 9,
+  /* Address space limit (?) */
+  RLIMIT_AS = 6,
 #define RLIMIT_AS RLIMIT_AS
 
   /* Number of processes.  */
-  __RLIMIT_NPROC = 6,
+  __RLIMIT_NPROC = 8,
 #define RLIMIT_NPROC __RLIMIT_NPROC
 
   /* Locked-in-memory address space.  */
-  __RLIMIT_MEMLOCK = 8,
+  __RLIMIT_MEMLOCK = 9,
 #define RLIMIT_MEMLOCK __RLIMIT_MEMLOCK
 
   /* Maximum number of file locks.  */
@@ -111,14 +111,22 @@ enum __rlimit_resource
 };
 
 /* Value to indicate that there is no limit.  */
-#ifndef __USE_FILE_OFFSET64
-# define RLIM_INFINITY ((__rlim_t) -1)
+#if _MIPS_SIM == _ABI64
+/* The N64 syscall uses this value.  */
+# define RLIM_INFINITY 0xffffffffffffffffUL
+# ifdef __USE_LARGEFILE64
+#  define RLIM64_INFINITY 0xffffffffffffffffUL
+# endif
 #else
-# define RLIM_INFINITY 0xffffffffffffffffuLL
-#endif
-
-#ifdef __USE_LARGEFILE64
-# define RLIM64_INFINITY 0xffffffffffffffffuLL
+/* The O32 and N32 syscalls use 0x7fffffff.  */
+# ifndef __USE_FILE_OFFSET64
+#  define RLIM_INFINITY ((long int)(~0UL >> 1))
+# else
+#  define RLIM_INFINITY 0xffffffffffffffffULL
+# endif
+# ifdef __USE_LARGEFILE64
+#  define RLIM64_INFINITY 0xffffffffffffffffULL
+# endif
 #endif
 
 /* We can represent all limits.  */

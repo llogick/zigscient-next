@@ -36,14 +36,8 @@ pub const Feature = enum {
     mips32r3,
     mips32r5,
     mips32r6,
-    mips3_32,
-    mips3_32r2,
     mips3d,
     mips4,
-    mips4_32,
-    mips4_32r2,
-    mips5,
-    mips5_32r2,
     mips64,
     mips64r2,
     mips64r3,
@@ -131,7 +125,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.dsp)] = .{
         .llvm_name = "dsp",
         .description = "Mips DSP ASE",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .mips32r2,
+        }),
     };
     result[@backingInt(Feature.dspr2)] = .{
         .llvm_name = "dspr2",
@@ -145,12 +141,15 @@ pub const all_features = blk: {
         .description = "Mips DSP-R3 ASE",
         .dependencies = featureSet(&[_]Feature{
             .dspr2,
+            .mips32r6,
         }),
     };
     result[@backingInt(Feature.eva)] = .{
         .llvm_name = "eva",
         .description = "Mips EVA ASE",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .mips32r3,
+        }),
     };
     result[@backingInt(Feature.fix_r5900)] = .{
         .llvm_name = "fix-r5900",
@@ -172,7 +171,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.ginv)] = .{
         .llvm_name = "ginv",
         .description = "Mips Global Invalidate ASE",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .mips32r6,
+        }),
     };
     result[@backingInt(Feature.interaptiv_mr2)] = .{
         .llvm_name = null,
@@ -214,7 +215,7 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Loongson EXTensions R2 instructions",
         .dependencies = featureSet(&[_]Feature{
-            .mips3,
+            .loongson_ext,
         }),
     };
     result[@backingInt(Feature.loongson_mmi)] = .{
@@ -249,8 +250,6 @@ pub const all_features = blk: {
         .description = "MIPS III ISA Support",
         .dependencies = featureSet(&[_]Feature{
             .mips2,
-            .mips3_32,
-            .mips3_32r2,
         }),
     };
     result[@backingInt(Feature.mips32)] = .{
@@ -258,8 +257,6 @@ pub const all_features = blk: {
         .description = "Mips32 ISA Support",
         .dependencies = featureSet(&[_]Feature{
             .mips2,
-            .mips3_32,
-            .mips4_32,
         }),
     };
     result[@backingInt(Feature.mips32r2)] = .{
@@ -267,9 +264,6 @@ pub const all_features = blk: {
         .description = "Mips32r2 ISA Support",
         .dependencies = featureSet(&[_]Feature{
             .mips32,
-            .mips3_32r2,
-            .mips4_32r2,
-            .mips5_32r2,
         }),
     };
     result[@backingInt(Feature.mips32r3)] = .{
@@ -295,16 +289,6 @@ pub const all_features = blk: {
             .nan2008,
         }),
     };
-    result[@backingInt(Feature.mips3_32)] = .{
-        .llvm_name = "mips3_32",
-        .description = "Subset of MIPS-III that is also in MIPS32 [highly experimental]",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.mips3_32r2)] = .{
-        .llvm_name = "mips3_32r2",
-        .description = "Subset of MIPS-III that is also in MIPS32r2 [highly experimental]",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
     result[@backingInt(Feature.mips3d)] = .{
         .llvm_name = "mips3d",
         .description = "Mips 3D ASE",
@@ -317,39 +301,14 @@ pub const all_features = blk: {
         .description = "MIPS IV ISA Support",
         .dependencies = featureSet(&[_]Feature{
             .mips3,
-            .mips4_32,
-            .mips4_32r2,
         }),
-    };
-    result[@backingInt(Feature.mips4_32)] = .{
-        .llvm_name = "mips4_32",
-        .description = "Subset of MIPS-IV that is also in MIPS32 [highly experimental]",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.mips4_32r2)] = .{
-        .llvm_name = "mips4_32r2",
-        .description = "Subset of MIPS-IV that is also in MIPS32r2 [highly experimental]",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.mips5)] = .{
-        .llvm_name = "mips5",
-        .description = "MIPS V ISA Support [highly experimental]",
-        .dependencies = featureSet(&[_]Feature{
-            .mips4,
-            .mips5_32r2,
-        }),
-    };
-    result[@backingInt(Feature.mips5_32r2)] = .{
-        .llvm_name = "mips5_32r2",
-        .description = "Subset of MIPS-V that is also in MIPS32r2 [highly experimental]",
-        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.mips64)] = .{
         .llvm_name = "mips64",
         .description = "Mips64 ISA Support",
         .dependencies = featureSet(&[_]Feature{
             .mips32,
-            .mips5,
+            .mips4,
         }),
     };
     result[@backingInt(Feature.mips64r2)] = .{
@@ -392,7 +351,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.mt)] = .{
         .llvm_name = "mt",
         .description = "Mips MT ASE",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .mips32r2,
+        }),
     };
     result[@backingInt(Feature.mxa)] = .{
         .llvm_name = null,
@@ -546,7 +507,6 @@ pub const cpu = struct {
         .name = "1004kc",
         .llvm_name = "mips32r2",
         .features = featureSet(&[_]Feature{
-            .mips32r2,
             .mt,
         }),
     };
@@ -555,7 +515,6 @@ pub const cpu = struct {
         .llvm_name = "mips32r2",
         .features = featureSet(&[_]Feature{
             .fpu_d,
-            .mips32r2,
             .mt,
         }),
     };
@@ -564,7 +523,6 @@ pub const cpu = struct {
         .llvm_name = "mips32r2",
         .features = featureSet(&[_]Feature{
             .dspr2,
-            .mips32r2,
         }),
     };
     pub const @"1074kf": CpuModel = .{
@@ -573,7 +531,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .dspr2,
             .fpu_d,
-            .mips32r2,
         }),
     };
     pub const @"20kc": CpuModel = .{
@@ -596,7 +553,6 @@ pub const cpu = struct {
         .llvm_name = "mips32r2",
         .features = featureSet(&[_]Feature{
             .dsp,
-            .mips32r2,
         }),
     };
     pub const @"24kef": CpuModel = .{
@@ -605,7 +561,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .dsp,
             .fpu_d,
-            .mips32r2,
         }),
     };
     pub const @"24kf": CpuModel = .{
@@ -620,7 +575,6 @@ pub const cpu = struct {
         .name = "34kc",
         .llvm_name = "mips32r2",
         .features = featureSet(&[_]Feature{
-            .mips32r2,
             .mt,
         }),
     };
@@ -629,7 +583,6 @@ pub const cpu = struct {
         .llvm_name = "mips32r2",
         .features = featureSet(&[_]Feature{
             .fpu_d,
-            .mips32r2,
             .mt,
         }),
     };
@@ -682,7 +635,6 @@ pub const cpu = struct {
         .llvm_name = "mips32r2",
         .features = featureSet(&[_]Feature{
             .dspr2,
-            .mips32r2,
         }),
     };
     pub const @"74kf": CpuModel = .{
@@ -691,7 +643,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .dspr2,
             .fpu_d,
-            .mips32r2,
         }),
     };
     pub const allegrex: CpuModel = .{
@@ -715,7 +666,6 @@ pub const cpu = struct {
         .llvm_name = "mips64r2",
         .features = featureSet(&[_]Feature{
             .fpu_d,
-            .loongson_ext,
             .loongson_ext2,
             .loongson_mmi,
             .mips64r2,
@@ -738,7 +688,6 @@ pub const cpu = struct {
             .dspr2,
             .fpu_d,
             .loongson_cam,
-            .loongson_ext,
             .loongson_ext2,
             .loongson_mmi,
             .mips64r2,
@@ -750,7 +699,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .fpu_d,
             .loongson_cam,
-            .loongson_ext,
             .loongson_ext2,
             .loongson_mmi,
             .mips64r2,
@@ -782,7 +730,6 @@ pub const cpu = struct {
         .llvm_name = "mips32r3",
         .features = featureSet(&[_]Feature{
             .eva,
-            .mips32r3,
             .mt,
         }),
     };
@@ -1068,7 +1015,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .dspr2,
             .eva,
-            .mips32r3,
         }),
     };
     pub const r10000: CpuModel = .{

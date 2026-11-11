@@ -1,0 +1,2059 @@
+.{
+    .zig_name = "aarch64",
+    .llvm = .{
+        .name = "AArch64",
+        .td_name = "AArch64",
+    },
+    .branch_quota = 2000,
+    .feature_overrides = .{
+        .{
+            .llvm_name = "a320",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a35",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a53",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a55",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a57",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a510",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a520",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a520ae",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a64fx",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a65",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a72",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a73",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a75",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a76",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a77",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a78",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a78ae",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a78c",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a710",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a715",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a720",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a720ae",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "ampere1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "ampere1a",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "ampere1b",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "ampere1c",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a10",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a11",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a12",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a13",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a14",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a15",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a16",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a17",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-a7",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-m4",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "apple-m5",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "c1-nano",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "c1-premium",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "c1-pro",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "c1-ultra",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "carmel",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-a725",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-a78",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-r82",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-r82ae",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-x1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-x2",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-x3",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-x4",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-x925",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "exynosm3",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "exynosm4",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "falkor",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "fujitsu-monaka",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "hip12",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "kryo",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoverse512tvb",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversee1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversen1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversen2",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversen3",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversev1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversev2",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversev3",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoversev3AE",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "olympus",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "oryon-1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "saphira",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "thunderx",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "thunderx2t99",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "thunderx3t110",
+            .flatten = true,
+            .omit_deps = .{
+                "no_unaligned_access",
+            },
+        },
+        .{
+            .llvm_name = "thunderxt81",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "thunderxt83",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "thunderxt88",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "tsv110",
+            .flatten = true,
+        },
+
+        .{
+            .llvm_name = "aggressive-interleaving",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "all",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "ascend-store-address",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x8",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x9",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x10",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x11",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x12",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x13",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x14",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x15",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "call-saved-x18",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-distinct-predicate-dst-reg",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-latency-sched-heuristic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-ldp",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-maximize-scalable-bandwidth",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "enable-select-opt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-stp",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "el2vmsa",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "el3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "execute-only",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "exynos-cheap-as-move",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "fixed-load-latency-4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "fmv",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "force-32bit-jump-tables",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-blr",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-nocomdat",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-retbr",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "max-interleave-factor-4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "mca-streaming-sched",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-bti-at-return-twice",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-lfi-loads",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-lfi-stores",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-neg-immediates",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "outline-atomics",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-lr-for-ra",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x1",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x5",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x6",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x7",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x9",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x10",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x11",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x12",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x13",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x14",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x15",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x18",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x20",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x21",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x22",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x23",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x24",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x25",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x26",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x27",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x28",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "store-pair-suppress",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tpidr-el1",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tpidr-el2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tpidr-el3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tpidrro-el0",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tagged-globals",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-fixed-over-scalable-if-equal-cost",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-postra-scheduler",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-reciprocal-square-root",
+            .omit = true,
+        },
+
+        // Future ISA extensions; omit until they are stabilized.
+        .{
+            .llvm_name = "use-experimental-zeroing-pseudos",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "v8a",
+            .zig_name = "aclass",
+            .desc = "Is application profile ('A' series)",
+        },
+        .{
+            .llvm_name = "cmpbr",
+            .extra_deps = .{
+                "cssc",
+            },
+        },
+        .{
+            .llvm_name = "CONTEXTIDREL2",
+            .zig_name = "contextidr_el2",
+            .desc = "Enable RW operand Context ID Register (EL2)",
+        },
+        .{
+            .llvm_name = "f16f32mm",
+            .extra_deps = .{
+                "f16f32dot",
+            },
+        },
+        .{
+            .llvm_name = "f8f16mm",
+            .extra_deps = .{
+                "f8f32mm",
+                "fp8dot2",
+            },
+        },
+        .{
+            .llvm_name = "f8f32mm",
+            .extra_deps = .{
+                "fp8dot4",
+            },
+        },
+        .{
+            .llvm_name = "fp16fml",
+            .omit_deps = .{
+                "fullfp16",
+            },
+        },
+        .{
+            .llvm_name = "fp8",
+            .extra_deps = .{
+                "bf16",
+                "faminmax",
+                "fpmr",
+                "lut",
+            },
+        },
+        .{
+            .llvm_name = "fp8dot2",
+            .extra_deps = .{
+                "fp8dot4",
+            },
+        },
+        .{
+            .llvm_name = "fp8dot4",
+            .extra_deps = .{
+                "fp8fma",
+            },
+        },
+        .{
+            .llvm_name = "fpac",
+            .extra_deps = .{
+                "pauth",
+            },
+        },
+        .{
+            .llvm_name = "fullfp16",
+            .extra_deps = .{
+                "neon",
+            },
+        },
+        .{
+            .llvm_name = "pauth-lr",
+            .extra_deps = .{
+                "fpac",
+            },
+        },
+        .{
+            .llvm_name = "poe2",
+            .extra_deps = .{
+                "btie",
+            },
+        },
+        .{
+            .llvm_name = "v8r",
+            .zig_name = "rclass",
+            .desc = "Is realtime profile ('R' series)",
+            .omit_deps = .{
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+            },
+            .extra_deps = .{
+                "lse2",
+            },
+        },
+        .{
+            .llvm_name = "sme",
+            .extra_deps = .{
+                "complxnum",
+                "fp16fml",
+            },
+        },
+        .{
+            .llvm_name = "sme-f8f16",
+            .extra_deps = .{
+                "sme_f8f32",
+            },
+        },
+        .{
+            .llvm_name = "sme-mop4",
+            .extra_deps = .{
+                "sme2p1",
+            },
+        },
+        .{
+            .llvm_name = "sme-tmop",
+            .extra_deps = .{
+                "sme2p1",
+            },
+        },
+        .{
+            .llvm_name = "sme2p2",
+            .extra_deps = .{
+                "sme_mop4",
+                "sme_tmop",
+                "ssve_fexpa",
+            },
+        },
+        .{
+            .llvm_name = "sme2p3",
+            .extra_deps = .{
+                "sme_lutv2",
+            },
+        },
+        .{
+            .llvm_name = "spe-eef",
+            .extra_deps = .{
+                "spe",
+            },
+        },
+        .{
+            .llvm_name = "ssve-aes",
+            .extra_deps = .{
+                "sme2p1",
+            },
+        },
+        .{
+            .llvm_name = "ssve-bitperm",
+            .extra_deps = .{
+                "sme2p1",
+            },
+        },
+        .{
+            .llvm_name = "ssve-fexpa",
+            .extra_deps = .{
+                "sme2p1",
+            },
+        },
+        .{
+            .llvm_name = "ssve-fp8dot2",
+            .extra_deps = .{
+                "ssve_fp8dot4",
+            },
+        },
+        .{
+            .llvm_name = "ssve-fp8dot4",
+            .extra_deps = .{
+                "ssve_fp8fma",
+            },
+        },
+        .{
+            .llvm_name = "strict-align",
+            .zig_name = "no_unaligned_access",
+        },
+        .{
+            .llvm_name = "sve-aes",
+            .extra_deps = .{
+                "sha3",
+            },
+        },
+        .{
+            .llvm_name = "sve-aes2",
+            .extra_deps = .{
+                "sve_aes",
+            },
+        },
+        .{
+            .llvm_name = "sve-b16b16",
+            .extra_deps = .{
+                "fullfp16",
+            },
+        },
+        .{
+            .llvm_name = "sve-b16mm",
+            .extra_deps = .{
+                "sve_bfscale",
+            },
+        },
+        .{
+            .llvm_name = "sve-bfscale",
+            .extra_deps = .{
+                "sve_b16b16",
+            },
+        },
+        .{
+            .llvm_name = "sve-bitperm",
+            .extra_deps = .{
+                "fullfp16",
+            },
+        },
+        .{
+            .llvm_name = "sve-f16f32mm",
+            .extra_deps = .{
+                "sve2p1",
+            },
+        },
+        .{
+            .llvm_name = "sve-sha3",
+            .extra_deps = .{
+                "aes",
+            },
+        },
+        .{
+            .llvm_name = "tev",
+            .extra_deps = .{
+                "poe2",
+            },
+        },
+        .{
+            .llvm_name = "trbe",
+            .extra_deps = .{
+                "tracev8_4",
+            },
+        },
+        .{
+            .llvm_name = "vh",
+            .extra_deps = .{
+                "lse",
+            },
+        },
+        .{
+            .llvm_name = "v8.1a",
+            .omit_deps = .{
+                "rdm",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "v8.2a",
+            .extra_deps = .{
+                "contextidr_el2",
+            },
+        },
+        .{
+            .llvm_name = "v8.3a",
+            .omit_deps = .{
+                "complxnum",
+                "jsconv",
+            },
+        },
+        .{
+            .llvm_name = "v8.4a",
+            .omit_deps = .{
+                "am",
+                "dotprod",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+            },
+        },
+        .{
+            .llvm_name = "v8.5a",
+            .omit_deps = .{
+                "fptoint",
+                "specrestrict",
+            },
+        },
+        .{
+            .llvm_name = "v8.6a",
+            .omit_deps = .{
+                "amvs",
+                "bf16",
+                "fgt",
+                "i8mm",
+            },
+        },
+        .{
+            .llvm_name = "v8.9a",
+            .omit_deps = .{
+                "chk",
+                "prfm_slc_target",
+            },
+        },
+        .{
+            .llvm_name = "v9.4a",
+            .extra_deps = .{
+                "chk",
+            },
+        },
+        .{
+            .llvm_name = "v9.7a",
+            .omit_deps = .{
+                "f16f32dot",
+                "fprcvt",
+                "sve2p3",
+            },
+        },
+    },
+    .extra_features = .{
+        .{
+            .zig_name = "fpmr",
+            .desc = "Enable Armv9.2-A Floating-point Mode Register",
+            .deps = .{
+                "neon",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "apple-a10",
+            .omit_deps = .{
+                "perfmon",
+                "vh",
+            },
+        },
+        // Who thought this alias was a good idea? Upgrade your compiler and suddenly your
+        // programs SIGILL because this changed meaning. Brilliant.
+        .{
+            .llvm_name = "apple-latest",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "cyclone",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "a64fx",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "ampere1",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "ampere1a",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "ampere1b",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "ampere1c",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "apple-a11",
+            .extra_deps = .{
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a12",
+            .extra_deps = .{
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a13",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a14",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a15",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a16",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a17",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a18",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "v9_2a",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a19",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "v9_2a",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a7",
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a8",
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-a9",
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-m1",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-m2",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-m3",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-m4",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "v9_2a",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-m5",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "v9_2a",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-s10",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-s4",
+            .extra_deps = .{
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-s5",
+            .extra_deps = .{
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-s6",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-s7",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-s8",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "apple-s9",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "armagicpu",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "c1-nano",
+            .extra_deps = .{
+                "amvs",
+                "nv",
+                "specrestrict",
+            },
+        },
+        .{
+            .llvm_name = "c1-premium",
+            .extra_deps = .{
+                "amvs",
+                "nv",
+                "specrestrict",
+            },
+        },
+        .{
+            .llvm_name = "c1-pro",
+            .extra_deps = .{
+                "amvs",
+                "nv",
+                "specrestrict",
+            },
+        },
+        .{
+            .llvm_name = "c1-ultra",
+            .extra_deps = .{
+                "amvs",
+                "nv",
+                "specrestrict",
+            },
+        },
+        .{
+            .llvm_name = "carmel",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cobalt-100",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a320",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a510",
+            .extra_deps = .{
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a520",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a520ae",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a55",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a65",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a65ae",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a710",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a715",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a720",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a720ae",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a725",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a75",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a76",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a76ae",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a77",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a78",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a78ae",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a78c",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r82",
+            .extra_deps = .{
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r82ae",
+            .extra_deps = .{
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x1",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x1c",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x2",
+            .extra_deps = .{
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x3",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x4",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x925",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "exynos-m4",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "exynos-m5",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "fujitsu-monaka",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "gb10",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "grace",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "hip12",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "v9_2a",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-512tvb",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-e1",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-n1",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-n2",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-n3",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-v1",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-v2",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-v3",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-v3ae",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "olympus",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "oryon-1",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "rigel",
+            .extra_deps = .{
+                "amvs",
+                "fgt",
+                "mpam",
+                "nv",
+                "sel2",
+                "specrestrict",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "saphira",
+            .extra_deps = .{
+                "am",
+                "mpam",
+                "nv",
+                "sel2",
+                "tracev8_4",
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "thunderx2t99",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "thunderx3t110",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+        .{
+            .llvm_name = "tsv110",
+            .extra_deps = .{
+                "vh",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8a",
+            .features = .{
+                "fp_armv8",
+                "aclass",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8r",
+            .features = .{
+                "fp_armv8",
+                "rclass",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_1a",
+            .features = .{
+                "fp_armv8",
+                "v8_1a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_2a",
+            .features = .{
+                "fp_armv8",
+                "v8_2a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_3a",
+            .features = .{
+                "fp_armv8",
+                "v8_3a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_4a",
+            .features = .{
+                "fp_armv8",
+                "v8_4a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_5a",
+            .features = .{
+                "fp_armv8",
+                "v8_5a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_6a",
+            .features = .{
+                "fp_armv8",
+                "v8_6a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_7a",
+            .features = .{
+                "fp_armv8",
+                "v8_7a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_8a",
+            .features = .{
+                "fp_armv8",
+                "v8_8a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_9a",
+            .features = .{
+                "fp_armv8",
+                "v8_9a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9a",
+            .features = .{
+                "fp_armv8",
+                "v9a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_1a",
+            .features = .{
+                "fp_armv8",
+                "v9_1a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_2a",
+            .features = .{
+                "fp_armv8",
+                "v9_2a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_3a",
+            .features = .{
+                "fp_armv8",
+                "v9_3a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_4a",
+            .features = .{
+                "fp_armv8",
+                "v9_4a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_5a",
+            .features = .{
+                "fp_armv8",
+                "v9_5a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_6a",
+            .features = .{
+                "fp_armv8",
+                "v9_6a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_7a",
+            .features = .{
+                "fp_armv8",
+                "v9_7a",
+            },
+        },
+
+        .{
+            .llvm_name = "generic",
+            .zig_name = "emag",
+            .features = .{
+                "aclass",
+                "crc",
+                "crypto",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "exynos_m1",
+            .features = .{
+                "aclass",
+                "crc",
+                "crypto",
+                "fuse_aes",
+                "perfmon",
+                "slow_misaligned_128store",
+                "slow_paired_128",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "exynos_m2",
+            .features = .{
+                "aclass",
+                "crc",
+                "crypto",
+                "fuse_aes",
+                "perfmon",
+                "slow_misaligned_128store",
+                "slow_paired_128",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "xgene1",
+            .features = .{
+                "aclass",
+                "neon",
+                "perfmon",
+            },
+        },
+    },
+}

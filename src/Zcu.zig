@@ -4294,6 +4294,10 @@ pub fn atomicPtrAlignment(
 
         .mips64,
         .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
         => 64, // N32 should be 64, not 32.
 
         .x86_64 => if (target.cpu.has(.x86, .cx16)) 128 else 64, // x32 should be 64 or 128, not 32.

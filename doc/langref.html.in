@@ -6956,7 +6956,7 @@ const builtin = @import("builtin");
       {#syntax_block|c|varytarget.h#}
 long FOO = __LONG_MAX__;
       {#end_syntax_block#}
-      {#shell_samp#}$ zig translate-c -target thumb-freestanding-gnueabihf varytarget.h|grep FOO
+      {#shell_samp#}$ zig translate-c -target thumb-freestanding-gnu varytarget.h|grep FOO
 pub export var FOO: c_long = 2147483647;
 $ zig translate-c -target x86_64-macos-gnu varytarget.h|grep FOO
 pub export var FOO: c_long = 9223372036854775807;{#end_shell_samp#}

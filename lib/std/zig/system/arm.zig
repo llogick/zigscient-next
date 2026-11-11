@@ -353,7 +353,6 @@ pub const aarch64 = struct {
         setFeature(cpu, .mpam, bitField(registers[0], 40) >= 1); // MPAM v1.0
         setFeature(cpu, .sel2, bitField(registers[0], 36) >= 1);
         setFeature(cpu, .sve, bitField(registers[0], 32) >= 1);
-        setFeature(cpu, .el3, bitField(registers[0], 12) >= 1);
         setFeature(cpu, .ras, bitField(registers[0], 28) >= 1);
         setFeature(cpu, .fp_armv8, signedBitField(registers[0], 16) >= 0);
         setFeature(cpu, .neon, signedBitField(registers[0], 20) >= 0);

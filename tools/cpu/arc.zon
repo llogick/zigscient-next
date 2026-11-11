@@ -1,0 +1,13 @@
+.{
+    .zig_name = "arc",
+    .llvm = .{
+        .name = "ARC",
+        .td_name = "ARC",
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .zig_name = "arcv2",
+        },
+    },
+}

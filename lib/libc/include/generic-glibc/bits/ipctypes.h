@@ -1,4 +1,4 @@
-/* bits/ipctypes.h -- Define some types used by SysV IPC/MSG/SHM.  Generic.
+/* bits/ipctypes.h -- Define some types used by SysV IPC/MSG/SHM.  MIPS version
    Copyright (C) 2002-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -13,7 +13,7 @@
    Lesser General Public License for more details.
 
    You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
+   License along with the GNU C Library.  If not, see
    <https://www.gnu.org/licenses/>.  */
 
 /*
@@ -25,12 +25,7 @@
 
 #include <bits/types.h>
 
-/* Used in `struct shmid_ds'.  */
-# if __WORDSIZE == 32
-typedef unsigned short int __ipc_pid_t;
-# else
-typedef int __ipc_pid_t;
-# endif
+typedef __SLONG32_TYPE __ipc_pid_t;
 
 
 #endif /* bits/ipctypes.h */

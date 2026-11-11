@@ -1,0 +1,44 @@
+.{
+    .zig_name = "ve",
+    .llvm = .{
+        .name = "VE",
+        .td_name = "VE",
+    },
+    .extra_features = .{
+        .{
+            .zig_name = "ve3",
+            .desc = "Enable VE3 instructions",
+            .deps = .{},
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "ve10",
+            .features = .{
+                "vpu",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "ve20",
+            .features = .{
+                "vpu",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "ve30",
+            .features = .{
+                "ve3",
+                "vpu",
+            },
+        },
+    },
+}

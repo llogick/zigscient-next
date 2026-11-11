@@ -1169,7 +1169,7 @@ test "arrays and vectors with big integers" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_riscv64) return error.SkipZigTest;
-    if (builtin.zig_backend == .stage2_llvm and (builtin.abi == .gnuabin32 or builtin.abi == .muslabin32 or builtin.abi == .abin32)) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/23805
+    if (builtin.zig_backend == .stage2_llvm and builtin.abi.isN32()) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/23805
 
     inline for (.{ u65528, u65529, u65535 }) |Int| {
         var a: [1]Int = undefined;

@@ -17,41 +17,15 @@ comptime {
 }
 
 fn clear_cache(start: usize, end: usize) callconv(.c) void {
-    const x86 = switch (arch) {
-        .x86, .x86c16, .x86_64 => true,
-        else => false,
-    };
-    const arm32 = switch (arch) {
-        .arm, .armeb, .thumb, .thumbeb => true,
-        else => false,
-    };
-    const arm64 = switch (arch) {
-        .aarch64, .aarch64_be => true,
-        else => false,
-    };
-    const loongarch = switch (arch) {
-        .loongarch32,
-        .loongarch64,
-        => true,
-        else => false,
-    };
-    const mips = switch (arch) {
-        .mips, .mipsel, .mips64, .mips64el => true,
-        else => false,
-    };
+    const x86 = arch.isX86();
+    const arm32 = arch.isArm();
+    const arm64 = arch.isAarch64();
+    const loongarch = arch.isLoongarch();
+    const mips = arch.isMips();
     const riscv = arch.isRiscv();
-    const powerpc64 = switch (arch) {
-        .powerpc64, .powerpc64le => true,
-        else => false,
-    };
-    const sparc = switch (arch) {
-        .sparc, .sparc64 => true,
-        else => false,
-    };
-    const apple = switch (os) {
-        .ios, .maccatalyst, .macos, .watchos, .tvos, .visionos => true,
-        else => false,
-    };
+    const powerpc64 = arch.isPowerpc64();
+    const sparc = arch.isSparc();
+    const apple = os.isDarwin();
     if (x86) {
         // Intel processors have a unified instruction and data cache
         // so there is nothing to do

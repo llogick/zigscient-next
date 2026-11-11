@@ -1,4 +1,4 @@
-/* Generic implementation of the semaphore struct semid_ds.
+/* MIPS implementation of the semaphore struct semid_ds
    Copyright (C) 1995-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -26,18 +26,11 @@ struct semid_ds
 #ifdef __USE_TIME64_REDIRECTS
 # include <bits/types/struct_semid64_ds_helper.h>
 #else
-  struct ipc_perm sem_perm;        /* operation permission struct */
-# if __TIMESIZE == 32
-  __time_t sem_otime;              /* last semop() time */
+  struct ipc_perm sem_perm;		/* operation permission struct */
+  __time_t sem_otime;	/* last semop() time */
+  __time_t sem_ctime;	/* last time changed by semctl() */
+  __syscall_ulong_t sem_nsems;		/* number of semaphores in set */
   __syscall_ulong_t __sem_otime_high;
-  __time_t sem_ctime;             /* last time changed by semctl() */
   __syscall_ulong_t __sem_ctime_high;
-# else
-  __time_t sem_otime;
-  __time_t sem_ctime;
-# endif
-  __syscall_ulong_t sem_nsems;    /* number of semaphores in set */
-  __syscall_ulong_t __glibc_reserved3;
-  __syscall_ulong_t __glibc_reserved4;
 #endif
 };

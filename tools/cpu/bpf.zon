@@ -1,0 +1,32 @@
+.{
+    .zig_name = "bpf",
+    .llvm = .{
+        .name = "BPF",
+        .td_name = "BPF",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "dummy",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "dwarfris",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "allows-misaligned-mem-access",
+            .zig_name = "unaligned_access",
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "probe",
+            .omit = true,
+        },
+    },
+}

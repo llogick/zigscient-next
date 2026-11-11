@@ -2761,7 +2761,25 @@ pub const Clobbers = switch (@import("builtin").cpu.arch) {
         acc: bool = false,
         spefsc: bool = false,
     },
-    .mips, .mipsel, .mips64, .mips64el => bitpack struct {
+    .mips,
+    .mipsel,
+    .mipsf32,
+    .mipsf32el,
+    .mipsf64,
+    .mipsf64el,
+    .mipsf64n8,
+    .mipsf64n8el,
+    .mipsn8,
+    .mipsn8el,
+    .mipsr6,
+    .mipsr6el,
+    .mips64,
+    .mips64el,
+    .mips64n8,
+    .mips64n8el,
+    .mips64r6,
+    .mips64r6el,
+    => bitpack struct {
         /// Whether the inline assembly code may perform stores to memory
         /// addresses other than those derived from input pointer provenance.
         memory: bool = false,

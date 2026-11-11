@@ -45,7 +45,7 @@ comptime {
                 symbol(&__aeabi_read_tp, "__aeabi_read_tp");
             }
 
-            if (builtin.target.cpu.has(.arm, .has_v4t)) {
+            if (builtin.target.cpu.has(.arm, .v4t)) {
                 symbol(&__gnu_thumb1_case_sqi, "__gnu_thumb1_case_sqi");
                 symbol(&__gnu_thumb1_case_uqi, "__gnu_thumb1_case_uqi");
                 symbol(&__gnu_thumb1_case_shi, "__gnu_thumb1_case_shi");
@@ -130,12 +130,35 @@ pub fn __aeabi_unwind_cpp_pr2() callconv(.{ .arm_aapcs = .{} }) void {}
 
 // This function can only clobber r0 according to the ABI
 pub fn __aeabi_read_tp() callconv(.naked) void {
-    @setRuntimeSafety(false);
-    asm volatile (
+    if (builtin.target.os.tag == .linux) {
+        if (comptime builtin.target.cpu.has(.arm, .mclass)) asm volatile (
+            \\ mov ip, r7
+            \\ ldr r7, 1f
+            \\ svc #0
+            \\ mov r7, ip
+            \\ bx lr
+            \\ .balign 4
+            \\1:
+            \\ .word 0x000f0006 // __ARM_NR_get_tls
+        ) else if (comptime builtin.target.cpu.has(.arm, .v6k)) asm volatile (
+            \\ mrc p15, 0, r0, c13, c0, 3
+            \\ bx lr
+        ) else asm volatile (if (builtin.target.cpu.arch.isThumb())
+                \\ ldr r0, 1f
+                \\ bx r0
+                \\ .balign 4
+                \\1:
+                \\ .word 0xffff0fe0 // __kuser_get_tls
+            else
+                \\ ldr pc, 1f
+                \\ .balign 4
+                \\1:
+                \\ .word 0xffff0fe0 // __kuser_get_tls
+        );
+    } else asm volatile (
         \\ mrc p15, 0, r0, c13, c0, 3
         \\ bx lr
     );
-    unreachable;
 }
 
 // The following functions are wrapped in an asm block to ensure the required

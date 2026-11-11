@@ -219,17 +219,9 @@ pub const PreferredLoadStoreElement = element: {
     break :element usize;
 };
 
-pub const want_aeabi = switch (builtin.abi) {
-    .eabi,
-    .eabihf,
-    .musleabi,
-    .musleabihf,
-    .gnueabi,
-    .gnueabihf,
-    .android,
-    .androideabi,
-    => builtin.cpu.arch.isArm(),
-    else => false,
+pub const want_aeabi = builtin.target.cpu.arch.isArm() and switch (builtin.target.os.tag) {
+    .windows, .uefi => false,
+    else => true,
 };
 
 /// These functions are required on Windows on ARM. They are provided by MSVC libc, but in libc-less
@@ -266,36 +258,9 @@ pub const want_float_exceptions = !builtin.cpu.arch.isWasm();
 /// rather than the standard names:
 /// * __gnu_f2h_ieee
 /// * __gnu_h2f_ieee
-/// Known correct configurations:
-///   x86_64-freestanding-none => true
-///   x86_64-linux-none => true
-///   x86_64-linux-gnu => true
-///   x86_64-linux-musl => true
-///   x86_64-linux-eabi => true
-///   arm-linux-musleabihf => true
-///   arm-linux-gnueabihf => true
-///   arm-linux-eabihf => false
-///   wasm32-freestanding-none => false
-///   x86_64-windows-gnu => true
-///   x86_64-windows-msvc => true
-///   any-macos-any => false
-pub const gnu_f16_abi = switch (builtin.cpu.arch) {
-    .wasm32,
-    .wasm64,
-    .riscv64,
-    .riscv64be,
-    .riscv32,
-    .riscv32be,
-    => false,
-
-    .x86, .x86c16, .x86_64 => true,
-
-    .arm, .armeb, .thumb, .thumbeb => switch (builtin.abi) {
-        .eabi, .eabihf => false,
-        else => true,
-    },
-
-    else => !builtin.os.tag.isDarwin(),
+pub const gnu_f16_abi = builtin.target.cpu.arch.isArm() and !builtin.target.os.tag.isDarwin() and switch (builtin.target.abi) {
+    .none, .sf => false,
+    else => true,
 };
 
 pub const want_sparc64_abi = builtin.cpu.arch == .sparc64;

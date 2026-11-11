@@ -1,0 +1,149 @@
+.{
+    .zig_name = "m68k",
+    .llvm = .{
+        .name = "M68k",
+        .td_name = "M68k",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "reserve-a0",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-a1",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-a2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-a3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-a4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-a5",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-a6",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d0",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d1",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d5",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d6",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-d7",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "isa-68040",
+            .omit_deps = .{
+                "isa_68882",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "M68000",
+            .zig_name = "m68000",
+        },
+        .{
+            .llvm_name = "M68010",
+            .zig_name = "m68010",
+        },
+        .{
+            .llvm_name = "M68020",
+            .zig_name = "m68020",
+            .extra_deps = .{
+                "isa_68881",
+            },
+        },
+        .{
+            .llvm_name = "M68030",
+            .zig_name = "m68030",
+            .extra_deps = .{
+                "isa_68881",
+            },
+        },
+        .{
+            .llvm_name = "M68040",
+            .zig_name = "m68040",
+            .extra_deps = .{
+                "isa_68881",
+            },
+        },
+        .{
+            .llvm_name = "M68060",
+            .zig_name = "m68060",
+            .extra_deps = .{
+                "isa_68881",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = "M68040",
+            .zig_name = "m68ec040",
+            .features = .{
+                "isa_68040",
+            },
+        },
+        .{
+            .llvm_name = "M68060",
+            .zig_name = "m68ec060",
+            .features = .{
+                "isa_68060",
+            },
+        },
+        .{
+            .llvm_name = "M68040",
+            .zig_name = "m68lc040",
+            .features = .{
+                "isa_68040",
+            },
+        },
+        .{
+            .llvm_name = "M68060",
+            .zig_name = "m68lc060",
+            .features = .{
+                "isa_68060",
+            },
+        },
+    },
+}

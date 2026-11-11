@@ -1,0 +1,19 @@
+.{
+    .zig_name = "xtensa",
+    .llvm = .{
+        .name = "Xtensa",
+        .td_name = "Xtensa",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "forced-atomics",
+            .omit = true,
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .zig_name = "xtensa",
+        },
+    },
+}

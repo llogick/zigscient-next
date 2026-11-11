@@ -135,7 +135,7 @@ pub const SubArch = enum {
                 .arm_v8_8a => aarch64.v8_8a,
                 .arm_v8_9a => aarch64.v8_9a,
                 .arm_v8m_baseline => return null,
-                .arm_v8r => aarch64.v8r,
+                .arm_v8r => aarch64.rclass,
                 .arm_v9 => aarch64.v9a,
                 .arm_v9_1a => aarch64.v9_1a,
                 .arm_v9_2a => aarch64.v9_2a,
@@ -159,16 +159,10 @@ pub const SubArch = enum {
                 .arm_v6k => arm.v6k,
                 .arm_v6m => arm.v6m,
                 .arm_v6t2 => arm.v6t2,
-                .arm_v7 => arm.has_v7,
-                .arm_v7a => arm.v7a,
-                .arm_v7r => arm.v7r,
-                .arm_v7em => arm.v7em,
+                .arm_v7, .arm_v7a, .arm_v7r, .arm_v7em, .arm_v7m, .arm_v7ve => arm.v7,
                 .arm_v7k => return null,
-                .arm_v7m => arm.v7m,
                 .arm_v7s => return null,
-                .arm_v7ve => arm.v7ve,
-                .arm_v8 => arm.v8a,
-                .arm_v8r => arm.v8r,
+                .arm_v8, .arm_v8r => arm.v8,
                 .arm_v8_1a => arm.v8_1a,
                 .arm_v8_1m_mainline => arm.v8_1m_main,
                 .arm_v8_2a => arm.v8_2a,
@@ -205,9 +199,32 @@ pub const SubArch = enum {
                 .arm_v6k => &cpu.mpcore,
                 .arm_v6t2 => &cpu.arm1156t2_s,
                 .arm_v6m => &cpu.cortex_m0,
+                .arm_v7, .arm_v7a => &cpu.armv7a,
                 .arm_v7r => &cpu.cortex_r4,
                 .arm_v7m => &cpu.cortex_m3,
                 .arm_v7em => &cpu.cortex_m4,
+                .arm_v7ve => &cpu.armv7ve,
+                .arm_v8 => &cpu.armv8a,
+                .arm_v8_1a => &cpu.armv8_1a,
+                .arm_v8_2a => &cpu.armv8_2a,
+                .arm_v8_3a => &cpu.armv8_3a,
+                .arm_v8_4a => &cpu.armv8_4a,
+                .arm_v8_5a => &cpu.armv8_5a,
+                .arm_v8_6a => &cpu.armv8_6a,
+                .arm_v8_7a => &cpu.armv8_7a,
+                .arm_v8_8a => &cpu.armv8_8a,
+                .arm_v8_9a => &cpu.armv8_9a,
+                .arm_v8_1m_mainline => &cpu.armv8_1m_main,
+                .arm_v8m_baseline => &cpu.armv8m,
+                .arm_v8m_mainline => &cpu.armv8m_main,
+                .arm_v8r => &cpu.armv8r,
+                .arm_v9 => &cpu.armv9a,
+                .arm_v9_1a => &cpu.armv9_1a,
+                .arm_v9_2a => &cpu.armv9_2a,
+                .arm_v9_3a => &cpu.armv9_3a,
+                .arm_v9_4a => &cpu.armv9_4a,
+                .arm_v9_5a => &cpu.armv9_5a,
+                .arm_v9_6a => &cpu.armv9_6a,
                 else => null,
             };
         } else if (arch.isMips32()) {
@@ -518,7 +535,7 @@ pub fn ignoreNonZeroSizedBitfieldTypeAlignment(target: *const Target) bool {
     switch (target.cpu.arch) {
         .avr => return true,
         .arm => {
-            if (std.Target.arm.featureSetHas(target.cpu.features, .has_v7)) {
+            if (std.Target.arm.featureSetHas(target.cpu.features, .v7)) {
                 switch (target.os.tag) {
                     .ios => return true,
                     else => return false,
@@ -541,7 +558,7 @@ pub fn minZeroWidthBitfieldAlignment(target: *const Target) ?u29 {
     switch (target.cpu.arch) {
         .avr => return 8,
         .arm => {
-            if (std.Target.arm.featureSetHas(target.cpu.features, .has_v7)) {
+            if (std.Target.arm.featureSetHas(target.cpu.features, .v7)) {
                 switch (target.os.tag) {
                     .ios => return 32,
                     else => return null,
@@ -559,8 +576,8 @@ pub fn unnamedFieldAffectsAlignment(target: *const Target) bool {
             return true;
         },
         .armeb => {
-            if (std.Target.arm.featureSetHas(target.cpu.features, .has_v7)) {
-                if (Abi.default(target.cpu.arch, target.os.tag) == .eabi) return true;
+            if (std.Target.arm.featureSetHas(target.cpu.features, .v7)) {
+                return true;
             }
         },
         .arm => return true,
@@ -1844,66 +1861,57 @@ pub fn parseOs(result: *std.Target.Query, text: []const u8, version_string: ?*[]
 
 pub fn armVersion(target: Target) ?struct { version: u8, string: []const u8 } {
     assert(target.cpu.arch.isArm());
-    for ([_]struct { std.Target.arm.Feature, []const u8 }{
-        .{ .v9_6a, "9_6A" },
-        .{ .v9_5a, "9_5A" },
-        .{ .v9_4a, "9_4A" },
-        .{ .v9_3a, "9_3A" },
-        .{ .v9_2a, "9_2A" },
-        .{ .v9_1a, "9_1A" },
-        .{ .v9a, "9A" },
+    const string = armVersionString(target.cpu) orelse return null;
+    return .{
+        .version = string[0] - '0',
+        .string = string,
+    };
+}
 
-        .{ .v8_9a, "8_9A" },
-        .{ .v8_8a, "8_8A" },
-        .{ .v8_7a, "8_7A" },
-        .{ .v8_6a, "8_6A" },
-        .{ .v8_5a, "8_5A" },
-        .{ .v8_4a, "8_4A" },
-        .{ .v8_3a, "8_3A" },
-        .{ .v8_2a, "8_2A" },
-        .{ .v8_1a, "8_1A" },
-        .{ .v8_1m_main, "8_1M_MAIN" },
-        .{ .v8a, "8A" },
-        .{ .v8r, "8R" },
-        .{ .v8m_main, "8M_MAIN" },
-        .{ .v8m, "8M_BASE" },
-
-        .{ .v7ve, "7VE" },
-        .{ .v7a, "7A" },
-        .{ .v7r, "7R" },
-        .{ .v7m, "7M" },
-        .{ .v7em, "7EM" },
-        .{ .has_v7, "7A" }, // bare armv7 with no profile: default to A
-
-        .{ .v6t2, "6T2" },
-        .{ .v6kz, "6KZ" },
-        .{ .v6k, "6K" },
-        .{ .v6j, "6J" },
-        .{ .v6sm, "6SM" },
-        .{ .v6m, "6M" },
-        .{ .v6, "6" },
-
-        .{ .v5tej, "5TEJ" },
-        .{ .v5te, "5TE" },
-        .{ .v5t, "5T" },
-
-        .{ .v4t, "4T" },
-        .{ .v4, "4" },
-
-        .{ .v3m, "3M" },
-        .{ .v3, "3" },
-
-        .{ .v2a, "2A" },
-        .{ .v2, "2" },
-    }) |fs| {
-        if (target.cpu.features.isEnabled(@backingInt(fs[0]))) {
-            return .{
-                .version = fs[1][0] - '0',
-                .string = fs[1],
-            };
-        }
+fn armVersionString(cpu: Cpu) ?[]const u8 {
+    for ([_]struct { []const std.Target.arm.Feature, []const u8 }{
+        .{ &.{ .rclass, .v8 }, "8R" },
+        .{ &.{.v9_6a}, "9_6A" },
+        .{ &.{.v9_5a}, "9_5A" },
+        .{ &.{.v9_4a}, "9_4A" },
+        .{ &.{.v9_3a}, "9_3A" },
+        .{ &.{.v9_2a}, "9_2A" },
+        .{ &.{.v9_1a}, "9_1A" },
+        .{ &.{.v9a}, "9A" },
+        .{ &.{.v8_9a}, "8_9A" },
+        .{ &.{.v8_8a}, "8_8A" },
+        .{ &.{.v8_7a}, "8_7A" },
+        .{ &.{.v8_6a}, "8_6A" },
+        .{ &.{.v8_5a}, "8_5A" },
+        .{ &.{.v8_4a}, "8_4A" },
+        .{ &.{.v8_3a}, "8_3A" },
+        .{ &.{.v8_2a}, "8_2A" },
+        .{ &.{.v8_1a}, "8_1A" },
+        .{ &.{.v8}, "8A" },
+        .{ &.{.v8_1m_main}, "8_1M_MAIN" },
+        .{ &.{.v8m_main}, "8M_MAIN" },
+        .{ &.{ .mclass, .dsp, .v7 }, "7EM" },
+        .{ &.{ .mclass, .v7 }, "7M" },
+        .{ &.{ .rclass, .v7 }, "7R" },
+        .{ &.{ .v7, .virtualization }, "7VE" },
+        .{ &.{.v7}, "7A" },
+        .{ &.{.v6t2}, "6T2" },
+        .{ &.{.v8m}, "8M_BASE" },
+        .{ &.{.v6m}, "6M" },
+        .{ &.{ .trustzone, .v6k }, "6KZ" },
+        .{ &.{.v6k}, "6K" },
+        .{ &.{.v6}, "6" },
+        .{ &.{.v5te}, "5TE" },
+        .{ &.{.v5t}, "5T" },
+        .{ &.{.v4t}, "4T" },
+        .{ &.{.v4}, "4" },
+        .{ &.{.v3m}, "3M" },
+        .{ &.{.v3}, "3" },
+        .{ &.{.v2a}, "2A" },
+        .{ &.{.v2}, "2" },
+    }) |entry| {
+        if (cpu.hasAll(.arm, entry[0])) return entry[1];
     }
-
     return null;
 }
 

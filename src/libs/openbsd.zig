@@ -84,7 +84,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 try includePath(comp, arena, try arena.print("{s}-{s}-{s}", .{
                     std.zig.target.openbsdArchNameHeaders(target.cpu.arch),
                     @tagName(target.os.tag),
-                    @tagName(target.abi),
+                    std.zig.target.openbsdAbiNameHeaders(target.abi),
                 })),
                 "-I",
                 try includePath(comp, arena, "generic-openbsd"),

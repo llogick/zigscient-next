@@ -1,0 +1,1140 @@
+.{
+    .zig_name = "mips",
+    .llvm = .{
+        .name = "Mips",
+        .td_name = "Mips",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "i6400",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "i6500",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "mips3_32",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "mips3_32r2",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "mips4_32",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "mips4_32r2",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "mips5",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "mips5_32r2",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "p5600",
+            .flatten = true,
+        },
+
+        .{
+            .llvm_name = "fp64",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "fpxx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "gp64",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "long-calls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "micromips",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "mips16",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "noabicalls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "nooddspreg",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "ptr64",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "single-float",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "soft-float",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sym32",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-compact-branches",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-indirect-jump-hazard",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-tcc-in-div",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "xgot",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "dsp",
+            .extra_deps = .{
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "dspr3",
+            .extra_deps = .{
+                "mips32r6",
+            },
+        },
+        .{
+            .llvm_name = "eva",
+            .extra_deps = .{
+                "mips32r3",
+            },
+        },
+        .{
+            .llvm_name = "ginv",
+            .extra_deps = .{
+                "mips32r6",
+            },
+        },
+        .{
+            .llvm_name = "mips3d",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mt",
+            .extra_deps = .{
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "strict-align",
+            .zig_name = "no_unaligned_access",
+        },
+    },
+    .extra_features = .{
+        .{
+            .zig_name = "allegrex",
+            .desc = "Sony Allegrex extensions",
+            .deps = .{
+                "mips2",
+            },
+        },
+        .{
+            .zig_name = "cnmips2",
+            .desc = "Octeon II cnMIPS support",
+            .deps = .{
+                "cnmipsp",
+            },
+        },
+        .{
+            .zig_name = "cnmips3",
+            .desc = "Octeon III cnMIPS support",
+            .deps = .{
+                "cnmips2",
+            },
+        },
+        .{
+            .zig_name = "fpu_d",
+            .desc = "Double-precision floating point (D format)",
+            .deps = .{
+                "fpu_s",
+            },
+        },
+        .{
+            .zig_name = "fpu_s",
+            .desc = "Single-precision floating point (S and W formats)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "interaptiv_mr2",
+            .desc = "interAptiv MR2 extensions (32-bit save/restore)",
+            .deps = .{
+                "mips32r3",
+            },
+        },
+        .{
+            .zig_name = "loongson_2e",
+            .desc = "Loongson 2E extensions",
+            .deps = .{
+                "fpu_d",
+                "mips3",
+            },
+        },
+        .{
+            .zig_name = "loongson_2f",
+            .desc = "Loongson 2F extensions",
+            .deps = .{
+                "fpu_d",
+                "mips3",
+            },
+        },
+        .{
+            .zig_name = "loongson_cam",
+            .desc = "Loongson Content Address Memory instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "loongson_ext",
+            .desc = "Loongson EXTensions instructions",
+            .deps = .{
+                "fpu_s",
+                "mips3",
+            },
+        },
+        .{
+            .zig_name = "loongson_ext2",
+            .desc = "Loongson EXTensions R2 instructions",
+            .deps = .{
+                "loongson_ext",
+            },
+        },
+        .{
+            .zig_name = "loongson_mmi",
+            .desc = "Loongson MultiMedia extensions Instructions",
+            .deps = .{
+                "fpu_s",
+                "mips3",
+            },
+        },
+        .{
+            .zig_name = "mcu",
+            .desc = "MCU ASE",
+            .deps = .{
+                "mips32",
+            },
+        },
+        .{
+            .zig_name = "mxa",
+            .desc = "Ingenic MXA SIMD extension",
+            .deps = .{
+                "msa",
+            },
+        },
+        .{
+            .zig_name = "mxu1",
+            .desc = "Ingenic MXU1 SIMD extension",
+            .deps = .{
+                "mips32",
+            },
+        },
+        .{
+            .zig_name = "mxu1_1",
+            .desc = "Ingenic MXU1.1 SIMD extension",
+            .deps = .{
+                "mxu1",
+            },
+        },
+        .{
+            .zig_name = "mxu2",
+            .desc = "Ingenic MXU2 SIMD extension",
+            .deps = .{
+                "mips32",
+            },
+        },
+        .{
+            .zig_name = "no_llsc",
+            .desc = "Disable load-linked/store-conditional instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "r3900",
+            .desc = "Toshiba R3900 extensions",
+            .deps = .{
+                "mips1",
+            },
+        },
+        .{
+            .zig_name = "r4650",
+            .desc = "R4650 multiply instructions",
+            .deps = .{
+                "mips3",
+            },
+        },
+        .{
+            .zig_name = "sb1",
+            .desc = "Broadcom SB-1 extensions",
+            .deps = .{
+                "fpu_d",
+                "mips64",
+            },
+        },
+        .{
+            .zig_name = "smartmips",
+            .desc = "SmartMIPS ASE",
+            .deps = .{
+                "mips32",
+            },
+        },
+        .{
+            .zig_name = "vr4100",
+            .desc = "NEC VR4100 multiply-add instructions",
+            .deps = .{
+                "mips3",
+            },
+        },
+        .{
+            .zig_name = "vr4120",
+            .desc = "NEC VR4120 multiply-accumulate instructions",
+            .deps = .{
+                "mips3",
+                "vr4100",
+            },
+        },
+        .{
+            .zig_name = "vr5400",
+            .desc = "NEC VR5400 extensions",
+            .deps = .{
+                "fpu_s",
+                "mips4",
+            },
+        },
+        .{
+            .zig_name = "vr5500",
+            .desc = "NEC VR5500 extensions",
+            .deps = .{
+                "fpu_s",
+                "mips4",
+            },
+        },
+        .{
+            .zig_name = "xlr",
+            .desc = "RMI XLR extensions",
+            .deps = .{
+                "mips64",
+            },
+        },
+        .{
+            .zig_name = "xpa",
+            .desc = "Extended Physical Address ASE",
+            .deps = .{
+                "mips32r5",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "mips5",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "i6400",
+            .omit_deps = .{
+                "i6400",
+            },
+            .extra_deps = .{
+                "ginv",
+                "mips64r6",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "i6500",
+            .omit_deps = .{
+                "i6500",
+            },
+            .extra_deps = .{
+                "crc",
+                "ginv",
+                "mips64r6",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "mips1",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips2",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips32",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips32r3",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips32r5",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips32r6",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips64r2",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips64r3",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips64r5",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "mips64r6",
+            .extra_deps = .{
+                "fpu_d",
+            },
+        },
+        .{
+            .llvm_name = "p5600",
+            .extra_deps = .{
+                "eva",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "r5900",
+            .extra_deps = .{
+                "fpu_s",
+                "no_llsc",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "1004kc",
+            .features = .{
+                "mips32r2",
+                "mt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "1004kf",
+            .features = .{
+                "fpu_d",
+                "mips32r2",
+                "mt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "1074kc",
+            .features = .{
+                "dspr2",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "1074kf",
+            .features = .{
+                "dspr2",
+                "fpu_d",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .zig_name = "20kc",
+            .features = .{
+                "mips3d",
+                "mips64",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "24kc",
+            .features = .{
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "24kf",
+            .features = .{
+                "fpu_d",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "24kec",
+            .features = .{
+                "dsp",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "24kef",
+            .features = .{
+                "dsp",
+                "fpu_d",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "34kc",
+            .features = .{
+                "mips32r2",
+                "mt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "34kf",
+            .features = .{
+                "fpu_d",
+                "mips32r2",
+                "mt",
+            },
+        },
+        .{
+            .llvm_name = "mips32",
+            .zig_name = "4k",
+            .features = .{
+                "mips32",
+            },
+        },
+        .{
+            .llvm_name = "mips32",
+            .zig_name = "4ke",
+            .features = .{
+                "mips32",
+            },
+        },
+        .{
+            .llvm_name = "mips32",
+            .zig_name = "4ksc",
+            .features = .{
+                "mips32",
+                "smartmips",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "4ksd",
+            .features = .{
+                "mips32r2",
+                "smartmips",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .zig_name = "5kc",
+            .features = .{
+                "mips64",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .zig_name = "5kf",
+            .features = .{
+                "fpu_d",
+                "mips64",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "74kc",
+            .features = .{
+                "dspr2",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "74kf",
+            .features = .{
+                "dspr2",
+                "fpu_d",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips2",
+            .zig_name = "allegrex",
+            .features = .{
+                "allegrex",
+                "fpu_s",
+                "vfpu",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "gs232",
+            .features = .{
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips64r2",
+            .zig_name = "gs264e",
+            .features = .{
+                "fpu_d",
+                "loongson_ext",
+                "loongson_ext2",
+                "loongson_mmi",
+                "mips64r2",
+                "msa",
+            },
+        },
+        .{
+            .llvm_name = "mips64r2",
+            .zig_name = "gs464",
+            .features = .{
+                "fpu_d",
+                "loongson_mmi",
+                "mips64r2",
+            },
+        },
+        .{
+            .llvm_name = "mips64r2",
+            .zig_name = "gs464e",
+            .features = .{
+                "dspr2",
+                "fpu_d",
+                "loongson_cam",
+                "loongson_ext",
+                "loongson_ext2",
+                "loongson_mmi",
+                "mips64r2",
+            },
+        },
+        .{
+            .llvm_name = "mips64r2",
+            .zig_name = "gs464v",
+            .features = .{
+                "fpu_d",
+                "loongson_cam",
+                "loongson_ext",
+                "loongson_ext2",
+                "loongson_mmi",
+                "mips64r2",
+                "msa",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r3",
+            .zig_name = "interaptiv",
+            .features = .{
+                "eva",
+                "mips32r3",
+                "mt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r3",
+            .zig_name = "interaptiv_mr2",
+            .features = .{
+                "interaptiv_mr2",
+                "mt",
+            },
+        },
+        .{
+            .llvm_name = "mips32",
+            .zig_name = "jz4740",
+            .features = .{
+                "mxu1",
+            },
+        },
+        .{
+            .llvm_name = "mips32",
+            .zig_name = "jz4760",
+            .features = .{
+                "fpu_d",
+                "mxu1_1",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "jz4770",
+            .features = .{
+                "fpu_d",
+                "mips32r2",
+                "mxu1_1",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "loongson_2e",
+            .features = .{
+                "loongson_2e",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "loongson_2f",
+            .features = .{
+                "loongson_2f",
+                "loongson_mmi",
+            },
+        },
+        .{
+            .llvm_name = "mips64r2",
+            .zig_name = "loongson_3a",
+            .features = .{
+                "fpu_d",
+                "loongson_cam",
+                "loongson_ext",
+                "loongson_mmi",
+                "mips64r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "m14k",
+            .features = .{
+                "mcu",
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "m4k",
+            .features = .{
+                "mips32r2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r5",
+            .zig_name = "m5100",
+            .features = .{
+                "mcu",
+                "mips32r5",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r5",
+            .zig_name = "m5150",
+            .features = .{
+                "mcu",
+                "mips32r5",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r6",
+            .zig_name = "m6200",
+            .features = .{
+                "mcu",
+                "mips32r6",
+            },
+        },
+        .{
+            .llvm_name = "mips32r6",
+            .zig_name = "m6250",
+            .features = .{
+                "mcu",
+                "mips32r6",
+            },
+        },
+        .{
+            .llvm_name = "mips32r3",
+            .zig_name = "microaptiv",
+            .features = .{
+                "mcu",
+                "mips32r3",
+            },
+        },
+        .{
+            .llvm_name = "octeon+",
+            .zig_name = "octeon2",
+            .features = .{
+                "cnmips2",
+            },
+        },
+        .{
+            .llvm_name = "octeon+",
+            .zig_name = "octeon3",
+            .features = .{
+                "cnmips3",
+                "fpu_d",
+                "mips64r5",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "mips64r6",
+            .zig_name = "p6600",
+            .features = .{
+                "eva",
+                "mips64r6",
+                "virt",
+            },
+        },
+        .{
+            .llvm_name = "mips32r3",
+            .zig_name = "proaptiv",
+            .features = .{
+                "dspr2",
+                "eva",
+                "mips32r3",
+            },
+        },
+        .{
+            .llvm_name = "mips1",
+            .zig_name = "r2000",
+            .features = .{
+                "mips1",
+            },
+        },
+        .{
+            .llvm_name = "mips1",
+            .zig_name = "r3000",
+            .features = .{
+                "mips1",
+            },
+        },
+        .{
+            .llvm_name = "mips1",
+            .zig_name = "r3000a",
+            .features = .{
+                "mips1",
+            },
+        },
+        .{
+            .llvm_name = "mips1",
+            .zig_name = "r3900",
+            .features = .{
+                "r3900",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "r4000",
+            .features = .{
+                "fpu_d",
+                "mips3",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "r4400",
+            .features = .{
+                "fpu_d",
+                "mips3",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "r4600",
+            .features = .{
+                "fpu_d",
+                "mips3",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "r4650",
+            .features = .{
+                "fpu_s",
+                "r4650",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "r4700",
+            .features = .{
+                "fpu_d",
+                "mips3",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "r5000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips2",
+            .zig_name = "r6000",
+            .features = .{
+                "fpu_d",
+                "mips2",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "r8000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "r10000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "r12000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "r14000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "r16000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "rm5200",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "rm7000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+                "r4650",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "rm9000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+                "r4650",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .zig_name = "sb1",
+            .features = .{
+                "mips3d",
+                "sb1",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .zig_name = "sb1a",
+            .features = .{
+                "mips3d",
+                "sb1",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .zig_name = "sr71000",
+            .features = .{
+                "fpu_d",
+                "mips64",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "vr4100",
+            .features = .{
+                "no_llsc",
+                "vr4100",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "vr4111",
+            .features = .{
+                "no_llsc",
+                "vr4100",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "vr4120",
+            .features = .{
+                "no_llsc",
+                "vr4120",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "vr4130",
+            .features = .{
+                "no_llsc",
+                "vr4120",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "vr4181",
+            .features = .{
+                "no_llsc",
+                "vr4100",
+            },
+        },
+        .{
+            .llvm_name = "mips3",
+            .zig_name = "vr4300",
+            .features = .{
+                "mips3",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "vr5000",
+            .features = .{
+                "fpu_d",
+                "mips4",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "vr5400",
+            .features = .{
+                "fpu_d",
+                "vr5400",
+            },
+        },
+        .{
+            .llvm_name = "mips4",
+            .zig_name = "vr5500",
+            .features = .{
+                "fpu_d",
+                "vr5500",
+            },
+        },
+        .{
+            .llvm_name = "mips32r2",
+            .zig_name = "x1830",
+            .features = .{
+                "fpu_d",
+                "mips32r2",
+                "mxu2",
+            },
+        },
+        .{
+            .llvm_name = "mips32r5",
+            .zig_name = "x2000",
+            .features = .{
+                "fpu_d",
+                "mips32r5",
+                "mxa",
+            },
+        },
+        .{
+            .llvm_name = "mips64r2",
+            .zig_name = "xlp",
+            .features = .{
+                "fpu_d",
+                "mips64r2",
+                "xlr",
+            },
+        },
+        .{
+            .llvm_name = "mips64",
+            .zig_name = "xlr",
+            .features = .{
+                "xlr",
+            },
+        },
+    },
+}

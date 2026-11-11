@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
         .cpu_arch = .thumb,
         .cpu_model = .{ .explicit = &std.Target.arm.cpu.cortex_m4 },
         .os_tag = .freestanding,
-        .abi = .gnueabihf,
+        .abi = .gnu,
     });
 
     if (skip_non_native and !std.zig.target.isNative(&target.query, &target.result, &b.graph.host.result)) return;

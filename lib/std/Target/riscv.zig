@@ -665,12 +665,16 @@ pub const all_features = blk: {
     result[@backingInt(Feature.smcdeleg)] = .{
         .llvm_name = "smcdeleg",
         .description = "'Smcdeleg' (Counter Delegation Machine Level)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .ssccfg,
+        }),
     };
     result[@backingInt(Feature.smcntrpmf)] = .{
         .llvm_name = "smcntrpmf",
         .description = "'Smcntrpmf' (Cycle and Instret Privilege Mode Filtering)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .zicntr,
+        }),
     };
     result[@backingInt(Feature.smcsrind)] = .{
         .llvm_name = "smcsrind",
@@ -681,7 +685,7 @@ pub const all_features = blk: {
         .llvm_name = "smctr",
         .description = "'Smctr' (Control Transfer Records Machine Level)",
         .dependencies = featureSet(&[_]Feature{
-            .sscsrind,
+            .ssctr,
         }),
     };
     result[@backingInt(Feature.smdbltrp)] = .{
@@ -724,7 +728,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.ssccfg)] = .{
         .llvm_name = "ssccfg",
         .description = "'Ssccfg' (Counter Configuration Supervisor Level)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .sscsrind,
+        }),
     };
     result[@backingInt(Feature.ssccptr)] = .{
         .llvm_name = "ssccptr",
@@ -1232,7 +1238,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.xsfvfbfexp16e)] = .{
         .llvm_name = "xsfvfbfexp16e",
         .description = "'XSfvfbfexp16e' (SiFive Vector Floating-Point Exponential Function Instruction, BFloat16)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .zve32f,
+        }),
     };
     result[@backingInt(Feature.xsfvfexp16e)] = .{
         .llvm_name = "xsfvfexp16e",
@@ -1346,7 +1354,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.xtheadfmemidx)] = .{
         .llvm_name = "xtheadfmemidx",
         .description = "'XTHeadFMemIdx' (T-Head FP Indexed Memory Operations)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .f,
+        }),
     };
     result[@backingInt(Feature.xtheadmac)] = .{
         .llvm_name = "xtheadmac",
@@ -1395,7 +1405,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.za64rs)] = .{
         .llvm_name = "za64rs",
         .description = "'Za64rs' (Reservation Set Size of at Most 64 Bytes)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .za128rs,
+        }),
     };
     result[@backingInt(Feature.zaamo)] = .{
         .llvm_name = "zaamo",
@@ -1624,7 +1636,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.ziccamoc)] = .{
         .llvm_name = "ziccamoc",
         .description = "'Ziccamoc' (Main Memory Supports Atomics in Zacas)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .ziccamoa,
+        }),
     };
     result[@backingInt(Feature.ziccid)] = .{
         .llvm_name = "ziccid",
@@ -2071,13 +2085,6 @@ pub const cpu = struct {
             .xaifet,
         }),
     };
-    pub const andes_45_series: CpuModel = .{
-        .name = "andes_45_series",
-        .llvm_name = "andes-45-series",
-        .features = featureSet(&[_]Feature{
-            .short_forward_branch_ialu,
-        }),
-    };
     pub const andes_a25: CpuModel = .{
         .name = "andes_a25",
         .llvm_name = "andes-a25",
@@ -2209,11 +2216,6 @@ pub const cpu = struct {
             .zbb,
             .zifencei,
         }),
-    };
-    pub const rocket: CpuModel = .{
-        .name = "rocket",
-        .llvm_name = "rocket",
-        .features = featureSet(&[_]Feature{}),
     };
     pub const rocket_rv32: CpuModel = .{
         .name = "rocket_rv32",
@@ -2742,13 +2744,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .i,
-        }),
-    };
-    pub const sifive_7_series: CpuModel = .{
-        .name = "sifive_7_series",
-        .llvm_name = "sifive-7-series",
-        .features = featureSet(&[_]Feature{
-            .short_forward_branch_ialu,
         }),
     };
     pub const sifive_e20: CpuModel = .{

@@ -1175,22 +1175,18 @@ const LinuxThreadImpl = struct {
                     : [ptr] "{ebx}" (@intFromPtr(self.mapped.ptr)),
                       [len] "{ecx}" (self.mapped.len),
                 ),
-                .x86_64 => asm volatile (switch (target.abi) {
-                        .gnux32, .muslx32, .x32 =>
+                .x86_64 => asm volatile (if (target.abi.isX32())
                         \\ movl $0x4000000b, %%eax # SYS_munmap
                         \\ syscall
                         \\ movl $0x4000003c, %%eax # SYS_exit
                         \\ xor %%rdi, %%rdi
                         \\ syscall
-                        ,
-                        else =>
+                    else
                         \\ movl $11, %%eax # SYS_munmap
                         \\ syscall
                         \\ movl $60, %%eax # SYS_exit
                         \\ xor %%rdi, %%rdi
                         \\ syscall
-                        ,
-                    }
                     :
                     : [ptr] "{rdi}" (@intFromPtr(self.mapped.ptr)),
                       [len] "{rsi}" (self.mapped.len),
@@ -1275,7 +1271,19 @@ const LinuxThreadImpl = struct {
                     : [ptr] "{r5}" (@intFromPtr(self.mapped.ptr)),
                       [len] "{r6}" (self.mapped.len),
                 ),
-                .mips, .mipsel => asm volatile (
+                .mips,
+                .mipsel,
+                .mipsf32,
+                .mipsf32el,
+                .mipsf64,
+                .mipsf64el,
+                .mipsf64n8,
+                .mipsf64n8el,
+                .mipsn8,
+                .mipsn8el,
+                .mipsr6,
+                .mipsr6el,
+                => asm volatile (
                     \\ li $v0, 4091 # SYS_munmap
                     \\ syscall
                     \\ li $v0, 4001 # SYS_exit
@@ -1285,22 +1293,24 @@ const LinuxThreadImpl = struct {
                     : [ptr] "{$4}" (@intFromPtr(self.mapped.ptr)),
                       [len] "{$5}" (self.mapped.len),
                 ),
-                .mips64, .mips64el => asm volatile (switch (target.abi) {
-                        .gnuabin32, .muslabin32, .abin32 =>
+                .mips64,
+                .mips64el,
+                .mips64n8,
+                .mips64n8el,
+                .mips64r6,
+                .mips64r6el,
+                => asm volatile (if (target.abi.isN32())
                         \\ li $v0, 6011 # SYS_munmap
                         \\ syscall
                         \\ li $v0, 6058 # SYS_exit
                         \\ li $a0, 0
                         \\ syscall
-                        ,
-                        else =>
+                    else
                         \\ li $v0, 5011 # SYS_munmap
                         \\ syscall
                         \\ li $v0, 5058 # SYS_exit
                         \\ li $a0, 0
                         \\ syscall
-                        ,
-                    }
                     :
                     : [ptr] "{$4}" (@intFromPtr(self.mapped.ptr)),
                       [len] "{$5}" (self.mapped.len),
@@ -1438,7 +1448,6 @@ const LinuxThreadImpl = struct {
     extern var __zig_elf_static_tls: extern struct {
         size: usize,
         alignment: usize,
-        gdt_entry_number: usize,
     };
 
     /// Provided by compiler-rt.
@@ -1524,7 +1533,7 @@ const LinuxThreadImpl = struct {
         if (target.cpu.arch == .x86) {
             defer tls_ptr = @intFromPtr(&user_desc);
             user_desc = .{
-                .entry_number = __zig_elf_static_tls.gdt_entry_number,
+                .entry_number = asm volatile ("movw %%gs, %[sel]" : [sel] "=r" (-> u16)) >> 3,
                 .base_addr = tls_ptr,
                 .limit = 0xfffff,
                 .flags = .{

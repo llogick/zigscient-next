@@ -99,7 +99,7 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                     try includePath(comp, arena, try arena.print("{s}-{s}-{s}", .{
                         std.zig.target.freebsdArchNameHeaders(target.cpu.arch),
                         @tagName(target.os.tag),
-                        @tagName(target.abi),
+                        std.zig.target.freebsdAbiNameHeaders(target.abi),
                     })),
                     "-I",
                     try includePath(comp, arena, "generic-freebsd"),

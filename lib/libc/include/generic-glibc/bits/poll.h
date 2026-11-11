@@ -12,7 +12,7 @@
    Lesser General Public License for more details.
 
    You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
+   License along with the GNU C Library.  If not, see
    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _SYS_POLL_H
@@ -30,8 +30,8 @@
 /* These values are defined in XPG4.2.  */
 # define POLLRDNORM	0x040		/* Normal data may be read.  */
 # define POLLRDBAND	0x080		/* Priority data may be read.  */
-# define POLLWRNORM	0x100		/* Writing now will not block.  */
-# define POLLWRBAND	0x200		/* Priority data may be written.  */
+# define POLLWRNORM	POLLOUT		/* Writing now will not block.  */
+# define POLLWRBAND	0x100		/* Priority data may be written.  */
 #endif
 
 #ifdef __USE_GNU

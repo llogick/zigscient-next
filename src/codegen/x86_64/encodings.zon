@@ -1094,14 +1094,14 @@
     .{ .fclex,  .z, .{}, .{ 0xdb, 0xe2 }, 0, .wait, .@"387" },
     .{ .fnclex, .z, .{}, .{ 0xdb, 0xe2 }, 0, .none, .@"387" },
 
-    .{ .fcmovb,   .zo, .{ .st0, .st }, .{ 0xda, 0xc0 }, 0, .none, .@"cmov x87" },
-    .{ .fcmove,   .zo, .{ .st0, .st }, .{ 0xda, 0xc8 }, 0, .none, .@"cmov x87" },
-    .{ .fcmovbe,  .zo, .{ .st0, .st }, .{ 0xda, 0xd0 }, 0, .none, .@"cmov x87" },
-    .{ .fcmovu,   .zo, .{ .st0, .st }, .{ 0xda, 0xd8 }, 0, .none, .@"cmov x87" },
-    .{ .fcmovnb,  .zo, .{ .st0, .st }, .{ 0xdb, 0xc0 }, 0, .none, .@"cmov x87" },
-    .{ .fcmovne,  .zo, .{ .st0, .st }, .{ 0xdb, 0xc8 }, 0, .none, .@"cmov x87" },
-    .{ .fcmovnbe, .zo, .{ .st0, .st }, .{ 0xdb, 0xd0 }, 0, .none, .@"cmov x87" },
-    .{ .fcmovnu,  .zo, .{ .st0, .st }, .{ 0xdb, 0xd8 }, 0, .none, .@"cmov x87" },
+    .{ .fcmovb,   .zo, .{ .st0, .st }, .{ 0xda, 0xc0 }, 0, .none, .@"cmov 387" },
+    .{ .fcmove,   .zo, .{ .st0, .st }, .{ 0xda, 0xc8 }, 0, .none, .@"cmov 387" },
+    .{ .fcmovbe,  .zo, .{ .st0, .st }, .{ 0xda, 0xd0 }, 0, .none, .@"cmov 387" },
+    .{ .fcmovu,   .zo, .{ .st0, .st }, .{ 0xda, 0xd8 }, 0, .none, .@"cmov 387" },
+    .{ .fcmovnb,  .zo, .{ .st0, .st }, .{ 0xdb, 0xc0 }, 0, .none, .@"cmov 387" },
+    .{ .fcmovne,  .zo, .{ .st0, .st }, .{ 0xdb, 0xc8 }, 0, .none, .@"cmov 387" },
+    .{ .fcmovnbe, .zo, .{ .st0, .st }, .{ 0xdb, 0xd0 }, 0, .none, .@"cmov 387" },
+    .{ .fcmovnu,  .zo, .{ .st0, .st }, .{ 0xdb, 0xd8 }, 0, .none, .@"cmov 387" },
 
     .{ .fcom,   .m, .{ .m32 }, .{ 0xd8       }, 2, .none, .@"387" },
     .{ .fcom,   .m, .{ .m64 }, .{ 0xdc       }, 2, .none, .@"387" },
@@ -1113,10 +1113,10 @@
     .{ .fcomp,  .z, .{      }, .{ 0xd8, 0xd9 }, 0, .none, .@"387" },
     .{ .fcompp, .z, .{      }, .{ 0xde, 0xd9 }, 0, .none, .@"387" },
 
-    .{ .fcomi,   .zo, .{ .st0, .st }, .{ 0xdb, 0xf0 }, 0, .none, .@"cmov x87" },
-    .{ .fcomip,  .zo, .{ .st0, .st }, .{ 0xdf, 0xf0 }, 0, .none, .@"cmov x87" },
-    .{ .fucomi,  .zo, .{ .st0, .st }, .{ 0xdb, 0xe8 }, 0, .none, .@"cmov x87" },
-    .{ .fucomip, .zo, .{ .st0, .st }, .{ 0xdf, 0xe8 }, 0, .none, .@"cmov x87" },
+    .{ .fcomi,   .zo, .{ .st0, .st }, .{ 0xdb, 0xf0 }, 0, .none, .@"cmov 387" },
+    .{ .fcomip,  .zo, .{ .st0, .st }, .{ 0xdf, 0xf0 }, 0, .none, .@"cmov 387" },
+    .{ .fucomi,  .zo, .{ .st0, .st }, .{ 0xdb, 0xe8 }, 0, .none, .@"cmov 387" },
+    .{ .fucomip, .zo, .{ .st0, .st }, .{ 0xdf, 0xe8 }, 0, .none, .@"cmov 387" },
 
     .{ .fcos, .z, .{}, .{ 0xd9, 0xff }, 0, .none, .@"387" },
 
@@ -1624,9 +1624,9 @@
 
     .{ .addsubps, .rm, .{ .xmm, .xmm_m128 }, .{ 0xf2, 0x0f, 0xd0 }, 0, .none, .sse3 },
 
-    .{ .fisttp, .m, .{ .m16 }, .{ 0xdf }, 1, .none, .@"sse3 x87" },
-    .{ .fisttp, .m, .{ .m32 }, .{ 0xdb }, 1, .none, .@"sse3 x87" },
-    .{ .fisttp, .m, .{ .m64 }, .{ 0xdd }, 1, .none, .@"sse3 x87" },
+    .{ .fisttp, .m, .{ .m16 }, .{ 0xdf }, 1, .none, .@"sse3 387" },
+    .{ .fisttp, .m, .{ .m32 }, .{ 0xdb }, 1, .none, .@"sse3 387" },
+    .{ .fisttp, .m, .{ .m64 }, .{ 0xdd }, 1, .none, .@"sse3 387" },
 
     .{ .haddpd, .rm, .{ .xmm, .xmm_m128 }, .{ 0x66, 0x0f, 0x7c }, 0, .none, .sse3 },
 

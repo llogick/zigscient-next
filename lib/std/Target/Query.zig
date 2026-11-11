@@ -118,6 +118,8 @@ pub const OsVersion = union(enum) {
 
 pub const SemanticVersion = std.SemanticVersion;
 
+/// Deprecated; to be removed in 0.19.0. If you need both `Target` and `Query`,
+/// keep both around instead of using this function.
 pub fn fromTarget(target: *const Target) Query {
     var result: Query = .{
         .cpu_arch = target.cpu.arch,
@@ -252,8 +254,20 @@ pub fn parse(args: ParseOptions) !Query {
     const opt_abi_text = it.next();
     if (opt_abi_text) |abi_text| {
         var abi_it = mem.splitScalar(u8, abi_text, '.');
-        const abi = std.meta.stringToEnum(Target.Abi, abi_it.first()) orelse
-            return error.UnknownApplicationBinaryInterface;
+        const abi = std.meta.stringToEnum(Target.Abi, abi_it.first()) orelse compat: {
+            // Deprecated compatibility aliases; to be removed in 0.19.0.
+            if (std.mem.eql(u8, abi_it.first(), "abin32")) break :compat Target.Abi.n32;
+            if (std.mem.eql(u8, abi_it.first(), "eabi")) break :compat Target.Abi.sf;
+            if (std.mem.eql(u8, abi_it.first(), "eabihf")) break :compat Target.Abi.none;
+            if (std.mem.eql(u8, abi_it.first(), "gnuabi64")) break :compat Target.Abi.gnu;
+            if (std.mem.eql(u8, abi_it.first(), "gnuabin32")) break :compat Target.Abi.gnun32;
+            if (std.mem.eql(u8, abi_it.first(), "gnueabihf")) break :compat Target.Abi.none;
+            if (std.mem.eql(u8, abi_it.first(), "muslabi64")) break :compat Target.Abi.musl;
+            if (std.mem.eql(u8, abi_it.first(), "muslabin32")) break :compat Target.Abi.musln32;
+            if (std.mem.eql(u8, abi_it.first(), "musleabi")) break :compat Target.Abi.muslsf;
+            if (std.mem.eql(u8, abi_it.first(), "musleabihf")) break :compat Target.Abi.musl;
+            break :compat null;
+        } orelse return error.UnknownApplicationBinaryInterface;
         result.abi = abi;
         diags.abi = abi;
 
@@ -517,7 +531,7 @@ pub fn serializeCpuAlloc(query: Query, gpa: Allocator) Allocator.Error![]u8 {
     return gpa.print("{f}", .{std.fmt.alt(&query, .printCpu)});
 }
 
-/// Deprecated; use `zigTriple` instead. Will be removed in 0.18.0.
+/// Deprecated; use `printZigTriple` instead. Will be removed in 0.18.0.
 pub fn allocDescription(query: Query, allocator: Allocator) ![]u8 {
     return query.zigTriple(allocator);
 }
@@ -651,20 +665,20 @@ test parse {
     }
     {
         const query = try Query.parse(.{
-            .arch_os_abi = "arm-linux-musleabihf",
-            .cpu_features = "generic+v8a",
+            .arch_os_abi = "arm-linux-musl",
+            .cpu_features = "armv7a+no_unaligned_access",
         });
         const target = try std.zig.system.resolveTargetQuery(io, query);
 
         try std.testing.expect(target.os.tag == .linux);
-        try std.testing.expect(target.abi == .musleabihf);
+        try std.testing.expect(target.abi == .musl);
         try std.testing.expect(target.cpu.arch == .arm);
-        try std.testing.expect(target.cpu.model == &Target.arm.cpu.generic);
-        try std.testing.expect(target.cpu.has(.arm, .v8a));
+        try std.testing.expect(target.cpu.model == &Target.arm.cpu.armv7a);
+        try std.testing.expect(target.cpu.has(.arm, .no_unaligned_access));
 
         const text = try query.zigTriple(std.testing.allocator);
         defer std.testing.allocator.free(text);
-        try std.testing.expectEqualSlices(u8, "arm-linux-musleabihf", text);
+        try std.testing.expectEqualSlices(u8, "arm-linux-musl", text);
     }
     {
         const query = try Query.parse(.{

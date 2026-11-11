@@ -61,7 +61,25 @@ pub fn initializeLLVMTarget(io: Io, arch: std.Target.Cpu.Arch) void {
             bindings.LLVMInitializeLanaiAsmPrinter();
             bindings.LLVMInitializeLanaiAsmParser();
         },
-        .mips, .mipsel, .mips64, .mips64el => {
+        .mips,
+        .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
+        .mips64,
+        .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
+        => {
             bindings.LLVMInitializeMipsTarget();
             bindings.LLVMInitializeMipsTargetInfo();
             bindings.LLVMInitializeMipsTargetMC();
@@ -307,8 +325,8 @@ pub fn emit(
         comp.config.function_sections,
         comp.config.data_sections,
         switch (target.abi.float()) {
-            .hard => .Hard,
             .soft => .Soft,
+            else => .Hard,
         },
         if (target_util.llvmMachineAbi(target)) |s| s.ptr else null,
         target_util.useEmulatedTls(target),

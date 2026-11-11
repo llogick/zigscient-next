@@ -43,7 +43,7 @@ pub const GetExternalExecutorOptions = struct {
 pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExternalExecutorOptions) Executor {
     const host_os_tag = options.host_os_tag;
     const host_cpu_arch = options.host_cpu_arch;
-    const os_match = host_os_tag == candidate.os.tag;
+    const os_match = host_os_tag == candidate.os.tag or (host_os_tag == .macos and candidate.os.tag == .maccatalyst);
     const cpu_ok = cpu_ok: {
         if (host_cpu_arch == candidate.cpu.arch)
             break :cpu_ok true;
@@ -80,7 +80,7 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
 
     // If the OS match and OS is macOS and CPU is arm64, we can use Rosetta 2
     // to emulate the foreign architecture.
-    if (os_match and (host_os_tag == .maccatalyst or host_os_tag == .macos) and host_cpu_arch == .aarch64) {
+    if (os_match and host_cpu_arch == .aarch64) {
         switch (candidate.cpu.arch) {
             .x86_64 => return .rosetta,
             else => return bad_result,
@@ -100,10 +100,10 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
                 .freebsd,
                 => .{ .qemu = switch (t) {
                     .x86 => "qemu-i386",
-                    .x86_64 => switch (candidate.abi) {
-                        .gnux32, .muslx32, .x32 => return bad_result,
-                        else => "qemu-x86_64",
-                    },
+                    .x86_64 => if (candidate.abi.isX32())
+                        return bad_result
+                    else
+                        "qemu-x86_64",
                     else => "qemu-" ++ @tagName(t),
                 } },
                 else => bad_result,
@@ -119,8 +119,22 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
             .microblazeel,
             .mips,
             .mipsel,
+            .mipsf32,
+            .mipsf32el,
+            .mipsf64,
+            .mipsf64el,
+            .mipsf64n8,
+            .mipsf64n8el,
+            .mipsn8,
+            .mipsn8el,
+            .mipsr6,
+            .mipsr6el,
             .mips64,
             .mips64el,
+            .mips64n8,
+            .mips64n8el,
+            .mips64r6,
+            .mips64r6el,
             .or1k,
             .powerpc,
             .powerpc64,
@@ -142,11 +156,27 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
                         .powerpc => "qemu-ppc",
                         .powerpc64 => "qemu-ppc64",
                         .powerpc64le => "qemu-ppc64le",
-                        .mips64, .mips64el => switch (candidate.abi) {
-                            .gnuabin32, .muslabin32, .abin32 => if (t == .mips64el) "qemu-mipsn32el" else "qemu-mipsn32",
-                            else => "qemu-" ++ @tagName(t),
-                        },
-                        // TODO: Actually check the SuperH version.
+                        .mips,
+                        .mipsel,
+                        .mipsf32,
+                        .mipsf32el,
+                        .mipsf64,
+                        .mipsf64el,
+                        .mipsf64n8,
+                        .mipsf64n8el,
+                        .mipsn8,
+                        .mipsn8el,
+                        .mipsr6,
+                        .mipsr6el,
+                        => if (candidate.cpu.arch.endian() == .little) "qemu-mipsel" else "qemu-mips",
+                        .mips64,
+                        .mips64n8,
+                        .mips64r6,
+                        => if (candidate.abi.isN32()) "qemu-mipsn32" else "qemu-mips64",
+                        .mips64el,
+                        .mips64n8el,
+                        .mips64r6el,
+                        => if (candidate.abi.isN32()) "qemu-mipsn32el" else "qemu-mips64el",
                         .sh => "qemu-sh4",
                         .sheb => "qemu-sh4eb",
                         .sparc => "qemu-sparc32plus",
@@ -192,25 +222,24 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
     }
 }
 
-pub const DetectError = error{
+pub const ResolveTargetError = error{
     FileSystem,
     SystemResources,
     SymLinkLoop,
     ProcessFdQuotaExceeded,
     SystemFdQuotaExceeded,
     DeviceBusy,
-    OSVersionDetectionFail,
-    Unexpected,
+    OsVersionQueryFailed,
     /// Android-only. Querying API level through `getprop` failed.
     ApiLevelQueryFailed,
-} || Io.Cancelable;
+} || Io.Cancelable || Io.UnexpectedError;
 
 /// Given a `Target.Query`, which specifies in detail which parts of the
 /// target should be detected natively, which should be standard or default,
 /// and which are provided explicitly, this function resolves the native
 /// components by detecting the native system, and then resolves
 /// standard/default parts relative to that.
-pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
+pub fn resolveTargetQuery(io: Io, query: Target.Query) ResolveTargetError!Target {
     // Until https://github.com/ziglang/zig/issues/4592 is implemented (support detecting the
     // native CPU architecture as being different than the current target), we use this:
     const query_cpu_arch = query.cpu_arch orelse builtin.cpu.arch;
@@ -256,7 +285,7 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
                     .PERM => unreachable, // only when setting values,
                     .NOMEM => unreachable, // memory already on the stack
                     .NOENT => unreachable, // constant, known good value
-                    else => return error.OSVersionDetectionFail,
+                    else => return error.OsVersionQueryFailed,
                 }
 
                 switch (builtin.target.os.tag) {
@@ -314,7 +343,7 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
                     error.PermissionDenied => unreachable, // only when setting values,
                     error.SystemResources => unreachable, // memory already on the stack
                     error.UnknownName => unreachable, // constant, known good value
-                    error.Unexpected => return error.OSVersionDetectionFail,
+                    error.Unexpected => return error.OsVersionQueryFailed,
                 };
 
                 if (Target.Query.parseVersion(buf[0 .. len - 1 :0])) |ver| {
@@ -323,7 +352,7 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
                     os.version_range.semver.min = ver;
                     os.version_range.semver.max = ver;
                 } else |_| {
-                    return error.OSVersionDetectionFail;
+                    return error.OsVersionQueryFailed;
                 }
             },
             else => {
@@ -361,7 +390,7 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         os.version_range.linux.android = android;
     }
 
-    var cpu = switch (query.cpu_model) {
+    const maybe_cpu: ?Target.Cpu = switch (query.cpu_model) {
         .native => detectNativeCpuAndFeatures(io, query_cpu_arch),
         .baseline => null,
         .determined_by_arch_os => if (query.cpu_arch == null)
@@ -369,16 +398,11 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         else
             null,
         .explicit => |model| model.toCpu(query_cpu_arch),
-    } orelse Target.Cpu.baseline(query_cpu_arch, os);
+    };
 
-    updateCpuFeatures(
-        &cpu.features,
-        cpu.arch.allFeaturesList(),
-        query.cpu_features_add,
-        query.cpu_features_sub,
-    );
+    const arch = if (maybe_cpu) |c| c.arch else query_cpu_arch;
 
-    var result = detectAbiAndDynamicLinker(io, cpu, os, query) catch |err| switch (err) {
+    var detected = detectAbiAndDynamicLinker(io, arch, os, query) catch |err| switch (err) {
         error.Canceled => |e| return e,
         error.Unexpected => |e| return e,
         error.ApiLevelQueryFailed => |e| return e,
@@ -403,27 +427,19 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         error.UnhelpfulFile,
         error.InvalidElfFile,
         error.RelativeShebang,
-        => return defaultAbiAndDynamicLinker(cpu, os, query),
+        => defaultAbiAndDynamicLinker(arch, os, query),
     };
-
-    // These CPU feature hacks have to come after ABI detection.
-    {
-        // https://github.com/llvm/llvm-project/issues/105978
-        if (result.cpu.arch.isArm() and result.abi.float() == .soft) {
-            result.cpu.features.removeFeature(@backingInt(Target.arm.Feature.vfp2));
-        }
-    }
 
     // It's possible that we detect the native ABI, but fail to detect the OS version or were told
     // to use the default OS version range. In that case, while we can't determine the exact native
     // OS version, we do at least know that some ABIs require a particular OS version (by way of
     // `std.zig.target.available_libcs`). So in this case, adjust the OS version to the minimum that
     // we know is required.
-    if (result.abi != query_abi and query.os_version_min == null) {
-        const result_ver_range = &result.os.version_range;
-        const abi_ver_range = result.os.tag.defaultVersionRange(result.cpu.arch, result.abi).version_range;
+    if (detected.abi != query_abi and query.os_version_min == null) {
+        const result_ver_range = &detected.os.version_range;
+        const abi_ver_range = detected.os.tag.defaultVersionRange(arch, detected.abi).version_range;
 
-        switch (result.os.tag.versionRangeTag()) {
+        switch (detected.os.tag.versionRangeTag()) {
             .none => {},
             .semver => if (result_ver_range.semver.min.order(abi_ver_range.semver.min) == .lt) {
                 result_ver_range.semver.min = abi_ver_range.semver.min;
@@ -445,19 +461,361 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         }
     }
 
-    return result;
+    var cpu: Target.Cpu = maybe_cpu orelse .baseline(arch, detected.os, detected.abi);
+
+    resolveCpuFeatures(
+        arch,
+        &cpu.features,
+        abiRemovedFeatures(arch, detected.abi),
+        query.cpu_features_add,
+        query.cpu_features_sub,
+    );
+
+    return .{
+        .cpu = cpu,
+        .os = detected.os,
+        .abi = detected.abi,
+        .ofmt = query.ofmt orelse .default(detected.os.tag, arch),
+        .dynamic_linker = detected.dynamic_linker,
+    };
 }
 
-fn updateCpuFeatures(
+fn resolveCpuFeatures(
+    arch: Target.Cpu.Arch,
     set: *Target.Cpu.Feature.Set,
-    all_features_list: []const Target.Cpu.Feature,
+    abi_sub_set: Target.Cpu.Feature.Set,
     add_set: Target.Cpu.Feature.Set,
     sub_set: Target.Cpu.Feature.Set,
 ) void {
-    set.removeFeatureSet(sub_set);
+    const all = arch.allFeaturesList();
+
+    var abi_sub = abi_sub_set;
+    abi_sub.populateDependents(all);
+
+    var sub = sub_set;
+    sub.populateDependents(all);
+
+    set.removeFeatureSet(abi_sub);
+    set.removeFeatureSet(sub);
     set.addFeatureSet(add_set);
-    set.populateDependencies(all_features_list);
-    set.removeFeatureSet(sub_set);
+    set.populateDependencies(all);
+    set.removeFeatureSet(sub);
+
+    const blocked = sub;
+
+    // This loop isn't necessary if derivation rules are ordered perfectly, but
+    // that's far too easy to mess up and cause subtle bugs as a result. Still,
+    // please do try to keep the rules ordered sensibly so derivation completes
+    // in one iteration.
+    while (true) {
+        const old = set.*;
+
+        switch (arch.family()) {
+            .aarch64 => {
+                const when = Target.aarch64.featureSetHas;
+                const whenAll = Target.aarch64.featureSetHasAll;
+
+                derive(set, blocked, .aarch64, .ete, when(set.*, .trbe));
+                derive(set, blocked, .aarch64, .neon, when(set.*, .fp_armv8));
+                derive(set, blocked, .aarch64, .rdm, whenAll(set.*, .{ .neon, .v8_1a }));
+                derive(set, blocked, .aarch64, .fullfp16, whenAll(set.*, .{ .fp16fml, .v8_2a }));
+                derive(set, blocked, .aarch64, .complxnum, whenAll(set.*, .{ .fp_armv8, .v8_3a }));
+                derive(set, blocked, .aarch64, .jsconv, whenAll(set.*, .{ .fp_armv8, .v8_3a }));
+                derive(set, blocked, .aarch64, .dotprod, whenAll(set.*, .{ .neon, .v8_4a }));
+                derive(set, blocked, .aarch64, .fullfp16, whenAll(set.*, .{ .neon, .v9a }));
+                derive(set, blocked, .aarch64, .fp16fml, whenAll(set.*, .{ .fullfp16, .v8_4a }));
+                derive(set, blocked, .aarch64, .fptoint, whenAll(set.*, .{ .fp_armv8, .v8_5a }));
+                derive(set, blocked, .aarch64, .bf16, whenAll(set.*, .{ .fp_armv8, .v8_6a }));
+                derive(set, blocked, .aarch64, .i8mm, whenAll(set.*, .{ .neon, .v8_6a }));
+                derive(set, blocked, .aarch64, .spe_eef, whenAll(set.*, .{ .spe, .v8_7a }));
+                derive(set, blocked, .aarch64, .ete, whenAll(set.*, .{ .tracev8_4, .v9a }));
+                derive(set, blocked, .aarch64, .sve2p1, whenAll(set.*, .{ .sve2, .v9_4a }));
+                derive(set, blocked, .aarch64, .sme2p1, whenAll(set.*, .{ .sme2, .v9_4a }));
+                derive(set, blocked, .aarch64, .faminmax, whenAll(set.*, .{ .fp_armv8, .v9_5a }));
+                derive(set, blocked, .aarch64, .lut, whenAll(set.*, .{ .neon, .v9_5a }));
+                derive(set, blocked, .aarch64, .sve_bfscale, whenAll(set.*, .{ .sve_b16b16, .v9_6a }));
+                derive(set, blocked, .aarch64, .fprcvt, whenAll(set.*, .{ .fp_armv8, .v9_7a }));
+                derive(set, blocked, .aarch64, .f16f32dot, whenAll(set.*, .{ .fp16fml, .v9_7a }));
+                derive(set, blocked, .aarch64, .sve2p3, whenAll(set.*, .{ .sve2, .v9_7a }));
+                derive(set, blocked, .aarch64, .sme2p3, whenAll(set.*, .{ .sme, .v9_7a }));
+                derive(set, blocked, .aarch64, .lscp, whenAll(set.*, .{ .d128, .v9_7a }));
+                derive(set, blocked, .aarch64, .f16f32mm, whenAll(set.*, .{ .sve_f16f32mm, .v9_7a }));
+                derive(set, blocked, .aarch64, .sme2p1, whenAll(set.*, .{ .sme, .sve2p1 }));
+                derive(set, blocked, .aarch64, .sme2p2, whenAll(set.*, .{ .sme, .sve2p2 }));
+                derive(set, blocked, .aarch64, .sme2p3, whenAll(set.*, .{ .sme, .sve2p3 }));
+                derive(set, blocked, .aarch64, .sve2p1, whenAll(set.*, .{ .sme2p1, .sve2 }));
+                derive(set, blocked, .aarch64, .sve2p2, whenAll(set.*, .{ .sme2p2, .sve2 }));
+                derive(set, blocked, .aarch64, .sve2p3, whenAll(set.*, .{ .sme2p3, .sve2 }));
+                derive(set, blocked, .aarch64, .ssve_fp8fma, whenAll(set.*, .{ .fp8fma, .sme2 }));
+                derive(set, blocked, .aarch64, .ssve_fp8dot2, whenAll(set.*, .{ .fp8dot2, .sme2 }));
+                derive(set, blocked, .aarch64, .ssve_fp8dot4, whenAll(set.*, .{ .fp8dot4, .sme2 }));
+                derive(set, blocked, .aarch64, .sve_sha3, whenAll(set.*, .{ .sve, .sve_aes }));
+                derive(set, blocked, .aarch64, .sve_aes, whenAll(set.*, .{ .sve, .sve_sha3 }));
+                derive(set, blocked, .aarch64, .sha2, whenAll(set.*, .{ .aes, .rme }));
+                derive(set, blocked, .aarch64, .sha3, whenAll(set.*, .{ .aes, .rme }));
+                derive(set, blocked, .aarch64, .aes, whenAll(set.*, .{ .rme, .sha2 }));
+                derive(set, blocked, .aarch64, .sha3, whenAll(set.*, .{ .rme, .sha2 }));
+                derive(set, blocked, .aarch64, .aes, whenAll(set.*, .{ .rme, .sm4 }));
+                derive(set, blocked, .aarch64, .sha2, whenAll(set.*, .{ .rme, .sm4 }));
+                derive(set, blocked, .aarch64, .sha3, whenAll(set.*, .{ .rme, .sm4 }));
+                derive(set, blocked, .aarch64, .sve_aes, whenAll(set.*, .{ .aes, .rme, .sve }));
+                derive(set, blocked, .aarch64, .sve_aes, whenAll(set.*, .{ .rme, .sha2, .sve }));
+                derive(set, blocked, .aarch64, .sve_sha3, whenAll(set.*, .{ .aes, .rme, .sve }));
+                derive(set, blocked, .aarch64, .sve_sha3, whenAll(set.*, .{ .rme, .sha2, .sve }));
+                derive(set, blocked, .aarch64, .spe_eef, whenAll(set.*, .{ .rme, .spe }));
+                derive(set, blocked, .aarch64, .sve2_aes, whenAll(set.*, .{ .sve_aes, .sve2 }));
+                derive(set, blocked, .aarch64, .sve2_bitperm, whenAll(set.*, .{ .sve_bitperm, .sve2 }));
+                derive(set, blocked, .aarch64, .sve2_sha3, whenAll(set.*, .{ .sve_sha3, .sve2 }));
+                derive(set, blocked, .aarch64, .sve2_sm4, whenAll(set.*, .{ .sve_sm4, .sve2 }));
+                derive(set, blocked, .aarch64, .crypto, whenAll(set.*, .{ .aes, .sha2 }));
+                derive(set, blocked, .aarch64, .dotprod, whenAll(set.*, .{ .neon, .rclass }));
+                derive(set, blocked, .aarch64, .rdm, whenAll(set.*, .{ .neon, .rclass }));
+                derive(set, blocked, .aarch64, .complxnum, whenAll(set.*, .{ .fp_armv8, .rclass }));
+                derive(set, blocked, .aarch64, .jsconv, whenAll(set.*, .{ .fp_armv8, .rclass }));
+                derive(set, blocked, .aarch64, .fullfp16, whenAll(set.*, .{ .fp16fml, .rclass }));
+                derive(set, blocked, .aarch64, .fp16fml, whenAll(set.*, .{ .fullfp16, .rclass }));
+            },
+            .arm => {
+                const when = Target.arm.featureSetHas;
+                const whenAll = Target.arm.featureSetHasAll;
+
+                derive(set, blocked, .arm, .hwdiv, whenAll(set.*, .{ .mclass, .v8m }));
+                derive(set, blocked, .arm, .v7clrex, whenAll(set.*, .{ .mclass, .v8m }));
+                derive(set, blocked, .arm, .acquire_release, whenAll(set.*, .{ .mclass, .v8m }) and !when(set.*, .v7));
+                derive(set, blocked, .arm, .no_unaligned_access, when(set.*, .mclass) and !when(set.*, .v7));
+                derive(set, blocked, .arm, .no_unaligned_access, !when(set.*, .v6));
+                derive(set, blocked, .arm, .dsp, !when(set.*, .mclass) and when(set.*, .v5te));
+                derive(set, blocked, .arm, .trustzone, whenAll(set.*, .{ .aclass, .virtualization }) and !when(set.*, .v8));
+                derive(set, blocked, .arm, .virtualization, whenAll(set.*, .{ .rclass, .v8 }));
+                derive(set, blocked, .arm, .dfb, whenAll(set.*, .{ .rclass, .v8 }));
+                derive(set, blocked, .arm, .neon, whenAll(set.*, .{ .fp64, .rclass, .v8 }));
+                derive(set, blocked, .arm, .neon, whenAll(set.*, .{ .aclass, .v8, .vfp2sp }));
+                derive(set, blocked, .arm, .fp_armv8, whenAll(set.*, .{ .aclass, .v8, .vfp2sp }));
+                derive(set, blocked, .arm, .fp_armv8, whenAll(set.*, .{ .neon, .v8 }));
+                derive(set, blocked, .arm, .fp_armv8d16sp, whenAll(set.*, .{ .fp64, .mclass }));
+                derive(set, blocked, .arm, .vfp4d16sp, whenAll(set.*, .{ .mclass, .vfp2sp }));
+                derive(set, blocked, .arm, .fp_armv8d16sp, whenAll(set.*, .{ .v8m_main, .vfp2sp }));
+                derive(set, blocked, .arm, .fullfp16, whenAll(set.*, .{ .v8_1m_main, .vfp2sp }));
+                derive(set, blocked, .arm, .vfp3d16sp, whenAll(set.*, .{ .v7, .vfp2sp }));
+                derive(set, blocked, .arm, .fp_armv8d16sp, whenAll(set.*, .{ .v8, .vfp2sp }));
+                derive(set, blocked, .arm, .fullfp16, whenAll(set.*, .{ .fp16fml, .v8_2a }));
+                derive(set, blocked, .arm, .fullfp16, whenAll(set.*, .{ .neon, .v9a }));
+                derive(set, blocked, .arm, .fp16fml, whenAll(set.*, .{ .fullfp16, .v8_4a }));
+                derive(set, blocked, .arm, .dotprod, whenAll(set.*, .{ .neon, .v8_4a }));
+                derive(set, blocked, .arm, .vfp2, whenAll(set.*, .{ .fp64, .vfp2sp }));
+                derive(set, blocked, .arm, .vfp3d16, whenAll(set.*, .{ .fp64, .vfp3d16sp }));
+                derive(set, blocked, .arm, .vfp3sp, whenAll(set.*, .{ .d32, .vfp3d16sp }));
+                derive(set, blocked, .arm, .vfp3, whenAll(set.*, .{ .vfp3d16, .vfp3sp }));
+                derive(set, blocked, .arm, .vfp4d16, whenAll(set.*, .{ .fp64, .vfp4d16sp }));
+                derive(set, blocked, .arm, .vfp4sp, whenAll(set.*, .{ .d32, .vfp4d16sp }));
+                derive(set, blocked, .arm, .vfp4, whenAll(set.*, .{ .vfp4d16, .vfp4sp }));
+                derive(set, blocked, .arm, .fp_armv8d16, whenAll(set.*, .{ .fp_armv8d16sp, .fp64 }));
+                derive(set, blocked, .arm, .fp_armv8sp, whenAll(set.*, .{ .d32, .fp_armv8d16sp }));
+                derive(set, blocked, .arm, .fp_armv8, whenAll(set.*, .{ .fp_armv8d16, .fp_armv8sp }));
+                derive(set, blocked, .arm, .crypto, whenAll(set.*, .{ .aes, .sha2 }));
+            },
+            .hexagon => {
+                const when = Target.hexagon.featureSetHas;
+                const whenAll = Target.hexagon.featureSetHasAll;
+
+                derive(set, blocked, .hexagon, .hvxv60, whenAll(set.*, .{ .hvx, .v60 }));
+                derive(set, blocked, .hexagon, .hvxv62, whenAll(set.*, .{ .hvx, .v62 }));
+                derive(set, blocked, .hexagon, .hvxv65, whenAll(set.*, .{ .hvx, .v65 }));
+                derive(set, blocked, .hexagon, .hvxv66, whenAll(set.*, .{ .hvx, .v66 }));
+                derive(set, blocked, .hexagon, .hvxv67, whenAll(set.*, .{ .hvx, .v67 }));
+                derive(set, blocked, .hexagon, .hvxv68, whenAll(set.*, .{ .hvx, .v68 }));
+                derive(set, blocked, .hexagon, .hvxv69, whenAll(set.*, .{ .hvx, .v69 }));
+                derive(set, blocked, .hexagon, .hvxv71, whenAll(set.*, .{ .hvx, .v71 }));
+                derive(set, blocked, .hexagon, .hvxv73, whenAll(set.*, .{ .hvx, .v73 }));
+                derive(set, blocked, .hexagon, .hvxv75, whenAll(set.*, .{ .hvx, .v75 }));
+                derive(set, blocked, .hexagon, .hvxv79, whenAll(set.*, .{ .hvx, .v79 }));
+                derive(set, blocked, .hexagon, .hvxv81, whenAll(set.*, .{ .hvx, .v81 }));
+                derive(set, blocked, .hexagon, .hvx_length64b, when(set.*, .hvx) and !when(set.*, .hvx_length128b));
+            },
+            .mips => {
+                const when = Target.mips.featureSetHas;
+                const whenAll = Target.mips.featureSetHasAll;
+
+                derive(set, blocked, .mips, .fpu_d, whenAll(set.*, .{ .fpu_s, .mips32 }) and !when(set.*, .mips32r6));
+                derive(set, blocked, .mips, .fpu_d, whenAll(set.*, .{ .fpu_s, .msa }));
+                derive(set, blocked, .mips, .abs2008, whenAll(set.*, .{ .fpu_s, .msa }));
+                derive(set, blocked, .mips, .nan2008, whenAll(set.*, .{ .fpu_s, .msa }));
+                derive(set, blocked, .mips, .mips64r2, whenAll(set.*, .{ .mips32r2, .mips64 }));
+                derive(set, blocked, .mips, .mips64r3, whenAll(set.*, .{ .mips32r3, .mips64 }));
+                derive(set, blocked, .mips, .mips64r5, whenAll(set.*, .{ .mips32r5, .mips64 }));
+                derive(set, blocked, .mips, .mips64r6, whenAll(set.*, .{ .mips32r6, .mips64 }));
+                derive(set, blocked, .mips, .dspr3, whenAll(set.*, .{ .dspr2, .mips32r6 }));
+            },
+            .powerpc => {
+                const when = Target.powerpc.featureSetHas;
+                const whenAll = Target.powerpc.featureSetHasAll;
+
+                derive(set, blocked, .powerpc, .fsqrt, whenAll(set.*, .{ .fpu, .isa_v203_instructions }));
+                derive(set, blocked, .powerpc, .stfiwx, whenAll(set.*, .{ .fpu, .isa_v203_instructions }));
+                derive(set, blocked, .powerpc, .fcpsgn, whenAll(set.*, .{ .fpu, .isa_v205_instructions }));
+                derive(set, blocked, .powerpc, .lfiwax, whenAll(set.*, .{ .fpu, .isa_v205_instructions }));
+                derive(set, blocked, .powerpc, .fre, whenAll(set.*, .{ .fpu, .isa_v206_instructions }));
+                derive(set, blocked, .powerpc, .fres, whenAll(set.*, .{ .fpu, .isa_v206_instructions }));
+                derive(set, blocked, .powerpc, .fprnd, whenAll(set.*, .{ .fpu, .isa_v206_instructions }));
+                derive(set, blocked, .powerpc, .frsqrte, whenAll(set.*, .{ .fpu, .isa_v206_instructions }));
+                derive(set, blocked, .powerpc, .frsqrtes, whenAll(set.*, .{ .fpu, .isa_v206_instructions }));
+                derive(set, blocked, .powerpc, .fpcvt, whenAll(set.*, .{ .fpu, .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .ldbrx, whenAll(set.*, .{ .@"64bit", .isa_v206_instructions }));
+                derive(set, blocked, .powerpc, .bpermd, whenAll(set.*, .{ .@"64bit", .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .extdiv, whenAll(set.*, .{ .@"64bit", .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .popcntd, whenAll(set.*, .{ .@"64bit", .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .quadword_atomics, whenAll(set.*, .{ .@"64bit", .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .vsx, whenAll(set.*, .{ .altivec, .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .power8_altivec, whenAll(set.*, .{ .altivec, .isa_v207_instructions }));
+                derive(set, blocked, .powerpc, .direct_move, whenAll(set.*, .{ .isa_v207_instructions, .vsx }));
+                derive(set, blocked, .powerpc, .power8_vector, whenAll(set.*, .{ .isa_v207_instructions, .vsx }));
+                derive(set, blocked, .powerpc, .crypto, whenAll(set.*, .{ .altivec, .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .power9_altivec, whenAll(set.*, .{ .altivec, .isa_v30_instructions }));
+                derive(set, blocked, .powerpc, .paired_vector_memops, whenAll(set.*, .{ .altivec, .isa_v31_instructions }));
+                derive(set, blocked, .powerpc, .prefix_instrs, whenAll(set.*, .{ .@"64bit", .isa_v31_instructions }));
+                derive(set, blocked, .powerpc, .pcrelative_memops, when(set.*, .prefix_instrs));
+            },
+            .riscv => {
+                const when = Target.riscv.featureSetHas;
+                const whenAll = Target.riscv.featureSetHasAll;
+
+                derive(set, blocked, .riscv, .zcd, whenAll(set.*, .{ .c, .d }));
+                derive(set, blocked, .riscv, .zcf, whenAll(set.*, .{ .@"32bit", .c, .f }));
+                derive(set, blocked, .riscv, .zcf, whenAll(set.*, .{ .@"32bit", .f, .zce }));
+                derive(set, blocked, .riscv, .c, when(set.*, .zca) and (when(set.*, .zcf) or !whenAll(set.*, .{ .@"32bit", .f })) and (when(set.*, .zcd) or !when(set.*, .d)));
+                derive(set, blocked, .riscv, .zce, whenAll(set.*, .{ .zcb, .zcmp, .zcmt }) and (when(set.*, .zcf) or !whenAll(set.*, .{ .@"32bit", .f })));
+                derive(set, blocked, .riscv, .a, whenAll(set.*, .{ .zaamo, .zalrsc }));
+                derive(set, blocked, .riscv, .b, whenAll(set.*, .{ .zba, .zbb, .zbs }));
+                derive(set, blocked, .riscv, .zkn, whenAll(set.*, .{ .zbkb, .zbkc, .zbkx, .zknd, .zkne, .zknh }));
+                derive(set, blocked, .riscv, .zks, whenAll(set.*, .{ .zbkb, .zbkc, .zbkx, .zksed, .zksh }));
+                derive(set, blocked, .riscv, .zk, whenAll(set.*, .{ .zkn, .zkr, .zkt }));
+                derive(set, blocked, .riscv, .zvkn, whenAll(set.*, .{ .zvkb, .zvkned, .zvknhb, .zvkt }));
+                derive(set, blocked, .riscv, .zvknc, whenAll(set.*, .{ .zvbc, .zvkn }));
+                derive(set, blocked, .riscv, .zvkng, whenAll(set.*, .{ .zvkg, .zvkn }));
+                derive(set, blocked, .riscv, .zvks, whenAll(set.*, .{ .zvkb, .zvksed, .zvksh, .zvkt }));
+                derive(set, blocked, .riscv, .zvksc, whenAll(set.*, .{ .zvbc, .zvks }));
+                derive(set, blocked, .riscv, .zvksg, whenAll(set.*, .{ .zvkg, .zvks }));
+                derive(set, blocked, .riscv, .zve64f, whenAll(set.*, .{ .zve32f, .zve64x }));
+                derive(set, blocked, .riscv, .sha, whenAll(set.*, .{ .h, .shcounterenw, .shgatpa, .shtvala, .shvsatpa, .shvstvala, .shvstvecd, .ssstateen }));
+                derive(set, blocked, .riscv, .smcdeleg, when(set.*, .ssccfg));
+            },
+            .s390x => {
+                const whenAny = Target.s390x.featureSetHasAny;
+
+                // A single `stfle` bit covers multiple features:
+                const b45 = .{ .distops, .fbcrs, .hiword, .iacc, .loc, .popcnt };
+                const b49 = .{ .exhint, .lat, .minste, .ppa };
+                const b53 = .{ .loc2, .lzr };
+
+                inline for (b45) |feat| derive(set, blocked, .s390x, feat, whenAny(set.*, b45));
+                inline for (b49) |feat| derive(set, blocked, .s390x, feat, whenAny(set.*, b49));
+                inline for (b53) |feat| derive(set, blocked, .s390x, feat, whenAny(set.*, b53));
+            },
+            .sh => {
+                const whenAll = Target.sh.featureSetHasAll;
+
+                derive(set, blocked, .sh, .fsca, whenAll(set.*, .{ .fpu, .sh4 }));
+                derive(set, blocked, .sh, .fsrra, whenAll(set.*, .{ .fpu, .sh4 }));
+            },
+            .x86 => {
+                const whenAll = Target.x86.featureSetHasAll;
+                const whenAny = Target.x86.featureSetHasAny;
+
+                // What is LLVM smoking? It's literally a single `cpuid` bit...
+                const apxf = .{ .ccmp, .cf, .egpr, .jmpabs, .ndd, .nf, .ppx, .push2pop2, .zu };
+
+                derive(set, blocked, .x86, .@"287", whenAll(set.*, .{ .@"286", .@"8087" }));
+                derive(set, blocked, .x86, .@"387", whenAll(set.*, .{ .@"486", .@"8087" }));
+                inline for (apxf) |feat| derive(set, blocked, .x86, feat, whenAny(set.*, apxf));
+            },
+            else => {},
+        }
+
+        if (set.eql(old)) break;
+    }
+}
+
+fn derive(
+    set: *Target.Cpu.Feature.Set,
+    blocked: Target.Cpu.Feature.Set,
+    comptime family: Target.Cpu.Arch.Family,
+    feature: @field(Target, @tagName(family)).Feature,
+    condition: bool,
+) void {
+    if (!condition) return;
+
+    var add: Target.Cpu.Feature.Set = @field(Target, @tagName(family)).featureSet(&.{feature});
+    add.populateDependencies(&@field(Target, @tagName(family)).all_features);
+
+    var unblocked = add;
+    unblocked.removeFeatureSet(blocked);
+
+    if (unblocked.eql(add)) set.addFeatureSet(add);
+}
+
+fn abiRemovedFeatures(arch: Target.Cpu.Arch, abi: Target.Abi) Target.Cpu.Feature.Set {
+    return switch (abi.float()) {
+        .soft => switch (arch.family()) {
+            .aarch64 => Target.aarch64.featureSet(&.{
+                .fp_armv8,
+            }),
+            .alpha => Target.alpha.featureSet(&.{
+                .fpu,
+            }),
+            .arm => Target.arm.featureSet(&.{
+                .fpregs,
+            }),
+            .csky => Target.csky.featureSet(&.{
+                .floate1,
+                .float7e60,
+            }),
+            .hppa => Target.hppa.featureSet(&.{
+                .fpu,
+            }),
+            .loongarch => Target.loongarch.featureSet(&.{
+                .f,
+            }),
+            .m68k => Target.m68k.featureSet(&.{
+                .isa_68881,
+            }),
+            .mips => Target.mips.featureSet(&.{
+                .fpu_s,
+            }),
+            .powerpc => Target.powerpc.featureSet(&.{
+                .fpu,
+            }),
+            .riscv => Target.riscv.featureSet(&.{
+                .f,
+            }),
+            .sh => Target.sh.featureSet(&.{
+                .fpu,
+            }),
+            .sparc => Target.sparc.featureSet(&.{
+                .fpu,
+            }),
+            .x86 => Target.x86.featureSet(&.{
+                .@"8087",
+            }),
+            else => .empty,
+        },
+        .hard32 => switch (arch.family()) {
+            .csky => Target.csky.featureSet(&.{
+                .float1e2,
+                .fpuv3_df,
+            }),
+            .loongarch => Target.loongarch.featureSet(&.{
+                .d,
+            }),
+            .mips => Target.mips.featureSet(&.{
+                .fpu_d,
+            }),
+            .riscv => Target.riscv.featureSet(&.{
+                .d,
+            }),
+            else => .empty,
+        },
+        .hard64 => .empty,
+    };
 }
 
 fn detectNativeCpuAndFeatures(io: Io, cpu_arch: Target.Cpu.Arch) ?Target.Cpu {
@@ -483,7 +841,7 @@ fn detectNativeCpuAndFeatures(io: Io, cpu_arch: Target.Cpu.Arch) ?Target.Cpu {
     return null;
 }
 
-pub const AbiAndDynamicLinkerFromFileError = error{
+const AbiAndDynamicLinkerFromFileError = error{
     Canceled,
     AccessDenied,
     Unexpected,
@@ -513,19 +871,17 @@ pub const AbiAndDynamicLinkerFromFileError = error{
 fn abiAndDynamicLinkerFromFile(
     file_reader: *Io.File.Reader,
     header: *const elf.Header,
-    cpu: Target.Cpu,
+    arch: Target.Cpu.Arch,
     os: Target.Os,
     ld_info_list: []const LdInfo,
     query: Target.Query,
-) AbiAndDynamicLinkerFromFileError!Target {
+) AbiAndDynamicLinkerFromFileError!DetectedTarget {
     assert(query.abi == null); // See the early exit in `detectAbiAndDynamicLinker`.
 
     const io = file_reader.io;
-    var result: Target = .{
-        .cpu = cpu,
+    var result: DetectedTarget = .{
         .os = os,
-        .abi = Target.Abi.default(cpu.arch, os.tag),
-        .ofmt = query.ofmt orelse Target.ObjectFormat.default(os.tag, cpu.arch),
+        .abi = .default(arch, os.tag),
         .dynamic_linker = query.dynamic_linker orelse .none,
     };
     var rpath_offset: ?u64 = null; // Found inside PT.DYNAMIC
@@ -564,7 +920,7 @@ fn abiAndDynamicLinkerFromFile(
             .DYNAMIC => {
                 got_dyn_section = true;
 
-                if (builtin.target.os.tag == .linux and result.isGnuLibC() and query.glibc_version == null) {
+                if (builtin.target.os.tag == .linux and result.abi.isGnu() and query.glibc_version == null) {
                     var dyn_it = header.iterateDynamicSection(file_reader, phdr.offset, phdr.filesz);
                     while (try dyn_it.next()) |dyn| {
                         if (dyn.d_tag == elf.DT_RUNPATH) {
@@ -579,14 +935,14 @@ fn abiAndDynamicLinkerFromFile(
     }
 
     if (look_for_ld and result.dynamic_linker.get() == null) {
-        result.dynamic_linker = .standard(cpu, os.tag, result.abi);
+        result.dynamic_linker = .standard(arch, os.tag, result.abi);
     }
 
     if (!got_dyn_section) {
         return error.StaticElfFile;
     }
 
-    if (builtin.target.os.tag == .linux and result.isGnuLibC() and query.glibc_version == null) {
+    if (builtin.target.os.tag == .linux and result.abi.isGnu() and query.glibc_version == null) {
         const str_section_off = header.shoff + @as(u64, header.shentsize) * @as(u64, header.shstrndx);
         try file_reader.seekTo(str_section_off);
         const shstr = try elf.takeSectionHeader(&file_reader.interface, header.is_64, header.endian);
@@ -684,7 +1040,7 @@ fn abiAndDynamicLinkerFromFile(
         var path_buf: [posix.PATH_MAX]u8 = undefined;
         var index: usize = 0;
         const prefix = "/lib/";
-        const cpu_arch = @tagName(result.cpu.arch);
+        const cpu_arch = @tagName(arch);
         const os_tag = @tagName(result.os.tag);
         const abi = @tagName(result.abi);
         @memcpy(path_buf[index..][0..prefix.len], prefix);
@@ -869,6 +1225,12 @@ fn glibcVerFromSoFile(file_reader: *Io.File.Reader) !std.SemanticVersion {
     return max_ver;
 }
 
+const DetectedTarget = struct {
+    os: Target.Os,
+    abi: Target.Abi,
+    dynamic_linker: Target.DynamicLinker,
+};
+
 /// In the past, this function attempted to use the executable's own binary if it was dynamically
 /// linked to answer both the C ABI question and the dynamic linker question. However, this
 /// could be problematic on a system that uses a RUNPATH for the compiler binary, locking
@@ -882,11 +1244,11 @@ fn glibcVerFromSoFile(file_reader: *Io.File.Reader) !std.SemanticVersion {
 /// answer to these questions, or if there is a shebang line, then it chases the referenced
 /// file recursively. If that does not provide the answer, then the function falls back to
 /// defaults.
-fn detectAbiAndDynamicLinker(io: Io, cpu: Target.Cpu, os: Target.Os, query: Target.Query) !Target {
+fn detectAbiAndDynamicLinker(io: Io, arch: Target.Cpu.Arch, os: Target.Os, query: Target.Query) !DetectedTarget {
     const native_os_uses_elf = comptime Target.ObjectFormat.default(builtin.target.os.tag, builtin.target.cpu.arch) == .elf;
     const native_ld_needs_abi = comptime Target.DynamicLinker.kind(builtin.target.os.tag) == .arch_os_abi;
     if (!native_os_uses_elf or !native_ld_needs_abi or query.os_tag != null or query.abi != null) {
-        return defaultAbiAndDynamicLinker(cpu, os, query);
+        return defaultAbiAndDynamicLinker(arch, os, query);
     }
 
     assert(os.tag == builtin.target.os.tag);
@@ -909,7 +1271,7 @@ fn detectAbiAndDynamicLinker(io: Io, cpu: Target.Cpu, os: Target.Os, query: Targ
     var ld_info_list_len: usize = 0;
 
     for (all_abis) |abi| {
-        const ld: Target.DynamicLinker = .standard(cpu, os.tag, abi);
+        const ld: Target.DynamicLinker = .standard(arch, os.tag, abi);
 
         // Does the generated target triple actually have a standard dynamic linker path?
         if (ld.get() == null) continue;
@@ -1025,7 +1387,7 @@ fn detectAbiAndDynamicLinker(io: Io, cpu: Target.Cpu, os: Target.Os, query: Targ
     };
     defer file_reader.file.close(io);
 
-    var result = abiAndDynamicLinkerFromFile(&file_reader, &header, cpu, os, ld_info_list, query) catch |err| switch (err) {
+    var result = abiAndDynamicLinkerFromFile(&file_reader, &header, arch, os, ld_info_list, query) catch |err| switch (err) {
         error.FileSystem,
         error.SystemResources,
         error.SymLinkLoop,
@@ -1038,11 +1400,11 @@ fn detectAbiAndDynamicLinker(io: Io, cpu: Target.Cpu, os: Target.Os, query: Targ
 
         else => |e| {
             std.log.warn("encountered {t}; falling back to default ABI and dynamic linker", .{e});
-            return defaultAbiAndDynamicLinker(cpu, os, query);
+            return defaultAbiAndDynamicLinker(arch, os, query);
         },
     };
 
-    if (builtin.target.os.tag == .linux and result.isBionicLibC() and query.android_api_level == null) {
+    if (builtin.target.os.tag == .linux and result.abi.isAndroid() and query.android_api_level == null) {
         result.os.version_range.linux.android = detectAndroidApiLevel(io) catch |err| return switch (err) {
             error.InvalidWtf8,
             error.InvalidBatchScriptArg,
@@ -1066,14 +1428,12 @@ fn detectAbiAndDynamicLinker(io: Io, cpu: Target.Cpu, os: Target.Os, query: Targ
     return result;
 }
 
-fn defaultAbiAndDynamicLinker(cpu: Target.Cpu, os: Target.Os, query: Target.Query) Target {
-    const abi = query.abi orelse Target.Abi.default(cpu.arch, os.tag);
+fn defaultAbiAndDynamicLinker(arch: Target.Cpu.Arch, os: Target.Os, query: Target.Query) DetectedTarget {
+    const abi: Target.Abi = query.abi orelse .default(arch, os.tag);
     return .{
-        .cpu = cpu,
         .os = os,
         .abi = abi,
-        .ofmt = query.ofmt orelse Target.ObjectFormat.default(os.tag, cpu.arch),
-        .dynamic_linker = query.dynamic_linker orelse .standard(cpu, os.tag, abi),
+        .dynamic_linker = query.dynamic_linker orelse .standard(arch, os.tag, abi),
     };
 }
 

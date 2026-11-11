@@ -12,10 +12,28 @@ else switch (native_arch) {
     .hexagon => Hexagon,
     .kvx => Kvx,
     .lanai => Lanai,
-    .loongarch32, .loongarch64 => LoongArch,
+    .loongarch32, .loongarch64 => Loongarch,
     .m68k => M68k,
     .m88k => M88k,
-    .mips, .mipsel, .mips64, .mips64el => Mips,
+    .mips,
+    .mipsel,
+    .mipsf32,
+    .mipsf32el,
+    .mipsf64,
+    .mipsf64el,
+    .mipsf64n8,
+    .mipsf64n8el,
+    .mipsn8,
+    .mipsn8el,
+    .mipsr6,
+    .mipsr6el,
+    .mips64,
+    .mips64el,
+    .mips64n8,
+    .mips64n8el,
+    .mips64r6,
+    .mips64r6el,
+    => Mips,
     .or1k => Or1k,
     .powerpc, .powerpcle, .powerpc64, .powerpc64le => Powerpc,
     .sparc, .sparc64 => Sparc,
@@ -57,7 +75,7 @@ pub fn fromPosixSignalContext(ctx_ptr: ?*const anyopaque) ?Native {
         // The 32-bit kABI (added later) kept the 64-bit layout.
         return .{
             .r = s: {
-                var regs: [32]LoongArch.Gpr = undefined;
+                var regs: [32]Loongarch.Gpr = undefined;
                 for (uc.mcontext.r, 0..) |r, i| regs[i] = @truncate(r);
                 break :s regs;
             },
@@ -137,7 +155,29 @@ pub fn fromPosixSignalContext(ctx_ptr: ?*const anyopaque) ?Native {
                 [_]Csky.Gpr{uc.mcontext.r31},
             .pc = uc.mcontext.pc,
         },
-        .hexagon, .loongarch32, .loongarch64, .mips, .mipsel, .mips64, .mips64el, .or1k => .{
+        .hexagon,
+        .loongarch32,
+        .loongarch64,
+        .mips,
+        .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
+        .mips64,
+        .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
+        .or1k,
+        => .{
             .r = uc.mcontext.r,
             .pc = uc.mcontext.pc,
         },
@@ -815,15 +855,15 @@ const Lanai = extern struct {
 };
 
 /// This is an `extern struct` so that inline assembly in `current` can use field offsets.
-const LoongArch = extern struct {
+const Loongarch = extern struct {
     /// The numbered general-purpose registers r0 - r31. r0 must be zero.
     r: [32]Gpr,
     pc: Gpr,
 
     pub const Gpr = if (native_arch == .loongarch64) u64 else u32;
 
-    pub inline fn current() LoongArch {
-        var ctx: LoongArch = undefined;
+    pub inline fn current() Loongarch {
+        var ctx: Loongarch = undefined;
         asm volatile (if (Gpr == u64)
                 \\ st.d $zero, $t0, 0
                 \\ st.d $ra, $t0, 8
@@ -902,14 +942,14 @@ const LoongArch = extern struct {
         return ctx;
     }
 
-    pub fn getFp(ctx: *const LoongArch) usize {
+    pub fn getFp(ctx: *const Loongarch) usize {
         return ctx.r[22];
     }
-    pub fn getPc(ctx: *const LoongArch) usize {
+    pub fn getPc(ctx: *const Loongarch) usize {
         return ctx.pc;
     }
 
-    pub fn dwarfRegisterBytes(ctx: *LoongArch, register_num: u16) DwarfRegisterError![]u8 {
+    pub fn dwarfRegisterBytes(ctx: *Loongarch, register_num: u16) DwarfRegisterError![]u8 {
         switch (register_num) {
             0...31 => return @ptrCast(&ctx.r[register_num]),
             64 => return @ptrCast(&ctx.pc),
@@ -2068,8 +2108,22 @@ const signal_ucontext_t = switch (native_os) {
         .m68k,
         .mips,
         .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
         .mips64,
         .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
         .or1k,
         .s390x,
         .sh,
@@ -2165,7 +2219,19 @@ const signal_ucontext_t = switch (native_os) {
                     pc: u32,
                 },
                 // https://github.com/torvalds/linux/blob/cd5a0afbdf8033dc83786315d63f8b325bdba2fd/arch/mips/include/uapi/asm/sigcontext.h
-                .mips, .mipsel => extern struct {
+                .mips,
+                .mipsel,
+                .mipsf32,
+                .mipsf32el,
+                .mipsf64,
+                .mipsf64el,
+                .mipsf64n8,
+                .mipsf64n8el,
+                .mipsn8,
+                .mipsn8el,
+                .mipsr6,
+                .mipsr6el,
+                => extern struct {
                     _regmask: u32,
                     _status: u32,
                     // ??? A spectacularly failed attempt to be future-proof?
@@ -2173,7 +2239,13 @@ const signal_ucontext_t = switch (native_os) {
                     r: [32]u64,
                 },
                 // https://github.com/torvalds/linux/blob/cd5a0afbdf8033dc83786315d63f8b325bdba2fd/arch/mips/include/uapi/asm/sigcontext.h
-                .mips64, .mips64el => extern struct {
+                .mips64,
+                .mips64el,
+                .mips64n8,
+                .mips64n8el,
+                .mips64r6,
+                .mips64r6el,
+                => extern struct {
                     r: [32]u64,
                     _fpregs: [32]u64,
                     _hi: [4]u64,
@@ -2701,7 +2773,7 @@ const signal_ucontext_t = switch (native_os) {
                 pc: u32,
             },
             // https://github.com/NetBSD/src/blob/861008c62187bf7bc0aac4d81e52ed6eee4d0c74/sys/arch/mips/include/mcontext.h
-            .mips, .mipsel => extern struct {
+            .mips, .mipsel, .mipsf32, .mipsf32el => extern struct {
                 r: [32]u32 align(8),
                 _lo: i32,
                 _hi: i32,
@@ -2709,7 +2781,13 @@ const signal_ucontext_t = switch (native_os) {
                 pc: u32,
             },
             // https://github.com/NetBSD/src/blob/861008c62187bf7bc0aac4d81e52ed6eee4d0c74/sys/arch/mips/include/mcontext.h
-            .mips64, .mips64el => @compileError("https://github.com/ziglang/zig/issues/23765#issuecomment-2880386178"),
+            .mips64, .mips64el => extern struct {
+                r: [32]u64,
+                _lo: i64,
+                _hi: i64,
+                _cause: i64,
+                pc: u64,
+            },
             // https://github.com/NetBSD/src/blob/861008c62187bf7bc0aac4d81e52ed6eee4d0c74/sys/arch/powerpc/include/mcontext.h
             .powerpc => extern struct {
                 r: [32]u32 align(16),

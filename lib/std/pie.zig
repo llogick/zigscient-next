@@ -37,7 +37,25 @@ const R_RELATIVE = switch (builtin.cpu.arch) {
     .loongarch32, .loongarch64 => R_LARCH_RELATIVE,
     .m68k => R_68K_RELATIVE,
     .microblaze, .microblazeel => R_MICROBLAZE_REL,
-    .mips, .mipsel, .mips64, .mips64el => R_MIPS_RELATIVE,
+    .mips,
+    .mipsel,
+    .mipsf32,
+    .mipsf32el,
+    .mipsf64,
+    .mipsf64el,
+    .mipsf64n8,
+    .mipsf64n8el,
+    .mipsn8,
+    .mipsn8el,
+    .mipsr6,
+    .mipsr6el,
+    .mips64,
+    .mips64el,
+    .mips64n8,
+    .mips64n8el,
+    .mips64r6,
+    .mips64r6el,
+    => R_MIPS_RELATIVE,
     .or1k => R_OR1K_RELATIVE,
     .powerpc, .powerpcle, .powerpc64, .powerpc64le => R_PPC_RELATIVE,
     .riscv32, .riscv32be, .riscv64, .riscv64be => R_RISCV_RELATIVE,
@@ -166,7 +184,19 @@ inline fn getDynamicSymbol() [*]const elf.Dyn {
                 : [ret] "=r" (-> [*]const elf.Dyn),
                 :
                 : .{ .r18 = true }),
-            .mips, .mipsel => asm volatile (
+            .mips,
+            .mipsel,
+            .mipsf32,
+            .mipsf32el,
+            .mipsf64,
+            .mipsf64el,
+            .mipsf64n8,
+            .mipsf64n8el,
+            .mipsn8,
+            .mipsn8el,
+            .mipsr6,
+            .mipsr6el,
+            => asm volatile (
                 \\ .weak _DYNAMIC
                 \\ .hidden _DYNAMIC
                 \\ bal 1f
@@ -178,31 +208,34 @@ inline fn getDynamicSymbol() [*]const elf.Dyn {
                 : [ret] "=r" (-> [*]const elf.Dyn),
                 :
                 : .{ .lr = true }),
-            .mips64, .mips64el => switch (builtin.abi) {
-                .gnuabin32, .muslabin32, .abin32 => asm volatile (
-                    \\ .weak _DYNAMIC
-                    \\ .hidden _DYNAMIC
-                    \\ bal 1f
-                    \\ .gpword _DYNAMIC
-                    \\1:
-                    \\ lw %[ret], 0($ra)
-                    \\ addu %[ret], %[ret], $gp
-                    : [ret] "=r" (-> [*]const elf.Dyn),
-                    :
-                    : .{ .lr = true }),
-                else => asm volatile (
-                    \\ .weak _DYNAMIC
-                    \\ .hidden _DYNAMIC
-                    \\ .balign 8
-                    \\ bal 1f
-                    \\ .gpdword _DYNAMIC
-                    \\1:
-                    \\ ld %[ret], 0($ra)
-                    \\ daddu %[ret], %[ret], $gp
-                    : [ret] "=r" (-> [*]const elf.Dyn),
-                    :
-                    : .{ .lr = true }),
-            },
+            .mips64,
+            .mips64el,
+            .mips64n8,
+            .mips64n8el,
+            .mips64r6,
+            .mips64r6el,
+            => if (builtin.target.abi.isN32()) asm volatile (
+                \\ .weak _DYNAMIC
+                \\ .hidden _DYNAMIC
+                \\ bal 1f
+                \\ .gpword _DYNAMIC
+                \\1:
+                \\ lw %[ret], 0($ra)
+                \\ addu %[ret], %[ret], $gp
+                : [ret] "=r" (-> [*]const elf.Dyn),
+                :
+                : .{ .lr = true }) else asm volatile (
+                \\ .weak _DYNAMIC
+                \\ .hidden _DYNAMIC
+                \\ .balign 8
+                \\ bal 1f
+                \\ .gpdword _DYNAMIC
+                \\1:
+                \\ ld %[ret], 0($ra)
+                \\ daddu %[ret], %[ret], $gp
+                : [ret] "=r" (-> [*]const elf.Dyn),
+                :
+                : .{ .lr = true }),
             .or1k => asm volatile (
                 \\ .weak _DYNAMIC
                 \\ .hidden _DYNAMIC

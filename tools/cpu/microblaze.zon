@@ -1,0 +1,266 @@
+.{
+    .zig_name = "microblaze",
+    .llvm = null,
+    .extra_features = .{
+        .{
+            .zig_name = "barrel",
+            .desc = "Enable barrel shift instructions (C_USE_BARREL)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "div",
+            .desc = "Enable hardware divide instructions (C_USE_DIV)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "fpu",
+            .desc = "Enable single-precision floating point instructions (C_USE_FPU >= 1)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "fpu2",
+            .desc = "Enable floating point conversion and square root instructions (C_USE_FPU = 2)",
+            .deps = .{
+                "fpu",
+            },
+        },
+        .{
+            .zig_name = "msr",
+            .desc = "Enable msrset and msrclr instructions (C_USE_MSR_INSTR)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "mul",
+            .desc = "Enable 32-bit multiply instructions (C_USE_HW_MUL >= 1)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "mul64",
+            .desc = "Enable multiply high instructions (C_USE_HW_MUL = 2)",
+            .deps = .{
+                "mul",
+            },
+        },
+        .{
+            .zig_name = "pcmp",
+            .desc = "Enable pattern compare instructions, and clz with v8.10 (C_USE_PCMP_INSTR)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "pipe3",
+            .desc = "Tune for the 3-stage pipeline (C_AREA_OPTIMIZED = 1)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "pipe8",
+            .desc = "Tune for the 8-stage pipeline (C_AREA_OPTIMIZED = 2)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "reorder",
+            .desc = "Enable byte-reversed load/store instructions, and swapb and swaph with v8.30 (C_USE_REORDER_INSTR)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "v7_20",
+            .desc = "Enable MicroBlaze v7.20 instructions (lwx, swx)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "v8_10",
+            .desc = "Enable MicroBlaze v8.10 instructions (mbar)",
+            .deps = .{
+                "v7_20",
+            },
+        },
+        .{
+            .zig_name = "v8_30",
+            .desc = "Enable MicroBlaze v8.30 instructions (swapb and swaph with reorder)",
+            .deps = .{
+                "v8_10",
+            },
+        },
+        .{
+            .zig_name = "v10_0",
+            .desc = "Enable MicroBlaze v10.0 instructions (bsefi and bsifi with barrel)",
+            .deps = .{
+                "v8_30",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "v2_00",
+            .features = .{
+                "pipe3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v2_10",
+            .features = .{
+                "pipe3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v3_00",
+            .features = .{
+                "pipe3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v4_00",
+            .features = .{
+                "pipe3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v5_00",
+            .features = .{
+                "msr",
+                "pcmp",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v6_00",
+            .features = .{},
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v7_00",
+            .features = .{},
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v7_10",
+            .features = .{},
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v7_20",
+            .features = .{
+                "v7_20",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v7_30",
+            .features = .{
+                "v7_20",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v8_00",
+            .features = .{
+                "reorder",
+                "v7_20",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v8_10",
+            .features = .{
+                "reorder",
+                "v8_10",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v8_20",
+            .features = .{
+                "reorder",
+                "v8_10",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v8_30",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v8_40",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v8_50",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v9_0",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v9_1",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v9_2",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v9_3",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v9_4",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v9_5",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v9_6",
+            .features = .{
+                "v8_30",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v10_0",
+            .features = .{
+                "v10_0",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v11_0",
+            .features = .{
+                "v10_0",
+            },
+        },
+    },
+}

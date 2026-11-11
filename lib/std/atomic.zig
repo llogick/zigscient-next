@@ -383,13 +383,13 @@ pub inline fn spinLoopHint() void {
         // https://www.keil.com/support/man/docs/armasm/armasm_dom1361289926796.htm
         .arm,
         .armeb,
-        => if (comptime builtin.cpu.has(.arm, .has_v6k)) {
+        => if (comptime builtin.cpu.has(.arm, .v6k)) {
             asm volatile ("yield");
         },
 
         .thumb,
         .thumbeb,
-        => if (comptime builtin.cpu.hasAny(.arm, &.{ .has_v6m, .thumb2 })) {
+        => if (comptime builtin.cpu.hasAny(.arm, &.{ .v6m, .thumb2 })) {
             asm volatile ("yield");
         },
 
@@ -400,8 +400,22 @@ pub inline fn spinLoopHint() void {
 
         .mips,
         .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
         .mips64,
         .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
         => if (comptime builtin.cpu.has(.mips, .mips32r2)) {
             asm volatile ("pause");
         },
@@ -472,8 +486,22 @@ pub fn cacheLineForCpu(cpu: std.Target.Cpu) u16 {
         .microblazeel,
         .mips,
         .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
         .mips64,
         .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
         .sh,
         .sheb,
         .sparc,

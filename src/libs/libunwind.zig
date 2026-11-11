@@ -131,7 +131,7 @@ pub fn buildStaticLib(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         if (target.os.tag == .haiku) {
             try cflags.append(arena, "-D_LIBUNWIND_USE_HAIKU_BSD_LIB");
         }
-        if (target.cpu.arch.isArm() and target.abi.float() == .hard) {
+        if (target.cpu.arch.isArm() and target.abi.float() != .soft) {
             try cflags.append(arena, "-DCOMPILER_RT_ARMHF_TARGET");
         }
 

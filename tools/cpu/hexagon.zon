@@ -1,0 +1,359 @@
+.{
+    .zig_name = "hexagon",
+    .llvm = .{
+        .name = "Hexagon",
+        .td_name = "Hexagon",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "compound",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "duplex",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "long-calls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "memops",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "noreturn-stack-elim",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "nvj",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "nvs",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "packets",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r6",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r7",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r8",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r9",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r10",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r11",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r12",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r13",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r14",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r15",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r16",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r17",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r18",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r19",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r20",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r21",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r22",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r23",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r24",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r25",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r26",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r27",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserved-r28",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r16",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r17",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r18",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r19",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r20",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r21",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r22",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r23",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r24",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r25",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r26",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "scs-reg-r27",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "small-data",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "zreg",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "hvx-ieee-fp",
+            .extra_deps = .{
+                "hvxv68",
+            },
+        },
+        .{
+            .llvm_name = "hvx-qfloat",
+            .extra_deps = .{
+                "hvxv68",
+            },
+        },
+        .{
+            .llvm_name = "hvxv60",
+            .extra_deps = .{
+                "v60",
+            },
+        },
+        .{
+            .llvm_name = "hvxv62",
+            .extra_deps = .{
+                "v62",
+            },
+        },
+        .{
+            .llvm_name = "hvxv65",
+            .extra_deps = .{
+                "v65",
+            },
+        },
+        .{
+            .llvm_name = "hvxv66",
+            .extra_deps = .{
+                "hvx_length128b",
+                "v66",
+            },
+        },
+        .{
+            .llvm_name = "hvxv67",
+            .extra_deps = .{
+                "v67",
+            },
+        },
+        .{
+            .llvm_name = "hvxv68",
+            .extra_deps = .{
+                "v68",
+            },
+        },
+        .{
+            .llvm_name = "hvxv69",
+            .extra_deps = .{
+                "v69",
+            },
+        },
+        .{
+            .llvm_name = "hvxv71",
+            .extra_deps = .{
+                "v71",
+            },
+        },
+        .{
+            .llvm_name = "hvxv73",
+            .extra_deps = .{
+                "v73",
+            },
+        },
+        .{
+            .llvm_name = "hvxv75",
+            .extra_deps = .{
+                "v75",
+            },
+        },
+        .{
+            .llvm_name = "hvxv79",
+            .extra_deps = .{
+                "v79",
+            },
+        },
+        .{
+            .llvm_name = "hvxv81",
+            .extra_deps = .{
+                "v81",
+            },
+        },
+        .{
+            .llvm_name = "v55",
+            .extra_deps = .{
+                "v5",
+            },
+        },
+        .{
+            .llvm_name = "v60",
+            .extra_deps = .{
+                "v55",
+            },
+        },
+        .{
+            .llvm_name = "v62",
+            .extra_deps = .{
+                "v60",
+            },
+        },
+        .{
+            .llvm_name = "v65",
+            .extra_deps = .{
+                "v62",
+            },
+        },
+        .{
+            .llvm_name = "v66",
+            .extra_deps = .{
+                "v65",
+            },
+        },
+        .{
+            .llvm_name = "v67",
+            .extra_deps = .{
+                "v66",
+            },
+        },
+        .{
+            .llvm_name = "v68",
+            .extra_deps = .{
+                "v67",
+            },
+        },
+        .{
+            .llvm_name = "v69",
+            .extra_deps = .{
+                "v68",
+            },
+        },
+        .{
+            .llvm_name = "v71",
+            .extra_deps = .{
+                "v69",
+            },
+        },
+        .{
+            .llvm_name = "v73",
+            .extra_deps = .{
+                "v71",
+            },
+        },
+        .{
+            .llvm_name = "v75",
+            .extra_deps = .{
+                "v73",
+            },
+        },
+        .{
+            .llvm_name = "v79",
+            .extra_deps = .{
+                "v75",
+            },
+        },
+        .{
+            .llvm_name = "v81",
+            .extra_deps = .{
+                "v79",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+    },
+}

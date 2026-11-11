@@ -644,20 +644,9 @@ test "arguments pointed to on stack into tailcall" {
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_c and builtin.os.tag == .windows) return error.SkipZigTest; // MSVC doesn't support always tail calls
 
-    switch (builtin.cpu.arch) {
-        .wasm32,
-        .wasm64,
-        .mips,
-        .mipsel,
-        .mips64,
-        .mips64el,
-        .powerpc,
-        .powerpcle,
-        .powerpc64,
-        .powerpc64le,
-        => return error.SkipZigTest,
-        else => {},
-    }
+    if (builtin.target.cpu.arch.isMips()) return error.SkipZigTest;
+    if (builtin.target.cpu.arch.isPowerpc()) return error.SkipZigTest;
+    if (builtin.target.cpu.arch.isWasm()) return error.SkipZigTest;
 
     const S = struct {
         var base: usize = undefined;

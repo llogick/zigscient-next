@@ -1,0 +1,751 @@
+.{
+    .zig_name = "riscv",
+    .llvm = .{
+        .name = "RISCV",
+        .td_name = "RISCV",
+    },
+    .branch_quota = 2000,
+    .feature_overrides = .{
+        .{
+            .llvm_name = "rva20s64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rva20u64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rva22s64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rva22u64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rva23s64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rva23u64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rvb23s64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rvb23u64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rvi20u32",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "rvi20u64",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "andes45",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "mips-p8700",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "sifive7",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "ventana-veyron",
+            .flatten = true,
+        },
+
+        .{
+            .llvm_name = "exact-asm",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-latency-sched-heuristic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-misched-load-clustering",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-misched-store-clustering",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-postmisched-load-clustering",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-postmisched-store-clustering",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "enable-select-opt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "enable-vsetvli-sched-heuristic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "forced-atomics",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-default-unroll",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-trailing-seq-cst-fence",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "relax",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x1",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x5",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x6",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x7",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x8",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x9",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x10",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x11",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x12",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x13",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x14",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x15",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x16",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x17",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x18",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x19",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x20",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x21",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x22",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x23",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x24",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x25",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x26",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x27",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x28",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x29",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x30",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-x31",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "save-restore",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tagged-globals",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-postra-scheduler",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "xcheriot",
+            .omit = true,
+        },
+
+        // Future ISA extensions; omit until they are stabilized.
+        .{
+            .llvm_name = "experimental",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-p",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-rvm23u32",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-smpmpmt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-svukte",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-xqccmt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-xsfmclic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-xsfsclic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-y",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zibi",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zicfilp",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zicfiss",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvabd",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvbc32e",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvdot4a8i",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvfbdota32f",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvfbfa",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvfofp8min",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvfqwbdota8f",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvfqwdota8f",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvfwbdota16bf",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvfwdota16bf",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvkgs",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvqwbdota16i",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvqwbdota8i",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvqwdota16i",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvqwdota8i",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvvfmm",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvvmm",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvvmtls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvvmttls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "experimental-zvzip",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "smcdeleg",
+            .extra_deps = .{
+                "ssccfg",
+            },
+        },
+        .{
+            .llvm_name = "smcntrpmf",
+            .extra_deps = .{
+                "zicntr",
+            },
+        },
+        .{
+            .llvm_name = "smctr",
+            .extra_deps = .{
+                "ssctr",
+            },
+        },
+        .{
+            .llvm_name = "ssccfg",
+            .extra_deps = .{
+                "sscsrind",
+            },
+        },
+        .{
+            .llvm_name = "unaligned-scalar-mem",
+            .zig_name = "unaligned_access",
+        },
+        .{
+            .llvm_name = "unaligned-vector-mem",
+            .zig_name = "unaligned_vector_access",
+        },
+        .{
+            .llvm_name = "xsfvfbfexp16e",
+            .extra_deps = .{
+                "zve32f",
+            },
+        },
+        .{
+            .llvm_name = "xtheadfmemidx",
+            .extra_deps = .{
+                "f",
+            },
+        },
+        .{
+            .llvm_name = "za64rs",
+            .extra_deps = .{
+                "za128rs",
+            },
+        },
+        .{
+            .llvm_name = "ziccamoc",
+            .extra_deps = .{
+                "ziccamoa",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "andes-45-series",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic-ooo",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic-rv32",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic-rv64",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "rocket",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sifive-7-series",
+            .omit = true,
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32e",
+            .features = .{
+                "32bit",
+                "e",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32ec",
+            .features = .{
+                "32bit",
+                "c",
+                "e",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32emc",
+            .features = .{
+                "32bit",
+                "c",
+                "e",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32gc",
+            .features = .{
+                "32bit",
+                "a",
+                "c",
+                "d",
+                "i",
+                "m",
+                "zcd",
+                "zcf",
+                "zicsr",
+                "zifencei",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32i",
+            .features = .{
+                "32bit",
+                "i",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32im",
+            .features = .{
+                "32bit",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32ima",
+            .features = .{
+                "32bit",
+                "a",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32imac",
+            .features = .{
+                "32bit",
+                "a",
+                "c",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32imafc",
+            .features = .{
+                "32bit",
+                "a",
+                "c",
+                "f",
+                "i",
+                "m",
+                "zcf",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32imafdc",
+            .features = .{
+                "32bit",
+                "a",
+                "c",
+                "d",
+                "i",
+                "m",
+                "zcd",
+                "zcf",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv32imc",
+            .features = .{
+                "32bit",
+                "c",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64gc",
+            .features = .{
+                "64bit",
+                "a",
+                "c",
+                "d",
+                "i",
+                "m",
+                "zcd",
+                "zicsr",
+                "zifencei",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64i",
+            .features = .{
+                "64bit",
+                "i",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64im",
+            .features = .{
+                "64bit",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64ima",
+            .features = .{
+                "64bit",
+                "a",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64imac",
+            .features = .{
+                "64bit",
+                "a",
+                "c",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64imafc",
+            .features = .{
+                "64bit",
+                "a",
+                "c",
+                "f",
+                "i",
+                "m",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64imafdc",
+            .features = .{
+                "64bit",
+                "a",
+                "c",
+                "d",
+                "i",
+                "m",
+                "zcd",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rv64imc",
+            .features = .{
+                "64bit",
+                "c",
+                "i",
+                "m",
+            },
+        },
+
+        .{
+            .llvm_name = null,
+            .zig_name = "rva20s64",
+            .features = .{
+                "rva20s64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rva20u64",
+            .features = .{
+                "rva20u64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rva22s64",
+            .features = .{
+                "rva22s64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rva22u64",
+            .features = .{
+                "rva22u64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rva23s64",
+            .features = .{
+                "rva23s64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rva23u64",
+            .features = .{
+                "rva23u64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rvb23s64",
+            .features = .{
+                "rvb23s64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rvb23u64",
+            .features = .{
+                "rvb23u64",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rvi20u32",
+            .features = .{
+                "rvi20u32",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "rvi20u64",
+            .features = .{
+                "rvi20u64",
+            },
+        },
+    },
+}

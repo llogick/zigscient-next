@@ -1,0 +1,205 @@
+.{
+    .zig_name = "sh",
+    .llvm = null,
+    .extra_features = .{
+        .{
+            .zig_name = "cas",
+            .desc = "Enable cas.l instruction",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "dsp",
+            .desc = "Enable DSP extension",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "dynshift",
+            .desc = "Enable dynamic shift instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "fpu",
+            .desc = "Enable floating point unit",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "fsca",
+            .desc = "Enable fsca instruction",
+            .deps = .{
+                "fpu",
+            },
+        },
+        .{
+            .zig_name = "fsrra",
+            .desc = "Enable fsrra instruction",
+            .deps = .{
+                "fpu",
+            },
+        },
+        .{
+            .zig_name = "mmu",
+            .desc = "Enable memory management unit",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "sh2",
+            .desc = "Enable SH-2 instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "sh2a",
+            .desc = "Enable SH-2A instructions",
+            .deps = .{
+                "dynshift",
+                "sh2",
+            },
+        },
+        .{
+            .zig_name = "sh3",
+            .desc = "Enable SH-3 instructions",
+            .deps = .{
+                "dynshift",
+                "sh2",
+            },
+        },
+        .{
+            .zig_name = "sh4",
+            .desc = "Enable SH-4 instructions",
+            .deps = .{
+                "sh3",
+            },
+        },
+        .{
+            .zig_name = "sh4a",
+            .desc = "Enable SH-4A instructions",
+            .deps = .{
+                "sh4",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "j2",
+            .features = .{
+                "cas",
+                "dynshift",
+                "sh2",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh1",
+            .features = .{},
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh2",
+            .features = .{
+                "sh2",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh2_dsp",
+            .features = .{
+                "dsp",
+                "sh2",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh2a",
+            .features = .{
+                "fpu",
+                "sh2a",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh2a_nofpu",
+            .features = .{
+                "sh2a",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh2e",
+            .features = .{
+                "fpu",
+                "sh2",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh3",
+            .features = .{
+                "mmu",
+                "sh3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh3_dsp",
+            .features = .{
+                "dsp",
+                "mmu",
+                "sh3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh3e",
+            .features = .{
+                "fpu",
+                "mmu",
+                "sh3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh4",
+            .features = .{
+                "fpu",
+                "mmu",
+                "sh4",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh4_nofpu",
+            .features = .{
+                "mmu",
+                "sh4",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh4a",
+            .features = .{
+                "fpu",
+                "fsca",
+                "fsrra",
+                "mmu",
+                "sh4a",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh4a_nofpu",
+            .features = .{
+                "mmu",
+                "sh4a",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "sh4al_dsp",
+            .features = .{
+                "dsp",
+                "mmu",
+                "sh4a",
+            },
+        },
+    },
+}

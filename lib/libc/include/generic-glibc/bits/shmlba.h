@@ -1,4 +1,4 @@
-/* Define SHMLBA.  Generic version.
+/* Define SHMLBA.  MIPS version.
    Copyright (C) 2018-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -20,10 +20,5 @@
 # error "Never use <bits/shmlba.h> directly; include <sys/shm.h> instead."
 #endif
 
-__BEGIN_DECLS
-
 /* Segment low boundary address multiple.  */
-#define SHMLBA		(__getpagesize ())
-extern int __getpagesize (void) __THROW __attribute__ ((__const__));
-
-__END_DECLS
+#define SHMLBA		0x40000

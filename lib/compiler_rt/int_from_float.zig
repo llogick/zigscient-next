@@ -126,7 +126,7 @@ fn __aeabi_fixsfti(_: compiler_rt.f32.Abi) callconv(.naked) i128 {
             :
             : [__fixsfti] "X" (&__fixsfti),
         ),
-        .hard => asm volatile (
+        else => asm volatile (
             \\ push {r0-r4, lr}
             \\ mov r0, sp
             \\ bl %[__fixsfti]
@@ -183,7 +183,7 @@ fn __aeabi_fixdfti(_: compiler_rt.f64.Abi) callconv(.naked) i128 {
             :
             : [__fixdfti] "X" (&__fixdfti),
         ),
-        .hard => asm volatile (
+        else => asm volatile (
             \\ push {r0-r4, lr}
             \\ mov r0, sp
             \\ bl %[__fixdfti]
@@ -389,7 +389,7 @@ fn __aeabi_fixunssfti(_: compiler_rt.f32.Abi) callconv(.naked) u128 {
             :
             : [__fixunssfti] "X" (&__fixunssfti),
         ),
-        .hard => asm volatile (
+        else => asm volatile (
             \\ push {r0-r4, lr}
             \\ mov r0, sp
             \\ bl %[__fixunssfti]
@@ -446,7 +446,7 @@ fn __aeabi_fixunsdfti(_: compiler_rt.f64.Abi) callconv(.naked) u128 {
             :
             : [__fixunsdfti] "X" (&__fixunsdfti),
         ),
-        .hard => asm volatile (
+        else => asm volatile (
             \\ push {r0-r4, lr}
             \\ mov r0, sp
             \\ bl %[__fixunsdfti]

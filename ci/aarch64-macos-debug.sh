@@ -59,12 +59,6 @@ stage3-debug/bin/zig build install test docs \
   -Denable-llvm \
   -Dno-lib \
   -Denable-macos-sdk \
-  -Dskip-spirv \
-  -Dskip-wasm \
-  -Dskip-freebsd \
-  -Dskip-netbsd \
-  -Dskip-openbsd \
-  -Dskip-windows \
-  -Dskip-linux
+  -Dskip-non-native
 
 stage4-debug/bin/zig test ../test/behavior.zig

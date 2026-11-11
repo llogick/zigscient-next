@@ -1,0 +1,1796 @@
+.{
+    .zig_name = "x86",
+    .llvm = .{
+        .name = "X86",
+        .td_name = "X86",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "16bit-mode",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "32bit-mode",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "64bit-mode",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "avx10.1-512",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "avx10.2-512",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "evex512",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-ijmp",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-ret",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "inline-asm-use-gpr32",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "lvi-cfi",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "lvi-load-hardening",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-edi",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r8",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r9",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r10",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r11",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r12",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r13",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r14",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r15",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r16",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r17",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r18",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r19",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r20",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r21",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r22",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r23",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r24",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r25",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r26",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r27",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r28",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r29",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r30",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r31",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "retpoline",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "retpoline-external-thunk",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "retpoline-indirect-branches",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "retpoline-indirect-calls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "seses",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "soft-float",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tagged-globals",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "x32",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "x87",
+            .zig_name = "387",
+            .extra_deps = .{
+                "287",
+            },
+        },
+        .{
+            .llvm_name = "64bit",
+            .extra_deps = .{
+                "486",
+                "nopl",
+            },
+        },
+        .{
+            .llvm_name = "amx-avx512",
+            .extra_deps = .{
+                "avx512f",
+            },
+        },
+        .{
+            .llvm_name = "amx-tile",
+            .extra_deps = .{
+                "64bit",
+                "xsave",
+            },
+        },
+        .{
+            .llvm_name = "avx",
+            .extra_deps = .{
+                "xsave",
+            },
+        },
+        .{
+            .llvm_name = "ccmp",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "cf",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "cmpccxadd",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "cx16",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "egpr",
+            .extra_deps = .{
+                "64bit",
+                "cmov",
+                "xsave",
+            },
+        },
+        .{
+            .llvm_name = "fsgsbase",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "jmpabs",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "mmx",
+            .extra_deps = .{
+                "387",
+            },
+        },
+        .{
+            .llvm_name = "ndd",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "nf",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "ppx",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "push2pop2",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "sse",
+            .extra_deps = .{
+                "fxsr",
+                "mmx",
+            },
+        },
+        .{
+            .llvm_name = "sse4.2",
+            .extra_deps = .{
+                "crc32",
+            },
+        },
+        .{
+            .llvm_name = "sse-unaligned-mem",
+            .zig_name = "unaligned_sse_access",
+        },
+        .{
+            .llvm_name = "uintr",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "usermsr",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "zu",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+    },
+    .extra_features = .{
+        // Features removed from LLVM
+        .{
+            .zig_name = "3dnow",
+            .desc = "Enable 3DNow! instructions",
+            .deps = .{
+                "mmx",
+                "prfchw",
+            },
+        },
+        .{
+            .zig_name = "3dnowa",
+            .desc = "Enable 3DNow! Athlon instructions",
+            .deps = .{
+                "3dnow",
+            },
+        },
+        .{
+            .zig_name = "avx512er",
+            .desc = "Enable AVX-512 Exponential and Reciprocal Instructions",
+            .deps = .{
+                "avx512f",
+            },
+        },
+        .{
+            .zig_name = "avx512pf",
+            .desc = "Enable AVX-512 PreFetch Instructions",
+            .deps = .{
+                "avx512f",
+            },
+        },
+        .{
+            .zig_name = "prefetchwt1",
+            .desc = "Prefetch with Intent to Write and T1 Hint",
+            .deps = .{},
+        },
+
+        // Custom Zig features
+        .{
+            .zig_name = "186",
+            .desc = "Enable 80186 instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "286",
+            .desc = "Enable 80286 instructions",
+            .deps = .{
+                "186",
+                "aam_aad_imm",
+                "masked_shift_count",
+            },
+        },
+        .{
+            .zig_name = "287",
+            .desc = "Enable 80287 floating point instructions",
+            .deps = .{
+                "8087",
+            },
+        },
+        .{
+            .zig_name = "386",
+            .desc = "Support 80386 instructions",
+            .deps = .{
+                "286",
+            },
+        },
+        .{
+            .zig_name = "3dnow_inv",
+            .desc = "Enable inverse 3DNow! instructions",
+            .deps = .{
+                "3dnow",
+            },
+        },
+        .{
+            .zig_name = "486",
+            .desc = "Enable 80486 instructions",
+            .deps = .{
+                "386",
+            },
+        },
+        .{
+            .zig_name = "8087",
+            .desc = "Enable 8087 floating point instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "8bit_bus",
+            .desc = "Has an 8-bit external data bus",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "aam_aad_imm",
+            .desc = "AAM and AAD honor their immediate number base",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "bsf_bsr_0_clobbers_result",
+            .desc = "BSF/BSR may clobber the lower 32-bits of the result register when the source is zero",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "cxmmx",
+            .desc = "Enable Cyrix extended MMX instructions",
+            .deps = .{
+                "mmx",
+            },
+        },
+        .{
+            .zig_name = "cyrix_gx",
+            .desc = "Enable Cyrix MediaGX display driver and CPU access instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "cyrix_smhr",
+            .desc = "Enable Cyrix SMM header pointer instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "cyrix_smint",
+            .desc = "Enable Cyrix SMINT instruction (0F 38)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "cyrix_smint_old",
+            .desc = "Enable Cyrix SMINT instruction (0F 7E)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "cyrix_smm",
+            .desc = "Enable Cyrix SMM save/restore instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "geode_dmi",
+            .desc = "Enable AMD Geode debug management interrupt instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "gmi_ccs",
+            .desc = "Enable Zhaoxin GMI SM3/SM4 instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "gmi_sm2",
+            .desc = "Enable Zhaoxin GMI SM2 instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "masked_shift_count",
+            .desc = "Shift and rotate counts are masked to 5 bits",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "nec",
+            .desc = "Enable NEC V-series instructions",
+            .deps = .{
+                "186",
+            },
+        },
+        .{
+            .zig_name = "nec_8080",
+            .desc = "Enable NEC V-series 8080 emulation mode entry (BRKEM)",
+            .deps = .{
+                "nec",
+            },
+        },
+        .{
+            .zig_name = "nec_codec",
+            .desc = "Enable NEC V55PI MH/MR codec instructions",
+            .deps = .{
+                "nec_v55",
+            },
+        },
+        .{
+            .zig_name = "nec_v25",
+            .desc = "Enable NEC V25/V35 instructions",
+            .deps = .{
+                "nec",
+            },
+        },
+        .{
+            .zig_name = "nec_v55",
+            .desc = "Enable NEC V55 instructions",
+            .deps = .{
+                "nec_v25",
+            },
+        },
+        .{
+            .zig_name = "nec_xa",
+            .desc = "Enable NEC V-series extended address mode",
+            .deps = .{
+                "nec",
+            },
+        },
+        .{
+            .zig_name = "padlock_ace",
+            .desc = "Enable PadLock Advanced Cryptography Engine",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "padlock_ace2",
+            .desc = "Enable PadLock Advanced Cryptography Engine 2",
+            .deps = .{
+                "padlock_ace",
+            },
+        },
+        .{
+            .zig_name = "padlock_phe",
+            .desc = "Enable PadLock Hash Engine",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "padlock_phe2",
+            .desc = "Enable PadLock Hash Engine 2",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "padlock_pmm",
+            .desc = "Enable PadLock Montgomery Multiplier",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "padlock_rng",
+            .desc = "Enable PadLock Random Number Generator",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "padlock_rng2",
+            .desc = "Enable PadLock Random Number Generator 2",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "padlock_xmodx",
+            .desc = "Enable PadLock modular exponentiation instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "smap",
+            .desc = "Enable Supervisor Mode Access Prevention",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "smep",
+            .desc = "Enable Supervisor Mode Execution Prevention",
+            .deps = .{},
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "arrowlake_s",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "athlon-4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "athlon-fx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "athlon-mp",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "athlon-tbird",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "athlon64",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "athlon64-sse3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "atom_sse4_2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "barcelona",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_2_duo_sse4_1",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_2_duo_ssse3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_2nd_gen_avx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_3rd_gen_avx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_4th_gen_avx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_4th_gen_avx_tsx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_5th_gen_avx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_5th_gen_avx_tsx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_aes_pclmulqdq",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core_i7_sse4_2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core-avx-i",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "core-avx2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "corei7",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "corei7-avx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "goldmont_plus",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "graniterapids_d",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "icelake_client",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "icelake_server",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "mic_avx512",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "opteron",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "opteron-sse3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_3m",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_4_sse3",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_ii",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_iii",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_iii_no_xmm_regs",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_m",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_mmx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium_pro",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium3m",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pentium4m",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "skylake_avx512",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "skx",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "slm",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "alderlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "amdfam10",
+            .extra_deps = .{
+                "3dnowa",
+            },
+        },
+        .{
+            .llvm_name = "arrowlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "arrowlake-s",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "athlon",
+            .extra_deps = .{
+                "3dnowa",
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "athlon-xp",
+            .extra_deps = .{
+                "486",
+                "3dnowa",
+            },
+        },
+        .{
+            .llvm_name = "bdver4",
+            .extra_deps = .{
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "broadwell",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "c3",
+            .extra_deps = .{
+                "3dnow",
+                "486",
+                "cx8",
+            },
+        },
+        .{
+            .llvm_name = "c3-2",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "c86-4g-m4",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "c86-4g-m6",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "c86-4g-m7",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "c86-4g-m8",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "cannonlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "cascadelake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "clearwaterforest",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "cooperlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "diamondrapids",
+            .extra_deps = .{
+                "cf",
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "emeraldrapids",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "geode",
+            .extra_deps = .{
+                "3dnow_inv",
+                "3dnowa",
+                "486",
+                "cyrix_smint",
+                "cyrix_smm",
+                "geode_dmi",
+            },
+        },
+        .{
+            .llvm_name = "goldmont",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "goldmont-plus",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "gracemont",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "grandridge",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "graniterapids",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "graniterapids-d",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "haswell",
+            .extra_deps = .{
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "i386",
+            .extra_deps = .{
+                "386",
+                "bsf_bsr_0_clobbers_result",
+            },
+        },
+        .{
+            .llvm_name = "i486",
+            .extra_deps = .{
+                "486",
+                "bsf_bsr_0_clobbers_result",
+            },
+        },
+        .{
+            .llvm_name = "i586",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "i686",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "icelake-client",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "icelake-server",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "ivybridge",
+            .extra_deps = .{
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "k6",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "k6-2",
+            .extra_deps = .{
+                "3dnow",
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "k6-3",
+            .extra_deps = .{
+                "3dnow",
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "k8",
+            .extra_deps = .{
+                "3dnowa",
+            },
+        },
+        .{
+            .llvm_name = "k8-sse3",
+            .extra_deps = .{
+                "3dnowa",
+            },
+        },
+        .{
+            .llvm_name = "knl",
+            .extra_deps = .{
+                "avx512er",
+                "avx512pf",
+                "prefetchwt1",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "knm",
+            .extra_deps = .{
+                "avx512er",
+                "avx512pf",
+                "prefetchwt1",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "lakemont",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "lunarlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "meteorlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "novalake",
+            .extra_deps = .{
+                "cf",
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "pantherlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "pentium",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "pentium-m",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "pentium-mmx",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "pentium2",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "pentium3",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "pentium4",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "pentiumpro",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "prescott",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "raptorlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "rocketlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "sapphirerapids",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "sierraforest",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "silvermont",
+            .extra_deps = .{
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "skylake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "skylake-avx512",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "tigerlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "tremont",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "wildcatlake",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "winchip2",
+            .extra_deps = .{
+                "3dnow",
+                "486",
+                "cx8",
+            },
+        },
+        .{
+            .llvm_name = "winchip-c6",
+            .extra_deps = .{
+                "486",
+                "cx8",
+            },
+        },
+        .{
+            .llvm_name = "yonah",
+            .extra_deps = .{
+                "486",
+            },
+        },
+        .{
+            .llvm_name = "znver1",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "znver2",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "znver3",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "znver4",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "znver5",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+        .{
+            .llvm_name = "znver6",
+            .extra_deps = .{
+                "smap",
+                "smep",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "c7",
+            .features = .{
+                "486",
+                "cmov",
+                "cx8",
+                "fxsr",
+                "mmx",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_pmm",
+                "padlock_rng",
+                "slow_unaligned_mem_16",
+                "sse3",
+                "vzeroupper",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx486dlc",
+            .features = .{
+                "486",
+                "bsf_bsr_0_clobbers_result",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx486dx",
+            .features = .{
+                "387",
+                "486",
+                "bsf_bsr_0_clobbers_result",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx486dx2",
+            .features = .{
+                "387",
+                "486",
+                "bsf_bsr_0_clobbers_result",
+                "cyrix_smint_old",
+                "cyrix_smm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx486dx4",
+            .features = .{
+                "387",
+                "486",
+                "bsf_bsr_0_clobbers_result",
+                "cyrix_smint_old",
+                "cyrix_smm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx486s",
+            .features = .{
+                "486",
+                "bsf_bsr_0_clobbers_result",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx486slc",
+            .features = .{
+                "486",
+                "bsf_bsr_0_clobbers_result",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx5x86",
+            .features = .{
+                "387",
+                "486",
+                "bsf_bsr_0_clobbers_result",
+                "cyrix_smint_old",
+                "cyrix_smm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx6x86",
+            .features = .{
+                "387",
+                "486",
+                "cyrix_smint_old",
+                "cyrix_smm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx6x86l",
+            .features = .{
+                "387",
+                "486",
+                "cx8",
+                "cyrix_smint_old",
+                "cyrix_smm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "cx6x86mx",
+            .features = .{
+                "486",
+                "cmov",
+                "cx8",
+                "cxmmx",
+                "cyrix_smhr",
+                "cyrix_smint",
+                "cyrix_smm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "eden_x4",
+            .features = .{
+                "64bit",
+                "adx",
+                "aes",
+                "avx2",
+                "bmi",
+                "bmi2",
+                "cmov",
+                "cx16",
+                "f16c",
+                "fsgsbase",
+                "fxsr",
+                "invpcid",
+                "lzcnt",
+                "mmx",
+                "movbe",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_phe2",
+                "padlock_pmm",
+                "padlock_rng",
+                "padlock_rng2",
+                "padlock_xmodx",
+                "pclmul",
+                "popcnt",
+                "prfchw",
+                "rdrnd",
+                "rdseed",
+                "sahf",
+                "smep",
+                "vzeroupper",
+                "xsaveopt",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "geode_gx1",
+            .features = .{
+                "486",
+                "cx8",
+                "cxmmx",
+                "cyrix_gx",
+                "cyrix_smint",
+                "cyrix_smm",
+                "slow_unaligned_mem_16",
+                "vzeroupper",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "i186",
+            .features = .{
+                "186",
+                "aam_aad_imm",
+                "masked_shift_count",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "i188",
+            .features = .{
+                "186",
+                "8bit_bus",
+                "aam_aad_imm",
+                "masked_shift_count",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "i286",
+            .features = .{
+                "286",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "i8086",
+            .features = .{
+                "aam_aad_imm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "i8088",
+            .features = .{
+                "8bit_bus",
+                "aam_aad_imm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "lujiazui",
+            .features = .{
+                "64bit",
+                "adx",
+                "aes",
+                "bmi",
+                "bmi2",
+                "cmov",
+                "cx16",
+                "f16c",
+                "fsgsbase",
+                "fxsr",
+                "gmi_ccs",
+                "invpcid",
+                "lzcnt",
+                "mmx",
+                "movbe",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_phe2",
+                "padlock_pmm",
+                "padlock_rng",
+                "padlock_rng2",
+                "padlock_xmodx",
+                "pclmul",
+                "popcnt",
+                "prfchw",
+                "rdrnd",
+                "rdseed",
+                "sahf",
+                "sha",
+                "smep",
+                "vzeroupper",
+                "xsaveopt",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "mediagx",
+            .features = .{
+                "387",
+                "486",
+                "bsf_bsr_0_clobbers_result",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "mii",
+            .features = .{
+                "486",
+                "cmov",
+                "cx8",
+                "cxmmx",
+                "cyrix_smhr",
+                "cyrix_smint",
+                "cyrix_smm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "nano",
+            .features = .{
+                "64bit",
+                "cmov",
+                "cx16",
+                "fxsr",
+                "mmx",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_rng",
+                "sahf",
+                "ssse3",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "nano_3000",
+            .features = .{
+                "64bit",
+                "cmov",
+                "cx16",
+                "fxsr",
+                "mmx",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_phe2",
+                "padlock_pmm",
+                "padlock_rng",
+                "padlock_rng2",
+                "padlock_xmodx",
+                "popcnt",
+                "sahf",
+                "sse4_1",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "nano_x2",
+            .features = .{
+                "64bit",
+                "cmov",
+                "cx16",
+                "fxsr",
+                "mmx",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_phe2",
+                "padlock_pmm",
+                "padlock_rng",
+                "padlock_rng2",
+                "padlock_xmodx",
+                "popcnt",
+                "sahf",
+                "sse4_1",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "nano_x4",
+            .features = .{
+                "64bit",
+                "cmov",
+                "cx16",
+                "fxsr",
+                "mmx",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_phe2",
+                "padlock_pmm",
+                "padlock_rng",
+                "padlock_rng2",
+                "padlock_xmodx",
+                "popcnt",
+                "sahf",
+                "sse4_1",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "shijidadao",
+            .features = .{
+                "64bit",
+                "adx",
+                "aes",
+                "avx2",
+                "bmi",
+                "bmi2",
+                "cmov",
+                "cx16",
+                "f16c",
+                "fma",
+                "fsgsbase",
+                "fxsr",
+                "gmi_ccs",
+                "gmi_sm2",
+                "invpcid",
+                "lzcnt",
+                "mmx",
+                "movbe",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_phe2",
+                "padlock_pmm",
+                "padlock_rng",
+                "padlock_rng2",
+                "padlock_xmodx",
+                "pclmul",
+                "pku",
+                "popcnt",
+                "prefetchwt1",
+                "prfchw",
+                "rdpid",
+                "rdrnd",
+                "rdseed",
+                "sahf",
+                "sha",
+                "smep",
+                "vzeroupper",
+                "xsavec",
+                "xsaveopt",
+                "xsaves",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v20",
+            .features = .{
+                "8bit_bus",
+                "nec_8080",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v25",
+            .features = .{
+                "8bit_bus",
+                "nec_v25",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v30",
+            .features = .{
+                "nec_8080",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v30mz",
+            .features = .{
+                "186",
+                "aam_aad_imm",
+                "masked_shift_count",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v33a",
+            .features = .{
+                "nec_xa",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v35",
+            .features = .{
+                "nec_v25",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v40",
+            .features = .{
+                "8bit_bus",
+                "nec_8080",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v50",
+            .features = .{
+                "nec_8080",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v53a",
+            .features = .{
+                "nec_xa",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v55pi",
+            .features = .{
+                "nec_codec",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "winchip3",
+            .features = .{
+                "3dnow",
+                "486",
+                "cx8",
+                "prfchw",
+                "slow_unaligned_mem_16",
+                "vzeroupper",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "yongfeng",
+            .features = .{
+                "64bit",
+                "adx",
+                "aes",
+                "avx2",
+                "bmi",
+                "bmi2",
+                "cmov",
+                "cx16",
+                "f16c",
+                "fma",
+                "fsgsbase",
+                "fxsr",
+                "gmi_ccs",
+                "gmi_sm2",
+                "invpcid",
+                "lzcnt",
+                "mmx",
+                "movbe",
+                "padlock_ace2",
+                "padlock_phe",
+                "padlock_phe2",
+                "padlock_pmm",
+                "padlock_rng",
+                "padlock_rng2",
+                "padlock_xmodx",
+                "pclmul",
+                "pku",
+                "popcnt",
+                "prefetchwt1",
+                "prfchw",
+                "rdpid",
+                "rdrnd",
+                "rdseed",
+                "sahf",
+                "sha",
+                "smap",
+                "smep",
+                "vzeroupper",
+                "xsaveopt",
+            },
+        },
+    },
+}

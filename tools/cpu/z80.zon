@@ -1,0 +1,187 @@
+.{
+    .zig_name = "z80",
+    .llvm = null,
+    .extra_features = .{
+        .{
+            .zig_name = "epu",
+            .desc = "Enable Extended Processing Unit instructions",
+            .deps = .{
+                "z280",
+            },
+        },
+        .{
+            .zig_name = "ez80",
+            .desc = "Enable eZ80 instructions including ADL mode",
+            .deps = .{
+                "xyhl",
+                "z180",
+            },
+        },
+        .{
+            .zig_name = "infc",
+            .desc = "Enable flags-only port input instruction",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "no_inirx",
+            .desc = "Disable block I/O instructions that address the port with DE and count with BC",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "no_ld_i_hl",
+            .desc = "Disable 16-bit I register transfers",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "r800",
+            .desc = "Enable R800 instructions",
+            .deps = .{
+                "infc",
+                "xyhl",
+            },
+        },
+        .{
+            .zig_name = "reliable_ld_a_i",
+            .desc = "LD A,I and LD A,R reliably report the interrupt enable state",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "sli",
+            .desc = "Enable shift left inserting 1 instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "xdcb",
+            .desc = "Enable indexed rotate, shift, RES, and SET instructions that also store to a register",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "xyhl",
+            .desc = "Enable index register halves (IXH, IXL, IYH, IYL)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "z180",
+            .desc = "Enable Z180 instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "z280",
+            .desc = "Enable Z280 instructions",
+            .deps = .{
+                "infc",
+                "xyhl",
+            },
+        },
+        .{
+            .zig_name = "z380",
+            .desc = "Enable Z380 instructions including long mode",
+            .deps = .{
+                "xyhl",
+                "z180",
+            },
+        },
+        .{
+            .zig_name = "z80n",
+            .desc = "Enable Z80N instructions",
+            .deps = .{},
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "ez80",
+            .features = .{
+                "ez80",
+                "reliable_ld_a_i",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "ez80190",
+            .features = .{
+                "ez80",
+                "no_inirx",
+                "no_ld_i_hl",
+                "reliable_ld_a_i",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "ez80f92",
+            .features = .{
+                "ez80",
+                "no_ld_i_hl",
+                "reliable_ld_a_i",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "r800",
+            .features = .{
+                "r800",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "z180",
+            .features = .{
+                "z180",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "z280",
+            .features = .{
+                "reliable_ld_a_i",
+                "z280",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "z380",
+            .features = .{
+                "reliable_ld_a_i",
+                "z380",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "z80",
+            .features = .{},
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "z8400",
+            .features = .{
+                "infc",
+                "sli",
+                "xdcb",
+                "xyhl",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "z84c00",
+            .features = .{
+                "infc",
+                "reliable_ld_a_i",
+                "sli",
+                "xdcb",
+                "xyhl",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "z80n",
+            .features = .{
+                "infc",
+                "reliable_ld_a_i",
+                "sli",
+                "xdcb",
+                "xyhl",
+                "z80n",
+            },
+        },
+    },
+}

@@ -176,8 +176,8 @@
 #elif defined(__loongarch__)
 #define _LIBUNWIND_TARGET_LOONGARCH 1
 #if __loongarch_grlen == 64
-#define _LIBUNWIND_CONTEXT_SIZE 65
-#define _LIBUNWIND_CURSOR_SIZE 77
+#define _LIBUNWIND_CONTEXT_SIZE (33 + 32 * (__loongarch_frlen / 64))
+#define _LIBUNWIND_CURSOR_SIZE (_LIBUNWIND_CONTEXT_SIZE + 12)
 #else
 #error "Unsupported LoongArch ABI"
 #endif

@@ -1,0 +1,90 @@
+.{
+    .zig_name = "wasm",
+    .llvm = .{
+        .name = "WebAssembly",
+        .td_name = "WebAssembly",
+    },
+    // For whatever reason, LLVM's WebAssembly backend sets these implied features in code
+    // rather than making them proper dependencies, so fix that here...
+    .feature_overrides = .{
+        .{
+            .llvm_name = "fp16",
+            .extra_deps = .{
+                "simd128",
+            },
+        },
+        .{
+            .llvm_name = "reference-types",
+            .extra_deps = .{
+                "bulk_memory",
+            },
+        },
+        .{
+            .llvm_name = "relaxed-atomics",
+            .extra_deps = .{
+                "atomics",
+            },
+        },
+        .{
+            .llvm_name = "relaxed-simd",
+            .extra_deps = .{
+                "simd128",
+            },
+        },
+    },
+    .extra_features = .{
+        .{
+            .zig_name = "nontrapping_bulk_memory_len0",
+            .desc = "Bulk memory operations with a zero length do not trap",
+            .deps = .{
+                "bulk_memory_opt",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "bleeding-edge",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "v1_0",
+            .features = .{
+                "mutable_globals",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v2_0",
+            .features = .{
+                "multivalue",
+                "mutable_globals",
+                "nontrapping_fptoint",
+                "reference_types",
+                "sign_ext",
+                "simd128",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "v3_0",
+            .features = .{
+                "exception_handling",
+                "extended_const",
+                "gc",
+                "multimemory",
+                "mutable_globals",
+                "nontrapping_fptoint",
+                "relaxed_simd",
+                "sign_ext",
+                "tail_call",
+            },
+        },
+    },
+}

@@ -3258,8 +3258,22 @@ pub const Sigaction = switch (native_os) {
     } else switch (native_arch) {
         .mips,
         .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
         .mips64,
         .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
         => if (builtin.target.abi.isMusl())
             common_linux_Sigaction
         else if (builtin.target.ptrBitWidth() == 64) extern struct {
@@ -4406,7 +4420,7 @@ pub const cmsg_align = switch (native_os) {
         // https://github.com/NetBSD/src/blob/ac016822f750dc9166c84b6d2657479992622192/sys/arch/amd64/include/cdefs.h#L6
         .x86_64 => @sizeOf(c_long),
         // https://github.com/NetBSD/src/blob/ac016822f750dc9166c84b6d2657479992622192/sys/arch/mips/include/cdefs.h#L74
-        .mips, .mips64, .mipsel, .mips64el => 8,
+        .mips, .mipsel, .mipsf32, .mipsf32el, .mips64, .mips64el => 8,
         // https://github.com/NetBSD/src/blob/ac016822f750dc9166c84b6d2657479992622192/sys/arch/sparc/include/cdefs.h#L8
         .sparc64 => 16,
         // https://github.com/NetBSD/src/blob/ac016822f750dc9166c84b6d2657479992622192/sys/arch/sparc/include/cdefs.h#L10
@@ -7252,7 +7266,7 @@ pub const PR = switch (native_os) {
 };
 pub const _errno = switch (native_os) {
     .linux => switch (native_abi) {
-        .android, .androideabi => private.__errno,
+        .android, .androidsf => private.__errno,
         else => private.__errno_location,
     },
     .emscripten => private.__errno_location,
@@ -8021,14 +8035,23 @@ pub const pthread_mutex_t = switch (native_os) {
         data: [data_len]u8 align(@alignOf(usize)) = @splat(0),
 
         const data_len = switch (native_abi) {
-            .musl, .musleabi, .musleabihf => if (@sizeOf(usize) == 8) 40 else 24,
-            .gnu, .gnuabin32, .gnuabi64, .gnueabi, .gnueabihf, .gnux32 => switch (native_arch) {
+            .musl, .musln32, .musln32sf, .muslsf, .muslx32 => if (@sizeOf(usize) == 8) 40 else 24,
+            .gnu, .gnun32, .gnun32sf, .gnusf, .gnux32 => switch (native_arch) {
                 .aarch64 => 48,
                 .x86_64 => if (native_abi == .gnux32) 32 else 40,
-                .mips64, .powerpc64, .powerpc64le, .sparc64 => 40,
+                .mips64,
+                .mips64el,
+                .mips64n8,
+                .mips64n8el,
+                .mips64r6,
+                .mips64r6el,
+                .powerpc64,
+                .powerpc64le,
+                .sparc64,
+                => 40,
                 else => if (@sizeOf(usize) == 8) 40 else 24,
             },
-            .android, .androideabi => if (@sizeOf(usize) == 8) 40 else 4,
+            .android, .androidsf => if (@sizeOf(usize) == 8) 40 else 4,
             else => @compileError("unsupported ABI"),
         };
     },
@@ -8129,7 +8152,7 @@ pub const pthread_cond_t = switch (native_os) {
 
 pub const pthread_rwlock_t = switch (native_os) {
     .linux => switch (native_abi) {
-        .android, .androideabi => switch (@sizeOf(usize)) {
+        .android, .androidsf => switch (@sizeOf(usize)) {
             4 => extern struct {
                 data: [40]u8 align(@alignOf(usize)) = @splat(0),
             },
@@ -8227,7 +8250,7 @@ pub const pthread_spin_t = switch (native_os) {
         .aarch64, .aarch64_be => u8,
         .arm, .armeb => i32,
         .m68k => u8,
-        .mips, .mipsel => u32,
+        .mips, .mipsel, .mipsf32, .mipsf32el, .mips64, .mips64el => u32,
         .powerpc => i32,
         .riscv32, .riscv64 => u32,
         .sparc, .sparc64 => u8,

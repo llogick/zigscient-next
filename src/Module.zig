@@ -356,14 +356,25 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
         if (target.cpu.arch.isMips()) {
             try buf.append(arena, if (options.global.pic) '-' else '+');
             try buf.appendSlice(arena, "noabicalls,");
-            try buf.appendSlice(arena, if (target.cpu.has(.mips, .fpu_s) and !target.cpu.has(.mips, .fpu_d))
-                "-fpxx,+nooddspreg,+single-float,"
-            else if (target.cpu.arch.isMips64() or target.cpu.hasAny(.mips, &.{ .mips32r6, .msa }))
-                "-fpxx,-nooddspreg,+fp64,"
-            else if (target.cpu.has(.mips, .mips2))
-                "+fpxx,+nooddspreg,"
-            else
-                "-fpxx,+nooddspreg,");
+
+            try buf.append(arena, if (target.cpu.arch.isMipsN8()) '+' else '-');
+            try buf.appendSlice(arena, "nan2008,");
+
+            try buf.appendSlice(arena, switch (target.abi.float()) {
+                .soft => "",
+                .hard32 => if (target.cpu.arch.isMips32())
+                    "-fpxx,+single-float,+nooddspreg,"
+                else
+                    "-fpxx,+single-float,-nooddspreg,",
+                .hard64 => if (target.cpu.arch.isMipsF64())
+                    "-fpxx,+fp64,-nooddspreg,"
+                else if (target.cpu.arch.isMipsF32())
+                    "-fpxx,-fp64,+nooddspreg,"
+                else
+                    "+fpxx,+nooddspreg,",
+            });
+
+            if (!target.cpu.arch.isMipsF64()) try buf.appendSlice(arena, "-msa,");
         }
 
         if (target.cpu.arch.isPowerpc32()) {

@@ -69,17 +69,23 @@ pub const all_features = blk: {
     result[@backingInt(Feature.frecipe)] = .{
         .llvm_name = "frecipe",
         .description = "Support frecipe.{s/d} and frsqrte.{s/d} instructions",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .f,
+        }),
     };
     result[@backingInt(Feature.lam_bh)] = .{
         .llvm_name = "lam-bh",
         .description = "Support amswap[_db].{b/h} and amadd[_db].{b/h} instructions",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .@"64bit",
+        }),
     };
     result[@backingInt(Feature.lamcas)] = .{
         .llvm_name = "lamcas",
         .description = "Support amcas[_db].{b/h/w/d}",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .@"64bit",
+        }),
     };
     result[@backingInt(Feature.lasx)] = .{
         .llvm_name = "lasx",
@@ -113,7 +119,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.scq)] = .{
         .llvm_name = "scq",
         .description = "Support sc.q instruction",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .@"64bit",
+        }),
     };
     result[@backingInt(Feature.unaligned_access)] = .{
         .llvm_name = "ual",
@@ -156,7 +164,6 @@ pub const cpu = struct {
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
             .@"32bit",
-            .unaligned_access,
         }),
     };
     pub const la32v1_0: CpuModel = .{
@@ -193,7 +200,6 @@ pub const cpu = struct {
         .name = "la64v1_1",
         .llvm_name = null,
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .div32,
             .frecipe,
             .lam_bh,
@@ -208,7 +214,6 @@ pub const cpu = struct {
         .name = "la664",
         .llvm_name = "la664",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .div32,
             .frecipe,
             .lam_bh,

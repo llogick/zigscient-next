@@ -119,7 +119,14 @@ typedef struct {
 				union sigval si_value;
 				struct {
 					int si_status;
-					clock_t si_utime, si_stime;
+					clock_t si_utime;
+#ifdef __SI_CLOCK_PAD
+					long __si_utime_pad;
+#endif
+					clock_t si_stime;
+#ifdef __SI_CLOCK_PAD
+					long __si_stime_pad;
+#endif
 				} __sigchld;
 			} __second;
 		} __si_common;

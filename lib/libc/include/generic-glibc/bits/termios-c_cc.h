@@ -1,4 +1,4 @@
-/* termios c_cc symbolic constant definitions.  Linux/generic version.
+/* termios c_cc symbolic constant definitions.  Linux/mips version.
    Copyright (C) 2019-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -17,24 +17,27 @@
    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _TERMIOS_H
-# error "Never include <bits/termios_c_cc.h> directly; use <termios.h> instead."
+# error "Never include <bits/termios-c_cc.h> directly; use <termios.h> instead."
 #endif
 
 /* c_cc characters */
-#define VINTR 0
-#define VQUIT 1
-#define VERASE 2
-#define VKILL 3
-#define VEOF 4
-#define VTIME 5
-#define VMIN 6
-#define VSWTC 7
-#define VSTART 8
-#define VSTOP 9
-#define VSUSP 10
-#define VEOL 11
-#define VREPRINT 12
-#define VDISCARD 13
-#define VWERASE 14
-#define VLNEXT 15
-#define VEOL2 16
+#define VINTR		0	/* Interrupt character [ISIG].  */
+#define VQUIT		1	/* Quit character [ISIG].  */
+#define VERASE		2	/* Erase character [ICANON].  */
+#define VKILL		3	/* Kill-line character [ICANON].  */
+#define VMIN		4	/* Minimum number of bytes read at once [!ICANON].  */
+#define VTIME		5	/* Time-out value (tenths of a second) [!ICANON].  */
+#define VEOL2		6	/* Second EOL character [ICANON].  */
+#define VSWTC		7
+#define VSWTCH		VSWTC
+#define VSTART		8	/* Start (X-ON) character [IXON, IXOFF].  */
+#define VSTOP		9	/* Stop (X-OFF) character [IXON, IXOFF].  */
+#define VSUSP		10	/* Suspend character [ISIG].  */
+				/* VDSUSP is not supported on Linux. */
+/* #define VDSUSP	11	/ * Delayed suspend character [ISIG].  */
+#define VREPRINT	12	/* Reprint-line character [ICANON].  */
+#define VDISCARD	13	/* Discard character [IEXTEN].  */
+#define VWERASE		14	/* Word-erase character [ICANON].  */
+#define VLNEXT		15	/* Literal-next character [IEXTEN].  */
+#define VEOF		16	/* End-of-file character [ICANON].  */
+#define VEOL		17	/* End-of-line character [ICANON].  */

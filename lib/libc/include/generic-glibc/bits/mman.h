@@ -1,4 +1,4 @@
-/* Definitions for POSIX memory map interface.  Linux/generic version.
+/* Definitions for POSIX memory map interface.  Linux/MIPS version.
    Copyright (C) 1997-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -20,13 +20,25 @@
 # error "Never use <bits/mman.h> directly; include <sys/mman.h> instead."
 #endif
 
-/* These definitions are appropriate for architectures that, in the
-   Linux kernel, either have no uapi/asm/mman.h, or have one that
-   includes asm-generic/mman.h without any changes or additions
-   relevant to glibc.  If there are additions relevant to glibc, an
-   architecture-specific bits/mman.h is needed.  */
+/* The following definitions basically come from the kernel headers.
+   But the kernel header is not namespace clean.  */
 
-#include <bits/mman-map-flags-generic.h>
+/* These are Linux-specific.  */
+#define MAP_NORESERVE	0x0400		/* don't check for reservations */
+#define MAP_GROWSDOWN	0x1000		/* stack-like segment */
+#define MAP_DENYWRITE	0x2000		/* ETXTBSY */
+#define MAP_EXECUTABLE	0x4000		/* mark it as an executable */
+#define MAP_LOCKED	0x8000		/* pages are locked */
+#define MAP_POPULATE   0x10000         /* populate (prefault) pagetables */
+#define MAP_NONBLOCK   0x20000         /* do not block on IO */
+#define MAP_STACK	0x40000		/* Allocation is for a stack.  */
+#define MAP_HUGETLB	0x80000		/* Create huge page mapping.  */
+#define MAP_FIXED_NOREPLACE 0x100000	/* MAP_FIXED but do not unmap
+					   underlying mapping.  */
+
+#define __MAP_ANONYMOUS 0x0800
 
 /* Include generic Linux declarations.  */
 #include <bits/mman-linux.h>
+
+#define MAP_RENAME	MAP_ANONYMOUS

@@ -1,0 +1,1534 @@
+.{
+    .zig_name = "arm",
+    .llvm = .{
+        .name = "ARM",
+        .td_name = "ARM",
+    },
+    .branch_quota = 10000,
+    .feature_overrides = .{
+        .{
+            .llvm_name = "a5",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a7",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a8",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a9",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a12",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a15",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a17",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a32",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a35",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a53",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a55",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a57",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a72",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a73",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a75",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a76",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a77",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "a78c",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv4",
+            .flatten = true,
+            .extra_deps = .{
+                "no_unaligned_access",
+                "v4",
+            },
+        },
+        .{
+            .llvm_name = "armv4t",
+            .flatten = true,
+            .extra_deps = .{
+                "no_unaligned_access",
+            },
+        },
+        .{
+            .llvm_name = "armv5t",
+            .flatten = true,
+            .extra_deps = .{
+                "no_unaligned_access",
+            },
+        },
+        .{
+            .llvm_name = "armv5te",
+            .flatten = true,
+            .extra_deps = .{
+                "no_unaligned_access",
+            },
+        },
+        .{
+            .llvm_name = "armv6",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv6-m",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv6k",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv6kz",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv6t2",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv7-a",
+            .flatten = true,
+            .omit_deps = .{
+                "neon",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "armv7-m",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv7-r",
+            .flatten = true,
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "armv7e-m",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "armv7ve",
+            .flatten = true,
+            .omit_deps = .{
+                "neon",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "armv8.1-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.1-m.main",
+            .flatten = true,
+            .omit_deps = .{
+                "8msecext",
+            },
+        },
+        .{
+            .llvm_name = "armv8.2-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.3-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.4-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.5-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.6-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.7-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.8-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8.9-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crc",
+                "crypto",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv8-m.base",
+            .flatten = true,
+            .omit_deps = .{
+                "8msecext",
+            },
+        },
+        .{
+            .llvm_name = "armv8-m.main",
+            .flatten = true,
+            .omit_deps = .{
+                "8msecext",
+            },
+        },
+        .{
+            .llvm_name = "armv8-r",
+            .flatten = true,
+            .omit_deps = .{
+                "crc",
+            },
+        },
+        .{
+            .llvm_name = "armv9.1-a",
+            .flatten = true,
+            .omit_deps = .{
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv9.2-a",
+            .flatten = true,
+            .omit_deps = .{
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv9.3-a",
+            .flatten = true,
+            .omit_deps = .{
+                "crypto",
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv9.4-a",
+            .flatten = true,
+            .omit_deps = .{
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv9.5-a",
+            .flatten = true,
+            .omit_deps = .{
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv9.6-a",
+            .flatten = true,
+            .omit_deps = .{
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv9.7-a",
+            .flatten = true,
+            .omit_deps = .{
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "armv9-a",
+            .flatten = true,
+            .omit_deps = .{
+                "dotprod",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a78",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-a78ae",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-a510",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-a710",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-x1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "cortex-x1c",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "exynos",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "krait",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "kryo",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "m3",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "m7",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "m55",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "m85",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "neoverse-v1",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "r4",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "r5",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "r7",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "r52",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "r52plus",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "swift",
+            .flatten = true,
+        },
+
+        .{
+            .llvm_name = "32bit",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "aapcs-frame-chain",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "armv5tej",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "armv6j",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "armv6s-m",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "armv7k",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "armv7s",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "big-endian-instructions",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "disable-postra-scheduler",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "execute-only",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-blr",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-nocomdat",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "harden-sls-retbr",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "iwmmxt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "iwmmxt2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "long-calls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-bti-at-return-twice",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-movt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "no-neg-immediates",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "read-tp-tpidrprw",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "read-tp-tpidruro",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "read-tp-tpidrurw",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "reserve-r9",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "soft-float",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "thumb-mode",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-mipipeliner",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-misched",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "xscale",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "8msecext",
+            .extra_deps = .{
+                "mclass",
+                "v8m",
+            },
+        },
+        .{
+            .llvm_name = "aclass",
+            .extra_deps = .{
+                "v7",
+            },
+        },
+        .{
+            .llvm_name = "d32",
+            .extra_deps = .{
+                "fpregs",
+            },
+        },
+        .{
+            .llvm_name = "fp16",
+            .extra_deps = .{
+                "vfp3d16sp",
+            },
+        },
+        .{
+            .llvm_name = "fp16fml",
+            .extra_deps = .{
+                "neon",
+            },
+            .omit_deps = .{
+                "fullfp16",
+            },
+        },
+        .{
+            .llvm_name = "hwdiv-arm",
+            .extra_deps = .{
+                "hwdiv",
+            },
+        },
+        .{
+            .llvm_name = "lob",
+            .extra_deps = .{
+                "v8m_main",
+            },
+        },
+        .{
+            .llvm_name = "mclass",
+            .extra_deps = .{
+                "db",
+                "noarm",
+                "v6m",
+            },
+        },
+        .{
+            .llvm_name = "strict-align",
+            .zig_name = "no_unaligned_access",
+        },
+        .{
+            .llvm_name = "pacbti",
+            .extra_deps = .{
+                "v8_1m_main",
+            },
+        },
+        .{
+            .llvm_name = "rclass",
+            .extra_deps = .{
+                "hwdiv",
+                "v7",
+            },
+        },
+        .{
+            .llvm_name = "v4t",
+            .extra_deps = .{
+                "v4",
+            },
+        },
+        .{
+            .llvm_name = "v6t2",
+            .omit_deps = .{
+                "v6k",
+            },
+        },
+        .{
+            .llvm_name = "v7",
+            .extra_deps = .{
+                "db",
+                "v6k",
+            },
+        },
+        .{
+            .llvm_name = "v8",
+            .extra_deps = .{
+                "hwdiv_arm",
+                "mp",
+            },
+            .omit_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "v8.1a",
+            .extra_deps = .{
+                "crc",
+            },
+        },
+        .{
+            .llvm_name = "v8.1m.main",
+            .extra_deps = .{
+                "lob",
+                "ras",
+            },
+        },
+        .{
+            .llvm_name = "v8.2a",
+            .extra_deps = .{
+                "ras",
+            },
+        },
+        .{
+            .llvm_name = "v8.4a",
+            .omit_deps = .{
+                "dotprod",
+            },
+        },
+        .{
+            .llvm_name = "v8.6a",
+            .omit_deps = .{
+                "bf16",
+                "i8mm",
+            },
+        },
+        .{
+            .llvm_name = "v8m.main",
+            .extra_deps = .{
+                "acquire_release",
+                "hwdiv",
+                "mclass",
+            },
+        },
+        .{
+            .llvm_name = "virtualization",
+            .extra_deps = .{
+                "mp",
+            },
+        },
+    },
+    .extra_features = .{
+        // LLVM removed support for v2 and v3 but zig wants to support targeting old hardware
+        .{
+            .zig_name = "v2",
+            .desc = "Support ARM v2 instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "v2a",
+            .desc = "Support ARM v2a instructions",
+            .deps = .{
+                "v2",
+            },
+        },
+        .{
+            .zig_name = "v3",
+            .desc = "Support ARM v3 instructions",
+            .deps = .{
+                "v2a",
+            },
+        },
+        .{
+            .zig_name = "v3m",
+            .desc = "Support ARM v3m instructions",
+            .deps = .{
+                "v3",
+            },
+        },
+        .{
+            .zig_name = "v4",
+            .desc = "Support ARM v4 instructions",
+            .deps = .{
+                "v3m",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "arm1020e",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "arm1022e",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "arm10e",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "arm926ej-s",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "arm946e-s",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "arm966e-s",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "arm968e-s",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "arm9e",
+            .extra_deps = .{
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a12",
+            .extra_deps = .{
+                "neon",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a15",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a17",
+            .extra_deps = .{
+                "neon",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a32",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a35",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a5",
+            .extra_deps = .{
+                "perfmon",
+                "vfp4d16",
+            },
+            .omit_deps = .{
+                "vfp4",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a510",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a53",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a55",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a57",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a7",
+            .extra_deps = .{
+                "perfmon",
+                "vfp4d16",
+            },
+            .omit_deps = .{
+                "vfp4",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a710",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a72",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a73",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a75",
+            .extra_deps = .{
+                "perfmon",
+                "trustzone",
+                "virtualization",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a76",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a76ae",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a77",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a78",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a78ae",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a78c",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a8",
+            .extra_deps = .{
+                "neon",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a9",
+            .extra_deps = .{
+                "perfmon",
+                "vfp3d16",
+            },
+        },
+        .{
+            .llvm_name = "cortex-m7",
+            .extra_deps = .{
+                "fp_armv8d16sp",
+            },
+            .omit_deps = .{
+                "fp_armv8d16",
+            },
+        },
+        .{
+            .llvm_name = "cortex-m33",
+            .omit_deps = .{
+                "dsp",
+            },
+        },
+        .{
+            .llvm_name = "cortex-m35p",
+            .omit_deps = .{
+                "dsp",
+            },
+        },
+        .{
+            .llvm_name = "cortex-m52",
+            .extra_deps = .{
+                "fullfp16",
+            },
+            .omit_deps = .{
+                "mve_fp",
+                "pacbti",
+            },
+        },
+        .{
+            .llvm_name = "cortex-m55",
+            .extra_deps = .{
+                "fullfp16",
+            },
+            .omit_deps = .{
+                "mve_fp",
+            },
+        },
+        .{
+            .llvm_name = "cortex-m85",
+            .extra_deps = .{
+                "8msecext",
+                "fullfp16",
+            },
+            .omit_deps = .{
+                "mve_fp",
+                "pacbti",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r4",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r4f",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r5",
+            .extra_deps = .{
+                "perfmon",
+                "vfp3d16sp",
+            },
+            .omit_deps = .{
+                "vfp3d16",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r52",
+            .extra_deps = .{
+                "crc",
+                "perfmon",
+            },
+            .omit_deps = .{
+                "fp_armv8",
+                "neon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r52plus",
+            .extra_deps = .{
+                "crc",
+                "perfmon",
+            },
+            .omit_deps = .{
+                "fp_armv8",
+                "neon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r7",
+            .extra_deps = .{
+                "perfmon",
+                "vfp3d16sp",
+            },
+            .omit_deps = .{
+                "vfp3d16",
+            },
+        },
+        .{
+            .llvm_name = "cortex-r8",
+            .extra_deps = .{
+                "perfmon",
+                "vfp3d16sp",
+            },
+            .omit_deps = .{
+                "vfp3d16",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x1",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "cortex-x1c",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "exynos-m3",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "exynos-m4",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "exynos-m5",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "krait",
+            .extra_deps = .{
+                "neon",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-n1",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-n2",
+            .extra_deps = .{
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "neoverse-v1",
+            .extra_deps = .{
+                "perfmon",
+            },
+            .omit_deps = .{
+                "crypto",
+            },
+        },
+        .{
+            .llvm_name = "star-mc1",
+            .omit_deps = .{
+                "dsp",
+            },
+        },
+        .{
+            .llvm_name = "star-mc3",
+            .extra_deps = .{
+                "fullfp16",
+            },
+            .omit_deps = .{
+                "mve_fp",
+                "pacbti",
+            },
+        },
+        .{
+            .llvm_name = "swift",
+            .extra_deps = .{
+                "neon",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv2",
+            .features = .{
+                "no_unaligned_access",
+                "v2",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv2a",
+            .features = .{
+                "no_unaligned_access",
+                "v2a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv3",
+            .features = .{
+                "no_unaligned_access",
+                "v3",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv3m",
+            .features = .{
+                "no_unaligned_access",
+                "v3m",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv4",
+            .features = .{
+                "armv4",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv4t",
+            .features = .{
+                "armv4t",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv5t",
+            .features = .{
+                "armv5t",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv5te",
+            .features = .{
+                "armv5te",
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv6",
+            .features = .{
+                "armv6",
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv6k",
+            .features = .{
+                "armv6k",
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv6kz",
+            .features = .{
+                "armv6kz",
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv6m",
+            .features = .{
+                "armv6_m",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv6t2",
+            .features = .{
+                "armv6t2",
+                "vfp2",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv7a",
+            .features = .{
+                "armv7_a",
+                "vfp3d16",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv7em",
+            .features = .{
+                "armv7e_m",
+                "vfp4d16sp",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv7m",
+            .features = .{
+                "armv7_m",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv7r",
+            .features = .{
+                "armv7_r",
+                "vfp3d16sp",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv7ve",
+            .features = .{
+                "armv7ve",
+                "vfp3d16",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_1a",
+            .features = .{
+                "armv8_1_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_1m_main",
+            .features = .{
+                "armv8_1_m_main",
+                "fp_armv8d16sp",
+                "fullfp16",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_2a",
+            .features = .{
+                "armv8_2_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_3a",
+            .features = .{
+                "armv8_3_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_4a",
+            .features = .{
+                "armv8_4_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_5a",
+            .features = .{
+                "armv8_5_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_6a",
+            .features = .{
+                "armv8_6_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_7a",
+            .features = .{
+                "armv8_7_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_8a",
+            .features = .{
+                "armv8_8_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8_9a",
+            .features = .{
+                "armv8_9_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8a",
+            .features = .{
+                "armv8_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8m",
+            .features = .{
+                "armv8_m_base",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8m_main",
+            .features = .{
+                "armv8_m_main",
+                "fp_armv8d16sp",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv8r",
+            .features = .{
+                "armv8_r",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_1a",
+            .features = .{
+                "armv9_1_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_2a",
+            .features = .{
+                "armv9_2_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_3a",
+            .features = .{
+                "armv9_3_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_4a",
+            .features = .{
+                "armv9_4_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_5a",
+            .features = .{
+                "armv9_5_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_6a",
+            .features = .{
+                "armv9_6_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9_7a",
+            .features = .{
+                "armv9_7_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "armv9a",
+            .features = .{
+                "armv9_a",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "exynos_m1",
+            .features = .{
+                "armv8_a",
+                "exynos",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "generic",
+            .zig_name = "exynos_m2",
+            .features = .{
+                "armv8_a",
+                "exynos",
+                "perfmon",
+            },
+        },
+        .{
+            .llvm_name = "cortex-a9",
+            .zig_name = "kermit",
+            .features = .{
+                "armv7_a",
+                "avoid_partial_cpsr",
+                "expand_fp_mlx",
+                "fp16",
+                "mp",
+                "muxed_units",
+                "neon",
+                "neon_fpmovs",
+                "perfmon",
+                "prefer_vmovsr",
+                "ret_addr_stack",
+                "trustzone",
+                "vldn_align",
+                "vmlx_forwarding",
+                "vmlx_hazards",
+            },
+        },
+    },
+}

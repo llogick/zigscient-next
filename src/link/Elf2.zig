@@ -5888,10 +5888,10 @@ fn initHeaders(
             ehdr.shoff = 0;
             ehdr.flags = switch (machine) {
                 .LOONGARCH => .{ .loongarch = .{
-                    .base_abi_modifier = switch (comp.getTarget().abi) {
-                        .gnusf, .muslsf => .s,
-                        .gnuf32, .muslf32 => .f,
-                        else => .d,
+                    .base_abi_modifier = switch (comp.getTarget().abi.float()) {
+                        .soft => .s,
+                        .hard32 => .f,
+                        .hard64 => .d,
                     },
                     .abi_extension = .base,
                     .abi_version = 1,

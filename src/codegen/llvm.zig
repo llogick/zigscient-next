@@ -56,9 +56,7 @@ pub fn supportsTailCall(target: *const std.Target) bool {
     return switch (target.cpu.arch) {
         .wasm32, .wasm64 => target.cpu.has(.wasm, .tail_call),
         // Although these ISAs support tail calls, LLVM does not support tail calls on them.
-        .mips, .mipsel, .mips64, .mips64el => false,
-        .powerpc, .powerpcle, .powerpc64, .powerpc64le => false,
-        else => true,
+        else => !(target.cpu.arch.isMips() or target.cpu.arch.isPowerpc()),
     };
 }
 
@@ -2054,7 +2052,7 @@ pub const Object = struct {
             // Ideally, we would support something akin to the `-mfloat-abi=softfp` option that GCC
             // and Clang support for Arm32 and CSKY. We don't currently expose such an option in
             // Zig, and using CPU features as the source of truth for this makes for a miserable
-            // user experience since people expect e.g. `arm-linux-gnueabi` to mean full soft float
+            // user experience since people expect e.g. `arm-linux-gnusf` to mean full soft float
             // unless the compiler has explicitly been told otherwise. (And note that our baseline
             // CPU models almost all include FPU features!)
             //

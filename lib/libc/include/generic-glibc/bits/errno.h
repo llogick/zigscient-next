@@ -1,4 +1,4 @@
-/* Error constants.  Linux specific version.
+/* Error constants.  MIPS/Linux specific version.
    Copyright (C) 1996-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -13,11 +13,10 @@
    Lesser General Public License for more details.
 
    You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
+   License along with the GNU C Library.  If not, see
    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _BITS_ERRNO_H
-#define _BITS_ERRNO_H 1
 
 #if !defined _ERRNO_H
 # error "Never include <bits/errno.h> directly; use <errno.h> instead."
@@ -31,23 +30,23 @@
 # endif
 
 # ifndef ECANCELED
-#  define ECANCELED		125
+#  define ECANCELED		158
 # endif
 
 # ifndef EOWNERDEAD
-#  define EOWNERDEAD		130
+#  define EOWNERDEAD		165
 # endif
 
-#ifndef ENOTRECOVERABLE
-#  define ENOTRECOVERABLE	131
+# ifndef ENOTRECOVERABLE
+#  define ENOTRECOVERABLE	166
 # endif
 
 # ifndef ERFKILL
-#  define ERFKILL		132
+#  define ERFKILL		167
 # endif
 
 # ifndef EHWPOISON
-#  define EHWPOISON		133
+#  define EHWPOISON		168
 # endif
 
 #endif /* bits/errno.h.  */

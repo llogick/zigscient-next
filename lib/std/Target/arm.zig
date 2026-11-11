@@ -51,41 +51,9 @@ pub const Feature = enum {
     fullfp16,
     fuse_aes,
     fuse_literals,
-    has_v4t,
-    has_v5t,
-    has_v5te,
-    has_v6,
-    has_v6k,
-    has_v6m,
-    has_v6t2,
-    has_v7,
-    has_v7clrex,
-    has_v8,
-    has_v8_1a,
-    has_v8_1m_main,
-    has_v8_2a,
-    has_v8_3a,
-    has_v8_4a,
-    has_v8_5a,
-    has_v8_6a,
-    has_v8_7a,
-    has_v8_8a,
-    has_v8_9a,
-    has_v8m,
-    has_v8m_main,
-    has_v9_1a,
-    has_v9_2a,
-    has_v9_3a,
-    has_v9_4a,
-    has_v9_5a,
-    has_v9_6a,
-    has_v9_7a,
-    has_v9a,
     hwdiv,
     hwdiv_arm,
     i8mm,
-    iwmmxt,
-    iwmmxt2,
     lob,
     loop_align,
     mclass,
@@ -131,19 +99,13 @@ pub const Feature = enum {
     v4t,
     v5t,
     v5te,
-    v5tej,
     v6,
-    v6j,
     v6k,
-    v6kz,
     v6m,
-    v6sm,
     v6t2,
-    v7a,
-    v7em,
-    v7m,
-    v7r,
-    v7ve,
+    v7,
+    v7clrex,
+    v8,
     v8_1a,
     v8_1m_main,
     v8_2a,
@@ -154,10 +116,8 @@ pub const Feature = enum {
     v8_7a,
     v8_8a,
     v8_9a,
-    v8a,
     v8m,
     v8m_main,
-    v8r,
     v9_1a,
     v9_2a,
     v9_3a,
@@ -181,7 +141,6 @@ pub const Feature = enum {
     vmlx_forwarding,
     vmlx_hazards,
     wide_stride_vfp,
-    xscale,
     zcz,
 };
 
@@ -198,12 +157,17 @@ pub const all_features = blk: {
     result[@backingInt(Feature.@"8msecext")] = .{
         .llvm_name = "8msecext",
         .description = "Enable support for ARMv8-M Security Extensions",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .mclass,
+            .v8m,
+        }),
     };
     result[@backingInt(Feature.aclass)] = .{
         .llvm_name = "aclass",
         .description = "Is application profile ('A' series)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .v7,
+        }),
     };
     result[@backingInt(Feature.acquire_release)] = .{
         .llvm_name = "acquire-release",
@@ -253,7 +217,7 @@ pub const all_features = blk: {
         .llvm_name = "cde",
         .description = "Support CDE instructions",
         .dependencies = featureSet(&[_]Feature{
-            .has_v8m_main,
+            .v8m_main,
         }),
     };
     result[@backingInt(Feature.cdecp0)] = .{
@@ -338,7 +302,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.d32)] = .{
         .llvm_name = "d32",
         .description = "Extend FP to 32 double registers",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .fpregs,
+        }),
     };
     result[@backingInt(Feature.db)] = .{
         .llvm_name = "db",
@@ -385,13 +351,15 @@ pub const all_features = blk: {
     result[@backingInt(Feature.fp16)] = .{
         .llvm_name = "fp16",
         .description = "Enable half-precision floating point",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .vfp3d16sp,
+        }),
     };
     result[@backingInt(Feature.fp16fml)] = .{
         .llvm_name = "fp16fml",
         .description = "Enable full half-precision floating point fml instructions",
         .dependencies = featureSet(&[_]Feature{
-            .fullfp16,
+            .neon,
         }),
     };
     result[@backingInt(Feature.fp64)] = .{
@@ -475,226 +443,6 @@ pub const all_features = blk: {
         .description = "CPU fuses literal generation operations",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.has_v4t)] = .{
-        .llvm_name = "v4t",
-        .description = "Support ARM v4T instructions",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.has_v5t)] = .{
-        .llvm_name = "v5t",
-        .description = "Support ARM v5T instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v4t,
-        }),
-    };
-    result[@backingInt(Feature.has_v5te)] = .{
-        .llvm_name = "v5te",
-        .description = "Support ARM v5TE, v5TEj, and v5TExp instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v5t,
-        }),
-    };
-    result[@backingInt(Feature.has_v6)] = .{
-        .llvm_name = "v6",
-        .description = "Support ARM v6 instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v5te,
-        }),
-    };
-    result[@backingInt(Feature.has_v6k)] = .{
-        .llvm_name = "v6k",
-        .description = "Support ARM v6k instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v6,
-        }),
-    };
-    result[@backingInt(Feature.has_v6m)] = .{
-        .llvm_name = "v6m",
-        .description = "Support ARM v6M instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v6,
-        }),
-    };
-    result[@backingInt(Feature.has_v6t2)] = .{
-        .llvm_name = "v6t2",
-        .description = "Support ARM v6t2 instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v6k,
-            .has_v8m,
-            .thumb2,
-        }),
-    };
-    result[@backingInt(Feature.has_v7)] = .{
-        .llvm_name = "v7",
-        .description = "Support ARM v7 instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v6t2,
-            .has_v7clrex,
-        }),
-    };
-    result[@backingInt(Feature.has_v7clrex)] = .{
-        .llvm_name = "v7clrex",
-        .description = "Has v7 clrex instruction",
-        .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.has_v8)] = .{
-        .llvm_name = "v8",
-        .description = "Support ARM v8 instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .acquire_release,
-            .has_v7,
-            .perfmon,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_1a)] = .{
-        .llvm_name = "v8.1a",
-        .description = "Support ARM v8.1a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_1m_main)] = .{
-        .llvm_name = "v8.1m.main",
-        .description = "Support ARM v8-1M Mainline instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8m_main,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_2a)] = .{
-        .llvm_name = "v8.2a",
-        .description = "Support ARM v8.2a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_1a,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_3a)] = .{
-        .llvm_name = "v8.3a",
-        .description = "Support ARM v8.3a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_2a,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_4a)] = .{
-        .llvm_name = "v8.4a",
-        .description = "Support ARM v8.4a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .dotprod,
-            .has_v8_3a,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_5a)] = .{
-        .llvm_name = "v8.5a",
-        .description = "Support ARM v8.5a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_4a,
-            .sb,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_6a)] = .{
-        .llvm_name = "v8.6a",
-        .description = "Support ARM v8.6a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .bf16,
-            .has_v8_5a,
-            .i8mm,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_7a)] = .{
-        .llvm_name = "v8.7a",
-        .description = "Support ARM v8.7a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_6a,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_8a)] = .{
-        .llvm_name = "v8.8a",
-        .description = "Support ARM v8.8a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_7a,
-        }),
-    };
-    result[@backingInt(Feature.has_v8_9a)] = .{
-        .llvm_name = "v8.9a",
-        .description = "Support ARM v8.9a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .clrbhb,
-            .has_v8_8a,
-        }),
-    };
-    result[@backingInt(Feature.has_v8m)] = .{
-        .llvm_name = "v8m",
-        .description = "Support ARM v8M Baseline instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v6m,
-        }),
-    };
-    result[@backingInt(Feature.has_v8m_main)] = .{
-        .llvm_name = "v8m.main",
-        .description = "Support ARM v8M Mainline instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v7,
-        }),
-    };
-    result[@backingInt(Feature.has_v9_1a)] = .{
-        .llvm_name = "v9.1a",
-        .description = "Support ARM v9.1a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_6a,
-            .has_v9a,
-        }),
-    };
-    result[@backingInt(Feature.has_v9_2a)] = .{
-        .llvm_name = "v9.2a",
-        .description = "Support ARM v9.2a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_7a,
-            .has_v9_1a,
-        }),
-    };
-    result[@backingInt(Feature.has_v9_3a)] = .{
-        .llvm_name = "v9.3a",
-        .description = "Support ARM v9.3a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_8a,
-            .has_v9_2a,
-        }),
-    };
-    result[@backingInt(Feature.has_v9_4a)] = .{
-        .llvm_name = "v9.4a",
-        .description = "Support ARM v9.4a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_9a,
-            .has_v9_3a,
-        }),
-    };
-    result[@backingInt(Feature.has_v9_5a)] = .{
-        .llvm_name = "v9.5a",
-        .description = "Support ARM v9.5a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v9_4a,
-        }),
-    };
-    result[@backingInt(Feature.has_v9_6a)] = .{
-        .llvm_name = "v9.6a",
-        .description = "Support ARM v9.6a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v9_5a,
-        }),
-    };
-    result[@backingInt(Feature.has_v9_7a)] = .{
-        .llvm_name = "v9.7a",
-        .description = "Support ARM v9.7a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v9_6a,
-        }),
-    };
-    result[@backingInt(Feature.has_v9a)] = .{
-        .llvm_name = "v9a",
-        .description = "Support ARM v9a instructions",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v8_5a,
-        }),
-    };
     result[@backingInt(Feature.hwdiv)] = .{
         .llvm_name = "hwdiv",
         .description = "Enable divide instructions in Thumb",
@@ -703,7 +451,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.hwdiv_arm)] = .{
         .llvm_name = "hwdiv-arm",
         .description = "Enable divide instructions in ARM mode",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .hwdiv,
+        }),
     };
     result[@backingInt(Feature.i8mm)] = .{
         .llvm_name = "i8mm",
@@ -712,24 +462,12 @@ pub const all_features = blk: {
             .neon,
         }),
     };
-    result[@backingInt(Feature.iwmmxt)] = .{
-        .llvm_name = "iwmmxt",
-        .description = "ARMv5te architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .v5te,
-        }),
-    };
-    result[@backingInt(Feature.iwmmxt2)] = .{
-        .llvm_name = "iwmmxt2",
-        .description = "ARMv5te architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .v5te,
-        }),
-    };
     result[@backingInt(Feature.lob)] = .{
         .llvm_name = "lob",
         .description = "Enable Low Overhead Branch extensions",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .v8m_main,
+        }),
     };
     result[@backingInt(Feature.loop_align)] = .{
         .llvm_name = "loop-align",
@@ -739,7 +477,11 @@ pub const all_features = blk: {
     result[@backingInt(Feature.mclass)] = .{
         .llvm_name = "mclass",
         .description = "Is microcontroller profile ('M' series)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .db,
+            .noarm,
+            .v6m,
+        }),
     };
     result[@backingInt(Feature.mp)] = .{
         .llvm_name = "mp",
@@ -758,7 +500,7 @@ pub const all_features = blk: {
             .dsp,
             .fpregs16,
             .fpregs64,
-            .has_v8_1m_main,
+            .v8_1m_main,
         }),
     };
     result[@backingInt(Feature.mve1beat)] = .{
@@ -824,7 +566,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.pacbti)] = .{
         .llvm_name = "pacbti",
         .description = "Enable Pointer Authentication and Branch Target Identification",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .v8_1m_main,
+        }),
     };
     result[@backingInt(Feature.perfmon)] = .{
         .llvm_name = "perfmon",
@@ -854,7 +598,10 @@ pub const all_features = blk: {
     result[@backingInt(Feature.rclass)] = .{
         .llvm_name = "rclass",
         .description = "Is realtime profile ('R' series)",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .hwdiv,
+            .v7,
+        }),
     };
     result[@backingInt(Feature.ret_addr_stack)] = .{
         .llvm_name = "ret-addr-stack",
@@ -927,534 +674,262 @@ pub const all_features = blk: {
     };
     result[@backingInt(Feature.v2)] = .{
         .llvm_name = null,
-        .description = "ARMv2 architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .no_unaligned_access,
-        }),
+        .description = "Support ARM v2 instructions",
+        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.v2a)] = .{
         .llvm_name = null,
-        .description = "ARMv2a architecture",
+        .description = "Support ARM v2a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .no_unaligned_access,
+            .v2,
         }),
     };
     result[@backingInt(Feature.v3)] = .{
         .llvm_name = null,
-        .description = "ARMv3 architecture",
+        .description = "Support ARM v3 instructions",
         .dependencies = featureSet(&[_]Feature{
-            .no_unaligned_access,
+            .v2a,
         }),
     };
     result[@backingInt(Feature.v3m)] = .{
         .llvm_name = null,
-        .description = "ARMv3m architecture",
+        .description = "Support ARM v3m instructions",
         .dependencies = featureSet(&[_]Feature{
-            .no_unaligned_access,
+            .v3,
         }),
     };
     result[@backingInt(Feature.v4)] = .{
-        .llvm_name = "armv4",
-        .description = "ARMv4 architecture",
+        .llvm_name = null,
+        .description = "Support ARM v4 instructions",
         .dependencies = featureSet(&[_]Feature{
-            .no_unaligned_access,
+            .v3m,
         }),
     };
     result[@backingInt(Feature.v4t)] = .{
-        .llvm_name = "armv4t",
-        .description = "ARMv4t architecture",
+        .llvm_name = "v4t",
+        .description = "Support ARM v4T instructions",
         .dependencies = featureSet(&[_]Feature{
-            .has_v4t,
-            .no_unaligned_access,
+            .v4,
         }),
     };
     result[@backingInt(Feature.v5t)] = .{
-        .llvm_name = "armv5t",
-        .description = "ARMv5t architecture",
+        .llvm_name = "v5t",
+        .description = "Support ARM v5T instructions",
         .dependencies = featureSet(&[_]Feature{
-            .has_v5t,
-            .no_unaligned_access,
+            .v4t,
         }),
     };
     result[@backingInt(Feature.v5te)] = .{
-        .llvm_name = "armv5te",
-        .description = "ARMv5te architecture",
+        .llvm_name = "v5te",
+        .description = "Support ARM v5TE, v5TEj, and v5TExp instructions",
         .dependencies = featureSet(&[_]Feature{
-            .has_v5te,
-            .no_unaligned_access,
-        }),
-    };
-    result[@backingInt(Feature.v5tej)] = .{
-        .llvm_name = "armv5tej",
-        .description = "ARMv5tej architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v5te,
-            .no_unaligned_access,
+            .v5t,
         }),
     };
     result[@backingInt(Feature.v6)] = .{
-        .llvm_name = "armv6",
-        .description = "ARMv6 architecture",
+        .llvm_name = "v6",
+        .description = "Support ARM v6 instructions",
         .dependencies = featureSet(&[_]Feature{
-            .dsp,
-            .has_v6,
+            .v5te,
         }),
     };
-    result[@backingInt(Feature.v6j)] = .{
-        .llvm_name = "armv6j",
-        .description = "ARMv7a architecture",
+    result[@backingInt(Feature.v6k)] = .{
+        .llvm_name = "v6k",
+        .description = "Support ARM v6k instructions",
         .dependencies = featureSet(&[_]Feature{
             .v6,
         }),
     };
-    result[@backingInt(Feature.v6k)] = .{
-        .llvm_name = "armv6k",
-        .description = "ARMv6k architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v6k,
-        }),
-    };
-    result[@backingInt(Feature.v6kz)] = .{
-        .llvm_name = "armv6kz",
-        .description = "ARMv6kz architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .has_v6k,
-            .trustzone,
-        }),
-    };
     result[@backingInt(Feature.v6m)] = .{
-        .llvm_name = "armv6-m",
-        .description = "ARMv6m architecture",
+        .llvm_name = "v6m",
+        .description = "Support ARM v6M instructions",
         .dependencies = featureSet(&[_]Feature{
-            .db,
-            .has_v6m,
-            .mclass,
-            .no_unaligned_access,
-            .noarm,
-        }),
-    };
-    result[@backingInt(Feature.v6sm)] = .{
-        .llvm_name = "armv6s-m",
-        .description = "ARMv6sm architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .db,
-            .has_v6m,
-            .mclass,
-            .no_unaligned_access,
-            .noarm,
+            .v6,
         }),
     };
     result[@backingInt(Feature.v6t2)] = .{
-        .llvm_name = "armv6t2",
-        .description = "ARMv6t2 architecture",
+        .llvm_name = "v6t2",
+        .description = "Support ARM v6t2 instructions",
         .dependencies = featureSet(&[_]Feature{
-            .dsp,
-            .has_v6t2,
+            .thumb2,
+            .v8m,
         }),
     };
-    result[@backingInt(Feature.v7a)] = .{
-        .llvm_name = "armv7-a",
-        .description = "ARMv7a architecture",
+    result[@backingInt(Feature.v7)] = .{
+        .llvm_name = "v7",
+        .description = "Support ARM v7 instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
             .db,
-            .dsp,
-            .has_v7,
-            .perfmon,
+            .v6k,
+            .v6t2,
+            .v7clrex,
         }),
     };
-    result[@backingInt(Feature.v7em)] = .{
-        .llvm_name = "armv7e-m",
-        .description = "ARMv7em architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .db,
-            .dsp,
-            .has_v7,
-            .hwdiv,
-            .mclass,
-            .noarm,
-        }),
+    result[@backingInt(Feature.v7clrex)] = .{
+        .llvm_name = "v7clrex",
+        .description = "Has v7 clrex instruction",
+        .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.v7m)] = .{
-        .llvm_name = "armv7-m",
-        .description = "ARMv7m architecture",
+    result[@backingInt(Feature.v8)] = .{
+        .llvm_name = "v8",
+        .description = "Support ARM v8 instructions",
         .dependencies = featureSet(&[_]Feature{
-            .db,
-            .has_v7,
-            .hwdiv,
-            .mclass,
-            .noarm,
-        }),
-    };
-    result[@backingInt(Feature.v7r)] = .{
-        .llvm_name = "armv7-r",
-        .description = "ARMv7r architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .db,
-            .dsp,
-            .has_v7,
-            .hwdiv,
-            .perfmon,
-            .rclass,
-        }),
-    };
-    result[@backingInt(Feature.v7ve)] = .{
-        .llvm_name = "armv7ve",
-        .description = "ARMv7ve architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .db,
-            .dsp,
-            .has_v7,
+            .acquire_release,
+            .hwdiv_arm,
             .mp,
-            .perfmon,
-            .trustzone,
-            .virtualization,
+            .v7,
         }),
     };
     result[@backingInt(Feature.v8_1a)] = .{
-        .llvm_name = "armv8.1-a",
-        .description = "ARMv81a architecture",
+        .llvm_name = "v8.1a",
+        .description = "Support ARM v8.1a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
             .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_1a,
-            .mp,
-            .neon,
-            .trustzone,
-            .virtualization,
+            .v8,
         }),
     };
     result[@backingInt(Feature.v8_1m_main)] = .{
-        .llvm_name = "armv8.1-m.main",
-        .description = "ARMv81mMainline architecture",
+        .llvm_name = "v8.1m.main",
+        .description = "Support ARM v8-1M Mainline instructions",
         .dependencies = featureSet(&[_]Feature{
-            .acquire_release,
-            .db,
-            .has_v8_1m_main,
-            .hwdiv,
             .lob,
-            .mclass,
-            .noarm,
             .ras,
         }),
     };
     result[@backingInt(Feature.v8_2a)] = .{
-        .llvm_name = "armv8.2-a",
-        .description = "ARMv82a architecture",
+        .llvm_name = "v8.2a",
+        .description = "Support ARM v8.2a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_2a,
-            .mp,
-            .neon,
             .ras,
-            .trustzone,
-            .virtualization,
+            .v8_1a,
         }),
     };
     result[@backingInt(Feature.v8_3a)] = .{
-        .llvm_name = "armv8.3-a",
-        .description = "ARMv83a architecture",
+        .llvm_name = "v8.3a",
+        .description = "Support ARM v8.3a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_3a,
-            .mp,
-            .neon,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_2a,
         }),
     };
     result[@backingInt(Feature.v8_4a)] = .{
-        .llvm_name = "armv8.4-a",
-        .description = "ARMv84a architecture",
+        .llvm_name = "v8.4a",
+        .description = "Support ARM v8.4a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_4a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_3a,
         }),
     };
     result[@backingInt(Feature.v8_5a)] = .{
-        .llvm_name = "armv8.5-a",
-        .description = "ARMv85a architecture",
+        .llvm_name = "v8.5a",
+        .description = "Support ARM v8.5a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_5a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .sb,
+            .v8_4a,
         }),
     };
     result[@backingInt(Feature.v8_6a)] = .{
-        .llvm_name = "armv8.6-a",
-        .description = "ARMv86a architecture",
+        .llvm_name = "v8.6a",
+        .description = "Support ARM v8.6a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_6a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_5a,
         }),
     };
     result[@backingInt(Feature.v8_7a)] = .{
-        .llvm_name = "armv8.7-a",
-        .description = "ARMv87a architecture",
+        .llvm_name = "v8.7a",
+        .description = "Support ARM v8.7a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_7a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_6a,
         }),
     };
     result[@backingInt(Feature.v8_8a)] = .{
-        .llvm_name = "armv8.8-a",
-        .description = "ARMv88a architecture",
+        .llvm_name = "v8.8a",
+        .description = "Support ARM v8.8a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_8a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_7a,
         }),
     };
     result[@backingInt(Feature.v8_9a)] = .{
-        .llvm_name = "armv8.9-a",
-        .description = "ARMv89a architecture",
+        .llvm_name = "v8.9a",
+        .description = "Support ARM v8.9a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8_9a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
-        }),
-    };
-    result[@backingInt(Feature.v8a)] = .{
-        .llvm_name = "armv8-a",
-        .description = "ARMv8a architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v8,
-            .mp,
-            .neon,
-            .trustzone,
-            .virtualization,
+            .clrbhb,
+            .v8_8a,
         }),
     };
     result[@backingInt(Feature.v8m)] = .{
-        .llvm_name = "armv8-m.base",
-        .description = "ARMv8mBaseline architecture",
+        .llvm_name = "v8m",
+        .description = "Support ARM v8M Baseline instructions",
         .dependencies = featureSet(&[_]Feature{
-            .acquire_release,
-            .db,
-            .has_v7clrex,
-            .has_v8m,
-            .hwdiv,
-            .mclass,
-            .no_unaligned_access,
-            .noarm,
+            .v6m,
         }),
     };
     result[@backingInt(Feature.v8m_main)] = .{
-        .llvm_name = "armv8-m.main",
-        .description = "ARMv8mMainline architecture",
+        .llvm_name = "v8m.main",
+        .description = "Support ARM v8M Mainline instructions",
         .dependencies = featureSet(&[_]Feature{
             .acquire_release,
-            .db,
-            .has_v8m_main,
             .hwdiv,
             .mclass,
-            .noarm,
-        }),
-    };
-    result[@backingInt(Feature.v8r)] = .{
-        .llvm_name = "armv8-r",
-        .description = "ARMv8r architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .crc,
-            .db,
-            .dfb,
-            .dsp,
-            .fp_armv8d16sp,
-            .has_v8,
-            .mp,
-            .rclass,
-            .virtualization,
+            .v7,
         }),
     };
     result[@backingInt(Feature.v9_1a)] = .{
-        .llvm_name = "armv9.1-a",
-        .description = "ARMv91a architecture",
+        .llvm_name = "v9.1a",
+        .description = "Support ARM v9.1a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9_1a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_6a,
+            .v9a,
         }),
     };
     result[@backingInt(Feature.v9_2a)] = .{
-        .llvm_name = "armv9.2-a",
-        .description = "ARMv92a architecture",
+        .llvm_name = "v9.2a",
+        .description = "Support ARM v9.2a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9_2a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_7a,
+            .v9_1a,
         }),
     };
     result[@backingInt(Feature.v9_3a)] = .{
-        .llvm_name = "armv9.3-a",
-        .description = "ARMv93a architecture",
+        .llvm_name = "v9.3a",
+        .description = "Support ARM v9.3a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9_3a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_8a,
+            .v9_2a,
         }),
     };
     result[@backingInt(Feature.v9_4a)] = .{
-        .llvm_name = "armv9.4-a",
-        .description = "ARMv94a architecture",
+        .llvm_name = "v9.4a",
+        .description = "Support ARM v9.4a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9_4a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_9a,
+            .v9_3a,
         }),
     };
     result[@backingInt(Feature.v9_5a)] = .{
-        .llvm_name = "armv9.5-a",
-        .description = "ARMv95a architecture",
+        .llvm_name = "v9.5a",
+        .description = "Support ARM v9.5a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9_5a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v9_4a,
         }),
     };
     result[@backingInt(Feature.v9_6a)] = .{
-        .llvm_name = "armv9.6-a",
-        .description = "ARMv96a architecture",
+        .llvm_name = "v9.6a",
+        .description = "Support ARM v9.6a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9_6a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v9_5a,
         }),
     };
     result[@backingInt(Feature.v9_7a)] = .{
-        .llvm_name = "armv9.7-a",
-        .description = "ARMv97a architecture",
+        .llvm_name = "v9.7a",
+        .description = "Support ARM v9.7a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9_7a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v9_6a,
         }),
     };
     result[@backingInt(Feature.v9a)] = .{
-        .llvm_name = "armv9-a",
-        .description = "ARMv9a architecture",
+        .llvm_name = "v9a",
+        .description = "Support ARM v9a instructions",
         .dependencies = featureSet(&[_]Feature{
-            .aclass,
-            .crc,
-            .db,
-            .dsp,
-            .fp_armv8,
-            .has_v9a,
-            .mp,
-            .ras,
-            .trustzone,
-            .virtualization,
+            .v8_5a,
         }),
     };
     result[@backingInt(Feature.vfp2)] = .{
@@ -1525,7 +1000,6 @@ pub const all_features = blk: {
         .description = "Enable VFP4 instructions with only 16 d-registers and no double precision",
         .dependencies = featureSet(&[_]Feature{
             .fp16,
-            .vfp3d16sp,
         }),
     };
     result[@backingInt(Feature.vfp4sp)] = .{
@@ -1540,8 +1014,8 @@ pub const all_features = blk: {
         .llvm_name = "virtualization",
         .description = "Supports Virtualization extension",
         .dependencies = featureSet(&[_]Feature{
-            .hwdiv,
             .hwdiv_arm,
+            .mp,
         }),
     };
     result[@backingInt(Feature.vldn_align)] = .{
@@ -1564,13 +1038,6 @@ pub const all_features = blk: {
         .description = "Use a wide stride when allocating VFP registers",
         .dependencies = featureSet(&[_]Feature{}),
     };
-    result[@backingInt(Feature.xscale)] = .{
-        .llvm_name = "xscale",
-        .description = "ARMv5te architecture",
-        .dependencies = featureSet(&[_]Feature{
-            .v5te,
-        }),
-    };
     result[@backingInt(Feature.zcz)] = .{
         .llvm_name = "zcz",
         .description = "Has zero-cycle zeroing instructions",
@@ -1589,13 +1056,16 @@ pub const cpu = struct {
         .name = "arm1020e",
         .llvm_name = "arm1020e",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm1020t: CpuModel = .{
         .name = "arm1020t",
         .llvm_name = "arm1020t",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5t,
         }),
     };
@@ -1603,20 +1073,25 @@ pub const cpu = struct {
         .name = "arm1022e",
         .llvm_name = "arm1022e",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm10e: CpuModel = .{
         .name = "arm10e",
         .llvm_name = "arm10e",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm10tdmi: CpuModel = .{
         .name = "arm10tdmi",
         .llvm_name = "arm10tdmi",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5t,
         }),
     };
@@ -1624,6 +1099,7 @@ pub const cpu = struct {
         .name = "arm1136j_s",
         .llvm_name = "arm1136j-s",
         .features = featureSet(&[_]Feature{
+            .dsp,
             .v6,
         }),
     };
@@ -1631,6 +1107,7 @@ pub const cpu = struct {
         .name = "arm1136jf_s",
         .llvm_name = "arm1136jf-s",
         .features = featureSet(&[_]Feature{
+            .dsp,
             .slowfpvmlx,
             .v6,
             .vfp2,
@@ -1640,6 +1117,7 @@ pub const cpu = struct {
         .name = "arm1156t2_s",
         .llvm_name = "arm1156t2-s",
         .features = featureSet(&[_]Feature{
+            .dsp,
             .v6t2,
         }),
     };
@@ -1647,6 +1125,7 @@ pub const cpu = struct {
         .name = "arm1156t2f_s",
         .llvm_name = "arm1156t2f-s",
         .features = featureSet(&[_]Feature{
+            .dsp,
             .slowfpvmlx,
             .v6t2,
             .vfp2,
@@ -1656,7 +1135,8 @@ pub const cpu = struct {
         .name = "arm1176jz_s",
         .llvm_name = "arm1176jz-s",
         .features = featureSet(&[_]Feature{
-            .v6kz,
+            .trustzone,
+            .v6k,
         }),
     };
     pub const arm1176jzf_s: CpuModel = .{
@@ -1664,7 +1144,8 @@ pub const cpu = struct {
         .llvm_name = "arm1176jzf-s",
         .features = featureSet(&[_]Feature{
             .slowfpvmlx,
-            .v6kz,
+            .trustzone,
+            .v6k,
             .vfp2,
         }),
     };
@@ -1672,6 +1153,7 @@ pub const cpu = struct {
         .name = "arm710t",
         .llvm_name = "arm710t",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1679,6 +1161,7 @@ pub const cpu = struct {
         .name = "arm720t",
         .llvm_name = "arm720t",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1686,6 +1169,7 @@ pub const cpu = struct {
         .name = "arm7tdmi",
         .llvm_name = "arm7tdmi",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1693,6 +1177,7 @@ pub const cpu = struct {
         .name = "arm7tdmi_s",
         .llvm_name = "arm7tdmi-s",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1700,6 +1185,7 @@ pub const cpu = struct {
         .name = "arm8",
         .llvm_name = "arm8",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4,
         }),
     };
@@ -1707,6 +1193,7 @@ pub const cpu = struct {
         .name = "arm810",
         .llvm_name = "arm810",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4,
         }),
     };
@@ -1714,6 +1201,7 @@ pub const cpu = struct {
         .name = "arm9",
         .llvm_name = "arm9",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1721,6 +1209,7 @@ pub const cpu = struct {
         .name = "arm920",
         .llvm_name = "arm920",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1728,6 +1217,7 @@ pub const cpu = struct {
         .name = "arm920t",
         .llvm_name = "arm920t",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1735,6 +1225,7 @@ pub const cpu = struct {
         .name = "arm922t",
         .llvm_name = "arm922t",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1742,13 +1233,16 @@ pub const cpu = struct {
         .name = "arm926ej_s",
         .llvm_name = "arm926ej-s",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm940t: CpuModel = .{
         .name = "arm940t",
         .llvm_name = "arm940t",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -1756,54 +1250,453 @@ pub const cpu = struct {
         .name = "arm946e_s",
         .llvm_name = "arm946e-s",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm966e_s: CpuModel = .{
         .name = "arm966e_s",
         .llvm_name = "arm966e-s",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm968e_s: CpuModel = .{
         .name = "arm968e_s",
         .llvm_name = "arm968e-s",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm9e: CpuModel = .{
         .name = "arm9e",
         .llvm_name = "arm9e",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
+            .vfp2,
         }),
     };
     pub const arm9tdmi: CpuModel = .{
         .name = "arm9tdmi",
         .llvm_name = "arm9tdmi",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
-    pub const baseline: CpuModel = .{
-        .name = "baseline",
+    pub const armv2: CpuModel = .{
+        .name = "armv2",
         .llvm_name = "generic",
         .features = featureSet(&[_]Feature{
-            .v7a,
+            .no_unaligned_access,
+            .v2,
+        }),
+    };
+    pub const armv2a: CpuModel = .{
+        .name = "armv2a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
+            .v2a,
+        }),
+    };
+    pub const armv3: CpuModel = .{
+        .name = "armv3",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
+            .v3,
+        }),
+    };
+    pub const armv3m: CpuModel = .{
+        .name = "armv3m",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
+            .v3m,
+        }),
+    };
+    pub const armv4: CpuModel = .{
+        .name = "armv4",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
+            .v4,
+        }),
+    };
+    pub const armv4t: CpuModel = .{
+        .name = "armv4t",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
+            .v4t,
+        }),
+    };
+    pub const armv5t: CpuModel = .{
+        .name = "armv5t",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
+            .v5t,
+        }),
+    };
+    pub const armv5te: CpuModel = .{
+        .name = "armv5te",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
+            .v5te,
+            .vfp2,
+        }),
+    };
+    pub const armv6: CpuModel = .{
+        .name = "armv6",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .dsp,
+            .v6,
+            .vfp2,
+        }),
+    };
+    pub const armv6k: CpuModel = .{
+        .name = "armv6k",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .v6k,
+            .vfp2,
+        }),
+    };
+    pub const armv6kz: CpuModel = .{
+        .name = "armv6kz",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .trustzone,
+            .v6k,
+            .vfp2,
+        }),
+    };
+    pub const armv6m: CpuModel = .{
+        .name = "armv6m",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .mclass,
+            .no_unaligned_access,
+        }),
+    };
+    pub const armv6t2: CpuModel = .{
+        .name = "armv6t2",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .dsp,
+            .v6t2,
+            .vfp2,
+        }),
+    };
+    pub const armv7a: CpuModel = .{
+        .name = "armv7a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
             .vfp3d16,
+        }),
+    };
+    pub const armv7em: CpuModel = .{
+        .name = "armv7em",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .dsp,
+            .hwdiv,
+            .mclass,
+            .v7,
+            .vfp4d16sp,
+        }),
+    };
+    pub const armv7m: CpuModel = .{
+        .name = "armv7m",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .hwdiv,
+            .mclass,
+            .v7,
+        }),
+    };
+    pub const armv7r: CpuModel = .{
+        .name = "armv7r",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .dsp,
+            .rclass,
+            .vfp3d16sp,
+        }),
+    };
+    pub const armv7ve: CpuModel = .{
+        .name = "armv7ve",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .trustzone,
+            .vfp3d16,
+            .virtualization,
+        }),
+    };
+    pub const armv8_1a: CpuModel = .{
+        .name = "armv8_1a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_1a,
+        }),
+    };
+    pub const armv8_1m_main: CpuModel = .{
+        .name = "armv8_1m_main",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .fullfp16,
+            .v8_1m_main,
+        }),
+    };
+    pub const armv8_2a: CpuModel = .{
+        .name = "armv8_2a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_2a,
+        }),
+    };
+    pub const armv8_3a: CpuModel = .{
+        .name = "armv8_3a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_3a,
+        }),
+    };
+    pub const armv8_4a: CpuModel = .{
+        .name = "armv8_4a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_4a,
+        }),
+    };
+    pub const armv8_5a: CpuModel = .{
+        .name = "armv8_5a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_5a,
+        }),
+    };
+    pub const armv8_6a: CpuModel = .{
+        .name = "armv8_6a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_6a,
+        }),
+    };
+    pub const armv8_7a: CpuModel = .{
+        .name = "armv8_7a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_7a,
+        }),
+    };
+    pub const armv8_8a: CpuModel = .{
+        .name = "armv8_8a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_8a,
+        }),
+    };
+    pub const armv8_9a: CpuModel = .{
+        .name = "armv8_9a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8_9a,
+        }),
+    };
+    pub const armv8a: CpuModel = .{
+        .name = "armv8a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v8,
+        }),
+    };
+    pub const armv8m: CpuModel = .{
+        .name = "armv8m",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .acquire_release,
+            .hwdiv,
+            .mclass,
+            .no_unaligned_access,
+            .v7clrex,
+            .v8m,
+        }),
+    };
+    pub const armv8m_main: CpuModel = .{
+        .name = "armv8m_main",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .fp_armv8d16sp,
+            .v8m_main,
+        }),
+    };
+    pub const armv8r: CpuModel = .{
+        .name = "armv8r",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .dfb,
+            .dsp,
+            .fp_armv8d16sp,
+            .rclass,
+            .v8,
+            .virtualization,
+        }),
+    };
+    pub const armv9_1a: CpuModel = .{
+        .name = "armv9_1a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9_1a,
+        }),
+    };
+    pub const armv9_2a: CpuModel = .{
+        .name = "armv9_2a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9_2a,
+        }),
+    };
+    pub const armv9_3a: CpuModel = .{
+        .name = "armv9_3a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9_3a,
+        }),
+    };
+    pub const armv9_4a: CpuModel = .{
+        .name = "armv9_4a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9_4a,
+        }),
+    };
+    pub const armv9_5a: CpuModel = .{
+        .name = "armv9_5a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9_5a,
+        }),
+    };
+    pub const armv9_6a: CpuModel = .{
+        .name = "armv9_6a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9_6a,
+        }),
+    };
+    pub const armv9_7a: CpuModel = .{
+        .name = "armv9_7a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9_7a,
+        }),
+    };
+    pub const armv9a: CpuModel = .{
+        .name = "armv9a",
+        .llvm_name = "generic",
+        .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .v9a,
         }),
     };
     pub const cortex_a12: CpuModel = .{
         .name = "cortex_a12",
         .llvm_name = "cortex-a12",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_partial_cpsr,
-            .mp,
+            .dsp,
+            .neon,
+            .perfmon,
             .ret_addr_stack,
             .trustzone,
-            .v7a,
+            .vfp4,
             .virtualization,
             .vmlx_forwarding,
         }),
@@ -1812,13 +1705,15 @@ pub const cpu = struct {
         .name = "cortex_a15",
         .llvm_name = "cortex-a15",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_partial_cpsr,
-            .mp,
+            .dsp,
             .muxed_units,
+            .perfmon,
             .ret_addr_stack,
             .splat_vfp_neon,
             .trustzone,
-            .v7a,
+            .vfp4,
             .virtualization,
             .vldn_align,
         }),
@@ -1827,11 +1722,14 @@ pub const cpu = struct {
         .name = "cortex_a17",
         .llvm_name = "cortex-a17",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_partial_cpsr,
-            .mp,
+            .dsp,
+            .neon,
+            .perfmon,
             .ret_addr_stack,
             .trustzone,
-            .v7a,
+            .vfp4,
             .virtualization,
             .vmlx_forwarding,
         }),
@@ -1840,27 +1738,46 @@ pub const cpu = struct {
         .name = "cortex_a32",
         .llvm_name = "cortex-a32",
         .features = featureSet(&[_]Feature{
-            .v8a,
+            .aclass,
+            .crc,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .perfmon,
+            .trustzone,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_a35: CpuModel = .{
         .name = "cortex_a35",
         .llvm_name = "cortex-a35",
         .features = featureSet(&[_]Feature{
-            .v8a,
+            .aclass,
+            .crc,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .perfmon,
+            .trustzone,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_a5: CpuModel = .{
         .name = "cortex_a5",
         .llvm_name = "cortex-a5",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
             .mp,
+            .perfmon,
             .ret_addr_stack,
             .slow_fp_brcc,
             .slowfpvfmx,
             .slowfpvmlx,
             .trustzone,
-            .v7a,
+            .vfp4d16,
             .vmlx_forwarding,
         }),
     };
@@ -1868,9 +1785,13 @@ pub const cpu = struct {
         .name = "cortex_a510",
         .llvm_name = "cortex-a510",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .bf16,
+            .dsp,
             .fp16fml,
+            .fp_armv8,
             .i8mm,
+            .perfmon,
             .v9a,
         }),
     };
@@ -1878,40 +1799,64 @@ pub const cpu = struct {
         .name = "cortex_a53",
         .llvm_name = "cortex-a53",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .crc,
+            .dsp,
+            .fp_armv8,
             .fpao,
-            .v8a,
+            .neon,
+            .perfmon,
+            .trustzone,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_a55: CpuModel = .{
         .name = "cortex_a55",
         .llvm_name = "cortex-a55",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
+            .perfmon,
+            .trustzone,
             .v8_2a,
+            .virtualization,
         }),
     };
     pub const cortex_a57: CpuModel = .{
         .name = "cortex_a57",
         .llvm_name = "cortex-a57",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_partial_cpsr,
             .cheap_predicable_cpsr,
+            .crc,
+            .dsp,
             .fix_cortex_a57_aes_1742098,
+            .fp_armv8,
             .fpao,
-            .v8a,
+            .neon,
+            .perfmon,
+            .trustzone,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_a7: CpuModel = .{
         .name = "cortex_a7",
         .llvm_name = "cortex-a7",
         .features = featureSet(&[_]Feature{
-            .mp,
+            .aclass,
+            .dsp,
+            .perfmon,
             .ret_addr_stack,
             .slow_fp_brcc,
             .slowfpvfmx,
             .slowfpvmlx,
             .trustzone,
-            .v7a,
+            .vfp4d16,
             .virtualization,
             .vmlx_forwarding,
             .vmlx_hazards,
@@ -1921,9 +1866,13 @@ pub const cpu = struct {
         .name = "cortex_a710",
         .llvm_name = "cortex-a710",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .bf16,
+            .dsp,
             .fp16fml,
+            .fp_armv8,
             .i8mm,
+            .perfmon,
             .v9a,
         }),
     };
@@ -1931,31 +1880,57 @@ pub const cpu = struct {
         .name = "cortex_a72",
         .llvm_name = "cortex-a72",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .crc,
+            .dsp,
             .fix_cortex_a57_aes_1742098,
-            .v8a,
+            .fp_armv8,
+            .neon,
+            .perfmon,
+            .trustzone,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_a73: CpuModel = .{
         .name = "cortex_a73",
         .llvm_name = "cortex-a73",
         .features = featureSet(&[_]Feature{
-            .v8a,
+            .aclass,
+            .crc,
+            .dsp,
+            .fp_armv8,
+            .neon,
+            .perfmon,
+            .trustzone,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_a75: CpuModel = .{
         .name = "cortex_a75",
         .llvm_name = "cortex-a75",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
+            .perfmon,
+            .trustzone,
             .v8_2a,
+            .virtualization,
         }),
     };
     pub const cortex_a76: CpuModel = .{
         .name = "cortex_a76",
         .llvm_name = "cortex-a76",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -1963,8 +1938,12 @@ pub const cpu = struct {
         .name = "cortex_a76ae",
         .llvm_name = "cortex-a76ae",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -1972,8 +1951,12 @@ pub const cpu = struct {
         .name = "cortex_a77",
         .llvm_name = "cortex-a77",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -1981,8 +1964,12 @@ pub const cpu = struct {
         .name = "cortex_a78",
         .llvm_name = "cortex-a78",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -1990,8 +1977,12 @@ pub const cpu = struct {
         .name = "cortex_a78ae",
         .llvm_name = "cortex-a78ae",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -1999,8 +1990,12 @@ pub const cpu = struct {
         .name = "cortex_a78c",
         .llvm_name = "cortex-a78c",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -2008,13 +2003,16 @@ pub const cpu = struct {
         .name = "cortex_a8",
         .llvm_name = "cortex-a8",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .dsp,
+            .neon,
             .nonpipelined_vfp,
+            .perfmon,
             .ret_addr_stack,
             .slow_fp_brcc,
             .slowfpvfmx,
             .slowfpvmlx,
             .trustzone,
-            .v7a,
             .vmlx_forwarding,
             .vmlx_hazards,
         }),
@@ -2023,15 +2021,19 @@ pub const cpu = struct {
         .name = "cortex_a9",
         .llvm_name = "cortex-a9",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_partial_cpsr,
+            .dsp,
             .expand_fp_mlx,
+            .fp16,
             .mp,
             .muxed_units,
             .neon_fpmovs,
+            .perfmon,
             .prefer_vmovsr,
             .ret_addr_stack,
             .trustzone,
-            .v7a,
+            .vfp3d16,
             .vldn_align,
             .vmlx_forwarding,
             .vmlx_hazards,
@@ -2041,31 +2043,39 @@ pub const cpu = struct {
         .name = "cortex_m0",
         .llvm_name = "cortex-m0",
         .features = featureSet(&[_]Feature{
+            .mclass,
             .no_branch_predictor,
-            .v6m,
+            .no_unaligned_access,
         }),
     };
     pub const cortex_m0plus: CpuModel = .{
         .name = "cortex_m0plus",
         .llvm_name = "cortex-m0plus",
         .features = featureSet(&[_]Feature{
+            .mclass,
             .no_branch_predictor,
-            .v6m,
+            .no_unaligned_access,
         }),
     };
     pub const cortex_m1: CpuModel = .{
         .name = "cortex_m1",
         .llvm_name = "cortex-m1",
         .features = featureSet(&[_]Feature{
+            .mclass,
             .no_branch_predictor,
-            .v6m,
+            .no_unaligned_access,
         }),
     };
     pub const cortex_m23: CpuModel = .{
         .name = "cortex_m23",
         .llvm_name = "cortex-m23",
         .features = featureSet(&[_]Feature{
+            .acquire_release,
+            .hwdiv,
+            .mclass,
             .no_branch_predictor,
+            .no_unaligned_access,
+            .v7clrex,
             .v8m,
         }),
     };
@@ -2073,9 +2083,11 @@ pub const cpu = struct {
         .name = "cortex_m3",
         .llvm_name = "cortex-m3",
         .features = featureSet(&[_]Feature{
+            .hwdiv,
             .loop_align,
+            .mclass,
             .no_branch_predictor,
-            .v7m,
+            .v7,
         }),
     };
     pub const cortex_m33: CpuModel = .{
@@ -2084,6 +2096,7 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .avoid_muls,
             .fix_cmse_cve_2021_35465,
+            .fp_armv8d16sp,
             .loop_align,
             .no_branch_predictor,
             .slowfpvfmx,
@@ -2096,6 +2109,7 @@ pub const cpu = struct {
         .llvm_name = "cortex-m35p",
         .features = featureSet(&[_]Feature{
             .fix_cmse_cve_2021_35465,
+            .fp_armv8d16sp,
             .loop_align,
             .no_branch_predictor,
             .slowfpvfmx,
@@ -2107,11 +2121,15 @@ pub const cpu = struct {
         .name = "cortex_m4",
         .llvm_name = "cortex-m4",
         .features = featureSet(&[_]Feature{
+            .dsp,
+            .hwdiv,
             .loop_align,
+            .mclass,
             .no_branch_predictor,
             .slowfpvfmx,
             .slowfpvmlx,
-            .v7em,
+            .v7,
+            .vfp4d16sp,
         }),
     };
     pub const cortex_m52: CpuModel = .{
@@ -2119,6 +2137,8 @@ pub const cpu = struct {
         .llvm_name = "cortex-m52",
         .features = featureSet(&[_]Feature{
             .dsp,
+            .fp_armv8d16,
+            .fullfp16,
             .loop_align,
             .mve1beat,
             .no_branch_predictor,
@@ -2132,6 +2152,8 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .dsp,
             .fix_cmse_cve_2021_35465,
+            .fp_armv8d16,
+            .fullfp16,
             .loop_align,
             .no_branch_predictor,
             .slowfpvmlx,
@@ -2143,7 +2165,11 @@ pub const cpu = struct {
         .llvm_name = "cortex-m7",
         .features = featureSet(&[_]Feature{
             .branch_align_64,
-            .v7em,
+            .dsp,
+            .fp_armv8d16sp,
+            .hwdiv,
+            .mclass,
+            .v7,
         }),
     };
     pub const cortex_m85: CpuModel = .{
@@ -2153,6 +2179,8 @@ pub const cpu = struct {
             .@"8msecext",
             .branch_align_64,
             .dsp,
+            .fp_armv8d16,
+            .fullfp16,
             .v8_1m_main,
         }),
     };
@@ -2161,8 +2189,10 @@ pub const cpu = struct {
         .llvm_name = "cortex-r4",
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
+            .dsp,
+            .perfmon,
+            .rclass,
             .ret_addr_stack,
-            .v7r,
         }),
     };
     pub const cortex_r4f: CpuModel = .{
@@ -2170,11 +2200,13 @@ pub const cpu = struct {
         .llvm_name = "cortex-r4f",
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
+            .dsp,
+            .perfmon,
+            .rclass,
             .ret_addr_stack,
             .slow_fp_brcc,
             .slowfpvfmx,
             .slowfpvmlx,
-            .v7r,
             .vfp3d16,
         }),
     };
@@ -2183,28 +2215,45 @@ pub const cpu = struct {
         .llvm_name = "cortex-r5",
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
+            .dsp,
             .hwdiv_arm,
+            .perfmon,
+            .rclass,
             .ret_addr_stack,
             .slow_fp_brcc,
             .slowfpvfmx,
             .slowfpvmlx,
-            .v7r,
+            .vfp3d16sp,
         }),
     };
     pub const cortex_r52: CpuModel = .{
         .name = "cortex_r52",
         .llvm_name = "cortex-r52",
         .features = featureSet(&[_]Feature{
+            .crc,
+            .dfb,
+            .dsp,
+            .fp_armv8d16sp,
             .fpao,
-            .v8r,
+            .perfmon,
+            .rclass,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_r52plus: CpuModel = .{
         .name = "cortex_r52plus",
         .llvm_name = "cortex-r52plus",
         .features = featureSet(&[_]Feature{
+            .crc,
+            .dfb,
+            .dsp,
+            .fp_armv8d16sp,
             .fpao,
-            .v8r,
+            .perfmon,
+            .rclass,
+            .v8,
+            .virtualization,
         }),
     };
     pub const cortex_r7: CpuModel = .{
@@ -2212,13 +2261,16 @@ pub const cpu = struct {
         .llvm_name = "cortex-r7",
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
+            .dsp,
+            .fp16,
             .hwdiv_arm,
             .mp,
+            .perfmon,
+            .rclass,
             .ret_addr_stack,
             .slow_fp_brcc,
             .slowfpvfmx,
             .slowfpvmlx,
-            .v7r,
         }),
     };
     pub const cortex_r8: CpuModel = .{
@@ -2226,21 +2278,28 @@ pub const cpu = struct {
         .llvm_name = "cortex-r8",
         .features = featureSet(&[_]Feature{
             .avoid_partial_cpsr,
+            .dsp,
+            .fp16,
             .hwdiv_arm,
             .mp,
+            .perfmon,
+            .rclass,
             .ret_addr_stack,
             .slow_fp_brcc,
             .slowfpvfmx,
             .slowfpvmlx,
-            .v7r,
         }),
     };
     pub const cortex_x1: CpuModel = .{
         .name = "cortex_x1",
         .llvm_name = "cortex-x1",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -2248,8 +2307,12 @@ pub const cpu = struct {
         .name = "cortex_x1c",
         .llvm_name = "cortex-x1c",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -2257,14 +2320,17 @@ pub const cpu = struct {
         .name = "cyclone",
         .llvm_name = "cyclone",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_movs_shop,
             .avoid_partial_cpsr,
             .crypto,
+            .dsp,
+            .fp_armv8,
             .neonfp,
             .ret_addr_stack,
             .slowfpvfmx,
             .slowfpvmlx,
-            .v8a,
+            .v8,
             .zcz,
         }),
     };
@@ -2272,6 +2338,7 @@ pub const cpu = struct {
         .name = "ep9312",
         .llvm_name = "ep9312",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4t,
         }),
     };
@@ -2279,10 +2346,15 @@ pub const cpu = struct {
         .name = "exynos_m1",
         .llvm_name = "generic",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .crc,
             .crypto,
+            .dsp,
             .expand_fp_mlx,
+            .fp_armv8,
             .fuse_aes,
             .fuse_literals,
+            .perfmon,
             .prof_unpr,
             .ret_addr_stack,
             .slow_fp_brcc,
@@ -2291,7 +2363,7 @@ pub const cpu = struct {
             .slowfpvfmx,
             .slowfpvmlx,
             .splat_vfp_neon,
-            .v8a,
+            .v8,
             .wide_stride_vfp,
             .zcz,
         }),
@@ -2300,10 +2372,15 @@ pub const cpu = struct {
         .name = "exynos_m2",
         .llvm_name = "generic",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .crc,
             .crypto,
+            .dsp,
             .expand_fp_mlx,
+            .fp_armv8,
             .fuse_aes,
             .fuse_literals,
+            .perfmon,
             .prof_unpr,
             .ret_addr_stack,
             .slow_fp_brcc,
@@ -2312,7 +2389,7 @@ pub const cpu = struct {
             .slowfpvfmx,
             .slowfpvmlx,
             .splat_vfp_neon,
-            .v8a,
+            .v8,
             .wide_stride_vfp,
             .zcz,
         }),
@@ -2321,10 +2398,15 @@ pub const cpu = struct {
         .name = "exynos_m3",
         .llvm_name = "exynos-m3",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .crc,
             .crypto,
+            .dsp,
             .expand_fp_mlx,
+            .fp_armv8,
             .fuse_aes,
             .fuse_literals,
+            .perfmon,
             .prof_unpr,
             .ret_addr_stack,
             .slow_fp_brcc,
@@ -2333,7 +2415,7 @@ pub const cpu = struct {
             .slowfpvfmx,
             .slowfpvmlx,
             .splat_vfp_neon,
-            .v8a,
+            .v8,
             .wide_stride_vfp,
             .zcz,
         }),
@@ -2342,12 +2424,16 @@ pub const cpu = struct {
         .name = "exynos_m4",
         .llvm_name = "exynos-m4",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .crypto,
             .dotprod,
+            .dsp,
             .expand_fp_mlx,
+            .fp_armv8,
             .fullfp16,
             .fuse_aes,
             .fuse_literals,
+            .perfmon,
             .prof_unpr,
             .ret_addr_stack,
             .slow_fp_brcc,
@@ -2365,12 +2451,16 @@ pub const cpu = struct {
         .name = "exynos_m5",
         .llvm_name = "exynos-m5",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .crypto,
             .dotprod,
+            .dsp,
             .expand_fp_mlx,
+            .fp_armv8,
             .fullfp16,
             .fuse_aes,
             .fuse_literals,
+            .perfmon,
             .prof_unpr,
             .ret_addr_stack,
             .slow_fp_brcc,
@@ -2384,15 +2474,11 @@ pub const cpu = struct {
             .zcz,
         }),
     };
-    pub const generic: CpuModel = .{
-        .name = "generic",
-        .llvm_name = "generic",
-        .features = featureSet(&[_]Feature{}),
-    };
     pub const iwmmxt: CpuModel = .{
         .name = "iwmmxt",
         .llvm_name = "iwmmxt",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
         }),
     };
@@ -2400,17 +2486,19 @@ pub const cpu = struct {
         .name = "kermit",
         .llvm_name = "cortex-a9",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_partial_cpsr,
+            .dsp,
             .expand_fp_mlx,
             .fp16,
             .mp,
             .muxed_units,
             .neon,
             .neon_fpmovs,
+            .perfmon,
             .prefer_vmovsr,
             .ret_addr_stack,
             .trustzone,
-            .v7a,
             .vldn_align,
             .vmlx_forwarding,
             .vmlx_hazards,
@@ -2420,13 +2508,14 @@ pub const cpu = struct {
         .name = "krait",
         .llvm_name = "krait",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_partial_cpsr,
-            .hwdiv,
+            .dsp,
             .hwdiv_arm,
             .muxed_units,
             .neon,
+            .perfmon,
             .ret_addr_stack,
-            .v7a,
             .vfp4,
             .vldn_align,
             .vmlx_forwarding,
@@ -2436,8 +2525,12 @@ pub const cpu = struct {
         .name = "kryo",
         .llvm_name = "kryo",
         .features = featureSet(&[_]Feature{
+            .aclass,
+            .crc,
             .crypto,
-            .v8a,
+            .dsp,
+            .fp_armv8,
+            .v8,
         }),
     };
     pub const mpcore: CpuModel = .{
@@ -2460,7 +2553,11 @@ pub const cpu = struct {
         .name = "neoverse_n1",
         .llvm_name = "neoverse-n1",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .dotprod,
+            .dsp,
+            .fp_armv8,
+            .perfmon,
             .v8_2a,
         }),
     };
@@ -2468,9 +2565,13 @@ pub const cpu = struct {
         .name = "neoverse_n2",
         .llvm_name = "neoverse-n2",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .bf16,
+            .dsp,
             .fp16fml,
+            .fp_armv8,
             .i8mm,
+            .perfmon,
             .v9a,
         }),
     };
@@ -2478,9 +2579,13 @@ pub const cpu = struct {
         .name = "neoverse_v1",
         .llvm_name = "neoverse-v1",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .bf16,
+            .dsp,
+            .fp_armv8,
             .fullfp16,
             .i8mm,
+            .perfmon,
             .v8_4a,
         }),
     };
@@ -2488,16 +2593,19 @@ pub const cpu = struct {
         .name = "sc000",
         .llvm_name = "sc000",
         .features = featureSet(&[_]Feature{
+            .mclass,
             .no_branch_predictor,
-            .v6m,
+            .no_unaligned_access,
         }),
     };
     pub const sc300: CpuModel = .{
         .name = "sc300",
         .llvm_name = "sc300",
         .features = featureSet(&[_]Feature{
+            .hwdiv,
+            .mclass,
             .no_branch_predictor,
-            .v7m,
+            .v7,
         }),
     };
     pub const star_mc1: CpuModel = .{
@@ -2506,6 +2614,7 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .avoid_muls,
             .fix_cmse_cve_2021_35465,
+            .fp_armv8d16sp,
             .loop_align,
             .no_branch_predictor,
             .slowfpvfmx,
@@ -2518,6 +2627,8 @@ pub const cpu = struct {
         .llvm_name = "star-mc3",
         .features = featureSet(&[_]Feature{
             .dsp,
+            .fp_armv8d16,
+            .fullfp16,
             .loop_align,
             .mve1beat,
             .no_branch_predictor,
@@ -2529,6 +2640,7 @@ pub const cpu = struct {
         .name = "strongarm",
         .llvm_name = "strongarm",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4,
         }),
     };
@@ -2536,6 +2648,7 @@ pub const cpu = struct {
         .name = "strongarm110",
         .llvm_name = "strongarm110",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4,
         }),
     };
@@ -2543,6 +2656,7 @@ pub const cpu = struct {
         .name = "strongarm1100",
         .llvm_name = "strongarm1100",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4,
         }),
     };
@@ -2550,6 +2664,7 @@ pub const cpu = struct {
         .name = "strongarm1110",
         .llvm_name = "strongarm1110",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v4,
         }),
     };
@@ -2557,9 +2672,10 @@ pub const cpu = struct {
         .name = "swift",
         .llvm_name = "swift",
         .features = featureSet(&[_]Feature{
+            .aclass,
             .avoid_movs_shop,
             .avoid_partial_cpsr,
-            .hwdiv,
+            .dsp,
             .hwdiv_arm,
             .mp,
             .neon,
@@ -2573,7 +2689,6 @@ pub const cpu = struct {
             .slow_vgetlni32,
             .slowfpvfmx,
             .slowfpvmlx,
-            .v7a,
             .vfp4,
             .vmlx_hazards,
             .wide_stride_vfp,
@@ -2583,6 +2698,7 @@ pub const cpu = struct {
         .name = "xscale",
         .llvm_name = "xscale",
         .features = featureSet(&[_]Feature{
+            .no_unaligned_access,
             .v5te,
         }),
     };

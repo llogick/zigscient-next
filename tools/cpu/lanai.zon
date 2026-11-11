@@ -1,0 +1,13 @@
+.{
+    .zig_name = "lanai",
+    .llvm = .{
+        .name = "Lanai",
+        .td_name = "Lanai",
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+    },
+}

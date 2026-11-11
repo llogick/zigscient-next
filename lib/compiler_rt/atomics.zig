@@ -19,7 +19,7 @@ const supports_atomic_ops = switch (arch) {
     // operations (unless we're targeting Linux, the kernel provides a way to
     // perform CAS operations).
     // XXX: The Linux code path is not implemented yet.
-    !builtin.cpu.has(.arm, .has_v6m),
+    !(builtin.cpu.has(.arm, .v6m) and !builtin.cpu.has(.arm, .v8m)),
     else => true,
 };
 

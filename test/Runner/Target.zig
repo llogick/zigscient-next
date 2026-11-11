@@ -20,7 +20,7 @@ strip: Strip = .default,
 extra: bool = false,
 
 pub const Cpu = Cpu: {
-    @setEvalBranchQuota(4_000);
+    @setEvalBranchQuota(6_000);
     const Arch = std.Target.Cpu.Arch;
     const arch_info = @typeInfo(Arch).@"enum";
     const field_names = .{"native"} ++ arch_info.field_names;
@@ -40,24 +40,12 @@ pub const Cpu = Cpu: {
 
             pub const Model = Model: {
                 const explicit_models = @typeInfo(family.cpu).@"struct".decl_names;
-                var model_names: []const []const u8 = &.{"native"};
-                if (!@hasDecl(family.cpu, "baseline")) model_names = model_names ++ .{"baseline"};
-                model_names = model_names ++ explicit_models;
+                const model_names: []const []const u8 = .{ "native", "baseline" } ++ explicit_models;
                 const TagInt = std.math.IntFittingRange(0, model_names.len - 1);
                 var model_values: [model_names.len]TagInt = undefined;
-                var model_index = 0;
-                {
-                    var model_value = explicit_models.len;
-                    model_values[model_index] = model_value;
-                    model_index += 1;
-                    model_value += 1;
-                    if (!@hasDecl(family.cpu, "baseline")) {
-                        model_values[model_index] = model_value;
-                        model_index += 1;
-                        model_value += 1;
-                    }
-                }
-                for (model_values[model_index..], 0..) |*model_value, value| model_value.* = value;
+                model_values[0] = explicit_models.len;
+                model_values[1] = explicit_models.len + 1;
+                for (model_values[2..], 0..) |*model_value, value| model_value.* = value;
                 break :Model @Enum(TagInt, .exhaustive, model_names, &model_values);
             };
 

@@ -1,5 +1,14 @@
 #skip amdgcn-amdhsa-none-baseline-whole-llvm-debug-lld
 
+#skip csky-freestanding-f32-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-none-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-sf-baseline-whole-llvm-debug-lld
+#skip csky-linux-f32-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnu-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnusf-baseline-whole-llvm-debug-lld
+#skip csky-linux-none-baseline-whole-llvm-debug-lld
+#skip csky-linux-sf-baseline-whole-llvm-debug-lld
+
 #skip nvptx-cuda-none-baseline-whole-llvm-debug-lld
 #skip nvptx-nvcl-none-baseline-whole-llvm-debug-lld
 

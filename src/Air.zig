@@ -2628,32 +2628,10 @@ pub const CompilerRtFunc = enum(u32) {
     /// always; some target triples have slightly different compiler-rt ABIs for one reason or
     /// another.
     pub fn name(f: CompilerRtFunc, target: *const std.Target) []const u8 {
-        const use_gnu_f16_abi = switch (target.cpu.arch) {
-            .wasm32,
-            .wasm64,
-            .riscv64,
-            .riscv64be,
-            .riscv32,
-            .riscv32be,
-            => false,
-            .x86, .x86c16, .x86_64 => true,
-            .arm, .armeb, .thumb, .thumbeb => switch (target.abi) {
-                .eabi, .eabihf => false,
-                else => true,
-            },
-            else => !target.os.tag.isDarwin(),
-        };
-        const use_aeabi = target.cpu.arch.isArm() and switch (target.abi) {
-            .eabi,
-            .eabihf,
-            .musleabi,
-            .musleabihf,
-            .gnueabi,
-            .gnueabihf,
-            .android,
-            .androideabi,
-            => true,
-            else => false,
+        const use_gnu_f16_abi = target.cpu.arch.isArm();
+        const use_aeabi = target.cpu.arch.isArm() and switch (target.os.tag) {
+            .windows, .uefi => false,
+            else => true,
         };
 
         // GNU didn't like the standard names specifically for conversions between f16
@@ -2722,32 +2700,10 @@ pub const CompilerRtFunc = enum(u32) {
     }
 
     pub fn @"callconv"(f: CompilerRtFunc, target: *const std.Target) std.lang.CallingConvention {
-        const use_gnu_f16_abi = switch (target.cpu.arch) {
-            .wasm32,
-            .wasm64,
-            .riscv64,
-            .riscv64be,
-            .riscv32,
-            .riscv32be,
-            => false,
-            .x86, .x86c16, .x86_64 => true,
-            .arm, .armeb, .thumb, .thumbeb => switch (target.abi) {
-                .eabi, .eabihf => false,
-                else => true,
-            },
-            else => !target.os.tag.isDarwin(),
-        };
-        const use_aeabi = target.cpu.arch.isArm() and switch (target.abi) {
-            .eabi,
-            .eabihf,
-            .musleabi,
-            .musleabihf,
-            .gnueabi,
-            .gnueabihf,
-            .android,
-            .androideabi,
-            => true,
-            else => false,
+        const use_gnu_f16_abi = target.cpu.arch.isArm();
+        const use_aeabi = target.cpu.arch.isArm() and switch (target.os.tag) {
+            .windows, .uefi => false,
+            else => true,
         };
 
         if (use_gnu_f16_abi) switch (f) {

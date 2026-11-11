@@ -1,0 +1,353 @@
+.{
+    .zig_name = "amdgcn",
+    .llvm = .{
+        .name = "AMDGPU",
+        .td_name = "AMDGPU",
+    },
+    .branch_quota = 2000,
+    .feature_overrides = .{
+        // The `zig_name`s on these are placeholders to avoid collision with
+        // the real features defined further below.
+        .{
+            .llvm_name = "gfx9",
+            .zig_name = "__gfx9",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "gfx10",
+            .zig_name = "__gfx10",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "gfx11",
+            .zig_name = "__gfx11",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "gfx12",
+            .zig_name = "__gfx12",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "gfx13",
+            .zig_name = "__gfx13",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "sea-islands",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "southern-islands",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "volcanic-islands",
+            .flatten = true,
+        },
+
+        .{
+            .llvm_name = "assembler-permissive-wavesize",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "block-vgpr-csr",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "cumode",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "dumpcode",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "enable-ds128",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "enable-flat-scratch",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "enable-prt-strict-null",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "flat-for-global",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "fmaf",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "load-store-opt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "max-private-element-size-4",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "max-private-element-size-8",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "max-private-element-size-16",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "precise-memory",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "real-true16",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "si-scheduler",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sramecc",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "trap-handler",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "unaligned-access-mode",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "unsafe-ds-offset-folding",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-add-pc64-inst",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "xnack",
+            .flatten = true,
+        },
+
+        .{
+            .llvm_name = "ci-insts",
+            .zig_name = "gfx7",
+            .extra_deps = .{
+                "flat_address_space",
+                "unaligned_buffer_access",
+            },
+        },
+        .{
+            .llvm_name = "gfx8-insts",
+            .zig_name = "gfx8",
+            .extra_deps = .{
+                "16_bit_insts",
+                "dpp",
+                "gfx7",
+                "int_clamp_insts",
+                "inv_2pi_inline_imm",
+            },
+        },
+        .{
+            .llvm_name = "gfx9-insts",
+            .zig_name = "gfx9",
+            .extra_deps = .{
+                "a16",
+                "add_no_carry_insts",
+                "aperture_regs",
+                "flat_global_insts",
+                "flat_inst_offsets",
+                "flat_scratch_insts",
+                "gfx8",
+                "unaligned_ds_access",
+                "unaligned_scratch_access",
+                "vop3p",
+            },
+        },
+        .{
+            .llvm_name = "gfx90a-insts",
+            .zig_name = "gfx9_0a",
+            .extra_deps = .{
+                "gfx9",
+            },
+        },
+        .{
+            .llvm_name = "gfx940-insts",
+            .zig_name = "gfx9_4",
+            .extra_deps = .{
+                "gfx9_0a",
+            },
+        },
+        .{
+            .llvm_name = "gfx950-insts",
+            .zig_name = "gfx9_5",
+            .extra_deps = .{
+                "gfx9_4",
+            },
+        },
+        .{
+            .llvm_name = "gfx10-insts",
+            .zig_name = "gfx10",
+            .extra_deps = .{
+                "atomic_fmin_fmax_flat_f32",
+                "atomic_fmin_fmax_global_f32",
+                "dpp8",
+                "fma_mix_insts",
+                "g16",
+                "gfx9",
+                "mimg_r128",
+                "movrel",
+                "no_sdst_cmpx",
+                "permlane16_insts",
+                "pk_fmac_f16_inst",
+                "vop3_literal",
+                "vscnt",
+            },
+        },
+        .{
+            .llvm_name = "gfx10-3-insts",
+            .zig_name = "gfx10_3",
+            .extra_deps = .{
+                "gfx10",
+                "gfx10_a_encoding",
+                "gfx10_b_encoding",
+            },
+        },
+        .{
+            .llvm_name = "gfx11-insts",
+            .zig_name = "gfx11",
+            .extra_deps = .{
+                "gfx10_3",
+                "true16",
+                "vopd",
+            },
+        },
+        .{
+            .llvm_name = "gfx11-7-insts",
+            .zig_name = "gfx11_7",
+            .extra_deps = .{
+                "gfx11",
+            },
+        },
+        .{
+            .llvm_name = "gfx12-insts",
+            .zig_name = "gfx12",
+            .extra_deps = .{
+                "default_component_broadcast",
+                "flat_offset_bits_24",
+                "flat_signed_offset",
+                "gfx11",
+                "ieee_minimum_maximum_insts",
+                "minimum3_maximum3_f16",
+                "minimum3_maximum3_f32",
+                "salu_minimum_maximum_insts",
+            },
+        },
+        .{
+            .llvm_name = "gfx1250-insts",
+            .zig_name = "gfx12_5",
+            .extra_deps = .{
+                "gfx12",
+            },
+        },
+        .{
+            .llvm_name = "gfx13-insts",
+            .zig_name = "gfx13",
+            .extra_deps = .{
+                "extended_image_insts",
+                "formatted_mubuf_insts",
+                "gfx12",
+                "image_insts",
+                "mtbuf_insts",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "bonaire",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "carrizo",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "fiji",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic-hsa",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "hainan",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "hawaii",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "iceland",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "kabini",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "kaveri",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "mullins",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "oland",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "pitcairn",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "polaris10",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "polaris11",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "stoney",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tahiti",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tonga",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "tongapro",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "verde",
+            .omit = true,
+        },
+    },
+}

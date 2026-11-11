@@ -1,0 +1,209 @@
+.{
+    .zig_name = "or1k",
+    .llvm = null,
+    .extra_features = .{
+        .{
+            .zig_name = "adrp",
+            .desc = "Enable PC-relative page address instruction (l.adrp)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "atomic",
+            .desc = "Enable load-linked/store-conditional instructions (l.lwa, l.swa)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "cmov",
+            .desc = "Enable conditional move instruction (l.cmov)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "csync",
+            .desc = "Enable context synchronization instruction (l.csync)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "div",
+            .desc = "Enable hardware divide instructions (l.div, l.divu)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "ext",
+            .desc = "Enable sign/zero extension instructions (l.extbs, l.extbz, l.exths, l.exthz, l.extws, l.extwz)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "ff1",
+            .desc = "Enable find first 1 instruction (l.ff1)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "fl1",
+            .desc = "Enable find last 1 instruction (l.fl1)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "mac",
+            .desc = "Enable multiply-accumulate instructions (l.mac, l.maci, l.macrc, l.macu, l.msb, l.msbu)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "madd_s",
+            .desc = "Enable single-precision floating point multiply-add instruction (lf.madd.s)",
+            .deps = .{
+                "orfpx32",
+            },
+        },
+        .{
+            .zig_name = "madd_d",
+            .desc = "Enable double-precision floating point multiply-add instruction (lf.madd.d)",
+            .deps = .{
+                "orfpx64a32",
+            },
+        },
+        .{
+            .zig_name = "msync",
+            .desc = "Enable memory synchronization instruction (l.msync)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "mul",
+            .desc = "Enable hardware multiply instructions (l.mul, l.muli, l.mulu)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "muld",
+            .desc = "Enable widening multiply instructions (l.muld, l.muldu)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "no_addc",
+            .desc = "Disable add with carry instructions (l.addc, l.addic)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "no_sr_cy",
+            .desc = "Disable carry flag (SR[CY]) updates",
+            .deps = .{
+                "no_addc",
+            },
+        },
+        .{
+            .zig_name = "no_sr_ov",
+            .desc = "Disable overflow flag (SR[OV]) updates",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "no_sra",
+            .desc = "Disable arithmetic shift right instructions (l.sra, l.srai)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "orfpx32",
+            .desc = "Enable single-precision floating point instructions",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "orfpx64a32",
+            .desc = "Enable double-precision floating point instructions on register pairs",
+            .deps = .{
+                "orfpx32",
+                "sfun_s",
+            },
+        },
+        .{
+            .zig_name = "psync",
+            .desc = "Enable pipeline synchronization instruction (l.psync)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "ror",
+            .desc = "Enable rotate right instructions (l.ror, l.rori)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "sfimm",
+            .desc = "Enable set flag with immediate instructions (l.sfeqi, l.sfnei, l.sfgtsi, l.sfgtui, l.sfgesi, l.sfgeui, l.sfltsi, l.sfltui, l.sflesi, l.sfleui)",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "sfun_s",
+            .desc = "Enable unordered single-precision floating point comparison instructions (lf.sfueq.s, lf.sfune.s, lf.sfugt.s, lf.sfuge.s, lf.sfult.s, lf.sfule.s, lf.sfun.s)",
+            .deps = .{
+                "orfpx32",
+            },
+        },
+        .{
+            .zig_name = "stod_dtos",
+            .desc = "Enable floating point precision conversion instructions (lf.stod.d, lf.dtos.d)",
+            .deps = .{
+                "orfpx64a32",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "ar100",
+            .features = .{
+                "csync",
+                "ff1",
+                "msync",
+                "psync",
+                "sfimm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "marocchino",
+            .features = .{
+                "atomic",
+                "cmov",
+                "div",
+                "ext",
+                "ff1",
+                "fl1",
+                "msync",
+                "mul",
+                "orfpx64a32",
+                "ror",
+                "sfimm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "mor1kx",
+            .features = .{
+                "atomic",
+                "cmov",
+                "div",
+                "ff1",
+                "fl1",
+                "msync",
+                "mul",
+                "sfimm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "or1200",
+            .features = .{
+                "cmov",
+                "csync",
+                "div",
+                "ext",
+                "ff1",
+                "fl1",
+                "msync",
+                "mul",
+                "psync",
+                "sfimm",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "orbis32",
+            .features = .{},
+        },
+    },
+}

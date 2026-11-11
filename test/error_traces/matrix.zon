@@ -9,24 +9,6 @@
         .backend = .llvm,
     },
 
-    // FreeBSD Targets
-
-    .{
-        .cpu = .{ .arm = .{} },
-        .os = .{ .freebsd = .{} },
-        .abi = .{ .eabihf = .{} },
-        .cache_mode = .whole,
-        .backend = .llvm,
-    },
-
-    .{
-        .cpu = .{ .x86 = .{} },
-        .os = .{ .freebsd = .{} },
-        .abi = .{ .none = .{} },
-        .cache_mode = .whole,
-        .backend = .llvm,
-    },
-
     // Linux Targets
 
     .{
@@ -48,7 +30,7 @@
     .{
         .cpu = .{ .arm = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .eabihf = .{} },
+        .abi = .{ .none = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -56,7 +38,7 @@
     .{
         .cpu = .{ .armeb = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .eabihf = .{} },
+        .abi = .{ .none = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -88,7 +70,7 @@
     .{
         .cpu = .{ .mips = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .eabihf = .{} },
+        .abi = .{ .none = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -96,7 +78,23 @@
     .{
         .cpu = .{ .mipsel = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .eabihf = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mipsr6 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mipsr6el = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -111,7 +109,7 @@
     .{
         .cpu = .{ .mips64 = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .abin32 = .{} },
+        .abi = .{ .n32 = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -126,7 +124,37 @@
     .{
         .cpu = .{ .mips64el = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .abin32 = .{} },
+        .abi = .{ .n32 = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mips64r6 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
+        .cpu = .{ .mips64r6 = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .n32 = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+
+    .{
+        .cpu = .{ .mips64r6el = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .none = .{} },
+        .cache_mode = .whole,
+        .backend = .llvm,
+    },
+    .{
+        .cpu = .{ .mips64r6el = .{} },
+        .os = .{ .linux = .{} },
+        .abi = .{ .n32 = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -134,7 +162,7 @@
     .{
         .cpu = .{ .powerpc = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .eabihf = .{} },
+        .abi = .{ .none = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -190,7 +218,7 @@
     .{
         .cpu = .{ .thumb = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .eabihf = .{} },
+        .abi = .{ .none = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -198,7 +226,7 @@
     .{
         .cpu = .{ .thumbeb = .{} },
         .os = .{ .linux = .{} },
-        .abi = .{ .eabihf = .{} },
+        .abi = .{ .none = .{} },
         .cache_mode = .whole,
         .backend = .llvm,
     },
@@ -260,14 +288,6 @@
     },
 
     // NetBSD Targets
-
-    .{
-        .cpu = .{ .riscv32 = .{} },
-        .os = .{ .netbsd = .{} },
-        .abi = .{ .none = .{} },
-        .cache_mode = .whole,
-        .backend = .llvm,
-    },
 
     .{
         .cpu = .{ .x86 = .{} },

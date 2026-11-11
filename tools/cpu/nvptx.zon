@@ -1,0 +1,454 @@
+.{
+    .zig_name = "nvptx",
+    .llvm = .{
+        .name = "NVPTX",
+        .td_name = "NVPTX",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "sm_101",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sm_101a",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sm_101f",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sm_21",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "ptx40",
+            .extra_deps = .{
+                "ptx32",
+            },
+        },
+        .{
+            .llvm_name = "ptx41",
+            .extra_deps = .{
+                "ptx40",
+            },
+        },
+        .{
+            .llvm_name = "ptx42",
+            .extra_deps = .{
+                "ptx41",
+            },
+        },
+        .{
+            .llvm_name = "ptx43",
+            .extra_deps = .{
+                "ptx42",
+            },
+        },
+        .{
+            .llvm_name = "ptx50",
+            .extra_deps = .{
+                "ptx43",
+            },
+        },
+        .{
+            .llvm_name = "ptx60",
+            .extra_deps = .{
+                "ptx50",
+            },
+        },
+        .{
+            .llvm_name = "ptx61",
+            .extra_deps = .{
+                "ptx60",
+            },
+        },
+        .{
+            .llvm_name = "ptx62",
+            .extra_deps = .{
+                "ptx61",
+            },
+        },
+        .{
+            .llvm_name = "ptx63",
+            .extra_deps = .{
+                "ptx62",
+            },
+        },
+        .{
+            .llvm_name = "ptx64",
+            .extra_deps = .{
+                "ptx63",
+            },
+        },
+        .{
+            .llvm_name = "ptx65",
+            .extra_deps = .{
+                "ptx64",
+            },
+        },
+        .{
+            .llvm_name = "ptx70",
+            .extra_deps = .{
+                "ptx65",
+            },
+        },
+        .{
+            .llvm_name = "ptx71",
+            .extra_deps = .{
+                "ptx70",
+            },
+        },
+        .{
+            .llvm_name = "ptx72",
+            .extra_deps = .{
+                "ptx71",
+            },
+        },
+        .{
+            .llvm_name = "ptx73",
+            .extra_deps = .{
+                "ptx72",
+            },
+        },
+        .{
+            .llvm_name = "ptx74",
+            .extra_deps = .{
+                "ptx73",
+            },
+        },
+        .{
+            .llvm_name = "ptx75",
+            .extra_deps = .{
+                "ptx74",
+            },
+        },
+        .{
+            .llvm_name = "ptx76",
+            .extra_deps = .{
+                "ptx75",
+            },
+        },
+        .{
+            .llvm_name = "ptx77",
+            .extra_deps = .{
+                "ptx76",
+            },
+        },
+        .{
+            .llvm_name = "ptx78",
+            .extra_deps = .{
+                "ptx77",
+            },
+        },
+        .{
+            .llvm_name = "ptx80",
+            .extra_deps = .{
+                "ptx78",
+            },
+        },
+        .{
+            .llvm_name = "ptx81",
+            .extra_deps = .{
+                "ptx80",
+            },
+        },
+        .{
+            .llvm_name = "ptx82",
+            .extra_deps = .{
+                "ptx81",
+            },
+        },
+        .{
+            .llvm_name = "ptx83",
+            .extra_deps = .{
+                "ptx82",
+            },
+        },
+        .{
+            .llvm_name = "ptx84",
+            .extra_deps = .{
+                "ptx83",
+            },
+        },
+        .{
+            .llvm_name = "ptx85",
+            .extra_deps = .{
+                "ptx84",
+            },
+        },
+        .{
+            .llvm_name = "ptx86",
+            .extra_deps = .{
+                "ptx85",
+            },
+        },
+        .{
+            .llvm_name = "ptx87",
+            .extra_deps = .{
+                "ptx86",
+            },
+        },
+        .{
+            .llvm_name = "ptx88",
+            .extra_deps = .{
+                "ptx87",
+            },
+        },
+        .{
+            .llvm_name = "ptx90",
+            .extra_deps = .{
+                "ptx88",
+            },
+        },
+        .{
+            .llvm_name = "ptx91",
+            .extra_deps = .{
+                "ptx90",
+            },
+        },
+        .{
+            .llvm_name = "ptx92",
+            .extra_deps = .{
+                "ptx91",
+            },
+        },
+        .{
+            .llvm_name = "ptx93",
+            .extra_deps = .{
+                "ptx92",
+            },
+        },
+        .{
+            .llvm_name = "sm_30",
+            .extra_deps = .{
+                "sm_20",
+            },
+        },
+        .{
+            .llvm_name = "sm_32",
+            .extra_deps = .{
+                "sm_30",
+            },
+        },
+        .{
+            .llvm_name = "sm_35",
+            .extra_deps = .{
+                "sm_32",
+            },
+        },
+        .{
+            .llvm_name = "sm_37",
+            .extra_deps = .{
+                "sm_35",
+            },
+        },
+        .{
+            .llvm_name = "sm_50",
+            .extra_deps = .{
+                "sm_37",
+            },
+        },
+        .{
+            .llvm_name = "sm_52",
+            .extra_deps = .{
+                "sm_50",
+            },
+        },
+        .{
+            .llvm_name = "sm_53",
+            .extra_deps = .{
+                "sm_52",
+            },
+        },
+        .{
+            .llvm_name = "sm_60",
+            .extra_deps = .{
+                "sm_53",
+            },
+        },
+        .{
+            .llvm_name = "sm_61",
+            .extra_deps = .{
+                "sm_60",
+            },
+        },
+        .{
+            .llvm_name = "sm_62",
+            .extra_deps = .{
+                "sm_61",
+            },
+        },
+        .{
+            .llvm_name = "sm_70",
+            .extra_deps = .{
+                "sm_62",
+            },
+        },
+        .{
+            .llvm_name = "sm_72",
+            .extra_deps = .{
+                "sm_70",
+            },
+        },
+        .{
+            .llvm_name = "sm_75",
+            .extra_deps = .{
+                "sm_72",
+            },
+        },
+        .{
+            .llvm_name = "sm_80",
+            .extra_deps = .{
+                "sm_75",
+            },
+        },
+        .{
+            .llvm_name = "sm_86",
+            .extra_deps = .{
+                "sm_80",
+            },
+        },
+        .{
+            .llvm_name = "sm_87",
+            .extra_deps = .{
+                "sm_86",
+            },
+        },
+        .{
+            .llvm_name = "sm_88",
+            .extra_deps = .{
+                "sm_87",
+            },
+        },
+        .{
+            .llvm_name = "sm_89",
+            .extra_deps = .{
+                "sm_88",
+            },
+        },
+        .{
+            .llvm_name = "sm_90",
+            .extra_deps = .{
+                "sm_89",
+            },
+        },
+        .{
+            .llvm_name = "sm_90a",
+            .extra_deps = .{
+                "sm_90",
+            },
+        },
+        .{
+            .llvm_name = "sm_100",
+            .extra_deps = .{
+                "sm_90",
+            },
+        },
+        .{
+            .llvm_name = "sm_100f",
+            .extra_deps = .{
+                "sm_100",
+            },
+        },
+        .{
+            .llvm_name = "sm_100a",
+            .extra_deps = .{
+                "sm_100f",
+            },
+        },
+        .{
+            .llvm_name = "sm_103",
+            .extra_deps = .{
+                "sm_100",
+            },
+        },
+        .{
+            .llvm_name = "sm_103f",
+            .extra_deps = .{
+                "sm_100f",
+                "sm_103",
+            },
+        },
+        .{
+            .llvm_name = "sm_103a",
+            .extra_deps = .{
+                "sm_103f",
+            },
+        },
+        .{
+            .llvm_name = "sm_110",
+            .extra_deps = .{
+                "sm_103",
+            },
+        },
+        .{
+            .llvm_name = "sm_110f",
+            .extra_deps = .{
+                "sm_110",
+            },
+        },
+        .{
+            .llvm_name = "sm_110a",
+            .extra_deps = .{
+                "sm_110f",
+            },
+        },
+        .{
+            .llvm_name = "sm_120",
+            .extra_deps = .{
+                "sm_110",
+            },
+        },
+        .{
+            .llvm_name = "sm_120f",
+            .extra_deps = .{
+                "sm_120",
+            },
+        },
+        .{
+            .llvm_name = "sm_120a",
+            .extra_deps = .{
+                "sm_120f",
+            },
+        },
+        .{
+            .llvm_name = "sm_121",
+            .extra_deps = .{
+                "sm_120",
+            },
+        },
+        .{
+            .llvm_name = "sm_121f",
+            .extra_deps = .{
+                "sm_120f",
+                "sm_121",
+            },
+        },
+        .{
+            .llvm_name = "sm_121a",
+            .extra_deps = .{
+                "sm_121f",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "sm_101",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sm_101a",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sm_101f",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "sm_21",
+            .omit = true,
+        },
+    },
+}

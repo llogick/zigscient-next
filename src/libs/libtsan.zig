@@ -161,7 +161,7 @@ pub fn buildTsan(comp: *Compilation, prog_node: std.Progress.Node) BuildError!vo
         const asm_source = switch (target.cpu.arch) {
             .aarch64, .aarch64_be => "tsan_rtl_aarch64.S",
             .loongarch64 => "tsan_rtl_loongarch64.S",
-            .mips64, .mips64el => "tsan_rtl_mips64.S",
+            .mips64, .mips64el, .mips64n8, .mips64n8el, .mips64r6, .mips64r6el => "tsan_rtl_mips64.S",
             .powerpc64, .powerpc64le => "tsan_rtl_ppc64.S",
             .riscv64 => "tsan_rtl_riscv64.S",
             .s390x => "tsan_rtl_s390x.S",

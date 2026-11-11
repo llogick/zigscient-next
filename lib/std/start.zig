@@ -194,7 +194,25 @@ fn _start() callconv(.naked) noreturn {
             .m68k => ".cfi_undefined %%pc",
             .m88k => ".cfi_undefined %%r1",
             .microblaze, .microblazeel => "", // No CFI support.
-            .mips, .mipsel, .mips64, .mips64el => ".cfi_undefined $ra",
+            .mips,
+            .mipsel,
+            .mipsf32,
+            .mipsf32el,
+            .mipsf64,
+            .mipsf64el,
+            .mipsf64n8,
+            .mipsf64n8el,
+            .mipsn8,
+            .mipsn8el,
+            .mipsr6,
+            .mipsr6el,
+            .mips64,
+            .mips64el,
+            .mips64n8,
+            .mips64n8el,
+            .mips64r6,
+            .mips64r6el,
+            => ".cfi_undefined $ra",
             .or1k => ".cfi_undefined 9",
             .powerpc, .powerpcle, .powerpc64, .powerpc64le => ".cfi_undefined lr",
             .riscv32, .riscv32be, .riscv64, .riscv64be => if (builtin.zig_backend == .stage2_riscv64)
@@ -406,7 +424,19 @@ fn _start() callconv(.naked) noreturn {
             \\ andi r1, r1, -4
             \\ bri %[posixCallMainAndExit]
             ,
-            .mips, .mipsel =>
+            .mips,
+            .mipsel,
+            .mipsf32,
+            .mipsf32el,
+            .mipsf64,
+            .mipsf64el,
+            .mipsf64n8,
+            .mipsf64n8el,
+            .mipsn8,
+            .mipsn8el,
+            .mipsr6,
+            .mipsr6el,
+            =>
             \\ move $fp, $zero
             \\ bal 1f
             \\ .gpword .
@@ -425,8 +455,13 @@ fn _start() callconv(.naked) noreturn {
             \\ subu $sp, $sp, 16
             \\ jr $t9
             ,
-            .mips64, .mips64el => switch (builtin.abi) {
-                .gnuabin32, .muslabin32, .abin32 =>
+            .mips64,
+            .mips64el,
+            .mips64n8,
+            .mips64n8el,
+            .mips64r6,
+            .mips64r6el,
+            => if (builtin.target.abi.isN32())
                 \\ move $fp, $zero
                 \\ bal 1f
                 \\ .gpword .
@@ -442,8 +477,7 @@ fn _start() callconv(.naked) noreturn {
                 \\ and $sp, -16
                 \\ subu $sp, $sp, 16
                 \\ jr $t9
-                ,
-                else =>
+            else
                 \\ move $fp, $zero
                 // This is needed because early MIPS versions don't support misaligned loads. Without
                 // this directive, the hidden `nop` inserted to fill the delay slot after `bal` would
@@ -463,8 +497,7 @@ fn _start() callconv(.naked) noreturn {
                 \\ and $sp, -16
                 \\ dsubu $sp, $sp, 16
                 \\ jr $t9
-                ,
-            },
+            ,
             .powerpc, .powerpcle =>
             // Set up the initial stack frame, and clear the back chain pointer.
             // r1 = SP, r31 = FP
@@ -652,22 +685,7 @@ fn posixCallMainAndExit(argc_argv_ptr: [*]usize) callconv(.c) noreturn {
         // while trying to access the global variable (happens on MIPS at least).
         __zig_elf_auxv = auxv;
 
-        if (!builtin.single_threaded) {
-            // ARMv6 targets (and earlier) have no support for TLS in hardware.
-            // FIXME: Elide the check for targets >= ARMv7 when the target feature API
-            // becomes less verbose (and more usable).
-            if (comptime native_arch.isArm()) {
-                if (at_hwcap & std.os.linux.HWCAP.TLS == 0) {
-                    // FIXME: Make __aeabi_read_tp call the kernel helper kuser_get_tls
-                    // For the time being use a simple trap instead of a @panic call to
-                    // keep the binary bloat under control.
-                    @trap();
-                }
-            }
-
-            // Initialize the TLS area.
-            __zig_elf_static_tls_init(phdrs, phnum);
-        }
+        if (!builtin.single_threaded) __zig_elf_static_tls_init(phdrs, phnum);
 
         // The way Linux executables represent stack size is via the PT.GNU_STACK
         // program header. However the kernel does not recognize it; it always gives 8 MiB.

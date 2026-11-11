@@ -624,11 +624,6 @@ pub fn resolve(options: Options) ResolveError!Config {
                 .hexagon,
                 // +/- 32 KiB
                 .m68k,
-                // 256 MiB region
-                .mips,
-                .mipsel,
-                .mips64,
-                .mips64el,
                 // +/- 32 MiB
                 .powerpc,
                 .powerpcle,
@@ -638,7 +633,7 @@ pub fn resolve(options: Options) ResolveError!Config {
                 .thumb,
                 .thumbeb,
                 => true,
-                else => false,
+                else => target.cpu.arch.isMips(), // 256 MiB region
             },
             else => false,
         };

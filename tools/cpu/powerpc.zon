@@ -1,0 +1,300 @@
+.{
+    .zig_name = "powerpc",
+    .llvm = .{
+        .name = "PowerPC",
+        .td_name = "PPC",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "e500",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "ppc4xx",
+            .flatten = true,
+        },
+        .{
+            .llvm_name = "ppc6xx",
+            .flatten = true,
+        },
+
+        .{
+            .llvm_name = "64bit",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "64bitregs",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "aix",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "aix-shared-lib-tls-model-opt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "aix-small-local-dynamic-tls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "aix-small-local-exec-tls",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "crbits",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "efpu2",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "float128",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "hard-float",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "invariant-function-descriptors",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "longcall",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "modern-aix-as",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "ppc-postra-sched",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "ppc-prera-sched",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "privileged",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "rop-protect",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "secure-plt",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "spe",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "use-ptrgl-helper",
+            .omit = true,
+        },
+
+        // Future ISA extensions; omit until they are stabilized.
+        .{
+            .llvm_name = "future-vector",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "isa-future-instructions",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "64bit-support",
+            .zig_name = "64bit",
+        },
+        .{
+            .llvm_name = "bpermd",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "isa-v206-instructions",
+            .extra_deps = .{
+                "isa_v205_instructions",
+                "isel",
+                "mfocrf",
+            },
+        },
+        .{
+            .llvm_name = "isa-v207-instructions",
+            .extra_deps = .{
+                "icbt",
+                "isa_v206_instructions",
+                "partword_atomics",
+            },
+        },
+        .{
+            .llvm_name = "ldbrx",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "fast-MFLR",
+            .zig_name = "fast_mflr",
+        },
+        .{
+            .llvm_name = "paired-vector-memops",
+            .omit_deps = .{
+                "isa_v30_instructions",
+            },
+            .extra_deps = .{
+                "isa_v31_instructions",
+            },
+        },
+        .{
+            .llvm_name = "quadword-atomics",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "allow-unaligned-fp-access",
+            .zig_name = "unaligned_fp_access",
+        },
+    },
+    .extra_features = .{
+        .{
+            .zig_name = "isa_v203_instructions",
+            .desc = "Enable instructions in ISA 2.03.",
+            .deps = .{},
+        },
+        .{
+            .zig_name = "isa_v205_instructions",
+            .desc = "Enable instructions in ISA 2.05.",
+            .deps = .{
+                "cmpb",
+                "isa_v203_instructions",
+            },
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "e500",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "ppc",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "ppc64le",
+            .omit = true,
+        },
+
+        // Future ISA extensions; omit until they are stabilized.
+        .{
+            .llvm_name = "future",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "602",
+            .omit_deps = .{
+                "fpu",
+            },
+        },
+        .{
+            .llvm_name = "ppc32",
+            .extra_deps = .{
+                "fpu",
+            },
+        },
+        .{
+            .llvm_name = "pwr3",
+            .omit_deps = .{
+                "altivec",
+            },
+        },
+        .{
+            .llvm_name = "pwr4",
+            .omit_deps = .{
+                "altivec",
+            },
+        },
+        .{
+            .llvm_name = "pwr5",
+            .omit_deps = .{
+                "altivec",
+            },
+        },
+        .{
+            .llvm_name = "pwr5x",
+            .omit_deps = .{
+                "altivec",
+            },
+            .extra_deps = .{
+                "isa_v203_instructions",
+            },
+        },
+        .{
+            .llvm_name = "pwr6",
+            .extra_deps = .{
+                "isa_v205_instructions",
+            },
+        },
+        .{
+            .llvm_name = "pwr6x",
+            .extra_deps = .{
+                "isa_v205_instructions",
+            },
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = "970",
+            .zig_name = "cell",
+            .features = .{
+                "64bit",
+                "altivec",
+                "fres",
+                "frsqrte",
+                "fsqrt",
+                "mfocrf",
+                "stfiwx",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "e500",
+            .features = .{
+                "isel",
+                "msync",
+            },
+        },
+        .{
+            .llvm_name = "e5500",
+            .zig_name = "e6500",
+            .features = .{
+                "64bit",
+                "altivec",
+                "booke",
+                "bpermd",
+                "cmpb",
+                "fres",
+                "frsqrte",
+                "isel",
+                "mfocrf",
+                "partword_atomics",
+                "popcntd",
+                "stfiwx",
+            },
+        },
+    },
+}

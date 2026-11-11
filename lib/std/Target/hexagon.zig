@@ -41,7 +41,6 @@ pub const Feature = enum {
     v75,
     v79,
     v81,
-    zreg,
 };
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
@@ -101,6 +100,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvx,
+            .v60,
         }),
     };
     result[@backingInt(Feature.hvxv62)] = .{
@@ -108,6 +108,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv60,
+            .v62,
         }),
     };
     result[@backingInt(Feature.hvxv65)] = .{
@@ -115,14 +116,16 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv62,
+            .v65,
         }),
     };
     result[@backingInt(Feature.hvxv66)] = .{
         .llvm_name = "hvxv66",
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
+            .hvx_length128b,
             .hvxv65,
-            .zreg,
+            .v66,
         }),
     };
     result[@backingInt(Feature.hvxv67)] = .{
@@ -130,6 +133,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv66,
+            .v67,
         }),
     };
     result[@backingInt(Feature.hvxv68)] = .{
@@ -137,6 +141,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv67,
+            .v68,
         }),
     };
     result[@backingInt(Feature.hvxv69)] = .{
@@ -144,6 +149,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv68,
+            .v69,
         }),
     };
     result[@backingInt(Feature.hvxv71)] = .{
@@ -151,6 +157,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv69,
+            .v71,
         }),
     };
     result[@backingInt(Feature.hvxv73)] = .{
@@ -158,6 +165,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv71,
+            .v73,
         }),
     };
     result[@backingInt(Feature.hvxv75)] = .{
@@ -165,6 +173,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv73,
+            .v75,
         }),
     };
     result[@backingInt(Feature.hvxv79)] = .{
@@ -172,6 +181,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv75,
+            .v79,
         }),
     };
     result[@backingInt(Feature.hvxv81)] = .{
@@ -179,6 +189,7 @@ pub const all_features = blk: {
         .description = "Hexagon HVX instructions",
         .dependencies = featureSet(&[_]Feature{
             .hvxv79,
+            .v81,
         }),
     };
     result[@backingInt(Feature.mem_noshuf)] = .{
@@ -291,11 +302,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .v79,
         }),
-    };
-    result[@backingInt(Feature.zreg)] = .{
-        .llvm_name = "zreg",
-        .description = "Hexagon ZReg extension instructions",
-        .dependencies = featureSet(&[_]Feature{}),
     };
     const ti = @typeInfo(Feature);
     for (&result, 0..) |*elem, i| {

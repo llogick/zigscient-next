@@ -112,7 +112,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .freebsd,
-                .abi = .eabihf,
+                .abi = .none,
             },
             .link_libc = true,
         },
@@ -254,21 +254,21 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .eabi,
+                .abi = .none,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .eabihf,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -276,7 +276,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
                 .ofmt = .c,
             },
             .link_libc = true,
@@ -285,7 +285,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -295,7 +295,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .link_libc = true,
         },
@@ -303,7 +303,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
                 .ofmt = .c,
             },
             .link_libc = true,
@@ -312,7 +312,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -322,7 +322,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .gnueabi,
+                .abi = .gnu,
             },
             .link_libc = true,
         },
@@ -330,7 +330,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .gnueabihf,
+                .abi = .gnusf,
             },
             .link_libc = true,
         },
@@ -339,21 +339,21 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .eabi,
+                .abi = .none,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .eabihf,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -361,7 +361,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
                 .ofmt = .c,
             },
             .link_libc = true,
@@ -370,7 +370,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -380,7 +380,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .link_libc = true,
         },
@@ -388,7 +388,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
                 .ofmt = .c,
             },
             .link_libc = true,
@@ -397,7 +397,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -407,7 +407,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .gnueabi,
+                .abi = .gnu,
             },
             .link_libc = true,
         },
@@ -415,7 +415,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .gnueabihf,
+                .abi = .gnusf,
             },
             .link_libc = true,
         },
@@ -452,6 +452,14 @@ const module_test_targets = blk: {
                 .os_tag = .linux,
                 .abi = .none,
             },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .loongarch32,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
+            .extra_target = true,
         },
         .{
             .target = .{
@@ -477,6 +485,14 @@ const module_test_targets = blk: {
                 .os_tag = .linux,
                 .abi = .none,
             },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .loongarch64,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
+            .extra_target = true,
         },
         .{
             .target = .{
@@ -537,21 +553,29 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .eabi,
+                .abi = .none,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .eabihf,
+                .abi = .f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips,
+                .os_tag = .linux,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -559,7 +583,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -569,7 +593,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .link_libc = true,
         },
@@ -577,7 +601,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -587,7 +611,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .gnueabi,
+                .abi = .gnu,
             },
             .link_libc = true,
         },
@@ -595,7 +619,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .gnueabihf,
+                .abi = .gnusf,
             },
             .link_libc = true,
         },
@@ -604,21 +628,29 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .eabi,
+                .abi = .none,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .eabihf,
+                .abi = .f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsel,
+                .os_tag = .linux,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -626,7 +658,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -636,7 +668,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .link_libc = true,
         },
@@ -644,7 +676,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -654,7 +686,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .gnueabi,
+                .abi = .gnu,
             },
             .link_libc = true,
         },
@@ -662,10 +694,548 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .gnueabihf,
+                .abi = .gnusf,
             },
             .link_libc = true,
         },
+
+        // https://github.com/llvm/llvm-project/pull/209362
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32,
+        //         .os_tag = .linux,
+        //         .abi = .none,
+        //     },
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32,
+        //         .os_tag = .linux,
+        //         .abi = .gnu,
+        //     },
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+
+        // https://github.com/llvm/llvm-project/pull/209362
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32el,
+        //         .os_tag = .linux,
+        //         .abi = .none,
+        //     },
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32el,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32el,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32el,
+        //         .os_tag = .linux,
+        //         .abi = .gnu,
+        //     },
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64el,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64el,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64el,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64el,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8el,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8el,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8el,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsf64n8el,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mipsn8el,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+
+        // https://github.com/llvm/llvm-project/pull/226838
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .none,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .f32,
+        //     },
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .sf,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .gnu,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6,
+        //         .os_tag = .linux,
+        //         .abi = .gnusf,
+        //     },
+        //     .link_libc = true,
+        // },
+
+        // https://github.com/llvm/llvm-project/pull/226838
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .none,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .f32,
+        //     },
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .sf,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .gnu,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsr6el,
+        //         .os_tag = .linux,
+        //         .abi = .gnusf,
+        //     },
+        //     .link_libc = true,
+        // },
 
         .{
             .target = .{
@@ -678,14 +1248,36 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .abin32,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .muslabi64,
+                .abi = .n32,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .n32f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .n32sf,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -693,7 +1285,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .muslabi64,
+                .abi = .musl,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -703,7 +1295,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .muslabin32,
+                .abi = .muslsf,
             },
             .link_libc = true,
         },
@@ -711,7 +1303,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .muslabin32,
+                .abi = .muslsf,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -721,7 +1313,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .gnuabi64,
+                .abi = .musln32,
             },
             .link_libc = true,
         },
@@ -729,7 +1321,59 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .gnuabin32,
+                .abi = .musln32,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .gnun32,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .gnun32sf,
             },
             .link_libc = true,
         },
@@ -745,14 +1389,36 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .abin32,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .muslabi64,
+                .abi = .n32,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .n32f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .n32sf,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -760,7 +1426,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .muslabi64,
+                .abi = .musl,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -770,16 +1436,15 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .muslabin32,
+                .abi = .muslsf,
             },
             .link_libc = true,
-            .extra_target = true,
         },
         .{
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .muslabin32,
+                .abi = .muslsf,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -789,7 +1454,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .gnuabi64,
+                .abi = .musln32,
             },
             .link_libc = true,
         },
@@ -797,7 +1462,211 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .gnuabin32,
+                .abi = .musln32,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .gnun32,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .gnun32sf,
+            },
+            .link_libc = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .n32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .n32f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .n32sf,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .musln32,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .musln32,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .gnun32,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8,
+                .os_tag = .linux,
+                .abi = .gnun32sf,
             },
             .link_libc = true,
             .extra_target = true,
@@ -805,33 +1674,469 @@ const module_test_targets = blk: {
 
         .{
             .target = .{
-                .cpu_arch = .powerpc,
+                .cpu_arch = .mips64n8el,
                 .os_tag = .linux,
-                .abi = .eabi,
+                .abi = .none,
             },
             .extra_target = true,
         },
         .{
             .target = .{
-                .cpu_arch = .powerpc,
+                .cpu_arch = .mips64n8el,
                 .os_tag = .linux,
-                .abi = .eabihf,
+                .abi = .sf,
             },
+            .extra_target = true,
         },
         .{
             .target = .{
-                .cpu_arch = .powerpc,
+                .cpu_arch = .mips64n8el,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .n32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .n32f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .n32sf,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .musl,
             },
             .link_libc = true,
             .extra_target = true,
         },
         .{
             .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .musln32,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .musln32,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .musln32sf,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .gnu,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .gnun32,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64n8el,
+                .os_tag = .linux,
+                .abi = .gnun32sf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+
+        // https://github.com/llvm/llvm-project/pull/226838
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .none,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .sf,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .n32,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .n32f32,
+        //     },
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .n32sf,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .musln32,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .musln32,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .musln32sf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .musln32sf,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .gnu,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .gnusf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .gnun32,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6,
+        //         .os_tag = .linux,
+        //         .abi = .gnun32sf,
+        //     },
+        //     .link_libc = true,
+        // },
+
+        // https://github.com/llvm/llvm-project/pull/226838
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .none,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .sf,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .n32,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .n32f32,
+        //     },
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .n32sf,
+        //     },
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .musl,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .muslsf,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .musln32,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .musln32,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .musln32sf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .musln32sf,
+        //     },
+        //     .linkage = .dynamic,
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .gnu,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .gnusf,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .gnun32,
+        //     },
+        //     .link_libc = true,
+        // },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mips64r6el,
+        //         .os_tag = .linux,
+        //         .abi = .gnun32sf,
+        //     },
+        //     .link_libc = true,
+        // },
+
+        .{
+            .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .none,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .powerpc,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .powerpc,
+                .os_tag = .linux,
+                .abi = .musl,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .powerpc,
+                .os_tag = .linux,
+                .abi = .musl,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -841,15 +2146,16 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .link_libc = true,
+            .extra_target = true,
         },
         .{
             .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .linkage = .dynamic,
             .link_libc = true,
@@ -921,14 +2227,23 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .riscv32,
                 .os_tag = .linux,
+                .abi = .f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
                 .abi = .none,
             },
         },
         .{
-            .target = std.Target.Query.parse(.{
-                .arch_os_abi = "riscv32-linux-none",
-                .cpu_features = "baseline-d-f",
-            }) catch unreachable,
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
             .extra_target = true,
         },
         .{
@@ -950,10 +2265,40 @@ const module_test_targets = blk: {
             .extra_target = true,
         },
         .{
-            .target = std.Target.Query.parse(.{
-                .arch_os_abi = "riscv32-linux-musl",
-                .cpu_features = "baseline-d-f",
-            }) catch unreachable,
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .muslf32,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .muslf32,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .linkage = .dynamic,
             .link_libc = true,
             .extra_target = true,
         },
@@ -964,6 +2309,15 @@ const module_test_targets = blk: {
                 .abi = .gnu,
             },
             .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+            .extra_target = true,
         },
 
         // TODO implement codegen airFieldParentPtr
@@ -980,14 +2334,23 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .riscv64,
                 .os_tag = .linux,
+                .abi = .f32,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
                 .abi = .none,
             },
         },
         .{
-            .target = std.Target.Query.parse(.{
-                .arch_os_abi = "riscv64-linux-none",
-                .cpu_features = "baseline-d-f",
-            }) catch unreachable,
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
             .extra_target = true,
         },
         .{
@@ -1009,10 +2372,40 @@ const module_test_targets = blk: {
             .extra_target = true,
         },
         .{
-            .target = std.Target.Query.parse(.{
-                .arch_os_abi = "riscv64-linux-musl",
-                .cpu_features = "baseline-d-f",
-            }) catch unreachable,
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .muslf32,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .muslf32,
+            },
+            .linkage = .dynamic,
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .link_libc = true,
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+            .linkage = .dynamic,
             .link_libc = true,
             .extra_target = true,
         },
@@ -1023,6 +2416,15 @@ const module_test_targets = blk: {
                 .abi = .gnu,
             },
             .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .gnusf,
+            },
+            .link_libc = true,
+            .extra_target = true,
         },
 
         .{
@@ -1079,21 +2481,21 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .thumb,
                 .os_tag = .linux,
-                .abi = .eabi,
+                .abi = .none,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .thumb,
                 .os_tag = .linux,
-                .abi = .eabihf,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .thumb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -1101,7 +2503,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .thumb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .link_libc = true,
         },
@@ -1110,21 +2512,21 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .thumbeb,
                 .os_tag = .linux,
-                .abi = .eabi,
+                .abi = .none,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .thumbeb,
                 .os_tag = .linux,
-                .abi = .eabihf,
+                .abi = .sf,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .thumbeb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
             .link_libc = true,
         },
@@ -1132,7 +2534,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .thumbeb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
             .link_libc = true,
         },
@@ -1388,7 +2790,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .netbsd,
-                .abi = .eabi,
+                .abi = .none,
             },
             .link_libc = true,
         },
@@ -1396,7 +2798,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .netbsd,
-                .abi = .eabihf,
+                .abi = .sf,
             },
             .link_libc = true,
         },
@@ -1405,7 +2807,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .netbsd,
-                .abi = .eabi,
+                .abi = .none,
             },
             .link_libc = true,
         },
@@ -1413,7 +2815,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .netbsd,
-                .abi = .eabihf,
+                .abi = .sf,
             },
             .link_libc = true,
         },
@@ -1422,7 +2824,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .netbsd,
-                .abi = .eabi,
+                .abi = .none,
             },
             .link_libc = true,
         },
@@ -1430,7 +2832,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .netbsd,
-                .abi = .eabihf,
+                .abi = .sf,
             },
             .link_libc = true,
         },
@@ -1439,7 +2841,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .netbsd,
-                .abi = .eabi,
+                .abi = .none,
             },
             .link_libc = true,
         },
@@ -1447,7 +2849,63 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .netbsd,
-                .abi = .eabihf,
+                .abi = .sf,
+            },
+            .link_libc = true,
+        },
+
+        // https://github.com/llvm/llvm-project/pull/209362
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32,
+        //         .os_tag = .netbsd,
+        //         .abi = .none,
+        //     },
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+
+        // https://github.com/llvm/llvm-project/pull/209362
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .mipsf32el,
+        //         .os_tag = .netbsd,
+        //         .abi = .none,
+        //     },
+        //     .link_libc = true,
+        //     .extra_target = true,
+        // },
+
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .netbsd,
+                .abi = .sf,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .netbsd,
+                .abi = .n32sf,
+            },
+            .link_libc = true,
+        },
+
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .netbsd,
+                .abi = .sf,
+            },
+            .link_libc = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .netbsd,
+                .abi = .n32sf,
             },
             .link_libc = true,
         },
@@ -1456,7 +2914,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .netbsd,
-                .abi = .eabihf,
+                .abi = .none,
             },
             .link_libc = true,
         },
@@ -1512,7 +2970,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .openbsd,
-                .abi = .eabi,
+                .abi = .sf,
             },
             .link_libc = true,
         },
@@ -1530,7 +2988,7 @@ const module_test_targets = blk: {
             .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .openbsd,
-                .abi = .eabihf,
+                .abi = .none,
             },
             .link_libc = true,
         },
@@ -1826,14 +3284,14 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .arm,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
         },
 
@@ -1841,14 +3299,14 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .armeb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
         },
 
@@ -1867,6 +3325,13 @@ const c_abi_targets = blk: {
                 .abi = .musl,
             },
         },
+        // .{
+        //     .target = .{
+        //         .cpu_arch = .loongarch64,
+        //         .os_tag = .linux,
+        //         .abi = .muslf32,
+        //     },
+        // },
         .{
             .target = .{
                 .cpu_arch = .loongarch64,
@@ -1879,14 +3344,14 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mips,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
         },
 
@@ -1894,14 +3359,14 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mipsel,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
         },
 
@@ -1909,14 +3374,28 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .muslabi64,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mips64,
                 .os_tag = .linux,
-                .abi = .muslabin32,
+                .abi = .muslsf,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .musln32,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64,
+                .os_tag = .linux,
+                .abi = .musln32sf,
             },
         },
 
@@ -1924,14 +3403,28 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .muslabi64,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .mips64el,
                 .os_tag = .linux,
-                .abi = .muslabin32,
+                .abi = .muslsf,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .musln32,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .mips64el,
+                .os_tag = .linux,
+                .abi = .musln32sf,
             },
         },
 
@@ -1939,14 +3432,14 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .powerpc,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
         },
 
@@ -1966,30 +3459,46 @@ const c_abi_targets = blk: {
         },
 
         .{
-            .target = std.Target.Query.parse(.{
-                .arch_os_abi = "riscv32-linux-musl",
-                .cpu_features = "baseline-d-f",
-            }) catch unreachable,
-        },
-        .{
             .target = .{
                 .cpu_arch = .riscv32,
                 .os_tag = .linux,
                 .abi = .musl,
             },
         },
-
         .{
-            .target = std.Target.Query.parse(.{
-                .arch_os_abi = "riscv64-linux-musl",
-                .cpu_features = "baseline-d-f",
-            }) catch unreachable,
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .muslf32,
+            },
         },
+        .{
+            .target = .{
+                .cpu_arch = .riscv32,
+                .os_tag = .linux,
+                .abi = .muslsf,
+            },
+        },
+
         .{
             .target = .{
                 .cpu_arch = .riscv64,
                 .os_tag = .linux,
                 .abi = .musl,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .muslf32,
+            },
+        },
+        .{
+            .target = .{
+                .cpu_arch = .riscv64,
+                .os_tag = .linux,
+                .abi = .muslsf,
             },
         },
 
@@ -2005,14 +3514,14 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .thumb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .thumb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
         },
 
@@ -2020,14 +3529,14 @@ const c_abi_targets = blk: {
             .target = .{
                 .cpu_arch = .thumbeb,
                 .os_tag = .linux,
-                .abi = .musleabi,
+                .abi = .musl,
             },
         },
         .{
             .target = .{
                 .cpu_arch = .thumbeb,
                 .os_tag = .linux,
-                .abi = .musleabihf,
+                .abi = .muslsf,
             },
         },
 
@@ -3240,42 +4749,42 @@ const libc_test_nsz_targets: []const std.Target.Query = &.{
     .{
         .cpu_arch = .arm,
         .os_tag = .linux,
-        .abi = .musleabi,
+        .abi = .musl,
     },
     .{
         .cpu_arch = .arm,
         .os_tag = .linux,
-        .abi = .musleabihf,
+        .abi = .muslsf,
     },
     .{
         .cpu_arch = .armeb,
         .os_tag = .linux,
-        .abi = .musleabi,
+        .abi = .musl,
     },
     .{
         .cpu_arch = .armeb,
         .os_tag = .linux,
-        .abi = .musleabihf,
+        .abi = .muslsf,
     },
     .{
         .cpu_arch = .thumb,
         .os_tag = .linux,
-        .abi = .musleabi,
+        .abi = .musl,
     },
     .{
         .cpu_arch = .thumb,
         .os_tag = .linux,
-        .abi = .musleabihf,
+        .abi = .muslsf,
     },
     .{
         .cpu_arch = .thumbeb,
         .os_tag = .linux,
-        .abi = .musleabi,
+        .abi = .musl,
     },
     .{
         .cpu_arch = .thumbeb,
         .os_tag = .linux,
-        .abi = .musleabihf,
+        .abi = .muslsf,
     },
     .{
         .cpu_arch = .aarch64,
@@ -3297,6 +4806,11 @@ const libc_test_nsz_targets: []const std.Target.Query = &.{
         .os_tag = .linux,
         .abi = .musl,
     },
+    // .{
+    //     .cpu_arch = .loongarch64,
+    //     .os_tag = .linux,
+    //     .abi = .muslf32,
+    // },
     .{
         .cpu_arch = .loongarch64,
         .os_tag = .linux,
@@ -3305,52 +4819,222 @@ const libc_test_nsz_targets: []const std.Target.Query = &.{
     // .{
     //     .cpu_arch = .mips,
     //     .os_tag = .linux,
-    //     .abi = .musleabi,
+    //     .abi = .musl,
     // },
     // .{
     //     .cpu_arch = .mips,
     //     .os_tag = .linux,
-    //     .abi = .musleabihf,
+    //     .abi = .muslsf,
     // },
     // .{
     //     .cpu_arch = .mipsel,
     //     .os_tag = .linux,
-    //     .abi = .musleabi,
+    //     .abi = .musl,
     // },
     // .{
     //     .cpu_arch = .mipsel,
     //     .os_tag = .linux,
-    //     .abi = .musleabihf,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mipsf32,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsf32el,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsf64,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsf64el,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsf64n8,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsf64n8el,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsn8,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsn8,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mipsn8el,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsn8el,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mipsr6,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsr6,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mipsr6el,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mipsr6el,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
     // },
     // .{
     //     .cpu_arch = .mips64,
     //     .os_tag = .linux,
-    //     .abi = .muslabi64,
+    //     .abi = .musl,
     // },
     // .{
     //     .cpu_arch = .mips64,
     //     .os_tag = .linux,
-    //     .abi = .muslabin32,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64,
+    //     .os_tag = .linux,
+    //     .abi = .musln32,
+    // },
+    // .{
+    //     .cpu_arch = .mips64,
+    //     .os_tag = .linux,
+    //     .abi = .musln32sf,
     // },
     // .{
     //     .cpu_arch = .mips64el,
     //     .os_tag = .linux,
-    //     .abi = .muslabi64,
+    //     .abi = .musl,
     // },
     // .{
     //     .cpu_arch = .mips64el,
     //     .os_tag = .linux,
-    //     .abi = .muslabin32,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64el,
+    //     .os_tag = .linux,
+    //     .abi = .musln32,
+    // },
+    // .{
+    //     .cpu_arch = .mips64el,
+    //     .os_tag = .linux,
+    //     .abi = .musln32sf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8,
+    //     .os_tag = .linux,
+    //     .abi = .musln32,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8,
+    //     .os_tag = .linux,
+    //     .abi = .musln32sf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8el,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8el,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8el,
+    //     .os_tag = .linux,
+    //     .abi = .musln32,
+    // },
+    // .{
+    //     .cpu_arch = .mips64n8el,
+    //     .os_tag = .linux,
+    //     .abi = .musln32sf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6,
+    //     .os_tag = .linux,
+    //     .abi = .musln32,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6,
+    //     .os_tag = .linux,
+    //     .abi = .musln32sf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6el,
+    //     .os_tag = .linux,
+    //     .abi = .musl,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6el,
+    //     .os_tag = .linux,
+    //     .abi = .muslsf,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6el,
+    //     .os_tag = .linux,
+    //     .abi = .musln32,
+    // },
+    // .{
+    //     .cpu_arch = .mips64r6el,
+    //     .os_tag = .linux,
+    //     .abi = .musln32sf,
     // },
     .{
         .cpu_arch = .powerpc,
         .os_tag = .linux,
-        .abi = .musleabi,
+        .abi = .musl,
     },
     .{
         .cpu_arch = .powerpc,
         .os_tag = .linux,
-        .abi = .musleabihf,
+        .abi = .muslsf,
     },
     .{
         .cpu_arch = .powerpc64,
@@ -3367,10 +5051,30 @@ const libc_test_nsz_targets: []const std.Target.Query = &.{
         .os_tag = .linux,
         .abi = .musl,
     },
+    // .{
+    //     .cpu_arch = .riscv32,
+    //     .os_tag = .linux,
+    //     .abi = .muslf32,
+    // },
+    .{
+        .cpu_arch = .riscv32,
+        .os_tag = .linux,
+        .abi = .muslsf,
+    },
     .{
         .cpu_arch = .riscv64,
         .os_tag = .linux,
         .abi = .musl,
+    },
+    // .{
+    //     .cpu_arch = .riscv64,
+    //     .os_tag = .linux,
+    //     .abi = .muslf32,
+    // },
+    .{
+        .cpu_arch = .riscv64,
+        .os_tag = .linux,
+        .abi = .muslsf,
     },
     .{
         .cpu_arch = .s390x,

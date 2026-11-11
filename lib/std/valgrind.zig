@@ -26,7 +26,19 @@ pub fn doClientRequest(default: usize, request: usize, a1: usize, a2: usize, a3:
             : [_] "{x4}" (args),
               [_] "{x3}" (default),
             : .{ .memory = true }),
-        .mips, .mipsel => asm volatile (
+        .mips,
+        .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
+        => asm volatile (
             \\ srl $0,  $0,  13
             \\ srl $0,  $0,  29
             \\ srl $0,  $0,  3
@@ -36,7 +48,13 @@ pub fn doClientRequest(default: usize, request: usize, a1: usize, a2: usize, a3:
             : [_] "{$12}" (args),
               [_] "{$11}" (default),
             : .{ .memory = true }),
-        .mips64, .mips64el => asm volatile (
+        .mips64,
+        .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
+        => asm volatile (
             \\ dsll $0,  $0,  3   ; dsll $0, $0, 13
             \\ dsll $0,  $0,  29  ; dsll $0, $0, 19
             \\ or   $13, $13, $13

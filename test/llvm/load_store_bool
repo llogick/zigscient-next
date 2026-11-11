@@ -4,22 +4,20 @@
 
 #skip bpfel-freestanding-none-baseline-whole-llvm-debug-lld
 
-#skip csky-freestanding-eabi-baseline-whole-llvm-debug-lld
-#skip csky-freestanding-eabihf-baseline-whole-llvm-debug-lld
-#skip csky-linux-eabi-baseline-whole-llvm-debug-lld
-#skip csky-linux-eabihf-baseline-whole-llvm-debug-lld
-#skip csky-linux-gnueabi-baseline-whole-llvm-debug-lld
-#skip csky-linux-gnueabihf-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-f32-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-none-baseline-whole-llvm-debug-lld
+#skip csky-freestanding-sf-baseline-whole-llvm-debug-lld
+#skip csky-linux-f32-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnu-baseline-whole-llvm-debug-lld
+#skip csky-linux-gnusf-baseline-whole-llvm-debug-lld
+#skip csky-linux-none-baseline-whole-llvm-debug-lld
+#skip csky-linux-sf-baseline-whole-llvm-debug-lld
 
 #skip nvptx-cuda-none-baseline-whole-llvm-debug-lld
 #skip nvptx-nvcl-none-baseline-whole-llvm-debug-lld
 
 #skip nvptx64-cuda-none-baseline-whole-llvm-debug-lld
 #skip nvptx64-nvcl-none-baseline-whole-llvm-debug-lld
-
-#skip x86_64-linux-gnux32-baseline-whole-llvm-debug-new
-#skip x86_64-linux-muslx32-baseline-whole-llvm-debug-new
-#skip x86_64-linux-x32-baseline-whole-llvm-debug-new
 
 #zig build-obj {
 --name test -ofmt=llvmir -fno-lld -fno-new-linker

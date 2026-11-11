@@ -68,13 +68,13 @@ pub fn detect(io: Io, target_os: *Target.Os) !void {
                 }
                 continue;
             } else |_| {
-                return error.OSVersionDetectionFail;
+                return error.OsVersionQueryFailed;
             }
         } else |_| {
-            return error.OSVersionDetectionFail;
+            return error.OsVersionQueryFailed;
         }
     }
-    return error.OSVersionDetectionFail;
+    return error.OsVersionQueryFailed;
 }
 
 fn parseSystemVersion(buf: []const u8) !std.SemanticVersion {

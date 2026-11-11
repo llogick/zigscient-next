@@ -49,10 +49,10 @@ const Classifier = struct {
                 .loongarch32 => 32,
                 .loongarch64 => 64,
             },
-            .frlen = switch (target.abi) {
-                .gnusf, .muslsf => 0,
-                .gnuf32, .muslf32 => 32,
-                else => 64,
+            .frlen = switch (target.abi.float()) {
+                .soft => 0,
+                .hard32 => 32,
+                .hard64 => 64,
             },
         };
     }

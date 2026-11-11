@@ -13,6 +13,7 @@ pub const Feature = enum {
     fix_tn0012,
     fix_tn0013,
     fixallfdivsqrt,
+    fmaf,
     fpu,
     fpu_q,
     hasleoncasa,
@@ -29,10 +30,8 @@ pub const Feature = enum {
     slow_rdpc,
     soft_mul_div,
     ua2005,
-    ua2007,
     v8,
     v8_deprecated,
-    v8e,
     v9,
     vis,
     vis2,
@@ -52,7 +51,8 @@ pub const all_features = blk: {
         .llvm_name = "crypto",
         .description = "Enable cryptographic extensions",
         .dependencies = featureSet(&[_]Feature{
-            .osa2011,
+            .fpu,
+            .v9,
         }),
     };
     result[@backingInt(Feature.divscc)] = .{
@@ -89,6 +89,14 @@ pub const all_features = blk: {
         .llvm_name = "fixallfdivsqrt",
         .description = "LEON erratum fix: Fix FDIVS/FDIVD/FSQRTS/FSQRTD instructions with NOPs and floating-point store",
         .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.fmaf)] = .{
+        .llvm_name = "ua2007",
+        .description = "Enable fused multiply-add instructions",
+        .dependencies = featureSet(&[_]Feature{
+            .fpu,
+            .v9,
+        }),
     };
     result[@backingInt(Feature.fpu)] = .{
         .llvm_name = null,
@@ -153,8 +161,7 @@ pub const all_features = blk: {
         .llvm_name = "osa2011",
         .description = "Enable Oracle SPARC Architecture 2011 extensions",
         .dependencies = featureSet(&[_]Feature{
-            .ua2007,
-            .vis3,
+            .v9,
         }),
     };
     result[@backingInt(Feature.popc)] = .{
@@ -185,14 +192,7 @@ pub const all_features = blk: {
         .llvm_name = "ua2005",
         .description = "Enable UltraSPARC Architecture 2005 extensions",
         .dependencies = featureSet(&[_]Feature{
-            .vis2,
-        }),
-    };
-    result[@backingInt(Feature.ua2007)] = .{
-        .llvm_name = "ua2007",
-        .description = "Enable UltraSPARC Architecture 2007 extensions",
-        .dependencies = featureSet(&[_]Feature{
-            .ua2005,
+            .v9,
         }),
     };
     result[@backingInt(Feature.v8)] = .{
@@ -206,11 +206,6 @@ pub const all_features = blk: {
         .dependencies = featureSet(&[_]Feature{
             .v9,
         }),
-    };
-    result[@backingInt(Feature.v8e)] = .{
-        .llvm_name = null,
-        .description = "Enable SPARC-V8E instructions",
-        .dependencies = featureSet(&[_]Feature{}),
     };
     result[@backingInt(Feature.v9)] = .{
         .llvm_name = "v9",
@@ -457,6 +452,7 @@ pub const cpu = struct {
             .no_predictor,
             .ua2005,
             .v8_deprecated,
+            .vis2,
         }),
     };
     pub const niagara2: CpuModel = .{
@@ -467,15 +463,17 @@ pub const cpu = struct {
             .popc,
             .ua2005,
             .v8_deprecated,
+            .vis2,
         }),
     };
     pub const niagara3: CpuModel = .{
         .name = "niagara3",
         .llvm_name = "niagara3",
         .features = featureSet(&[_]Feature{
+            .fmaf,
             .no_predictor,
             .popc,
-            .ua2007,
+            .ua2005,
             .v8_deprecated,
             .vis3,
         }),
@@ -485,15 +483,18 @@ pub const cpu = struct {
         .llvm_name = "niagara4",
         .features = featureSet(&[_]Feature{
             .crypto,
+            .fmaf,
+            .osa2011,
             .popc,
+            .ua2005,
             .v8_deprecated,
+            .vis3,
         }),
     };
     pub const sparclet: CpuModel = .{
         .name = "sparclet",
         .llvm_name = "sparclet",
         .features = featureSet(&[_]Feature{
-            .divscc,
             .fpu,
             .scan,
         }),

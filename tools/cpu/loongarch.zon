@@ -1,0 +1,145 @@
+.{
+    .zig_name = "loongarch",
+    .llvm = .{
+        .name = "LoongArch",
+        .td_name = "LoongArch",
+    },
+    .feature_overrides = .{
+        .{
+            .llvm_name = "la-global-with-abs",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "la-global-with-pcrel",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "la-local-with-abs",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "prefer-w-inst",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "relax",
+            .omit = true,
+        },
+
+        .{
+            .llvm_name = "frecipe",
+            .extra_deps = .{
+                "f",
+            },
+        },
+        .{
+            .llvm_name = "lam-bh",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "lamcas",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "scq",
+            .extra_deps = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = "ual",
+            .zig_name = "unaligned_access",
+        },
+    },
+    .model_overrides = .{
+        .{
+            .llvm_name = "generic",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic-la32",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "generic-la64",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "loongarch32",
+            .omit = true,
+        },
+        .{
+            .llvm_name = "loongarch64",
+            .omit = true,
+        },
+    },
+    .extra_models = .{
+        .{
+            .llvm_name = null,
+            .zig_name = "generic_la32",
+            .features = .{
+                "32bit",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "generic_la64",
+            .features = .{
+                "64bit",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "la32v1_0",
+            .features = .{
+                "32bit",
+                "32s",
+                "d",
+                "unaligned_access",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "la32rv1_0",
+            .features = .{
+                "32bit",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "la64v1_0",
+            .features = .{
+                "64bit",
+                "lsx",
+                "unaligned_access",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "la64v1_1",
+            .features = .{
+                "64bit",
+                "div32",
+                "frecipe",
+                "lam_bh",
+                "lamcas",
+                "ld_seq_sa",
+                "lsx",
+                "scq",
+                "unaligned_access",
+            },
+        },
+        .{
+            .llvm_name = null,
+            .zig_name = "la132",
+            .features = .{
+                "32bit",
+                "32s",
+            },
+        },
+    },
+}

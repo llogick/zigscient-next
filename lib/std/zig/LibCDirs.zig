@@ -182,8 +182,12 @@ pub fn detectFromBuilding(arena: Allocator, zig_lib_dir: Path, target: *const st
         std.zig.target.muslAbiNameHeaders(target.abi)
     else if (target.isGnuLibC())
         std.zig.target.glibcAbiNameHeaders(target.abi)
+    else if (target.isFreeBSDLibC())
+        std.zig.target.freebsdAbiNameHeaders(target.abi)
     else if (target.isNetBSDLibC())
         std.zig.target.netbsdAbiNameHeaders(target.abi)
+    else if (target.isOpenBSDLibC())
+        std.zig.target.openbsdAbiNameHeaders(target.abi)
     else
         @tagName(target.abi);
     const arch_include_dir = try arena.print("{f}" ++ s ++ "libc" ++ s ++ "include" ++ s ++ "{s}-{s}-{s}", .{
@@ -223,38 +227,7 @@ fn libCGenericName(target: *const std.Target) [:0]const u8 {
         .openbsd => return "openbsd",
         else => {},
     }
-    switch (target.abi) {
-        .gnu,
-        .gnuabin32,
-        .gnuabi64,
-        .gnueabi,
-        .gnueabihf,
-        .gnuf32,
-        .gnusf,
-        .gnux32,
-        => return "glibc",
-        .musl,
-        .muslabin32,
-        .muslabi64,
-        .musleabi,
-        .musleabihf,
-        .muslf32,
-        .muslsf,
-        .muslx32,
-        .none,
-        .ohos,
-        .ohoseabi,
-        => return "musl",
-        .eabi,
-        .eabihf,
-        .abin32,
-        .x32,
-        .ilp32,
-        .android,
-        .androideabi,
-        .msvc,
-        .simulator,
-        .call0,
-        => unreachable,
-    }
+    if (target.abi.isGnu()) return "glibc";
+    if (target.abi.isMusl()) return "musl";
+    return "zig";
 }

@@ -82,8 +82,8 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
             });
 
             const csu_march: ?[]const u8 = switch (target.cpu.arch) {
-                .arm => if (target.abi.float() == .hard) "earmhf" else "earm",
-                .armeb => if (target.abi.float() == .hard) "earmhfeb" else "earmeb",
+                .arm => if (target.abi.float() == .soft) "earm" else "earmhf",
+                .armeb => if (target.abi.float() == .soft) "earmeb" else "earmhfeb",
                 else => null,
             };
 
@@ -512,7 +512,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             };
 
             {
-                const targets = try inc_reader.takeLeb128(u64);
+                const targets = try inc_reader.takeLeb128(u128);
                 var lib_index = try inc_reader.takeByte();
 
                 const is_weak = (lib_index & (1 << 6)) != 0;
@@ -523,7 +523,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                 // Test whether the inclusion applies to our current library and target.
                 const ok_lib_and_target =
                     (lib_index == lib_i) and
-                    ((targets & (@as(u64, 1) << @as(u6, @intCast(target_targ_index)))) != 0);
+                    ((targets & (@as(u128, 1) << @as(u6, @intCast(target_targ_index)))) != 0);
 
                 while (true) {
                     const byte = try inc_reader.takeByte();
@@ -589,7 +589,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             };
 
             {
-                const targets = try inc_reader.takeLeb128(u64);
+                const targets = try inc_reader.takeLeb128(u128);
                 const size = try inc_reader.takeLeb128(u16);
                 var lib_index = try inc_reader.takeByte();
 
@@ -601,7 +601,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
                 // Test whether the inclusion applies to our current library and target.
                 const ok_lib_and_target =
                     (lib_index == lib_i) and
-                    ((targets & (@as(u64, 1) << @as(u6, @intCast(target_targ_index)))) != 0);
+                    ((targets & (@as(u128, 1) << @as(u6, @intCast(target_targ_index)))) != 0);
 
                 while (true) {
                     const byte = try inc_reader.takeByte();

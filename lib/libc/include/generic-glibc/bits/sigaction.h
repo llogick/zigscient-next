@@ -1,4 +1,4 @@
-/* The proper definitions for Linux's sigaction.
+/* The proper definitions for Linux/MIPS's sigaction.
    Copyright (C) 1993-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -13,7 +13,7 @@
    Lesser General Public License for more details.
 
    You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
+   License along with the GNU C Library.  If not, see
    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _BITS_SIGACTION_H
@@ -26,6 +26,9 @@
 /* Structure describing the action to be taken when a signal arrives.  */
 struct sigaction
   {
+    /* Special flags.  */
+    int sa_flags;
+
     /* Signal handler.  */
 #if defined __USE_POSIX199309 || defined __USE_XOPEN_EXTENDED
     union
@@ -36,35 +39,38 @@ struct sigaction
 	void (*sa_sigaction) (int, siginfo_t *, void *);
       }
     __sigaction_handler;
-# define sa_handler	__sigaction_handler.sa_handler
-# define sa_sigaction	__sigaction_handler.sa_sigaction
+# define sa_handler    __sigaction_handler.sa_handler
+# define sa_sigaction  __sigaction_handler.sa_sigaction
 #else
     __sighandler_t sa_handler;
 #endif
-
     /* Additional set of signals to be blocked.  */
     __sigset_t sa_mask;
 
-    /* Special flags.  */
-    int sa_flags;
-
+    /* The ABI says here are two unused ints following. */
     /* Restore handler.  */
     void (*sa_restorer) (void);
+
+#if _MIPS_SZPTR < 64
+    int sa_resv[1];
+#endif
   };
 
 /* Bits in `sa_flags'.  */
-#define	SA_NOCLDSTOP  1		 /* Don't send SIGCHLD when children stop.  */
-#define SA_NOCLDWAIT  2		 /* Don't create zombie on child death.  */
-#define SA_SIGINFO    4		 /* Invoke signal-catching function with
+/* Please note that some Linux kernels versions use different values for these
+   flags which is a bug in those kernel versions.  */
+#define SA_NOCLDSTOP  0x00000001 /* Don't send SIGCHLD when children stop.  */
+#define SA_NOCLDWAIT  0x00010000 /* Don't create zombie on child death.  */
+#define SA_SIGINFO    0x00000008 /* Invoke signal-catching function with
 				    three arguments instead of one.  */
 #if defined __USE_XOPEN_EXTENDED || defined __USE_MISC
 # define SA_ONSTACK   0x08000000 /* Use signal stack by using `sa_restorer'. */
 #endif
 #if defined __USE_XOPEN_EXTENDED || defined __USE_XOPEN2K8
+# define SA_RESETHAND 0x80000000 /* Reset to SIG_DFL on entry to handler.  */
 # define SA_RESTART   0x10000000 /* Restart syscall on signal return.  */
 # define SA_NODEFER   0x40000000 /* Don't automatically block the signal when
 				    its handler is being executed.  */
-# define SA_RESETHAND 0x80000000 /* Reset to SIG_DFL on entry to handler.  */
 #endif
 #ifdef __USE_MISC
 # define SA_INTERRUPT 0x20000000 /* Historical no-op.  */
@@ -76,8 +82,13 @@ struct sigaction
 #endif
 
 /* Values for the HOW argument to `sigprocmask'.  */
-#define	SIG_BLOCK     0		 /* Block signals.  */
-#define	SIG_UNBLOCK   1		 /* Unblock signals.  */
-#define	SIG_SETMASK   2		 /* Set the set of blocked signals.  */
+#define SIG_NOP	      0		/* 0 is unused to catch errors */
+#define	SIG_BLOCK     1		/* Block signals.  */
+#define	SIG_UNBLOCK   2		/* Unblock signals.  */
+#define	SIG_SETMASK   3		/* Set the set of blocked signals.  */
+#ifdef __USE_MISC
+# define SIG_SETMASK32 256	/* Goodie from SGI for BSD compatibility:
+				   set only the low 32 bit of the sigset.  */
+#endif
 
 #endif

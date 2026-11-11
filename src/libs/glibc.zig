@@ -844,7 +844,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
 
                 break :n sym_name_buf.written();
             };
-            const targets = try inc_reader.takeLeb128(u64);
+            const targets = try inc_reader.takeLeb128(u128);
             var lib_index = try inc_reader.takeByte();
 
             const is_terminal = (lib_index & (1 << 7)) != 0;
@@ -856,7 +856,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             // Test whether the inclusion applies to our current library and target.
             const ok_lib_and_target =
                 (lib_index == lib_i) and
-                ((targets & (@as(u64, 1) << @as(u6, @intCast(target_targ_index)))) != 0);
+                ((targets & (@as(u128, 1) << @as(u7, @intCast(target_targ_index)))) != 0);
 
             while (true) {
                 const byte = try inc_reader.takeByte();
@@ -1016,7 +1016,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
 
                 break :n sym_name_buf.written();
             };
-            const targets = try inc_reader.takeLeb128(u64);
+            const targets = try inc_reader.takeLeb128(u128);
             const size = try inc_reader.takeLeb128(u16);
             var lib_index = try inc_reader.takeByte();
 
@@ -1029,7 +1029,7 @@ pub fn buildSharedObjects(comp: *Compilation, prog_node: std.Progress.Node) anye
             // Test whether the inclusion applies to our current library and target.
             const ok_lib_and_target =
                 (lib_index == lib_i) and
-                ((targets & (@as(u64, 1) << @as(u6, @intCast(target_targ_index)))) != 0);
+                ((targets & (@as(u128, 1) << @as(u7, @intCast(target_targ_index)))) != 0);
 
             while (true) {
                 const byte = try inc_reader.takeByte();

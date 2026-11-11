@@ -86,9 +86,16 @@ pub const Options = struct {
     target: *const std.Target = &builtin.target,
 };
 
-fn subArchName(target: *const std.Target, comptime family: std.Target.Cpu.Arch.Family, mappings: anytype) ?[]const u8 {
-    inline for (mappings) |mapping| {
-        if (target.cpu.has(family, mapping[0])) return mapping[1];
+fn subArchName(
+    target: *const std.Target,
+    comptime family: std.Target.Cpu.Arch.Family,
+    mappings: []const struct {
+        []const @field(std.Target, @tagName(family)).Feature,
+        []const u8,
+    },
+) ?[]const u8 {
+    for (mappings) |mapping| {
+        if (target.cpu.hasAll(family, mapping[0])) return mapping[1];
     }
 
     return null;
@@ -112,11 +119,28 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         .loongarch32 => "loongarch32",
         .loongarch64 => "loongarch64",
         .m68k => "m68k",
-        // MIPS sub-architectures are a bit irregular, so we handle them manually here.
-        .mips => if (target.cpu.has(.mips, .mips32r6)) "mipsisa32r6" else "mips",
-        .mipsel => if (target.cpu.has(.mips, .mips32r6)) "mipsisa32r6el" else "mipsel",
-        .mips64 => if (target.cpu.has(.mips, .mips64r6)) "mipsisa64r6" else "mips64",
-        .mips64el => if (target.cpu.has(.mips, .mips64r6)) "mipsisa64r6el" else "mips64el",
+        .mips,
+        .mipsf32,
+        .mipsf64,
+        .mipsf64n8,
+        .mipsn8,
+        => "mips",
+        .mipsel,
+        .mipsf32el,
+        .mipsf64el,
+        .mipsf64n8el,
+        .mipsn8el,
+        => "mipsel",
+        .mips64,
+        .mips64n8,
+        => "mips64",
+        .mips64el,
+        .mips64n8el,
+        => "mips64el",
+        .mipsr6 => "mipsisa32r6",
+        .mipsr6el => "mipsisa32r6el",
+        .mips64r6 => "mipsisa64r6",
+        .mips64r6el => "mipsisa64r6el",
         .msp430 => "msp430",
         .powerpc => "powerpc",
         .powerpcle => "powerpcle",
@@ -171,65 +195,64 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
     try llvm_triple.appendSlice(allocator, llvm_arch);
 
     const llvm_sub_arch: ?[]const u8 = switch (target.cpu.arch) {
-        .arm, .armeb, .thumb, .thumbeb => subArchName(target, .arm, .{
-            .{ .v4t, "v4t" },
-            .{ .v5t, "v5t" },
-            .{ .v5te, "v5te" },
-            .{ .v5tej, "v5tej" },
-            .{ .v6, "v6" },
-            .{ .v6k, "v6k" },
-            .{ .v6kz, "v6kz" },
-            .{ .v6m, "v6m" },
-            .{ .v6t2, "v6t2" },
-            .{ .v7a, "v7a" },
-            .{ .v7em, "v7em" },
-            .{ .v7m, "v7m" },
-            .{ .v7r, "v7r" },
-            .{ .v7ve, "v7ve" },
-            .{ .v8a, "v8a" },
-            .{ .v8_1a, "v8.1a" },
-            .{ .v8_2a, "v8.2a" },
-            .{ .v8_3a, "v8.3a" },
-            .{ .v8_4a, "v8.4a" },
-            .{ .v8_5a, "v8.5a" },
-            .{ .v8_6a, "v8.6a" },
-            .{ .v8_7a, "v8.7a" },
-            .{ .v8_8a, "v8.8a" },
-            .{ .v8_9a, "v8.9a" },
-            .{ .v8m, "v8m.base" },
-            .{ .v8m_main, "v8m.main" },
-            .{ .v8_1m_main, "v8.1m.main" },
-            .{ .v8r, "v8r" },
-            .{ .v9a, "v9a" },
-            .{ .v9_1a, "v9.1a" },
-            .{ .v9_2a, "v9.2a" },
-            .{ .v9_3a, "v9.3a" },
-            .{ .v9_4a, "v9.4a" },
-            .{ .v9_5a, "v9.5a" },
-            .{ .v9_6a, "v9.6a" },
-            .{ .v9_7a, "v9.7a" },
-        }),
+        .arm, .armeb, .thumb, .thumbeb => subArchName(target, .arm, &.{
+            .{ &.{ .rclass, .v8 }, "v8r" },
+            .{ &.{.v9_7a}, "v9.7a" },
+            .{ &.{.v9_6a}, "v9.6a" },
+            .{ &.{.v9_5a}, "v9.5a" },
+            .{ &.{.v9_4a}, "v9.4a" },
+            .{ &.{.v9_3a}, "v9.3a" },
+            .{ &.{.v9_2a}, "v9.2a" },
+            .{ &.{.v9_1a}, "v9.1a" },
+            .{ &.{.v9a}, "v9a" },
+            .{ &.{.v8_9a}, "v8.9a" },
+            .{ &.{.v8_8a}, "v8.8a" },
+            .{ &.{.v8_7a}, "v8.7a" },
+            .{ &.{.v8_6a}, "v8.6a" },
+            .{ &.{.v8_5a}, "v8.5a" },
+            .{ &.{.v8_4a}, "v8.4a" },
+            .{ &.{.v8_3a}, "v8.3a" },
+            .{ &.{.v8_2a}, "v8.2a" },
+            .{ &.{.v8_1a}, "v8.1a" },
+            .{ &.{.v8}, "v8a" },
+            .{ &.{.v8_1m_main}, "v8.1m.main" },
+            .{ &.{.v8m_main}, "v8m.main" },
+            .{ &.{ .mclass, .dsp, .v7 }, "v7em" },
+            .{ &.{ .mclass, .v7 }, "v7m" },
+            .{ &.{ .rclass, .v7 }, "v7r" },
+            .{ &.{ .v7, .virtualization }, "v7ve" },
+            .{ &.{.v7}, "v7a" },
+            .{ &.{.v6t2}, "v6t2" },
+            .{ &.{.v8m}, "v8m.base" },
+            .{ &.{.v6m}, "v6m" },
+            .{ &.{ .trustzone, .v6k }, "v6kz" },
+            .{ &.{.v6k}, "v6k" },
+            .{ &.{.v6}, "v6" },
+            .{ &.{.v5te}, "v5te" },
+            .{ &.{.v5t}, "v5t" },
+            .{ &.{.v4t}, "v4t" },
+        }) orelse "v4",
         .spirv32 => switch (target.os.tag) {
-            .vulkan, .opengl => subArchName(target, .spirv, .{
-                .{ .v1_6, "1.6" },
-                .{ .v1_5, "1.5" },
+            .vulkan, .opengl => subArchName(target, .spirv, &.{
+                .{ &.{.v1_6}, "1.6" },
+                .{ &.{.v1_5}, "1.5" },
             }),
-            else => subArchName(target, .spirv, .{
-                .{ .v1_6, "v1.6" },
-                .{ .v1_5, "v1.5" },
-                .{ .v1_4, "v1.4" },
-                .{ .v1_3, "v1.3" },
-                .{ .v1_2, "v1.2" },
-                .{ .v1_1, "v1.1" },
+            else => subArchName(target, .spirv, &.{
+                .{ &.{.v1_6}, "v1.6" },
+                .{ &.{.v1_5}, "v1.5" },
+                .{ &.{.v1_4}, "v1.4" },
+                .{ &.{.v1_3}, "v1.3" },
+                .{ &.{.v1_2}, "v1.2" },
+                .{ &.{.v1_1}, "v1.1" },
             }),
         },
-        .spirv64 => subArchName(target, .spirv, .{
-            .{ .v1_6, "v1.6" },
-            .{ .v1_5, "v1.5" },
-            .{ .v1_4, "v1.4" },
-            .{ .v1_3, "v1.3" },
-            .{ .v1_2, "v1.2" },
-            .{ .v1_1, "v1.1" },
+        .spirv64 => subArchName(target, .spirv, &.{
+            .{ &.{.v1_6}, "v1.6" },
+            .{ &.{.v1_5}, "v1.5" },
+            .{ &.{.v1_4}, "v1.4" },
+            .{ &.{.v1_3}, "v1.3" },
+            .{ &.{.v1_2}, "v1.2" },
+            .{ &.{.v1_1}, "v1.1" },
         }),
         else => null,
     };
@@ -328,39 +351,58 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
     try llvm_triple.append(allocator, '-');
 
     const llvm_abi = switch (target.abi) {
-        .none => if (target.os.tag == .maccatalyst) "macabi" else "unknown",
-        .gnu => "gnu",
-        .gnuabin32 => "gnuabin32",
-        .gnuabi64 => "gnuabi64",
-        .gnueabi => "gnueabi",
-        .gnueabihf => "gnueabihf",
-        .gnuf32 => "gnuf32",
-        .gnusf => "gnusf",
-        .gnux32 => "gnux32",
-        .ilp32 => "unknown",
-        .eabi => "eabi",
-        .eabihf => "eabihf",
-        .abin32 => "unknown",
-        .x32 => "muslx32", // https://github.com/ziglang/zig/issues/25649
+        .none => if (target.cpu.arch.isArm())
+            "eabihf"
+        else if (target.os.tag == .maccatalyst)
+            "macabi"
+        else
+            "unknown",
         .android => "android",
-        .androideabi => "androideabi",
+        .androidsf => if (target.cpu.arch.isArm())
+            "androideabi"
+        else
+            "android",
+        .gnu => if (target.cpu.arch.isArm())
+            "gnueabihf"
+        else
+            "gnu",
+        .gnuf32 => "gnuf32",
+        .gnun32, .gnun32sf => "gnuabin32",
+        .gnusf => if (target.cpu.arch.isArm())
+            "gnueabi"
+        else
+            "gnusf",
+        .gnux32 => "gnux32",
+        .msvc => "msvc",
         .musl => switch (target.os.tag) {
             // For WASI/Emscripten, "musl" refers to the libc, not really the ABI.
             // "unknown" provides better compatibility with LLVM-based tooling for these targets.
             .wasi, .emscripten => "unknown",
-            else => "musl",
+            else => if (target.cpu.arch.isArm())
+                "musleabihf"
+            else
+                "musl",
         },
-        .muslabin32 => "muslabin32",
-        .muslabi64 => "muslabi64",
-        .musleabi => "musleabi",
-        .musleabihf => "musleabihf",
         .muslf32 => "muslf32",
-        .muslsf => "muslsf",
+        .musln32, .musln32sf => "muslabin32",
+        .muslsf => if (target.cpu.arch.isArm())
+            "musleabi"
+        else
+            "muslsf",
         .muslx32 => "muslx32",
-        .msvc => "msvc",
+        .n32, .n32f32, .n32sf => "muslabin32", // https://github.com/ziglang/zig/issues/25649
+        .ohos, .ohossf => "ohos",
+        .sf => if (target.cpu.arch.isArm())
+            "eabi"
+        else
+            "unknown",
         .simulator => "simulator",
-        .ohos, .ohoseabi => "ohos",
-        .call0 => "unknown",
+        .x32, .x32sf => "muslx32", // https://github.com/ziglang/zig/issues/25649
+
+        .call0,
+        .f32,
+        .ilp32,
+        => "unknown",
     };
     try llvm_triple.appendSlice(allocator, llvm_abi);
 
@@ -470,16 +512,34 @@ pub const DataLayout = struct {
             .bpfeb => "E-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
             .bpfel => "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
             .msp430 => "e-m:e-p:16:16-i32:16-i64:16-f32:16-f64:16-a:8-n8:16-S16",
-            .mips => "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64",
-            .mipsel => "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64",
-            .mips64 => switch (target.abi) {
-                .gnuabin32, .muslabin32, .abin32 => "E-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
-                else => "E-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
-            },
-            .mips64el => switch (target.abi) {
-                .gnuabin32, .muslabin32, .abin32 => "e-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
-                else => "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
-            },
+            .mips,
+            .mipsf32,
+            .mipsf64,
+            .mipsf64n8,
+            .mipsn8,
+            .mipsr6,
+            => "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64",
+            .mipsel,
+            .mipsf32el,
+            .mipsf64el,
+            .mipsf64n8el,
+            .mipsn8el,
+            .mipsr6el,
+            => "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64",
+            .mips64,
+            .mips64n8,
+            .mips64r6,
+            => if (target.abi.isN32())
+                "E-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128"
+            else
+                "E-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
+            .mips64el,
+            .mips64n8el,
+            .mips64r6el,
+            => if (target.abi.isN32())
+                "e-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128"
+            else
+                "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
             .m68k => "E-m:e-p:32:16:32-i8:8:8-i16:16:16-i32:16:32-n8:16:32-a:0:16-S16",
             .powerpc => "E-m:e-p:32:32-Fn32-i64:64-n32",
             .powerpcle => "e-m:e-p:32:32-Fn32-i64:64-n32",
@@ -541,13 +601,12 @@ pub const DataLayout = struct {
                 "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-i128:128-f64:32:64-f80:32-n8:16:32-S128",
             .x86_64 => if (target.os.tag.isDarwin() or target.ofmt == .macho)
                 "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
-            else switch (target.abi) {
-                .gnux32, .muslx32, .x32 => "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
-                else => if ((target.os.tag == .windows or target.os.tag == .uefi) and target.ofmt == .coff)
-                    "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
-                else
-                    "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
-            },
+            else if (target.abi.isX32())
+                "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+            else if ((target.os.tag == .windows or target.os.tag == .uefi) and target.ofmt == .coff)
+                "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+            else
+                "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
             .spirv32 => switch (target.os.tag) {
                 .vulkan, .opengl => "e-ve-i64:64-n8:16:32:64-G10",
                 else => "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-n8:16:32:64-G1",

@@ -225,8 +225,22 @@ pub fn createEmpty(
         .hexagon,
         .mips,
         .mipsel,
+        .mipsf32,
+        .mipsf32el,
+        .mipsf64,
+        .mipsf64el,
+        .mipsf64n8,
+        .mipsf64n8el,
+        .mipsn8,
+        .mipsn8el,
+        .mipsr6,
+        .mipsr6el,
         .mips64,
         .mips64el,
+        .mips64n8,
+        .mips64n8el,
+        .mips64r6,
+        .mips64r6el,
         .powerpc,
         .powerpcle,
         .powerpc64,
@@ -4272,10 +4286,7 @@ pub fn sectionSize(self: *Elf, shndx: u32) u64 {
 }
 
 fn defaultEntrySymbolName(cpu_arch: std.Target.Cpu.Arch) []const u8 {
-    return switch (cpu_arch) {
-        .mips, .mipsel, .mips64, .mips64el => "__start",
-        else => "_start",
-    };
+    return if (cpu_arch.isMips()) "__start" else "_start";
 }
 
 fn createThunks(elf_file: *Elf, atom_list: *AtomList) !void {

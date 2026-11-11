@@ -3491,17 +3491,9 @@ const Block = struct {
     ) Error!Air.Inst.Ref {
         const pt = l.pt;
         const target = pt.zcu.getTarget();
-        const use_aeabi = target.cpu.arch.isArm() and switch (target.abi) {
-            .eabi,
-            .eabihf,
-            .musleabi,
-            .musleabihf,
-            .gnueabi,
-            .gnueabihf,
-            .android,
-            .androideabi,
-            => true,
-            else => false,
+        const use_aeabi = target.cpu.arch.isArm() and switch (target.os.tag) {
+            .windows, .uefi => false,
+            else => true,
         };
         const func: Air.CompilerRtFunc, const ret_cmp_op: std.math.CompareOperator = switch (float_ty.floatBits(target)) {
             // zig fmt: off

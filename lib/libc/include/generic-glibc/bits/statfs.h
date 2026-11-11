@@ -12,58 +12,62 @@
    Lesser General Public License for more details.
 
    You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library; if not, see
+   License along with the GNU C Library.  If not, see
    <https://www.gnu.org/licenses/>.  */
 
 #ifndef _SYS_STATFS_H
 # error "Never include <bits/statfs.h> directly; use <sys/statfs.h> instead."
 #endif
 
-#include <bits/types.h>
+#include <bits/types.h>  /* for __fsid_t and __fsblkcnt_t*/
 
 struct statfs
   {
-    __fsword_t f_type;
-    __fsword_t f_bsize;
+    long int f_type;
+#define f_fstyp f_type
+    long int f_bsize;
+    long int f_frsize;	/* Fragment size - unsupported */
 #ifndef __USE_FILE_OFFSET64
     __fsblkcnt_t f_blocks;
     __fsblkcnt_t f_bfree;
+    __fsblkcnt_t f_files;
+    __fsblkcnt_t f_ffree;
     __fsblkcnt_t f_bavail;
-    __fsfilcnt_t f_files;
-    __fsfilcnt_t f_ffree;
 #else
     __fsblkcnt64_t f_blocks;
     __fsblkcnt64_t f_bfree;
+    __fsblkcnt64_t f_files;
+    __fsblkcnt64_t f_ffree;
     __fsblkcnt64_t f_bavail;
-    __fsfilcnt64_t f_files;
-    __fsfilcnt64_t f_ffree;
 #endif
+
+	/* Linux specials */
     __fsid_t f_fsid;
-    __fsword_t f_namelen;
-    __fsword_t f_frsize;
-    __fsword_t f_flags;
-    __fsword_t f_spare[4];
+    long int f_namelen;
+    long int f_flags;
+    long int f_spare[5];
   };
 
 #ifdef __USE_LARGEFILE64
 struct statfs64
   {
-    __fsword_t f_type;
-    __fsword_t f_bsize;
+    long int f_type;
+#define f_fstyp f_type
+    long int f_bsize;
+    long int f_frsize;	/* Fragment size - unsupported */
     __fsblkcnt64_t f_blocks;
     __fsblkcnt64_t f_bfree;
+    __fsblkcnt64_t f_files;
+    __fsblkcnt64_t f_ffree;
     __fsblkcnt64_t f_bavail;
-    __fsfilcnt64_t f_files;
-    __fsfilcnt64_t f_ffree;
+
+	/* Linux specials */
     __fsid_t f_fsid;
-    __fsword_t f_namelen;
-    __fsword_t f_frsize;
-    __fsword_t f_flags;
-    __fsword_t f_spare[4];
+    long int f_namelen;
+    long int f_flags;
+    long int f_spare[5];
   };
 #endif
 
 /* Tell code we have these members.  */
 #define _STATFS_F_NAMELEN
-#define _STATFS_F_FRSIZE
-#define _STATFS_F_FLAGS

@@ -112,10 +112,7 @@ pub const Elf = struct {
             33...64 => .p64,
             else => return error.UnsupportedElfArchitecture,
         };
-        const default_entry_name: []const u8 = switch (target.cpu.arch) {
-            .mips, .mipsel, .mips64, .mips64el => "__start",
-            else => "_start",
-        };
+        const default_entry_name: []const u8 = if (target.cpu.arch.isMips()) "__start" else "_start";
         return .{
             .entry_name = switch (options.entry) {
                 .disabled => null,
@@ -464,7 +461,7 @@ fn coffLink(lld: *Lld, arena: Allocator) !void {
             try argv.append(gpa, try arena.print("-MLLVM:-target-abi={s}", .{mabi}));
         }
 
-        try argv.append(gpa, try arena.print("-MLLVM:-float-abi={s}", .{if (target.abi.float() == .hard) "hard" else "soft"}));
+        try argv.append(gpa, try arena.print("-MLLVM:-float-abi={s}", .{if (target.abi.float() == .soft) "soft" else "hard"}));
 
         if (comp.config.lto != .none) {
             switch (optimize_mode) {
@@ -869,11 +866,11 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
 
         try argv.appendSlice(gpa, &.{
             "-mllvm",
-            try arena.print("-float-abi={s}", .{if (target.abi.float() == .hard) "hard" else "soft"}),
+            try arena.print("-float-abi={s}", .{if (target.abi.float() == .soft) "soft" else "hard"}),
         });
 
         switch (target.cpu.arch) {
-            .armeb, .thumbeb => if (is_exe_or_dyn_lib and target.cpu.has(.arm, .has_v6)) try argv.append(gpa, "--be8"),
+            .armeb, .thumbeb => if (is_exe_or_dyn_lib and target.cpu.has(.arm, .v6)) try argv.append(gpa, "--be8"),
             else => {},
         }
 
@@ -1315,33 +1312,21 @@ fn getLDMOption(target: *const std.Target) ?[]const u8 {
         .hexagon => "hexagonelf",
         .loongarch32 => "elf32loongarch",
         .loongarch64 => "elf64loongarch",
-        .mips => switch (target.os.tag) {
+        .mips, .mipsf32, .mipsf64, .mipsf64n8, .mipsn8, .mipsr6 => switch (target.os.tag) {
             .freebsd => "elf32btsmip_fbsd",
             else => "elf32btsmip",
         },
-        .mipsel => switch (target.os.tag) {
+        .mipsel, .mipsf32el, .mipsf64el, .mipsf64n8el, .mipsn8el, .mipsr6el => switch (target.os.tag) {
             .freebsd => "elf32ltsmip_fbsd",
             else => "elf32ltsmip",
         },
-        .mips64 => switch (target.os.tag) {
-            .freebsd => switch (target.abi) {
-                .gnuabin32, .muslabin32, .abin32 => "elf32btsmipn32_fbsd",
-                else => "elf64btsmip_fbsd",
-            },
-            else => switch (target.abi) {
-                .gnuabin32, .muslabin32, .abin32 => "elf32btsmipn32",
-                else => "elf64btsmip",
-            },
+        .mips64, .mips64n8, .mips64r6 => switch (target.os.tag) {
+            .freebsd => if (target.abi.isN32()) "elf32btsmipn32_fbsd" else "elf64btsmip_fbsd",
+            else => if (target.abi.isN32()) "elf32btsmipn32" else "elf64btsmip",
         },
-        .mips64el => switch (target.os.tag) {
-            .freebsd => switch (target.abi) {
-                .gnuabin32, .muslabin32, .abin32 => "elf32ltsmipn32_fbsd",
-                else => "elf64ltsmip_fbsd",
-            },
-            else => switch (target.abi) {
-                .gnuabin32, .muslabin32, .abin32 => "elf32ltsmipn32",
-                else => "elf64ltsmip",
-            },
+        .mips64el, .mips64n8el, .mips64r6el => switch (target.os.tag) {
+            .freebsd => if (target.abi.isN32()) "elf32ltsmipn32_fbsd" else "elf64ltsmip_fbsd",
+            else => if (target.abi.isN32()) "elf32ltsmipn32" else "elf64ltsmip",
         },
         .msp430 => "msp430elf",
         .powerpc => switch (target.os.tag) {
@@ -1365,10 +1350,7 @@ fn getLDMOption(target: *const std.Target) ?[]const u8 {
             .freebsd => "elf_i386_fbsd",
             else => "elf_i386",
         },
-        .x86_64 => switch (target.abi) {
-            .gnux32, .muslx32, .x32 => "elf32_x86_64",
-            else => "elf_x86_64",
-        },
+        .x86_64 => if (target.abi.isX32()) "elf32_x86_64" else "elf_x86_64",
         else => null,
     };
 }

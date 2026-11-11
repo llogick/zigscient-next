@@ -38,6 +38,8 @@ pub const Feature = enum {
     fusion,
     htm,
     icbt,
+    isa_v203_instructions,
+    isa_v205_instructions,
     isa_v206_instructions,
     isa_v207_instructions,
     isa_v30_instructions,
@@ -100,7 +102,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.bpermd)] = .{
         .llvm_name = "bpermd",
         .description = "Enable the bpermd instruction",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .@"64bit",
+        }),
     };
     result[@backingInt(Feature.cmpb)] = .{
         .llvm_name = "cmpb",
@@ -291,15 +295,36 @@ pub const all_features = blk: {
         .description = "Enable icbt instruction",
         .dependencies = featureSet(&[_]Feature{}),
     };
+    result[@backingInt(Feature.isa_v203_instructions)] = .{
+        .llvm_name = null,
+        .description = "Enable instructions in ISA 2.03.",
+        .dependencies = featureSet(&[_]Feature{}),
+    };
+    result[@backingInt(Feature.isa_v205_instructions)] = .{
+        .llvm_name = null,
+        .description = "Enable instructions in ISA 2.05.",
+        .dependencies = featureSet(&[_]Feature{
+            .cmpb,
+            .isa_v203_instructions,
+        }),
+    };
     result[@backingInt(Feature.isa_v206_instructions)] = .{
         .llvm_name = "isa-v206-instructions",
         .description = "Enable instructions in ISA 2.06.",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .isa_v205_instructions,
+            .isel,
+            .mfocrf,
+        }),
     };
     result[@backingInt(Feature.isa_v207_instructions)] = .{
         .llvm_name = "isa-v207-instructions",
         .description = "Enable instructions in ISA 2.07.",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .icbt,
+            .isa_v206_instructions,
+            .partword_atomics,
+        }),
     };
     result[@backingInt(Feature.isa_v30_instructions)] = .{
         .llvm_name = "isa-v30-instructions",
@@ -323,7 +348,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.ldbrx)] = .{
         .llvm_name = "ldbrx",
         .description = "Enable the ldbrx instruction",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .@"64bit",
+        }),
     };
     result[@backingInt(Feature.lfiwax)] = .{
         .llvm_name = "lfiwax",
@@ -357,7 +384,7 @@ pub const all_features = blk: {
         .llvm_name = "paired-vector-memops",
         .description = "32Byte load and store instructions",
         .dependencies = featureSet(&[_]Feature{
-            .isa_v30_instructions,
+            .isa_v31_instructions,
             .vsx,
         }),
     };
@@ -432,7 +459,9 @@ pub const all_features = blk: {
     result[@backingInt(Feature.quadword_atomics)] = .{
         .llvm_name = "quadword-atomics",
         .description = "Enable lqarx and stqcx.",
-        .dependencies = featureSet(&[_]Feature{}),
+        .dependencies = featureSet(&[_]Feature{
+            .@"64bit",
+        }),
     };
     result[@backingInt(Feature.recipprec)] = .{
         .llvm_name = "recipprec",
@@ -605,9 +634,7 @@ pub const cpu = struct {
         .name = "a2",
         .llvm_name = "a2",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .booke,
-            .cmpb,
             .fcpsgn,
             .fpcvt,
             .fprnd,
@@ -617,10 +644,8 @@ pub const cpu = struct {
             .frsqrtes,
             .fsqrt,
             .isa_v206_instructions,
-            .isel,
             .ldbrx,
             .lfiwax,
-            .mfocrf,
             .recipprec,
             .slow_popcntd,
             .stfiwx,
@@ -671,7 +696,6 @@ pub const cpu = struct {
         .name = "e6500",
         .llvm_name = "e5500",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .altivec,
             .booke,
             .bpermd,
@@ -744,52 +768,11 @@ pub const cpu = struct {
             .stfiwx,
         }),
     };
-    pub const ppc64le: CpuModel = .{
-        .name = "ppc64le",
-        .llvm_name = "ppc64le",
-        .features = featureSet(&[_]Feature{
-            .@"64bit",
-            .bpermd,
-            .cmpb,
-            .crypto,
-            .direct_move,
-            .extdiv,
-            .fcpsgn,
-            .fpcvt,
-            .fprnd,
-            .fre,
-            .fres,
-            .frsqrte,
-            .frsqrtes,
-            .fsqrt,
-            .fuse_addi_load,
-            .fuse_addis_load,
-            .htm,
-            .icbt,
-            .isa_v206_instructions,
-            .isa_v207_instructions,
-            .isel,
-            .ldbrx,
-            .lfiwax,
-            .mfocrf,
-            .partword_atomics,
-            .popcntd,
-            .power8_vector,
-            .predictable_select_expensive,
-            .quadword_atomics,
-            .recipprec,
-            .stfiwx,
-            .two_const_nr,
-            .unaligned_fp_access,
-        }),
-    };
     pub const pwr10: CpuModel = .{
         .name = "pwr10",
         .llvm_name = "pwr10",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .bpermd,
-            .cmpb,
             .crypto,
             .direct_move,
             .extdiv,
@@ -808,14 +791,9 @@ pub const cpu = struct {
             .fuse_logical_add,
             .fuse_sha3,
             .fuse_store,
-            .icbt,
-            .isa_v206_instructions,
-            .isel,
             .ldbrx,
             .lfiwax,
-            .mfocrf,
             .mma,
-            .partword_atomics,
             .pcrelative_memops,
             .popcntd,
             .power10_vector,
@@ -831,9 +809,7 @@ pub const cpu = struct {
         .name = "pwr11",
         .llvm_name = "pwr11",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .bpermd,
-            .cmpb,
             .crypto,
             .direct_move,
             .extdiv,
@@ -852,14 +828,9 @@ pub const cpu = struct {
             .fuse_logical_add,
             .fuse_sha3,
             .fuse_store,
-            .icbt,
-            .isa_v206_instructions,
-            .isel,
             .ldbrx,
             .lfiwax,
-            .mfocrf,
             .mma,
-            .partword_atomics,
             .pcrelative_memops,
             .popcntd,
             .power10_vector,
@@ -876,7 +847,6 @@ pub const cpu = struct {
         .llvm_name = "pwr3",
         .features = featureSet(&[_]Feature{
             .@"64bit",
-            .altivec,
             .fres,
             .frsqrte,
             .mfocrf,
@@ -888,7 +858,6 @@ pub const cpu = struct {
         .llvm_name = "pwr4",
         .features = featureSet(&[_]Feature{
             .@"64bit",
-            .altivec,
             .fres,
             .frsqrte,
             .fsqrt,
@@ -901,7 +870,6 @@ pub const cpu = struct {
         .llvm_name = "pwr5",
         .features = featureSet(&[_]Feature{
             .@"64bit",
-            .altivec,
             .fre,
             .fres,
             .frsqrte,
@@ -916,13 +884,13 @@ pub const cpu = struct {
         .llvm_name = "pwr5x",
         .features = featureSet(&[_]Feature{
             .@"64bit",
-            .altivec,
             .fprnd,
             .fre,
             .fres,
             .frsqrte,
             .frsqrtes,
             .fsqrt,
+            .isa_v203_instructions,
             .mfocrf,
             .stfiwx,
         }),
@@ -933,7 +901,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .altivec,
-            .cmpb,
             .fcpsgn,
             .fprnd,
             .fre,
@@ -941,6 +908,7 @@ pub const cpu = struct {
             .frsqrte,
             .frsqrtes,
             .fsqrt,
+            .isa_v205_instructions,
             .lfiwax,
             .mfocrf,
             .recipprec,
@@ -953,7 +921,6 @@ pub const cpu = struct {
         .features = featureSet(&[_]Feature{
             .@"64bit",
             .altivec,
-            .cmpb,
             .fcpsgn,
             .fprnd,
             .fre,
@@ -961,6 +928,7 @@ pub const cpu = struct {
             .frsqrte,
             .frsqrtes,
             .fsqrt,
+            .isa_v205_instructions,
             .lfiwax,
             .mfocrf,
             .recipprec,
@@ -971,9 +939,7 @@ pub const cpu = struct {
         .name = "pwr7",
         .llvm_name = "pwr7",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .bpermd,
-            .cmpb,
             .extdiv,
             .fcpsgn,
             .fpcvt,
@@ -984,10 +950,8 @@ pub const cpu = struct {
             .frsqrtes,
             .fsqrt,
             .isa_v206_instructions,
-            .isel,
             .ldbrx,
             .lfiwax,
-            .mfocrf,
             .popcntd,
             .recipprec,
             .stfiwx,
@@ -1000,9 +964,7 @@ pub const cpu = struct {
         .name = "pwr8",
         .llvm_name = "pwr8",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .bpermd,
-            .cmpb,
             .crypto,
             .direct_move,
             .extdiv,
@@ -1017,14 +979,9 @@ pub const cpu = struct {
             .fuse_addi_load,
             .fuse_addis_load,
             .htm,
-            .icbt,
-            .isa_v206_instructions,
             .isa_v207_instructions,
-            .isel,
             .ldbrx,
             .lfiwax,
-            .mfocrf,
-            .partword_atomics,
             .popcntd,
             .power8_vector,
             .predictable_select_expensive,
@@ -1039,9 +996,7 @@ pub const cpu = struct {
         .name = "pwr9",
         .llvm_name = "pwr9",
         .features = featureSet(&[_]Feature{
-            .@"64bit",
             .bpermd,
-            .cmpb,
             .crypto,
             .direct_move,
             .extdiv,
@@ -1054,13 +1009,8 @@ pub const cpu = struct {
             .frsqrtes,
             .fsqrt,
             .htm,
-            .icbt,
-            .isa_v206_instructions,
-            .isel,
             .ldbrx,
             .lfiwax,
-            .mfocrf,
-            .partword_atomics,
             .popcntd,
             .power9_vector,
             .predictable_select_expensive,

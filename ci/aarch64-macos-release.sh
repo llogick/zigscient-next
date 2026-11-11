@@ -61,13 +61,7 @@ stage3-release/bin/zig build install test docs \
   -Denable-llvm \
   -Dno-lib \
   -Denable-macos-sdk \
-  -Dskip-spirv \
-  -Dskip-wasm \
-  -Dskip-freebsd \
-  -Dskip-netbsd \
-  -Dskip-openbsd \
-  -Dskip-windows \
-  -Dskip-linux
+  -Dskip-non-native
 
 # Ensure that the fuzzer at least compiles.
 stage3-release/bin/zig build test-std --fuzz=1K -Dno-lib -Dfuzz-only -Doptimize=ReleaseSafe

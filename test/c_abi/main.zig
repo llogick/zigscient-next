@@ -15949,6 +15949,7 @@ extern fn c_test_struct_f32() void;
 test "struct f32" {
     if (builtin.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerpc()) return error.SkipZigTest;
+    if (builtin.target.cpu.arch.isRiscv() and builtin.target.abi.float() == .hard32) return error.SkipZigTest;
     if (builtin.cpu.arch == .x86 and builtin.os.tag == .windows) return error.SkipZigTest;
 
     const s = c_ret_struct_f32();
@@ -15981,6 +15982,7 @@ test "struct f32, f32" {
     if (builtin.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerpc()) return error.SkipZigTest;
     if (builtin.cpu.arch.isRiscv32()) return error.SkipZigTest;
+    if (builtin.target.cpu.arch.isRiscv() and builtin.target.abi.float() == .hard32) return error.SkipZigTest;
     if (builtin.cpu.arch == .x86 and builtin.os.tag == .windows) return error.SkipZigTest;
 
     const s = c_ret_struct_f32_f32();
@@ -16123,6 +16125,7 @@ extern fn c_test_struct_void_f32() void;
 test "struct void, f32" {
     if (builtin.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerpc()) return error.SkipZigTest;
+    if (builtin.target.cpu.arch.isRiscv() and builtin.target.abi.float() == .hard32) return error.SkipZigTest;
     if (builtin.cpu.arch == .x86 and builtin.os.tag == .windows) return error.SkipZigTest;
 
     const s = c_ret_struct_void_f32();
@@ -16180,7 +16183,7 @@ extern fn c_test_struct_array_2_f32() void;
 test "struct [2]f32" {
     if (builtin.cpu.arch.isAarch64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
-    if (builtin.cpu.arch == .loongarch64 and builtin.abi.float() == .hard) return error.SkipZigTest;
+    if (builtin.cpu.arch == .loongarch64 and builtin.abi.float() != .soft) return error.SkipZigTest;
     if (builtin.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerpc()) return error.SkipZigTest;
     if (builtin.cpu.arch.isRiscv()) return error.SkipZigTest;
@@ -16351,7 +16354,7 @@ extern fn c_test_struct_array_1_sentinel_f32() void;
 test "struct [1:sentinel]f32" {
     if (builtin.cpu.arch.isAarch64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
-    if (builtin.cpu.arch == .loongarch64 and builtin.abi.float() == .hard) return error.SkipZigTest;
+    if (builtin.cpu.arch == .loongarch64 and builtin.abi.float() != .soft) return error.SkipZigTest;
     if (builtin.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerpc()) return error.SkipZigTest;
     if (builtin.cpu.arch.isRiscv()) return error.SkipZigTest;
@@ -16504,6 +16507,7 @@ test "struct f32 align(8)" {
     if (builtin.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerpc()) return error.SkipZigTest;
     if (builtin.cpu.arch.isRiscv32()) return error.SkipZigTest;
+    if (builtin.target.cpu.arch.isRiscv() and builtin.target.abi.float() == .hard32) return error.SkipZigTest;
     if (builtin.cpu.arch == .x86) return error.SkipZigTest;
 
     const s = c_ret_struct_f32a8();
@@ -16828,7 +16832,7 @@ test "struct [2]f64" {
     if (builtin.cpu.arch.isAarch64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isArm()) return error.SkipZigTest;
     if (builtin.cpu.arch == .hexagon) return error.SkipZigTest;
-    if (builtin.cpu.arch == .loongarch64 and builtin.abi.float() == .hard) return error.SkipZigTest;
+    if (builtin.cpu.arch == .loongarch64 and builtin.abi.float() != .soft) return error.SkipZigTest;
     if (builtin.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.cpu.arch.isPowerpc()) return error.SkipZigTest;
     if (builtin.cpu.arch.isRiscv()) return error.SkipZigTest;
@@ -17744,6 +17748,7 @@ test "f16 struct" {
     if (builtin.cpu.arch.isArm() and builtin.mode != .debug) return error.SkipZigTest;
     if (builtin.target.cpu.arch.isMips64()) return error.SkipZigTest;
     if (builtin.target.cpu.arch.isPowerpc32()) return error.SkipZigTest;
+    if (builtin.target.cpu.arch.isRiscv() and builtin.target.abi.float() == .hard32) return error.SkipZigTest;
     if (builtin.cpu.arch == .s390x) return error.SkipZigTest;
     if (builtin.cpu.arch == .x86 and builtin.os.tag == .windows) return error.SkipZigTest;
 

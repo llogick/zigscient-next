@@ -300,6 +300,8 @@ pub const Wip = struct {
                 .os_version_max = os_version_max,
                 .glibc_version = glibc_version != null,
                 .android_api_level = q.android_api_level != null,
+            },
+            .flags2 = .{
                 .dynamic_linker = dynamic_linker != null,
             },
             .cpu_features_add = .{ .value = if (cpu_features_add_empty) null else q.cpu_features_add },
@@ -375,6 +377,8 @@ pub const Wip = struct {
                 .os_version_max = os_version_max,
                 .glibc_version = glibc_version != null,
                 .android_api_level = android_api_level != null,
+            },
+            .flags2 = .{
                 .dynamic_linker = dynamic_linker != null,
             },
             .cpu_features_add = .{ .value = if (cpu_features_add_empty) null else t.cpu.features },
@@ -2249,6 +2253,7 @@ pub const ResolvedTarget = struct {
 
 pub const TargetQuery = struct {
     flags: Flags,
+    flags2: Flags2,
 
     cpu_features_add: Storage.FlagOptional(.flags, .cpu_features_add, std.Target.Cpu.Feature.Set),
     cpu_features_sub: Storage.FlagOptional(.flags, .cpu_features_sub, std.Target.Cpu.Feature.Set),
@@ -2257,7 +2262,7 @@ pub const TargetQuery = struct {
     os_version_max: Storage.FlagUnion(.flags, .os_version_max, OsVersion),
     glibc_version: Storage.FlagOptional(.flags, .glibc_version, String),
     android_api_level: Storage.FlagOptional(.flags, .android_api_level, u32),
-    dynamic_linker: Storage.FlagOptional(.flags, .dynamic_linker, String),
+    dynamic_linker: Storage.FlagOptional(.flags2, .dynamic_linker, String),
 
     pub const Index = enum(u32) {
         _,
@@ -2329,34 +2334,37 @@ pub const TargetQuery = struct {
 
     pub const Abi = enum(u5) {
         none,
+        call0,
+        f32,
+        ilp32,
+        msvc,
+        n32,
+        n32f32,
+        n32sf,
+        sf,
+        simulator,
+        x32,
+        x32sf,
+
+        android,
+        androidsf,
+
         gnu,
-        gnuabin32,
-        gnuabi64,
-        gnueabi,
-        gnueabihf,
         gnuf32,
+        gnun32,
+        gnun32sf,
         gnusf,
         gnux32,
-        eabi,
-        eabihf,
-        abin32,
-        x32,
-        ilp32,
-        android,
-        androideabi,
+
         musl,
-        muslabin32,
-        muslabi64,
-        musleabi,
-        musleabihf,
         muslf32,
+        musln32,
+        musln32sf,
         muslsf,
         muslx32,
-        msvc,
-        simulator,
+
         ohos,
-        ohoseabi,
-        call0,
+        ohossf,
 
         default,
 
@@ -2374,69 +2382,116 @@ pub const TargetQuery = struct {
         }
     };
 
-    pub const CpuArch = enum(u6) {
+    pub const CpuArch = enum(u7) {
         aarch64,
         aarch64_be,
+
         alpha,
+
         amdgcn,
+
         arc,
         arceb,
+
         arm,
         armeb,
+        thumb,
+        thumbeb,
+
         avr,
+
         bpfeb,
         bpfel,
+
         csky,
-        ez80,
+
         hexagon,
+
         hppa,
         hppa64,
+
         kvx,
+
         lanai,
+
         loongarch32,
         loongarch64,
+
         m68k,
+
         m88k,
+
         microblaze,
         microblazeel,
+
         mips,
         mipsel,
+        mipsf32,
+        mipsf32el,
+        mipsf64,
+        mipsf64el,
+        mipsf64n8,
+        mipsf64n8el,
+        mipsn8,
+        mipsn8el,
+        mipsr6,
+        mipsr6el,
         mips64,
         mips64el,
+        mips64n8,
+        mips64n8el,
+        mips64r6,
+        mips64r6el,
+
         msp430,
+
         nvptx,
         nvptx64,
+
         or1k,
+
         powerpc,
         powerpcle,
         powerpc64,
         powerpc64le,
+
         propeller,
+
         riscv32,
         riscv32be,
         riscv64,
         riscv64be,
+
         s390x,
+
         sh,
         sheb,
+
         sparc,
         sparc64,
+
         spork8,
+
         spirv32,
         spirv64,
-        thumb,
-        thumbeb,
+
         ve,
+
         wasm32,
         wasm64,
+
         x86_16,
         x86,
         x86c16,
         x86_64,
+
         xcore,
+
         xtensa,
         xtensaeb,
+
         z80,
+        ez80,
 
         default,
 
@@ -2557,7 +2612,11 @@ pub const TargetQuery = struct {
         os_version_max: OsVersion.Tag,
         glibc_version: bool,
         android_api_level: bool,
+    };
+
+    pub const Flags2 = bitpack struct(u32) {
         dynamic_linker: bool,
+        _: u31 = 0,
     };
 
     pub fn unwrapTarget(tq: *const TargetQuery, c: *const Configuration) std.Target {

@@ -1,4 +1,4 @@
-/* Generic implementation of the SysV message struct msqid_ds.
+/* Linux/MIPS implementation of the SysV message struct msqid_ds.
    Copyright (C) 2020-2026 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
@@ -31,12 +31,21 @@ struct msqid_ds
 #else
   struct ipc_perm msg_perm;	/* structure describing operation permission */
 # if __TIMESIZE == 32
+#  ifdef __MIPSEL__
   __time_t msg_stime;		/* time of last msgsnd command */
   unsigned long int __msg_stime_high;
   __time_t msg_rtime;		/* time of last msgsnd command */
   unsigned long int __msg_rtime_high;
   __time_t msg_ctime;		/* time of last change */
   unsigned long int __msg_ctime_high;
+#  else
+  unsigned long int __msg_stime_high;
+  __time_t msg_stime;		/* time of last msgsnd command */
+  unsigned long int __msg_rtime_high;
+  __time_t msg_rtime;		/* time of last msgsnd command */
+  unsigned long int __msg_ctime_high;
+  __time_t msg_ctime;		/* time of last change */
+#  endif
 # else
   __time_t msg_stime;		/* time of last msgsnd command */
   __time_t msg_rtime;		/* time of last msgsnd command */
