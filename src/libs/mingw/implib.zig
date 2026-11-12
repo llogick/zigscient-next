@@ -211,17 +211,30 @@ pub const Members = struct {
 const GetMembersError = GetImportDescriptorError || GetShortImportError;
 
 pub fn getMembers(
-    allocator: std.mem.Allocator,
+    gpa: std.mem.Allocator,
     module_def: def.ModuleDefinition,
     machine_type: std.coff.IMAGE.FILE.MACHINE,
 ) GetMembersError!Members {
     var members: Members = .{
-        .arena = std.heap.ArenaAllocator.init(allocator),
+        .arena = .init(gpa),
     };
-    const arena = members.arena.allocator();
     errdefer members.deinit();
 
-    try members.list.ensureTotalCapacity(arena, 3 + module_def.exports.items.len);
+    try appendMembers(&members, gpa, module_def, machine_type);
+
+    return members;
+}
+
+pub fn appendMembers(
+    members: *Members,
+    /// Used for temporary allocations that get cleaned up before returning.
+    gpa: std.mem.Allocator,
+    module_def: def.ModuleDefinition,
+    machine_type: std.coff.IMAGE.FILE.MACHINE,
+) GetMembersError!void {
+    const arena = members.arena.allocator();
+
+    try members.list.ensureUnusedCapacity(arena, 3 + module_def.exports.items.len);
     const module_import_name = try arena.dupe(u8, module_def.name orelse "");
     const library = std.fs.path.stem(module_import_name);
 
@@ -244,9 +257,9 @@ pub fn getMembers(
         e: *const def.ModuleDefinition.Export,
     };
     var renames: std.ArrayList(DeferredExport) = .empty;
-    defer renames.deinit(allocator);
+    defer renames.deinit(gpa);
     var regular_imports: std.array_hash_map.String([]const u8) = .empty;
-    defer regular_imports.deinit(allocator);
+    defer regular_imports.deinit(gpa);
 
     for (module_def.exports.items) |*e| {
         if (e.private) continue;
@@ -277,7 +290,7 @@ pub fn getMembers(
             } else if (std.mem.eql(u8, name, import_name)) {
                 import_name_type = .NAME;
             } else {
-                try renames.append(allocator, .{
+                try renames.append(gpa, .{
                     .name = name,
                     .e = e,
                 });
@@ -287,7 +300,7 @@ pub fn getMembers(
             import_name_type = getNameType(maybe_mangled_name, e.name, machine_type, module_def.type);
         }
 
-        try regular_imports.put(allocator, applyNameType(import_name_type, name), name);
+        try regular_imports.put(gpa, applyNameType(import_name_type, name), name);
         try members.list.append(arena, try getShortImport(arena, module_import_name, name, export_name, machine_type, e.ordinal, e.type, import_name_type));
     }
     for (renames.items) |deferred| {
@@ -316,8 +329,6 @@ pub fn getMembers(
             ));
         }
     }
-
-    return members;
 }
 
 /// Returns a slice of `name`

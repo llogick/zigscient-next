@@ -622,6 +622,7 @@ pub fn build(b: *std.Build) !void {
         const update_mingw_run = b.addRunArtifact(update_mingw_exe);
         update_mingw_run.addDirectoryArg(b.path("lib"));
         update_mingw_run.addDirectoryArg(.{ .cwd_relative = mingw_src_path });
+        update_mingw_run.addDirectoryArg(b.path("src/libs/mingw"));
 
         update_mingw_step.dependOn(&update_mingw_run.step);
     } else {
