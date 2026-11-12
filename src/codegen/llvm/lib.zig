@@ -172,7 +172,7 @@ pub fn initializeLLVMTarget(io: Io, arch: std.Target.Cpu.Arch) void {
                 bindings.LLVMInitializeCSKYTarget();
                 bindings.LLVMInitializeCSKYTargetInfo();
                 bindings.LLVMInitializeCSKYTargetMC();
-                // There is no LLVMInitializeCSKYAsmPrinter function.
+                bindings.LLVMInitializeCSKYAsmPrinter();
                 bindings.LLVMInitializeCSKYAsmParser();
             }
         },

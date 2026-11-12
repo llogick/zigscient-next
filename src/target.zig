@@ -233,6 +233,7 @@ pub fn hasLlvmSupport(target: *const std.Target, ofmt: std.Target.ObjectFormat) 
         .avr,
         .bpfel,
         .bpfeb,
+        .csky,
         .hexagon,
         .loongarch32,
         .loongarch64,
@@ -284,10 +285,6 @@ pub fn hasLlvmSupport(target: *const std.Target, ofmt: std.Target.ObjectFormat) 
         .ve,
         .xtensa,
         => true,
-
-        // LLVM backend exists but can produce neither assembly nor object files.
-        .csky,
-        => false,
 
         // Third-party LLVM backend exists.
         .ez80,

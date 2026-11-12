@@ -2786,7 +2786,7 @@ pub fn sigaction(sig: SIG, noalias act: ?*const Sigaction, noalias oact: ?*Sigac
     const mask_size = @sizeOf(@TypeOf(ksa.mask));
 
     if (act) |new| {
-        if (native_arch == .hexagon or is_loongarch or is_mips or native_arch == .or1k or is_riscv) {
+        if (native_arch == .csky or native_arch == .hexagon or is_loongarch or is_mips or native_arch == .or1k or is_riscv) {
             ksa = .{
                 .handler = new.handler.handler,
                 .flags = new.flags,

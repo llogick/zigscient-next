@@ -2042,29 +2042,12 @@ pub const Object = struct {
             } }, &o.builder);
         }
 
-        if (target.abi.float() == .soft) {
-            // `use-soft-float` means "use software routines for floating point computations". In
-            // other words, it configures how LLVM lowers basic float instructions like `fcmp`,
-            // `fadd`, etc. The float calling convention is configured on `TargetMachine` and is
-            // mostly an orthogonal concept, although obviously we do need hardware float operations
-            // to actually be able to pass float values in float registers.
-            //
-            // Ideally, we would support something akin to the `-mfloat-abi=softfp` option that GCC
-            // and Clang support for Arm32 and CSKY. We don't currently expose such an option in
-            // Zig, and using CPU features as the source of truth for this makes for a miserable
-            // user experience since people expect e.g. `arm-linux-gnusf` to mean full soft float
-            // unless the compiler has explicitly been told otherwise. (And note that our baseline
-            // CPU models almost all include FPU features!)
-            //
-            // Revisit this at some point.
+        // ARM and CSKY support `softfp` mode, so don't emit `use-soft-float` for them.
+        if (target.abi.float() == .soft and !(target.cpu.arch.isArm() or target.cpu.arch == .csky)) {
             try attributes.addFnAttr(.{ .string = .{
                 .kind = try o.builder.string("use-soft-float"),
                 .value = try o.builder.string("true"),
             } }, &o.builder);
-
-            // This prevents LLVM from using FPU/SIMD code for things like `memcpy`. As for the
-            // above, this should be revisited if `softfp` support is added.
-            try attributes.addFnAttr(.noimplicitfloat, &o.builder);
         }
 
         // The frontend should eventually offer options to control these.

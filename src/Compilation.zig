@@ -6800,7 +6800,11 @@ pub fn addCCArgs(
             // TODO: softfp for arm and csky
             try argv.append(
                 arena,
-                try arena.print("-mfloat-abi={s}", .{if (target.abi.float() == .soft) "soft" else "hard"}),
+                try arena.print("-mfloat-abi={s}", .{if (target.abi.float() != .soft) "hard" else b: {
+                    if (target.cpu.has(.arm, .fpregs)) break :b "softfp";
+                    if (target.cpu.hasAny(.csky, &.{ .floate1, .float7e60 })) break :b "softfp";
+                    break :b "soft";
+                }}),
             );
 
             if (target.cpu.arch.isMips()) {
@@ -6846,12 +6850,9 @@ pub fn addCCArgs(
 
     // Non-preprocessed assembly files don't support these flags.
     if (ext != .assembly) {
-        if (target.abi.float() == .soft) {
-            if (target_util.clangSupportsNoImplicitFloatArg(target)) {
-                try argv.append(arena, "-mno-implicit-float");
-            }
-
-            // Ensure that Clang emits the `use-soft-float` function attribute.
+        // Ensure that Clang emits the `use-soft-float` function attribute. ARM and CSKY support
+        // `softfp` mode, so don't emit `use-soft-float` for them.
+        if (target.abi.float() == .soft and !(target.cpu.arch.isArm() or target.cpu.arch == .csky)) {
             try argv.appendSlice(arena, &.{ "-Xclang", "-msoft-float" });
         }
 

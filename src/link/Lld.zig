@@ -805,6 +805,7 @@ fn elfLink(lld: *Lld, arena: Allocator) !void {
     if (output_mode == .Obj and
         (comp.config.lto != .none or
             target.cpu.arch.isBpf() or
+            target.cpu.arch == .csky or
             target.cpu.arch == .lanai or
             target.cpu.arch == .m68k or
             target.cpu.arch.isSparc() or
