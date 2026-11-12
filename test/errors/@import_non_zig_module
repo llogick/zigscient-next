@@ -1,0 +1,41 @@
+#zig build-obj {
+--name test -fno-emit-bin
+--dep message -Mroot=test.zig
+-Mmessage=message.txt
+#}
+
+#write message.txt {
+hello, world!
+this is a text file
+#}
+
+#write test.zig {
+const message = @import("message");
+comptime {
+    std.debug.assert(std.mem.eql(u8, message,
+        \\hello, world!
+        \\this is a text file
+        \\
+    ));
+}
+const std = @import("std");
+#}
+#update
+#check errors {
+test.zig:1:25: error: root file of module 'message' is not a Zig or ZON file
+test.zig:1:25: note: use '@embedFile' to read the contents of the module's root file
+#}
+
+#write test.zig {
+const message = @embedFile("message");
+comptime {
+    std.debug.assert(std.mem.eql(u8, message,
+        \\hello, world!
+        \\this is a text file
+        \\
+    ));
+}
+const std = @import("std");
+#}
+#update "switch to @embedFile"
+#check errors ""

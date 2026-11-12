@@ -12882,6 +12882,12 @@ fn zirImport(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.
         error.ModuleNotFound => return sema.fail(block, operand_src, "no module named '{s}' available within module '{s}'", .{
             operand, block.getFileScope(zcu).mod.?.fully_qualified_name,
         }),
+        error.NonZigModule => return sema.failWithOwnedErrorMsg(block, msg: {
+            const msg = try sema.errMsg(operand_src, "root file of module '{s}' is not a Zig or ZON file", .{operand});
+            errdefer msg.destroy(zcu.comp.gpa);
+            try sema.errNote(operand_src, msg, "use '@embedFile' to read the contents of the module's root file", .{});
+            break :msg msg;
+        }),
         error.IllegalZigImport => unreachable, // caught before semantic analysis
         error.OutOfMemory => |e| return e,
     };
