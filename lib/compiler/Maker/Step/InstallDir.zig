@@ -52,7 +52,7 @@ pub fn make(
 
     var all_cached = true;
     var it = try src_dir.walk(gpa);
-    defer it.deinit();
+    defer it.deinit(io);
     next_entry: while (it.next(io) catch |err| switch (err) {
         error.Canceled, error.OutOfMemory => |e| return e,
         else => |e| return step.fail(maker, "failed iterating dir {f}: {t}", .{ src_dir_path, e }),

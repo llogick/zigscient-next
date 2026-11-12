@@ -1527,7 +1527,7 @@ fn testFilenameLimits(io: Io, iterable_dir: Dir, maxed_filename: []const u8, max
     // High level walk API
     {
         var walker = try iterable_dir.walk(testing.allocator);
-        defer walker.deinit();
+        defer walker.deinit(io);
 
         var file_count: usize = 0;
         var dir_count: usize = 0;
@@ -2045,7 +2045,7 @@ test "walker" {
     }
 
     var walker = try tmp.dir.walk(testing.allocator);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     var num_walked: usize = 0;
     while (try walker.next(io)) |entry| {
@@ -2107,7 +2107,7 @@ test "selective walker, skip entries that start with ." {
     }
 
     var walker = try tmp.dir.walkSelectively(testing.allocator);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     var num_walked: usize = 0;
     while (try walker.next(io)) |entry| {
@@ -2144,7 +2144,7 @@ test "walker without fully iterating" {
     defer tmp.cleanup();
 
     var walker = try tmp.dir.walk(testing.allocator);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     // Create 2 directories inside the tmp directory, but then only iterate once before breaking.
     // This ensures that walker doesn't try to close the initial directory when not fully iterating.
@@ -2158,6 +2158,60 @@ test "walker without fully iterating" {
         break;
     }
     try expectEqual(@as(usize, 1), num_walked);
+}
+
+test "walker closes remaining dir handles after partial iteration" {
+    const io = testing.io;
+
+    var tmp = tmpDir(.{ .iterate = true });
+    defer tmp.cleanup();
+
+    try tmp.dir.createDirPath(io, "a/b");
+    try tmp.dir.writeFile(io, .{ .sub_path = "a/b/c", .data = "" });
+
+    var walker = try tmp.dir.walk(testing.allocator);
+
+    while (try walker.next(io)) |entry| {
+        // once we break, a and a/b is left open
+        if (mem.eql(u8, entry.basename, "c")) break;
+    }
+
+    const stack = walker.inner.stack.items;
+
+    try expectEqual(3, stack.len);
+
+    // Check that the non-initial dir handles get closed during deinit.
+    switch (native_os) {
+        .wasi => walker.deinit(io),
+        .windows => {
+            var handles: [2]std.os.windows.HANDLE = undefined;
+            for (stack[1..], &handles) |item, *handle| handle.* = item.iter.reader.dir.handle;
+            walker.deinit(io);
+
+            for (handles) |handle| {
+                var io_status_block: windows.IO_STATUS_BLOCK = undefined;
+                var device_info: windows.FILE.FS_DEVICE_INFORMATION = undefined;
+                const status = windows.ntdll.NtQueryVolumeInformationFile(
+                    handle,
+                    &io_status_block,
+                    &device_info,
+                    @sizeOf(windows.FILE.FS_DEVICE_INFORMATION),
+                    .Device,
+                );
+                try expectEqual(.INVALID_HANDLE, status);
+            }
+        },
+        else => {
+            var fds: [2]std.posix.fd_t = undefined;
+            for (stack[1..], &fds) |item, *fd| fd.* = item.iter.reader.dir.handle;
+            walker.deinit(io);
+
+            for (fds) |fd| {
+                const rc = std.posix.system.fcntl(fd, std.posix.F.GETFD, @as(usize, 0));
+                try expectEqual(std.posix.E.BADF, std.posix.system.errno(rc));
+            }
+        },
+    }
 }
 
 test "'.' and '..' in Dir functions" {

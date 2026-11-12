@@ -4864,7 +4864,7 @@ fn docsCopyModule(
     defer mod_dir.close(io);
 
     var walker = try mod_dir.walk(comp.gpa);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     var archiver: std.tar.Writer = .{ .underlying_writer = &tar_file_writer.interface };
     archiver.prefix = name;

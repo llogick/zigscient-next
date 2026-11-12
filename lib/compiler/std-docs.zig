@@ -203,7 +203,7 @@ fn serveSourcesTar(request: *std.http.Server.Request, context: *Context) !void {
     defer std_dir.close(io);
 
     var walker = try std_dir.walk(gpa);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     var archiver: std.tar.Writer = .{ .underlying_writer = &response.writer };
     archiver.prefix = "std";

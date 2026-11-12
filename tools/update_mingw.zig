@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
 
     {
         var walker = try dest_crt_dir.walk(arena);
-        defer walker.deinit();
+        defer walker.deinit(io);
 
         var fail = false;
 
@@ -86,7 +86,7 @@ pub fn main(init: std.process.Init) !void {
 
         {
             var walker = try dest_winpthreads_dir.walk(arena);
-            defer walker.deinit();
+            defer walker.deinit(io);
 
             var fail = false;
 
@@ -114,7 +114,7 @@ pub fn main(init: std.process.Init) !void {
     {
         // Also add all new def and def.in files.
         var walker = try src_crt_dir.walkSelectively(arena);
-        defer walker.deinit();
+        defer walker.deinit(io);
 
         var fail = false;
 

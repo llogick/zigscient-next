@@ -60,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
     // Copy updated files from upstream.
     {
         var walker = try dest_dir.walk(arena);
-        defer walker.deinit();
+        defer walker.deinit(io);
 
         walk: while (try walker.next(io)) |entry| {
             if (entry.kind != .file) continue;
@@ -99,7 +99,7 @@ pub fn main(init: std.process.Init) !void {
     defer generic_glibc_dir.close(io);
 
     var walker = try include_dir.walk(arena);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     walk: while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;

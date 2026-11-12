@@ -419,7 +419,7 @@ pub const JobQueue = struct {
 
         {
             var walker = try pkg_dir.walk(gpa);
-            defer walker.deinit();
+            defer walker.deinit(io);
 
             while (try walker.next(io)) |entry| {
                 const symlink = switch (entry.kind) {
@@ -1672,7 +1672,7 @@ fn recursiveDirectoryCopy(f: *Fetch, dir: Io.Dir, tmp_dir: Io.Dir) anyerror!void
     const io = f.job_queue.io;
     // Recursive directory copy.
     var it = try dir.walk(gpa);
-    defer it.deinit();
+    defer it.deinit(io);
     while (try it.next(io)) |entry| {
         switch (entry.kind) {
             .directory => {}, // omit empty directories
@@ -1768,7 +1768,7 @@ fn computeHash(f: *Fetch, pkg_path: Path, filter: Filter) RunError!ComputedHash 
     defer sus_dirs.deinit(gpa);
 
     var walker = try root_dir.walk(gpa);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     // Total number of bytes of file contents included in the package.
     var total_size: u64 = 0;

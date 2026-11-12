@@ -1649,7 +1649,7 @@ fn runRepositoryTest(io: Io, comptime format: Oid.Format, head_commit: []const u
     defer actual_files.deinit(testing.allocator);
     defer for (actual_files.items) |file| testing.allocator.free(file);
     var walker = try worktree.dir.walk(testing.allocator);
-    defer walker.deinit();
+    defer walker.deinit(io);
     while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;
         const path = try testing.allocator.dupe(u8, entry.path);

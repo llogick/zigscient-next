@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
     defer mingw_libcommon_dir.close(io);
 
     var walker = try mingw_libcommon_dir.walk(arena);
-    defer walker.deinit();
+    defer walker.deinit(io);
 
     while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;

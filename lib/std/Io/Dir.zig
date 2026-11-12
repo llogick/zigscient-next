@@ -294,8 +294,13 @@ pub const SelectiveWalker = struct {
         });
     }
 
-    pub fn deinit(self: *SelectiveWalker) void {
+    pub fn deinit(self: *SelectiveWalker, io: Io) void {
         self.name_buffer.deinit(self.allocator);
+        if (self.stack.items.len > 1) {
+            for (self.stack.items[1..]) |item| {
+                item.iter.reader.dir.close(io);
+            }
+        }
         self.stack.deinit(self.allocator);
     }
 
@@ -369,8 +374,8 @@ pub const Walker = struct {
         return entry;
     }
 
-    pub fn deinit(self: *Walker) void {
-        self.inner.deinit();
+    pub fn deinit(self: *Walker, io: Io) void {
+        self.inner.deinit(io);
     }
 
     /// Leaves the current directory, continuing walking one level up.

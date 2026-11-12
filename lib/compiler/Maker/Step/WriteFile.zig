@@ -83,7 +83,7 @@ pub fn make(
                 const src_dir_path = try maker.resolveLazyPath(arena, src_lazy_path, step_index);
 
                 var it = try src_dir.walk(gpa);
-                defer it.deinit();
+                defer it.deinit(io);
                 while (it.next(io) catch |err| switch (err) {
                     error.Canceled, error.OutOfMemory => |e| return e,
                     else => |e| return step.fail(maker, "failed iterating dir {f}: {t}", .{ src_dir_path, e }),
@@ -231,7 +231,7 @@ fn operate(
         }
 
         var it = try already_open_dir.walk(gpa);
-        defer it.deinit();
+        defer it.deinit(io);
         while (it.next(io) catch |err| switch (err) {
             error.Canceled, error.OutOfMemory => |e| return e,
             else => |e| return step.fail(maker, "failed iterating dir {f}: {t}", .{ src_dir_path, e }),
