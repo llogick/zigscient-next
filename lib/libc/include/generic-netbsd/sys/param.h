@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.738.2.9 2026/07/30 15:23:12 martin Exp $	*/
+/*	$NetBSD: param.h,v 1.738.2.11 2026/11/02 16:34:32 martin Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993

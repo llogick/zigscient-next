@@ -540,7 +540,7 @@ pub const Os = struct {
 
                             break :blk default_min;
                         },
-                        .max = .{ .major = 11, .minor = 0, .patch = 0 },
+                        .max = .{ .major = 11, .minor = 1, .patch = 0 },
                     },
                 },
                 .openbsd => .{
