@@ -14,8 +14,9 @@ const mem = std.mem;
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const log = std.log.scoped(.zcu);
-const deps_log = std.log.scoped(.zcu_deps);
-const refs_log = std.log.scoped(.zcu_refs);
+const stats_log = std.log.scoped(.@"zcu-stats");
+const deps_log = std.log.scoped(.@"zcu-deps");
+const refs_log = std.log.scoped(.@"zcu-refs");
 const BigIntConst = std.math.big.int.Const;
 const BigIntMutable = std.math.big.int.Mutable;
 const Target = std.Target;
@@ -5729,6 +5730,118 @@ fn updateTracyOutdatedPlots(zcu: *const Zcu) void {
     zcu.updateTracyPlot("outdated", zcu.outdated.count());
     zcu.updateTracyPlot("potentially_outdated", zcu.potentially_outdated.count());
     zcu.updateTracyPlot("outdated_ready", zcu.outdated_ready.funcs.count() + zcu.outdated_ready.other.count());
+}
+
+pub fn dumpStats(zcu: *const Zcu, arena: Allocator) Allocator.Error!void {
+    {
+        var d: InternPool.Dump = .{
+            .name = zcu.comp.root_name,
+            .arena = arena,
+            .ip = &zcu.intern_pool,
+            .err = null,
+        };
+        std.log.scoped(.@"ip-stats").debug("{f}", .{&d});
+        if (d.err) |err| return err;
+        std.log.scoped(.@"ip-values").debug("{f}", .{std.fmt.alt(&d, .formatAll)});
+        if (d.err) |err| return err;
+        std.log.scoped(.@"ip-generic-instances").debug("{f}", .{std.fmt.alt(&d, .formatGenericInstances)});
+        if (d.err) |err| return err;
+    }
+
+    stats_log.debug(
+        \\ZCU memory consumption ({q}):
+        \\  import_table                 {d: >7} capacity = {Bi: >10.2}
+        \\    -> `File` objects          {s: >7}            {Bi: >10.2}
+        \\  embed_table                  {d: >7} capacity = {Bi: >10.2}
+        \\  module_roots                 {d: >7} capacity = {Bi: >10.2}
+        \\  analysis_in_progress         {d: >7} capacity = {Bi: >10.2}
+        \\  potentially_outdated         {d: >7} capacity = {Bi: >10.2}
+        \\  outdated                     {d: >7} capacity = {Bi: >10.2}
+        \\  outdated_ready.funcs         {d: >7} capacity = {Bi: >10.2}
+        \\  outdated_ready.other         {d: >7} capacity = {Bi: >10.2}
+        \\  all_exports                  {d: >7} capacity = {Bi: >10.2}
+        \\  free_exports                 {d: >7} capacity = {Bi: >10.2}
+        \\  single_exports               {d: >7} capacity = {Bi: >10.2}
+        \\  multi_exports                {d: >7} capacity = {Bi: >10.2}
+        \\  compile_logs                 {d: >7} capacity = {Bi: >10.2}
+        \\  compile_log_lines            {d: >7} capacity = {Bi: >10.2}
+        \\  free_compile_log_lines       {d: >7} capacity = {Bi: >10.2}
+        \\  global_assembly              {d: >7} capacity = {Bi: >10.2}
+        \\    -> string bytes            {s: >7}            {Bi: >10.2}
+        \\  test_functions               {d: >7} capacity = {Bi: >10.2}
+        \\  reference_table              {d: >7} capacity = {Bi: >10.2}
+        \\  all_references               {d: >7} capacity = {Bi: >10.2}
+        \\  free_references              {d: >7} capacity = {Bi: >10.2}
+        \\  inline_reference_frames      {d: >7} capacity = {Bi: >10.2}
+        \\  free_inline_reference_frames {d: >7} capacity = {Bi: >10.2}
+        \\  type_reference_table         {d: >7} capacity = {Bi: >10.2}
+        \\  all_type_references          {d: >7} capacity = {Bi: >10.2}
+        \\  free_type_references         {d: >7} capacity = {Bi: >10.2}
+        \\  resolved_references          {d: >7} capacity = {Bi: >10.2}
+        \\
+    , .{
+        zcu.comp.root_name,
+        zcu.import_table.capacity(),
+        zcu.import_table.capacity() * @sizeOf(File.Index),
+        "",
+        zcu.import_table.capacity() * @sizeOf(File),
+        zcu.embed_table.capacity(),
+        zcu.embed_table.capacity() * @sizeOf(EmbedFile),
+        zcu.module_roots.capacity(),
+        zcu.module_roots.capacity() * (@sizeOf(*Module) + @sizeOf(File.Index.Optional)),
+        zcu.alive_files.capacity(),
+        zcu.alive_files.capacity() * (@sizeOf(File.Index) + @sizeOf(File.Reference)),
+        zcu.analysis_in_progress.capacity(),
+        zcu.analysis_in_progress.capacity() * (@sizeOf(AnalUnit) + @sizeOf(?*DependencyReason)),
+        zcu.potentially_outdated.capacity(),
+        zcu.potentially_outdated.capacity() * (@sizeOf(AnalUnit) + @sizeOf(u32)),
+        zcu.outdated.capacity(),
+        zcu.outdated.capacity() * (@sizeOf(AnalUnit) + @sizeOf(u32)),
+        zcu.outdated_ready.funcs.capacity(),
+        zcu.outdated_ready.funcs.capacity() * @sizeOf(InternPool.Index),
+        zcu.all_exports.capacity,
+        zcu.all_exports.capacity * @sizeOf(Export),
+        zcu.free_exports.capacity,
+        zcu.free_exports.capacity * @sizeOf(Export.Index),
+        zcu.single_exports.capacity(),
+        zcu.single_exports.capacity() * (@sizeOf(AnalUnit) + @sizeOf(Export.Index)),
+        zcu.multi_exports.capacity(),
+        zcu.multi_exports.capacity() * (@sizeOf(AnalUnit) + @sizeOf([2]u32)),
+        zcu.compile_logs.capacity(),
+        zcu.compile_logs.capacity() * @sizeOf(@TypeOf(zcu.compile_logs).KV),
+        zcu.compile_log_lines.capacity,
+        zcu.compile_log_lines.capacity * @sizeOf(CompileLogLine),
+        zcu.free_compile_log_lines.capacity,
+        zcu.free_compile_log_lines.capacity * @sizeOf(CompileLogLine.Index),
+        zcu.global_assembly.capacity(),
+        zcu.global_assembly.capacity() * (@sizeOf(AnalUnit) + @sizeOf([]u8)),
+        "",
+        global_asm_bytes: {
+            var n: usize = 0;
+            for (zcu.global_assembly.values()) |s| n += s.len;
+            break :global_asm_bytes n;
+        },
+        zcu.test_functions.capacity(),
+        zcu.test_functions.capacity() * @sizeOf(InternPool.Nav.Index),
+        zcu.reference_table.capacity(),
+        zcu.reference_table.capacity() * (@sizeOf(AnalUnit) + @sizeOf(u32)),
+        zcu.all_references.capacity,
+        zcu.all_references.capacity * @sizeOf(Reference),
+        zcu.free_references.capacity,
+        zcu.free_references.capacity * @sizeOf(u32),
+        zcu.inline_reference_frames.capacity,
+        zcu.inline_reference_frames.capacity * @sizeOf(InlineReferenceFrame),
+        zcu.free_inline_reference_frames.capacity,
+        zcu.free_inline_reference_frames.capacity * @sizeOf(InlineReferenceFrame.Index),
+        zcu.type_reference_table.capacity(),
+        zcu.type_reference_table.capacity() * (@sizeOf(AnalUnit) + @sizeOf(u32)),
+        zcu.all_type_references.capacity,
+        zcu.all_type_references.capacity * @sizeOf(TypeReference),
+        zcu.free_type_references.capacity,
+        zcu.free_type_references.capacity * @sizeOf(u32),
+        if (zcu.resolved_references) |*r| r.capacity() else 0,
+        if (zcu.resolved_references) |*r| r.capacity() * (@sizeOf(AnalUnit) + @sizeOf(?ResolvedReference)) else 0,
+    });
 }
 
 pub const Active = struct {

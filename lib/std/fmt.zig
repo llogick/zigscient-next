@@ -216,7 +216,7 @@ pub const Parser = struct {
     }
 };
 
-pub const ArgSetType = u32;
+pub const ArgSetType = u64;
 
 pub const ArgState = struct {
     next_arg: usize = 0,
@@ -239,7 +239,7 @@ pub const ArgState = struct {
         }
 
         // Mark this argument as used
-        self.used_args |= @as(ArgSetType, 1) << @as(u5, @intCast(next_index));
+        self.used_args |= @as(ArgSetType, 1) << @intCast(next_index);
         return next_index;
     }
 };

@@ -18,6 +18,6 @@ export fn entry() void {
 #}
 #update
 #check errors {
-test.zig:9:59: error: values of type 'type' must be comptime-known, but index value is runtime-known
-test.zig:9:58: note: types are not available at runtime
+test.zig:9:58: error: cannot load comptime-only type 'type'
+test.zig:9:59: note: pointer is runtime-known
 #}

@@ -3020,20 +3020,7 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
             try pt.processExports();
         }
 
-        {
-            var d: InternPool.Dump = .{
-                .name = comp.root_name,
-                .arena = arena,
-                .ip = &zcu.intern_pool,
-                .err = null,
-            };
-            std.log.scoped(.@"ip-stats").debug("{f}", .{&d});
-            if (d.err) |err| return err;
-            std.log.scoped(.@"ip-values").debug("{f}", .{std.fmt.alt(&d, .formatAll)});
-            if (d.err) |err| return err;
-            std.log.scoped(.@"ip-generic-instances").debug("{f}", .{std.fmt.alt(&d, .formatGenericInstances)});
-            if (d.err) |err| return err;
-        }
+        try zcu.dumpStats(arena);
     }
 
     if (comp.link_depfile) |depfile_path| if (comp.bin_file) |lf| {

@@ -705,7 +705,7 @@ pub fn print(w: *Writer, comptime fmt: []const u8, args: anytype) Error!void {
     const field_names = args_type_info.@"struct".field_names;
     const max_format_args = @typeInfo(std.fmt.ArgSetType).int.bits;
     if (field_names.len > max_format_args) {
-        @compileError("32 arguments max are supported per format call");
+        @compileError("64 arguments max are supported per format call");
     }
 
     @setEvalBranchQuota(@as(comptime_int, fmt.len) * 1000); // NOTE: We're upcasting as 16-bit usize overflows.

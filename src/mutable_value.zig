@@ -38,6 +38,9 @@ pub const MutableValue = union(enum) {
     pub const Aggregate = struct {
         ty: InternPool.Index,
         elems: []MutableValue,
+        /// For arrays/vectors of `u8`, this is the number of elements which prevent us from using
+        /// the more efficient`.bytes` representation. For other arrays, this value is meaningless.
+        non_trivial_elems: usize,
     };
     pub const Slice = struct {
         ty: InternPool.Index,
@@ -173,18 +176,28 @@ pub const MutableValue = union(enum) {
                             mv.* = .{ .aggregate = .{
                                 .ty = agg.ty,
                                 .elems = mut_elems,
+                                .non_trivial_elems = 0,
                             } };
                         }
                     },
                     .elems => |elems| {
                         assert(elems.len == ip.aggregateTypeLenIncludingSentinel(agg.ty));
                         const mut_elems = try arena.alloc(MutableValue, elems.len);
+                        const type_allows_bytes: bool = switch (Type.fromInterned(agg.ty).zigTypeTag(zcu)) {
+                            .array, .vector => Type.fromInterned(agg.ty).childType(zcu).toIntern() == .u8_type,
+                            else => false,
+                        };
+                        var non_trivial_elems: usize = 0;
                         for (elems, mut_elems) |interned_elem, *mut_elem| {
+                            if (type_allows_bytes and !isTrivialInt(.{ .interned = interned_elem }, zcu)) {
+                                non_trivial_elems += 1;
+                            }
                             mut_elem.* = .{ .interned = interned_elem };
                         }
                         mv.* = .{ .aggregate = .{
                             .ty = agg.ty,
                             .elems = mut_elems,
+                            .non_trivial_elems = non_trivial_elems,
                         } };
                     },
                     .repeated_elem => |val| {
@@ -202,6 +215,7 @@ pub const MutableValue = union(enum) {
                             mv.* = .{ .aggregate = .{
                                 .ty = agg.ty,
                                 .elems = mut_elems,
+                                .non_trivial_elems = if (isTrivialInt(.{ .interned = val }, zcu)) 0 else @intCast(len),
                             } };
                         }
                     },
@@ -230,6 +244,7 @@ pub const MutableValue = union(enum) {
                             mv.* = .{ .aggregate = .{
                                 .ty = ty_ip,
                                 .elems = elems,
+                                .non_trivial_elems = elems.len,
                             } };
                         } else {
                             const repeated_val = try arena.create(MutableValue);
@@ -283,6 +298,7 @@ pub const MutableValue = union(enum) {
                 mv.* = .{ .aggregate = .{
                     .ty = bytes.ty,
                     .elems = elems,
+                    .non_trivial_elems = 0,
                 } };
             },
             else => {},
@@ -317,6 +333,7 @@ pub const MutableValue = union(enum) {
                 mv.* = .{ .aggregate = .{
                     .ty = bytes.ty,
                     .elems = elems,
+                    .non_trivial_elems = 0,
                 } };
             },
             .repeated => |repeated| {
@@ -326,6 +343,7 @@ pub const MutableValue = union(enum) {
                 mv.* = .{ .aggregate = .{
                     .ty = repeated.ty,
                     .elems = elems,
+                    .non_trivial_elems = if (isTrivialInt(repeated.child.*, zcu)) 0 else @intCast(len),
                 } };
             },
             .slice, .aggregate => {},
@@ -354,7 +372,7 @@ pub const MutableValue = union(enum) {
     ) Allocator.Error!void {
         const zcu = pt.zcu;
         const ip = &zcu.intern_pool;
-        const is_trivial_int = field_val.isTrivialInt(zcu);
+        const is_trivial_int = isTrivialInt(field_val, zcu);
         try mv.unintern(pt, arena, is_trivial_int, true);
         switch (mv.*) {
             .interned,
@@ -379,7 +397,7 @@ pub const MutableValue = union(enum) {
                 if (Type.fromInterned(r.ty).zigTypeTag(zcu) != .@"struct" and
                     is_trivial_int and
                     Type.fromInterned(r.ty).childType(zcu).toIntern() == .u8_type and
-                    r.child.isTrivialInt(zcu))
+                    isTrivialInt(r.child.*, zcu))
                 {
                     // We can use the `bytes` representation.
                     const bytes = try arena.alloc(u8, @intCast(len_inc_sent));
@@ -398,38 +416,35 @@ pub const MutableValue = union(enum) {
                     mv.* = .{ .aggregate = .{
                         .ty = r.ty,
                         .elems = mut_elems,
+                        .non_trivial_elems = @intFromBool(!is_trivial_int) +
+                            (mut_elems.len - 1) * @as(usize, @intFromBool(!isTrivialInt(r.child.*, zcu))),
                     } };
                 }
             },
-            .aggregate => |a| {
+            .aggregate => |*a| {
+                const old_field_val = a.elems[field_idx];
                 a.elems[field_idx] = field_val;
-                const is_struct = Type.fromInterned(a.ty).zigTypeTag(zcu) == .@"struct";
-                // Attempt to switch to a more efficient representation.
-                const is_repeated = for (a.elems) |e| {
-                    if (!e.eqlTrivial(field_val)) break false;
-                } else true;
-                if (!is_struct and is_repeated) {
-                    // Switch to `repeated` repr
-                    const mut_repeated = try arena.create(MutableValue);
-                    mut_repeated.* = field_val;
-                    mv.* = .{ .repeated = .{
-                        .ty = a.ty,
-                        .child = mut_repeated,
-                    } };
-                } else if (!is_struct and is_trivial_int and Type.fromInterned(a.ty).childType(zcu).toIntern() == .u8_type) {
-                    // See if we can switch to `bytes` repr
-                    for (a.elems) |e| {
-                        if (!e.isTrivialInt(zcu)) break;
-                    } else {
-                        const bytes = try arena.alloc(u8, a.elems.len);
-                        for (a.elems, bytes) |elem_val, *b| {
-                            b.* = @intCast(Value.fromInterned(elem_val.interned).toUnsignedInt(zcu));
+                switch (Type.fromInterned(a.ty).zigTypeTag(zcu)) {
+                    .array, .vector => if (Type.fromInterned(a.ty).childType(zcu).toIntern() == .u8_type) {
+                        const old_was_trivial_int = isTrivialInt(old_field_val, zcu);
+                        if (old_was_trivial_int and !is_trivial_int) {
+                            a.non_trivial_elems += 1;
+                        } else if (!old_was_trivial_int and is_trivial_int) {
+                            a.non_trivial_elems -= 1;
+                            if (a.non_trivial_elems == 0) {
+                                // We are now able to switch to the `bytes` representation!
+                                const bytes = try arena.alloc(u8, a.elems.len);
+                                for (a.elems, bytes) |elem_val, *b| {
+                                    b.* = @intCast(Value.fromInterned(elem_val.interned).toUnsignedInt(zcu));
+                                }
+                                mv.* = .{ .bytes = .{
+                                    .ty = a.ty,
+                                    .data = bytes,
+                                } };
+                            }
                         }
-                        mv.* = .{ .bytes = .{
-                            .ty = a.ty,
-                            .data = bytes,
-                        } };
-                    }
+                    },
+                    else => {},
                 }
             },
         }

@@ -316,15 +316,16 @@ const PackValueBytes = struct {
             .array => {
                 // Each element is padded up to its ABI size. The final element does not have trailing padding.
                 const elem_ty = ty.childType(zcu);
-                const elems = try arena.alloc(InternPool.Index, @intCast(ty.arrayLen(zcu)));
+                const len = ty.arrayLen(zcu);
+                const maybe_sentinel = ty.sentinel(zcu);
+                const elems = try arena.alloc(InternPool.Index, @intCast(len + @intFromBool(maybe_sentinel != null)));
 
-                for (elems) |*elem| {
+                for (elems[0..@intCast(len)]) |*elem| {
                     elem.* = (try pack.get(elem_ty)).toIntern();
                 }
-
-                if (ty.sentinel(zcu)) |s| {
-                    _ = s; // TODO: validate sentinel was preserved!
-                    pack.padding(elem_ty.abiSize(zcu));
+                if (maybe_sentinel) |sentinel| {
+                    pack.padding(elem_ty.abiSize(zcu)); // TODO: validate sentinel was preserved!
+                    elems[@intCast(len)] = sentinel.toIntern();
                 }
 
                 return pt.aggregateValue(ty, elems);

@@ -87,8 +87,9 @@ pub fn RegisterManager(
                 max_id = @max(elem_id, max_id);
             }
 
-            comptime var map: [max_id - min_id + 1]std.math.IntFittingRange(0, set.len) = @splat(set.len);
-            inline for (set, 0..) |elem, elem_index| map[comptime elem.id() - min_id] = elem_index;
+            comptime var wip_map: [max_id - min_id + 1]std.math.IntFittingRange(0, set.len) = @splat(set.len);
+            inline for (set, 0..) |elem, elem_index| wip_map[comptime elem.id() - min_id] = elem_index;
+            const map = wip_map;
 
             const id_index = reg.id() -% min_id;
             if (id_index >= map.len) return null;

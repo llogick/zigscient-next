@@ -12,6 +12,6 @@ export fn foo() void {
 #}
 #update
 #check errors {
-test.zig:4:11: error: values of type 'type' must be comptime-known, but index value is runtime-known
-test.zig:4:10: note: types are not available at runtime
+test.zig:4:10: error: cannot load comptime-only type 'type'
+test.zig:4:11: note: pointer is runtime-known
 #}

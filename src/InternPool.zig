@@ -10647,23 +10647,21 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) Io.Writer.E
     const namespace_name_deps_size = namespace_name_deps_len * (@sizeOf(NamespaceNameKey) + 4);
 
     try w.print(
-        \\InternPool dependencies: {d} bytes
-        \\  {d} entries: {d} bytes
-        \\  {d} src_hash: {d} bytes
-        \\  {d} nav_val: {d} bytes
-        \\  {d} nav_ty: {d} bytes
-        \\  {d} func_ies: {d} bytes
-        \\  {d} type_layout: {d} bytes
-        \\  {d} struct_defaults: {d} bytes
-        \\  {d} source_file: {d} bytes
-        \\  {d} embed_file: {d} bytes
-        \\  {d} namespace: {d} bytes
-        \\  {d} namespace_name: {d} bytes
+        \\InternPool dependencies:
+        \\  entries          {d: >7}  {Bi: >10.2}
+        \\  src_hash         {d: >7}  {Bi: >10.2}
+        \\  nav_val          {d: >7}  {Bi: >10.2}
+        \\  nav_ty           {d: >7}  {Bi: >10.2}
+        \\  func_ies         {d: >7}  {Bi: >10.2}
+        \\  type_layout      {d: >7}  {Bi: >10.2}
+        \\  struct_defaults  {d: >7}  {Bi: >10.2}
+        \\  source_file      {d: >7}  {Bi: >10.2}
+        \\  embed_file       {d: >7}  {Bi: >10.2}
+        \\  namespace        {d: >7}  {Bi: >10.2}
+        \\  namespace_name   {d: >7}  {Bi: >10.2}
+        \\    total          {s: >7}  {Bi: >10.2}
         \\
     , .{
-        dep_entries_size + src_hash_deps_size + nav_val_deps_size + nav_ty_deps_size +
-            func_ies_deps_size + type_layout_deps_size + struct_defaults_deps_size + source_file_deps_size +
-            embed_file_deps_size + namespace_deps_size + namespace_name_deps_size,
         dep_entries_len,
         dep_entries_size,
         src_hash_deps_len,
@@ -10686,6 +10684,10 @@ fn dumpDependencyStatsFallible(ip: *const InternPool, w: *Io.Writer) Io.Writer.E
         namespace_deps_size,
         namespace_name_deps_len,
         namespace_name_deps_size,
+        "",
+        dep_entries_size + src_hash_deps_size + nav_val_deps_size + nav_ty_deps_size +
+            func_ies_deps_size + type_layout_deps_size + struct_defaults_deps_size + source_file_deps_size +
+            embed_file_deps_size + namespace_deps_size + namespace_name_deps_size,
     });
 }
 
@@ -10693,32 +10695,84 @@ fn dumpStatsFallible(ip: *const InternPool, arena: Allocator, w: *Io.Writer) (Al
     var items_len: usize = 0;
     var extra_len: usize = 0;
     var limbs_len: usize = 0;
+    var strings_len: usize = 0;
+    var string_bytes_len: usize = 0;
+    var tracked_insts_len: usize = 0;
+    var maps_len: usize = 0;
+    var navs_len: usize = 0;
+    var comptime_units_len: usize = 0;
+    var namespaces_len: usize = 0;
     for (ip.locals) |*local| {
         items_len += local.mutate.items.len;
         extra_len += local.mutate.extra.len;
         limbs_len += local.mutate.limbs.len;
+        strings_len += local.mutate.strings.len;
+        string_bytes_len += local.mutate.string_bytes.len;
+        tracked_insts_len += local.mutate.tracked_insts.len;
+        maps_len += local.mutate.maps.len;
+        navs_len += local.mutate.navs.len;
+        comptime_units_len += local.mutate.comptime_units.len;
+        const namespaces_buckets_len = local.mutate.namespaces.buckets_list.len;
+        if (namespaces_buckets_len > 0) {
+            for (
+                local.shared.namespaces.view().items(.@"0")[0 .. namespaces_buckets_len - 1],
+            ) |namespace_bucket| {
+                namespaces_len += namespace_bucket.len;
+            }
+            namespaces_len += local.mutate.namespaces.last_bucket_len;
+        }
     }
+
+    // TODO: map overhead size is not taken into account
+
     const items_size = (1 + 4) * items_len;
     const extra_size = 4 * extra_len;
     const limbs_size = 8 * limbs_len;
-
-    // TODO: map overhead size is not taken into account
-    const total_size = items_size + extra_size + limbs_size;
+    const strings_size = 4 * strings_len;
+    const tracked_insts_size = 4 * tracked_insts_len;
+    const maps_size = @sizeOf(FieldMap) * maps_len;
+    const navs_size = @sizeOf(Nav.Repr) * navs_len;
+    const comptime_units_size = @sizeOf(ComptimeUnit) * comptime_units_len;
+    const namespaces_size = @sizeOf(Zcu.Namespace) * namespaces_len;
 
     try w.print(
-        \\InternPool values: {d} bytes
-        \\  {d} items: {d} bytes
-        \\  {d} extra: {d} bytes
-        \\  {d} limbs: {d} bytes
+        \\InternPool locals:
+        \\  items           {d: >8}  {Bi: >10.2}
+        \\  extra           {d: >8}  {Bi: >10.2}
+        \\  limbs           {d: >8}  {Bi: >10.2}
+        \\  strings         {d: >8}  {Bi: >10.2}
+        \\  string_bytes    {s: >8}  {Bi: >10.2}
+        \\  tracked_insts   {d: >8}  {Bi: >10.2}
+        \\  maps            {d: >8}  {Bi: >10.2}
+        \\  navs            {d: >8}  {Bi: >10.2}
+        \\  comptime_units  {d: >8}  {Bi: >10.2}
+        \\  namespaces      {d: >8}  {Bi: >10.2}
+        \\    total         {s: >8}  {Bi: >10.2}
         \\
     , .{
-        total_size,
         items_len,
         items_size,
         extra_len,
         extra_size,
         limbs_len,
         limbs_size,
+        strings_len,
+        strings_size,
+        "",
+        string_bytes_len,
+        tracked_insts_len,
+        tracked_insts_size,
+        maps_len,
+        maps_size,
+        navs_len,
+        navs_size,
+        comptime_units_len,
+        comptime_units_size,
+        namespaces_len,
+        namespaces_size,
+        "",
+        items_size + extra_size + limbs_size + strings_size + string_bytes_len +
+            tracked_insts_size + maps_size + navs_size + comptime_units_size + namespaces_size,
     });
 
     const TagStats = struct {
@@ -10985,7 +11039,7 @@ fn dumpStatsFallible(ip: *const InternPool, arena: Allocator, w: *Io.Writer) (Al
     const len = @min(50, counts.count());
     try w.print("  top 50 tags:\n", .{});
     for (counts.keys()[0..len], counts.values()[0..len]) |tag, stats| {
-        try w.print("    {t}: {d} occurrences, {d} total bytes\n", .{ tag, stats.count, stats.bytes });
+        try w.print("    {t}: {d} occurrences, total size {Bi:.2}\n", .{ tag, stats.count, stats.bytes });
     }
 }
 
