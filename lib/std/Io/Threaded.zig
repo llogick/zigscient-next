@@ -13337,7 +13337,7 @@ fn netSendManyPosix(
                 .iov = iovec[0..1],
                 .iovlen = 1,
                 .control = @constCast(message.control.ptr),
-                .controllen = message.control.len,
+                .controllen = @intCast(message.control.len),
                 .flags = 0,
             },
             .len = undefined, // Populated by calling sendmmsg below.

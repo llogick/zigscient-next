@@ -8,6 +8,21 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 
+// std requires a newer glibc version than we're testing here. Avoid taking a
+// dependency on any std code that links newer glibc symbols.
+pub const panic = std.debug.FullPanic(panicFn);
+fn panicFn(msg: []const u8, _: ?usize) noreturn {
+    _ = std.c.write(2, msg.ptr, msg.len);
+    _ = std.c.write(2, "\n", 1);
+    std.c.abort();
+}
+pub const std_options: std.Options = .{
+    .enable_segfault_handler = false,
+    .unexpected_error_tracing = false,
+};
+pub const std_options_debug_threaded_io: ?*std.Io.Threaded = null;
+pub const std_options_debug_io: std.Io = unreachable;
+
 const c_malloc = @import("malloc.h"); // for reallocarray
 const c_stdlib = @import("stdlib.h"); // for atexit
 const c_string = @import("string.h"); // for strlcpy
@@ -19,11 +34,9 @@ extern "c" fn fstatat(dirfd: i32, path: [*:0]const u8, buf: [*]const u8, flag: u
 extern "c" fn stat(noalias path: [*:0]const u8, noalias buf: [*]const u8) c_int;
 
 // PR #17034 - fstat moved between libc_nonshared and libc
-fn checkStat() !void {
-    const cwd_fd = std.Io.Dir.cwd().handle;
-
+fn checkStat() void {
     var buf: [256]u8 = @splat(0);
-    var result = fstatat(cwd_fd, "a_file_that_definitely_does_not_exist", &buf, 0);
+    var result = fstatat(std.c.AT.FDCWD, "a_file_that_definitely_does_not_exist", &buf, 0);
     assert(result == -1);
     assert(std.posix.errno(result) == .NOENT);
 
@@ -33,18 +46,18 @@ fn checkStat() !void {
 }
 
 // PR #17607 - reallocarray not visible in headers
-fn checkReallocarray() !void {
+fn checkReallocarray() void {
     // reallocarray was introduced in v2.26
     if (comptime glibc_ver.order(.{ .major = 2, .minor = 26, .patch = 0 }) == .lt) {
         if (@hasDecl(c_malloc, "reallocarray")) {
             @compileError("Before v2.26 'malloc.h' does not define 'reallocarray'");
         }
     } else {
-        return try checkReallocarray_v2_26();
+        checkReallocarray_v2_26();
     }
 }
 
-fn checkReallocarray_v2_26() !void {
+fn checkReallocarray_v2_26() void {
     const size = 16;
     const tenX = c_malloc.reallocarray(c_malloc.NULL, 10, size);
     const elevenX = c_malloc.reallocarray(tenX, 11, size);
@@ -54,17 +67,17 @@ fn checkReallocarray_v2_26() !void {
 }
 
 // getauxval introduced in v2.16
-fn checkGetAuxVal() !void {
+fn checkGetAuxVal() void {
     if (comptime glibc_ver.order(.{ .major = 2, .minor = 16, .patch = 0 }) == .lt) {
         if (@hasDecl(std.c, "getauxval")) {
             @compileError("Before v2.16 glibc does not define 'getauxval'");
         }
     } else {
-        try checkGetAuxVal_v2_16();
+        checkGetAuxVal_v2_16();
     }
 }
 
-fn checkGetAuxVal_v2_16() !void {
+fn checkGetAuxVal_v2_16() void {
     const base = std.c.getauxval(std.elf.AT.BASE);
     const pgsz = std.c.getauxval(std.elf.AT.PAGESZ);
 
@@ -73,17 +86,17 @@ fn checkGetAuxVal_v2_16() !void {
 }
 
 // strlcpy introduced in v2.38, which is newer than many installed glibcs
-fn checkStrlcpy() !void {
+fn checkStrlcpy() void {
     if (comptime glibc_ver.order(.{ .major = 2, .minor = 38, .patch = 0 }) == .lt) {
         if (@hasDecl(c_string, "strlcpy")) {
             @compileError("Before v2.38 glibc does not define 'strlcpy'");
         }
     } else {
-        try checkStrlcpy_v2_38();
+        checkStrlcpy_v2_38();
     }
 }
 
-fn checkStrlcpy_v2_38() !void {
+fn checkStrlcpy_v2_38() void {
     var buf: [99]u8 = undefined;
     const used = c_string.strlcpy(&buf, "strlcpy works!", buf.len);
     assert(used == 14);
@@ -94,18 +107,18 @@ fn forceExit0Callback() callconv(.c) void {
     std.c.exit(0); // Override the main() exit code
 }
 
-fn checkAtExit() !void {
+fn checkAtExit() void {
     const result = c_stdlib.atexit(forceExit0Callback);
     assert(result == 0);
 }
 
 pub fn main() !u8 {
-    try checkStat();
-    try checkReallocarray();
-    try checkStrlcpy();
+    checkStat();
+    checkReallocarray();
+    checkStrlcpy();
 
-    try checkGetAuxVal();
-    try checkAtExit();
+    checkGetAuxVal();
+    checkAtExit();
 
     std.c.exit(1); // overridden by atexit() callback
 }

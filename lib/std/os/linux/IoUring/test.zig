@@ -11,8 +11,8 @@ const IoUring = std.os.linux.IoUring;
 const BufferGroup = IoUring.BufferGroup;
 
 const posix = std.posix;
-const iovec = posix.iovec;
-const iovec_const = posix.iovec_const;
+const iovec = linux.iovec;
+const iovec_const = linux.iovec_const;
 
 comptime {
     assert(builtin.os.tag == .linux);

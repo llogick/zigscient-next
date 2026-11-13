@@ -19,10 +19,6 @@ const is_ppc = native_arch.isPowerpc();
 const is_riscv = native_arch.isRiscv();
 const is_sparc = native_arch.isSparc();
 const is_hppa = native_arch.isHppa();
-const iovec = std.posix.iovec;
-const iovec_const = std.posix.iovec_const;
-const winsize = std.posix.winsize;
-const ACCMODE = std.posix.ACCMODE;
 
 test {
     if (builtin.os.tag == .linux) {
@@ -3579,6 +3575,35 @@ pub fn tee(src: fd_t, dest: fd_t, len: usize, flags: u32) usize {
         flags,
     );
 }
+
+pub const iovec = extern struct {
+    base: [*]u8,
+    len: usize,
+};
+pub const iovec_const = extern struct {
+    base: [*]const u8,
+    len: usize,
+};
+
+pub const winsize = extern struct {
+    row: u16,
+    col: u16,
+    xpixel: u16,
+    ypixel: u16,
+};
+
+pub const ACCMODE = enum(u2) {
+    RDONLY = 0,
+    WRONLY = 1,
+    RDWR = 2,
+};
+
+pub const LOCK = struct {
+    pub const SH = 1;
+    pub const EX = 2;
+    pub const NB = 4;
+    pub const UN = 8;
+};
 
 pub const Sysinfo = if (native_abi.isX32())
     extern struct {
@@ -9171,7 +9196,12 @@ pub const V = if (is_mips) enum(u32) {
     EOL2 = 16,
 };
 
-pub const TCSA = std.posix.TCSA;
+pub const TCSA = enum(c_uint) {
+    NOW,
+    DRAIN,
+    FLUSH,
+    _,
+};
 
 pub const sgttyb = if (is_mips or is_ppc or is_sparc) extern struct {
     ispeed: c_char,

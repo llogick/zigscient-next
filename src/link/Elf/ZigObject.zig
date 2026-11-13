@@ -1410,11 +1410,11 @@ fn updateNavCode(
     if (elf_file.base.child_pid) |pid| {
         switch (builtin.os.tag) {
             .linux => {
-                var code_vec: [1]std.posix.iovec_const = .{.{
+                var code_vec: [1]std.os.linux.iovec_const = .{.{
                     .base = code.ptr,
                     .len = code.len,
                 }};
-                var remote_vec: [1]std.posix.iovec_const = .{.{
+                var remote_vec: [1]std.os.linux.iovec_const = .{.{
                     .base = @as([*]u8, @ptrFromInt(@as(usize, @intCast(sym.address(.{}, elf_file))))),
                     .len = code.len,
                 }};
@@ -1980,11 +1980,11 @@ fn writeTrampoline(tr_sym: Symbol, target: Symbol, elf_file: *Elf) !void {
     if (elf_file.base.child_pid) |pid| {
         switch (builtin.os.tag) {
             .linux => {
-                var local_vec: [1]std.posix.iovec_const = .{.{
+                var local_vec: [1]std.os.linux.iovec_const = .{.{
                     .base = out.ptr,
                     .len = out.len,
                 }};
-                var remote_vec: [1]std.posix.iovec_const = .{.{
+                var remote_vec: [1]std.os.linux.iovec_const = .{.{
                     .base = @as([*]u8, @ptrFromInt(@as(usize, @intCast(source_addr)))),
                     .len = out.len,
                 }};

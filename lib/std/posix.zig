@@ -213,84 +213,16 @@ pub const R_OK = system.R_OK;
 pub const W_OK = system.W_OK;
 pub const X_OK = system.X_OK;
 
-pub const iovec = extern struct {
-    base: [*]u8,
-    len: usize,
-};
+pub const iovec = system.iovec;
+pub const iovec_const = system.iovec_const;
 
-pub const iovec_const = extern struct {
-    base: [*]const u8,
-    len: usize,
-};
+pub const ACCMODE = system.ACCMODE;
+pub const TCSA = system.TCSA;
+pub const winsize = system.winsize;
 
-pub const ACCMODE = switch (native_os) {
-    // POSIX has a note about the access mode values:
-    //
-    // In historical implementations the value of O_RDONLY is zero. Because of
-    // that, it is not possible to detect the presence of O_RDONLY and another
-    // option. Future implementations should encode O_RDONLY and O_WRONLY as
-    // bit flags so that: O_RDONLY | O_WRONLY == O_RDWR
-    //
-    // In practice SerenityOS is the only system supported by Zig that
-    // implements this suggestion.
-    // https://github.com/SerenityOS/serenity/blob/4adc51fdf6af7d50679c48b39362e062f5a3b2cb/Kernel/API/POSIX/fcntl.h#L28-L30
-    .serenity => enum(u2) {
-        NONE = 0,
-        RDONLY = 1,
-        WRONLY = 2,
-        RDWR = 3,
-    },
-    else => enum(u2) {
-        RDONLY = 0,
-        WRONLY = 1,
-        RDWR = 2,
-    },
-};
+pub const LOCK = system.LOCK;
 
-pub const TCSA = switch (native_os) {
-    .illumos => system.TCSA,
-    else => enum(c_uint) {
-        NOW,
-        DRAIN,
-        FLUSH,
-        _,
-    },
-};
-
-pub const winsize = extern struct {
-    row: u16,
-    col: u16,
-    xpixel: u16,
-    ypixel: u16,
-};
-
-pub const LOCK = struct {
-    pub const SH = 1;
-    pub const EX = 2;
-    pub const NB = 4;
-    pub const UN = 8;
-};
-
-pub const LOG = struct {
-    /// system is unusable
-    pub const EMERG = 0;
-    /// action must be taken immediately
-    pub const ALERT = 1;
-    /// critical conditions
-    pub const CRIT = 2;
-    /// error conditions
-    pub const ERR = 3;
-    /// warning conditions
-    pub const WARNING = 4;
-    /// normal but significant condition
-    pub const NOTICE = 5;
-    /// informational
-    pub const INFO = 6;
-    /// debug-level messages
-    pub const DEBUG = 7;
-};
-
-pub const socket_t = fd_t;
+pub const socket_t = system.socket_t;
 
 /// Obtains errno from the return value of a system function call.
 ///

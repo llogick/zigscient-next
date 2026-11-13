@@ -79,3 +79,12 @@ pub const mlockall = {};
 pub const munlockall = {};
 
 pub const cmsg_align = {};
+
+pub const iovec = extern struct {
+    base: [*]u8,
+    len: usize,
+};
+pub const iovec_const = extern struct {
+    base: [*]const u8,
+    len: usize,
+};

@@ -373,7 +373,7 @@ pub const ReadBuffer = union(enum) {
     buffer: []u8,
 
     /// io_uring will read directly into these buffers using readv.
-    iovecs: []const posix.iovec,
+    iovecs: []const linux.iovec,
 
     /// io_uring will select a buffer that has previously been provided with `provide_buffers`.
     /// The buffer group reference by `group_id` must contain at least one buffer for the read to work.
@@ -456,7 +456,7 @@ pub fn read_fixed(
     self: *IoUring,
     user_data: u64,
     fd: linux.fd_t,
-    buffer: *posix.iovec,
+    buffer: *linux.iovec,
     offset: u64,
     buffer_index: u16,
 ) !*linux.io_uring_sqe {
@@ -474,7 +474,7 @@ pub fn writev(
     self: *IoUring,
     user_data: u64,
     fd: linux.fd_t,
-    iovecs: []const posix.iovec_const,
+    iovecs: []const linux.iovec_const,
     offset: u64,
 ) !*linux.io_uring_sqe {
     const sqe = try self.get_sqe();
@@ -492,7 +492,7 @@ pub fn write_fixed(
     self: *IoUring,
     user_data: u64,
     fd: linux.fd_t,
-    buffer: *posix.iovec,
+    buffer: *linux.iovec,
     offset: u64,
     buffer_index: u16,
 ) !*linux.io_uring_sqe {
@@ -1290,7 +1290,7 @@ pub fn unregister_napi(self: *IoUring, napi: *linux.io_uring_napi) !void {
 }
 
 /// Registers an array of buffers for use with `read_fixed` and `write_fixed`.
-pub fn register_buffers(self: *IoUring, buffers: []const posix.iovec) !void {
+pub fn register_buffers(self: *IoUring, buffers: []const linux.iovec) !void {
     assert(self.fd >= 0);
     const res = linux.io_uring_register(
         self.fd,

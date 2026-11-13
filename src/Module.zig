@@ -396,7 +396,7 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
             // disabling all windowed instructions altogether. That's kind of silly because a
             // windowed core can do call0 just fine.
             try buf.append(arena, if (target.abi == .call0) '-' else '+');
-            try buf.appendSlice(arena, "backchain,");
+            try buf.appendSlice(arena, "windowed,");
         }
 
         if (buf.items.len == 0) break :b "";
