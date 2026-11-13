@@ -2166,6 +2166,23 @@ const module_test_targets = blk: {
 
         .{
             .target = .{
+                .cpu_arch = .powerpcle,
+                .os_tag = .linux,
+                .abi = .none,
+            },
+            .extra_target = true,
+        },
+        .{
+            .target = .{
+                .cpu_arch = .powerpcle,
+                .os_tag = .linux,
+                .abi = .sf,
+            },
+            .extra_target = true,
+        },
+
+        .{
+            .target = .{
                 .cpu_arch = .powerpc64,
                 .os_tag = .linux,
                 .abi = .none,

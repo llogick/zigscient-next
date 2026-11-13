@@ -108,7 +108,7 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
     const llvm_arch = switch (target.cpu.arch) {
         .arm => "arm",
         .armeb => "armeb",
-        .aarch64 => if (target.abi == .ilp32) "aarch64_32" else "aarch64",
+        .aarch64 => "aarch64",
         .aarch64_be => "aarch64_be",
         .arc => "arc",
         .avr => "avr",
@@ -358,10 +358,6 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         else
             "unknown",
         .android => "android",
-        .androidsf => if (target.cpu.arch.isArm())
-            "androideabi"
-        else
-            "android",
         .gnu => if (target.cpu.arch.isArm())
             "gnueabihf"
         else
@@ -478,40 +474,30 @@ pub const DataLayout = struct {
     pub fn stringForTarget(target: *const std.Target) []const u8 {
         // These data layouts should match Clang.
         return switch (target.cpu.arch) {
-            .arc => "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-f32:32:32-i64:32-f64:32-a:0:32-n32",
-            .xcore => "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32-f64:32-a:0:32-n32",
-            .hexagon => "e-m:e-p:32:32:32-a:0-n16:32-i64:64:64-i32:32:32-i16:16:16-i1:8:8-f32:32:32-f64:64:64-v32:32:32-v64:64:64-v512:512:512-v1024:1024:1024-v2048:2048:2048",
-            .lanai => "E-m:e-p:32:32-i64:64-a:0:32-n32-S64",
-            .aarch64 => if (target.ofmt == .macho)
-                if (target.os.tag == .windows or target.os.tag == .uefi)
-                    "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32"
-                else if (target.abi == .ilp32)
-                    "e-m:o-p:32:32-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32"
-                else
-                    "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32"
+            .aarch64 => if (target.os.tag.isDarwin())
+                "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32"
             else if (target.os.tag == .windows or target.os.tag == .uefi)
                 "e-m:w-p270:32:32-p271:32:32-p272:64:64-p:64:64-i32:32-i64:64-i128:128-n32:64-S128-Fn32"
             else
                 "e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32",
             .aarch64_be => "E-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32",
-            .arm => if (target.ofmt == .macho)
-                "e-m:o-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
-            else
-                "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64",
-            .armeb, .thumbeb => if (target.ofmt == .macho)
-                "E-m:o-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
-            else
-                "E-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64",
-            .thumb => if (target.ofmt == .macho)
-                "e-m:o-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
-            else if (target.os.tag == .windows or target.os.tag == .uefi)
+            .amdgcn => "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",
+            .arc => "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-f32:32:32-i64:32-f64:32-a:0:32-n32",
+            .arm => "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64",
+            .armeb, .thumbeb => "E-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64",
+            .thumb => if (target.os.tag == .windows or target.os.tag == .uefi)
                 "e-m:w-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64"
             else
                 "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64",
             .avr => "e-P1-p:16:8-i8:8-i16:8-i32:8-i64:8-f32:8-f64:8-n8:16-a:8",
             .bpfeb => "E-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
             .bpfel => "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
-            .msp430 => "e-m:e-p:16:16-i32:16-i64:16-f32:16-f64:16-a:8-n8:16-S16",
+            .csky => "e-m:e-S32-p:32:32-i32:32:32-i64:32:32-f32:32:32-f64:32:32-v64:32:32-v128:32:32-a:0:32-Fi32-n32",
+            .hexagon => "e-m:e-p:32:32:32-a:0-n16:32-i64:64:64-i32:32:32-i16:16:16-i1:8:8-f32:32:32-f64:64:64-v32:32:32-v64:64:64-v512:512:512-v1024:1024:1024-v2048:2048:2048",
+            .lanai => "E-m:e-p:32:32-i64:64-a:0:32-n32-S64",
+            .loongarch32 => "e-m:e-p:32:32-i64:64-n32-S128",
+            .loongarch64 => "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
+            .m68k => "E-m:e-p:32:16:32-i8:8:8-i16:16:16-i32:16:32-n8:16:32-a:0:16-S16",
             .mips,
             .mipsf32,
             .mipsf64,
@@ -540,7 +526,9 @@ pub const DataLayout = struct {
                 "e-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128"
             else
                 "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
-            .m68k => "E-m:e-p:32:16:32-i8:8:8-i16:16:16-i32:16:32-n8:16:32-a:0:16-S16",
+            .msp430 => "e-m:e-p:16:16-i32:16-i64:16-f32:16-f64:16-a:8-n8:16-S16",
+            .nvptx => "e-p:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",
+            .nvptx64 => "e-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",
             .powerpc => "E-m:e-p:32:32-Fn32-i64:64-n32",
             .powerpcle => "e-m:e-p:32:32-Fn32-i64:64-n32",
             .powerpc64 => switch (target.os.tag) {
@@ -552,9 +540,6 @@ pub const DataLayout = struct {
                 "e-m:e-Fn32-i64:64-i128:128-n32:64-S128-v256:256:256-v512:512:512"
             else
                 "e-m:e-Fn32-i64:64-i128:128-n32:64",
-            .nvptx => "e-p:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",
-            .nvptx64 => "e-p6:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",
-            .amdgcn => "e-m:e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",
             .riscv32 => if (target.cpu.has(.riscv, .e))
                 "e-m:e-p:32:32-i64:64-n32-S32"
             else
@@ -571,9 +556,27 @@ pub const DataLayout = struct {
                 "E-m:e-p:64:64-i64:64-i128:128-n32:64-S64"
             else
                 "E-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
+            .s390x => "E-S64-m:e-i1:8:16-i8:8:16-i64:64-f128:64-v128:64-a:8:16-n32:64",
             .sparc => "E-m:e-p:32:32-i64:64-i128:128-f128:64-n32-S64",
             .sparc64 => "E-m:e-i64:64-i128:128-n32:64-S128",
-            .s390x => "E-S64-m:e-i1:8:16-i8:8:16-i64:64-f128:64-v128:64-a:8:16-n32:64",
+            .spirv32 => switch (target.os.tag) {
+                .vulkan, .opengl => "e-ve-i64:64-n8:16:32:64-G10",
+                else => "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-n8:16:32:64-G1",
+            },
+            .spirv64 => if (target.os.tag == .amdhsa)
+                "e-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-n32:64-S32-G1-P4-A0"
+            else
+                "e-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-n8:16:32:64-G1",
+            .ve => "e-m:e-i64:64-n32:64-S128-v64:64:64-v128:64:64-v256:64:64-v512:64:64-v1024:64:64-v2048:64:64-v4096:64:64-v8192:64:64-v16384:64:64",
+            .wasm32 => if (target.os.tag == .emscripten)
+                "e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-i128:128-f128:64-n32:64-S128-ni:1:10:20"
+            else
+                "e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-i128:128-n32:64-S128-ni:1:10:20",
+            .wasm64 => if (target.os.tag == .emscripten)
+                "e-m:e-p:64:64-p10:8:8-p20:8:8-i64:64-i128:128-f128:64-n32:64-S128-ni:1:10:20"
+            else
+                "e-m:e-p:64:64-p10:8:8-p20:8:8-i64:64-i128:128-n32:64-S128-ni:1:10:20",
+            // TODO: clean this up; what is even going on in this prong?
             .x86, .x86c16 => if (target.os.tag == .windows or target.os.tag == .uefi) switch (target.abi) {
                 .gnu => if (target.ofmt == .coff)
                     "e-m:x-p:32:32-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:32-n8:16:32-a:0:32-S32"
@@ -595,38 +598,16 @@ pub const DataLayout = struct {
                     else
                         "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:32-n8:16:32-a:0:32-S32";
                 },
-            } else if (target.ofmt == .macho)
-                "e-m:o-p:32:32-p270:32:32-p271:32:32-p272:64:64-i128:128-f64:32:64-f80:32-n8:16:32-S128"
-            else
-                "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-i128:128-f64:32:64-f80:32-n8:16:32-S128",
-            .x86_64 => if (target.os.tag.isDarwin() or target.ofmt == .macho)
+            } else "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-i128:128-f64:32:64-f80:32-n8:16:32-S128",
+            .x86_64 => if (target.os.tag.isDarwin())
                 "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+            else if (target.os.tag == .windows or target.os.tag == .uefi)
+                "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
             else if (target.abi.isX32())
                 "e-m:e-p:32:32-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
-            else if ((target.os.tag == .windows or target.os.tag == .uefi) and target.ofmt == .coff)
-                "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
             else
                 "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
-            .spirv32 => switch (target.os.tag) {
-                .vulkan, .opengl => "e-ve-i64:64-n8:16:32:64-G10",
-                else => "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-n8:16:32:64-G1",
-            },
-            .spirv64 => if (target.os.tag == .amdhsa)
-                "e-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-n32:64-S32-G1-P4-A0"
-            else
-                "e-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-n8:16:32:64-G1",
-            .wasm32 => if (target.os.tag == .emscripten)
-                "e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-i128:128-f128:64-n32:64-S128-ni:1:10:20"
-            else
-                "e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-i128:128-n32:64-S128-ni:1:10:20",
-            .wasm64 => if (target.os.tag == .emscripten)
-                "e-m:e-p:64:64-p10:8:8-p20:8:8-i64:64-i128:128-f128:64-n32:64-S128-ni:1:10:20"
-            else
-                "e-m:e-p:64:64-p10:8:8-p20:8:8-i64:64-i128:128-n32:64-S128-ni:1:10:20",
-            .ve => "e-m:e-i64:64-n32:64-S128-v64:64:64-v128:64:64-v256:64:64-v512:64:64-v1024:64:64-v2048:64:64-v4096:64:64-v8192:64:64-v16384:64:64",
-            .csky => "e-m:e-S32-p:32:32-i32:32:32-i64:32:32-f32:32:32-f64:32:32-v64:32:32-v128:32:32-a:0:32-Fi32-n32",
-            .loongarch32 => "e-m:e-p:32:32-i64:64-n32-S128",
-            .loongarch64 => "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
+            .xcore => "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32-f64:32-a:0:32-n32",
             .xtensa => "e-m:e-p:32:32-i8:8:32-i16:16:32-i64:64-n32",
 
             .alpha,

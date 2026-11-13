@@ -219,7 +219,6 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .thumbeb, .os = .linux, .abi = .musl, .os_ver = .{ .major = 2, .minor = 6, .patch = 0 } },
     .{ .arch = .thumbeb, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 2, .minor = 6, .patch = 0 } },
 
-    .{ .arch = .x86, .os = .freebsd, .abi = .none },
     .{ .arch = .x86, .os = .linux, .abi = .gnu, .glibc_triple = "i686-linux-gnu" },
     .{ .arch = .x86, .os = .linux, .abi = .musl },
     .{ .arch = .x86, .os = .netbsd, .abi = .none },

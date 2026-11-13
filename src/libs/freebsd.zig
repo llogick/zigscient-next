@@ -107,10 +107,8 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                     try csuPath(comp, arena, switch (target.cpu.arch) {
                         .arm => "arm",
                         .aarch64 => "aarch64",
-                        .powerpc => "powerpc",
                         .powerpc64, .powerpc64le => "powerpc64",
                         .riscv64 => "riscv",
-                        .x86 => "i386",
                         .x86_64 => "amd64",
                         else => unreachable,
                     }),
@@ -167,17 +165,6 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                 },
 
                 .{
-                    .path = "powerpc" ++ path.sep_str ++ "crt1_c.c",
-                    .flags = cflags.items,
-                    .condition = target.cpu.arch == .powerpc,
-                },
-                .{
-                    .path = "powerpc" ++ path.sep_str ++ "crtsavres.S",
-                    .flags = acflags.items,
-                    .condition = target.cpu.arch == .powerpc,
-                },
-
-                .{
                     .path = "powerpc64" ++ path.sep_str ++ "crt1_c.c",
                     .flags = cflags.items,
                     .condition = target.cpu.arch.isPowerpc64(),
@@ -192,17 +179,6 @@ pub fn buildCrtFile(comp: *Compilation, crt_file: CrtFile, prog_node: std.Progre
                     .path = "riscv" ++ path.sep_str ++ "crt1_s.S",
                     .flags = acflags.items,
                     .condition = target.cpu.arch == .riscv64,
-                },
-
-                .{
-                    .path = "i386" ++ path.sep_str ++ "crt1_c.c",
-                    .flags = cflags.items,
-                    .condition = target.cpu.arch == .x86,
-                },
-                .{
-                    .path = "i386" ++ path.sep_str ++ "crt1_s.S",
-                    .flags = acflags.items,
-                    .condition = target.cpu.arch == .x86,
                 },
 
                 .{

@@ -395,7 +395,8 @@ pub fn create(arena: Allocator, options: CreateOptions) !*Module {
             // LLVM does not currently support specifying windowed vs call0 ABI any other way than
             // disabling all windowed instructions altogether. That's kind of silly because a
             // windowed core can do call0 just fine.
-            if (target.abi == .call0) try buf.appendSlice(arena, "-windowed,");
+            try buf.append(arena, if (target.abi == .call0) '-' else '+');
+            try buf.appendSlice(arena, "backchain,");
         }
 
         if (buf.items.len == 0) break :b "";

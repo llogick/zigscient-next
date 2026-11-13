@@ -7,7 +7,6 @@ const CpuModel = std.Target.Cpu.Model;
 pub const Feature = enum {
     v3_1,
     v3_2,
-    v4_1,
 };
 
 pub const featureSet = CpuFeature.FeatureSetFns(Feature).featureSet;
@@ -28,13 +27,6 @@ pub const all_features = blk: {
         .llvm_name = null,
         .description = "Enable ISA v3.2",
         .dependencies = featureSet(&[_]Feature{}),
-    };
-    result[@backingInt(Feature.v4_1)] = .{
-        .llvm_name = null,
-        .description = "Enable ISA v4.1",
-        .dependencies = featureSet(&[_]Feature{
-            .v3_2,
-        }),
     };
     const ti = @typeInfo(Feature);
     for (&result, 0..) |*elem, i| {

@@ -87,7 +87,6 @@ const freebsd_targets = [_]LibCTarget{
     .{ .arch = .aarch64, .abi = .none },
     .{ .arch = .powerpc64, .abi = .none },
     .{ .arch = .riscv64, .abi = .none },
-    .{ .arch = .x86, .abi = .none },
     .{ .arch = .x86_64, .abi = .none },
 };
 
@@ -206,11 +205,9 @@ pub fn main(init: std.process.Init) !void {
             .musl => std.zig.target.muslArchName(libc_target.arch, libc_target.abi),
             .freebsd => switch (libc_target.arch) {
                 .arm => "armv7",
-                .x86 => "i386",
                 .x86_64 => "amd64",
 
                 .aarch64,
-                .powerpc,
                 .powerpc64,
                 .riscv64,
                 => |a| @tagName(a),

@@ -1313,25 +1313,12 @@ fn getLDMOption(target: *const std.Target) ?[]const u8 {
         .hexagon => "hexagonelf",
         .loongarch32 => "elf32loongarch",
         .loongarch64 => "elf64loongarch",
-        .mips, .mipsf32, .mipsf64, .mipsf64n8, .mipsn8, .mipsr6 => switch (target.os.tag) {
-            .freebsd => "elf32btsmip_fbsd",
-            else => "elf32btsmip",
-        },
-        .mipsel, .mipsf32el, .mipsf64el, .mipsf64n8el, .mipsn8el, .mipsr6el => switch (target.os.tag) {
-            .freebsd => "elf32ltsmip_fbsd",
-            else => "elf32ltsmip",
-        },
-        .mips64, .mips64n8, .mips64r6 => switch (target.os.tag) {
-            .freebsd => if (target.abi.isN32()) "elf32btsmipn32_fbsd" else "elf64btsmip_fbsd",
-            else => if (target.abi.isN32()) "elf32btsmipn32" else "elf64btsmip",
-        },
-        .mips64el, .mips64n8el, .mips64r6el => switch (target.os.tag) {
-            .freebsd => if (target.abi.isN32()) "elf32ltsmipn32_fbsd" else "elf64ltsmip_fbsd",
-            else => if (target.abi.isN32()) "elf32ltsmipn32" else "elf64ltsmip",
-        },
+        .mips, .mipsf32, .mipsf64, .mipsf64n8, .mipsn8, .mipsr6 => "elf32btsmip",
+        .mipsel, .mipsf32el, .mipsf64el, .mipsf64n8el, .mipsn8el, .mipsr6el => "elf32ltsmip",
+        .mips64, .mips64n8, .mips64r6 => if (target.abi.isN32()) "elf32btsmipn32" else "elf64btsmip",
+        .mips64el, .mips64n8el, .mips64r6el => if (target.abi.isN32()) "elf32ltsmipn32" else "elf64ltsmip",
         .msp430 => "msp430elf",
         .powerpc => switch (target.os.tag) {
-            .freebsd => "elf32ppc_fbsd",
             .linux => "elf32ppclinux",
             else => "elf32ppc",
         },
@@ -1347,10 +1334,7 @@ fn getLDMOption(target: *const std.Target) ?[]const u8 {
         .riscv64be => "elf64briscv",
         .s390x => "elf64_s390",
         .sparc64 => "elf64_sparc",
-        .x86, .x86c16 => switch (target.os.tag) {
-            .freebsd => "elf_i386_fbsd",
-            else => "elf_i386",
-        },
+        .x86, .x86c16 => "elf_i386",
         .x86_64 => if (target.abi.isX32()) "elf32_x86_64" else "elf_x86_64",
         else => null,
     };

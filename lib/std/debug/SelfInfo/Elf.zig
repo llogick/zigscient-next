@@ -120,7 +120,6 @@ pub const can_unwind: bool = s: {
             .aarch64,
             .arm,
             .riscv64,
-            .x86,
             .x86_64,
         },
         .illumos => &.{
@@ -178,7 +177,6 @@ pub const can_unwind: bool = s: {
             .aarch64,
             .arm,
             .riscv64,
-            .x86,
             .x86_64,
         },
         // Not supported yet: hppa, mips64/mips64el, sh/sheb

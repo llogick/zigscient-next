@@ -12,13 +12,6 @@
             .desc = "Enable ISA v3.2",
             .deps = .{},
         },
-        .{
-            .zig_name = "v4_1",
-            .desc = "Enable ISA v4.1",
-            .deps = .{
-                "v3_2",
-            },
-        },
     },
     .extra_models = .{
         .{

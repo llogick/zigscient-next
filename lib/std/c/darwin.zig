@@ -406,7 +406,7 @@ pub extern "c" fn kevent64(
     timeout: ?*const timespec,
 ) c_int;
 
-pub const mach_hdr = if (@sizeOf(usize) == 8) mach_header_64 else mach_header;
+pub const mach_hdr = mach_header_64;
 
 pub const mach_header_64 = std.macho.mach_header_64;
 pub const mach_header = std.macho.mach_header;

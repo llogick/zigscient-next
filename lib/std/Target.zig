@@ -806,7 +806,6 @@ pub const Abi = enum {
     x32sf,
 
     android,
-    androidsf,
 
     gnu,
     gnuf32,
@@ -1025,7 +1024,6 @@ pub const Abi = enum {
     pub inline fn isAndroid(abi: Abi) bool {
         return switch (abi) {
             .android,
-            .androidsf,
             => true,
             else => false,
         };
@@ -1071,7 +1069,6 @@ pub const Abi = enum {
 
     pub inline fn float(abi: Abi) Float {
         return switch (abi) {
-            .androidsf,
             .gnun32sf,
             .gnusf,
             .musln32sf,
@@ -2907,7 +2904,6 @@ pub const DynamicLinker = struct {
                 .arm,
                 .aarch64,
                 .riscv64,
-                .x86,
                 .x86_64,
                 => init("/system/runtime_loader"),
                 else => none,
@@ -2921,7 +2917,6 @@ pub const DynamicLinker = struct {
                 .riscv64,
                 => if (abi == .gnu) init("/lib/ld-riscv64-lp64.so.1") else none,
 
-                .x86 => if (abi == .gnu) init("/lib/ld.so.1") else none,
                 .x86_64 => initFmt("/lib/ld-{s}.so.1", .{switch (abi) {
                     .gnu => "x86-64",
                     .gnux32 => "x32",
@@ -2935,15 +2930,11 @@ pub const DynamicLinker = struct {
 
             .linux => if (abi.isAndroid())
                 switch (arch) {
-                    .arm => if (abi == .androidsf) init("/system/bin/linker") else none,
-
                     .aarch64,
                     .riscv64,
                     .x86,
                     .x86_64,
-                    => if (abi == .android) initFmt("/system/bin/linker{s}", .{
-                        if (ptrBitWidth_arch_abi(arch, abi) == 64) "64" else "",
-                    }) else none,
+                    => if (abi == .android) init("/system/bin/linker64") else none,
 
                     else => none,
                 }
@@ -3239,11 +3230,9 @@ pub const DynamicLinker = struct {
             .freebsd => switch (arch) {
                 .arm,
                 .aarch64,
-                .powerpc,
                 .powerpc64,
                 .powerpc64le,
                 .riscv64,
-                .x86,
                 .x86_64,
                 => init("/libexec/ld-elf.so.1"),
                 else => none,
@@ -3520,9 +3509,7 @@ pub fn stackAlignment(target: *const Target) u16 {
         => if (!target.cpu.has(.riscv, .e)) return 16,
 
         .x86 => switch (target.os.tag) {
-            .hurd,
-            .linux,
-            => return 16,
+            .linux => return 16,
             else => {},
         },
 
@@ -3753,9 +3740,11 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             .longdouble => switch (target.cpu.arch) {
                 .x86,
                 .x86c16,
+                => if (target.cpu.has(.x86, .@"387")) 80 else null,
+
                 .x86_64,
                 => switch (target.abi) {
-                    .android, .ohos => 64,
+                    .android, .ohos => 128,
                     else => if (target.cpu.has(.x86, .@"387")) 80 else null,
                 },
 
@@ -3862,10 +3851,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
             .int, .uint, .float => 32,
             .long, .ulong => switch (target.cpu.arch) {
                 .x86_64 => 64,
-                else => switch (target.abi) {
-                    .ilp32 => 32,
-                    else => 64,
-                },
+                else => 64,
             },
             .longlong, .ulonglong, .double => 64,
             .longdouble => switch (target.cpu.arch) {

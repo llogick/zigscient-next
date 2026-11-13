@@ -2347,7 +2347,6 @@ pub const TargetQuery = struct {
         x32sf,
 
         android,
-        androidsf,
 
         gnu,
         gnuf32,

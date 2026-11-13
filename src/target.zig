@@ -185,7 +185,7 @@ pub fn hasValgrindSupport(target: *const std.Target, backend: std.lang.CompilerB
             else => false,
         },
         .x86 => switch (target.os.tag) {
-            .linux, .freebsd => true,
+            .linux => true,
             .windows => !ofmt_c_msvc,
             else => false,
         },
@@ -538,7 +538,7 @@ pub fn libcFullLinkFlags(target: *const std.Target) []const []const u8 {
         .illumos => &.{ "-lm", "-lsocket", "-lnsl", "-lc" },
         .haiku => &.{ "-lm", "-lroot", "-lpthread", "-lc", "-lnetwork" },
         .linux => switch (target.abi) {
-            .android, .androidsf, .ohos, .ohossf => &.{ "-lm", "-lc", "-ldl" },
+            .android, .ohos, .ohossf => &.{ "-lm", "-lc", "-ldl" },
             else => &.{ "-lm", "-lpthread", "-lc", "-ldl", "-lrt", "-lutil" },
         },
         // On SerenityOS libc includes libm, libpthread, libdl, and libssp.
