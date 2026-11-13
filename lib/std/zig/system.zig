@@ -1122,9 +1122,8 @@ fn glibcVerFromRPath(io: Io, rpath: []const u8) !std.SemanticVersion {
     // the past, we used readlink() here because the link name would
     // reveal the glibc version. However, in more recent GNU/Linux
     // installations, there is no symlink. Thus we instead use a more
-    // robust check of opening the libc shared object and looking at the
-    // .dynstr section, and finding the max version number of symbols
-    // that start with "GLIBC_2.".
+    // robust check of opening the libc shared object and reading the
+    // release version out of its banner string.
     const glibc_so_basename = "libc.so.6";
     var file = dir.openFile(io, glibc_so_basename, .{}) catch |err| switch (err) {
         error.NameTooLong => return error.Unexpected,
@@ -1157,8 +1156,7 @@ fn glibcVerFromRPath(io: Io, rpath: []const u8) !std.SemanticVersion {
     };
     defer file.close(io);
 
-    // Empirically, glibc 2.34 libc.so .dynstr section is 32441 bytes on my system.
-    var buffer: [8000]u8 = undefined;
+    var buffer: [4096]u8 = undefined;
     var file_reader: Io.File.Reader = .init(file, io, &buffer);
 
     return glibcVerFromSoFile(&file_reader) catch |err| switch (err) {
@@ -1175,6 +1173,9 @@ fn glibcVerFromRPath(io: Io, rpath: []const u8) !std.SemanticVersion {
     };
 }
 
+/// Reads the glibc release version from the banner string that `csu/version.c` places in
+/// `.rodata`, e.g. "GNU C Library (GNU libc) stable release version 2.39." or "GNU C Library (GNU libc) development release version 2.44.9000".
+/// See https://sourceware.org/cgit/glibc/tree/csu/version.c#n26
 fn glibcVerFromSoFile(file_reader: *Io.File.Reader) !std.SemanticVersion {
     const header = try elf.Header.read(&file_reader.interface);
     const str_section_off = header.shoff + @as(u64, header.shentsize) * @as(u64, header.shstrndx);
@@ -1184,45 +1185,51 @@ fn glibcVerFromSoFile(file_reader: *Io.File.Reader) !std.SemanticVersion {
     const shstrtab = strtab_buf[0..@min(shstr.sh_size, strtab_buf.len)];
     try file_reader.seekTo(shstr.sh_offset);
     try file_reader.interface.readSliceAll(shstrtab);
-    const dynstr: struct { offset: u64, size: u64 } = find_dyn_str: {
+    const rodata: struct { offset: u64, size: u64 } = find_rodata: {
         var it = header.iterateSectionHeaders(file_reader);
         while (try it.next()) |shdr| {
             const end = mem.findScalarPos(u8, shstrtab, shdr.sh_name, 0) orelse continue;
             const sh_name = shstrtab[shdr.sh_name..end :0];
-            if (mem.eql(u8, sh_name, ".dynstr")) break :find_dyn_str .{
+            if (mem.eql(u8, sh_name, ".rodata")) break :find_rodata .{
                 .offset = shdr.sh_offset,
                 .size = shdr.sh_size,
             };
         } else return error.InvalidGnuLibCVersion;
     };
 
-    // Here we loop over all the strings in the dynstr string table, assuming that any
-    // strings that start with "GLIBC_2." indicate the existence of such a glibc version,
-    // and furthermore, that the system-installed glibc is at minimum that version.
-    var max_ver: std.SemanticVersion = .{ .major = 2, .minor = 2, .patch = 5 };
+    const needle = " release version ";
     var offset: u64 = 0;
-    try file_reader.seekTo(dynstr.offset);
-    while (offset < dynstr.size) {
+    try file_reader.seekTo(rodata.offset);
+    while (offset < rodata.size) {
         if (file_reader.interface.takeSentinel(0)) |s| {
-            if (mem.startsWith(u8, s, "GLIBC_2.")) {
-                const chopped = s["GLIBC_".len..];
-                const ver = Target.Query.parseVersion(chopped) catch |err| switch (err) {
+            if (mem.indexOf(u8, s, needle)) |pos| {
+                const chopped = s[pos + needle.len ..];
+                const end = mem.findNone(u8, chopped, "0123456789.") orelse chopped.len;
+                var version = Target.Query.parseVersion(mem.trimEnd(u8, chopped[0..end], ".")) catch |err| switch (err) {
                     error.Overflow => return error.InvalidGnuLibCVersion,
                     error.InvalidVersion => return error.InvalidGnuLibCVersion,
                 };
-                switch (ver.order(max_ver)) {
-                    .gt => max_ver = ver,
-                    .lt, .eq => continue,
-                }
+                version.patch = 0;
+                return version;
             }
             offset += s.len + 1;
         } else |err| switch (err) {
-            error.EndOfStream, error.StreamTooLong => break,
+            error.EndOfStream => break,
+            // `.rodata` also holds long non-zero byte sections.
+            // Skip until we find C-strings.
+            error.StreamTooLong => {
+                const buffered = file_reader.interface.buffered();
+                // always keep the last needle length in case of a partial match at the end
+                const skipped = mem.find(u8, buffered, needle) orelse (buffered.len -| needle.len);
+                if (skipped == 0) return error.InvalidGnuLibCVersion;
+                file_reader.interface.toss(skipped);
+                offset += skipped;
+            },
             error.ReadFailed => |e| return e,
         }
     }
 
-    return max_ver;
+    return error.InvalidGnuLibCVersion;
 }
 
 const DetectedTarget = struct {
