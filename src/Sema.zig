@@ -8329,9 +8329,10 @@ fn zirFunc(
 
     var extra_index = extra.end;
 
-    const ret_ty: Type = if (extra.data.ret_ty.is_generic)
-        .generic_poison
-    else switch (extra.data.ret_ty.body_len) {
+    const ret_ty: Type = if (extra.data.ret_ty.is_generic) blk: {
+        extra_index += extra.data.ret_ty.body_len;
+        break :blk .generic_poison;
+    } else switch (extra.data.ret_ty.body_len) {
         0 => .void,
         1 => blk: {
             const ret_ty_ref: Zir.Inst.Ref = @fromBackingInt(@intCast(sema.code.extra[extra_index]));
