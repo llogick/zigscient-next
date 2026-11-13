@@ -802,7 +802,6 @@ pub const E = switch (native_os) {
         CANCELED = 79,
         PROMISEVIOLATION = 80,
         STALE = 81,
-        SRCNOTFOUND = 82,
         _,
     },
     else => void,
