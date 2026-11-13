@@ -254,18 +254,19 @@ pub fn parse(args: ParseOptions) !Query {
     const opt_abi_text = it.next();
     if (opt_abi_text) |abi_text| {
         var abi_it = mem.splitScalar(u8, abi_text, '.');
-        const abi = std.meta.stringToEnum(Target.Abi, abi_it.first()) orelse compat: {
+        const abi_name = abi_it.first();
+        const abi = std.meta.stringToEnum(Target.Abi, abi_name) orelse compat: {
             // Deprecated compatibility aliases; to be removed in 0.19.0.
-            if (std.mem.eql(u8, abi_it.first(), "abin32")) break :compat Target.Abi.n32;
-            if (std.mem.eql(u8, abi_it.first(), "eabi")) break :compat Target.Abi.sf;
-            if (std.mem.eql(u8, abi_it.first(), "eabihf")) break :compat Target.Abi.none;
-            if (std.mem.eql(u8, abi_it.first(), "gnuabi64")) break :compat Target.Abi.gnu;
-            if (std.mem.eql(u8, abi_it.first(), "gnuabin32")) break :compat Target.Abi.gnun32;
-            if (std.mem.eql(u8, abi_it.first(), "gnueabihf")) break :compat Target.Abi.none;
-            if (std.mem.eql(u8, abi_it.first(), "muslabi64")) break :compat Target.Abi.musl;
-            if (std.mem.eql(u8, abi_it.first(), "muslabin32")) break :compat Target.Abi.musln32;
-            if (std.mem.eql(u8, abi_it.first(), "musleabi")) break :compat Target.Abi.muslsf;
-            if (std.mem.eql(u8, abi_it.first(), "musleabihf")) break :compat Target.Abi.musl;
+            if (std.mem.eql(u8, abi_name, "abin32")) break :compat Target.Abi.n32;
+            if (std.mem.eql(u8, abi_name, "eabi")) break :compat Target.Abi.sf;
+            if (std.mem.eql(u8, abi_name, "eabihf")) break :compat Target.Abi.none;
+            if (std.mem.eql(u8, abi_name, "gnuabi64")) break :compat Target.Abi.gnu;
+            if (std.mem.eql(u8, abi_name, "gnuabin32")) break :compat Target.Abi.gnun32;
+            if (std.mem.eql(u8, abi_name, "gnueabihf")) break :compat Target.Abi.none;
+            if (std.mem.eql(u8, abi_name, "muslabi64")) break :compat Target.Abi.musl;
+            if (std.mem.eql(u8, abi_name, "muslabin32")) break :compat Target.Abi.musln32;
+            if (std.mem.eql(u8, abi_name, "musleabi")) break :compat Target.Abi.muslsf;
+            if (std.mem.eql(u8, abi_name, "musleabihf")) break :compat Target.Abi.musl;
             break :compat null;
         } orelse return error.UnknownApplicationBinaryInterface;
         result.abi = abi;
