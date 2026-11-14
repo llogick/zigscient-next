@@ -612,7 +612,7 @@ const Input = struct {
         file_location: MappedFile.Node.FileLocation,
         vaddr: u64,
         size: u64,
-        compression: Compression = .none,
+        compression: Compression,
         /// The node corresponding to this input section.
         node: MappedFile.Node.Index,
         /// The head of a linked list of symbols in this input section.
@@ -5065,7 +5065,7 @@ const Symbol = struct {
                     else => |parent_shndx| break :parent_shndx parent_shndx,
                 };
                 switch (elf.getNode(symbol_ni)) {
-                    else => |tag| @panic(@tagName(tag)),
+                    else => unreachable,
                     .section, .section_manual_size => |parent_shndx| break :parent_shndx parent_shndx,
                     inline .input_section, .merge_section => |si| return &si.ptr(elf).first_symbol,
                     inline .nav, .uav, .lazy_code, .lazy_const_data => |mi| {
@@ -9117,6 +9117,7 @@ fn loadObject(
                                 // zero-based. This will eventually be updated by `flushMoved`.
                                 .vaddr = 0,
                                 .size = section.shdr.size,
+                                .compression = .none,
                                 .node = ni,
                                 .first_symbol = .null,
                                 .first_target_reloc = .none,
@@ -9191,6 +9192,7 @@ fn loadObject(
                                 // zero-based. This will eventually be updated by `flushMoved`.
                                 .vaddr = 0,
                                 .size = section.shdr.size,
+                                .compression = .none,
                                 .node = ni,
                                 .first_symbol = .null,
                                 .first_target_reloc = .none,
@@ -9203,9 +9205,9 @@ fn loadObject(
             }
 
             // This array will exclude the "null" symbol (symtab index 0).
-            var symmap: std.ArrayList(struct {
-                input_shndx: u32 = std.elf.SHN_UNDEF,
-                target: Reloc.Target.Payload,
+            var symmap: std.ArrayList(union(enum) {
+                symbol: Symbol.Id,
+                input_section: u32,
             }) = .empty;
             defer symmap.deinit(gpa);
 
@@ -9255,7 +9257,7 @@ fn loadObject(
                 try symmap.resize(gpa, symnum -| 1); // -1 to exclude "null" symbol
                 try fr.seekTo(fl.offset + symtab.shdr.offset + symtab.shdr.entsize); // +entsize to skip "null" symbol
                 for (symmap.items) |*symbol| {
-                    symbol.* = .{ .target = .{ .symbol = .null } };
+                    symbol.* = .{ .symbol = .null };
                     const input_symbol = try r.peekStruct(ElfN.Sym, target_endian);
                     try r.discardAll64(symtab.shdr.entsize);
 
@@ -9292,15 +9294,7 @@ fn loadObject(
                                 );
                             },
                             else => {
-                                symbol.* = .{
-                                    .input_shndx = input_symbol.shndx,
-                                    .target = switch (sections[input_symbol.shndx].placement) {
-                                        .none => continue,
-                                        .progbits => |isi| .{ .node = isi.ptr(elf).node },
-                                        .merge => |merge| .{ .node = merge.index.ptr(elf).node },
-                                        .nobits => |nobits| .{ .section = nobits.shndx },
-                                    },
-                                };
+                                symbol.* = .{ .input_section = input_symbol.shndx };
                                 continue;
                             },
                         },
@@ -9347,7 +9341,7 @@ fn loadObject(
                                     ),
                                     else => |e| return e,
                                 };
-                                symbol.* = .{ .target = .{ .symbol = gsi.id() } };
+                                symbol.* = .{ .symbol = gsi.id() };
                                 continue;
                             },
                         },
@@ -9420,7 +9414,7 @@ fn loadObject(
                                 .type = sym_type,
                                 .shndx = output_shndx,
                             });
-                            symbol.* = .{ .target = .{ .symbol = lsi.id() } };
+                            symbol.* = .{ .symbol = lsi.id() };
                         },
                         .GLOBAL, .WEAK, .GNU_UNIQUE => |bind| {
                             const gsi = elf.addGlobalSymbol(.{
@@ -9450,7 +9444,7 @@ fn loadObject(
                                 error.UndefinedDefaultVersion => unreachable, // shndx is not `.UNDEF` (i.e. the symbol is defined)
                                 else => |e| return e,
                             };
-                            symbol.* = .{ .target = .{ .symbol = gsi.id() } };
+                            symbol.* = .{ .symbol = gsi.id() };
                         },
                     }
                 }
@@ -9527,10 +9521,8 @@ fn loadObject(
                                 "relocation target symbol index {d} exceeds symtab size",
                                 .{rel.info.sym},
                             );
-                            const symmap_entry = &symmap.items[si];
-                            const target: Reloc.Target, const addend: i64 = switch (symmap_entry.input_shndx) {
-                                std.elf.SHN_UNDEF => switch (symmap_entry.target.symbol) {
-                                    else => |sym_id| .{ .{ .symbol = sym_id }, rel.addend },
+                            const target: Reloc.Target, const addend: i64 = switch (symmap.items[si]) {
+                                .symbol => |symbol| switch (symbol) {
                                     .null => {
                                         diags.addParseError(
                                             path,
@@ -9539,12 +9531,28 @@ fn loadObject(
                                         );
                                         continue;
                                     },
+                                    else => .{ .{ .symbol = symbol }, rel.addend },
                                 },
-                                else => |input_shndx| switch (sections[input_shndx].placement) {
-                                    .none => unreachable,
-                                    .progbits => .{ .{ .node = symmap_entry.target.node }, rel.addend },
+                                .input_section => |input_shndx| switch (sections[input_shndx].placement) {
+                                    .none => {
+                                        if (sections[input_shndx].shdr.type == .NOTE) {
+                                            // TODO: don't emit this error for now, it breaks
+                                            // linking libc on some systems
+                                            continue;
+                                        }
+                                        diags.addParseError(
+                                            path,
+                                            "unsupported section symbol at index {d} required for relocation",
+                                            .{rel.info.sym},
+                                        );
+                                        continue;
+                                    },
+                                    .progbits => |isi| .{
+                                        .{ .node = isi.ptr(elf).node },
+                                        rel.addend,
+                                    },
                                     .merge => |merge| .{
-                                        .{ .node = symmap_entry.target.node },
+                                        .{ .node = merge.index.ptr(elf).node },
                                         @bitCast(merge.map.get(std.math.cast(u32, rel.addend) orelse {
                                             diags.addParseError(
                                                 path,
@@ -9555,7 +9563,7 @@ fn loadObject(
                                         })),
                                     },
                                     .nobits => |nobits| .{
-                                        .{ .section = symmap_entry.target.section },
+                                        .{ .section = nobits.shndx },
                                         @as(i64, @bitCast(nobits.offset)) +% rel.addend,
                                     },
                                 },
