@@ -156,12 +156,10 @@ bss_moved: bool,
 /// it only applies to input `SHT_NOBITS` and a few other fixed sections.
 section_first_target_reloc: std.array_hash_map.Auto(Section.Index, Reloc.Index),
 
-init_fini_priorities: struct {
-    /// Arena-allocated.
-    init_array: *InitFiniPriorities,
-    /// Arena-allocated.
-    fini_array: *InitFiniPriorities,
-},
+/// Arena-allocated.
+init_array_priorities: *InitFiniPriorities,
+/// Arena-allocated.
+fini_array_priorities: *InitFiniPriorities,
 
 shstrtab: StringTable,
 strtab: StringTable,
@@ -5822,10 +5820,9 @@ fn create(
         .bss_moved = false,
         .section_first_target_reloc = .empty,
 
-        .init_fini_priorities = .{
-            .init_array = try .create(arena),
-            .fini_array = try .create(arena),
-        },
+        .init_array_priorities = try .create(arena),
+        .fini_array_priorities = try .create(arena),
+
         .shstrtab = .{ .map = .empty },
         .strtab = .{ .map = .empty },
         .dynstr = .{ .map = .empty },
@@ -7057,8 +7054,8 @@ fn initHeaders(
         }
 
         // Create any always-provided linker-defined symbols. The symbols marking the `INIT_ARRAY`/
-        // `FINI_ARRAY`/`PREINIT_ARRAY` sections are instead created by `createInitFiniArraySection`
-        // when needed (it seems to be legal to leave those undefined if the section doesn't exist).
+        // `FINI_ARRAY`/`PREINIT_ARRAY` sections are created here with initial values, then updated
+        // by `getOrCreateInitFiniArraySection` if/when the corresponding sections are created.
 
         // Despite the name, `__dso_handle` is necessary even in static binaries.
         _ = elf.addGlobalSymbol(.{
@@ -8026,9 +8023,13 @@ fn mapInputSection(elf: *Elf, opts: struct {
     flags: std.elf.SHF,
     entsize: std.elf.Xword,
     /// Must be one of:
+    /// * `.NULL`
     /// * `.PROGBITS`
     /// * `.NOBITS`
     /// * `.X86_64_UNWIND`
+    /// * `.INIT_ARRAY`
+    /// * `.FINI_ARRAY`
+    /// * `.PREINIT_ARRAY`
     type: std.elf.SHT,
 }) (Error || error{
     UnsupportedSectionFlags,
@@ -8053,29 +8054,60 @@ fn mapInputSection(elf: *Elf, opts: struct {
     }
 
     if (elf.base.comp.config.debug_format == .strip and
+        (opts.type == .PROGBITS or opts.type == .NULL) and
         std.mem.startsWith(u8, opts.name, ".debug_") and
         !opts.flags.ALLOC)
     {
         return error.StripSection;
     }
 
-    const name: []const u8 = switch (elf.ehdrType()) {
-        .REL => opts.name,
-        .EXEC, .DYN => name: {
-            if (std.mem.startsWith(u8, opts.name, ".text.")) break :name ".text";
-            if (std.mem.startsWith(u8, opts.name, ".rodata.")) break :name ".rodata";
-            if (std.mem.startsWith(u8, opts.name, ".data.rel.ro.")) break :name ".data.rel.ro";
-            if (std.mem.startsWith(u8, opts.name, ".data.")) break :name ".data";
-            if (std.mem.startsWith(u8, opts.name, ".tdata.")) break :name ".tdata";
-            if (std.mem.startsWith(u8, opts.name, ".gcc_except_table.")) break :name ".gcc_except_table";
-            if (std.mem.eql(u8, opts.name, ".bss")) break :name ".bss";
-            if (std.mem.startsWith(u8, opts.name, ".bss.")) break :name ".bss";
-            if (std.mem.eql(u8, opts.name, ".tbss")) break :name ".tbss";
-            if (std.mem.startsWith(u8, opts.name, ".tbss.")) break :name ".tbss";
-            break :name opts.name;
-        },
-    };
+    if (!elf.base.comp.config.any_unwind_tables and
+        (opts.type == .PROGBITS or opts.type == .NULL or opts.type == std.elf.SHT.X86_64_UNWIND) and
+        std.mem.eql(u8, opts.name, ".eh_frame"))
+    {
+        return error.StripSection;
+    }
+
     const existing_shndx: Section.Index = existing: {
+        const name: []const u8 = switch (elf.ehdrType()) {
+            .REL => opts.name,
+            .EXEC, .DYN => switch (opts.type) {
+                .INIT_ARRAY => break :existing try elf.getOrCreateInitFiniArraySection(
+                    &elf.shndx.init_array,
+                    .INIT_ARRAY,
+                    ".init_array",
+                    "__init_array_start",
+                    "__init_array_end",
+                ),
+                .FINI_ARRAY => break :existing try elf.getOrCreateInitFiniArraySection(
+                    &elf.shndx.fini_array,
+                    .FINI_ARRAY,
+                    ".fini_array",
+                    "__fini_array_start",
+                    "__fini_array_end",
+                ),
+                .PREINIT_ARRAY => break :existing try elf.getOrCreateInitFiniArraySection(
+                    &elf.shndx.preinit_array,
+                    .PREINIT_ARRAY,
+                    ".preinit_array",
+                    "__preinit_array_start",
+                    "__preinit_array_end",
+                ),
+                else => name: {
+                    if (std.mem.startsWith(u8, opts.name, ".text.")) break :name ".text";
+                    if (std.mem.startsWith(u8, opts.name, ".rodata.")) break :name ".rodata";
+                    if (std.mem.startsWith(u8, opts.name, ".data.rel.ro.")) break :name ".data.rel.ro";
+                    if (std.mem.startsWith(u8, opts.name, ".data.")) break :name ".data";
+                    if (std.mem.startsWith(u8, opts.name, ".tdata.")) break :name ".tdata";
+                    if (std.mem.startsWith(u8, opts.name, ".gcc_except_table.")) break :name ".gcc_except_table";
+                    if (std.mem.eql(u8, opts.name, ".bss")) break :name ".bss";
+                    if (std.mem.startsWith(u8, opts.name, ".bss.")) break :name ".bss";
+                    if (std.mem.eql(u8, opts.name, ".tbss")) break :name ".tbss";
+                    if (std.mem.startsWith(u8, opts.name, ".tbss.")) break :name ".tbss";
+                    break :name opts.name;
+                },
+            },
+        };
         const name_shstrtab = try elf.string(.shstrtab, name);
         const gop = try elf.section_by_name.getOrPut(gpa, name_shstrtab);
         if (gop.found_existing) {
@@ -8093,10 +8125,16 @@ fn mapInputSection(elf: *Elf, opts: struct {
         return elf.addSection(parent_node, .{
             .name = name,
             .type = switch (opts.type) {
-                .PROGBITS => .NULL, // size is 0
-                .X86_64_UNWIND => .X86_64_UNWIND,
+                .NULL, .PROGBITS => .NULL, // size is 0
                 .NOBITS => if (elf.ehdrType() == .REL) .NOBITS else return error.UnsupportedNobitsSection,
-                else => unreachable,
+
+                .X86_64_UNWIND,
+                .INIT_ARRAY,
+                .FINI_ARRAY,
+                .PREINIT_ARRAY,
+                => |t| t,
+
+                else => unreachable, // unsupported section type
             },
             .flags = flags: {
                 // We need to decompress the section for linking.
@@ -8104,7 +8142,18 @@ fn mapInputSection(elf: *Elf, opts: struct {
                 flags.COMPRESSED = false;
                 break :flags flags;
             },
-            .entsize = std.math.lossyCast(u32, opts.entsize),
+            .entsize = switch (opts.type) {
+                .INIT_ARRAY, .FINI_ARRAY, .PREINIT_ARRAY => elf.targetPtrSize(),
+                else => std.math.lossyCast(u32, opts.entsize),
+            },
+            .addralign = switch (opts.type) {
+                .INIT_ARRAY, .FINI_ARRAY, .PREINIT_ARRAY => .fromByteUnits(elf.targetPtrSize()),
+                else => .@"1",
+            },
+            .manual_size = switch (opts.type) {
+                .INIT_ARRAY, .FINI_ARRAY, .PREINIT_ARRAY => true,
+                else => false,
+            },
         });
     };
     switch (elf.shdrPtr(existing_shndx)) {
@@ -8121,15 +8170,18 @@ fn mapInputSection(elf: *Elf, opts: struct {
             const existing_type = elf.targetLoad(&shdr.type);
 
             switch (opts.type) {
-                .PROGBITS, .X86_64_UNWIND => switch (existing_type) {
+                .NULL, .PROGBITS, .X86_64_UNWIND => switch (existing_type) {
                     .NULL, .PROGBITS, .X86_64_UNWIND => {},
                     else => return error.SectionTypeConflict,
                 },
-                .NOBITS => switch (existing_type) {
-                    .NOBITS => {},
-                    else => return error.SectionTypeConflict,
-                },
-                else => unreachable,
+
+                .NOBITS,
+                .INIT_ARRAY,
+                .FINI_ARRAY,
+                .PREINIT_ARRAY,
+                => |t| if (existing_type != t) return error.SectionTypeConflict,
+
+                else => unreachable, // unsupported section type
             }
 
             // All okay, combine the section flags
@@ -8653,67 +8705,121 @@ fn loadObject(
                 defer sections_trace.end();
 
                 for (sections[1..]) |*section| {
-                    const section_trace = tracy.traceNamed(@src(), "input section");
-                    defer section_trace.end();
                     if (section.shdr.name >= shstrtab.len) continue;
                     const name = std.mem.sliceTo(shstrtab[section.shdr.name..], 0);
-                    section_trace.addText(name);
-                    if (!comp.config.any_unwind_tables and std.mem.eql(u8, name, ".eh_frame")) continue;
 
                     switch (section.shdr.type) {
-                        else => continue,
+                        .REL,
+                        .RELA,
+                        .STRTAB,
+                        .SYMTAB,
+                        .SYMTAB_SHNDX,
+                        => continue, // special section, handled elsewhere
+
+                        .HASH,
+                        .DYNAMIC,
+                        .SHLIB,
+                        .DYNSYM,
+                        .RELR,
+                        .GNU_HASH,
+                        .GNU_VERDEF,
+                        .GNU_VERNEED,
+                        .GNU_VERSYM,
+                        => |sht| return diags.failParse(
+                            path,
+                            "section {q} has type SHT_{s} which is illegal in relocatables",
+                            .{ name, std.enums.tagName(std.elf.SHT, sht) orelse switch (sht) {
+                                .GNU_HASH => "GNU_HASH",
+                                .GNU_VERDEF => "GNU_VERDEF",
+                                .GNU_VERNEED => "GNU_VERNEED",
+                                .GNU_VERSYM => "GNU_VERSYM",
+                                else => unreachable,
+                            } },
+                        ),
+
+                        else => |sht| return diags.failParse(
+                            path,
+                            "section {q} has unknown type '0x{x}'",
+                            .{ name, sht },
+                        ),
+
+                        .NOTE,
+                        .GROUP,
+                        .LLVM_ADDRSIG,
+                        => continue, // TODO
+
+                        .NULL,
+                        .PROGBITS,
+                        .NOBITS,
+                        .X86_64_UNWIND,
+                        .INIT_ARRAY,
+                        .FINI_ARRAY,
+                        .PREINIT_ARRAY,
+                        => {},
+                    }
+
+                    const section_trace = tracy.traceNamed(@src(), "input section");
+                    defer section_trace.end();
+                    section_trace.addText(name);
+
+                    const shndx = elf.mapInputSection(.{
+                        .name = name,
+                        .flags = section.shdr.flags.shf,
+                        .entsize = section.shdr.entsize,
+                        .type = section.shdr.type,
+                    }) catch |err| switch (err) {
+                        else => |e| return e,
+                        error.StripSection => continue,
+                        error.TlsSectionUnavailable => switch (section.shdr.size) {
+                            0 => continue,
+                            else => return diags.failParse(
+                                path,
+                                "thread-local storage section {q} is incompatible with -fsingle-threaded",
+                                .{name},
+                            ),
+                        },
+                        error.UnsupportedSectionFlags => return diags.failParse(
+                            path,
+                            "unsupported flags for section {q}",
+                            .{name},
+                        ),
+                        error.SectionTypeConflict => return diags.failParse(
+                            path,
+                            "type of section {q} conflicts with other inputs",
+                            .{name},
+                        ),
+                        error.SectionFlagsConflict => return diags.failParse(
+                            path,
+                            "flags of section {q} conflict with other inputs",
+                            .{name},
+                        ),
+                        error.UnsupportedNobitsSection => return diags.failParse(
+                            path,
+                            "unsupported section type SHT_NOBITS for non-bss section {q}",
+                            .{name},
+                        ),
+                    };
+
+                    if (section.shdr.flags.shf.COMPRESSED) {
+                        // SHF_COMPRESSED is only allowed on non-alloc sections.
+                        if (section.shdr.flags.shf.ALLOC) return diags.failParse(
+                            path,
+                            "section {q} has conflicting flags SHF_ALLOC and SHF_COMPRESSED",
+                            .{name},
+                        );
+                        if (section.shdr.type != .PROGBITS) return diags.failParse(
+                            path,
+                            "section {q} has flag SHF_COMPRESSED but is not SHT_PROGBITS",
+                            .{name},
+                        );
+                    }
+
+                    switch (section.shdr.type) {
+                        else => unreachable, // handled above
+
+                        .NULL => continue,
+
                         .NOBITS => {
-                            if (section.shdr.flags.shf.COMPRESSED) {
-                                return diags.failParse(path, "SHT_NOBITS section cannot be compressed", .{});
-                            }
-
-                            const shndx = elf.mapInputSection(.{
-                                .name = name,
-                                .flags = section.shdr.flags.shf,
-                                .entsize = section.shdr.entsize,
-                                .type = section.shdr.type,
-                            }) catch |err| switch (err) {
-                                else => |e| return e,
-                                error.StripSection => continue,
-                                error.TlsSectionUnavailable => {
-                                    if (section.shdr.size == 0) continue;
-
-                                    return diags.failParse(
-                                        path,
-                                        "thread-local storage section {q} is incompatible with '-fsingle-threaded'",
-                                        .{name},
-                                    );
-                                },
-                                error.UnsupportedSectionFlags => if (!section.shdr.flags.shf.ALLOC) {
-                                    // It probably doesn't matter, just skip this section.
-                                    continue;
-                                } else return diags.failParse(
-                                    path,
-                                    "unsupported flags for section {q}",
-                                    .{name},
-                                ),
-                                error.SectionTypeConflict => if (!section.shdr.flags.shf.ALLOC) {
-                                    // It probably doesn't matter, just skip this section.
-                                    continue;
-                                } else return diags.failParse(
-                                    path,
-                                    "type of section {q} conflicts with other inputs",
-                                    .{name},
-                                ),
-                                error.SectionFlagsConflict => if (!section.shdr.flags.shf.ALLOC) {
-                                    // It probably doesn't matter, just skip this section.
-                                    continue;
-                                } else return diags.failParse(
-                                    path,
-                                    "flags of section {q} conflict with other inputs",
-                                    .{name},
-                                ),
-                                error.UnsupportedNobitsSection => return diags.failParse(
-                                    path,
-                                    "unsupported section type SHT_NOBITS for non-bss section {q}",
-                                    .{name},
-                                ),
-                            };
                             _ = try elf.section_first_target_reloc.getOrPutValue(gpa, shndx, .none);
                             section.placement = .{ .nobits = .{
                                 .shndx = shndx,
@@ -8735,36 +8841,6 @@ fn loadObject(
                             }
                         },
                         .PROGBITS, .X86_64_UNWIND => {
-                            const shndx = elf.mapInputSection(.{
-                                .name = name,
-                                .flags = section.shdr.flags.shf,
-                                .entsize = section.shdr.entsize,
-                                .type = section.shdr.type,
-                            }) catch |err| switch (err) {
-                                else => |e| return e,
-                                error.StripSection => continue,
-                                error.TlsSectionUnavailable => {
-                                    if (section.shdr.size == 0) continue;
-                                    return diags.failParse(path, "thread-local storage section " ++
-                                        "{q} is incompatible with '-fsingle-threaded'", .{name});
-                                },
-                                error.UnsupportedSectionFlags => return diags.failParse(
-                                    path,
-                                    "unsupported flags for section {q}",
-                                    .{name},
-                                ),
-                                error.SectionTypeConflict => return diags.failParse(
-                                    path,
-                                    "type of section {q} conflicts with other inputs",
-                                    .{name},
-                                ),
-                                error.SectionFlagsConflict => return diags.failParse(
-                                    path,
-                                    "flags of section {q} conflict with other inputs",
-                                    .{name},
-                                ),
-                                error.UnsupportedNobitsSection => unreachable, // not SHT_NOBITS
-                            };
                             const shndx_ni = shndx.node(elf);
 
                             // For well-known sections, we know that it's fine to have e.g. random
@@ -8791,12 +8867,6 @@ fn loadObject(
                                     .output_size = section.shdr.size,
                                 },
                                 true => opts: {
-                                    // SHF_COMPRESSED is only allowed on non-alloc sections.
-                                    if (section.shdr.flags.shf.ALLOC) return diags.failParse(
-                                        path,
-                                        "section {q} has conflicting flags SHF_ALLOC and SHF_COMPRESSED",
-                                        .{name},
-                                    );
                                     try fr.seekTo(fl.offset + section.shdr.offset);
                                     const chdr = try r.peekStruct(ElfN.Chdr, target_endian);
                                     break :opts .{
@@ -8977,6 +9047,9 @@ fn loadObject(
                                 .alignment = need_align,
                                 .moved = true, // see assert at end of `Input.Section.flush`
                             };
+                            const isi: Input.Section.Index = @fromBackingInt(@intCast(
+                                elf.input_sections.items.len,
+                            ));
                             const ni = elf.addNodeAssumeCapacity(
                                 if (header_node) try shndx_ni.addHeaderChildAfter(
                                     gpa,
@@ -8993,13 +9066,8 @@ fn loadObject(
                                     },
                                     add_node_opts,
                                 ) else try shndx_ni.addFloatingChild(gpa, &elf.mf, add_node_opts),
-                                .{ .input_section = @fromBackingInt(@intCast(
-                                    elf.input_sections.items.len,
-                                )) },
+                                .{ .input_section = isi },
                             );
-                            section.placement = .{
-                                .progbits = @fromBackingInt(@intCast(elf.input_sections.items.len)),
-                            };
                             elf.input_sections.addOneAssumeCapacity().* = .{
                                 .input = ii,
                                 .file_location = .{
@@ -9017,134 +9085,61 @@ fn loadObject(
                                 .first_reloc = .none,
                             };
                             elf.input_prog_node.increaseEstimatedTotalItems(1);
+                            section.placement = .{ .progbits = isi };
                         },
-                        inline .INIT_ARRAY, .FINI_ARRAY => |@"type"| {
-                            if (section.shdr.flags.shf.COMPRESSED) {
-                                return diags.failParse(path, "SHT_{t} section cannot be compressed", .{@"type"});
-                            }
+                        .INIT_ARRAY => {
                             switch (section.shdr.entsize) {
                                 0, class.size() => {},
-                                else => return diags.failParse(path, "bad entsize on SHT_{t} shdr", .{@"type"}),
+                                else => return diags.failParse(path, "bad entsize on SHT_INIT_ARRAY shdr", .{}),
                             }
                             if (section.shdr.addralign > class.size()) {
-                                return diags.failParse(path, "bad addralign on SHT_{t} shdr", .{@"type"});
+                                return diags.failParse(path, "bad addralign on SHT_INIT_ARRAY shdr", .{});
                             }
                             if (section.shdr.size % class.size() != 0) {
-                                return diags.failParse(path, "bad size on SHT_{t} shdr", .{@"type"});
+                                return diags.failParse(path, "bad size on SHT_INIT_ARRAY shdr", .{});
                             }
-
-                            const output_section_name: []const u8 = switch (@"type") {
-                                .INIT_ARRAY => "init_array",
-                                .FINI_ARRAY => "fini_array",
-                                .PREINIT_ARRAY => "preinit_array",
-                                else => comptime unreachable,
-                            };
-
-                            const shndx: *Section.Index = &@field(elf.shndx, output_section_name);
-                            if (shndx.* == .UNDEF) {
-                                try elf.createInitFiniArraySection(shndx, output_section_name, @"type");
-                            }
-                            switch (elf.shdrPtr(shndx.*)) {
-                                inline else => |shdr| {
-                                    const old_size = elf.targetLoad(&shdr.size);
-                                    const new_size = old_size + section.shdr.size;
-                                    elf.targetStore(&shdr.size, @intCast(new_size));
-                                    elf.updateInitFiniArraySectionSize(shndx.*, output_section_name);
-                                },
-                            }
-                            const shndx_ni = shndx.node(elf);
-
-                            const priorities: *InitFiniPriorities = @field(elf.init_fini_priorities, output_section_name);
-
-                            const priority: ?u16 = priority: {
-                                const dot_index = std.mem.findScalarLast(u8, name, '.') orelse {
-                                    break :priority null;
-                                };
-                                break :priority std.fmt.parseInt(
-                                    u16,
-                                    name[dot_index + 1 ..],
-                                    10,
-                                ) catch |err| switch (err) {
-                                    error.Overflow, error.InvalidCharacter => null,
-                                };
-                            };
-
-                            const after_oni: MappedFile.Node.Index.Optional = after: {
-                                const p = priority orelse {
-                                    break :after shndx_ni.last(&elf.mf);
-                                };
-
-                                const chunk_start = (p >> 8) << 8;
-                                var cur_priority = @as(u32, p) + 1;
-                                while (cur_priority > chunk_start) {
-                                    cur_priority -= 1;
-                                    if (priorities.all[cur_priority].unwrap()) |last| {
-                                        break :after .wrap(last);
-                                    }
-                                }
-
-                                var cur_chunk: u8 = @intCast(p >> 8);
-                                while (cur_chunk > 0) {
-                                    cur_chunk -= 1;
-                                    if (priorities.last_in_chunk[cur_chunk].unwrap()) |last| {
-                                        break :after .wrap(last);
-                                    }
-                                }
-
-                                break :after .none;
-                            };
-
-                            const ni = elf.addNodeAssumeCapacity(
-                                try shndx_ni.addHeaderChildAfter(gpa, &elf.mf, after_oni, .{
-                                    .size = section.shdr.size,
-                                    .alignment = .fromByteUnits(class.size()),
-                                    .moved = true, // see assert at end of `Input.Section.flush`
-                                }),
-                                .{ .input_section = @fromBackingInt(@intCast(
-                                    elf.input_sections.items.len,
-                                )) },
-                            );
-                            section.placement = .{
-                                .progbits = @fromBackingInt(@intCast(elf.input_sections.items.len)),
-                            };
-                            elf.input_sections.addOneAssumeCapacity().* = .{
+                            const isi = try elf.addInitFiniArrayInputSectionAssumeCapacity(.{
+                                .shndx = shndx,
                                 .input = ii,
-                                .file_location = .{
+                                .input_section_file_location = .{
                                     .offset = fl.offset + section.shdr.offset,
                                     .size = section.shdr.size,
                                 },
-                                // The section vaddr is initially 0, because the symbol addresses are
-                                // zero-based. This will eventually be updated by `flushMoved`.
-                                .vaddr = 0,
-                                .size = section.shdr.size,
-                                .compression = .none,
-                                .node = ni,
-                                .first_symbol = .null,
-                                .first_target_reloc = .none,
-                                .first_reloc = .none,
-                            };
-                            elf.input_prog_node.increaseEstimatedTotalItems(1);
-
-                            if (priority) |p| {
-                                priorities.all[p] = .wrap(ni);
-                                const chunk: u8 = @intCast(p >> 8);
-                                const chunk_end = (@as(u32, chunk) << 8) + 256;
-                                var cur = chunk_end;
-                                priorities.last_in_chunk[chunk] = while (cur > p) {
-                                    cur -= 1;
-                                    if (priorities.all[cur].unwrap()) |last| {
-                                        break .wrap(last);
-                                    }
-                                } else unreachable;
-                            }
+                                .input_section_name = name,
+                                .priorities = switch (elf.ehdrType()) {
+                                    .REL => null,
+                                    .DYN, .EXEC => elf.init_array_priorities,
+                                },
+                            });
+                            section.placement = .{ .progbits = isi };
                         },
-                        // Unlike `SHT_INIT_ARRAY` and `SHT_FINI_ARRAY`, `SHT_PREINIT_ARRAY` does
-                        // not support specifying "priority" values via section names such as
-                        // `.preinit_array.00000` and `.preinit_array.12345`.
-                        .PREINIT_ARRAY => {
-                            if (section.shdr.flags.shf.COMPRESSED) {
-                                return diags.failParse(path, "SHT_PREINIT_ARRAY section cannot be compressed", .{});
+                        .FINI_ARRAY => {
+                            switch (section.shdr.entsize) {
+                                0, class.size() => {},
+                                else => return diags.failParse(path, "bad entsize on SHT_FINI_ARRAY shdr", .{}),
                             }
+                            if (section.shdr.addralign > class.size()) {
+                                return diags.failParse(path, "bad addralign on SHT_FINI_ARRAY shdr", .{});
+                            }
+                            if (section.shdr.size % class.size() != 0) {
+                                return diags.failParse(path, "bad size on SHT_FINI_ARRAY shdr", .{});
+                            }
+                            const isi = try elf.addInitFiniArrayInputSectionAssumeCapacity(.{
+                                .shndx = shndx,
+                                .input = ii,
+                                .input_section_file_location = .{
+                                    .offset = fl.offset + section.shdr.offset,
+                                    .size = section.shdr.size,
+                                },
+                                .input_section_name = name,
+                                .priorities = switch (elf.ehdrType()) {
+                                    .REL => null,
+                                    .DYN, .EXEC => elf.fini_array_priorities,
+                                },
+                            });
+                            section.placement = .{ .progbits = isi };
+                        },
+                        .PREINIT_ARRAY => {
                             switch (section.shdr.entsize) {
                                 0, class.size() => {},
                                 else => return diags.failParse(path, "bad entsize on SHT_PREINIT_ARRAY shdr", .{}),
@@ -9155,50 +9150,20 @@ fn loadObject(
                             if (section.shdr.size % class.size() != 0) {
                                 return diags.failParse(path, "bad size on SHT_PREINIT_ARRAY shdr", .{});
                             }
-
-                            if (elf.shndx.preinit_array == .UNDEF) {
-                                try elf.createInitFiniArraySection(&elf.shndx.preinit_array, "preinit_array", .PREINIT_ARRAY);
-                            }
-                            switch (elf.shdrPtr(elf.shndx.preinit_array)) {
-                                inline else => |shdr| {
-                                    const old_size = elf.targetLoad(&shdr.size);
-                                    const new_size = old_size + section.shdr.size;
-                                    elf.targetStore(&shdr.size, @intCast(new_size));
-                                    elf.updateInitFiniArraySectionSize(elf.shndx.preinit_array, "preinit_array");
-                                },
-                            }
-
-                            const after_oni = elf.shndx.preinit_array.node(elf).last(&elf.mf);
-                            const ni = elf.addNodeAssumeCapacity(
-                                try elf.shndx.preinit_array.node(elf).addHeaderChildAfter(gpa, &elf.mf, after_oni, .{
-                                    .size = section.shdr.size,
-                                    .alignment = .fromByteUnits(class.size()),
-                                    .moved = true, // see assert at end of `Input.Section.flush`
-                                }),
-                                .{ .input_section = @fromBackingInt(@intCast(
-                                    elf.input_sections.items.len,
-                                )) },
-                            );
-                            section.placement = .{
-                                .progbits = @fromBackingInt(@intCast(elf.input_sections.items.len)),
-                            };
-                            elf.input_sections.addOneAssumeCapacity().* = .{
+                            const isi = try elf.addInitFiniArrayInputSectionAssumeCapacity(.{
+                                .shndx = shndx,
                                 .input = ii,
-                                .file_location = .{
+                                .input_section_file_location = .{
                                     .offset = fl.offset + section.shdr.offset,
                                     .size = section.shdr.size,
                                 },
-                                // The section vaddr is initially 0, because the symbol addresses are
-                                // zero-based. This will eventually be updated by `flushMoved`.
-                                .vaddr = 0,
-                                .size = section.shdr.size,
-                                .compression = .none,
-                                .node = ni,
-                                .first_symbol = .null,
-                                .first_target_reloc = .none,
-                                .first_reloc = .none,
-                            };
-                            elf.input_prog_node.increaseEstimatedTotalItems(1);
+                                .input_section_name = name,
+                                // Unlike `SHT_INIT_ARRAY` and `SHT_FINI_ARRAY`, `SHT_PREINIT_ARRAY`
+                                // does not support specifying "priority" values via section names
+                                // like `.preinit_array.00000` and `.preinit_array.12345`.
+                                .priorities = null,
+                            });
+                            section.placement = .{ .progbits = isi };
                         },
                     }
                 }
@@ -10059,73 +10024,180 @@ fn checkInputIdent(
     );
 }
 
-fn createInitFiniArraySection(
+fn getOrCreateInitFiniArraySection(
     elf: *Elf,
     shndx: *Section.Index,
-    comptime name: []const u8,
     @"type": std.elf.SHT,
-) Error!void {
-    assert(shndx.* == .UNDEF);
-    const gpa = elf.base.comp.gpa;
-    assert(elf.section_by_name.count() == elf.shdrs.items.len);
-    try elf.section_by_name.ensureUnusedCapacity(gpa, 1);
-    shndx.* = try elf.addSection(elf.ni.data_rel_ro, .{
-        .name = "." ++ name,
-        .type = @"type",
-        .flags = .{ .WRITE = true, .ALLOC = true },
-        .addralign = switch (elf.identClass()) {
-            .NONE, _ => unreachable,
-            .@"32" => .@"4",
-            .@"64" => .@"8",
-        },
-        .entsize = elf.identClass().size(),
-        .manual_size = true,
-    });
-    const shndx_ni = shndx.node(elf);
-    const shndx_vaddr = shndx.vaddr(elf);
-    elf.section_by_name.putAssumeCapacityNoClobber(shndx.name(elf), {});
-    // These symbols definitely already exist with strong definitions, because we added them
-    // alongside the other linker-defined symbols, all the way back in `initHeaders`.
-    const start_gsi = elf.globalByName(.{
-        .name = "__" ++ name ++ "_start",
-        .version = null,
-    }).?;
-    const end_gsi = elf.globalByName(.{
-        .name = "__" ++ name ++ "_end",
-        .version = null,
-    }).?;
-    try elf.setGlobalSymbolValue(start_gsi, .{
-        .node = .wrap(shndx_ni),
-        .value = shndx_vaddr,
-        .size = 0,
-        .type = .NOTYPE,
-        .shndx = shndx.*,
-        .is_common = false,
-    });
-    try elf.updateGlobalDynamic(start_gsi, true);
-    try elf.setGlobalSymbolValue(end_gsi, .{
-        .node = .wrap(shndx_ni),
-        .value = shndx_vaddr,
-        .size = 0,
-        .type = .NOTYPE,
-        .shndx = shndx.*,
-        .is_common = false,
-    });
-    try elf.updateGlobalDynamic(end_gsi, true);
+    name: []const u8,
+    start_sym_name: []const u8,
+    end_sym_name: []const u8,
+) Error!Section.Index {
+    assert(elf.ehdrType() != .REL);
+    if (shndx.* == .UNDEF) {
+        const gpa = elf.base.comp.gpa;
+        assert(elf.section_by_name.count() == elf.shdrs.items.len);
+        try elf.section_by_name.ensureUnusedCapacity(gpa, 1);
+        shndx.* = try elf.addSection(elf.ni.data_rel_ro, .{
+            .name = name,
+            .type = @"type",
+            .flags = .{ .WRITE = true, .ALLOC = true },
+            .addralign = switch (elf.identClass()) {
+                .NONE, _ => unreachable,
+                .@"32" => .@"4",
+                .@"64" => .@"8",
+            },
+            .entsize = elf.identClass().size(),
+            .manual_size = true,
+        });
+        const shndx_ni = shndx.node(elf);
+        const shndx_vaddr = shndx.vaddr(elf);
+        elf.section_by_name.putAssumeCapacityNoClobber(shndx.name(elf), {});
+        // These symbols definitely already exist with strong definitions, because we added them
+        // alongside the other linker-defined symbols, all the way back in `initHeaders`.
+        const start_gsi = elf.globalByName(.{ .name = start_sym_name, .version = null }).?;
+        const end_gsi = elf.globalByName(.{ .name = end_sym_name, .version = null }).?;
+        try elf.setGlobalSymbolValue(start_gsi, .{
+            .node = .wrap(shndx_ni),
+            .value = shndx_vaddr,
+            .size = 0,
+            .type = .NOTYPE,
+            .shndx = shndx.*,
+            .is_common = false,
+        });
+        try elf.updateGlobalDynamic(start_gsi, true);
+        try elf.setGlobalSymbolValue(end_gsi, .{
+            .node = .wrap(shndx_ni),
+            .value = shndx_vaddr,
+            .size = 0,
+            .type = .NOTYPE,
+            .shndx = shndx.*,
+            .is_common = false,
+        });
+        try elf.updateGlobalDynamic(end_gsi, true);
+    }
+    return shndx.*;
 }
-fn updateInitFiniArraySectionSize(
-    elf: *Elf,
+fn addInitFiniArrayInputSectionAssumeCapacity(elf: *Elf, opts: struct {
     shndx: Section.Index,
-    comptime name: []const u8,
-) void {
-    const end_vaddr: u64 = switch (elf.shdrPtr(shndx)) {
-        inline else => |shdr| shndx.vaddr(elf) + elf.targetLoad(&shdr.size),
+    input: Input.Index,
+    input_section_file_location: MappedFile.Node.FileLocation,
+    input_section_name: []const u8,
+    priorities: ?*InitFiniPriorities,
+}) Error!Input.Section.Index {
+    const gpa = elf.base.comp.gpa;
+    const shndx = opts.shndx;
+
+    {
+        const new_size: u64 = switch (elf.shdrPtr(shndx)) {
+            inline else => |shdr| new_size: {
+                const old_size = elf.targetLoad(&shdr.size);
+                const new_size = old_size + opts.input_section_file_location.size;
+                elf.targetStore(&shdr.size, @intCast(new_size));
+                break :new_size new_size;
+            },
+        };
+        if (elf.ehdrType() != .REL) {
+            const section_end_sym: []const u8 = name: {
+                if (shndx == elf.shndx.init_array) break :name "__init_array_end";
+                if (shndx == elf.shndx.fini_array) break :name "__fini_array_end";
+                if (shndx == elf.shndx.preinit_array) break :name "__preinit_array_end";
+                unreachable;
+            };
+            // The symbol was created back in `initHeaders`, we just need to update its value to the new
+            // end of the section.
+            elf.globalByName(.{
+                .name = section_end_sym,
+                .version = null,
+            }).?.id().flushMoved(
+                elf,
+                shndx.vaddr(elf) + new_size,
+            );
+        }
+    }
+
+    const priority: ?u16 = priority: {
+        if (opts.priorities == null) {
+            break :priority null;
+        }
+        const dot_index = std.mem.findScalarLast(u8, opts.input_section_name, '.') orelse {
+            break :priority null;
+        };
+        break :priority std.fmt.parseInt(
+            u16,
+            opts.input_section_name[dot_index + 1 ..],
+            10,
+        ) catch |err| switch (err) {
+            error.Overflow, error.InvalidCharacter => null,
+        };
     };
-    const end_sym_gsi = elf.globalByName(.{
-        .name = "__" ++ name ++ "_end",
-        .version = null,
-    }).?;
-    end_sym_gsi.id().flushMoved(elf, end_vaddr);
+
+    const after_oni: MappedFile.Node.Index.Optional = after: {
+        const p = priority orelse {
+            break :after shndx.node(elf).last(&elf.mf);
+        };
+        const priorities = opts.priorities.?;
+
+        const chunk_start = (p >> 8) << 8;
+        var cur_priority = @as(u32, p) + 1;
+        while (cur_priority > chunk_start) {
+            cur_priority -= 1;
+            if (priorities.all[cur_priority].unwrap()) |last| {
+                break :after .wrap(last);
+            }
+        }
+
+        var cur_chunk: u8 = @intCast(p >> 8);
+        while (cur_chunk > 0) {
+            cur_chunk -= 1;
+            if (priorities.last_in_chunk[cur_chunk].unwrap()) |last| {
+                break :after .wrap(last);
+            }
+        }
+
+        break :after .none;
+    };
+
+    const isi: Input.Section.Index = @fromBackingInt(@intCast(
+        elf.input_sections.items.len,
+    ));
+    const ni = elf.addNodeAssumeCapacity(
+        try shndx.node(elf).addHeaderChildAfter(gpa, &elf.mf, after_oni, .{
+            .size = opts.input_section_file_location.size,
+            .alignment = .fromByteUnits(elf.targetPtrSize()),
+            .moved = true, // see assert at end of `Input.Section.flush`
+        }),
+        .{ .input_section = isi },
+    );
+    elf.input_sections.addOneAssumeCapacity().* = .{
+        .input = opts.input,
+        .file_location = opts.input_section_file_location,
+        // The section vaddr is initially 0, because the symbol addresses are
+        // zero-based. This will eventually be updated by `flushMoved`.
+        .vaddr = 0,
+        .size = opts.input_section_file_location.size,
+        .compression = .none,
+        .node = ni,
+        .first_symbol = .null,
+        .first_target_reloc = .none,
+        .first_reloc = .none,
+    };
+    elf.input_prog_node.increaseEstimatedTotalItems(1);
+
+    if (priority) |p| {
+        const priorities = opts.priorities.?;
+        priorities.all[p] = .wrap(ni);
+        const chunk: u8 = @intCast(p >> 8);
+        const chunk_end = (@as(u32, chunk) << 8) + 256;
+        var cur = chunk_end;
+        priorities.last_in_chunk[chunk] = while (cur > p) {
+            cur -= 1;
+            if (priorities.all[cur].unwrap()) |last| {
+                break .wrap(last);
+            }
+        } else unreachable;
+    }
+
+    return isi;
 }
 
 pub fn prelink(elf: *Elf, prog_node: std.Progress.Node) link.Error!void {

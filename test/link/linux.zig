@@ -621,6 +621,74 @@ pub fn addCases(ctx: *LinkContext) void {
             unreachable;
         }
     }
+
+    if (ctx.includeTest("init_array_obj")) |case| {
+        const obj = case.addObject(.{
+            .name = "arrays",
+            .asm_source_bytes =
+            \\.global init_00000
+            \\.global init_65535
+            \\.global init_default
+            \\.global init_60000
+            \\.global init_00100
+            \\
+            \\.global fini_00000
+            \\.global fini_65535
+            \\.global fini_default
+            \\.global fini_60000
+            \\.global fini_00100
+            \\
+            \\.global preinit
+            \\
+            \\.section .init_array.00000, "aw"
+            \\.balign 8
+            \\.quad init_00000
+            \\.section .init_array.65535, "aw"
+            \\.balign 8
+            \\.quad init_65535
+            \\.section .init_array, "aw"
+            \\.balign 8
+            \\.quad init_default
+            \\.section .init_array.60000, "aw"
+            \\.balign 8
+            \\.quad init_60000
+            \\.section .init_array.00100, "aw"
+            \\.balign 8
+            \\.quad init_00100
+            \\
+            \\.section .fini_array.00000, "aw"
+            \\.balign 8
+            \\.quad fini_00000
+            \\.section .fini_array.65535, "aw"
+            \\.balign 8
+            \\.quad fini_65535
+            \\.section .fini_array, "aw"
+            \\.balign 8
+            \\.quad fini_default
+            \\.section .fini_array.60000, "aw"
+            \\.balign 8
+            \\.quad fini_60000
+            \\.section .fini_array.00100, "aw"
+            \\.balign 8
+            \\.quad fini_00100
+            \\
+            \\.section .preinit_array, "aw"
+            \\.balign 8
+            \\.quad preinit
+            \\
+            ,
+        });
+        case.verifyObjdump(obj.getEmittedBin(), &.{
+            "--basenames",
+            "--redact=address",
+            "--redact=offset",
+            "--redact=index",
+            "--sections",
+            "--filter=type ~ \"_ARRAY\"",
+            "--relocs",
+            "--filter=reloc_section_name ~ \"_array\"",
+        }, .{});
+    }
 }
 
 const LinkContext = @import("../tests.zig").LinkContext;
