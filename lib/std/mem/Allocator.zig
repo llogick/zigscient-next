@@ -569,13 +569,19 @@ inline fn isInstantiable(Type: type) bool {
             .noreturn, .@"opaque" => false,
             .array => |array| (array.len == 0 and array.sentinel_ptr == null) or
                 isInstantiable(array.child),
-            .@"struct" => |@"struct"| for (@"struct".field_types) |Field| {
-                if (!isInstantiable(Field)) break false;
-            } else true,
+            .@"struct" => |@"struct"| blk: {
+                @setEvalBranchQuota(2 * @"struct".field_types.len);
+                break :blk for (@"struct".field_types) |Field| {
+                    if (!isInstantiable(Field)) break false;
+                } else true;
+            },
             .@"enum" => |@"enum"| isInstantiable(@"enum".tag_type),
-            .@"union" => |@"union"| for (@"union".field_types) |Field| {
-                if (isInstantiable(Field)) break true;
-            } else false,
+            .@"union" => |@"union"| blk: {
+                @setEvalBranchQuota(2 * @"union".field_types.len);
+                break :blk for (@"union".field_types) |Field| {
+                    if (isInstantiable(Field)) break true;
+                } else false;
+            },
             .spirv => |spirv| switch (spirv) {
                 .sampler, .image, .sampled_image => false,
                 .runtime_array => true,
