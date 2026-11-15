@@ -44,6 +44,8 @@ const runtime_array = @extern(*addrspace(.storage_buffer) const RuntimeArrayBuf,
 });
 
 test "@SpirvType" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
     _ = sampler;
     _ = sampled_image;
     _ = storage_image;

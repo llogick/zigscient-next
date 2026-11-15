@@ -696,6 +696,17 @@ fn emitSourceInfo(flush: *Flush, out: *Section, version: u32) link.Error!void {
         ) catch return error.OutOfMemory;
     }
 
+    if (comp.config.is_test) {
+        var test_info: std.Io.Writer.Allocating = .init(gpa);
+        defer test_info.deinit();
+        test_info.writer.writeAll("zig_test:") catch return error.OutOfMemory;
+        for (zcu.test_functions.keys(), 0..) |nav_index, index| {
+            const id = flush.navs.get(nav_index).?;
+            if (index != 0) test_info.writer.writeByte(':') catch return error.OutOfMemory;
+            test_info.writer.print("{d}", .{@backingInt(id)}) catch return error.OutOfMemory;
+        }
+        try out.emit(gpa, .OpSourceExtension, .{ .extension = test_info.written() });
+    }
     try out.emit(gpa, .OpSourceExtension, .{ .extension = error_info.written() });
     try out.emit(gpa, .OpSource, .{
         .source_language = .zig,

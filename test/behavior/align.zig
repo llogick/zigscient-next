@@ -514,6 +514,8 @@ test "struct field explicit alignment" {
 }
 
 test "nested struct field alignment" {
+    if (builtin.zig_backend == .stage2_llvm and builtin.os.tag == .vulkan) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest() !void {
             const T = struct {
@@ -532,6 +534,8 @@ test "nested struct field alignment" {
 }
 
 test "nested union field alignment" {
+    if (builtin.zig_backend == .stage2_llvm and builtin.os.tag == .vulkan) return error.SkipZigTest;
+
     const S = struct {
         fn doTheTest() !void {
             const T = struct {

@@ -675,7 +675,7 @@ test "@bitCast between float and vector" {
 }
 
 test "@bitCast to vectors of f80 and f128" {
-    if (builtin.zig_backend == .stage2_spirv) return error.SkipZigTest;
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
 
     const static = struct {
         fn doTheTest() !void {

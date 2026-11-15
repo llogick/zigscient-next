@@ -159,6 +159,7 @@ pub fn build(b: *std.Build) !void {
     const enable_macos_sdk = b.option(bool, "enable-macos-sdk", "Run tests requiring presence of macOS SDK and frameworks") orelse enable_ios_sdk;
     const enable_symlinks_windows = b.option(bool, "enable-symlinks-windows", "Run tests requiring presence of symlinks on Windows") orelse false;
     const config_h_path_option = b.option([]const u8, "config_h", "Path to the generated config.h");
+    const spirv_test_executor = b.option([]const u8, "spirv-test-executor", "Path to the SPIR-V test executor");
 
     if (!skip_install_lib_files) {
         b.installDirectory(.{
@@ -458,6 +459,7 @@ pub fn build(b: *std.Build) !void {
         .skip_llvm = skip_llvm,
         .skip_cbe = skip_cbe,
         .skip_libc = skip_libc,
+        .spirv_test_executor = if (spirv_test_executor) |path| .{ .cwd_relative = path } else null,
         .max_rss = 4_000_000_000,
     }));
 
@@ -502,7 +504,7 @@ pub fn build(b: *std.Build) !void {
         .skip_single_threaded = skip_single_threaded,
         .skip_non_native = skip_non_native,
         .test_only = test_only,
-        .skip_spirv = true,
+        .skip_spirv = skip_spirv,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
         .skip_netbsd = skip_netbsd,
@@ -529,7 +531,7 @@ pub fn build(b: *std.Build) !void {
         .skip_single_threaded = true,
         .skip_non_native = skip_non_native,
         .test_only = test_only,
-        .skip_spirv = true,
+        .skip_spirv = skip_spirv,
         .skip_wasm = skip_wasm,
         .skip_freebsd = skip_freebsd,
         .skip_netbsd = skip_netbsd,

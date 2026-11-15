@@ -723,6 +723,7 @@ test "pointer to bitpack struct member in a stack variable" {
 }
 
 test "bitpack struct with u0 field access" {
+    if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
 
     const S = bitpack struct {

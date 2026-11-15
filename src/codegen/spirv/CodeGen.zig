@@ -1971,13 +1971,7 @@ fn resolveType(cg: *CodeGen, ty: Type, repr: Repr) Error!Id {
             assert(repr == .direct);
             return try cg.voidType();
         },
-        .void => switch (repr) {
-            .direct => return try cg.voidType(),
-            .indirect => {
-                if (target.os.tag != .opencl) return cg.fail("cannot generate opaque type", .{});
-                return try cg.opaqueType("void", .{});
-            },
-        },
+        .void => return try cg.voidType(),
         .bool => switch (repr) {
             .direct => return try cg.boolType(),
             .indirect => return try cg.resolveType(.u1, .indirect),
@@ -1985,8 +1979,7 @@ fn resolveType(cg: *CodeGen, ty: Type, repr: Repr) Error!Id {
         .int => {
             if (ty.toIntern() == .u0_type) {
                 assert(repr == .indirect);
-                if (target.os.tag != .opencl) return cg.fail("cannot generate opaque type", .{});
-                return try cg.opaqueType("u0", .{});
+                return try cg.voidType();
             }
             const int_info = ty.intInfo(zcu);
             return try cg.intType(int_info.signedness, int_info.bits);
@@ -2008,16 +2001,16 @@ fn resolveType(cg: *CodeGen, ty: Type, repr: Repr) Error!Id {
         },
         .array => {
             const elem_ty = ty.childType(zcu);
+            if (!elem_ty.hasRuntimeBits(zcu)) {
+                assert(repr == .indirect);
+                return try cg.voidType();
+            }
             const elem_ty_id = try cg.resolveType(elem_ty, .indirect);
             const total_len = std.math.cast(u32, ty.arrayLenIncludingSentinel(zcu)) orelse {
                 return cg.fail("array type of {} elements is too large", .{ty.arrayLenIncludingSentinel(zcu)});
             };
 
-            if (!elem_ty.hasRuntimeBits(zcu)) {
-                assert(repr == .indirect);
-                if (target.os.tag != .opencl) return cg.fail("cannot generate opaque type", .{});
-                return try cg.opaqueType("zero-sized-array", .{});
-            } else if (total_len == 0) {
+            if (total_len == 0) {
                 // The size of the array would be 0, but that is not allowed in SPIR-V.
                 // This path can be reached for example when there is a slicing of a pointer
                 // that produces a zero-length array. In all cases where this type can be generated,
@@ -2035,6 +2028,10 @@ fn resolveType(cg: *CodeGen, ty: Type, repr: Repr) Error!Id {
         },
         .vector => {
             const elem_ty = ty.childType(zcu);
+            if (!elem_ty.hasRuntimeBits(zcu)) {
+                assert(repr == .indirect);
+                return try cg.voidType();
+            }
             const elem_ty_id = try cg.resolveType(elem_ty, repr);
             const len = ty.vectorLen(zcu);
             if (cg.isSpvVector(ty)) return try cg.vectorType(len, elem_ty_id);

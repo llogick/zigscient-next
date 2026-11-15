@@ -10,6 +10,7 @@ MCPU="baseline"
 CACHE_BASENAME="zig+llvm+lld+clang-$TARGET-0.18.0-dev.92+1e1964473"
 PREFIX="$HOME/deps/$CACHE_BASENAME"
 ZIG="$PREFIX/bin/zig"
+SPIRV_TEST_EXECUTOR="$HOME/deps/zig-spirv-test-executor-e781469"
 
 export PATH="$HOME/deps/wasmtime-v50.0.0-x86_64-linux:$HOME/deps/qemu-linux-x86_64-11.1.1.1/bin:$HOME/local/bin:$PATH"
 
@@ -46,6 +47,12 @@ stage3-debug/bin/zig build \
   -Dtarget=arm-linux-musl \
   -Dno-lib
 
+SPIRV_TEST_EXECUTOR_OUT="$PWD/spirv-test-executor"
+stage3-debug/bin/zig build \
+  --build-file "$SPIRV_TEST_EXECUTOR/build.zig" \
+  --prefix "$SPIRV_TEST_EXECUTOR_OUT" \
+  --system "$SPIRV_TEST_EXECUTOR/zig-pkg"
+
 stage3-debug/bin/zig build install test docs \
   --maxrss "${ZSF_MAX_RSS:-0}" \
   --prefix stage4-debug \
@@ -67,6 +74,7 @@ stage3-debug/bin/zig build install test docs \
   -Dskip-windows \
   -Dskip-darwin \
   -Denable-superhtml \
+  -Dspirv-test-executor="$SPIRV_TEST_EXECUTOR_OUT/bin/zig-spirv-test-executor" \
   -Dlldb="$HOME/deps/lldb-zig/Debug-c003e86788/bin/lldb" \
   -Dlibc-test-path="$HOME/deps/libc-test-b95fe84"
 
