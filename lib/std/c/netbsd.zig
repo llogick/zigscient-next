@@ -389,3 +389,10 @@ pub const TCP = struct {
     pub const MD5SIG = 0x10;
     pub const CONGCTL = 0x20;
 };
+
+// https://github.com/NetBSD/src/blob/6e3f6e42f352de1c14b16fbb34bba932cf48d3c2/sys/sys/mman.h#L216-L222
+pub const MFD = struct {
+    pub const CLOEXEC = 0x0001;
+    pub const ALLOWSEALING = 0x0002;
+    pub const CLOFORK = 0x0004;
+};

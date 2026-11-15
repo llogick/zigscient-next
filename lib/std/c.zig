@@ -1133,10 +1133,18 @@ pub const F = switch (native_os) {
         pub const GETNOSIGPIPE = 13;
         pub const SETNOSIGPIPE = 14;
         pub const GETPATH = 15;
+        pub const ADD_SEALS = 16;
+        pub const GET_SEALS = 17;
 
         pub const RDLCK = 1;
         pub const WRLCK = 3;
         pub const UNLCK = 2;
+
+        pub const SEAL_SEAL = 0x01;
+        pub const SEAL_SHRINK = 0x02;
+        pub const SEAL_GROW = 0x04;
+        pub const SEAL_WRITE = 0x08;
+        pub const SEAL_FUTURE_WRITE = 0x0010;
     },
     .dragonfly => struct {
         pub const ULOCK = 0;
@@ -10472,6 +10480,7 @@ pub const FUTEX = switch (native_os) {
 pub const MFD = switch (native_os) {
     .linux => linux.MFD,
     .freebsd => freebsd.MFD,
+    .netbsd => netbsd.MFD,
     else => void,
 };
 
