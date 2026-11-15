@@ -4754,7 +4754,6 @@ fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitErr
 
     var maybe_sync: CancelRegion.Sync.Maybe = .{ .cancel_region = .init() };
     defer maybe_sync.deinit(ev);
-    defer ev.childCleanup(child);
 
     const pid = child.id.?;
     var info: linux.siginfo_t = undefined;
@@ -4780,6 +4779,7 @@ fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitErr
         ev.yield(null, .nothing);
         switch (maybe_sync.cancel_region.errno()) {
             .SUCCESS => {
+                ev.childCleanup(child);
                 if (child.request_resource_usage_statistics) {
                     const sync = try maybe_sync.enterSync(ev);
                     while (true) {

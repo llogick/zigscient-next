@@ -459,6 +459,10 @@ pub const SpawnOptions = struct {
 };
 
 /// Creates a child process.
+///
+/// `Child.wait` or `Child.kill` releases allocated memory and handles.
+/// To ensure the child process terminates and resources are cleaned up
+/// in all cases, `Child.kill` should be called after `Child.wait`.
 pub fn spawn(io: Io, options: SpawnOptions) SpawnError!Child {
     return io.vtable.processSpawn(io.userdata, options);
 }

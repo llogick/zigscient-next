@@ -15828,8 +15828,6 @@ fn childCleanupWindows(child: *process.Child) void {
 }
 
 fn childWaitPosix(child: *process.Child) process.Child.WaitError!process.Child.Term {
-    defer childCleanupPosix(child);
-
     const pid = child.id.?;
 
     var ru: posix.rusage = undefined;
@@ -15841,6 +15839,7 @@ fn childWaitPosix(child: *process.Child) process.Child.WaitError!process.Child.T
         while (true) switch (posix.errno(posix.system.wait4(pid, &status, 0, ru_ptr))) {
             .SUCCESS => {
                 syscall.finish();
+                childCleanupPosix(child);
                 if (ru_ptr) |p| child.resource_usage_statistics.rusage = p.*;
                 return statusToTerm(@bitCast(status));
             },
@@ -15860,6 +15859,7 @@ fn childWaitPosix(child: *process.Child) process.Child.WaitError!process.Child.T
         while (true) switch (linux.errno(linux.waitid(.PID, pid, &info, linux.W.EXITED, ru_ptr))) {
             .SUCCESS => {
                 syscall.finish();
+                childCleanupPosix(child);
                 if (ru_ptr) |p| child.resource_usage_statistics.rusage = p.*;
                 const status: u32 = @bitCast(info.fields.common.second.sigchld.status);
                 const code: linux.CLD = @fromBackingInt(@intCast(info.code));
@@ -15884,6 +15884,7 @@ fn childWaitPosix(child: *process.Child) process.Child.WaitError!process.Child.T
     while (true) switch (posix.errno(posix.system.waitpid(pid, &status, 0))) {
         .SUCCESS => {
             syscall.finish();
+            childCleanupPosix(child);
             return statusToTerm(@bitCast(status));
         },
         .INTR => {

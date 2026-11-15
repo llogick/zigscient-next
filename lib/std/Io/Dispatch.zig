@@ -4571,7 +4571,6 @@ fn execvPath(
 
 fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitError!process.Child.Term {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
-    defer ev.childCleanup(child);
     const pid = child.id.?;
     const source = c.dispatch.source_create(
         .PROC,
@@ -4588,6 +4587,7 @@ fn childWait(userdata: ?*anyopaque, child: *process.Child) process.Child.WaitErr
     const ru_ptr = if (child.request_resource_usage_statistics) &ru else null;
     while (true) switch (c.errno(c.wait4(pid, &status, 0, ru_ptr))) {
         .SUCCESS => {
+            ev.childCleanup(child);
             if (ru_ptr) |p| child.resource_usage_statistics.rusage = p.*;
             return statusToTerm(@bitCast(status));
         },

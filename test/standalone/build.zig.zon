@@ -54,6 +54,9 @@
         .child_process = .{
             .path = "child_process",
         },
+        .child_process_cleanup = .{
+            .path = "child_process_cleanup",
+        },
         .embed_generated_file = .{
             .path = "embed_generated_file",
         },
