@@ -4916,8 +4916,9 @@ fn workerDocsWasmFallible(comp: *Compilation, prog_node: std.Progress.Node) SubU
 
     const optimize_mode: std.lang.Optimize = .small;
     const output_mode = std.lang.OutputMode.Exe;
+    var target_diags: std.zig.system.ResolveTargetDiagnostics = .none;
     const resolved_target: Module.ResolvedTarget = .{
-        .result = std.zig.system.resolveTargetQuery(io, .{
+        .result = std.zig.system.resolveTargetQuery(io, arena, .{
             .cpu_arch = .wasm32,
             .os_tag = .freestanding,
             .cpu_features_add = std.Target.wasm.featureSet(&.{
@@ -4930,12 +4931,13 @@ fn workerDocsWasmFallible(comp: *Compilation, prog_node: std.Progress.Node) SubU
                 //.simd128,
                 // .tail_call, not supported by Safari
             }),
-        }) catch unreachable,
+        }, &target_diags) catch unreachable,
 
         .is_native_os = false,
         .is_native_abi = false,
         .is_explicit_dynamic_linker = false,
     };
+    assert(target_diags.isEmpty());
 
     const config = Config.resolve(.{
         .output_mode = output_mode,

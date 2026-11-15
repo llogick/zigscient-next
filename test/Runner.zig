@@ -1297,61 +1297,62 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
                 break :triple_cpu .{ triple_cpu[0 .. cpu_pos - 1], triple_cpu[cpu_pos..] };
             };
             var query_parse_diags: std.Target.Query.ParseOptions.Diagnostics = undefined;
+            const query = std.Target.Query.parse(.{
+                .arch_os_abi = triple,
+                .cpu_features = cpu,
+                .object_format = switch (backend) {
+                    .selfhosted, .llvm => null,
+                    .cbe => "c",
+                },
+                .diagnostics = &query_parse_diags,
+            }) catch |err| switch (err) {
+                error.UnknownArchitecture => return runner.fail(
+                    "unable to resolve target {q}: unknown architecture: {q}",
+                    .{ target_query, query_parse_diags.unknown_architecture_name.? },
+                ),
+                error.MissingOperatingSystem => return runner.fail(
+                    "unable to resolve target {q}: missing operating system",
+                    .{target_query},
+                ),
+                error.UnknownOperatingSystem => return runner.fail(
+                    "unable to resolve target {q}: unknown operating system: {q}",
+                    .{ target_query, query_parse_diags.os_name.? },
+                ),
+                error.InvalidOperatingSystemVersion => return runner.fail(
+                    "unable to resolve target {q}: invalid operating system version",
+                    .{target_query},
+                ),
+                error.UnknownApplicationBinaryInterface => return runner.fail(
+                    "unable to resolve target {q}: unknown abi",
+                    .{target_query},
+                ),
+                error.InvalidAbiVersion => return runner.fail(
+                    "unable to resolve target {q}: invalid abi version",
+                    .{target_query},
+                ),
+                error.UnexpectedExtraField => unreachable, // validated above
+                error.UnknownCpuModel => return runner.fail(
+                    "unable to resolve target {q}: unknown cpu: {q}",
+                    .{ target_query, query_parse_diags.cpu_name.? },
+                ),
+                error.UnknownCpuFeature => return runner.fail(
+                    "unable to resolve target {q}: unknown cpu feature: {q}",
+                    .{ target_query, query_parse_diags.unknown_feature_name.? },
+                ),
+                error.UnknownObjectFormat => return runner.fail(
+                    "unable to resolve target {q}: unknown object format",
+                    .{target_query},
+                ),
+            };
+            var target_diags: std.zig.system.ResolveTargetDiagnostics = .none;
             const resolved = std.zig.system.resolveTargetQuery(
                 runner.io,
-                std.Target.Query.parse(.{
-                    .arch_os_abi = triple,
-                    .cpu_features = cpu,
-                    .object_format = switch (backend) {
-                        .selfhosted, .llvm => null,
-                        .cbe => "c",
-                    },
-                    .diagnostics = &query_parse_diags,
-                }) catch |err| switch (err) {
-                    error.UnknownArchitecture => return runner.fail(
-                        "unable to resolve target {q}: unknown architecture: {q}",
-                        .{ target_query, query_parse_diags.unknown_architecture_name.? },
-                    ),
-                    error.MissingOperatingSystem => return runner.fail(
-                        "unable to resolve target {q}: missing operating system",
-                        .{target_query},
-                    ),
-                    error.UnknownOperatingSystem => return runner.fail(
-                        "unable to resolve target {q}: unknown operating system: {q}",
-                        .{ target_query, query_parse_diags.os_name.? },
-                    ),
-                    error.InvalidOperatingSystemVersion => return runner.fail(
-                        "unable to resolve target {q}: invalid operating system version",
-                        .{target_query},
-                    ),
-                    error.UnknownApplicationBinaryInterface => return runner.fail(
-                        "unable to resolve target {q}: unknown abi",
-                        .{target_query},
-                    ),
-                    error.InvalidAbiVersion => return runner.fail(
-                        "unable to resolve target {q}: invalid abi version",
-                        .{target_query},
-                    ),
-                    error.UnexpectedExtraField => unreachable, // validated above
-                    error.UnknownCpuModel => return runner.fail(
-                        "unable to resolve target {q}: unknown cpu: {q}",
-                        .{ target_query, query_parse_diags.cpu_name.? },
-                    ),
-                    error.UnknownCpuFeature => return runner.fail(
-                        "unable to resolve target {q}: unknown cpu feature: {q}",
-                        .{ target_query, query_parse_diags.unknown_feature_name.? },
-                    ),
-                    error.UnknownObjectFormat => return runner.fail(
-                        "unable to resolve target {q}: unknown object format",
-                        .{target_query},
-                    ),
-                },
+                runner.arena.allocator(),
+                query,
+                &target_diags,
             ) catch |err| switch (err) {
                 error.Canceled => |e| return e,
-                else => |e| return runner.fail(
-                    "unable to resolve target {q}: {t}",
-                    .{ triple, e },
-                ),
+                else => |e| return runner.fail("{f}", .{target_diags.fmt(&query, e)}),
             };
             break :target .{
                 .triple = triple,
@@ -3302,10 +3303,7 @@ pub fn main(init: std.process.Init) (std.mem.Allocator.Error || std.Io.Cancelabl
                     .gdb_exe = null,
                     .lldb_exe = null,
                 },
-                .host = std.zig.system.resolveTargetQuery(init.io, .{}) catch |err| switch (err) {
-                    error.Canceled => |e| return e,
-                    else => |e| return fatal("unable to resolve host target: {t}", .{e}),
-                },
+                .host = std.zig.resolveTargetQueryOrFatal(init.io, arena, .{}),
                 .server = .{
                     .in = &stdin.interface,
                     .out = &stdout.interface,

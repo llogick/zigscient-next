@@ -638,7 +638,7 @@ fn getIncludePaths(
                     .cpu_arch = includes_arch,
                     .abi = .msvc,
                 };
-                const target = std.zig.resolveTargetQueryOrFatal(io, target_query);
+                const target = std.zig.resolveTargetQueryOrFatal(io, arena, target_query);
                 const is_native_abi = target_query.isNativeAbi();
                 const detected_libc = std.zig.LibCDirs.detect(arena, io, .{ .root_dir = .cwd(), .sub_path = zig_lib_dir }, &target, is_native_abi, true, null, environ_map) catch {
                     if (includes == .any) {
@@ -664,7 +664,7 @@ fn getIncludePaths(
                     .cpu_arch = includes_arch,
                     .abi = .gnu,
                 };
-                const target = std.zig.resolveTargetQueryOrFatal(io, target_query);
+                const target = std.zig.resolveTargetQueryOrFatal(io, arena, target_query);
                 const is_native_abi = target_query.isNativeAbi();
                 const detected_libc = std.zig.LibCDirs.detect(
                     arena,

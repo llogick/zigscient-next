@@ -129,7 +129,7 @@ fn printOutput(
     opt_zig_lib_dir: ?[]const u8,
     environ_map: *const process.Environ.Map,
 ) !void {
-    const host = try std.zig.system.resolveTargetQuery(io, .{});
+    const host = std.zig.resolveTargetQueryOrFatal(io, arena, .{});
     const obj_ext = builtin.object_format.fileExt(builtin.cpu.arch);
     const print = std.debug.print;
 
@@ -234,7 +234,7 @@ fn printOutput(
             const target_query = try std.Target.Query.parse(.{
                 .arch_os_abi = code.target_str orelse "native",
             });
-            const target = try std.zig.system.resolveTargetQuery(io, target_query);
+            const target = std.zig.resolveTargetQueryOrFatal(io, arena, target_query);
 
             const path_to_exe = try arena.print("./{s}{s}", .{
                 code_name, target.exeFileExt(),
@@ -310,7 +310,7 @@ fn printOutput(
                 const target_query = try std.Target.Query.parse(.{
                     .arch_os_abi = triple,
                 });
-                const target = try std.zig.system.resolveTargetQuery(io, target_query);
+                const target = std.zig.resolveTargetQueryOrFatal(io, arena, target_query);
                 switch (getExternalExecutor(io, &target, .{
                     .host_cpu_arch = host.cpu.arch,
                     .host_os_tag = host.os.tag,

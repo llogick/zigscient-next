@@ -259,7 +259,7 @@ fn translate(
         },
     }
 
-    const target = std.zig.resolveTargetQueryOrFatal(io, target_query);
+    const target = std.zig.resolveTargetQueryOrFatal(io, arena, target_query);
 
     if (link_libc) {
         if (target.isGnuLibC()) {

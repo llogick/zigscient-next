@@ -279,6 +279,7 @@ pub fn main(init: process.Init.Minimal) !void {
         .zig_lib_directory = zig_lib_directory,
         .build_root_directory = undefined,
         .random_seed = parseRandomSeed(seed_arg),
+        .host_target = std.zig.resolveTargetQueryOrFatal(io, arena, .{}),
     };
 
     const cmd = stringToEnum(enum { libc, init, fetch, build, @"cache-cat" }, cmd_name) orelse
@@ -2632,7 +2633,7 @@ fn cmdLibC(gpa: Allocator, graph: *Graph, args: []const []const u8) !void {
     const target_query = std.zig.parseTargetQueryOrReportFatalError(gpa, .{
         .arch_os_abi = target_arch_os_abi,
     });
-    const target = std.zig.resolveTargetQueryOrFatal(io, target_query);
+    const target = std.zig.resolveTargetQueryOrFatal(io, arena, target_query);
 
     if (print_includes) {
         const libc_installation: ?*LibCInstallation = libc: {

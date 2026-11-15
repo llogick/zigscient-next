@@ -2274,11 +2274,7 @@ fn runCommand(
                 const root_module_target = root_module.resolved_target.get(conf).?.result.get(conf);
                 const root_target = root_module_target.unwrapTarget(conf);
                 const config = maker.stepByIndex(producer_index).extended.compile.config.?;
-
-                const host: std.Target = std.zig.system.resolveTargetQuery(io, .{}) catch |he| switch (he) {
-                    error.Canceled => |e| return e,
-                    else => builtin.target,
-                };
+                const host = graph.host_target;
 
                 const need_cross_libc = root_target.os.tag == .linux and
                     config.flags.link_libc and config.flags.link_mode == .dynamic;

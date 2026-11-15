@@ -17,6 +17,7 @@ global_cache_root: Directory,
 local_cache_root: Directory,
 zig_lib_directory: Directory,
 build_root_directory: Directory,
+host_target: std.Target,
 
 debug_compiler_runtime_libs: ?std.builtin.Optimize = null,
 incremental: ?bool = null,

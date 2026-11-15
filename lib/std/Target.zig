@@ -2561,9 +2561,9 @@ pub fn printZigTriple(target: *const Target, w: *std.Io.Writer) std.Io.Writer.Er
         // to add a prefix '.' and make there be a total of three dots.
         .windows => |range| try w.print("{f}..{f}", .{ range.min, range.max }),
     }
-    if (version_range.gnuLibCVersion()) |glibc|
-        try w.print("-{t}.{f}", .{ target.abi, Query.PrintVersion{ .version = glibc } })
-    else if (target.abi.isAndroid())
+    if (target.isGnuLibC())
+        try w.print("-{t}.{f}", .{ target.abi, Query.PrintVersion{ .version = version_range.gnuLibCVersion().? } })
+    else if (target.isBionicLibC())
         try w.print("-{t}.{d}", .{ target.abi, target.os.version_range.linux.android })
     else
         try w.print("-{t}", .{target.abi});

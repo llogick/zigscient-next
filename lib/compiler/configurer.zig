@@ -49,7 +49,7 @@ pub fn main(init: process.Init.Minimal) !void {
         // TODO get this from parent process instead
         .host = .{
             .query = .{},
-            .result = try std.zig.system.resolveTargetQuery(io, .{}),
+            .result = std.zig.resolveTargetQueryOrFatal(io, arena, .{}),
         },
         .generated_files = .empty,
         .zig_exe = zig_exe,

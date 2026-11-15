@@ -271,10 +271,17 @@ fn serveWasm(
     // Do the compilation every request, so that the user can edit the files
     // and see the changes without restarting the server.
     const wasm_base_path = try buildWasmBinary(arena, context, optimize_mode);
-    const target = std.zig.system.resolveTargetQuery(io, std.Build.parseTargetQuery(.{
-        .arch_os_abi = autodoc_arch_os_abi,
-        .cpu_features = autodoc_cpu_features,
-    }) catch unreachable) catch unreachable;
+    var target_diags: std.zig.system.ResolveTargetDiagnostics = .none;
+    const target = std.zig.system.resolveTargetQuery(
+        io,
+        arena,
+        std.Build.parseTargetQuery(.{
+            .arch_os_abi = autodoc_arch_os_abi,
+            .cpu_features = autodoc_cpu_features,
+        }) catch unreachable,
+        &target_diags,
+    ) catch unreachable;
+    assert(target_diags.isEmpty());
     const bin_name = try std.zig.binNameAlloc(arena, .{
         .root_name = autodoc_root_name,
         .cpu_arch = target.cpu.arch,

@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
         , .{if (args.len == 0) "dump-cov" else args[0]}),
     };
 
-    const target = std.zig.resolveTargetQueryOrFatal(io, try .parse(.{
+    const target = std.zig.resolveTargetQueryOrFatal(io, arena, try .parse(.{
         .arch_os_abi = target_query_str,
     }));
 

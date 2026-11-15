@@ -2611,8 +2611,7 @@ pub fn resolveTargetQuery(b: *Build, query: Target.Query) ResolvedTarget {
     const io = b.graph.io;
     return .{
         .query = query,
-        .result = std.zig.system.resolveTargetQuery(io, query) catch
-            @panic("unable to resolve target query"),
+        .result = std.zig.resolveTargetQueryOrFatal(io, b.allocator, query),
     };
 }
 

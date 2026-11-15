@@ -9,8 +9,12 @@ const testing = std.testing;
 const Target = std.Target;
 
 /// Detect macOS version.
-/// `target_os` is not modified in case of error.
-pub fn detect(io: Io, target_os: *Target.Os) !void {
+/// `target_os` is not modified if the version can't be detected.
+pub fn detect(
+    io: Io,
+    target_os: *Target.Os,
+    diags: *std.zig.system.ResolveTargetDiagnostics,
+) std.zig.system.ResolveTargetError!void {
     // Drop use of osproductversion sysctl because:
     //   1. only available 10.13.4 High Sierra and later
     //   2. when used from a binary built against < SDK 11.0 it returns 10.16 and masks Big Sur 11.x version
@@ -52,29 +56,39 @@ pub fn detect(io: Io, target_os: *Target.Os) !void {
         prefixSlash ++ "SystemVersion.plist",
         prefixSlash ++ ".SystemVersionPlatform.plist",
     };
+    var diag: ?std.zig.system.ResolveTargetDiagnostics.OsVersion = null;
     for (paths) |path| {
         // approx. 4 times historical file size
         var buf: [2048]u8 = undefined;
 
-        if (Io.Dir.cwd().readFile(io, path, &buf)) |bytes| {
-            if (parseSystemVersion(bytes)) |ver| {
-                // never return non-canonical `10.(16+)`
-                if (!(ver.major == 10 and ver.minor >= 16)) {
-                    assert(ver.pre == null);
-                    assert(ver.build == null);
-                    target_os.version_range.semver.min = ver;
-                    target_os.version_range.semver.max = ver;
-                    return;
-                }
+        const bytes = Io.Dir.cwd().readFile(io, path, &buf) catch |err| switch (err) {
+            error.SystemResources,
+            error.SystemFdQuotaExceeded,
+            error.ProcessFdQuotaExceeded,
+            error.Canceled,
+            => |e| return e,
+
+            else => |e| {
+                if (diag == null) diag = .{ .read_error = .{ .path = path, .err = e } };
                 continue;
-            } else |_| {
-                return error.OsVersionQueryFailed;
-            }
-        } else |_| {
-            return error.OsVersionQueryFailed;
-        }
+            },
+        };
+        const ver = parseSystemVersion(bytes) catch {
+            if (diag == null) diag = .{ .invalid_file = .{ .path = path } };
+            continue;
+        };
+
+        // never return non-canonical `10.(16+)`
+        if (ver.major == 10 and ver.minor >= 16) continue;
+
+        assert(ver.pre == null);
+        assert(ver.build == null);
+        target_os.version_range.semver.min = ver;
+        target_os.version_range.semver.max = ver;
+        return;
     }
-    return error.OsVersionQueryFailed;
+
+    diags.os_version = diag orelse .{ .invalid_file = .{ .path = paths[paths.len - 1] } };
 }
 
 fn parseSystemVersion(buf: []const u8) !std.SemanticVersion {

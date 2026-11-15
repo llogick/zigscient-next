@@ -644,7 +644,9 @@ test parse {
             .arch_os_abi = "x86_64-linux-gnu",
             .cpu_features = "x86_64-sse-sse2-avx-cx8",
         });
-        const target = try std.zig.system.resolveTargetQuery(io, query);
+        var diags: std.zig.system.ResolveTargetDiagnostics = .none;
+        const target = try std.zig.system.resolveTargetQuery(io, std.testing.allocator, query, &diags);
+        try std.testing.expect(diags.isEmpty());
 
         try std.testing.expect(target.os.tag == .linux);
         try std.testing.expect(target.abi == .gnu);
@@ -669,7 +671,9 @@ test parse {
             .arch_os_abi = "arm-linux-musl",
             .cpu_features = "armv7a+no_unaligned_access",
         });
-        const target = try std.zig.system.resolveTargetQuery(io, query);
+        var diags: std.zig.system.ResolveTargetDiagnostics = .none;
+        const target = try std.zig.system.resolveTargetQuery(io, std.testing.allocator, query, &diags);
+        try std.testing.expect(diags.isEmpty());
 
         try std.testing.expect(target.os.tag == .linux);
         try std.testing.expect(target.abi == .musl);
@@ -686,7 +690,9 @@ test parse {
             .arch_os_abi = "aarch64-linux.3.10...4.4.1-gnu.2.27",
             .cpu_features = "armv8a",
         });
-        const target = try std.zig.system.resolveTargetQuery(io, query);
+        var diags: std.zig.system.ResolveTargetDiagnostics = .none;
+        const target = try std.zig.system.resolveTargetQuery(io, std.testing.allocator, query, &diags);
+        try std.testing.expect(diags.isEmpty());
 
         try std.testing.expect(target.cpu.arch == .aarch64);
         try std.testing.expect(target.os.tag == .linux);
@@ -709,7 +715,9 @@ test parse {
         const query = try Query.parse(.{
             .arch_os_abi = "aarch64-linux.3.10...4.4.1-android.30",
         });
-        const target = try std.zig.system.resolveTargetQuery(io, query);
+        var diags: std.zig.system.ResolveTargetDiagnostics = .none;
+        const target = try std.zig.system.resolveTargetQuery(io, std.testing.allocator, query, &diags);
+        try std.testing.expect(diags.isEmpty());
 
         try std.testing.expect(target.cpu.arch == .aarch64);
         try std.testing.expect(target.os.tag == .linux);
@@ -730,7 +738,9 @@ test parse {
         const query = try Query.parse(.{
             .arch_os_abi = "x86-windows.xp...win8-msvc",
         });
-        const target = try std.zig.system.resolveTargetQuery(io, query);
+        var diags: std.zig.system.ResolveTargetDiagnostics = .none;
+        const target = try std.zig.system.resolveTargetQuery(io, std.testing.allocator, query, &diags);
+        try std.testing.expect(diags.isEmpty());
 
         try std.testing.expect(target.cpu.arch == .x86);
         try std.testing.expect(target.os.tag == .windows);

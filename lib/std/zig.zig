@@ -883,9 +883,16 @@ pub fn putAstErrorsIntoBundle(
     }
 }
 
-pub fn resolveTargetQueryOrFatal(io: Io, target_query: std.Target.Query) std.Target {
-    return system.resolveTargetQuery(io, target_query) catch |err|
-        std.process.fatal("unable to resolve target: {t}", .{err});
+pub fn resolveTargetQueryOrFatal(
+    io: Io,
+    arena: mem.Allocator,
+    query: std.Target.Query,
+) std.Target {
+    var diags: system.ResolveTargetDiagnostics = .none;
+    return if (system.resolveTargetQuery(io, arena, query, &diags)) |tgt| b: {
+        if (!diags.isEmpty()) diags.log(&query);
+        break :b tgt;
+    } else |err| diags.fatal(&query, err);
 }
 
 pub fn parseTargetQueryOrReportFatalError(
@@ -2040,10 +2047,23 @@ pub fn buildExeSubprocess(
         log.err("command failed to report result: {f}", .{cmd});
         return error.AlreadyReported;
     };
-    const parsed_target = system.resolveTargetQuery(io, std.Build.parseTargetQuery(.{
-        .arch_os_abi = options.arch_os_abi orelse "native",
-        .cpu_features = options.cpu_features,
-    }) catch unreachable) catch unreachable;
+
+    const parsed_target = b: {
+        // Diagnostics will already have been logged by the caller, so just ignore them here.
+        var target_diags_arena: std.heap.ArenaAllocator = .init(gpa);
+        defer target_diags_arena.deinit();
+        var target_diags: system.ResolveTargetDiagnostics = .none;
+        break :b system.resolveTargetQuery(
+            io,
+            target_diags_arena.allocator(),
+            std.Build.parseTargetQuery(.{
+                .arch_os_abi = options.arch_os_abi orelse "native",
+                .cpu_features = options.cpu_features,
+            }) catch unreachable,
+            &target_diags,
+        ) catch unreachable;
+    };
+
     const bin_name = try binNameAlloc(gpa, .{
         .root_name = options.root_name,
         .cpu_arch = parsed_target.cpu.arch,
@@ -2053,6 +2073,7 @@ pub fn buildExeSubprocess(
         .output_mode = .Exe,
     });
     defer gpa.free(bin_name);
+
     return .{
         .received_fs_inputs = received_fs_inputs,
         .cache_hit = cache_hit,

@@ -79,7 +79,9 @@ test "minUnsignedBits" {
     var comp = try Compilation.init(.testing);
     defer comp.deinit();
     const target_query = try std.Target.Query.parse(.{ .arch_os_abi = "x86_64-linux-gnu" });
-    comp.target = .fromZigTarget(try std.zig.system.resolveTargetQuery(std.testing.io, target_query));
+    var target_diags: std.zig.system.ResolveTargetDiagnostics = .none;
+    comp.target = .fromZigTarget(try std.zig.system.resolveTargetQuery(std.testing.io, std.testing.allocator, target_query, &target_diags));
+    assert(target_diags.isEmpty());
 
     try Test.checkIntBits(&comp, 0, 0);
     try Test.checkIntBits(&comp, 1, 1);
@@ -114,7 +116,9 @@ test "minSignedBits" {
     var comp = try Compilation.init(.testing);
     defer comp.deinit();
     const target_query = try std.Target.Query.parse(.{ .arch_os_abi = "x86_64-linux-gnu" });
-    comp.target = .fromZigTarget(try std.zig.system.resolveTargetQuery(std.testing.io, target_query));
+    var target_diags: std.zig.system.ResolveTargetDiagnostics = .none;
+    comp.target = .fromZigTarget(try std.zig.system.resolveTargetQuery(std.testing.io, std.testing.allocator, target_query, &target_diags));
+    assert(target_diags.isEmpty());
 
     try Test.checkIntBits(&comp, -1, 1);
     try Test.checkIntBits(&comp, -2, 2);
