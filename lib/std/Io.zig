@@ -359,7 +359,7 @@ pub const Operation = union(enum) {
             SystemResources,
             /// Either `listen` was never called, or `shutdown` was called (possibly while
             /// this call was blocking). This allows `shutdown` to be used as a concurrent
-            /// cancellation mechanism.
+            /// cancelation mechanism.
             SocketNotListening,
             /// The network subsystem has failed.
             NetworkDown,

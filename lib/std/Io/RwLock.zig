@@ -392,7 +392,7 @@ test "canceled writer does not leak a semaphore permit" {
 }
 
 fn semaphoreLockCancel(rl: *Io.RwLock, io: Io) !void {
-    try rl.lock(io); //tests semaphore cancelling
+    try rl.lock(io); // Tests semaphore canceling.
 }
 
 fn mutexLockCancel(rl: *Io.RwLock, io: Io) !void {

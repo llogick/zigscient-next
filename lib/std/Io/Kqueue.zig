@@ -337,7 +337,7 @@ fn schedule(k: *Kqueue, thread: *Thread, ready_queue: Fiber.Queue) void {
         };
         // If an error occurs it only pessimises scheduling.
         _ = kevent(idle_search_thread.kq_fd, &changes, &.{}, null) catch |err| {
-            // TODO handle EINTR for cancellation purposes
+            // TODO handle EINTR for cancelation purposes
             @panic(@errorName(err)); // TODO
         };
         return;
@@ -435,7 +435,7 @@ fn idle(k: *Kqueue, thread: *Thread) void {
             maybe_ready_fiber = null;
         }
         const n = kevent(thread.kq_fd, &.{}, &events_buffer, null) catch |err| {
-            // TODO handle EINTR for cancellation purposes
+            // TODO handle EINTR for cancelation purposes
             @panic(@errorName(err)); // TODO
         };
         var maybe_ready_queue: ?Fiber.Queue = null;
@@ -526,7 +526,7 @@ const SwitchMessage = struct {
                     },
                 };
                 _ = kevent(each_thread.kq_fd, &changes, &.{}, null) catch |err| {
-                    // TODO handle EINTR for cancellation purposes
+                    // TODO handle EINTR for cancelation purposes
                     @panic(@errorName(err)); // TODO
                 };
             },
@@ -1237,7 +1237,7 @@ fn netRead(userdata: ?*anyopaque, fd: net.Socket.Handle, data: [][]u8) net.Strea
                         },
                     };
                     assert(0 == (kevent(thread.kq_fd, &changes, &.{}, null) catch |err| {
-                        // TODO handle EINTR for cancellation purposes
+                        // TODO handle EINTR for cancelation purposes
                         @panic(@errorName(err)); // TODO
                     }));
                 }

@@ -690,7 +690,7 @@ pub noinline fn captureCurrentStackTrace(options: StackUnwindOptions, addr_buf: 
 
     const io = std.Options.debug_io;
 
-    // do not let stack trace collection consume task cancellation.
+    // do not let stack trace collection consume task cancelation.
     const prev = io.swapCancelProtection(.blocked);
     defer _ = io.swapCancelProtection(prev);
 
