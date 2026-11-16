@@ -9895,16 +9895,10 @@ fn zirSwitchBlockErrUnion(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
     const non_err_case = zir_switch.non_err_case.?;
 
     var non_err_block: Block = child_block.makeSubBlock();
-    non_err_block.runtime_loop = null;
-    non_err_block.runtime_cond = operand_src;
-    non_err_block.runtime_index.increment();
     non_err_block.need_debug_scope = null;
     defer non_err_block.instructions.deinit(gpa);
 
     var switch_block: Block = child_block.makeSubBlock();
-    switch_block.runtime_loop = null;
-    switch_block.runtime_cond = operand_src;
-    switch_block.runtime_index.increment();
     switch_block.need_debug_scope = null;
     defer switch_block.instructions.deinit(gpa);
 
@@ -9932,6 +9926,15 @@ fn zirSwitchBlockErrUnion(sema: *Sema, block: *Block, inst: Zir.Inst.Index) Comp
             try sema.analyzePtrIsNonErr(block, operand_src, eu_maybe_ptr)
         else
             try sema.analyzeIsNonErr(block, operand_src, eu_maybe_ptr);
+
+        if (non_err_cond != .bool_true and non_err_cond != .bool_false) {
+            non_err_block.runtime_loop = null;
+            non_err_block.runtime_cond = operand_src;
+            non_err_block.runtime_index.increment();
+            switch_block.runtime_loop = null;
+            switch_block.runtime_cond = operand_src;
+            switch_block.runtime_index.increment();
+        }
 
         const non_err_hint: std.lang.BranchHint = hint: {
             // don't analyze the non-error body if it's unreachable

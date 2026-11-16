@@ -1021,3 +1021,36 @@ test "switch on error union if else capture" {
     try comptime S.doTheTest();
     try S.doTheTest();
 }
+
+test "comptime error union switch branches can mutate comptime variables" {
+    const S = struct {
+        fn fail() error{A}!void {
+            return error.A;
+        }
+    };
+    comptime {
+        var n = 0;
+        S.fail() catch |err| switch (err) {
+            error.A => n = 1,
+        };
+        try expectEqual(1, n);
+
+        var value: error{A}!u32 = 42;
+        if (value) |*payload| {
+            n = payload.*;
+            payload.* = 43;
+        } else |err| switch (err) {
+            error.A => n = 2,
+        }
+        try expectEqual(42, n);
+        try expectEqual(43, try value);
+
+        value = error.A;
+        if (value) |*payload| {
+            n = payload.*;
+        } else |err| switch (err) {
+            error.A => n = 3,
+        }
+        try expectEqual(3, n);
+    }
+}
