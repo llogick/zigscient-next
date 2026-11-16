@@ -358,7 +358,7 @@ pub fn tripleForTarget(allocator: Allocator, target: *const std.Target) ![]const
         else
             "unknown",
         .android => "android",
-        .gnu => if (target.cpu.arch.isArm())
+        .gnu => if (target.cpu.arch.isArm() and target.os.tag != .windows)
             "gnueabihf"
         else
             "gnu",
