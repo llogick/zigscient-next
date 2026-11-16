@@ -12,6 +12,7 @@ const builtin = @import("builtin");
 const crypto = std.crypto;
 const math = std.math;
 const mem = std.mem;
+const timing_safe = crypto.timing_safe;
 const testing = std.testing;
 const assert = std.debug.assert;
 const Endian = std.builtin.Endian;
@@ -204,12 +205,12 @@ pub fn Uint(comptime max_bits: comptime_int) type {
 
         /// Returns `true` if both integers are equal.
         pub fn eql(x: Self, y: Self) bool {
-            return crypto.timing_safe.eql([max_limbs_count]Limb, x.limbs_buffer, y.limbs_buffer);
+            return timing_safe.eql([max_limbs_count]Limb, x.limbs_buffer, y.limbs_buffer);
         }
 
         /// Compares two integers.
         pub fn compare(x: Self, y: Self) math.Order {
-            return crypto.timing_safe.compare(
+            return timing_safe.compare(
                 Limb,
                 &x.limbs_buffer,
                 &y.limbs_buffer,
@@ -219,7 +220,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
 
         /// Returns `true` if the integer is zero.
         pub fn isZero(x: Self) bool {
-            return ct.eql(orLimbs(x.limbsConst()), 0);
+            return timing_safe.isZero([]const Limb, x.limbsConst());
         }
 
         /// Returns `true` if the integer is odd.
@@ -229,7 +230,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
 
         pub fn isOne(x: Self) bool {
             const x_limbs = x.limbsConst();
-            return ct.eql((x_limbs[0] ^ 1) | orLimbs(x_limbs[1..]), 0);
+            return timing_safe.isZero(Limb, (x_limbs[0] ^ 1) | orLimbs(x_limbs[1..]));
         }
 
         /// Adds `y` to `x`, wrapping at the larger active width. Returns 1 on overflow.
@@ -254,7 +255,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
             @memcpy(wide[0..n], acc.limbsConst());
             mulAddWide(wide[0 .. 2 * n], x.limbsConst(), y.limbsConst());
             @memcpy(acc.limbs(), wide[0..n]);
-            return @intFromBool(!ct.eql(orLimbs(wide[n..][0..n]), 0));
+            return @intFromBool(!timing_safe.isZero([]const Limb, wide[n..][0..n]));
         }
 
         /// Returns the bit length, or 0 for zero.
@@ -357,7 +358,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
         // Replaces the limbs of `x` with the limbs of `y` if `on` is `true`.
         fn cmov(x: *Self, on: bool, y: Self) void {
             for (x.limbs(), y.limbsConst()) |*x_limb, y_limb| {
-                x_limb.* = ct.select(on, y_limb, x_limb.*);
+                x_limb.* = timing_safe.select(Limb, .fromBool(on), y_limb, x_limb.*);
             }
         }
 
@@ -367,7 +368,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
             assert(y.limbs_len <= x.limbs_len);
             for (x.limbs(), 0..) |*x_limb, i| {
                 const res = x_limb.* + y.limbs_buffer[i] + carry;
-                x_limb.* = ct.select(on, @as(TLimb, @truncate(res)), x_limb.*);
+                x_limb.* = timing_safe.select(Limb, .fromBool(on), @as(TLimb, @truncate(res)), x_limb.*);
                 carry = @truncate(res >> t_bits);
             }
             return carry;
@@ -379,7 +380,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
             assert(y.limbs_len <= x.limbs_len);
             for (x.limbs(), 0..) |*x_limb, i| {
                 const res = x_limb.* -% y.limbs_buffer[i] -% borrow;
-                x_limb.* = ct.select(on, @as(TLimb, @truncate(res)), x_limb.*);
+                x_limb.* = timing_safe.select(Limb, .fromBool(on), @as(TLimb, @truncate(res)), x_limb.*);
                 borrow = @truncate(res >> t_bits);
             }
             return borrow;
@@ -480,7 +481,7 @@ fn Fe_(comptime bits: comptime_int) type {
             var acc = decodeBytes(fe_limbs, bytes, endian);
 
             acc |= math.shr(Limb, fe_limbs[m_limbs_count - 1], t_bits - m.leading);
-            if (!ct.eql(acc, 0)) return error.Overflow;
+            if (!timing_safe.isZero(Limb, acc)) return error.Overflow;
             fe.v.limbs_len = m_limbs_count;
 
             _ = fe.v.conditionalSubWithOverflow(ct.limbsCmpGeq(fe.v, m.v), m.v);
@@ -859,7 +860,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
                 var carry: u1 = @truncate(math.shr(Limb, y, i));
                 var borrow: u1 = 0;
                 for (0..self.limbs_count()) |j| {
-                    const l = ct.select(need_sub, d_limbs[j], x_limbs[j]);
+                    const l = timing_safe.select(Limb, .fromBool(need_sub), d_limbs[j], x_limbs[j]);
                     var res = (l << 1) + carry;
                     x_limbs[j] = @as(TLimb, @truncate(res));
                     carry = @truncate(res >> t_bits);
@@ -869,7 +870,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
 
                     borrow = @truncate(res >> t_bits);
                 }
-                need_sub = ct.eql(carry, borrow);
+                need_sub = timing_safe.eql(u1, carry, borrow);
                 if (i == 0) break;
             }
             x.v.cmov(need_sub, d.v);
@@ -879,7 +880,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
         fn addAndReduce(x: *FeUint, y: FeUint, bound: FeUint) bool {
             const overflow = x.addWithOverflow(y);
             const underflow: u1 = @bitCast(ct.limbsCmpLt(x.*, bound));
-            const need_sub = ct.eql(overflow, underflow);
+            const need_sub = timing_safe.eql(u1, overflow, underflow);
             _ = x.conditionalSubWithOverflow(need_sub, bound);
             return need_sub;
         }
@@ -1103,7 +1104,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
             assert(y.limbs_count() == self.limbs_count());
             const overflow = self.montgomeryLoop(&d, &x, &y);
             const underflow = 1 -% @intFromBool(ct.limbsCmpGeq(d.v, self.v));
-            const need_sub = ct.eql(overflow, underflow);
+            const need_sub = timing_safe.eql(u1, overflow, underflow);
             _ = d.v.conditionalSubWithOverflow(need_sub, self.v);
             d.montgomery = x.montgomery == y.montgomery;
             return d;
@@ -1114,7 +1115,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
             assert(x.limbs_count() == self.limbs_count());
             const overflow = self.montgomeryLoop(&d, &x, &x);
             const underflow = 1 -% @intFromBool(ct.limbsCmpGeq(d.v, self.v));
-            const need_sub = ct.eql(overflow, underflow);
+            const need_sub = timing_safe.eql(u1, overflow, underflow);
             _ = d.v.conditionalSubWithOverflow(need_sub, self.v);
             d.montgomery = true;
             return d;
@@ -1193,14 +1194,14 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
                         t0 = pc[k - 1];
                     } else {
                         for (pc, 0..) |t, i| {
-                            t0.v.cmov(ct.eql(k, @truncate(i + 1)), t.v);
+                            t0.v.cmov(timing_safe.eql(u8, k, @truncate(i + 1)), t.v);
                         }
                     }
                     const t1 = if (montgomery) self.montgomeryMul(out, t0) else self.plainMul(out, t0);
                     if (public) {
                         @memcpy(out.v.limbs(), t1.v.limbsConst());
                     } else {
-                        out.v.cmov(!ct.eql(k, 0), t1.v);
+                        out.v.cmov(!timing_safe.isZero(u8, k), t1.v);
                     }
                 }
             }
@@ -1297,34 +1298,9 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
     };
 }
 
-fn valueBarrier(x: Limb) Limb {
-    if (@inComptime()) return x;
-    switch (builtin.zig_backend) {
-        .stage2_c, .stage2_wasm => return x,
-        else => {},
-    }
-    return asm (""
-        : [ret] "=r" (-> Limb),
-        : [x] "0" (x),
-    );
-}
-
 const ct = if (std.options.side_channels_mitigations == .none) ct_unprotected else ct_protected;
 
 const ct_protected = struct {
-    // Returns x if on is true, otherwise y.
-    fn select(on: bool, x: Limb, y: Limb) Limb {
-        const mask = valueBarrier(@as(Limb, 0) -% @intFromBool(on));
-        return y ^ (mask & (y ^ x));
-    }
-
-    // Compares two values in constant time.
-    fn eql(x: anytype, y: @TypeOf(x)) bool {
-        const c1 = @subWithOverflow(x, y)[1];
-        const c2 = @subWithOverflow(y, x)[1];
-        return @bitCast(1 - (c1 | c2));
-    }
-
     // Compares two big integers in constant time, returning true if x < y.
     fn limbsCmpLt(x: anytype, y: @TypeOf(x)) bool {
         var c: u1 = 0;
@@ -1359,16 +1335,6 @@ const ct_protected = struct {
 };
 
 const ct_unprotected = struct {
-    // Returns x if on is true, otherwise y.
-    fn select(on: bool, x: Limb, y: Limb) Limb {
-        return if (on) x else y;
-    }
-
-    // Compares two values in constant time.
-    fn eql(x: anytype, y: @TypeOf(x)) bool {
-        return x == y;
-    }
-
     // Compares two big integers in constant time, returning true if x < y.
     fn limbsCmpLt(x: anytype, y: @TypeOf(x)) bool {
         const x_limbs = x.limbsConst();
@@ -1499,13 +1465,6 @@ test "finite field arithmetic" {
 }
 
 fn testCt(ct_: anytype) !void {
-    const l0: Limb = 0;
-    const l1: Limb = 1;
-    try testing.expectEqual(l1, ct_.select(true, l1, l0));
-    try testing.expectEqual(l0, ct_.select(false, l1, l0));
-    try testing.expectEqual(false, ct_.eql(l1, l0));
-    try testing.expectEqual(true, ct_.eql(l1, l1));
-
     const M = Modulus(256);
     const m = try M.fromPrimitive(u256, 3429938563481314093726330772853735541133072814650493833233);
     const x = try M.Fe.fromPrimitive(u256, m, 80169837251094269539116136208111827396136208141182357733);

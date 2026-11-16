@@ -57,19 +57,20 @@ pub fn signMask(comptime T: type, x: T) T {
     return Impl.signMask(T, x);
 }
 
-/// Returns `a` if `c` is true, and `b` otherwise.
+/// A condition for `select` and `conditionalSwap`, created with `Choice.fromBool()`.
+pub const Choice = Impl.Choice;
+
+/// Returns `a` if `c` is set, and `b` otherwise.
 /// `T` is an integer or an array of integers.
-pub fn select(comptime T: type, c: bool, a: T, b: T) T {
+pub fn select(comptime T: type, c: Choice, a: T, b: T) T {
     comptime assert(@typeInfo(T) == .int or (@typeInfo(T) == .array and @typeInfo(std.meta.Elem(T)) == .int));
-    if (@inComptime()) return Plain.select(T, c, a, b);
     return Impl.select(T, c, a, b);
 }
 
-/// Swaps `a` and `b` if `c` is true.
+/// Swaps `a` and `b` if `c` is set.
 /// `T` is an integer or an array of integers.
-pub fn conditionalSwap(comptime T: type, c: bool, noalias a: *T, noalias b: *T) void {
+pub fn conditionalSwap(comptime T: type, c: Choice, noalias a: *T, noalias b: *T) void {
     comptime assert(@typeInfo(T) == .int or (@typeInfo(T) == .array and @typeInfo(std.meta.Elem(T)) == .int));
-    if (@inComptime()) return Plain.conditionalSwap(T, c, a, b);
     Impl.conditionalSwap(T, c, a, b);
 }
 
@@ -260,11 +261,20 @@ const Protected = struct {
         return Protected.valueBarrier(Plain.signMask(T, x));
     }
 
-    fn select(comptime T: type, c: bool, a: T, b: T) T {
+    const Choice = struct {
+        bit: usize,
+
+        pub fn fromBool(c: bool) Protected.Choice {
+            const bit: usize = @intFromBool(c);
+            return .{ .bit = if (@inComptime()) bit else Protected.valueBarrier(bit) };
+        }
+    };
+
+    fn select(comptime T: type, c: Protected.Choice, a: T, b: T) T {
         switch (@typeInfo(T)) {
-            .int => return b ^ (Protected.mask(T, c) & (a ^ b)),
+            .int => return b ^ (maskFromBit(T, c.bit) & (a ^ b)),
             .array => |info| {
-                const m = Protected.mask(info.child, c);
+                const m = maskFromBit(info.child, c.bit);
                 var r = b;
                 for (&r, a) |*ri, ai| {
                     ri.* ^= m & (ai ^ ri.*);
@@ -275,15 +285,15 @@ const Protected = struct {
         }
     }
 
-    fn conditionalSwap(comptime T: type, c: bool, noalias a: *T, noalias b: *T) void {
+    fn conditionalSwap(comptime T: type, c: Protected.Choice, noalias a: *T, noalias b: *T) void {
         switch (@typeInfo(T)) {
             .int => {
-                const t = (a.* ^ b.*) & Protected.mask(T, c);
+                const t = (a.* ^ b.*) & maskFromBit(T, c.bit);
                 a.* ^= t;
                 b.* ^= t;
             },
             .array => |info| {
-                const m = Protected.mask(info.child, c);
+                const m = maskFromBit(info.child, c.bit);
                 for (a, b) |*x, *y| {
                     const t = (x.* ^ y.*) & m;
                     x.* ^= t;
@@ -402,12 +412,20 @@ const Plain = struct {
         return @bitCast(s >> (bits - 1));
     }
 
-    fn select(comptime T: type, c: bool, a: T, b: T) T {
-        return if (c) a else b;
+    const Choice = struct {
+        on: bool,
+
+        pub fn fromBool(c: bool) Plain.Choice {
+            return .{ .on = c };
+        }
+    };
+
+    fn select(comptime T: type, c: Plain.Choice, a: T, b: T) T {
+        return if (c.on) a else b;
     }
 
-    fn conditionalSwap(comptime T: type, c: bool, noalias a: *T, noalias b: *T) void {
-        if (c) mem.swap(T, a, b);
+    fn conditionalSwap(comptime T: type, c: Plain.Choice, noalias a: *T, noalias b: *T) void {
+        if (c.on) mem.swap(T, a, b);
     }
 
     fn lessThan(comptime T: type, a: T, b: T) bool {
@@ -577,36 +595,39 @@ test {
             try testing.expectEqual(v, I.valueBarrier(v));
         }
 
-        try testing.expectEqual(-5, I.select(i16, true, -5, 7));
-        try testing.expectEqual(7, I.select(i16, false, -5, 7));
-        try testing.expectEqual(-1, I.select(i1, true, -1, 0));
-        try testing.expectEqual(0, I.select(u0, true, 0, 0));
-        const s = I.select([3:0]u8, true, .{ 1, 2, 3 }, .{ 4, 5, 6 });
+        try testing.expectEqual(-5, I.select(i16, .fromBool(true), -5, 7));
+        try testing.expectEqual(7, I.select(i16, .fromBool(false), -5, 7));
+        try testing.expectEqual(-1, I.select(i1, .fromBool(true), -1, 0));
+        try testing.expectEqual(0, I.select(u0, .fromBool(true), 0, 0));
+        try testing.expectEqual(1 << 199, I.select(u200, .fromBool(true), 1 << 199, 9));
+        try testing.expectEqual(9, I.select(u200, .fromBool(false), 1 << 199, 9));
+        comptime assert(I.select(u64, .fromBool(true), 1, 2) == 1);
+        const s = I.select([3:0]u8, .fromBool(true), .{ 1, 2, 3 }, .{ 4, 5, 6 });
         try testing.expectEqualSlices(u8, &.{ 1, 2, 3 }, &s);
-        try testing.expectEqual(7, I.select([0:7]u8, true, .{}, .{})[0]);
+        try testing.expectEqual(7, I.select([0:7]u8, .fromBool(true), .{}, .{})[0]);
 
         var a: [5]u64 = .{ 1, 2, 3, 4, 5 };
         var b: [5]u64 = .{ 6, 7, 8, 9, 10 };
-        I.conditionalSwap([5]u64, false, &a, &b);
+        I.conditionalSwap([5]u64, .fromBool(false), &a, &b);
         try testing.expectEqual(1, a[0]);
-        I.conditionalSwap([5]u64, true, &a, &b);
+        I.conditionalSwap([5]u64, .fromBool(true), &a, &b);
         try testing.expectEqual([5]u64{ 6, 7, 8, 9, 10 }, a);
         try testing.expectEqual([5]u64{ 1, 2, 3, 4, 5 }, b);
         var x: i32 = -4;
         var y: i32 = 9;
-        I.conditionalSwap(i32, true, &x, &y);
+        I.conditionalSwap(i32, .fromBool(true), &x, &y);
         try testing.expectEqual(9, x);
         try testing.expectEqual(-4, y);
         var sx: [2:0]u8 = .{ 1, 2 };
         var sy: [2:0]u8 = .{ 3, 4 };
-        I.conditionalSwap([2:0]u8, true, &sx, &sy);
+        I.conditionalSwap([2:0]u8, .fromBool(true), &sx, &sy);
         try testing.expectEqualSlices(u8, &.{ 3, 4 }, &sx);
         var e1: [0]u8 = .{};
         var e2: [0]u8 = .{};
-        I.conditionalSwap([0]u8, true, &e1, &e2);
+        I.conditionalSwap([0]u8, .fromBool(true), &e1, &e2);
         var z0: u0 = 0;
         var z1: u0 = 0;
-        I.conditionalSwap(u0, true, &z0, &z1);
+        I.conditionalSwap(u0, .fromBool(true), &z0, &z1);
 
         try testing.expect(I.eql([]const u8, "abc", "abc"));
         try testing.expect(!I.eql([]const u8, "abc", "abd"));
