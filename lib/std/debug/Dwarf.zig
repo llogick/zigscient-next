@@ -1546,7 +1546,7 @@ pub fn compactUnwindToDwarfRegNumber(unwind_reg_number: u3) !u16 {
 /// Returns `null` for CPU architectures without an instruction pointer register.
 pub fn ipRegNum(arch: std.Target.Cpu.Arch) ?u16 {
     return switch (arch) {
-        .aarch64, .aarch64_be => 32,
+        .aarch64, .aarch64be => 32,
         .alpha => 64,
         .arc, .arceb => 160,
         .arm, .armeb, .thumb, .thumbeb => 15,
@@ -1590,7 +1590,7 @@ pub fn ipRegNum(arch: std.Target.Cpu.Arch) ?u16 {
 
 pub fn fpRegNum(arch: std.Target.Cpu.Arch) u16 {
     return switch (arch) {
-        .aarch64, .aarch64_be => 29,
+        .aarch64, .aarch64be => 29,
         .alpha => 15,
         .arc, .arceb => 27,
         .arm, .armeb => 11,
@@ -1635,7 +1635,7 @@ pub fn fpRegNum(arch: std.Target.Cpu.Arch) u16 {
 
 pub fn spRegNum(arch: std.Target.Cpu.Arch) u16 {
     return switch (arch) {
-        .aarch64, .aarch64_be => 31,
+        .aarch64, .aarch64be => 31,
         .alpha => 30,
         .arc, .arceb => 28,
         .arm, .armeb, .thumb, .thumbeb => 13,

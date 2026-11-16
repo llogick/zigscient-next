@@ -231,7 +231,7 @@ pub const CallingConvention = union(enum(u8)) {
     x86_16_regparmcall: CommonOptions,
     x86_16_interrupt: CommonOptions,
 
-    // Calling conventions for the `aarch64` and `aarch64_be` architectures.
+    // Calling conventions for the `aarch64` and `aarch64be` architectures.
     aarch64_aapcs: CommonOptions,
     aarch64_aapcs_darwin: CommonOptions,
     aarch64_aapcs_win: CommonOptions,
@@ -1169,7 +1169,7 @@ pub const VaList = switch (builtin.cpu.arch) {
     .wasm64,
     .xcore,
     => *anyopaque,
-    .aarch64, .aarch64_be => switch (builtin.os.tag) {
+    .aarch64, .aarch64be => switch (builtin.os.tag) {
         .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .windows => *u8,
         else => switch (builtin.zig_backend) {
             else => VaListAarch64,

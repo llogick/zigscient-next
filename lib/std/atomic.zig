@@ -377,7 +377,7 @@ pub inline fn spinLoopHint() void {
         // https://bugs.java.com/bugdatabase/view_bug.do?bug_id=8258604
         // https://bugs.mysql.com/bug.php?id=100664
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         => asm volatile ("isb"),
 
         // https://www.keil.com/support/man/docs/armasm/armasm_dom1361289926796.htm
@@ -458,7 +458,7 @@ pub fn cacheLineForCpu(cpu: std.Target.Cpu) u16 {
         // - https://github.com/golang/go/blob/3dd58676054223962cd915bb0934d1f9f489d4d2/src/internal/cpu/cpu_ppc64x.go#L9
         .x86_64,
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .arc,
         .arceb,
         .powerpc64,

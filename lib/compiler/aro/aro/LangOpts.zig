@@ -261,7 +261,7 @@ pub fn setTargetOptions(self: *LangOpts, target: Target) void {
                 self.arm_ldrex = ldrex;
             }
         },
-        .aarch64, .aarch64_be => {
+        .aarch64, .aarch64be => {
             // ARM ldrex is always full-width
             self.arm_ldrex = .all;
         },

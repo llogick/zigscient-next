@@ -206,7 +206,7 @@ fn genericCpuAndNativeFeatures(arch: Target.Cpu.Arch) Target.Cpu {
     cpu.features.addFeatureSet(cpu.model.features);
 
     switch (arch) {
-        .aarch64, .aarch64_be => {
+        .aarch64, .aarch64be => {
             const Feature = Target.aarch64.Feature;
 
             // Override any features that are either present or absent
@@ -261,7 +261,7 @@ fn genericCpuAndNativeFeatures(arch: Target.Cpu.Arch) Target.Cpu {
 pub fn detectNativeCpuAndFeatures() ?Target.Cpu {
     const current_arch = builtin.cpu.arch;
     const cpu: ?Target.Cpu = switch (current_arch) {
-        .aarch64, .aarch64_be => blk: {
+        .aarch64, .aarch64be => blk: {
             var registers: [12]u64 = undefined;
 
             // CP 4000 -> MIDR_EL1

@@ -76,7 +76,7 @@ const riscv64_relocs = Table(11, elf.R_RISCV, .{
 pub fn decode(r_type: u32, cpu_arch: std.Target.Cpu.Arch) ?Kind {
     return switch (cpu_arch) {
         .x86_64 => x86_64_relocs.decode(r_type),
-        .aarch64, .aarch64_be => aarch64_relocs.decode(r_type),
+        .aarch64, .aarch64be => aarch64_relocs.decode(r_type),
         .riscv64, .riscv64be => riscv64_relocs.decode(r_type),
         else => @panic("TODO unhandled cpu arch"),
     };
@@ -85,7 +85,7 @@ pub fn decode(r_type: u32, cpu_arch: std.Target.Cpu.Arch) ?Kind {
 pub fn encode(comptime kind: Kind, cpu_arch: std.Target.Cpu.Arch) u32 {
     return switch (cpu_arch) {
         .x86_64 => x86_64_relocs.encode(kind),
-        .aarch64, .aarch64_be => aarch64_relocs.encode(kind),
+        .aarch64, .aarch64be => aarch64_relocs.encode(kind),
         .riscv64, .riscv64be => riscv64_relocs.encode(kind),
         else => @panic("TODO unhandled cpu arch"),
     };
@@ -98,7 +98,7 @@ pub const dwarf = struct {
                 .@"32" => .@"32",
                 .@"64" => .@"64",
             })),
-            .aarch64, .aarch64_be => @backingInt(@as(elf.R_AARCH64, switch (format) {
+            .aarch64, .aarch64be => @backingInt(@as(elf.R_AARCH64, switch (format) {
                 .@"32" => .ABS32,
                 .@"64" => .ABS64,
             })),
@@ -125,7 +125,7 @@ pub const dwarf = struct {
                 },
                 .debug_frame => .PC32,
             })),
-            .aarch64, .aarch64_be => @backingInt(@as(elf.R_AARCH64, switch (source_section) {
+            .aarch64, .aarch64be => @backingInt(@as(elf.R_AARCH64, switch (source_section) {
                 else => switch (address_size) {
                     .@"32" => .ABS32,
                     .@"64" => .ABS64,
@@ -164,7 +164,7 @@ fn formatRelocType(ctx: FormatRelocTypeCtx, writer: *std.Io.Writer) std.Io.Write
     const r_type = ctx.r_type;
     switch (ctx.cpu_arch) {
         .x86_64 => try writer.print("R_X86_64_{s}", .{@tagName(@as(elf.R_X86_64, @fromBackingInt(@intCast(r_type))))}),
-        .aarch64, .aarch64_be => try writer.print("R_AARCH64_{s}", .{@tagName(@as(elf.R_AARCH64, @fromBackingInt(@intCast(r_type))))}),
+        .aarch64, .aarch64be => try writer.print("R_AARCH64_{s}", .{@tagName(@as(elf.R_AARCH64, @fromBackingInt(@intCast(r_type))))}),
         .riscv64, .riscv64be => try writer.print("R_RISCV_{s}", .{@tagName(@as(elf.R_RISCV, @fromBackingInt(@intCast(r_type))))}),
         else => unreachable,
     }

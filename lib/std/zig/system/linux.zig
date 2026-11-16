@@ -923,7 +923,7 @@ const sparc = struct {
 pub fn detectNativeCpuAndFeatures(io: Io) ?Target.Cpu {
     const current_arch = builtin.cpu.arch;
     return switch (current_arch) {
-        .aarch64, .aarch64_be => aarch64.detectNativeCpuAndFeatures(current_arch),
+        .aarch64, .aarch64be => aarch64.detectNativeCpuAndFeatures(current_arch),
         .arm, .armeb, .thumb, .thumbeb => arm.detectNativeCpu(io, current_arch),
         .csky => csky.detectNativeCpu(io, current_arch),
         .m68k => m68k.detectNativeCpu(io, current_arch),

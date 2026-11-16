@@ -1022,7 +1022,7 @@ fn generateSystemDefines(comp: *Compilation, w: *Io.Writer) !void {
             try w.print("#define __ARM_SIZEOF_MINIMAL_ENUM {d}\n", .{min_enum_size});
             try w.print("#define __ARM_SIZEOF_WCHAR_T {d}\n", .{comp.type_store.wchar.sizeof(comp)});
         },
-        .aarch64, .aarch64_be => |arch| {
+        .aarch64, .aarch64be => |arch| {
             try define(w, "__aarch64__");
             try define(w, "__ARM_64BIT_STATE");
             try define(w, "__ARM_ARCH_ISA_A64");
@@ -1057,7 +1057,7 @@ fn generateSystemDefines(comp: *Compilation, w: *Io.Writer) !void {
                 .aarch64 => {
                     try define(w, "__AARCH64EL__");
                 },
-                .aarch64_be => {
+                .aarch64be => {
                     try define(w, "__AARCH64EB__");
                     try define(w, "__AARCH_BIG_ENDIAN");
                     try define(w, "__ARM_BIG_ENDIAN");

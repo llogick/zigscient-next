@@ -19,5 +19,5 @@ export fn entry2() void {
 #update
 #check errors {
 test.zig:1:28: error: calling convention 'x86_64_preserve_most' only available on architectures 'x86_64'
-test.zig:2:28: error: calling convention 'aarch64_preserve_most' only available on architectures 'aarch64', 'aarch64_be'
+test.zig:2:28: error: calling convention 'aarch64_preserve_most' only available on architectures 'aarch64', 'aarch64be'
 #}

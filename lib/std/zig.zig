@@ -2085,7 +2085,7 @@ pub fn compilerBackend(t: *const std.Target, use_llvm: bool) std.lang.CompilerBa
     if (use_llvm) return .stage2_llvm;
     if (t.ofmt == .c) return .stage2_c;
     return switch (t.cpu.arch) {
-        .aarch64, .aarch64_be => .stage2_aarch64,
+        .aarch64, .aarch64be => .stage2_aarch64,
         .arm, .armeb, .thumb, .thumbeb => .stage2_arm,
         .loongarch32, .loongarch64 => .stage2_loongarch,
         .powerpc, .powerpcle, .powerpc64, .powerpc64le => .stage2_powerpc,

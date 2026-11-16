@@ -284,7 +284,7 @@ pub inline fn toZigTarget(target: *const Target) std.Target {
 pub fn intMaxType(target: *const Target) QualType {
     switch (target.cpu.arch) {
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .sparc64,
         => {
             if (target.os.tag == .openbsd) return .long_long;
@@ -329,7 +329,7 @@ pub fn intPtrType(target: *const Target) QualType {
     if (target.os.tag == .haiku) return .long;
 
     switch (target.cpu.arch) {
-        .aarch64, .aarch64_be => switch (target.os.tag) {
+        .aarch64, .aarch64be => switch (target.os.tag) {
             .windows => return .long_long,
             else => {},
         },
@@ -409,7 +409,7 @@ pub fn int64Type(target: *const Target) QualType {
         .sparc64 => return intMaxType(target),
 
         .x86, .x86_64 => if (!target.os.tag.isDarwin()) return intMaxType(target),
-        .aarch64, .aarch64_be => if (!target.os.tag.isDarwin() and target.os.tag != .openbsd and target.os.tag != .windows) return .long,
+        .aarch64, .aarch64be => if (!target.os.tag.isDarwin() and target.os.tag != .openbsd and target.os.tag != .windows) return .long,
         else => {},
     }
     return .long_long;
@@ -433,7 +433,7 @@ pub fn defaultFunctionAlignment(target: *const Target) u8 {
         .xcore,
         => 4,
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .hexagon,
         .powerpc,
         .powerpcle,
@@ -469,7 +469,7 @@ pub fn minFunctionAlignment(target: *const Target) u8 {
         .xcore,
         => 2,
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .alpha,
         .arc,
         .arceb,
@@ -705,7 +705,7 @@ pub const FPSemantics = enum {
     pub fn halfPrecisionType(target: *const Target) ?FPSemantics {
         switch (target.cpu.arch) {
             .aarch64,
-            .aarch64_be,
+            .aarch64be,
             .arm,
             .armeb,
             .hexagon,
@@ -786,6 +786,7 @@ pub fn parseArchName(query: []const u8) ?ArchSubArch {
         .{ "ppc64le", .{ .powerpc64le, null } },
         .{ "xscale", .{ .arm, null } },
         .{ "xscaleeb", .{ .armeb, null } },
+        .{ "aarch64_be", .{ .aarch64be, null } },
         .{ "arm64", .{ .aarch64, null } },
         .{ "arm64e", .{ .aarch64, .aarch64_arm64e } },
         .{ "arm64ec", .{ .aarch64, .aarch64_arm64ec } },
@@ -899,7 +900,7 @@ pub fn parseArchName(query: []const u8) ?ArchSubArch {
         .{ "v8.1-m.main", .arm_v8_1m_mainline },
     });
 
-    for ([_]Cpu.Arch{ .arm, .armeb, .thumb, .thumbeb, .aarch64, .aarch64_be }) |arch| {
+    for ([_]Cpu.Arch{ .arm, .armeb, .thumb, .thumbeb, .aarch64, .aarch64be }) |arch| {
         const name = @tagName(arch);
         if (!mem.startsWith(u8, lower, name)) continue;
         var actual_arch = arch;
@@ -1056,7 +1057,7 @@ pub fn ldEmulationOption(target: *const Target, arm_endianness: ?std.builtin.End
             .big => "armelfb_linux_eabi",
         },
         .aarch64 => "aarch64linux",
-        .aarch64_be => "aarch64linuxb",
+        .aarch64be => "aarch64linuxb",
         .csky => "cskyelf_linux",
         .loongarch32 => "elf32loongarch",
         .loongarch64 => "elf64loongarch",
@@ -1143,7 +1144,7 @@ pub fn get32BitArchVariant(target: *const Target) ?Target {
         => {}, // Already 32 bit
 
         .aarch64 => copy.cpu.arch = .arm,
-        .aarch64_be => copy.cpu.arch = .armeb,
+        .aarch64be => copy.cpu.arch = .armeb,
         .hppa64 => copy.cpu.arch = .hppa,
         .loongarch64 => copy.cpu.arch = .loongarch32,
         .mips64 => copy.cpu.arch = .mips,
@@ -1188,7 +1189,7 @@ pub fn get64BitArchVariant(target: *const Target) ?Target {
         .z80,
         => return null,
 
-        .aarch64_be,
+        .aarch64be,
         .aarch64,
         .alpha,
         .amdgcn,
@@ -1213,7 +1214,7 @@ pub fn get64BitArchVariant(target: *const Target) ?Target {
         => {}, // Already 64 bit
 
         .arm => copy.cpu.arch = .aarch64,
-        .armeb => copy.cpu.arch = .aarch64_be,
+        .armeb => copy.cpu.arch = .aarch64be,
         .hppa => copy.cpu.arch = .hppa64,
         .loongarch32 => copy.cpu.arch = .loongarch64,
         .mips => copy.cpu.arch = .mips64,
@@ -1226,7 +1227,7 @@ pub fn get64BitArchVariant(target: *const Target) ?Target {
         .sparc => copy.cpu.arch = .sparc64,
         .spirv32 => copy.cpu.arch = .spirv64,
         .thumb => copy.cpu.arch = .aarch64,
-        .thumbeb => copy.cpu.arch = .aarch64_be,
+        .thumbeb => copy.cpu.arch = .aarch64be,
         .wasm32 => copy.cpu.arch = .wasm64,
         .x86, .x86c16 => copy.cpu.arch = .x86_64,
         .x86_16 => copy.cpu.arch = .x86_64,
@@ -1243,7 +1244,7 @@ pub fn toLLVMTriple(target: *const Target, buf: []u8) []const u8 {
 
     const llvm_arch = switch (target.cpu.arch) {
         .aarch64 => if (target.abi == .ilp32) "aarch64_32" else "aarch64",
-        .aarch64_be => "aarch64_be",
+        .aarch64be => "aarch64_be",
         .amdgcn => "amdgcn",
         .arc => "arc",
         .arm => "arm",

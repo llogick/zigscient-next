@@ -239,7 +239,7 @@ fn collectLibDirsAndTriples(
             biarch_libdirs.appendSliceAssumeCapacity(&AArch64LibDirs);
             biarch_triple_aliases.appendSliceAssumeCapacity(&AArch64Triples);
         },
-        .aarch64_be => {
+        .aarch64be => {
             lib_dirs.appendSliceAssumeCapacity(&AArch64beLibDirs);
             triple_aliases.appendSliceAssumeCapacity(&AArch64beTriples);
             biarch_libdirs.appendSliceAssumeCapacity(&AArch64beLibDirs);

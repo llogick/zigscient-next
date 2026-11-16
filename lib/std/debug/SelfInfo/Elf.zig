@@ -128,7 +128,7 @@ pub const can_unwind: bool = s: {
         // Not supported yet: hppa, hppa64, microblaze/microblazeel, sh/sheb
         .linux => &.{
             .aarch64,
-            .aarch64_be,
+            .aarch64be,
             .alpha,
             .arc,
             .arm,
@@ -182,7 +182,7 @@ pub const can_unwind: bool = s: {
         // Not supported yet: hppa, mips64/mips64el, sh/sheb
         .netbsd => &.{
             .aarch64,
-            .aarch64_be,
+            .aarch64be,
             .alpha,
             .arm,
             .armeb,

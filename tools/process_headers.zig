@@ -31,7 +31,7 @@ const glibc_targets = [_]LibCTarget{
     .{ .arch = .arm, .abi = .gnu, .dest = "arm-linux-gnu" },
     .{ .arch = .arm, .abi = .gnusf, .dest = "arm-linux-gnu" },
     .{ .arch = .aarch64, .abi = .gnu, .dest = "aarch64-linux-gnu" },
-    .{ .arch = .aarch64_be, .abi = .gnu, .dest = "aarch64-linux-gnu" },
+    .{ .arch = .aarch64be, .abi = .gnu, .dest = "aarch64-linux-gnu" },
     .{ .arch = .csky, .abi = .gnu, .dest = "csky-linux-gnu" },
     .{ .arch = .loongarch32, .abi = .gnu, .dest = "loongarch-linux-gnu" },
     .{ .arch = .loongarch32, .abi = .gnusf, .dest = "loongarch-linux-gnu" },

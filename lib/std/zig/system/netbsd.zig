@@ -71,7 +71,7 @@ const aarch64 = struct {
 
 pub fn detectNativeCpuAndFeatures() ?std.Target.Cpu {
     return switch (native_arch) {
-        .aarch64, .aarch64_be => aarch64.detectNativeCpuAndFeatures(native_arch),
+        .aarch64, .aarch64be => aarch64.detectNativeCpuAndFeatures(native_arch),
         else => null,
     };
 }

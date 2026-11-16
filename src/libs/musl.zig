@@ -190,7 +190,7 @@ pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Pro
             const arch_define = try arena.print("-DARCH_{s}", .{arch_name});
             const family_define = switch (target.cpu.arch) {
                 .arm, .armeb, .thumb, .thumbeb => "-DFAMILY_arm",
-                .aarch64, .aarch64_be => "-DFAMILY_aarch64",
+                .aarch64, .aarch64be => "-DFAMILY_aarch64",
                 .hexagon => "-DFAMILY_hexagon",
                 .loongarch64 => "-DFAMILY_loongarch",
                 .m68k => "-DFAMILY_m68k",

@@ -20,7 +20,7 @@
     },
 
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .none = .{} },
         .cache_mode = .whole,

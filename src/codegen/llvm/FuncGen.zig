@@ -6958,7 +6958,7 @@ fn valgrindClientRequest(
             ,
             .constraints = "={r3},{r4},{r3},~{cc},~{memory}",
         },
-        .aarch64, .aarch64_be => .{
+        .aarch64, .aarch64be => .{
             .template =
             \\ ror x12, x12, #3  ; ror x12, x12, #13
             \\ ror x12, x12, #51 ; ror x12, x12, #61
@@ -7906,7 +7906,7 @@ pub fn ccAbiPromoteInt(cc: std.lang.CallingConvention, zcu: *Zcu, ty: Type) ?std
 
     return switch (target.cpu.arch) {
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         => switch (target.os.tag) {
             .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => switch (int_info.bits) {
                 1, 8, 16 => int_info.signedness,

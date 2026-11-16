@@ -152,7 +152,7 @@
     },
 
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .none = .{} },
         .cache_mode = .whole,
@@ -161,7 +161,7 @@
         .unwind_tables = .none,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .none = .{} },
         .cache_mode = .whole,
@@ -170,7 +170,7 @@
         .unwind_tables = .async,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .none = .{} },
         .cache_mode = .whole,
@@ -179,7 +179,7 @@
         .unwind_tables = .async,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .musl = .{} },
         .cache_mode = .whole,
@@ -189,7 +189,7 @@
         .unwind_tables = .none,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .musl = .{} },
         .cache_mode = .whole,
@@ -199,7 +199,7 @@
         .unwind_tables = .async,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .musl = .{} },
         .cache_mode = .whole,
@@ -209,7 +209,7 @@
         .unwind_tables = .async,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .musl = .{} },
         .cache_mode = .whole,
@@ -221,7 +221,7 @@
         .unwind_tables = .none,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .musl = .{} },
         .cache_mode = .whole,
@@ -233,7 +233,7 @@
         .unwind_tables = .async,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .musl = .{} },
         .cache_mode = .whole,
@@ -245,7 +245,7 @@
         .unwind_tables = .async,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .gnu = .{} },
         .cache_mode = .whole,
@@ -255,7 +255,7 @@
         .unwind_tables = .none,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .gnu = .{} },
         .cache_mode = .whole,
@@ -265,7 +265,7 @@
         .unwind_tables = .async,
     },
     .{
-        .cpu = .{ .aarch64_be = .{} },
+        .cpu = .{ .aarch64be = .{} },
         .os = .{ .linux = .{} },
         .abi = .{ .gnu = .{} },
         .cache_mode = .whole,

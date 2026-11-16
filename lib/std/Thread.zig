@@ -1201,7 +1201,7 @@ const LinuxThreadImpl = struct {
                     : [ptr] "{r0}" (@intFromPtr(self.mapped.ptr)),
                       [len] "{r1}" (self.mapped.len),
                 ),
-                .aarch64, .aarch64_be => asm volatile (
+                .aarch64, .aarch64be => asm volatile (
                     \\ mov x8, #215 // SYS_munmap
                     \\ svc 0
                     \\ mov x8, #93 // SYS_exit

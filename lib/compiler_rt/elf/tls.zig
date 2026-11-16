@@ -90,7 +90,7 @@ const Variant = enum {
 
 const current_variant: Variant = switch (native_arch) {
     .aarch64,
-    .aarch64_be,
+    .aarch64be,
     .alpha,
     .arc,
     .arceb,
@@ -313,7 +313,7 @@ fn setThreadPointer(addr: usize) void {
             const rc = @call(.always_inline, linux.syscall2, .{ .arch_prctl, linux.ARCH.SET_FS, addr });
             assert(rc == 0);
         },
-        .aarch64, .aarch64_be => {
+        .aarch64, .aarch64be => {
             asm volatile (
                 \\ msr tpidr_el0, %[addr]
                 :
@@ -462,7 +462,7 @@ fn getThreadPointer() usize {
     @disableInstrumentation();
 
     return switch (native_arch) {
-        .aarch64, .aarch64_be => asm (
+        .aarch64, .aarch64be => asm (
             \\ mrs %[ret], tpidr_el0
             : [ret] "=r" (-> usize),
         ),

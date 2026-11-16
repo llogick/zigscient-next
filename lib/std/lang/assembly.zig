@@ -281,7 +281,7 @@ pub const Clobbers = switch (@import("builtin").cpu.arch) {
         fs: bool = false,
         gs: bool = false,
     },
-    .aarch64, .aarch64_be => bitpack struct {
+    .aarch64, .aarch64be => bitpack struct {
         /// Whether the inline assembly code may perform stores to memory
         /// addresses other than those derived from input pointer provenance.
         memory: bool = false,

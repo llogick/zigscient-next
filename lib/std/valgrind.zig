@@ -18,7 +18,7 @@ pub fn doClientRequest(default: usize, request: usize, a1: usize, a2: usize, a3:
             : [_] "{r4}" (args),
               [_] "{r3}" (default),
             : .{ .memory = true }),
-        .aarch64, .aarch64_be => asm volatile (
+        .aarch64, .aarch64be => asm volatile (
             \\ ror x12, x12, #3  ; ror x12, x12, #13
             \\ ror x12, x12, #51 ; ror x12, x12, #61
             \\ orr x10, x10, x10

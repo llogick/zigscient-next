@@ -4290,7 +4290,7 @@ pub fn atomicPtrAlignment(
         => 8,
 
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         => 128,
 
         .mips64,

@@ -783,7 +783,7 @@ pub fn addRunArtifact(b: *Build, exe: *Step.Compile) *Step.Run {
                 switch (exe.rootModuleTarget().cpu.arch) {
                     // stage2_aarch64
                     .aarch64,
-                    .aarch64_be,
+                    .aarch64be,
                     // stage2_powerpc
                     .powerpc,
                     .powerpcle,

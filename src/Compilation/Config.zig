@@ -616,7 +616,7 @@ pub fn resolve(options: Options) ResolveError!Config {
             .stage2_llvm => switch (target.cpu.arch) {
                 // +/- 128 MiB
                 .aarch64,
-                .aarch64_be,
+                .aarch64be,
                 // +/- 32 MiB
                 .arm,
                 .armeb,

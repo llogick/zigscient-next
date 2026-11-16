@@ -2398,7 +2398,7 @@ pub fn initNamedTypes(ts: *TypeStore, comp: *Compilation) !void {
         .windows => .ushort,
         .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos => .int,
         else => switch (arch) {
-            .aarch64, .aarch64_be => .uint,
+            .aarch64, .aarch64be => .uint,
             .arm, .armeb, .thumb, .thumbeb => .uint,
             .ve, .msp430 => .uint,
             .x86_64, .x86 => .int,
@@ -2532,7 +2532,7 @@ fn generateVaListType(ts: *TypeStore, comp: *Compilation) !QualType {
         .wasm64,
         .xcore,
         => return .void_pointer,
-        .aarch64, .aarch64_be => switch (comp.target.os.tag) {
+        .aarch64, .aarch64be => switch (comp.target.os.tag) {
             .driverkit, .ios, .maccatalyst, .macos, .tvos, .visionos, .watchos, .windows => return .char_pointer,
             else => .aarch64_va_list,
         },

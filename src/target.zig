@@ -146,7 +146,7 @@ pub fn hasValgrindSupport(target: *const std.Target, backend: std.lang.CompilerB
             .linux => true,
             else => false,
         },
-        .aarch64, .aarch64_be => switch (target.os.tag) {
+        .aarch64, .aarch64be => switch (target.os.tag) {
             .linux, .freebsd => true,
             else => false,
         },
@@ -228,7 +228,7 @@ pub fn hasLlvmSupport(target: *const std.Target, ofmt: std.Target.ObjectFormat) 
         .arm,
         .armeb,
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .arc,
         .avr,
         .bpfel,
@@ -516,7 +516,7 @@ pub fn wantsZigC(target: *const std.Target, link_mode: std.lang.LinkMode) bool {
 pub fn hasRedZone(target: *const std.Target) bool {
     return switch (target.cpu.arch) {
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .powerpc,
         .powerpcle,
         .powerpc64,
@@ -622,7 +622,7 @@ pub fn clangSupportsFloatAbiArg(target: *const std.Target) ?enum {
 pub fn clangSupportsNoImplicitFloatArg(target: *const std.Target) bool {
     return switch (target.cpu.arch) {
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .arm,
         .armeb,
         .thumb,
@@ -702,7 +702,7 @@ pub fn addrSpaceIsLogical(target: *const std.Target, as: AddressSpace) bool {
 
 pub fn llvmMachineAbi(target: *const std.Target) ?[:0]const u8 {
     return switch (target.cpu.arch) {
-        .aarch64, .aarch64_be => if (target.abi.float() == .soft)
+        .aarch64, .aarch64be => if (target.abi.float() == .soft)
             "aapcs-soft"
         else if (target.os.tag.isDarwin())
             "darwinpcs"
@@ -770,7 +770,7 @@ pub fn defaultFunctionAlignment(target: *const std.Target) Alignment {
         .xcore,
         => .@"4",
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .hexagon,
         .powerpc,
         .powerpcle,
@@ -807,7 +807,7 @@ pub fn minFunctionAlignment(target: *const std.Target) Alignment {
         .xcore,
         => .@"2",
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .alpha,
         .arc,
         .arceb,

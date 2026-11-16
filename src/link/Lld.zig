@@ -1297,7 +1297,7 @@ fn getLDMOption(target: *const std.Target) ?[]const u8 {
             .linux => "aarch64linux",
             else => "aarch64elf",
         },
-        .aarch64_be => switch (target.os.tag) {
+        .aarch64be => switch (target.os.tag) {
             .linux => "aarch64linuxb",
             else => "aarch64elfb",
         },

@@ -1416,12 +1416,12 @@ fn transCallingConvention(t: *Translator, cc: aro.Type.Func.CallingConvention) !
         .vectorcall => switch (t.comp.target.cpu.arch) {
             .x86 => .x86_vectorcall,
             .x86_64 => .x86_64_vectorcall,
-            .aarch64, .aarch64_be => .aarch64_vfabi,
+            .aarch64, .aarch64be => .aarch64_vfabi,
             else => .c,
         },
         .ms_abi => switch (t.comp.target.cpu.arch) {
             .x86_64 => .x86_64_win,
-            .aarch64, .aarch64_be => .aarch64_aapcs_win,
+            .aarch64, .aarch64be => .aarch64_aapcs_win,
             else => .c,
         },
         .sysv_abi => .x86_64_sysv,

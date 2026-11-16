@@ -220,7 +220,7 @@ pub fn createEmpty(
         .sparc64,
         => 0x100000,
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .amdgcn,
         .hexagon,
         .mips,
@@ -3676,7 +3676,7 @@ pub fn tpAddress(self: *Elf) i64 {
     const phdr = self.phdrs.items[index];
     const addr = switch (self.getTarget().cpu.arch) {
         .x86_64 => mem.alignForward(u64, phdr.vaddr + phdr.memsz, phdr.@"align"),
-        .aarch64, .aarch64_be => mem.alignBackward(u64, phdr.vaddr - 16, phdr.@"align"),
+        .aarch64, .aarch64be => mem.alignBackward(u64, phdr.vaddr - 16, phdr.@"align"),
         .riscv64, .riscv64be => phdr.vaddr,
         else => |arch| std.debug.panic("TODO implement getTpAddress for {s}", .{@tagName(arch)}),
     };
@@ -4053,7 +4053,7 @@ pub fn getTarget(self: *const Elf) *const std.Target {
 
 fn requiresThunks(self: Elf) bool {
     return switch (self.getTarget().cpu.arch) {
-        .aarch64, .aarch64_be => true,
+        .aarch64, .aarch64be => true,
         .x86_64, .riscv64, .riscv64be => false,
         else => @panic("TODO unimplemented architecture"),
     };
@@ -4296,7 +4296,7 @@ fn createThunks(elf_file: *Elf, atom_list: *AtomList) !void {
     // A branch will need an extender if its target is larger than
     // `2^(jump_bits - 1) - margin` where margin is some arbitrary number.
     const max_distance = switch (cpu_arch) {
-        .aarch64, .aarch64_be => 0x500_000,
+        .aarch64, .aarch64be => 0x500_000,
         .x86_64, .riscv64, .riscv64be => unreachable,
         else => @panic("unhandled arch"),
     };
@@ -4343,7 +4343,7 @@ fn createThunks(elf_file: *Elf, atom_list: *AtomList) !void {
             log.debug("atom({f}) {s}", .{ ref, atom_ptr.name(elf_file) });
             for (atom_ptr.relocs(elf_file)) |rel| {
                 const is_reachable = switch (cpu_arch) {
-                    .aarch64, .aarch64_be => r: {
+                    .aarch64, .aarch64be => r: {
                         const r_type: elf.R_AARCH64 = @fromBackingInt(@intCast(rel.r_type()));
                         if (r_type != .CALL26 and r_type != .JUMP26) break :r true;
                         const target_ref = file_ptr.resolveSymbol(rel.r_sym(), elf_file);

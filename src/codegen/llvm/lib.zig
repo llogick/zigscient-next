@@ -12,7 +12,7 @@ pub fn initializeLLVMTarget(io: Io, arch: std.Target.Cpu.Arch) void {
     defer target_registry_mutex.unlock(io);
 
     switch (arch) {
-        .aarch64, .aarch64_be => {
+        .aarch64, .aarch64be => {
             bindings.LLVMInitializeAArch64Target();
             bindings.LLVMInitializeAArch64TargetInfo();
             bindings.LLVMInitializeAArch64TargetMC();

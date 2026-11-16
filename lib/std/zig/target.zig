@@ -21,9 +21,9 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .aarch64, .os = .openbsd, .abi = .none, .os_ver = .{ .major = 6, .minor = 1, .patch = 0 } },
     .{ .arch = .aarch64, .os = .windows, .abi = .gnu },
 
-    .{ .arch = .aarch64_be, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 13, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 17, .patch = 0 } },
-    .{ .arch = .aarch64_be, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 13, .patch = 0 } },
-    .{ .arch = .aarch64_be, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 9, .minor = 0, .patch = 0 } },
+    .{ .arch = .aarch64be, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 13, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 17, .patch = 0 }, .glibc_triple = "aarch64_be-linux-gnu" },
+    .{ .arch = .aarch64be, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 13, .patch = 0 } },
+    .{ .arch = .aarch64be, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 9, .minor = 0, .patch = 0 } },
 
     .{ .arch = .arc, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 2, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 32, .patch = 0 } },
     .{ .arch = .arm, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 10, .minor = 0, .patch = 0 } },
@@ -326,7 +326,7 @@ pub fn osArchName(target: *const std.Target) [:0]const u8 {
     return switch (target.os.tag) {
         .linux => switch (target.cpu.arch) {
             .arm, .armeb, .thumb, .thumbeb => "arm",
-            .aarch64, .aarch64_be => "aarch64",
+            .aarch64, .aarch64be => "aarch64",
             .loongarch32, .loongarch64 => "loongarch",
             .mips,
             .mipsel,
@@ -362,7 +362,7 @@ pub fn muslArchName(arch: std.Target.Cpu.Arch, abi: std.Target.Abi) [:0]const u8
     if (abi.isX32()) return "x32";
     return switch (arch) {
         .arm, .armeb, .thumb, .thumbeb => "arm",
-        .aarch64, .aarch64_be => "aarch64",
+        .aarch64, .aarch64be => "aarch64",
         .hexagon => "hexagon",
         .loongarch64 => "loongarch64",
         .m68k => "m68k",
@@ -420,7 +420,7 @@ pub fn muslAbiNameHeaders(abi: std.Target.Abi) [:0]const u8 {
 
 pub fn glibcArchNameHeaders(arch: std.Target.Cpu.Arch) [:0]const u8 {
     return switch (arch) {
-        .aarch64, .aarch64_be => "aarch64",
+        .aarch64, .aarch64be => "aarch64",
         .arm, .armeb => "arm",
         .loongarch64 => "loongarch",
         .mips,
@@ -470,7 +470,7 @@ pub fn freebsdAbiNameHeaders(abi: std.Target.Abi) [:0]const u8 {
 pub fn netbsdArchNameHeaders(arch: std.Target.Cpu.Arch) [:0]const u8 {
     return switch (arch) {
         .armeb => "arm",
-        .aarch64_be => "aarch64",
+        .aarch64be => "aarch64",
         .mipsel,
         .mipsf32,
         .mipsf32el,
@@ -839,7 +839,7 @@ pub fn isNative(query: *const std.Target.Query, target: *const std.Target, host:
             .slow_unaligned_mem_16,
             .slow_unaligned_mem_32,
         }),
-        .aarch64, .aarch64_be => std.Target.aarch64.featureSet(&.{
+        .aarch64, .aarch64be => std.Target.aarch64.featureSet(&.{
             .addr_lsl_slow_14,
             .align_cmp_csel_pairs,
             .alu_lsl_fast,

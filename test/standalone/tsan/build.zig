@@ -8,8 +8,8 @@ const targets: []const std.Target.Query = &.{
 
     .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu },
     .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
-    .{ .cpu_arch = .aarch64_be, .os_tag = .linux, .abi = .gnu },
-    .{ .cpu_arch = .aarch64_be, .os_tag = .linux, .abi = .musl },
+    .{ .cpu_arch = .aarch64be, .os_tag = .linux, .abi = .gnu },
+    .{ .cpu_arch = .aarch64be, .os_tag = .linux, .abi = .musl },
     .{ .cpu_arch = .loongarch64, .os_tag = .linux, .abi = .gnu },
     .{ .cpu_arch = .loongarch64, .os_tag = .linux, .abi = .musl },
     .{ .cpu_arch = .mips64, .os_tag = .linux, .abi = .gnu },

@@ -29,7 +29,7 @@ const R_RELATIVE = switch (builtin.cpu.arch) {
     .x86_64 => R_AMD64_RELATIVE,
     .arc, .arceb => R_ARC_RELATIVE,
     .arm, .armeb, .thumb, .thumbeb => R_ARM_RELATIVE,
-    .aarch64, .aarch64_be => R_AARCH64_RELATIVE,
+    .aarch64, .aarch64be => R_AARCH64_RELATIVE,
     .alpha => R_ALPHA_RELATIVE,
     .csky => R_CSKY_RELATIVE,
     .hexagon => R_HEXAGON_RELATIVE,
@@ -106,7 +106,7 @@ inline fn getDynamicSymbol() [*]const elf.Dyn {
                 : [ret] "=r" (-> [*]const elf.Dyn),
             ),
             // A simple `adr` is not enough as it has a limited offset range
-            .aarch64, .aarch64_be => asm volatile (
+            .aarch64, .aarch64be => asm volatile (
                 \\ .weak _DYNAMIC
                 \\ .hidden _DYNAMIC
                 \\ adrp %[ret], _DYNAMIC

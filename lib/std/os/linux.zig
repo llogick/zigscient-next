@@ -27,7 +27,7 @@ test {
 }
 
 const arch_bits = switch (native_arch) {
-    .aarch64, .aarch64_be => @import("linux/aarch64.zig"),
+    .aarch64, .aarch64be => @import("linux/aarch64.zig"),
     .alpha => @import("linux/alpha.zig"),
     .arc, .arceb => @import("linux/arc.zig"),
     .arm, .armeb, .thumb, .thumbeb => @import("linux/arm.zig"),
@@ -144,7 +144,7 @@ pub const SECCOMP = @import("linux/seccomp.zig");
 pub const syscalls = @import("linux/syscalls.zig");
 pub const SYS = switch (native_arch) {
     .arc, .arceb => syscalls.Arc,
-    .aarch64, .aarch64_be => syscalls.Arm64,
+    .aarch64, .aarch64be => syscalls.Arm64,
     .alpha => syscalls.Alpha,
     .arm, .armeb, .thumb, .thumbeb => syscalls.Arm,
     .csky => syscalls.CSky,
@@ -226,7 +226,7 @@ pub const MAP = switch (native_arch) {
         UNINITIALIZED: bool = false,
         _: u5 = 0,
     },
-    .aarch64, .aarch64_be, .arm, .armeb, .thumb, .thumbeb => bitpack struct(u32) {
+    .aarch64, .aarch64be, .arm, .armeb, .thumb, .thumbeb => bitpack struct(u32) {
         TYPE: MAP_TYPE,
         FIXED: bool = false,
         ANONYMOUS: bool = false,
@@ -482,7 +482,7 @@ pub const O = switch (native_arch) {
         TMPFILE: bool = false,
         _23: u9 = 0,
     },
-    .aarch64, .aarch64_be, .arm, .armeb, .thumb, .thumbeb => bitpack struct(u32) {
+    .aarch64, .aarch64be, .arm, .armeb, .thumb, .thumbeb => bitpack struct(u32) {
         ACCMODE: ACCMODE = .RDONLY,
         _2: u4 = 0,
         CREAT: bool = false,
@@ -686,7 +686,7 @@ pub const O = switch (native_arch) {
 };
 
 pub const HWCAP = switch (native_arch) {
-    .aarch64, .aarch64_be => struct {
+    .aarch64, .aarch64be => struct {
         pub const FP = 1 << 0;
         pub const ASIMD = 1 << 1;
         pub const EVTSTRM = 1 << 2;
@@ -7586,7 +7586,7 @@ pub const MINSIGSTKSZ = switch (native_arch) {
     .sparc64,
     => 4096,
     .aarch64,
-    .aarch64_be,
+    .aarch64be,
     => 5120,
     .powerpc64,
     .powerpc64le,
@@ -7637,7 +7637,7 @@ pub const SIGSTKSZ = switch (native_arch) {
     .xtensaeb,
     => 8192,
     .aarch64,
-    .aarch64_be,
+    .aarch64be,
     .loongarch32,
     .loongarch64,
     .sparc,

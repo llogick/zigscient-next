@@ -5,7 +5,7 @@ const expect = std.testing.expect;
 const supports_128_bit_atomics = switch (builtin.cpu.arch) {
     // TODO: Ideally this could be sync'd with the logic in Sema.
     .aarch64 => true,
-    .aarch64_be => false, // Fails due to LLVM issues.
+    .aarch64be => false, // Fails due to LLVM issues.
     .x86_64 => builtin.cpu.has(.x86, .cx16),
     else => false,
 };

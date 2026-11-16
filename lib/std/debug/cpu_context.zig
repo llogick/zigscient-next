@@ -4,7 +4,7 @@
 pub const Native = if (@hasDecl(root, "debug") and @hasDecl(root.debug, "CpuContext"))
     root.debug.CpuContext
 else switch (native_arch) {
-    .aarch64, .aarch64_be => Aarch64,
+    .aarch64, .aarch64be => Aarch64,
     .alpha => Alpha,
     .arc, .arceb => Arc,
     .arm, .armeb, .thumb, .thumbeb => Arm,
@@ -139,7 +139,7 @@ pub fn fromPosixSignalContext(ctx_ptr: ?*const anyopaque) ?Native {
         .arm, .armeb, .thumb, .thumbeb => .{
             .r = uc.mcontext.r ++ [_]Arm.Gpr{uc.mcontext.pc},
         },
-        .aarch64, .aarch64_be => .{
+        .aarch64, .aarch64be => .{
             .x = uc.mcontext.x ++ [_]Aarch64.Gpr{uc.mcontext.lr},
             .sp = uc.mcontext.sp,
             .pc = uc.mcontext.pc,
@@ -2036,7 +2036,7 @@ const signal_ucontext_t = switch (native_os) {
         },
         // https://github.com/torvalds/linux/blob/cd5a0afbdf8033dc83786315d63f8b325bdba2fd/arch/arm64/include/uapi/asm/ucontext.h
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         // https://github.com/torvalds/linux/blob/cd5a0afbdf8033dc83786315d63f8b325bdba2fd/arch/loongarch/include/uapi/asm/ucontext.h
         .loongarch32,
         .loongarch64,
@@ -2054,7 +2054,7 @@ const signal_ucontext_t = switch (native_os) {
             _unused: [120]u8,
             mcontext: switch (native_arch) {
                 // https://github.com/torvalds/linux/blob/cd5a0afbdf8033dc83786315d63f8b325bdba2fd/arch/arm64/include/uapi/asm/sigcontext.h
-                .aarch64, .aarch64_be => extern struct {
+                .aarch64, .aarch64be => extern struct {
                     _fault_address: u64 align(16),
                     x: [30]u64,
                     lr: u64,
@@ -2714,7 +2714,7 @@ const signal_ucontext_t = switch (native_os) {
         _stack: std.c.stack_t,
         mcontext: switch (native_arch) {
             // https://github.com/NetBSD/src/blob/861008c62187bf7bc0aac4d81e52ed6eee4d0c74/sys/arch/arm/include/mcontext.h
-            .aarch64, .aarch64_be => extern struct {
+            .aarch64, .aarch64be => extern struct {
                 x: [30]u64 align(16),
                 lr: u64,
                 sp: u64,

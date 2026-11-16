@@ -2383,7 +2383,7 @@ pub const TargetQuery = struct {
 
     pub const CpuArch = enum(u7) {
         aarch64,
-        aarch64_be,
+        aarch64be,
 
         alpha,
 

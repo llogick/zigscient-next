@@ -237,7 +237,10 @@ pub fn parse(args: ParseOptions) !Query {
     const arch_name = it.first();
     const arch_is_native = mem.eql(u8, arch_name, "native");
     if (!arch_is_native) {
-        result.cpu_arch = std.meta.stringToEnum(Target.Cpu.Arch, arch_name) orelse {
+        result.cpu_arch = std.meta.stringToEnum(Target.Cpu.Arch, arch_name) orelse compat: {
+            // Deprecated compatibility aliases; to be removed in 0.19.0.
+            if (std.mem.eql(u8, arch_name, "aarch64_be")) break :compat Target.Cpu.Arch.aarch64be;
+
             diags.unknown_architecture_name = arch_name;
             return error.UnknownArchitecture;
         };

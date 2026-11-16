@@ -336,7 +336,7 @@ pub const FromName = struct {
 pub fn fromName(comp: *Compilation, name: []const u8) ?FromName {
     if (fromNameExtra(name, .common)) |found| return found;
     switch (comp.target.cpu.arch) {
-        .aarch64, .aarch64_be => {
+        .aarch64, .aarch64be => {
             if (fromNameExtra(name, .aarch64)) |found| return found;
             if (fromNameExtra(name, .neon)) |found| return found;
         },

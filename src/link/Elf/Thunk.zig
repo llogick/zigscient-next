@@ -24,7 +24,7 @@ pub fn targetAddress(thunk: Thunk, ref: Elf.Ref, elf_file: *Elf) i64 {
 
 pub fn write(thunk: Thunk, elf_file: *Elf, writer: anytype) !void {
     switch (elf_file.getTarget().cpu.arch) {
-        .aarch64, .aarch64_be => try aarch64.write(thunk, elf_file, writer),
+        .aarch64, .aarch64be => try aarch64.write(thunk, elf_file, writer),
         .x86_64, .riscv64, .riscv64be => unreachable,
         else => @panic("unhandled arch"),
     }
@@ -59,7 +59,7 @@ pub fn writeSymtab(thunk: Thunk, elf_file: *Elf) void {
 
 fn trampolineSize(cpu_arch: std.Target.Cpu.Arch) usize {
     return switch (cpu_arch) {
-        .aarch64, .aarch64_be => aarch64.trampoline_size,
+        .aarch64, .aarch64be => aarch64.trampoline_size,
         .x86_64, .riscv64, .riscv64be => unreachable,
         else => @panic("unhandled arch"),
     };

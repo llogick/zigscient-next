@@ -852,7 +852,7 @@ pub const Abi = enum {
             .freestanding, .other, .ashetos => switch (arch) {
                 // Soft float is usually a sane default for freestanding.
                 .aarch64,
-                .aarch64_be,
+                .aarch64be,
                 .alpha,
                 .arm,
                 .armeb,
@@ -1158,7 +1158,7 @@ pub const ObjectFormat = enum {
 
 pub fn toElfMachine(target: *const Target) std.elf.EM {
     return switch (target.cpu.arch) {
-        .aarch64, .aarch64_be => .AARCH64,
+        .aarch64, .aarch64be => .AARCH64,
         .alpha => .ALPHA,
         .amdgcn => .AMDGPU,
         .arc, .arceb => .ARC_COMPACT2,
@@ -1238,7 +1238,7 @@ pub fn toCoffMachine(target: *const Target) std.coff.IMAGE.FILE.MACHINE {
         .x86, .x86c16 => .I386,
         .x86_64 => .AMD64,
 
-        .aarch64_be,
+        .aarch64be,
         .amdgcn,
         .arc,
         .arceb,
@@ -1481,7 +1481,7 @@ pub const Cpu = struct {
 
     pub const Arch = enum {
         aarch64,
-        aarch64_be,
+        aarch64be,
 
         alpha,
 
@@ -1590,6 +1590,9 @@ pub const Cpu = struct {
         z80,
         ez80,
 
+        /// Deprecated; to be removed in 0.19.0.
+        pub const aarch64_be: Arch = .aarch64be;
+
         /// An architecture family can encompass multiple architectures as represented by `Arch`.
         /// For a given family tag, it is guaranteed that an `std.Target.<tag>` namespace exists
         /// containing CPU model and feature data.
@@ -1632,7 +1635,7 @@ pub const Cpu = struct {
 
         pub inline fn family(arch: Arch) Family {
             return switch (arch) {
-                .aarch64, .aarch64_be => .aarch64,
+                .aarch64, .aarch64be => .aarch64,
                 .alpha => .alpha,
                 .amdgcn => .amdgcn,
                 .arc, .arceb => .arc,
@@ -1720,7 +1723,7 @@ pub const Cpu = struct {
 
         pub inline fn isAarch64(arch: Arch) bool {
             return switch (arch) {
-                .aarch64, .aarch64_be => true,
+                .aarch64, .aarch64be => true,
                 else => false,
             };
         }
@@ -1998,7 +2001,7 @@ pub const Cpu = struct {
                 .z80,
                 => .little,
 
-                .aarch64_be,
+                .aarch64be,
                 .arceb,
                 .armeb,
                 .bpfeb,
@@ -2137,7 +2140,7 @@ pub const Cpu = struct {
                 .aarch64_vfabi_sve,
                 .aarch64_preserve_none,
                 .aarch64_preserve_most,
-                => &.{ .aarch64, .aarch64_be },
+                => &.{ .aarch64, .aarch64be },
 
                 .alpha_osf,
                 => &.{.alpha},
@@ -2346,7 +2349,7 @@ pub const Cpu = struct {
         /// Clang compatibility is important, consider using `baseline` instead.
         pub fn generic(arch: Arch) *const Model {
             return switch (arch) {
-                .aarch64, .aarch64_be => &aarch64.cpu.armv8a,
+                .aarch64, .aarch64be => &aarch64.cpu.armv8a,
                 .alpha => &alpha.cpu.ev4,
                 .amdgcn => &amdgcn.cpu.gfx600,
                 .arc, .arceb => &arc.cpu.arcv2,
@@ -2911,8 +2914,10 @@ pub const DynamicLinker = struct {
 
             .hurd => switch (arch) {
                 .aarch64,
-                .aarch64_be,
                 => if (abi == .gnu) initFmt("/lib/ld-{s}.so.1", .{@tagName(arch)}) else none,
+
+                .aarch64be,
+                => if (abi == .gnu) init("/lib/ld-aarch64_be.so.1") else none,
 
                 .riscv64,
                 => if (abi == .gnu) init("/lib/ld-riscv64-lp64.so.1") else none,
@@ -2950,6 +2955,9 @@ pub const DynamicLinker = struct {
                 }
             else if (abi.isMusl())
                 switch (arch) {
+                    .aarch64be,
+                    => if (abi == .musl) init("/lib/ld-musl-aarch64_be.so.1") else none,
+
                     .arm,
                     .armeb,
                     .thumb,
@@ -2976,7 +2984,6 @@ pub const DynamicLinker = struct {
                     }),
 
                     .aarch64,
-                    .aarch64_be,
                     .hexagon,
                     .kvx,
                     .microblaze,
@@ -3075,6 +3082,9 @@ pub const DynamicLinker = struct {
                 }
             else if (abi.isGnu())
                 switch (arch) {
+                    .aarch64be,
+                    => if (abi == .gnu) init("/lib/ld-linux-aarch64_be.so.1") else none,
+
                     .arc,
                     .arceb,
                     => if (abi == .gnu) initFmt("/lib/ld-linux-{t}.so.2", .{arch}) else none,
@@ -3088,7 +3098,6 @@ pub const DynamicLinker = struct {
                     }}),
 
                     .aarch64,
-                    .aarch64_be,
                     .or1k,
                     => if (abi == .gnu) initFmt("/lib/ld-linux-{s}.so.1", .{@tagName(arch)}) else none,
 
@@ -3243,7 +3252,7 @@ pub const DynamicLinker = struct {
                 .arm,
                 .armeb,
                 .aarch64,
-                .aarch64_be,
+                .aarch64be,
                 .hppa,
                 .m68k,
                 .mips,
@@ -3407,7 +3416,7 @@ pub fn ptrBitWidth_arch_abi(cpu_arch: Cpu.Arch, abi: Abi) u16 {
         => 32,
 
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .alpha,
         .amdgcn,
         .bpfeb,
@@ -3475,7 +3484,7 @@ pub fn stackAlignment(target: *const Target) u16 {
         => return 8,
 
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .alpha,
         .bpfeb,
         .bpfel,
@@ -3554,7 +3563,7 @@ pub fn cCharSignedness(target: *const Target) ?std.builtin.Signedness {
         .opengl => null,
         else => switch (target.cpu.arch) {
             .aarch64,
-            .aarch64_be,
+            .aarch64be,
             .arm,
             .armeb,
             .arc,
@@ -3686,7 +3695,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                     .riscv64,
                     .riscv64be,
                     .aarch64,
-                    .aarch64_be,
+                    .aarch64be,
                     .mips64,
                     .mips64el,
                     .mips64n8,
@@ -3780,7 +3789,7 @@ pub fn cTypeBitSize(target: *const Target, c_type: CType) ?u16 {
                 },
 
                 .aarch64,
-                .aarch64_be,
+                .aarch64be,
                 .loongarch32,
                 .loongarch64,
                 .mips64,
@@ -3993,7 +4002,7 @@ pub fn cTypeAlignment(target: *const Target, c_type: CType) ?u16 {
             => 8,
 
             .aarch64,
-            .aarch64_be,
+            .aarch64be,
             .alpha,
             .hppa64,
             .kvx,
@@ -4094,7 +4103,7 @@ pub fn cMaxIntAlignment(target: *const Target) u16 {
         => 8,
 
         .aarch64,
-        .aarch64_be,
+        .aarch64be,
         .alpha,
         .amdgcn,
         .bpfel,
@@ -4149,7 +4158,7 @@ pub fn cCallingConvention(target: *const Target) ?std.builtin.CallingConvention 
             .{ .aarch64_aapcs_win = .{} }
         else
             .{ .aarch64_aapcs = .{} },
-        .aarch64_be => .{ .aarch64_aapcs = .{} },
+        .aarch64be => .{ .aarch64_aapcs = .{} },
         .alpha => .{ .alpha_osf = .{} },
         .arm, .armeb, .thumb, .thumbeb => switch (target.abi.float()) {
             .soft => .{ .arm_aapcs = .{} },

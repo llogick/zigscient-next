@@ -56,7 +56,7 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
         if (host_cpu_arch == .aarch64 and candidate.cpu.arch == .arm)
             break :cpu_ok true;
 
-        if (host_cpu_arch == .aarch64_be and candidate.cpu.arch == .armeb)
+        if (host_cpu_arch == .aarch64be and candidate.cpu.arch == .armeb)
             break :cpu_ok true;
 
         // TODO additionally detect incompatible CPU features.
@@ -110,7 +110,7 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
                 } },
                 else => bad_result,
             },
-            inline .aarch64_be,
+            inline .aarch64be,
             .alpha,
             .armeb,
             .hexagon,
@@ -155,6 +155,7 @@ pub fn getExternalExecutor(io: Io, candidate: *const std.Target, options: GetExt
                 .linux,
                 => .{
                     .qemu = switch (t) {
+                        .aarch64be => "qemu-aarch64_be",
                         .powerpc => "qemu-ppc",
                         .powerpc64 => "qemu-ppc64",
                         .powerpc64le => "qemu-ppc64le",

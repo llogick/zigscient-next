@@ -218,14 +218,14 @@ const module_test_targets = blk: {
 
         .{
             .target = .{
-                .cpu_arch = .aarch64_be,
+                .cpu_arch = .aarch64be,
                 .os_tag = .linux,
                 .abi = .none,
             },
         },
         .{
             .target = .{
-                .cpu_arch = .aarch64_be,
+                .cpu_arch = .aarch64be,
                 .os_tag = .linux,
                 .abi = .musl,
             },
@@ -233,7 +233,7 @@ const module_test_targets = blk: {
         },
         .{
             .target = .{
-                .cpu_arch = .aarch64_be,
+                .cpu_arch = .aarch64be,
                 .os_tag = .linux,
                 .abi = .musl,
             },
@@ -243,7 +243,7 @@ const module_test_targets = blk: {
         },
         .{
             .target = .{
-                .cpu_arch = .aarch64_be,
+                .cpu_arch = .aarch64be,
                 .os_tag = .linux,
                 .abi = .gnu,
             },
@@ -2796,7 +2796,7 @@ const module_test_targets = blk: {
 
         .{
             .target = .{
-                .cpu_arch = .aarch64_be,
+                .cpu_arch = .aarch64be,
                 .os_tag = .netbsd,
                 .abi = .none,
             },
@@ -3289,7 +3289,7 @@ const c_abi_targets = blk: {
 
         .{
             .target = .{
-                .cpu_arch = .aarch64_be,
+                .cpu_arch = .aarch64be,
                 .os_tag = .linux,
                 .abi = .musl,
             },
@@ -4816,7 +4816,7 @@ const libc_test_nsz_targets: []const std.Target.Query = &.{
         .abi = .musl,
     },
     .{
-        .cpu_arch = .aarch64_be,
+        .cpu_arch = .aarch64be,
         .os_tag = .linux,
         .abi = .musl,
     },
