@@ -38,6 +38,26 @@ test "module level assembly" {
     }
 }
 
+test "discarded volatile asm register output" {
+    if (builtin.zig_backend != .stage2_x86_64) return error.SkipZigTest;
+
+    const X = extern struct { x: u64 };
+    const obj = X{ .x = 1 };
+    _ = asm volatile ("movq %[obj], %[ret]"
+        : [ret] "={rbx}" (-> u64),
+        : [obj] "{rcx}" (obj),
+    );
+    _ = asm volatile ("movq %[obj], %[ret]"
+        : [ret] "=r" (-> u64),
+        : [obj] "{rcx}" (obj),
+    );
+    const result = asm volatile ("movq %[obj], %[ret]"
+        : [ret] "={rbx}" (-> u64),
+        : [obj] "{rcx}" (obj),
+    );
+    try expectEqual(@as(u64, 1), result);
+}
+
 test "output constraint modifiers" {
     if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
     if (builtin.zig_backend == .stage2_wasm) return error.SkipZigTest; // TODO

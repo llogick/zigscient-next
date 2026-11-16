@@ -177087,8 +177087,8 @@ fn airAsm(self: *CodeGen, inst: Air.Inst.Index) !void {
 
     var it = unwrapped_asm.iterateOutputs();
     while (it.next()) |out| {
-        const maybe_inst = switch (out.operand) {
-            .none => inst,
+        const maybe_inst: ?Air.Inst.Index = switch (out.operand) {
+            .none => if (self.liveness.isUnused(inst)) null else inst,
             else => null,
         };
         const ty = switch (out.operand) {
@@ -177155,14 +177155,14 @@ fn airAsm(self: *CodeGen, inst: Air.Inst.Index) !void {
             };
         };
         if (arg_mcv.getReg()) |reg| if (RegisterManager.indexOfRegIntoTracked(reg)) |tracked_index| {
-            try self.register_manager.getRegIndex(tracked_index, if (out.operand == .none) inst else null);
+            try self.register_manager.getRegIndex(tracked_index, maybe_inst);
             _ = self.register_manager.lockRegIndexAssumeUnused(tracked_index);
         };
         if (!std.mem.eql(u8, out.name, "_"))
             arg_map.putAssumeCapacityNoClobber(out.name, @intCast(args_len));
         args[args_len] = arg_mcv;
         args_len += 1;
-        if (out.operand == .none) result = arg_mcv;
+        if (maybe_inst != null) result = arg_mcv;
         if (is_read) try self.load(arg_mcv, self.typeOf(out.operand), .{ .air_ref = out.operand });
     }
 
