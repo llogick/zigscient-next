@@ -379,3 +379,39 @@ test "negative zero" {
 fn smallBufferJsonReader(allocator: Allocator, io_reader: anytype) Scanner.Reader {
     return .init(allocator, io_reader);
 }
+
+const ScannerParseTest = struct {
+    testNum: u8,
+};
+
+test "diagnostics - parseFromTokenSource" {
+    var diags = std.json.Diagnostics{};
+
+    var buf: [4096]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buf);
+
+    var fbs: std.Io.Reader = .fixed("{\"testNum\":false}");
+    var json_reader: Scanner.Reader = .init(testing.allocator, &fbs);
+    defer json_reader.deinit();
+
+    if (parseFromTokenSource(ScannerParseTest, testing.allocator, &json_reader, .{ .diagnostics = &diags })) |parsed| {
+        defer parsed.deinit();
+        return error.expectedParseFailure;
+    } else |err| {
+        diags.dump(&writer, err, "input.json") catch {};
+        try writer.flush();
+        const output = writer.buffered();
+
+        try std.testing.expectEqual(error.UnexpectedToken, err);
+        try std.testing.expectEqualStrings(
+            \\input.json:1:17: UnexpectedToken
+            \\{"testNum":false}...
+            \\                ^
+            \\expected: int, found: bool
+            \\  in u8
+            \\  in json.dynamic_test.ScannerParseTest.testNum
+            \\  in json.dynamic_test.ScannerParseTest
+            \\
+        , output);
+    }
+}

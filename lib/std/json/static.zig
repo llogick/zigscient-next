@@ -9,6 +9,8 @@ const Token = Scanner.Token;
 const AllocWhen = Scanner.AllocWhen;
 const default_max_value_len = Scanner.default_max_value_len;
 const isNumberFormattedLikeAnInteger = Scanner.isNumberFormattedLikeAnInteger;
+const Diagnostics = Scanner.Diagnostics;
+const TokenType = Scanner.TokenType;
 
 const Value = @import("./dynamic.zig").Value;
 const Array = @import("./dynamic.zig").Array;
@@ -52,6 +54,10 @@ pub const ParseOptions = struct {
     /// When this option is true, JSON numbers encoded as floats (see `std.json.isNumberFormattedLikeAnInteger`)
     /// may lose precision when being parsed into `std.json.Value.float`.
     parse_numbers: bool = true,
+
+    /// Enable diagnostics with `var diagnostics: json.Diagnostics = .{};`,
+    /// and set this option to `&diagnostics`.
+    diagnostics: ?*Diagnostics = null,
 };
 
 pub fn Parsed(comptime T: type) type {
@@ -106,6 +112,7 @@ pub fn parseFromTokenSource(
     scanner_or_reader: anytype,
     options: ParseOptions,
 ) ParseError(@TypeOf(scanner_or_reader.*))!Parsed(T) {
+    errdefer scanner_or_reader.saveDiagnostics();
     var parsed = Parsed(T){
         .arena = try allocator.create(ArenaAllocator),
         .value = undefined,
@@ -128,6 +135,7 @@ pub fn parseFromTokenSourceLeaky(
     scanner_or_reader: anytype,
     options: ParseOptions,
 ) ParseError(@TypeOf(scanner_or_reader.*))!T {
+    errdefer scanner_or_reader.saveDiagnostics();
     if (@TypeOf(scanner_or_reader.*) == Scanner) {
         assert(scanner_or_reader.is_end_of_input);
     }
@@ -145,6 +153,9 @@ pub fn parseFromTokenSourceLeaky(
         } else {
             resolved_options.allocate = .alloc_always;
         }
+    }
+    if (resolved_options.diagnostics) |diag| {
+        scanner_or_reader.enableDiagnostics(diag);
     }
 
     const value = try innerParse(T, allocator, scanner_or_reader, resolved_options);
@@ -219,12 +230,16 @@ pub fn innerParse(
     source: anytype,
     options: ParseOptions,
 ) ParseError(@TypeOf(source.*))!T {
+    errdefer if (options.diagnostics) |diag| {
+        source.saveDiagnostics();
+        diag.recordContext(@typeName(T));
+    };
     switch (@typeInfo(T)) {
         .bool => {
             return switch (try source.next()) {
                 .true => true,
                 .false => false,
-                else => error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "bool"),
             };
         },
         .float, .comptime_float => {
@@ -232,7 +247,7 @@ pub fn innerParse(
             defer freeAllocated(allocator, token);
             const slice = switch (token) {
                 inline .number, .allocated_number, .string, .allocated_string => |slice| slice,
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "float"),
             };
             return try std.fmt.parseFloat(T, slice);
         },
@@ -241,9 +256,9 @@ pub fn innerParse(
             defer freeAllocated(allocator, token);
             const slice = switch (token) {
                 inline .number, .allocated_number, .string, .allocated_string => |slice| slice,
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "int"),
             };
-            return sliceToInt(T, slice);
+            return sliceToInt(T, slice, options);
         },
         .optional => |optionalInfo| {
             switch (try source.peekNextTokenType()) {
@@ -265,9 +280,9 @@ pub fn innerParse(
             defer freeAllocated(allocator, token);
             const slice = switch (token) {
                 inline .number, .allocated_number, .string, .allocated_string => |slice| slice,
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "enum (number or string)"),
             };
-            return sliceToEnum(T, slice);
+            return sliceToEnum(T, slice, options);
         },
         .@"union" => |unionInfo| {
             if (std.meta.hasFn(T, "jsonParse")) {
@@ -276,13 +291,17 @@ pub fn innerParse(
 
             if (unionInfo.tag_type == null) @compileError("Unable to parse into untagged union '" ++ @typeName(T) ++ "'");
 
-            if (.object_begin != try source.next()) return error.UnexpectedToken;
+            switch (try source.next()) {
+                .object_begin => {},
+                else => |t| return typeError(options.diagnostics, t, "union (object with one field)"),
+            }
 
             var result: ?T = null;
             var name_token: ?Token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
             const field_name = switch (name_token.?) {
                 inline .string, .allocated_string => |slice| slice,
                 else => {
+                    if (options.diagnostics) |diag| diag.setMessage("tagged union requires a field to identify the active tag");
                     return error.UnexpectedToken;
                 },
             };
@@ -295,8 +314,14 @@ pub fn innerParse(
                     name_token = null;
                     if (u_field_type == void) {
                         // void isn't really a json type, but we can support void payload union tags with {} as a value.
-                        if (.object_begin != try source.next()) return error.UnexpectedToken;
-                        if (.object_end != try source.next()) return error.UnexpectedToken;
+                        switch (try source.next()) {
+                            .object_begin => {},
+                            else => |t| return typeError(options.diagnostics, t, "void payload ('{}')"),
+                        }
+                        if (.object_end != try source.next()) {
+                            if (options.diagnostics) |diag| diag.setMessage("void payload '{}' should have no fields");
+                            return error.UnexpectedToken;
+                        }
                         result = @unionInit(T, u_field_name, {});
                     } else {
                         // Recurse.
@@ -306,24 +331,44 @@ pub fn innerParse(
                 }
             } else {
                 // Didn't match anything.
+                if (options.diagnostics) |diag| diag.setMessage("unrecognized tag name");
                 return error.UnknownField;
             }
 
-            if (.object_end != try source.next()) return error.UnexpectedToken;
+            if (.object_end != try source.next()) {
+                if (options.diagnostics) |diag| diag.setMessage("tagged union requires only one field or object is badly formatted json");
+                return error.UnexpectedToken;
+            }
 
             return result.?;
         },
 
         .@"struct" => |structInfo| {
             if (structInfo.is_tuple) {
-                if (.array_begin != try source.next()) return error.UnexpectedToken;
+                switch (try source.next()) {
+                    .array_begin => {},
+                    else => |t| return typeError(options.diagnostics, t, "tuple (array of values)"),
+                }
 
                 var r: T = undefined;
                 inline for (structInfo.field_types, 0..) |field_type, i| {
+                    if (.array_end == try source.peekNextTokenType()) {
+                        if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint(
+                            "tuple too short. expected length: {}",
+                            .{structInfo.field_types.len},
+                        ));
+                        return error.LengthMismatch;
+                    }
                     r[i] = try innerParse(field_type, allocator, source, options);
                 }
 
-                if (.array_end != try source.next()) return error.UnexpectedToken;
+                if (.array_end != try source.next()) {
+                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint(
+                        "tuple too long. expected length: {}",
+                        .{structInfo.field_types.len},
+                    ));
+                    return error.UnexpectedToken;
+                }
 
                 return r;
             }
@@ -332,7 +377,10 @@ pub fn innerParse(
                 return T.jsonParse(allocator, source, options);
             }
 
-            if (.object_begin != try source.next()) return error.UnexpectedToken;
+            switch (try source.next()) {
+                .object_begin => {},
+                else => |t| return typeError(options.diagnostics, t, "struct ({...})"),
+            }
 
             var r: T = undefined;
             var fields_seen: [structInfo.field_names.len]bool = @splat(false);
@@ -344,9 +392,7 @@ pub fn innerParse(
                     .object_end => { // No more fields.
                         break;
                     },
-                    else => {
-                        return error.UnexpectedToken;
-                    },
+                    else => |t| return typeError(options.diagnostics, t, "struct ({...})"),
                 };
 
                 inline for (
@@ -360,6 +406,7 @@ pub fn innerParse(
                         // Free the name token now in case we're using an allocator that optimizes freeing the last allocated object.
                         // (Recursing into innerParse() might trigger more allocations.)
                         freeAllocated(allocator, name_token.?);
+                        errdefer if (options.diagnostics) |diag| diag.recordContext(@typeName(T) ++ "." ++ f_name);
                         name_token = null;
                         if (fields_seen[i]) {
                             switch (options.duplicate_field_behavior) {
@@ -369,7 +416,10 @@ pub fn innerParse(
                                     _ = try innerParse(f_type, allocator, source, options);
                                     break;
                                 },
-                                .@"error" => return error.DuplicateField,
+                                .@"error" => {
+                                    if (options.diagnostics) |diag| diag.setMessage("duplicate field name: " ++ f_name);
+                                    return error.DuplicateField;
+                                },
                                 .use_last => {},
                             }
                         }
@@ -383,11 +433,12 @@ pub fn innerParse(
                     if (options.ignore_unknown_fields) {
                         try source.skipValue();
                     } else {
+                        if (options.diagnostics) |diag| diag.setMessageFmt("found unknown field. found: {s}", .{field_name});
                         return error.UnknownField;
                     }
                 }
             }
-            try fillDefaultStructValues(T, &r, &fields_seen);
+            try fillDefaultStructValues(T, options, &r, &fields_seen);
             return r;
         },
 
@@ -398,7 +449,7 @@ pub fn innerParse(
                     return internalParseArray(T, arrayInfo.child, allocator, source, options);
                 },
                 .string => {
-                    if (arrayInfo.child != u8) return error.UnexpectedToken;
+                    if (arrayInfo.child != u8) return typeError(options.diagnostics, .string, "string");
                     // Fixed-length string.
 
                     var r: T = undefined;
@@ -406,32 +457,54 @@ pub fn innerParse(
                     while (true) {
                         switch (try source.next()) {
                             .string => |slice| {
-                                if (i + slice.len != r.len) return error.LengthMismatch;
+                                if (i + slice.len > r.len) {
+                                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("string too long for fixed length array. expected length: {}", .{r.len}));
+                                    return error.LengthMismatch;
+                                }
+                                if (i + slice.len < r.len) {
+                                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("string too short for fixed length array. expected length: {}", .{r.len}));
+                                    return error.LengthMismatch;
+                                }
                                 @memcpy(r[i..][0..slice.len], slice);
                                 break;
                             },
                             .partial_string => |slice| {
-                                if (i + slice.len > r.len) return error.LengthMismatch;
+                                if (i + slice.len > r.len) {
+                                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("string too long for fixed length array. expected length: {}", .{r.len}));
+                                    return error.LengthMismatch;
+                                }
                                 @memcpy(r[i..][0..slice.len], slice);
                                 i += slice.len;
                             },
                             .partial_string_escaped_1 => |arr| {
-                                if (i + arr.len > r.len) return error.LengthMismatch;
+                                if (i + arr.len > r.len) {
+                                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("string too long for fixed length array. expected length: {}", .{r.len}));
+                                    return error.LengthMismatch;
+                                }
                                 @memcpy(r[i..][0..arr.len], arr[0..]);
                                 i += arr.len;
                             },
                             .partial_string_escaped_2 => |arr| {
-                                if (i + arr.len > r.len) return error.LengthMismatch;
+                                if (i + arr.len > r.len) {
+                                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("string too long for fixed length array. expected length: {}", .{r.len}));
+                                    return error.LengthMismatch;
+                                }
                                 @memcpy(r[i..][0..arr.len], arr[0..]);
                                 i += arr.len;
                             },
                             .partial_string_escaped_3 => |arr| {
-                                if (i + arr.len > r.len) return error.LengthMismatch;
+                                if (i + arr.len > r.len) {
+                                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("string too long for fixed length array. expected length: {}", .{r.len}));
+                                    return error.LengthMismatch;
+                                }
                                 @memcpy(r[i..][0..arr.len], arr[0..]);
                                 i += arr.len;
                             },
                             .partial_string_escaped_4 => |arr| {
-                                if (i + arr.len > r.len) return error.LengthMismatch;
+                                if (i + arr.len > r.len) {
+                                    if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("string too long for fixed length array. expected length: {}", .{r.len}));
+                                    return error.LengthMismatch;
+                                }
                                 @memcpy(r[i..][0..arr.len], arr[0..]);
                                 i += arr.len;
                             },
@@ -442,7 +515,7 @@ pub fn innerParse(
                     return r;
                 },
 
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, if (arrayInfo.child != u8) "array" else "array or string"),
             }
         },
 
@@ -452,7 +525,7 @@ pub fn innerParse(
                     const A = [vector_info.len]vector_info.child;
                     return try internalParseArray(A, vector_info.child, allocator, source, options);
                 },
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "array"),
             }
         },
 
@@ -490,7 +563,10 @@ pub fn innerParse(
                             return try arraylist.toOwnedSlice(allocator);
                         },
                         .string => {
-                            if (ptrInfo.child != u8) return error.UnexpectedToken;
+                            if (ptrInfo.child != u8) {
+                                if (options.diagnostics) |diag| diag.setMessageFmt("expected array of {}, found string", .{ptrInfo.child});
+                                return error.UnexpectedToken;
+                            }
 
                             // Dynamic length string.
                             if (ptrInfo.sentinel()) |s| {
@@ -512,7 +588,7 @@ pub fn innerParse(
                                 }
                             }
                         },
-                        else => return error.UnexpectedToken,
+                        else => |t| return typeError(options.diagnostics, t, if (ptrInfo.child == u8) "string" else "array"),
                     }
                 },
                 else => @compileError("Unable to parse into type '" ++ @typeName(T) ++ "'"),
@@ -534,12 +610,78 @@ fn internalParseArray(
 
     var r: T = undefined;
     for (&r) |*elem| {
+        if (.array_end == try source.peekNextTokenType()) {
+            if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("not enough items for fixed length array. expected length: {}", .{r.len}));
+            return error.LengthMismatch;
+        }
         elem.* = try innerParse(Child, allocator, source, options);
     }
 
-    if (.array_end != try source.next()) return error.UnexpectedToken;
+    if (.array_end != try source.next()) {
+        if (options.diagnostics) |diag| diag.setMessageFmt("too many items for fixed length array. expected length: {}", .{r.len});
+        return error.UnexpectedToken;
+    }
 
     return r;
+}
+
+fn coerceToStringDescriptor(token: anytype, comptime prefix: []const u8) []const u8 {
+    if (@TypeOf(token) == TokenType) {
+        return switch (token) {
+            .object_begin => prefix ++ "object",
+            .array_begin => prefix ++ "array",
+            .true, .false => prefix ++ "bool",
+            .null => prefix ++ "null",
+            .string => prefix ++ "string",
+            .number => prefix ++ "number",
+            .object_end => prefix ++ "object",
+            .array_end => prefix ++ "array",
+            .end_of_document => prefix ++ " end of document",
+        };
+    }
+    if (@TypeOf(token) == Value) {
+        return switch (@as(std.meta.Tag(Value), token)) {
+            .null => prefix ++ "null",
+            .array => prefix ++ "array",
+            .integer, .float, .number_string => prefix ++ "number",
+            .string => prefix ++ "string",
+            .object => prefix ++ "object",
+            .bool => prefix ++ "bool",
+        };
+    }
+    return switch (@as(std.meta.Tag(Token), token)) {
+        .object_begin => prefix ++ "object",
+        .array_begin => prefix ++ "array",
+        .true, .false => prefix ++ "bool",
+        .null => prefix ++ "null",
+
+        .number,
+        .partial_number,
+        .allocated_number,
+        => prefix ++ "number",
+
+        .string,
+        .partial_string,
+        .partial_string_escaped_1,
+        .partial_string_escaped_2,
+        .partial_string_escaped_3,
+        .partial_string_escaped_4,
+        .allocated_string,
+        => prefix ++ "string",
+
+        .object_end => prefix ++ "object",
+        .array_end => prefix ++ "array",
+        .end_of_document => prefix ++ " end of document",
+    };
+}
+
+pub fn typeError(diagnostics: ?*Diagnostics, token: anytype, comptime expected: []const u8) error{UnexpectedToken} {
+    if (diagnostics) |diag| {
+        const prefix = "expected: " ++ expected ++ ", found: ";
+        const s = coerceToStringDescriptor(token, prefix);
+        diag.setMessage(s);
+    }
+    return error.UnexpectedToken;
 }
 
 /// This is an internal function called recursively
@@ -553,11 +695,12 @@ pub fn innerParseFromValue(
     source: Value,
     options: ParseOptions,
 ) ParseFromValueError!T {
+    errdefer if (options.diagnostics) |diag| diag.recordContext(@typeName(T));
     switch (@typeInfo(T)) {
         .bool => {
             switch (source) {
                 .bool => |b| return b,
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "bool"),
             }
         },
         .float, .comptime_float => {
@@ -565,26 +708,30 @@ pub fn innerParseFromValue(
                 .float => |f| return @as(T, @floatCast(f)),
                 .integer => |i| return @as(T, @floatFromInt(i)),
                 .number_string, .string => |s| return std.fmt.parseFloat(T, s),
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "float"),
             }
         },
         .int, .comptime_int => {
             switch (source) {
                 .float => |f| {
-                    if (@round(f) != f) return error.InvalidNumber;
+                    errdefer if (options.diagnostics) |diag| diag.setMessageFmt("failed to parse. expected: {s} found: {d}", .{ @typeName(T), f });
+                    if (@round(f) != f) {
+                        return error.InvalidNumber;
+                    }
                     if (f > @as(@TypeOf(f), @floatFromInt(std.math.maxInt(T)))) return error.Overflow;
                     if (f < @as(@TypeOf(f), @floatFromInt(std.math.minInt(T)))) return error.Overflow;
                     return @intFromFloat(f);
                 },
                 .integer => |i| {
+                    errdefer if (options.diagnostics) |diag| diag.setMessageFmt("failed to parse. expected: {s} found: {d}", .{ @typeName(T), i });
                     if (i > std.math.maxInt(T)) return error.Overflow;
                     if (i < std.math.minInt(T)) return error.Overflow;
                     return @intCast(i);
                 },
                 .number_string, .string => |s| {
-                    return sliceToInt(T, s);
+                    return sliceToInt(T, s, options);
                 },
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "int"),
             }
         },
         .optional => |optionalInfo| {
@@ -599,10 +746,16 @@ pub fn innerParseFromValue(
             }
 
             switch (source) {
-                .float => return error.InvalidEnumTag,
-                .integer => |i| return std.enums.fromInt(T, i) orelse return error.InvalidEnumTag,
-                .number_string, .string => |s| return sliceToEnum(T, s),
-                else => return error.UnexpectedToken,
+                .float => {
+                    if (options.diagnostics) |diag| diag.setMessageFmt("invalid enum tag, float: {}", .{source});
+                    return error.InvalidEnumTag;
+                },
+                .integer => |i| return std.enums.fromInt(T, i) orelse {
+                    if (options.diagnostics) |diag| diag.setMessageFmt("invalid enum tag, integer: {}", .{source});
+                    return error.InvalidEnumTag;
+                },
+                .number_string, .string => |s| return sliceToEnum(T, s, options),
+                else => |t| return typeError(options.diagnostics, t, "enum (int or string)"),
             }
         },
         .@"union" => |unionInfo| {
@@ -612,8 +765,14 @@ pub fn innerParseFromValue(
 
             if (unionInfo.tag_type == null) @compileError("Unable to parse into untagged union '" ++ @typeName(T) ++ "'");
 
-            if (source != .object) return error.UnexpectedToken;
-            if (source.object.count() != 1) return error.UnexpectedToken;
+            if (source != .object) {
+                if (options.diagnostics) |diag| diag.setMessageFmt("union (object with one field), found: {s}", .{@tagName(source)});
+                return error.UnexpectedToken;
+            }
+            if (source.object.count() != 1) {
+                if (options.diagnostics) |diag| diag.setMessage("tagged union requires exactly one field");
+                return error.UnexpectedToken;
+            }
 
             var it = source.object.iterator();
             const kv = it.next().?;
@@ -623,8 +782,16 @@ pub fn innerParseFromValue(
                 if (std.mem.eql(u8, u_field_name, field_name)) {
                     if (u_field_type == void) {
                         // void isn't really a json type, but we can support void payload union tags with {} as a value.
-                        if (kv.value_ptr.* != .object) return error.UnexpectedToken;
-                        if (kv.value_ptr.*.object.count() != 0) return error.UnexpectedToken;
+
+                        switch (kv.value_ptr.*) {
+                            .object => {},
+                            else => |t| return typeError(options.diagnostics, t, "void payload ('{}')"),
+                        }
+
+                        if (kv.value_ptr.*.object.count() != 0) {
+                            if (options.diagnostics) |diag| diag.setMessage("void payload '{}' should have no fields");
+                            return error.UnexpectedToken;
+                        }
                         return @unionInit(T, u_field_name, {});
                     }
                     // Recurse.
@@ -632,13 +799,21 @@ pub fn innerParseFromValue(
                 }
             }
             // Didn't match anything.
+            if (options.diagnostics) |diag| diag.setMessage("unrecognized tag name");
             return error.UnknownField;
         },
 
         .@"struct" => |structInfo| {
             if (structInfo.is_tuple) {
-                if (source != .array) return error.UnexpectedToken;
-                if (source.array.items.len != structInfo.field_names.len) return error.UnexpectedToken;
+                switch (source) {
+                    .array => {},
+                    else => |t| return typeError(options.diagnostics, t, "tuple (array of values)"),
+                }
+
+                if (source.array.items.len != structInfo.field_names.len) {
+                    if (options.diagnostics) |diag| diag.setMessageFmt("tuple length doesn't match expected length. expected: {} found: {}", .{ structInfo.field_names.len, source.array.items.len });
+                    return error.UnexpectedToken;
+                }
 
                 var r: T = undefined;
                 inline for (0..structInfo.field_names.len, source.array.items) |i, item| {
@@ -652,7 +827,10 @@ pub fn innerParseFromValue(
                 return T.jsonParseFromValue(allocator, source, options);
             }
 
-            if (source != .object) return error.UnexpectedToken;
+            switch (source) {
+                .object => {},
+                else => |t| return typeError(options.diagnostics, t, "struct"),
+            }
 
             var r: T = undefined;
             var fields_seen: [structInfo.field_names.len]bool = @splat(false);
@@ -669,6 +847,7 @@ pub fn innerParseFromValue(
                 ) |f_name, f_type, f_attrs, i| {
                     if (f_attrs.@"comptime") @compileError("comptime fields are not supported: " ++ @typeName(T) ++ "." ++ f_name);
                     if (std.mem.eql(u8, f_name, field_name)) {
+                        errdefer if (options.diagnostics) |diag| diag.recordContext(@typeName(T) ++ "." ++ f_name);
                         assert(!fields_seen[i]); // Can't have duplicate keys in a Value.object.
                         @field(r, f_name) = try innerParseFromValue(f_type, allocator, kv.value_ptr.*, options);
                         fields_seen[i] = true;
@@ -676,10 +855,13 @@ pub fn innerParseFromValue(
                     }
                 } else {
                     // Didn't match anything.
-                    if (!options.ignore_unknown_fields) return error.UnknownField;
+                    if (!options.ignore_unknown_fields) {
+                        if (options.diagnostics) |diag| diag.setMessageFmt("found unknown field. found: {s}", .{field_name});
+                        return error.UnknownField;
+                    }
                 }
             }
-            try fillDefaultStructValues(T, &r, &fields_seen);
+            try fillDefaultStructValues(T, options, &r, &fields_seen);
             return r;
         },
 
@@ -690,17 +872,19 @@ pub fn innerParseFromValue(
                     return innerParseArrayFromArrayValue(T, arrayInfo.child, arrayInfo.len, allocator, array, options);
                 },
                 .string => |s| {
-                    if (arrayInfo.child != u8) return error.UnexpectedToken;
+                    if (arrayInfo.child != u8) return typeError(options.diagnostics, source, "array");
                     // Fixed-length string.
 
-                    if (s.len != arrayInfo.len) return error.LengthMismatch;
+                    if (s.len != arrayInfo.len) {
+                        if (options.diagnostics) |diag| diag.setMessageFmt("Length mismatch for fixed-length string. Found: {}. Expected: {}", .{ s.len, arrayInfo.len });
+                        return error.LengthMismatch;
+                    }
 
                     var r: T = undefined;
                     @memcpy(r[0..], s);
                     return r;
                 },
-
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, if (arrayInfo.child == u8) "array or fixed-length string" else "array"),
             }
         },
 
@@ -709,7 +893,7 @@ pub fn innerParseFromValue(
                 .array => |array| {
                     return innerParseArrayFromArrayValue(T, vecInfo.child, vecInfo.len, allocator, array, options);
                 },
-                else => return error.UnexpectedToken,
+                else => |t| return typeError(options.diagnostics, t, "array"),
             }
         },
 
@@ -735,7 +919,7 @@ pub fn innerParseFromValue(
                             return r;
                         },
                         .string => |s| {
-                            if (ptrInfo.child != u8) return error.UnexpectedToken;
+                            if (ptrInfo.child != u8) return typeError(options.diagnostics, source, "array");
                             // Dynamic length string.
 
                             const r = if (ptrInfo.sentinel()) |sentinel|
@@ -746,7 +930,7 @@ pub fn innerParseFromValue(
 
                             return r;
                         },
-                        else => return error.UnexpectedToken,
+                        else => |t| return typeError(options.diagnostics, t, if (ptrInfo.child == u8) "string" else "array"),
                     }
                 },
                 else => @compileError("Unable to parse into type '" ++ @typeName(T) ++ "'"),
@@ -764,7 +948,10 @@ fn innerParseArrayFromArrayValue(
     array: Array,
     options: ParseOptions,
 ) !T {
-    if (array.items.len != len) return error.LengthMismatch;
+    if (array.items.len != len) {
+        if (options.diagnostics) |diag| diag.setMessageFmt("array length mismatch. expected: {}, found: {}", .{ len, array.items.len });
+        return error.LengthMismatch;
+    }
 
     var r: T = undefined;
     for (array.items, 0..) |item, i| {
@@ -774,26 +961,47 @@ fn innerParseArrayFromArrayValue(
     return r;
 }
 
-fn sliceToInt(comptime T: type, slice: []const u8) !T {
+fn sliceToInt(comptime T: type, slice: []const u8, options: ParseOptions) !T {
     if (isNumberFormattedLikeAnInteger(slice))
-        return std.fmt.parseInt(T, slice, 10);
+        return std.fmt.parseInt(T, slice, 10) catch |err| {
+            if (options.diagnostics) |diag| diag.setMessageFmt("failed to parse. expected: {s} found: {s}", .{ @typeName(T), slice });
+            return err;
+        };
     // Try to coerce a float to an integer.
-    const float = try std.fmt.parseFloat(f128, slice);
-    if (@round(float) != float) return error.InvalidNumber;
-    if (float > @as(f128, @floatFromInt(std.math.maxInt(T))) or float < @as(f128, @floatFromInt(std.math.minInt(T)))) return error.Overflow;
+    const float = std.fmt.parseFloat(f128, slice) catch |err| {
+        if (options.diagnostics) |diag| diag.setMessageFmt("failed to parse. expected: {s} found: {s}", .{ @typeName(T), slice });
+        return err;
+    };
+    if (@round(float) != float) {
+        if (options.diagnostics) |diag| diag.setMessageFmt("failed to parse. expected: {s} found: {s}", .{ @typeName(T), slice });
+        return error.InvalidNumber;
+    }
+    if (float > @as(f128, @floatFromInt(std.math.maxInt(T))) or float < @as(f128, @floatFromInt(std.math.minInt(T)))) {
+        if (options.diagnostics) |diag| diag.setMessageFmt("failed to parse. expected: {s} found: {s}", .{ @typeName(T), slice });
+        return error.Overflow;
+    }
     return @as(T, @intCast(@as(i128, @intFromFloat(float))));
 }
 
-fn sliceToEnum(comptime T: type, slice: []const u8) !T {
+fn sliceToEnum(comptime T: type, slice: []const u8, options: ParseOptions) !T {
     // Check for a named value.
     if (std.meta.stringToEnum(T, slice)) |value| return value;
     // Check for a numeric value.
-    if (!isNumberFormattedLikeAnInteger(slice)) return error.InvalidEnumTag;
-    const n = std.fmt.parseInt(@typeInfo(T).@"enum".tag_type, slice, 10) catch return error.InvalidEnumTag;
-    return std.enums.fromInt(T, n) orelse return error.InvalidEnumTag;
+    if (!isNumberFormattedLikeAnInteger(slice)) {
+        if (options.diagnostics) |diag| diag.setMessageFmt("invalid enum tag, number not formatted as integer, slice: {s}", .{slice});
+        return error.InvalidEnumTag;
+    }
+    const n = std.fmt.parseInt(@typeInfo(T).@"enum".tag_type, slice, 10) catch {
+        if (options.diagnostics) |diag| diag.setMessageFmt("invalid enum tag, failed to parse int from enum tag type, slice: {s}", .{slice});
+        return error.InvalidEnumTag;
+    };
+    return std.enums.fromInt(T, n) orelse {
+        if (options.diagnostics) |diag| diag.setMessageFmt("invalid enum tag, failed to parse int from enum, slice: {s}", .{slice});
+        return error.InvalidEnumTag;
+    };
 }
 
-fn fillDefaultStructValues(comptime T: type, r: *T, fields_seen: *[@typeInfo(T).@"struct".field_names.len]bool) !void {
+fn fillDefaultStructValues(comptime T: type, options: ParseOptions, r: *T, fields_seen: *[@typeInfo(T).@"struct".field_names.len]bool) !void {
     const info = @typeInfo(T).@"struct";
     inline for (
         info.field_names,
@@ -805,6 +1013,7 @@ fn fillDefaultStructValues(comptime T: type, r: *T, fields_seen: *[@typeInfo(T).
             if (field_attrs.defaultValue(field_type)) |default| {
                 @field(r, field_name) = default;
             } else {
+                if (options.diagnostics) |diag| diag.setMessage("missing field: " ++ @typeName(T) ++ "." ++ field_name);
                 return error.MissingField;
             }
         }

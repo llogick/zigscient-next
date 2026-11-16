@@ -149,7 +149,10 @@ fn handleCompleteValue(stack: *Array, allocator: Allocator, source: anytype, val
                 if (gop.found_existing) {
                     switch (options.duplicate_field_behavior) {
                         .use_first => {},
-                        .@"error" => return error.DuplicateField,
+                        .@"error" => {
+                            if (options.diagnostics) |diag| diag.setMessageFmt("Duplicate Fields set for key: {s}", .{key});
+                            return error.DuplicateField;
+                        },
                         .use_last => {
                             gop.value_ptr.* = value;
                         },

@@ -450,6 +450,7 @@ fn testDiagnosticsFromSource(expected_error: ?anyerror, line: u64, col: u64, byt
     } else {
         try source.skipValue();
         try std.testing.expectEqual(Token.end_of_document, try source.next());
+        source.saveDiagnostics();
     }
     try std.testing.expectEqual(line, diagnostics.getLine());
     try std.testing.expectEqual(col, diagnostics.getColumn());
@@ -500,4 +501,81 @@ test isNumberFormattedLikeAnInteger {
     try std.testing.expect(!isNumberFormattedLikeAnInteger("1.23"));
     try std.testing.expect(!isNumberFormattedLikeAnInteger("1e10"));
     try std.testing.expect(!isNumberFormattedLikeAnInteger("1E10"));
+}
+
+test "diagnostics buffer" {
+    var diags = Diagnostics{};
+
+    diags.setMessage("test");
+    diags.recordContext("First");
+    diags.recordContext("Second");
+
+    var buf: [4096]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buf);
+
+    try diags.writeContext(&writer);
+    const output = writer.buffered();
+    try std.testing.expect(std.mem.containsAtLeast(u8, output, 1, "in First"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, output, 1, "in Second"));
+}
+
+test "diagnostics setMessageFmt" {
+    var diags = Diagnostics{};
+
+    diags.setMessageFmt("{s} - {d}", .{ "test", 30 });
+
+    try std.testing.expectEqualStrings("test - 30", diags.message);
+
+    diags = Diagnostics{};
+
+    diags.setMessageFmt("abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz", .{});
+
+    try std.testing.expectEqualStrings("abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz abcdefghijklmnopq...", diags.message);
+
+    diags = Diagnostics{};
+    diags.setMessage("comptime message");
+    try std.testing.expectEqualStrings("comptime message", diags.message);
+}
+
+test "diagnostic dump" {
+    var diags = Diagnostics{};
+
+    var buf: [4096]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buf);
+
+    try diags.writeContext(&writer);
+
+    diags.recordContext("test context");
+
+    diags.setMessage("test message");
+
+    try diags.dump(&writer, error.Test, "test.json");
+    const output = writer.buffered();
+    try std.testing.expect(std.mem.containsAtLeast(u8, output, 1, "test.json: Test"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, output, 1, "test message"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, output, 1, "test context"));
+}
+
+test "diagnostics non error has correct line/col" {
+    const diagnostics_test_multi_line =
+        \\ {
+        \\      "first": "first field",
+        \\      "second": "second field",
+        \\      "third": "third field"
+        \\ }
+    ;
+
+    var fixed: std.Io.Reader = .fixed(diagnostics_test_multi_line);
+
+    var diagnostics = std.json.Diagnostics{};
+    var jsonReader = std.json.Reader.init(std.testing.allocator, &fixed);
+    jsonReader.enableDiagnostics(&diagnostics);
+    defer jsonReader.deinit();
+
+    _ = try jsonReader.next();
+    _ = try jsonReader.next();
+    _ = try jsonReader.next();
+
+    try std.testing.expectEqual(29, diagnostics.getColumn());
+    try std.testing.expectEqual(2, diagnostics.getLine());
 }

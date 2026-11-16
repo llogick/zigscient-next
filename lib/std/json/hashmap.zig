@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const ParseOptions = @import("static.zig").ParseOptions;
 const innerParse = @import("static.zig").innerParse;
 const innerParseFromValue = @import("static.zig").innerParseFromValue;
+const typeError = @import("static.zig").typeError;
 const Value = @import("dynamic.zig").Value;
 
 /// A thin wrapper around `std.array_hash_map.String` that implements
@@ -22,7 +23,11 @@ pub fn ArrayHashMap(comptime T: type) type {
             var map: std.array_hash_map.String(T) = .empty;
             errdefer map.deinit(allocator);
 
-            if (.object_begin != try source.next()) return error.UnexpectedToken;
+            switch (try source.next()) {
+                .object_begin => {},
+                else => |t| return typeError(options.diagnostics, t, "hashmap"),
+            }
+
             while (true) {
                 const token = try source.nextAlloc(allocator, options.allocate.?);
                 switch (token) {
@@ -36,7 +41,10 @@ pub fn ArrayHashMap(comptime T: type) type {
                                     _ = try innerParse(T, allocator, source, options);
                                     continue;
                                 },
-                                .@"error" => return error.DuplicateField,
+                                .@"error" => {
+                                    if (options.diagnostics) |diag| diag.setMessageFmt("duplicate fields for key: {}", .{token});
+                                    return error.DuplicateField;
+                                },
                                 .use_last => {},
                             }
                         }
@@ -50,7 +58,10 @@ pub fn ArrayHashMap(comptime T: type) type {
         }
 
         pub fn jsonParseFromValue(allocator: Allocator, source: Value, options: ParseOptions) !@This() {
-            if (source != .object) return error.UnexpectedToken;
+            switch (source) {
+                .object => {},
+                else => |t| return typeError(options.diagnostics, t, "hashmap"),
+            }
 
             var map: std.array_hash_map.String(T) = .empty;
             errdefer map.deinit(allocator);
