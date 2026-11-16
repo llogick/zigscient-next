@@ -12608,6 +12608,7 @@ fn netConnectIpWindows(
         .CANCELLED => unreachable,
         .INSUFFICIENT_RESOURCES => return error.SystemResources,
         .CONNECTION_REFUSED => return error.ConnectionRefused,
+        .IO_TIMEOUT => return error.Timeout,
         else => |status| return windows.unexpectedStatus(status),
     }
     return .{ .handle = socket_handle, .address = bound_address };
