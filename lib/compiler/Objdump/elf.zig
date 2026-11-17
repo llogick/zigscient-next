@@ -103,6 +103,9 @@ pub const Table = enum {
                 bind,
                 visibility,
                 shndx,
+                is_undef,
+                is_abs,
+                is_common,
                 value,
                 size,
                 pub const types: std.enums.EnumArray(@This(), Objdump.Table.PropertyType) = .init(.{
@@ -113,6 +116,9 @@ pub const Table = enum {
                     .bind = .string,
                     .visibility = .string,
                     .shndx = .int,
+                    .is_undef = .bool,
+                    .is_abs = .bool,
+                    .is_common = .bool,
                     .value = .int,
                     .size = .int,
                 });
@@ -281,6 +287,7 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
                 class,
                 endian,
                 &ehdr,
+                sections,
             ) catch |err| switch (err) {
                 error.EndOfStream => phdrs: {
                     try d.warn("failed to read phdrs: unexpected eof", .{});
@@ -337,7 +344,8 @@ const Section = struct {
     const Contents = union(enum) {
         none,
         strtab: []const u8,
-        symtab: []const std.elf.Elf64.Sym,
+        symtab: []Symbol,
+        symtab_shndx: []const u32,
         relocs: []const std.elf.Elf64.Rela,
         relr: []const u64,
         dynamic: []const std.elf.Elf64.Dyn,
@@ -345,6 +353,41 @@ const Section = struct {
         verdef: []const Verdef,
         verneed: []const Verneed,
 
+        const Symbol = struct {
+            name: std.elf.Word,
+            type: std.elf.STT,
+            bind: std.elf.STB,
+            visibility: std.elf.STV,
+            shndx: Shndx,
+            value: std.elf.Elf64.Addr,
+            size: std.elf.Xword,
+
+            const Shndx = union(enum) {
+                section: std.elf.Section,
+                xindex: u32,
+
+                fn is(shndx: Shndx, what: enum(std.elf.Section) {
+                    UNDEF = std.elf.SHN_UNDEF,
+                    ABS = std.elf.SHN_ABS,
+                    COMMON = std.elf.SHN_COMMON,
+                }) bool {
+                    return switch (shndx) {
+                        .section => |section| section == @backingInt(what),
+                        .xindex => false,
+                    };
+                }
+
+                fn sectionIndex(shndx: Shndx) ?u32 {
+                    return switch (shndx) {
+                        .section => |section| switch (section) {
+                            std.elf.SHN_UNDEF, std.elf.SHN_LORESERVE...std.elf.SHN_HIRESERVE => null,
+                            else => section,
+                        },
+                        .xindex => |xindex| xindex,
+                    };
+                }
+            };
+        };
         const Verdef = struct {
             ver_ndx: std.elf.VER_NDX,
             aux_cnt: u16,
@@ -393,16 +436,25 @@ fn scanSections(
     const ElfN = class.ElfN();
     const r = d.reader();
 
-    if (ehdr.shnum == 0) return &.{};
+    if (ehdr.shoff == 0) return &.{};
+    try d.seekTo(ehdr.shoff);
+    const shnum = switch (ehdr.shnum) {
+        0 => shnum: {
+            const null_shdr = try r.peekStruct(ElfN.Shdr, endian);
+            break :shnum null_shdr.size;
+        },
+        1...std.elf.SHN_LORESERVE - 1 => |shnum| shnum,
+        std.elf.SHN_LORESERVE...std.elf.SHN_HIRESERVE => return &.{},
+    };
+    if (shnum == 0) return &.{};
 
     if (ehdr.shentsize < @sizeOf(ElfN.Shdr)) {
         try d.warn("failed to read shdrs: invalid shentsize '0x{x}'", .{ehdr.shentsize});
         return &.{};
     }
 
-    const sections = try arena.alloc(Section, ehdr.shnum);
+    const sections = try arena.alloc(Section, shnum);
 
-    try d.seekTo(ehdr.shoff);
     for (sections, 0..) |*section, shndx| {
         const shdr = try r.peekStruct(ElfN.Shdr, endian);
         try r.discardAll64(ehdr.shentsize);
@@ -442,25 +494,33 @@ fn scanSections(
     }
 
     // Now populate section names (or warn if we can't).
-    if (ehdr.shstrndx >= sections.len) {
-        try d.warn("failed to populate section names: shstrndx '{d}' >= shnum '{d}'", .{
-            ehdr.shstrndx, sections.len,
-        });
-    } else if (sections[ehdr.shstrndx].type != .STRTAB) {
-        try d.warn("failed to populate section names: shstrndx is not a STRTAB section", .{});
-    } else switch (sections[ehdr.shstrndx].contents) {
-        else => unreachable,
-        .none => try d.warn("failed to populate section names", .{}),
-        .strtab => |shstrtab| for (sections, 0..) |*section, shndx| {
-            if (section.name_offset >= shstrtab.len) {
-                try d.warn("failed to populate name of section at index '{d}': bad offset '{d}' into string table", .{
-                    shndx, section.name_offset,
-                });
-            } else {
-                section.name = std.mem.sliceTo(shstrtab[section.name_offset..], 0);
-            }
-        },
-    }
+    const shstrndx: Section.Contents.Symbol.Shndx = switch (ehdr.shstrndx) {
+        else => |section| .{ .section = section },
+        std.elf.SHN_XINDEX => .{ .xindex = sections[0].link },
+    };
+    if (shstrndx.sectionIndex()) |shstr_index| {
+        if (shstr_index >= sections.len) {
+            try d.warn("failed to populate section names: shstrndx '{d}' >= shnum '{d}'", .{
+                fmtShndx(d, shstrndx), sections.len,
+            });
+        } else if (sections[shstr_index].type != .STRTAB) {
+            try d.warn("failed to populate section names: shstrndx is not a STRTAB section", .{});
+        } else switch (sections[shstr_index].contents) {
+            else => unreachable,
+            .none => try d.warn("failed to populate section names", .{}),
+            .strtab => |shstrtab| for (sections, 0..) |*section, shndx| {
+                if (section.name_offset >= shstrtab.len) {
+                    try d.warn("failed to populate name of section at index '{d}': bad offset '{d}' into string table", .{
+                        shndx, section.name_offset,
+                    });
+                } else {
+                    section.name = std.mem.sliceTo(shstrtab[section.name_offset..], 0);
+                }
+            },
+        }
+    } else try d.warn("failed to populate section names: invalid shstrndx '{d}'", .{
+        fmtShndx(d, shstrndx),
+    });
 
     // Now scan symbols, relocations, etc; validate the sections and populate `contents`.
     for (sections) |*section| {
@@ -483,6 +543,18 @@ fn scanSections(
                 arena,
                 class,
                 ehdr.type,
+                endian,
+                sections,
+                section,
+            ) catch |err| switch (err) {
+                error.EndOfStream => try d.warn("unexpected eof reading {t} section {q}", .{
+                    section.type, section.name,
+                }),
+                else => |e| return e,
+            },
+            .SYMTAB_SHNDX => scanSymtabShndxSection(
+                d,
+                arena,
                 endian,
                 sections,
                 section,
@@ -570,7 +642,6 @@ fn scanSections(
             // TODO: do we need to validate or parse anything from these?
             .NOTE => {},
             .GROUP => {},
-            .SYMTAB_SHNDX => {},
             .SHLIB => {},
 
             _ => switch (section.type) {
@@ -643,6 +714,33 @@ fn scanSections(
                         });
                     }
                 }
+            },
+            .symtab_shndx => |xindices| if (section.linkedContents(.symtab, sections)) |symtab| {
+                if (xindices.len != symtab.len) {
+                    try d.warn("length of symbol section index table {q} does not match length of corresponding symbol table {q}", .{
+                        section.name, sections[section.link].name,
+                    });
+                } else for (xindices, symtab, 0..) |xindex, *symbol, symbol_index| switch (symbol.shndx) {
+                    .section => |shndx| switch (shndx) {
+                        else => if (xindex != 0) {
+                            try d.warn("symbol table {q} symbol '{d}' references conflicting sections '{d}' and '{d}'", .{
+                                sections[section.link].name, symbol_index, fmtShndx(d, symbol.shndx), fmtShndx(d, .{ .xindex = xindex }),
+                            });
+                        },
+                        std.elf.SHN_XINDEX => if (shndx == std.elf.SHN_UNDEF or shndx >= sections.len) {
+                            try d.warn("symbol section index table {q} symbol '{d}' references invalid section '{d}'", .{
+                                section.name, symbol_index, shndx,
+                            });
+                        } else {
+                            symbol.shndx = .{ .xindex = xindex };
+                        },
+                    },
+                    .xindex => |symbol_xindex| if (symbol_xindex != xindex) {
+                        try d.warn("symbol table {q} symbol '{d}' references conflicting sections '{d}' and '{d}'", .{
+                            sections[section.link].name, symbol_index, fmtShndx(d, symbol.shndx), fmtShndx(d, .{ .xindex = xindex }),
+                        });
+                    },
+                };
             },
             .relr => {},
             .relocs => |relocs| if (section.linkedContents(.symtab, sections)) |symtab| {
@@ -757,7 +855,7 @@ fn scanSymtabSection(
 
     const nsyms = @divExact(section.size, section.entsize);
     const symbols = try arena.alloc(
-        std.elf.Elf64.Sym,
+        Section.Contents.Symbol,
         std.math.cast(usize, nsyms) orelse return error.OutOfMemory,
     );
     try d.seekTo(section.offset);
@@ -766,14 +864,55 @@ fn scanSymtabSection(
         try r.discardAll64(section.entsize);
         symbol.* = .{
             .name = sym.name,
-            .info = sym.info,
-            .other = sym.other,
-            .shndx = sym.shndx,
+            .type = sym.info.type,
+            .bind = sym.info.bind,
+            .visibility = sym.other.visibility,
+            .shndx = .{ .section = sym.shndx },
             .value = sym.value,
             .size = sym.size,
         };
     }
     section.contents = .{ .symtab = symbols };
+}
+fn scanSymtabShndxSection(
+    d: *Objdump,
+    arena: Allocator,
+    endian: std.lang.Endian,
+    all_sections: []const Section,
+    section: *Section,
+) (Objdump.Error || error{EndOfStream})!void {
+    const r = d.reader();
+
+    if (section.entsize != @sizeOf(u32)) {
+        try d.warn("{t} section {q} has bad entsize '{d}' (need '{d}')", .{
+            section.type, section.name, section.entsize, @sizeOf(u32),
+        });
+        return;
+    }
+
+    if (section.size % section.entsize != 0) {
+        try d.warn("{t} section {q} has size '{d}' which is not divisible by entsize '{d}'", .{
+            section.type, section.name, section.size, section.entsize,
+        });
+        return;
+    }
+
+    const nsyms = @divExact(section.size, section.entsize);
+
+    // Problems with `section.link` are non-fatal.
+    if (section.link == 0 or section.link >= all_sections.len) {
+        try d.warn("{t} section {q} links to invalid section index '{d}'", .{
+            section.type, section.name, section.link,
+        });
+    } else switch (all_sections[section.link].type) {
+        else => try d.warn("{t} section {q} links to non-symtab section {q}", .{
+            section.type, section.name, all_sections[section.link].name,
+        }),
+        .SYMTAB, .DYNSYM => {},
+    }
+
+    try d.seekTo(section.offset);
+    section.contents = .{ .symtab_shndx = try r.readSliceEndianAlloc(arena, u32, nsyms, endian) };
 }
 
 fn scanRelocationSection(
@@ -1308,20 +1447,29 @@ fn scanPhdrs(
     comptime class: std.elf.CLASS,
     endian: std.lang.Endian,
     ehdr: *const class.ElfN().Ehdr,
+    sections: []const Section,
 ) (Objdump.Error || error{EndOfStream})![]const std.elf.Elf64.Phdr {
     const ElfN = class.ElfN();
     const r = d.reader();
 
-    if (ehdr.phnum == 0) return &.{};
+    if (ehdr.phoff == 0) return &.{};
+    const phnum = switch (ehdr.phnum) {
+        0...std.elf.PN_XNUM - 1 => |phnum| phnum,
+        std.elf.PN_XNUM => phnum: {
+            if (sections.len == 0) break :phnum 0;
+            break :phnum sections[0].info;
+        },
+    };
+    if (phnum == 0) return &.{};
 
+    try d.seekTo(ehdr.phoff);
     if (ehdr.phentsize < @sizeOf(ElfN.Phdr)) {
         try d.warn("failed to read phdrs: invalid phentsize '0x{x}'", .{ehdr.phentsize});
         return &.{};
     }
 
-    const phdrs = try arena.alloc(std.elf.Elf64.Phdr, ehdr.phnum);
+    const phdrs = try arena.alloc(std.elf.Elf64.Phdr, phnum);
 
-    try d.seekTo(ehdr.phoff);
     for (phdrs, 0..) |*phdr_out, phndx| {
         const phdr = try r.peekStruct(ElfN.Phdr, endian);
         try r.discardAll64(ehdr.phentsize);
@@ -1419,11 +1567,11 @@ fn validateSymbolVersions(
 
         for (symtab, versym, 0..) |symbol, version, symbol_index| {
             const ver_ndx: std.elf.VER_NDX = @fromBackingInt(version.VERSION);
-            switch (symbol.info.bind) {
+            switch (symbol.bind) {
                 .LOCAL => {
                     if (ver_ndx != .LOCAL) {
                         try d.warn("{s} symbol at index '{d}' in {q} has version index '{d}' in {q}", .{
-                            symbolBindString(symbol.info.bind),
+                            symbolBindString(symbol.bind),
                             symbol_index,
                             sections[versym_section.link].name,
                             fmtVerNdx(d, ver_ndx),
@@ -1444,7 +1592,7 @@ fn validateSymbolVersions(
             switch (ver_ndx) {
                 .GLOBAL => continue,
                 .LOCAL => {
-                    if (symbol.shndx != std.elf.SHN_UNDEF) {
+                    if (!symbol.shndx.is(.UNDEF)) {
                         try d.warn("defined symbol at index '{d}' in {q} has version index '{d}' in {q}", .{
                             symbol_index,
                             sections[versym_section.link].name,
@@ -1470,7 +1618,7 @@ fn validateSymbolVersions(
                 continue;
             };
             switch (version_info.kind) {
-                .defined => if (symbol.shndx == std.elf.SHN_UNDEF) {
+                .defined => if (symbol.shndx.is(.UNDEF)) {
                     try d.warn("undefined symbol at index '{d}' in {q} has locally defined version {q} in {q}", .{
                         symbol_index,
                         sections[versym_section.link].name,
@@ -1533,7 +1681,7 @@ fn dumpSections(
     defer row_it.deinit(d);
 
     try w.print("{d} section headers\n", .{d.fmtIntField(sections.len, .size)});
-    try w.print("  {[index]s: >5}  {[type]s: <13}  {[flags]s: ^12}  {[offset]s: ^10}  {[address]s: ^18}  {[size]s: ^18}  {[entsize]s: ^10}  {[addralign]s: ^10}  {[link]s: >6}  {[info]s: >6}  {[name]s}\n", .{
+    try w.print("  {[index]s: >10}  {[type]s: <13}  {[flags]s: ^12}  {[offset]s: ^10}  {[address]s: ^18}  {[size]s: ^18}  {[entsize]s: ^10}  {[addralign]s: ^10}  {[link]s: >10}  {[info]s: >10}  {[name]s}\n", .{
         .index = "index",
         .type = "type",
         .flags = "flags",
@@ -1548,7 +1696,7 @@ fn dumpSections(
     });
     while (row_it.next()) |shndx| {
         const section = &sections[shndx];
-        try w.print("  {d: >5}  {s: <13}  {f}  {x:0>8}  {x:0>16}  {x:0>16}  {x:0>8}  {x:0>8}  {d: >6}  {d: >6}  {s}\n", .{
+        try w.print("  {d: >10}  {s: <13}  {f}  {x:0>8}  {x:0>16}  {x:0>16}  {x:0>8}  {x:0>8}  {d: >10}  {d: >10}  {s}\n", .{
             d.fmtIntField(shndx, .index),
             sectionTypeString(section.type),
             fmtSectionFlags(d, section.flags),
@@ -1685,7 +1833,7 @@ fn dumpSymbols(
 
         var row_it = try conf.iterateRows(d, .{ .elf = .symbols }, symbols.len, struct {
             is_dynsym: bool,
-            symbols: []const std.elf.Elf64.Sym,
+            symbols: []const Section.Contents.Symbol,
             strtab: []const u8,
 
             pub fn property(
@@ -1698,10 +1846,13 @@ fn dumpSymbols(
                     .is_dynsym => ctx.is_dynsym,
                     .index => index,
                     .name => std.mem.sliceTo(ctx.strtab[@min(symbol.name, ctx.strtab.len)..], 0),
-                    .type => symbolTypeString(symbol.info.type),
-                    .bind => symbolBindString(symbol.info.bind),
-                    .visibility => @tagName(symbol.other.visibility),
-                    .shndx => symbol.shndx,
+                    .type => symbolTypeString(symbol.type),
+                    .bind => symbolBindString(symbol.bind),
+                    .visibility => @tagName(symbol.visibility),
+                    .shndx => symbol.shndx.sectionIndex() orelse 0,
+                    .is_undef => symbol.shndx.is(.UNDEF),
+                    .is_abs => symbol.shndx.is(.ABS),
+                    .is_common => symbol.shndx.is(.COMMON),
                     .value => symbol.value,
                     .size => symbol.size,
                 };
@@ -1726,7 +1877,7 @@ fn dumpSymbols(
             symbol_kind_str,
             symtab_section.name,
         });
-        try w.print("  {[index]s: >5}  {[type]s: <10}  {[bind]s: <10}  {[visibility]s: <10}  {[shndx]s: >6}  {[section]s: <14} {[value]s: ^18}  {[size]s: ^18}  {[name]s}\n", .{
+        try w.print("  {[index]s: >5}  {[type]s: <10}  {[bind]s: <10}  {[visibility]s: <10}  {[shndx]s: >10}  {[section]s: <14} {[value]s: ^18}  {[size]s: ^18}  {[name]s}\n", .{
             .index = "index",
             .type = "type",
             .bind = "bind",
@@ -1739,39 +1890,35 @@ fn dumpSymbols(
         });
         while (row_it.next()) |symbol_index| {
             const symbol = &symbols[symbol_index];
-            try w.print("  {d: >5}  {s: <10}  {s: <10}  {t: <10}  {d: >6}  {s: <14}  {x:0>16}  {x:0>16}  {s}\n", .{
+            try w.print("  {d: >5}  {s: <10}  {s: <10}  {t: <10}  {d: >10}  {s: <14}  {x:0>16}  {x:0>16}  {s}\n", .{
                 d.fmtIntField(symbol_index, .index),
-                symbolTypeString(symbol.info.type),
-                symbolBindString(symbol.info.bind),
-                symbol.other.visibility,
+                symbolTypeString(symbol.type),
+                symbolBindString(symbol.bind),
+                symbol.visibility,
                 fmtShndx(d, symbol.shndx),
-                switch (symbol.shndx) {
-                    std.elf.SHN_UNDEF, std.elf.SHN_COMMON, std.elf.SHN_ABS => "",
-                    else => |shndx| if (shndx < sections.len) name: {
-                        break :name sections[shndx].name[0..@min(sections[shndx].name.len, 14)];
-                    } else "",
-                },
+                if (symbol.shndx.sectionIndex()) |shndx| if (shndx < sections.len) name: {
+                    const name = sections[shndx].name;
+                    break :name name[0..@min(name.len, 14)];
+                } else "" else "",
                 // For SHN_UNDEF symbols in a dynamic symbol table, the address is usually 0, but it
                 // is significant for it to be non-zero because this causes the dynamic linker to
                 // treat the symbol as defined anyway (this is commonly used for canonical PLT
                 // entries). To allow snapshots to differentiate between these two fundamentally
                 // different cases, do not redact the value of SHN_UNDEF symbols in dynamic symbol
                 // tables if that value is zero.
-                d.fmtIntField(symbol.value, switch (symbol.shndx) {
-                    std.elf.SHN_UNDEF => kind: {
-                        if (symtab_section.type == .DYNSYM and symbol.value == 0) {
-                            break :kind null;
-                        }
-                        break :kind .address;
-                    },
-                    std.elf.SHN_COMMON, std.elf.SHN_ABS => null,
-                    else => .address,
-                }),
+                d.fmtIntField(symbol.value, if (symbol.shndx.sectionIndex()) |_|
+                    .address
+                else if (symbol.shndx.is(.UNDEF)) kind: {
+                    if (symtab_section.type == .DYNSYM and symbol.value == 0) {
+                        break :kind null;
+                    }
+                    break :kind .address;
+                } else null),
                 // For STT_OBJECT symbols, the symbol size is considered a part of the ABI (and will
                 // not change due to codegen or linker decisions), so don't redact it in that case.
-                d.fmtIntField(symbol.size, switch (symbol.info.bind) {
+                d.fmtIntField(symbol.size, switch (symbol.bind) {
                     .LOCAL => .size,
-                    else => switch (symbol.info.type) {
+                    else => switch (symbol.type) {
                         .OBJECT, .COMMON => null,
                         else => .size,
                     },
@@ -1804,7 +1951,7 @@ fn dumpSymbolVersions(
         if (symtab.len != versym.len) continue;
 
         var row_it = try conf.iterateRows(d, .{ .elf = .@"symbol-versions" }, versym.len, struct {
-            symtab: []const std.elf.Elf64.Sym,
+            symtab: []const Section.Contents.Symbol,
             versym: []const std.elf.Versym,
             strtab: []const u8,
             available_versions: []const ?AvailableSymbolVersion,
@@ -2047,7 +2194,7 @@ fn dumpRelocations(
             else => continue,
         };
 
-        const symtab: []const std.elf.Elf64.Sym, const strtab: []const u8 = symtab: {
+        const symtab: []const Section.Contents.Symbol, const strtab: []const u8 = symtab: {
             const symtab = relocs_section.linkedContents(.symtab, sections) orelse {
                 break :symtab .{ &.{}, &.{} };
             };
@@ -2061,7 +2208,7 @@ fn dumpRelocations(
             reloc_section_name: []const u8,
             sections: []const Section,
             relocs: []const std.elf.Elf64.Rela,
-            symtab: []const std.elf.Elf64.Sym,
+            symtab: []const Section.Contents.Symbol,
             strtab: []const u8,
             pub fn property(
                 ctx: @This(),
@@ -2078,11 +2225,12 @@ fn dumpRelocations(
                         if (reloc.info.sym == 0) return "";
                         if (reloc.info.sym >= ctx.symtab.len) return "";
                         const sym = &ctx.symtab[reloc.info.sym];
-                        if (sym.info.type == .SECTION and
-                            sym.shndx != std.elf.SHN_UNDEF and
-                            sym.shndx < ctx.sections.len)
-                        {
-                            return ctx.sections[sym.shndx].name;
+                        if (sym.type == .SECTION) {
+                            if (sym.shndx.sectionIndex()) |shndx| {
+                                if (shndx < ctx.sections.len) {
+                                    return ctx.sections[shndx].name;
+                                }
+                            }
                         }
                         return std.mem.sliceTo(ctx.strtab[@min(sym.name, ctx.strtab.len)..], 0);
                     },
@@ -2144,11 +2292,12 @@ fn dumpRelocations(
                 try w.writeAll(target_sym_name: {
                     if (reloc.info.sym >= symtab.len) break :target_sym_name "";
                     const sym = &symtab[reloc.info.sym];
-                    if (sym.info.type == .SECTION and
-                        sym.shndx != std.elf.SHN_UNDEF and
-                        sym.shndx < sections.len)
-                    {
-                        break :target_sym_name sections[sym.shndx].name;
+                    if (sym.type == .SECTION) {
+                        if (sym.shndx.sectionIndex()) |shndx| {
+                            if (shndx < sections.len) {
+                                break :target_sym_name sections[shndx].name;
+                            }
+                        }
                     }
                     break :target_sym_name std.mem.sliceTo(
                         strtab[@min(sym.name, strtab.len)..],
@@ -2447,24 +2596,29 @@ fn relocTypeString(machine: std.elf.EM, reloc_type: u32) []const u8 {
     };
 }
 
-fn fmtShndx(d: *const Objdump, shndx: u16) FormatShndx {
+fn fmtShndx(d: *const Objdump, shndx: Section.Contents.Symbol.Shndx) FormatShndx {
     return .{ .d = d, .shndx = shndx };
 }
 const FormatShndx = struct {
     d: *const Objdump,
-    shndx: u16,
+    shndx: Section.Contents.Symbol.Shndx,
     pub fn formatNumber(
         ctx: FormatShndx,
         w: *Io.Writer,
         number: std.fmt.Number,
     ) Io.Writer.Error!void {
-        switch (ctx.shndx) {
+        if (ctx.shndx.sectionIndex()) |shndx| try Objdump.FormatIntField.formatNumber(.{
+            .d = ctx.d,
+            .val = shndx,
+            .kind = .index,
+        }, w, number) else switch (ctx.shndx.section) {
             std.elf.SHN_UNDEF => try w.alignBuffer(
                 "UNDEF",
                 number.width orelse 0,
                 number.alignment,
                 number.fill,
             ),
+            std.elf.SHN_UNDEF + 1...std.elf.SHN_LORESERVE - 1 => unreachable,
             std.elf.SHN_ABS => try w.alignBuffer(
                 "ABS",
                 number.width orelse 0,
@@ -2477,11 +2631,21 @@ const FormatShndx = struct {
                 number.alignment,
                 number.fill,
             ),
-            else => |shndx| try Objdump.FormatIntField.formatNumber(.{
-                .d = ctx.d,
-                .val = shndx,
-                .kind = .index,
-            }, w, number),
+            std.elf.SHN_XINDEX => try w.alignBuffer(
+                "XINDEX",
+                number.width orelse 0,
+                number.alignment,
+                number.fill,
+            ),
+            else => |section| {
+                var hex_number = number;
+                hex_number.mode = .hex;
+                try Objdump.FormatIntField.formatNumber(.{
+                    .d = ctx.d,
+                    .val = section,
+                    .kind = null,
+                }, w, hex_number);
+            },
         }
     }
 };

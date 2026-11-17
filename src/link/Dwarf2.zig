@@ -17,9 +17,7 @@ debug_addr: Addr,
 frame: Frame,
 debug_info: Info,
 debug_line: Line,
-debug_line_str: Str,
 debug_rnglists: Rnglists,
-debug_str: Str,
 debug_str_offsets: StrOffsets,
 
 pub const AddressSize = enum(u8) { @"32" = 4, @"64" = 8, _ };
@@ -221,59 +219,6 @@ pub const Line = struct {
     };
 };
 
-pub const Str = struct {
-    ni: link.MappedFile.Node.Index.Optional,
-    end: usize,
-    map: std.array_hash_map.Custom(usize, void, Context, true),
-
-    fn get(
-        s: *Str,
-        gpa: std.mem.Allocator,
-        mf: *link.MappedFile,
-        str: []const u8,
-    ) link.MappedFile.Error!usize {
-        const ni = s.ni.unwrap().?;
-        const slice = ni.sliceConst(mf);
-        const gop = try s.map.getOrPutContextAdapted(
-            gpa,
-            str,
-            Adapter{ .slice = slice },
-            .{ .slice = slice },
-        );
-        if (!gop.found_existing) {
-            gop.key_ptr.* = s.end;
-            try ni.ensureMinimumSize(gpa, mf, s.end + str.len + 1);
-            const slice_mut = ni.slice(mf);
-            @memcpy(slice_mut[s.end..][0..str.len], str);
-            s.end += str.len;
-            slice_mut[s.end] = 0;
-            s.end += 1;
-        }
-        return gop.key_ptr.*;
-    }
-
-    const Context = struct {
-        slice: []const u8,
-        pub fn hash(context: Context, offset: usize) u32 {
-            return @truncate(std.hash.Wyhash.hash(0, std.mem.sliceTo(context.slice[offset..], 0)));
-        }
-        pub fn eql(_: Context, lhs_offset: usize, rhs_offset: usize) bool {
-            return lhs_offset == rhs_offset;
-        }
-    };
-
-    const Adapter = struct {
-        slice: []const u8,
-        pub fn hash(_: Adapter, key: []const u8) u32 {
-            return @truncate(std.hash.Wyhash.hash(0, key));
-        }
-        pub fn eql(adapter: Adapter, key: []const u8, rhs_offset: usize, _: usize) bool {
-            return std.mem.startsWith(u8, adapter.slice[rhs_offset..], key) and
-                adapter.slice[rhs_offset + key.len] == 0;
-        }
-    };
-};
-
 pub const Rnglists = struct {
     fn tableOffset(dwarf: *const Dwarf) usize {
         return dwarf.unitLengthSize() + 2 + 1 + 1 + 4;
@@ -286,24 +231,21 @@ pub const Rnglists = struct {
 
 pub const StrOffsets = struct {
     ni: link.MappedFile.Node.Index.Optional,
-    pending_index: usize,
-    map: std.array_hash_map.Auto(usize, void),
+    pending_index: u32,
+    map: std.array_hash_map.Auto(u32, void),
 
-    fn get(
-        so: *StrOffsets,
-        dwarf: *Dwarf,
-        s: *Str,
-        mf: *link.MappedFile,
-        str: []const u8,
-    ) link.Error!usize {
+    fn get(so: *StrOffsets, dwarf: *Dwarf, str: []const u8) link.Error!usize {
         const comp = dwarf.lf.comp;
         try so.map.ensureUnusedCapacity(comp.gpa, 1);
-        const offset = s.get(comp.gpa, mf, str) catch |err| switch (err) {
-            else => |e| return e,
-            error.MappedFileIo => return comp.link_diags.fail("failed to write output file: {t}", .{
-                mf.io_err.?,
-            }),
-        };
+        const offset = if (dwarf.lf.cast(.elf2)) |elf| offset: {
+            elf.debug_str_msi.ensureAdditionalCapacity(.@"1", str.len, elf) catch |err| switch (err) {
+                else => |e| return e,
+                error.MappedFileIo => return comp.link_diags.fail("failed to write output file: {t}", .{
+                    elf.mf.io_err.?,
+                }),
+            };
+            break :offset @backingInt(elf.debug_str_msi.getOrPutEntryAssumeCapacity(.@"1", str, elf));
+        } else unreachable;
         const gop = so.map.getOrPutAssumeCapacity(offset);
         return gop.index;
     }
@@ -1401,17 +1343,7 @@ pub fn init(lf: *link.File, format: DW.Format) Dwarf {
                 },
             },
         },
-        .debug_line_str = .{
-            .ni = .none,
-            .end = 0,
-            .map = .empty,
-        },
         .debug_rnglists = .{},
-        .debug_str = .{
-            .ni = .none,
-            .end = 0,
-            .map = .empty,
-        },
         .debug_str_offsets = .{
             .ni = .none,
             .pending_index = 0,
@@ -1430,8 +1362,6 @@ pub fn deinit(dwarf: *Dwarf) void {
     dwarf.funcs.deinit(gpa);
     dwarf.decls.deinit(gpa);
     dwarf.debug_addr.map.deinit(gpa);
-    dwarf.debug_line_str.map.deinit(gpa);
-    dwarf.debug_str.map.deinit(gpa);
     dwarf.debug_str_offsets.map.deinit(gpa);
     dwarf.* = undefined;
 }
@@ -1832,8 +1762,8 @@ pub fn genDebugInfoHeader(
     try dwarf.strx1(dih_nw, "zig " ++ @import("build_options").version);
     const root_dir_path = try mod.root.toAbsolute(&comp.dirs, comp.gpa);
     defer comp.gpa.free(root_dir_path);
-    try dwarf.strp(&dwarf.debug_line_str, dih_nw, root_dir_path);
-    try dwarf.strp(&dwarf.debug_line_str, dih_nw, mod.root_src_path);
+    try dwarf.strp(.debug_line_str, dih_nw, root_dir_path);
+    try dwarf.strp(.debug_line_str, dih_nw, mod.root_src_path);
     try dih_w.writeUleb128(0);
     const module_offset = dih_w.end;
     try dwarf.abbrevCode(dih_nw, .module);
@@ -1949,7 +1879,7 @@ pub fn genDebugLineHeader(
     for (unit.dirs.keys()) |ui| {
         const root_dir_path = try ui.mod(dwarf).root.toAbsolute(&zcu.comp.dirs, comp.gpa);
         defer comp.gpa.free(root_dir_path);
-        try dwarf.strp(&dwarf.debug_line_str, dlh_nw, root_dir_path);
+        try dwarf.strp(.debug_line_str, dlh_nw, root_dir_path);
     }
     try dlh_w.writeByte(5);
     try dlh_w.writeUleb128(DW.LNCT.path);
@@ -1965,7 +1895,7 @@ pub fn genDebugLineHeader(
     try dlh_w.writeUleb128(unit.files.count());
     for (unit.files.keys()) |zfi| {
         const zf = zcu.fileByIndex(zfi);
-        try dwarf.strp(&dwarf.debug_line_str, dlh_nw, zf.sub_file_path);
+        try dwarf.strp(.debug_line_str, dlh_nw, zf.sub_file_path);
         const di =
             if (zcu.alive_files.contains(zfi)) unit.dirs.getIndex(dwarf.getUnit(zf.mod.?)).? else 0;
         switch (directory_index_form) {
@@ -1976,7 +1906,7 @@ pub fn genDebugLineHeader(
         }
         try dlh_w.writeInt(i64, @truncate(zf.stat.mtime.nanoseconds), dwarf.endian);
         try dlh_w.writeInt(u64, zf.stat.size, dwarf.endian);
-        try dwarf.strp(&dwarf.debug_line_str, dlh_nw, if (zf.is_builtin) zf.source.? else "");
+        try dwarf.strp(.debug_line_str, dlh_nw, if (zf.is_builtin) zf.source.? else "");
     }
     switch (dwarf.format) {
         .@"32" => std.mem.writeInt(
@@ -2069,8 +1999,11 @@ pub fn genDebugStrOffsetsHeader(dwarf: *Dwarf, dsoh_w: *std.Io.Writer) std.Io.Wr
     assert(dsoh_w.end == StrOffsets.tableOffset(dwarf));
 }
 
-pub fn genPendingDebugStrOffsets(dwarf: *Dwarf, dso_nw: *link.MappedFile.Node.Writer) link.Error!void {
-    const debug_str_ni = dwarf.debug_str.ni.unwrap().?;
+pub fn genPendingDebugStrOffsets(
+    dwarf: *Dwarf,
+    debug_str_ni: link.MappedFile.Node.Index,
+    dso_nw: *link.MappedFile.Node.Writer,
+) link.Error!void {
     dso_nw.interface.end = dwarf.debug_str_offsets.size(dwarf);
     for (dwarf.debug_str_offsets.map.keys()[dwarf.debug_str_offsets.pending_index..]) |offset| {
         dwarf.secOffset(dso_nw, debug_str_ni, offset) catch |err| switch (err) {
@@ -4641,38 +4574,42 @@ fn exprLoc(dwarf: *Dwarf, nw: *link.MappedFile.Node.Writer, loc: Loc) link.EmitE
     try loc.write(.{ .mf = nw }, dwarf);
 }
 
-fn strp(dwarf: *Dwarf, s: *Str, nw: *link.MappedFile.Node.Writer, str: []const u8) link.EmitError!void {
+fn strp(dwarf: *Dwarf, s: enum {
+    debug_str,
+    debug_line_str,
+}, nw: *link.MappedFile.Node.Writer, str: []const u8) link.EmitError!void {
     const comp = dwarf.lf.comp;
-    try dwarf.secOffset(nw, s.ni.unwrap().?, s.get(comp.gpa, nw.mf, str) catch |err| switch (err) {
-        else => |e| return e,
-        error.MappedFileIo => return comp.link_diags.fail("failed to write output file: {t}", .{
-            nw.mf.io_err.?,
-        }),
-    });
+    if (dwarf.lf.cast(.elf2)) |elf| {
+        const str_msi = switch (s) {
+            .debug_str => elf.debug_str_msi,
+            .debug_line_str => elf.debug_line_str_msi,
+        };
+        str_msi.ensureAdditionalCapacity(.@"1", str.len, elf) catch |err| switch (err) {
+            else => |e| return e,
+            error.MappedFileIo => return comp.link_diags.fail("failed to write output file: {t}", .{
+                nw.mf.io_err.?,
+            }),
+        };
+        try dwarf.secOffset(nw, str_msi.ptr(elf).node, @backingInt(
+            str_msi.getOrPutEntryAssumeCapacity(.@"1", str, elf),
+        ));
+    } else unreachable;
 }
 
 fn strx(dwarf: *Dwarf, nw: *link.MappedFile.Node.Writer, str: []const u8) link.EmitError!void {
-    try nw.interface.writeUleb128(try dwarf.debug_str_offsets.get(dwarf, &dwarf.debug_str, nw.mf, str));
+    try nw.interface.writeUleb128(try dwarf.debug_str_offsets.get(dwarf, str));
 }
 fn strx1(dwarf: *Dwarf, nw: *link.MappedFile.Node.Writer, str: []const u8) link.EmitError!void {
-    try nw.interface.writeByte(@intCast(
-        try dwarf.debug_str_offsets.get(dwarf, &dwarf.debug_str, nw.mf, str),
-    ));
+    try nw.interface.writeByte(@intCast(try dwarf.debug_str_offsets.get(dwarf, str)));
 }
 fn strx2(dwarf: *Dwarf, nw: *link.MappedFile.Node.Writer, str: []const u8) link.EmitError!void {
-    try nw.interface.writeInt(u16, @intCast(
-        try dwarf.debug_str_offsets.get(dwarf, &dwarf.debug_str, nw.mf, str),
-    ), dwarf.endian);
+    try nw.interface.writeInt(u16, @intCast(try dwarf.debug_str_offsets.get(dwarf, str)), dwarf.endian);
 }
 fn strx3(dwarf: *Dwarf, nw: *link.MappedFile.Node.Writer, str: []const u8) link.EmitError!void {
-    try nw.interface.writeInt(u24, @intCast(
-        try dwarf.debug_str_offsets.get(dwarf, &dwarf.debug_str, nw.mf, str),
-    ), dwarf.endian);
+    try nw.interface.writeInt(u24, @intCast(try dwarf.debug_str_offsets.get(dwarf, str)), dwarf.endian);
 }
 fn strx4(dwarf: *Dwarf, nw: *link.MappedFile.Node.Writer, str: []const u8) link.EmitError!void {
-    try nw.interface.writeInt(u32, @intCast(
-        try dwarf.debug_str_offsets.get(dwarf, &dwarf.debug_str, nw.mf, str),
-    ), dwarf.endian);
+    try nw.interface.writeInt(u32, @intCast(try dwarf.debug_str_offsets.get(dwarf, str)), dwarf.endian);
 }
 
 fn reportWriteError(dwarf: *Dwarf, nw: *const link.MappedFile.Node.Writer) link.Error {

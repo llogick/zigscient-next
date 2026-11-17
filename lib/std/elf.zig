@@ -2971,6 +2971,7 @@ pub const SHN_LIVEPATCH = 0xff20;
 pub const SHN_ABS = 0xfff1;
 /// Associated symbol is common
 pub const SHN_COMMON = 0xfff2;
+pub const SHN_XINDEX = 0xffff;
 /// End of reserved indices
 pub const SHN_HIRESERVE = 0xffff;
 
