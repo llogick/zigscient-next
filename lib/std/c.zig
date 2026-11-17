@@ -11607,6 +11607,21 @@ pub extern "c" fn ffs(i: c_int) c_int;
 pub extern "c" fn ffsl(i: c_long) c_int;
 pub extern "c" fn ffsll(i: c_longlong) c_int;
 
+pub const srand48 = switch (builtin.os.tag) {
+    .openbsd => openbsd.srand48_deterministic,
+    else => private.srand48,
+};
+pub const seed48 = switch (builtin.os.tag) {
+    .openbsd => openbsd.seed48_deterministic,
+    else => private.seed48,
+};
+pub const lcong48 = switch (builtin.os.tag) {
+    .openbsd => openbsd.lcong48_deterministic,
+    else => private.lcong48,
+};
+pub extern "c" fn drand48() f64;
+pub extern "c" fn lrand48() c_long;
+pub extern "c" fn mrand48() c_long;
 pub extern "c" fn erand48(xsubi: *[3]c_ushort) f64;
 pub extern "c" fn jrand48(xsubi: *[3]c_ushort) c_long;
 pub extern "c" fn nrand48(xsubi: *[3]c_ushort) c_long;
@@ -12016,6 +12031,10 @@ pub const setkeymap = serenity.setkeymap;
 
 /// External definitions shared by two or more operating systems.
 const private = struct {
+    extern "c" fn srand48(seed: c_ulong) void;
+    extern "c" fn seed48(seed16v: *[3]c_ushort) *[3]c_ushort;
+    extern "c" fn lcong48(param: *[7]c_ushort) void;
+
     extern "c" fn strdup(s: [*:0]const c_char) ?[*:0]c_char;
     extern "c" fn _strdup(s: [*:0]const c_char) ?[*:0]c_char;
     extern "c" fn wcsdup(s: [*:0]const wchar_t) ?[*:0]wchar_t;

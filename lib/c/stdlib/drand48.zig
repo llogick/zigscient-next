@@ -87,6 +87,6 @@ fn seed48(seed16v: *[3]c_ushort) callconv(.c) *[3]c_ushort {
 }
 
 fn srand48(seedval: c_long) callconv(.c) void {
-    const xi = (@as(u32, @truncate(@as(c_ulong, @bitCast(seedval)))) << 16) | 0x330E;
+    const xi = (@as(u48, @truncate(@as(c_ulong, @bitCast(seedval)))) << 16) | 0x330E;
     lcg = .init(xi, default_multiplier, default_addend);
 }

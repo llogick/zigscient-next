@@ -28,7 +28,7 @@ test "erand48" {
 test "jrand48" {
     if (builtin.target.os.tag == .windows) return; // no jrand48
 
-    if (builtin.target.os.tag == .openbsd) return error.SkipZigTest; // TODO
+    if (builtin.target.os.tag == .openbsd) return error.SkipZigTest; // TODO: https://marc.info/?l=openbsd-tech&m=179482954031905
 
     var xsubi: [3]c_ushort = .{ 25175, 11052, 45015 };
 
@@ -67,4 +67,49 @@ test "nrand48" {
 
     try testing.expectEqual(2114923686, c.nrand48(&xsubi));
     try testing.expectEqualSlices(c_ushort, &.{ 58585, 22861, 64542 }, &xsubi);
+}
+
+test "srand48" {
+    if (builtin.target.os.tag == .windows) return; // no srand48
+
+    c.srand48(4);
+    try testing.expectEqual(1404534344, c.lrand48());
+    try testing.expectEqual(1220337298, c.lrand48());
+    try testing.expectEqual(107704692, c.lrand48());
+
+    if (builtin.target.os.tag == .openbsd) return error.SkipZigTest; // TODO: https://marc.info/?l=openbsd-tech&m=179482954031905
+
+    try testing.expectEqual(-1148695706, c.mrand48());
+    try testing.expectEqual(0.5300470938792223, c.drand48());
+}
+
+test "seed48" {
+    if (builtin.target.os.tag == .windows) return; // no seed48
+    var seed: [3]c_ushort = .{ 0x330E, 4, 0 };
+
+    _ = c.seed48(&seed);
+    try testing.expectEqual(1404534344, c.lrand48());
+    try testing.expectEqual(1220337298, c.lrand48());
+    try testing.expectEqual(107704692, c.lrand48());
+
+    if (builtin.target.os.tag == .openbsd) return error.SkipZigTest; // TODO: https://marc.info/?l=openbsd-tech&m=179482954031905
+
+    try testing.expectEqual(-1148695706, c.mrand48());
+    try testing.expectEqual(0.5300470938792223, c.drand48());
+}
+
+test "lcong48" {
+    if (builtin.target.os.tag == .windows) return; // no lcong48
+
+    var conf: [7]c_ushort = .{ 0x330E, 4, 0, 0xE66D, 0xDEEC, 5, 0xB };
+
+    _ = c.lcong48(&conf);
+    try testing.expectEqual(1404534344, c.lrand48());
+    try testing.expectEqual(1220337298, c.lrand48());
+    try testing.expectEqual(107704692, c.lrand48());
+
+    if (builtin.target.os.tag == .openbsd) return error.SkipZigTest; // TODO: https://marc.info/?l=openbsd-tech&m=179482954031905
+
+    try testing.expectEqual(-1148695706, c.mrand48());
+    try testing.expectEqual(0.5300470938792223, c.drand48());
 }

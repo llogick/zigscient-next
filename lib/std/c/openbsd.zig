@@ -109,6 +109,9 @@ pub extern "c" fn bcrypt(pass: [*:0]const u8, salt: [*:0]const u8) ?[*:0]const u
 pub extern "c" fn bcrypt_newhash(pass: [*:0]const u8, log_rounds: c_int, hash: [*]u8, hashlen: usize) c_int;
 pub extern "c" fn bcrypt_checkpass(pass: [*:0]const u8, goodhash: [*:0]const u8) c_int;
 pub extern "c" fn pw_dup(pw: *const passwd) ?*passwd;
+pub extern "c" fn srand48_deterministic(seed: c_ulong) void;
+pub extern "c" fn seed48_deterministic(seed16v: *[3]c_ushort) *[3]c_ushort;
+pub extern "c" fn lcong48_deterministic(param: *[7]c_ushort) void;
 
 pub const auth_item_t = enum(c_int) {
     ALL = 0,
