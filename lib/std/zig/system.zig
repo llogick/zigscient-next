@@ -402,18 +402,14 @@ pub fn resolveTargetQuery(
 
     if (query.os_tag == null) {
         switch (builtin.target.os.tag) {
-            .linux, .illumos => {
+            .linux => {
                 const uts = posix.uname();
                 const release = mem.sliceTo(&uts.release, 0);
+                const version_end = mem.findNone(u8, release, "0123456789.") orelse release.len;
 
-                // The release field sometimes has a weird format,
-                // `Version.parse` will attempt to find some meaningful interpretation.
-                if (std.SemanticVersion.parse(release)) |ver| {
-                    var stripped = ver;
-                    stripped.pre = null;
-                    stripped.build = null;
-                    os.version_range.linux.range.min = stripped;
-                    os.version_range.linux.range.max = stripped;
+                if (std.SemanticVersion.parse(release[0..version_end])) |ver| {
+                    os.version_range.linux.range.min = ver;
+                    os.version_range.linux.range.max = ver;
                 } else |err| switch (err) {
                     error.Overflow,
                     error.InvalidVersion,
