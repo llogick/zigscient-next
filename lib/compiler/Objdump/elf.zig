@@ -691,6 +691,7 @@ fn scanSections(
                 // TODO: do we need to validate or parse anything from these?
                 .LLVM_ADDRSIG => {},
                 .X86_64_UNWIND => {},
+                .GNU_SFRAME => {},
 
                 else => {
                     try d.warn("section {q} has unknown type '{d}'", .{ section.name, section.type });
@@ -2448,6 +2449,7 @@ fn dumpDynamic(
 fn sectionTypeString(sht: std.elf.SHT) []const u8 {
     return switch (sht) {
         .LLVM_ADDRSIG => "LLVM_ADDRSIG",
+        .GNU_SFRAME => "GNU_SFRAME",
         .GNU_HASH => "GNU_HASH",
         .GNU_VERDEF => "GNU_VERDEF",
         .GNU_VERNEED => "GNU_VERNEED",
@@ -2537,6 +2539,7 @@ fn phdrTypeString(pt: std.elf.PT) []const u8 {
         .GNU_PROPERTY => "GNU_PROPERTY",
         .GNU_STACK => "GNU_STACK",
         .GNU_RELRO => "GNU_RELRO",
+        .GNU_SFRAME => "GNU_SFRAME",
         .SUNWBSS => "SUNWBSS",
         .SUNWSTACK => "SUNWSTACK",
         else => std.enums.tagName(std.elf.PT, pt) orelse "(unknown)",

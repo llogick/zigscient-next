@@ -8914,6 +8914,7 @@ fn loadObject(
                         .NOTE,
                         .GROUP,
                         .LLVM_ADDRSIG,
+                        .GNU_SFRAME,
                         => continue, // TODO
 
                         .NULL,

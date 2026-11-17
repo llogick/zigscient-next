@@ -689,6 +689,53 @@ pub fn addCases(ctx: *LinkContext) void {
             "--filter=reloc_section_name ~ \"_array\"",
         }, .{});
     }
+
+    if (ctx.includeTest("sframe_section_ok")) |case| {
+        // We're not (yet) testing that the linker handles SFrame sections *correctly*, we just want
+        // to make sure that it ignores them rather than emitting an error.
+
+        const sframe_asm_source: []const u8 =
+            \\.section .sframe, "a", @0x6ffffff4
+            \\.word 0xdee2 # sfp_magic = SFRAME_MAGIC
+            \\.byte 2      # sfp_version = SFRAME_VERSION_2
+            \\.byte 0      # sfp_flags = 0
+            \\.byte 3      # shf_abi_arch = SFRAME_ABI_AMD64_ENDIAN_LITTLE
+            \\.byte 0      # sfh_cfa_fixed_fp_offset = 0
+            \\.byte 0      # sfh_cfa_fixed_ra_offset = 0
+            \\.byte 0      # sfh_auxhdr_len = 0
+            \\.word 0      # sfh_num_fdes = 0
+            \\.word 0      # sfh_num_fres = 0
+            \\.word 0      # sfh_fre_len = 0
+            \\.word 0      # sfh_fdeoff = 0
+            \\.word 0      # sfh_freoff = 0
+            \\
+        ;
+        const obj = case.addObject(.{
+            .name = "obj",
+            .zig_source_bytes =
+            \\export fn get_number() u32 {
+            \\    return 1234;
+            \\}
+            \\
+            ,
+            .asm_source_bytes = sframe_asm_source,
+        });
+        const exe = case.addExecutable(.{
+            .name = "exe",
+            .zig_source_bytes =
+            \\extern fn get_number() u32;
+            \\pub fn main() void {
+            \\    std.debug.print("get_number() = {d}\n", .{get_number()});
+            \\}
+            \\const std = @import("std");
+            \\
+            ,
+            .asm_source_bytes = sframe_asm_source,
+        });
+        exe.root_module.addObject(obj);
+        const run_exe = case.addRunArtifact(exe);
+        run_exe.expectStdErrEqual("get_number() = 1234\n");
+    }
 }
 
 const LinkContext = @import("../tests.zig").LinkContext;

@@ -995,6 +995,8 @@ pub const PT = enum(Word) {
     pub const GNU_RELRO: PT = @fromBackingInt(@intCast(0x6474e552));
     /// Contains the `.note.gnu.property` section
     pub const GNU_PROPERTY: PT = @fromBackingInt(@intCast(0x6474e553));
+    /// GNU SFrame stack tracing information
+    pub const GNU_SFRAME: PT = @fromBackingInt(0x6474e554);
 
     pub const LOSUNW: PT = @fromBackingInt(@intCast(0x6ffffffa));
     pub const HISUNW: PT = @fromBackingInt(@intCast(0x6fffffff));
@@ -1060,6 +1062,8 @@ pub const SHT = enum(Word) {
     /// LLVM address-significance table
     pub const LLVM_ADDRSIG: SHT = @fromBackingInt(@intCast(0x6fff4c03));
 
+    /// GNU SFrame stack tracing information
+    pub const GNU_SFRAME: SHT = @fromBackingInt(0x6ffffff4);
     /// GNU hash table
     pub const GNU_HASH: SHT = @fromBackingInt(@intCast(0x6ffffff6));
     /// GNU version definition table
