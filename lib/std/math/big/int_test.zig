@@ -1,13 +1,15 @@
 const std = @import("../../std.zig");
 const mem = std.mem;
 const testing = std.testing;
-const Managed = std.math.big.int.Managed;
-const Mutable = std.math.big.int.Mutable;
+const big = std.math.big.int;
+const Managed = big.Managed;
+const Mutable = big.Mutable;
+const Const = big.Const;
 const Limb = std.math.big.Limb;
 const SignedLimb = std.math.big.SignedLimb;
 const DoubleLimb = std.math.big.DoubleLimb;
 const SignedDoubleLimb = std.math.big.SignedDoubleLimb;
-const calcTwosCompLimbCount = std.math.big.int.calcTwosCompLimbCount;
+const calcTwosCompLimbCount = big.calcTwosCompLimbCount;
 const maxInt = std.math.maxInt;
 const minInt = std.math.minInt;
 
@@ -16,9 +18,9 @@ const minInt = std.math.minInt;
 // They will still run on larger than this and should pass, but the multi-limb code-paths
 // may be untested in some cases.
 
-fn expectNormalized(expected: comptime_int, actual: std.math.big.int.Const) !void {
+fn expectNormalized(expected: comptime_int, actual: Const) !void {
     try testing.expectEqual(expected >= 0, actual.positive);
-    try testing.expectEqual(std.math.big.int.calcLimbLen(expected), actual.limbs.len);
+    try testing.expectEqual(big.calcLimbLen(expected), actual.limbs.len);
     try testing.expect(actual.orderAgainstScalar(expected).compare(.eq));
 }
 
@@ -91,7 +93,7 @@ test "to target too small error" {
 }
 
 fn setFloat(comptime Float: type) !void {
-    var res_limbs: [std.math.big.int.calcNonZeroTwosCompLimbCount(11)]Limb = undefined;
+    var res_limbs: [big.calcNonZeroTwosCompLimbCount(11)]Limb = undefined;
     var res: Mutable = .{
         .limbs = &res_limbs,
         .len = undefined,
@@ -285,17 +287,25 @@ test setFloat {
 }
 
 fn toFloat(comptime Float: type) !void {
-    const Result = struct { Float, std.math.big.int.Exactness };
+    @setEvalBranchQuota(10_000);
+    const Result = struct { Float, big.Exactness };
     const fractional_bits = std.math.floatFractionalBits(Float);
+    const max_exponent = std.math.floatExponentMax(Float);
 
-    var int_limbs: [
-        std.math.big.int.calcNonZeroTwosCompLimbCount(2 + fractional_bits)
-    ]Limb = undefined;
+    var int_limbs: [std.math.big.int.calcNonZeroTwosCompLimbCount(2 + max_exponent)]Limb = undefined;
     var int: Mutable = .{
         .limbs = &int_limbs,
         .len = undefined,
         .positive = undefined,
     };
+
+    int.set(-1);
+    int.shiftLeft(int.toConst(), max_exponent + 1);
+    try testing.expectEqual(Result{ -std.math.inf(Float), .inexact }, int.toFloat(Float, .nearest_even));
+    try testing.expectEqual(Result{ -std.math.inf(Float), .inexact }, int.toFloat(Float, .away));
+    try testing.expectEqual(Result{ -std.math.floatMax(Float), .inexact }, int.toFloat(Float, .trunc));
+    try testing.expectEqual(Result{ -std.math.inf(Float), .inexact }, int.toFloat(Float, .floor));
+    try testing.expectEqual(Result{ -std.math.floatMax(Float), .inexact }, int.toFloat(Float, .ceil));
 
     int.set(-(1 << (fractional_bits + 1)) - 1);
     try testing.expectEqual(
@@ -479,7 +489,16 @@ fn toFloat(comptime Float: type) !void {
         ), .inexact },
         int.toFloat(Float, .ceil),
     );
+
+    int.set(1);
+    int.shiftLeft(int.toConst(), max_exponent + 1);
+    try testing.expectEqual(Result{ std.math.inf(Float), .inexact }, int.toFloat(Float, .nearest_even));
+    try testing.expectEqual(Result{ std.math.inf(Float), .inexact }, int.toFloat(Float, .away));
+    try testing.expectEqual(Result{ std.math.floatMax(Float), .inexact }, int.toFloat(Float, .trunc));
+    try testing.expectEqual(Result{ std.math.floatMax(Float), .inexact }, int.toFloat(Float, .floor));
+    try testing.expectEqual(Result{ std.math.inf(Float), .inexact }, int.toFloat(Float, .ceil));
 }
+
 test toFloat {
     try toFloat(f16);
     try toFloat(f32);
@@ -1145,6 +1164,15 @@ test "addWrap returns normalized result" {
     try testing.expect(r.isPositive() and r.len() == 1 and r.limbs[0] == 0);
 }
 
+test "addWrap accounts for discarded high limbs" {
+    const a: big.Const = .{ .limbs = &.{ 0, 1 }, .positive = true };
+    const zero: big.Const = .{ .limbs = &.{0}, .positive = true };
+    var storage: [1]Limb = undefined;
+    var r = big.Mutable.init(&storage, 0);
+    try testing.expect(r.addWrap(a, zero, .unsigned, @bitSizeOf(Limb)));
+    try testing.expect(r.eqlZero());
+}
+
 test "subWrap returns normalized result" {
     var x = try Managed.initSet(testing.allocator, 0);
     defer x.deinit();
@@ -1215,6 +1243,15 @@ test "addSat single-single, signed" {
     try a.addSat(&a, &b, .signed, @bitSizeOf(i14));
 
     try testing.expectEqual(maxInt(i14), try a.toInt(i14));
+}
+
+test "addSat must not truncate before saturation" {
+    const a: big.Const = .{ .limbs = &.{ 0, 1 }, .positive = true };
+    const zero: big.Const = .{ .limbs = &.{0}, .positive = true };
+    var storage: [1]Limb = undefined;
+    var r = big.Mutable.init(&storage, 0);
+    r.addSat(a, zero, .unsigned, @bitSizeOf(Limb));
+    try testing.expectEqual(std.math.maxInt(Limb), try r.toInt(Limb));
 }
 
 test "subSat single-single, signed" {
@@ -1559,6 +1596,25 @@ test "mulWrap large" {
     try c.truncate(&c, .signed, testbits);
 
     try testing.expect(b.eql(c));
+}
+
+test "wrapping multiply aliases the right operand" {
+    var al: [1]Limb = undefined;
+    var bl: [2]Limb = undefined;
+    var scratch: [1]Limb = undefined;
+    const a = Mutable.init(&al, 3);
+    var b = Mutable.init(&bl, -5);
+    b.mulWrap(a.toConst(), b.toConst(), .signed, 8, &scratch, null);
+    try testing.expectEqual(@as(i16, -15), try b.toInt(i16));
+}
+
+test "wrapping multiply uses only the advertised alias scratch" {
+    var al = [_]Limb{ 3, 1 };
+    var a: Mutable = .{ .limbs = &al, .len = 2, .positive = true };
+    const b: Const = .{ .limbs = &.{5}, .positive = true };
+    var scratch: [big.calcMulWrapLimbsBufferLen(8, 2, 1, 1)]Limb = undefined;
+    a.mulWrap(a.toConst(), b, .unsigned, 8, &scratch, null);
+    try testing.expectEqual(@as(u8, 15), try a.toInt(u8));
 }
 
 test "div single-half no rem" {
@@ -2562,6 +2618,15 @@ test "saturate multi unsigned" {
     try testing.expectEqual(maxInt(DoubleLimb), try a.toInt(DoubleLimb));
 }
 
+test "saturation uses the source value and source sign" {
+    var storage: [1]Limb = undefined;
+    var r = big.Mutable.init(&storage, 42);
+    r.saturate(.{ .limbs = &.{7}, .positive = true }, .signed, 8);
+    try testing.expectEqual(@as(i16, 7), try r.toInt(i16));
+    r.saturate(.{ .limbs = &.{200}, .positive = false }, .signed, 8);
+    try testing.expectEqual(@as(i16, -128), try r.toInt(i16));
+}
+
 test "shift-right single" {
     var a = try Managed.initSet(testing.allocator, 0xffff0000);
     defer a.deinit();
@@ -2666,6 +2731,15 @@ test "shift-right negative" {
     };
     arg8.shiftRight(.{ .limbs = &.{ 1, 1 }, .positive = false }, @bitSizeOf(Limb));
     try testing.expect(arg8.toConst().orderAgainstScalar(-2).compare(.eq));
+}
+
+test "negative right shift requires rounding carry space" {
+    var a = try Managed.initSet(testing.allocator, -((1 << (5 * @bitSizeOf(Limb))) - 1));
+    defer a.deinit();
+    var r = try Managed.init(testing.allocator);
+    defer r.deinit();
+    try r.shiftRight(&a, @bitSizeOf(Limb));
+    try testing.expectEqual(@as(i512, -(1 << (4 * @bitSizeOf(Limb)))), try r.toInt(i512));
 }
 
 test "sat shift-left simple unsigned" {
@@ -2816,6 +2890,13 @@ test "bitNotWrap more than two limbs" {
     try res.bitNotWrap(&a, .signed, bits);
     const Signed = @Int(.signed, bits);
     try testing.expectEqual((try res.toInt(Signed)), ~@as(Signed, maxInt(Limb)));
+}
+
+test "bitNotWrap respects the target capacity" {
+    var storage: [big.calcTwosCompLimbCount(8)]Limb = undefined;
+    var r = Mutable.init(&storage, 0);
+    r.bitNotWrap(.{ .limbs = &.{ 2, 1 }, .positive = true }, .unsigned, 8);
+    try testing.expectEqual(@as(u8, 253), try r.toInt(u8));
 }
 
 test "bitwise and simple" {
@@ -3099,6 +3180,13 @@ test "bitwise or negative-negative multi-limb" {
     try testing.expectEqual(-maxInt(Limb), try a.toInt(SignedDoubleLimb));
 }
 
+test "mixed-sign OR preserves the longer operand limbs" {
+    var storage = [_]Limb{ 0, 0 };
+    var r = big.Mutable.init(&storage, 0);
+    r.bitOr(.{ .limbs = &.{ 2, 1 }, .positive = false }, .{ .limbs = &.{1}, .positive = true });
+    try testing.expectEqual(-((1 << @bitSizeOf(Limb)) + 1), try r.toInt(i256));
+}
+
 test "var args" {
     var a = try Managed.initSet(testing.allocator, 5);
     defer a.deinit();
@@ -3183,6 +3271,20 @@ test "gcd one large" {
     try testing.expectEqual(1, try r.toInt(u64));
 }
 
+test "gcd with zero needs the nonzero operand capacity" {
+    var a = try big.Managed.initSet(testing.allocator, 1 << (@bitSizeOf(Limb) * (big.Managed.default_capacity + 1)));
+    defer a.deinit();
+    var zero = try big.Managed.init(testing.allocator);
+    defer zero.deinit();
+    var r = try big.Managed.init(testing.allocator);
+    defer r.deinit();
+
+    try r.gcd(&a, &zero);
+    try testing.expect(r.eql(a));
+    try r.gcd(&zero, &a);
+    try testing.expect(r.eql(a));
+}
+
 test "mutable to managed" {
     const allocator = testing.allocator;
     const limbs_buf = try allocator.alloc(Limb, 8);
@@ -3256,6 +3358,20 @@ test "pow" {
         try testing.expectEqual(@as(i32, -1), try a.toInt(i32));
         try a.pow(&a, 16);
         try testing.expectEqual(@as(i32, 1), try a.toInt(i32));
+    }
+}
+
+test "octal and base32 digits cross limb boundaries" {
+    var storage: [big.calcLimbLen(1 << 64)]Limb = undefined;
+    const a = big.Mutable.init(&storage, 1 << 64);
+
+    inline for (.{
+        .{ 8, "2000000000000000000000" },
+        .{ 32, "g000000000000" },
+    }) |case| {
+        var buffer: [256]u8 = undefined;
+        const written = a.toConst().toString(&buffer, case[0], .lower, &.{});
+        try testing.expectEqualStrings(case[1], buffer[0..written]);
     }
 }
 
@@ -3777,11 +3893,11 @@ test "eql zeroes #17296" {
 }
 
 test "Const.order 0 == -0" {
-    const a = std.math.big.int.Const{
+    const a = Const{
         .limbs = &.{0},
         .positive = true,
     };
-    const b = std.math.big.int.Const{
+    const b = Const{
         .limbs = &.{0},
         .positive = false,
     };
@@ -3833,6 +3949,14 @@ test "Managed sqrt(n) succeed with res.bitCountAbs() >= usize bits" {
     try std.testing.expectEqual(std.math.Order.eq, expected.order(res));
 }
 
+test "sqrt zero with enough scratch" {
+    var storage: [1]Limb = undefined;
+    var scratch: [big.calcSqrtLimbsBufferLen(0)]Limb = undefined;
+    var r = big.Mutable.init(&storage, 0);
+    r.sqrt(r.toConst(), &scratch);
+    try testing.expect(r.eqlZero());
+}
+
 test "(BigInt) positive" {
     var a = try Managed.initSet(testing.allocator, 2);
     defer a.deinit();
@@ -3880,26 +4004,26 @@ test "(BigInt) negative" {
 }
 
 test "clz" {
-    const neg_limb_max_squared: std.math.big.int.Const = .{
+    const neg_limb_max_squared: Const = .{
         .limbs = &.{ 1, maxInt(Limb) - 1 },
         .positive = false,
     };
     try testing.expectEqual(0, neg_limb_max_squared.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_max_squared_plus_one: std.math.big.int.Const = .{
+    const neg_limb_max_squared_plus_one: Const = .{
         .limbs = &.{ 0, maxInt(Limb) - 1 },
         .positive = false,
     };
     try testing.expectEqual(0, neg_limb_max_squared_plus_one.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_msb_squared: std.math.big.int.Const = .{
+    const neg_limb_msb_squared: Const = .{
         .limbs = &.{ 0, 1 << (@bitSizeOf(Limb) - 2) },
         .positive = false,
     };
     try testing.expectEqual(0, neg_limb_msb_squared.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, neg_limb_msb_squared.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_max: std.math.big.int.Const = .{
+    const neg_limb_max: Const = .{
         .limbs = &.{maxInt(Limb)},
         .positive = false,
     };
@@ -3908,7 +4032,7 @@ test "clz" {
     try testing.expectEqual(0, neg_limb_max.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, neg_limb_max.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_msb: std.math.big.int.Const = .{
+    const neg_limb_msb: Const = .{
         .limbs = &.{1 << (@bitSizeOf(Limb) - 1)},
         .positive = false,
     };
@@ -3918,7 +4042,7 @@ test "clz" {
     try testing.expectEqual(0, neg_limb_msb.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, neg_limb_msb.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_one: std.math.big.int.Const = .{
+    const neg_one: Const = .{
         .limbs = &.{1},
         .positive = false,
     };
@@ -3928,7 +4052,7 @@ test "clz" {
     try testing.expectEqual(0, neg_one.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, neg_one.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const zero: std.math.big.int.Const = .{
+    const zero: Const = .{
         .limbs = &.{0},
         .positive = true,
     };
@@ -3938,7 +4062,7 @@ test "clz" {
     try testing.expectEqual(@bitSizeOf(Limb) * 2, zero.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) * 2 + 1, zero.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const one: std.math.big.int.Const = .{
+    const one: Const = .{
         .limbs = &.{1},
         .positive = true,
     };
@@ -3948,7 +4072,7 @@ test "clz" {
     try testing.expectEqual(@bitSizeOf(Limb) * 2 - 1, one.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) * 2, one.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_msb: std.math.big.int.Const = .{
+    const limb_msb: Const = .{
         .limbs = &.{1 << (@bitSizeOf(Limb) - 1)},
         .positive = true,
     };
@@ -3958,7 +4082,7 @@ test "clz" {
     try testing.expectEqual(@bitSizeOf(Limb), limb_msb.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) + 1, limb_msb.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_max: std.math.big.int.Const = .{
+    const limb_max: Const = .{
         .limbs = &.{maxInt(Limb)},
         .positive = true,
     };
@@ -3968,7 +4092,7 @@ test "clz" {
     try testing.expectEqual(@bitSizeOf(Limb), limb_max.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) + 1, limb_max.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_msb_squared: std.math.big.int.Const = .{
+    const limb_msb_squared: Const = .{
         .limbs = &.{ 0, 1 << (@bitSizeOf(Limb) - 2) },
         .positive = true,
     };
@@ -3976,14 +4100,14 @@ test "clz" {
     try testing.expectEqual(1, limb_msb_squared.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(2, limb_msb_squared.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_max_squared_minus_one: std.math.big.int.Const = .{
+    const limb_max_squared_minus_one: Const = .{
         .limbs = &.{ 0, maxInt(Limb) - 1 },
         .positive = true,
     };
     try testing.expectEqual(0, limb_max_squared_minus_one.clz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(1, limb_max_squared_minus_one.clz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_max_squared: std.math.big.int.Const = .{
+    const limb_max_squared: Const = .{
         .limbs = &.{ 1, maxInt(Limb) - 1 },
         .positive = true,
     };
@@ -3992,26 +4116,26 @@ test "clz" {
 }
 
 test "ctz" {
-    const neg_limb_max_squared: std.math.big.int.Const = .{
+    const neg_limb_max_squared: Const = .{
         .limbs = &.{ 1, maxInt(Limb) - 1 },
         .positive = false,
     };
     try testing.expectEqual(0, neg_limb_max_squared.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_max_squared_plus_one: std.math.big.int.Const = .{
+    const neg_limb_max_squared_plus_one: Const = .{
         .limbs = &.{ 0, maxInt(Limb) - 1 },
         .positive = false,
     };
     try testing.expectEqual(@bitSizeOf(Limb) + 1, neg_limb_max_squared_plus_one.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_msb_squared: std.math.big.int.Const = .{
+    const neg_limb_msb_squared: Const = .{
         .limbs = &.{ 0, 1 << (@bitSizeOf(Limb) - 2) },
         .positive = false,
     };
     try testing.expectEqual(@bitSizeOf(Limb) * 2 - 2, neg_limb_msb_squared.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) * 2 - 2, neg_limb_msb_squared.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_max: std.math.big.int.Const = .{
+    const neg_limb_max: Const = .{
         .limbs = &.{maxInt(Limb)},
         .positive = false,
     };
@@ -4020,7 +4144,7 @@ test "ctz" {
     try testing.expectEqual(0, neg_limb_max.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, neg_limb_max.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_limb_msb: std.math.big.int.Const = .{
+    const neg_limb_msb: Const = .{
         .limbs = &.{1 << (@bitSizeOf(Limb) - 1)},
         .positive = false,
     };
@@ -4030,7 +4154,7 @@ test "ctz" {
     try testing.expectEqual(@bitSizeOf(Limb) - 1, neg_limb_msb.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) - 1, neg_limb_msb.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const neg_one: std.math.big.int.Const = .{
+    const neg_one: Const = .{
         .limbs = &.{1},
         .positive = false,
     };
@@ -4040,7 +4164,7 @@ test "ctz" {
     try testing.expectEqual(0, neg_one.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, neg_one.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const zero: std.math.big.int.Const = .{
+    const zero: Const = .{
         .limbs = &.{0},
         .positive = true,
     };
@@ -4050,7 +4174,7 @@ test "ctz" {
     try testing.expectEqual(@bitSizeOf(Limb) * 2, zero.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) * 2 + 1, zero.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const one: std.math.big.int.Const = .{
+    const one: Const = .{
         .limbs = &.{1},
         .positive = true,
     };
@@ -4060,7 +4184,7 @@ test "ctz" {
     try testing.expectEqual(0, one.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, one.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_msb: std.math.big.int.Const = .{
+    const limb_msb: Const = .{
         .limbs = &.{1 << (@bitSizeOf(Limb) - 1)},
         .positive = true,
     };
@@ -4070,7 +4194,7 @@ test "ctz" {
     try testing.expectEqual(@bitSizeOf(Limb) - 1, limb_msb.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) - 1, limb_msb.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_max: std.math.big.int.Const = .{
+    const limb_max: Const = .{
         .limbs = &.{maxInt(Limb)},
         .positive = true,
     };
@@ -4080,7 +4204,7 @@ test "ctz" {
     try testing.expectEqual(0, limb_max.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(0, limb_max.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_msb_squared: std.math.big.int.Const = .{
+    const limb_msb_squared: Const = .{
         .limbs = &.{ 0, 1 << (@bitSizeOf(Limb) - 2) },
         .positive = true,
     };
@@ -4088,14 +4212,14 @@ test "ctz" {
     try testing.expectEqual(@bitSizeOf(Limb) * 2 - 2, limb_msb_squared.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) * 2 - 2, limb_msb_squared.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_max_squared_minus_one: std.math.big.int.Const = .{
+    const limb_max_squared_minus_one: Const = .{
         .limbs = &.{ 0, maxInt(Limb) - 1 },
         .positive = true,
     };
     try testing.expectEqual(@bitSizeOf(Limb) + 1, limb_max_squared_minus_one.ctz(@bitSizeOf(Limb) * 2));
     try testing.expectEqual(@bitSizeOf(Limb) + 1, limb_max_squared_minus_one.ctz(@bitSizeOf(Limb) * 2 + 1));
 
-    const limb_max_squared: std.math.big.int.Const = .{
+    const limb_max_squared: Const = .{
         .limbs = &.{ 1, maxInt(Limb) - 1 },
         .positive = true,
     };
@@ -4138,4 +4262,26 @@ test "log10" {
 
     try a.setString(10, "504758845984192913149382719638135788792820830414213085834451043864912744833203879823150928260925344757009154551640690830148486352800955148298533547472300");
     try testing.expectEqual(152, a.toConst().log10Alloc(testing.allocator));
+}
+
+test "copy keeps an aliased view sign" {
+    var a = try big.Managed.initSet(testing.allocator, 3);
+    defer a.deinit();
+    try a.copy(a.toConst().negate());
+    try testing.expectEqual(-3, try a.toInt(i8));
+}
+
+test "negative-to-unsigned conversion returns the right error" {
+    var storage: [1]Limb = undefined;
+    const a = big.Mutable.init(&storage, -1);
+    try testing.expectError(error.NegativeIntoUnsigned, a.toInt(u8));
+}
+
+test "formatNumber uses padding and alignment" {
+    var storage: [1]Limb = undefined;
+    const a = big.Mutable.init(&storage, 42);
+    var buffer: [32]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try a.formatNumber(&writer, .{ .width = 5 });
+    try testing.expectEqualStrings("   42", writer.buffered());
 }
