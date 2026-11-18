@@ -39,17 +39,6 @@ pub fn reader(d: *const Objdump) *Io.Reader {
     }
 }
 
-/// Intended for use from `format` functions printing to `d.w`.
-pub fn setColor(d: *const Objdump, w: *Io.Writer, color: Io.Terminal.Color) Io.Writer.Error!void {
-    assert(w == d.w);
-    const term: Io.Terminal = .{ .writer = w, .mode = d.terminal_mode };
-    term.setColor(color) catch |err| switch (err) {
-        error.Unexpected => {},
-        error.Canceled => term.mode.windows_api.io.recancel(),
-        else => |e| return e,
-    };
-}
-
 pub fn logicalPos(d: *const Objdump) u64 {
     if (d.limited_reader) |lr| {
         return d.raw_file_reader.logicalPos() - lr.interface.bufferedLen() - d.seek_base;
@@ -110,6 +99,10 @@ pub const Options = struct {
 
     file_headers: bool,
 
+    hexdump_section: ?[]const u8,
+    hexdump_no_relocs: bool,
+    hexdump_offsets: bool,
+
     basenames: bool,
     redact: std.enums.EnumSet(FieldKind),
 
@@ -158,6 +151,9 @@ pub const FormatIntField = struct {
     val: u64,
     kind: ?FieldKind,
     pub fn formatNumber(ctx: FormatIntField, w: *Io.Writer, number: std.fmt.Number) Io.Writer.Error!void {
+        assert(w == ctx.d.w);
+        const term: Io.Terminal = .{ .writer = w, .mode = ctx.d.terminal_mode };
+
         const prefix: []const u8 = switch (number.mode) {
             .decimal => "",
             .binary => "0b",
@@ -199,10 +195,10 @@ pub const FormatIntField = struct {
         };
 
         if (number.width) |width| {
-            try ctx.d.setColor(w, .dim);
+            try term.updateStyle(.{ .weight = .dim });
             try w.writeAll(prefix);
             try w.splatByteAll(fill_digit, width -| significant_digits.len);
-            try ctx.d.setColor(w, .reset);
+            try term.updateStyle(.{ .weight = .default });
             try w.writeAll(significant_digits);
         } else {
             assert(significant_digits.len > 0);
@@ -255,12 +251,19 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
 
     var input_paths: std.ArrayList([]const u8) = .empty;
 
+    const Color = enum { auto, off, on };
+    var color: Color = .auto;
+
     var archive_symbol_tables: bool = false;
     var archive_symbol_filters: std.ArrayList([]const u8) = .empty;
     var archive_member_headers: bool = false;
     var archive_member_filters: std.ArrayList([]const u8) = .empty;
 
     var file_headers: bool = false;
+
+    var hexdump_section: ?[]const u8 = null;
+    var hexdump_no_relocs: bool = false;
+    var hexdump_offsets: bool = false;
 
     var basenames: bool = false;
     var redact: std.enums.EnumSet(FieldKind) = .empty;
@@ -296,6 +299,10 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
             Io.File.stdout().writeStreamingAll(io, usage) catch |err|
                 fatal("failed to write stdout: {t}", .{err});
             return 0;
+        } else if (mem.cutPrefix(u8, arg, "--color=")) |color_str| {
+            color = std.meta.stringToEnum(Color, color_str) orelse {
+                fatal("invalid color mode {q}", .{color_str});
+            };
         } else if (mem.eql(u8, arg, "--all")) {
             archive_symbol_tables = true;
             archive_member_headers = true;
@@ -317,6 +324,13 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
             try archive_member_filters.append(arena, member_name);
         } else if (mem.eql(u8, arg, "--file-headers")) {
             file_headers = true;
+        } else if (mem.cutPrefix(u8, arg, "--hexdump=")) |section_name| {
+            if (hexdump_section != null) fatal("multiple '--hexdump' options", .{});
+            hexdump_section = section_name;
+        } else if (mem.eql(u8, arg, "--hexdump-no-relocs")) {
+            hexdump_no_relocs = true;
+        } else if (mem.eql(u8, arg, "--hexdump-offsets")) {
+            hexdump_offsets = true;
         } else if (mem.eql(u8, arg, "-s") or mem.eql(u8, arg, "--snapshot")) {
             basenames = true;
             redact = .full;
@@ -456,6 +470,10 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
 
         .file_headers = file_headers,
 
+        .hexdump_section = hexdump_section,
+        .hexdump_no_relocs = hexdump_no_relocs,
+        .hexdump_offsets = hexdump_offsets,
+
         .basenames = basenames,
         .redact = redact,
 
@@ -467,12 +485,16 @@ pub fn main(init: std.process.Init) (Io.UnexpectedError || Io.Cancelable || Allo
     var stdout_buffer: [4096]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writerStreaming(io, &stdout_buffer);
 
-    const terminal_mode: Io.Terminal.Mode = try .detect(
-        io,
-        .stdout(),
-        if (init.environ_map.get("NO_COLOR")) |s| s.len > 0 else false,
-        if (init.environ_map.get("CLICOLOR_FORCE")) |s| s.len > 0 else false,
-    );
+    const terminal_mode: Io.Terminal.Mode = switch (color) {
+        .off => .no_color,
+        .on => .escape_codes,
+        .auto => try .detect(
+            io,
+            .stdout(),
+            if (init.environ_map.get("NO_COLOR")) |s| s.len > 0 else false,
+            if (init.environ_map.get("CLICOLOR_FORCE")) |s| s.len > 0 else false,
+        ),
+    };
 
     var any_errors: bool = false;
 
@@ -606,6 +628,7 @@ const usage =
     \\
     \\Options:
     \\  -h, --help                        Print this help and exit
+    \\  --color=(auto|off|on)             Enable or disable colored output
     \\  --all                             Display all available information, including file-format-specific
     \\  --archive-symbol-tables           Display contents of archive symbol tables
     \\  --archive-symbol-filter=<name>    Only consider symbols in archives whose names contain <anem>.
@@ -614,6 +637,9 @@ const usage =
     \\  --archive-member-filter=<name>    Only consider archive members names that contain <name>.
     \\                                    Can be specified multiple times.
     \\  --file-headers                    Display each file's format-specific header
+    \\  --hexdump=<name>                  Hex-dump the contents of the section with the given name
+    \\  --hexdump-no-relocs               Omit relocations when dumping sections with '--hex'
+    \\  --hexdump-offsets                 Print section offsets instead of addresses when dumping sections with '--hex'
     \\  -s, --snapshot                    Alias for --basenames --redact=all
     \\  --basenames                       Only show the basenames of input files and archive members instead of their full paths.
     \\  --redact=[kind]                   Redact the specified field kind. Intended for snapshot testing.
@@ -628,12 +654,12 @@ const usage =
     \\  --filter=<expr>                   Filter the table to rows where <expr> evaluates to 'true'
     \\  --sort=<expr>                     Sort the table by the result of evaluating <expr>
     \\
-    \\  <expr> is an expression with the following syntax:
-    \\    Comparison Operators: ==, !=, >=, <=, >, <
-    \\    Arithmetic Operators: +, -, *, /, %
-    \\    Boolean Operators: and, or, !
-    \\    String Operators: `haystack ~ needle` is true if haystack contains needle
-    \\    Literals: "string", 0x1234, true, false (Zig syntax)
+    \\Expression Syntax:
+    \\  Comparison Operators: ==, !=, >=, <=, >, <
+    \\  Arithmetic Operators: +, -, *, /, %
+    \\  Boolean Operators: and, or, !
+    \\  String Operators: `haystack ~ needle` is true if haystack contains needle
+    \\  Literals: "string", 789, 0b01, 0o067, 0x123abc, true, false (Zig syntax)
     \\
     \\ELF Tables:
     \\

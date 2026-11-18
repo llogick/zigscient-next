@@ -12,31 +12,12 @@ const File = std.Io.File;
 writer: *Io.Writer,
 mode: Mode,
 
-pub const Color = enum {
-    black,
-    red,
-    green,
-    yellow,
-    blue,
-    magenta,
-    cyan,
-    white,
-    bright_black,
-    bright_red,
-    bright_green,
-    bright_yellow,
-    bright_blue,
-    bright_magenta,
-    bright_cyan,
-    bright_white,
-    dim,
-    bold,
-    reset,
-};
-
 pub const Mode = union(enum) {
     no_color,
     escape_codes,
+    /// Deprecated, and only supported by the deprecated `setColor` API.
+    ///
+    /// Windows 10 RS1 introduced support for ANSI escape codes.
     windows_api: WindowsApi,
 
     pub const WindowsApi = if (!is_windows) noreturn else struct {
@@ -80,8 +61,195 @@ pub const Mode = union(enum) {
     }
 };
 
-pub const SetColorError = Io.Cancelable || Io.UnexpectedError || Io.Writer.Error;
+/// Terminal style state, including foreground and background color and font attributes.
+pub const Style = struct {
+    color: Style.Color,
+    background_color: Style.Color,
+    weight: Weight,
+    italic: bool,
+    underline: bool,
+    strikethrough: bool,
 
+    /// Backing int value is the ANSI foreground color code for the given color.
+    pub const Color = enum(u8) {
+        default = 39,
+        black = 30,
+        red = 31,
+        green = 32,
+        yellow = 33,
+        blue = 34,
+        magenta = 35,
+        cyan = 36,
+        white = 37,
+        bright_black = 90,
+        bright_red = 91,
+        bright_green = 92,
+        bright_yellow = 93,
+        bright_blue = 94,
+        bright_magenta = 95,
+        bright_cyan = 96,
+        bright_white = 97,
+    };
+
+    /// Backing int value is the ANSI code to switch to the given font weight.
+    pub const Weight = enum(u8) { default = 22, bold = 1, dim = 2 };
+
+    /// The terminal's initial style, before any `Style.update`/`Terminal.updateStyle` calls.
+    pub const reset: Style = .{
+        .color = .default,
+        .background_color = .default,
+        .weight = .default,
+        .italic = false,
+        .underline = false,
+        .strikethrough = false,
+    };
+
+    pub fn eql(a: *const Style, b: *const Style) bool {
+        return a.color == b.color and
+            a.background_color == b.background_color and
+            a.weight == b.weight and
+            a.italic == b.italic and
+            a.underline == b.underline and
+            a.strikethrough == b.strikethrough;
+    }
+
+    /// Any field may be `null` to indicate that the existing state should not be modified.
+    pub const UpdateOptions = struct {
+        pub const reset: UpdateOptions = .{
+            .color = .default,
+            .background_color = .default,
+            .weight = .default,
+            .italic = false,
+            .underline = false,
+            .strikethrough = false,
+        };
+
+        color: ?Style.Color = null,
+        background_color: ?Style.Color = null,
+        weight: ?Weight = null,
+        italic: ?bool = null,
+        underline: ?bool = null,
+        strikethrough: ?bool = null,
+    };
+
+    /// Like `Terminal.updateStyle`, but tracks the current style in `s` to avoid writing redundant
+    /// escape codes setting style properties which are already correctly configured.
+    pub fn update(s: *Style, term: Terminal, opts: UpdateOptions) Io.Writer.Error!void {
+        const new: Style = .{
+            // zig fmt: off
+            .color            = opts.color            orelse s.color,
+            .background_color = opts.background_color orelse s.background_color,
+            .weight           = opts.weight           orelse s.weight,
+            .italic           = opts.italic           orelse s.italic,
+            .underline        = opts.underline        orelse s.underline,
+            .strikethrough    = opts.strikethrough    orelse s.strikethrough,
+            // zig fmt: on
+        };
+
+        if (s.eql(&new)) return;
+
+        if (new.eql(&.reset)) {
+            try term.resetStyle();
+        } else try term.updateStyle(.{
+            // zig fmt: off
+            .color            = if (new.color            != s.color)            new.color            else null,
+            .background_color = if (new.background_color != s.background_color) new.background_color else null,
+            .weight           = if (new.weight           != s.weight)           new.weight           else null,
+            .italic           = if (new.italic           != s.italic)           new.italic           else null,
+            .underline        = if (new.underline        != s.underline)        new.underline        else null,
+            .strikethrough    = if (new.strikethrough    != s.strikethrough)    new.strikethrough    else null,
+            // zig fmt: on
+        });
+        s.* = new;
+    }
+};
+
+/// This function writes redundant escape sequences when a field of `opts` matches the terminal's
+/// current style. Consider instead using `Style.update` to prevent redundant work.
+pub fn updateStyle(term: Terminal, opts: Style.UpdateOptions) Io.Writer.Error!void {
+    switch (term.mode) {
+        .no_color => {},
+        .windows_api => {}, // deprecated; only supported by the legacy `setColor` interface
+        .escape_codes => {
+            // We use our own buffer for this instead of writing pieces to `w` so that we can remove
+            // the trailing ';' once we're done. This is easy because we have a small fixed bound on
+            // the size of the escape code. Currently, each of our ANSI escape parameters is no more
+            // than 3 decimal bytes, followed by the ';' separator, so 4 bytes per parameter.
+            var ansi_params_buf: [@typeInfo(Style).@"struct".field_names.len * 4]u8 = undefined;
+            var ansi_params: std.ArrayList(u8) = .initBuffer(&ansi_params_buf);
+
+            if (opts.color) |color| {
+                ansi_params.printAssumeCapacity("{d};", .{@backingInt(color)});
+            }
+            if (opts.background_color) |background_color| {
+                // Background color codes are offset by 10 from foreground color codes.
+                ansi_params.printAssumeCapacity("{d};", .{@backingInt(background_color) + 10});
+            }
+            if (opts.weight) |weight| {
+                ansi_params.printAssumeCapacity("{d};", .{@backingInt(weight)});
+            }
+            if (opts.italic) |italic| {
+                ansi_params.appendSliceAssumeCapacity(if (italic) "3;" else "23;");
+            }
+            if (opts.underline) |underline| {
+                ansi_params.appendSliceAssumeCapacity(if (underline) "4;" else "24;");
+            }
+            if (opts.strikethrough) |strikethrough| {
+                ansi_params.appendSliceAssumeCapacity(if (strikethrough) "9;" else "29;");
+            }
+
+            if (ansi_params.items.len == 0) {
+                // All properties unchanged.
+            } else {
+                try term.writer.print("\x1b[{s}m", .{ansi_params.items[0 .. ansi_params.items.len - 1]});
+            }
+        },
+    }
+}
+
+/// Equivalent to `term.updateStyle(.reset)`, but may use a more efficient escape sequence.
+///
+/// This function writes redundant escape sequences when the terminal's style is already in the
+/// reset state. Consider instead using `Style.update(.reset)` to prevent redundant work.
+pub fn resetStyle(term: Terminal) Io.Writer.Error!void {
+    switch (term.mode) {
+        .no_color => {},
+        .windows_api => {}, // deprecated; only supported by the legacy `setColor` interface
+        .escape_codes => try term.writer.writeAll("\x1b[0m"),
+    }
+}
+
+/// Deprecated; use `Style.Color` instead.
+///
+/// To be deleted before Zig 0.19.0 alongside `setColor`.
+pub const Color = enum {
+    black,
+    red,
+    green,
+    yellow,
+    blue,
+    magenta,
+    cyan,
+    white,
+    bright_black,
+    bright_red,
+    bright_green,
+    bright_yellow,
+    bright_blue,
+    bright_magenta,
+    bright_cyan,
+    bright_white,
+    dim,
+    bold,
+    reset,
+};
+/// Deprecated; see doc comment on `setColor`.
+///
+/// To be deleted before Zig 0.19.0 alongside `setColor`.
+pub const SetColorError = Io.Cancelable || Io.UnexpectedError || Io.Writer.Error;
+/// Deprecated; use `Style.update` or `Terminal.updateStyle` instead.
+///
+/// To be deleted before Zig 0.19.0.
 pub fn setColor(t: Terminal, color: Color) SetColorError!void {
     switch (t.mode) {
         .no_color => return,

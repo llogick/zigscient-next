@@ -320,6 +320,30 @@ pub fn dump(d: *Objdump) Objdump.Error!void {
             if (d.opts.tables.elf.get(.dynamic)) |conf| {
                 try dumpDynamic(d, conf, sections);
             }
+
+            // TODO: the CLI for this is quite bad right now. I have yet to figure out how to expose
+            // all of these cool objdump features without making an interactive CLI prompt thing.
+            if (d.opts.hexdump_section) |section_name| {
+                for (sections, 0..) |*s, i| {
+                    if (std.mem.eql(u8, s.name, section_name)) {
+                        try hexDumpSection(
+                            d,
+                            ehdr.type,
+                            ehdr.ident.class,
+                            ehdr.machine,
+                            sections,
+                            @intCast(i),
+                            .{
+                                .shift_offset_labels = if (d.opts.hexdump_offsets) 0 else s.addr,
+                                .show_relocs = !d.opts.hexdump_no_relocs,
+                            },
+                        );
+                        break;
+                    }
+                } else {
+                    try d.warn("failed to hexdump {q}: no such section", .{section_name});
+                }
+            }
         },
     }
 }
@@ -2465,44 +2489,48 @@ const FormatSectionFlags = struct {
     d: *const Objdump,
     shf: std.elf.SHF,
     pub fn format(ctx: FormatSectionFlags, w: *Io.Writer) Io.Writer.Error!void {
-        const d = ctx.d;
         const shf = ctx.shf;
 
-        var is_dim = false;
+        assert(w == ctx.d.w);
+        const term: Io.Terminal = .{ .writer = w, .mode = ctx.d.terminal_mode };
+        var style: Io.Terminal.Style = .reset;
 
         // The order in which we print flags does not match the field order. Instead, this order is
         // chosen to put the most important & common flags near the start, which in turn means the
         // key we print in `dumpSections` (which matches this order) is easier to understand.
-        try writeFlag(d, w, &is_dim, 'A', shf.ALLOC);
-        try writeFlag(d, w, &is_dim, 'W', shf.WRITE);
-        try writeFlag(d, w, &is_dim, 'X', shf.EXECINSTR);
-        try writeFlag(d, w, &is_dim, 'T', shf.TLS);
-        try writeFlag(d, w, &is_dim, 'M', shf.MERGE);
-        try writeFlag(d, w, &is_dim, 'S', shf.STRINGS);
-        try writeFlag(d, w, &is_dim, 'G', shf.GROUP);
-        try writeFlag(d, w, &is_dim, 'C', shf.COMPRESSED);
-        try writeFlag(d, w, &is_dim, 'I', shf.INFO_LINK);
-        try writeFlag(d, w, &is_dim, 'L', shf.LINK_ORDER);
-        try writeFlag(d, w, &is_dim, 'O', shf.OS_NONCONFORMING);
+        try writeFlag(term, &style, 'A', shf.ALLOC);
+        try writeFlag(term, &style, 'W', shf.WRITE);
+        try writeFlag(term, &style, 'X', shf.EXECINSTR);
+        try writeFlag(term, &style, 'T', shf.TLS);
+        try writeFlag(term, &style, 'M', shf.MERGE);
+        try writeFlag(term, &style, 'S', shf.STRINGS);
+        try writeFlag(term, &style, 'G', shf.GROUP);
+        try writeFlag(term, &style, 'C', shf.COMPRESSED);
+        try writeFlag(term, &style, 'I', shf.INFO_LINK);
+        try writeFlag(term, &style, 'L', shf.LINK_ORDER);
+        try writeFlag(term, &style, 'O', shf.OS_NONCONFORMING);
 
         const any_unknown = shf.unused3 != 0 or
             shf.unused12 != 0 or
             shf.OS.MASK != 0 or
             shf.PROC.MASK != 0;
 
-        try writeFlag(d, w, &is_dim, '?', any_unknown);
+        try writeFlag(term, &style, '?', any_unknown);
 
-        if (is_dim) try d.setColor(w, .reset);
+        try style.update(term, .reset);
     }
-    fn writeFlag(d: *const Objdump, w: *Io.Writer, is_dim: *bool, flag_char: u8, flag_set: bool) Io.Writer.Error!void {
+    fn writeFlag(
+        term: Io.Terminal,
+        style: *Io.Terminal.Style,
+        flag_char: u8,
+        flag_set: bool,
+    ) Io.Writer.Error!void {
         if (flag_set) {
-            if (is_dim.*) try d.setColor(w, .reset);
-            is_dim.* = false;
-            try w.writeByte(flag_char);
+            try style.update(term, .{ .weight = .default });
+            try term.writer.writeByte(flag_char);
         } else {
-            if (!is_dim.*) try d.setColor(w, .dim);
-            is_dim.* = true;
-            try w.writeByte('-');
+            try style.update(term, .{ .weight = .dim });
+            try term.writer.writeByte('-');
         }
     }
 };
@@ -2552,22 +2580,23 @@ const FormatPhdrFlags = struct {
     d: *const Objdump,
     pf: std.elf.PF,
     pub fn format(ctx: FormatPhdrFlags, w: *Io.Writer) Io.Writer.Error!void {
-        const d = ctx.d;
         const pf = ctx.pf;
 
-        var is_dim = false;
+        assert(w == ctx.d.w);
+        const term: Io.Terminal = .{ .writer = w, .mode = ctx.d.terminal_mode };
+        var style: Io.Terminal.Style = .reset;
 
-        try FormatSectionFlags.writeFlag(d, w, &is_dim, 'R', pf.R);
-        try FormatSectionFlags.writeFlag(d, w, &is_dim, 'W', pf.W);
-        try FormatSectionFlags.writeFlag(d, w, &is_dim, 'X', pf.X);
+        try FormatSectionFlags.writeFlag(term, &style, 'R', pf.R);
+        try FormatSectionFlags.writeFlag(term, &style, 'W', pf.W);
+        try FormatSectionFlags.writeFlag(term, &style, 'X', pf.X);
 
         const any_unknown = pf.unused3 != 0 or
             pf.OS.MASK != 0 or
             pf.PROC.MASK != 0;
 
-        try FormatSectionFlags.writeFlag(d, w, &is_dim, '?', any_unknown);
+        try FormatSectionFlags.writeFlag(term, &style, '?', any_unknown);
 
-        if (is_dim) try d.setColor(w, .reset);
+        try style.update(term, .reset);
     }
 };
 
@@ -2596,6 +2625,520 @@ fn relocTypeString(machine: std.elf.EM, reloc_type: u32) []const u8 {
         .PPC64 => std.enums.tagName(std.elf.R_PPC64, @fromBackingInt(reloc_type)) orelse "(unknown)",
         .SPARCV9 => std.enums.tagName(std.elf.R_SPARC, @fromBackingInt(reloc_type)) orelse "(unknown)",
         .LOONGARCH => std.enums.tagName(std.elf.R_LARCH, @fromBackingInt(reloc_type)) orelse "(unknown)",
+    };
+}
+fn relocTypeLen(
+    class: std.elf.CLASS,
+    machine: std.elf.EM,
+    reloc_type: u32,
+) u8 {
+    return switch (machine) {
+        else => 0,
+
+        .X86_64 => switch (@as(std.elf.R_X86_64, @fromBackingInt(reloc_type))) {
+            _,
+            .NONE,
+            .COPY,
+            .TLSDESC_CALL,
+            => 0,
+
+            // wordclass
+            .GLOB_DAT,
+            .JUMP_SLOT,
+            .RELATIVE,
+            .IRELATIVE,
+            => class.size(),
+
+            .TLSDESC => 2 * class.size(),
+
+            // word64
+            .@"64",
+            .DTPMOD64,
+            .DTPOFF64,
+            .TPOFF64,
+            .PC64,
+            .GOTOFF64,
+            .SIZE64,
+            .RELATIVE64,
+            .GOT64,
+            .GOTPCREL64,
+            .GOTPC64,
+            .GOTPLT64,
+            .PLTOFF64,
+            => 8,
+
+            // word32
+            .PC32,
+            .GOT32,
+            .PLT32,
+            .GOTPCREL,
+            .@"32",
+            .@"32S",
+            .TLSGD,
+            .TLSLD,
+            .DTPOFF32,
+            .GOTTPOFF,
+            .TPOFF32,
+            .GOTPC32,
+            .SIZE32,
+            .GOTPC32_TLSDESC,
+            .GOTPCRELX,
+            .REX_GOTPCRELX,
+            => 4,
+
+            // word16
+            .@"16",
+            .PC16,
+            => 2,
+
+            // word8
+            .@"8",
+            .PC8,
+            => 1,
+        },
+
+        .AARCH64 => switch (@as(std.elf.R_AARCH64, @fromBackingInt(reloc_type))) {
+            _,
+            .NONE,
+            .COPY,
+            .P32_COPY,
+            => 0,
+
+            .GLOB_DAT,
+            .JUMP_SLOT,
+            .RELATIVE,
+            .TLS_DTPMOD,
+            .TLS_DTPREL,
+            .TLS_TPREL,
+            .IRELATIVE,
+            => 8,
+
+            .P32_GLOB_DAT,
+            .P32_JUMP_SLOT,
+            .P32_RELATIVE,
+            .P32_TLS_DTPMOD,
+            .P32_TLS_DTPREL,
+            .P32_TLS_TPREL,
+            .P32_IRELATIVE,
+            => 4,
+
+            .ABS64, .PREL64 => 8,
+            .ABS32, .PREL32 => 4,
+            .ABS16, .PREL16 => 2,
+
+            else => 0, // TODO: handle all aarch64 relocs
+        },
+
+        .RISCV => switch (@as(std.elf.R_RISCV, @fromBackingInt(reloc_type))) {
+            _,
+            .NONE,
+            .COPY,
+            .TPREL_ADD,
+            .ALIGN,
+            .RELAX,
+            .TLSDESC_CALL,
+            .VENDOR,
+            => 0,
+
+            // wordclass
+            .RELATIVE,
+            .JUMP_SLOT,
+            .IRELATIVE,
+            => class.size(),
+
+            .TLSDESC => 2 * class.size(),
+
+            // word64
+            .@"64",
+            .TLS_DTPMOD64,
+            .TLS_DTPREL64,
+            .TLS_TPREL64,
+            .ADD64,
+            .SUB64,
+            => 8,
+
+            // word32
+            .@"32",
+            .TLS_DTPMOD32,
+            .TLS_DTPREL32,
+            .TLS_TPREL32,
+            .ADD32,
+            .SUB32,
+            .GOT32_PCREL,
+            .SET32,
+            .@"32_PCREL",
+            .PLT32,
+            => 4,
+
+            // word16
+            .ADD16,
+            .SUB16,
+            .SET16,
+            => 2,
+
+            // word8
+            .ADD8,
+            .SUB8,
+            .SET8,
+            => 1,
+
+            // word6
+            .SUB6,
+            .SET6,
+            => 1,
+
+            // ULEB128
+            .SET_ULEB128,
+            .SUB_ULEB128,
+            => 1,
+
+            // U+I-Type
+            .CALL,
+            .CALL_PLT,
+            => 4 * 2,
+
+            // B-Type
+            .BRANCH,
+            // J-Type
+            .JAL,
+            // U-Type
+            .GOT_HI20,
+            .TLS_GOT_HI20,
+            .TLS_GD_HI20,
+            .PCREL_HI20,
+            .HI20,
+            .TPREL_HI20,
+            .TLSDESC_HI20,
+            // I-Type
+            .PCREL_LO12_I,
+            .LO12_I,
+            .TPREL_LO12_I,
+            .TLSDESC_LOAD_LO12,
+            .TLSDESC_ADD_LO12,
+            // S-Type
+            .PCREL_LO12_S,
+            .LO12_S,
+            .TPREL_LO12_S,
+            => 4,
+
+            // CB-Type
+            .RVC_BRANCH,
+            // CJ-Type
+            .RVC_JUMP,
+            => 2,
+        },
+
+        .PPC64 => switch (@as(std.elf.R_PPC64, @fromBackingInt(reloc_type))) {
+            _,
+            .NONE,
+            .COPY,
+            .JMP_SLOT,
+            .TLS,
+            .TLSGD,
+            .TLSLD,
+            .PLTSEQ,
+            .PLTCALL,
+            .PLTSEQ_NOTOC,
+            .PLTCALL_NOTOC,
+            .PCREL_OPT,
+            => 0,
+
+            // doubleword64
+            .GLOB_DAT,
+            .RELATIVE,
+            .ADDR64,
+            .REL64,
+            .TOC,
+            .DTPMOD64,
+            .TPREL64,
+            .DTPREL64,
+            .IRELATIVE,
+            => 8,
+
+            // prefix34
+            .PCREL34,
+            .GOT_PCREL34,
+            .PLT_PCREL34,
+            .PLT_PCREL34_NOTOC,
+            .TPREL34,
+            .DTPREL34,
+            .GOT_TLSGD_PCREL34,
+            .GOT_TLSLD_PCREL34,
+            .GOT_TPREL_PCREL34,
+            => 8,
+
+            // word32
+            .ADDR32,
+            .REL32,
+            => 4,
+
+            // low24
+            .ADDR24,
+            .REL24,
+            .REL24_NOTOC,
+            => 4,
+
+            // low14
+            .ADDR14,
+            .ADDR14_BRTAKEN,
+            .ADDR14_BRNTAKEN,
+            .REL14,
+            .REL14_BRTAKEN,
+            .REL14_BRNTAKEN,
+            => 4,
+
+            // half16/half16ds
+            .ADDR16,
+            .ADDR16_LO,
+            .ADDR16_HI,
+            .ADDR16_HA,
+            .GOT16,
+            .GOT16_LO,
+            .GOT16_HI,
+            .GOT16_HA,
+            .PLT16_LO,
+            .PLT16_HI,
+            .PLT16_HA,
+            .ADDR16_HIGHER,
+            .ADDR16_HIGHERA,
+            .ADDR16_HIGHEST,
+            .ADDR16_HIGHESTA,
+            .TOC16,
+            .TOC16_LO,
+            .TOC16_HI,
+            .TOC16_HA,
+            .ADDR16_DS,
+            .ADDR16_LO_DS,
+            .GOT16_DS,
+            .GOT16_LO_DS,
+            .PLT16_LO_DS,
+            .TOC16_DS,
+            .TOC16_LO_DS,
+            .TPREL16,
+            .TPREL16_LO,
+            .TPREL16_HI,
+            .TPREL16_HA,
+            .DTPREL16,
+            .DTPREL16_LO,
+            .DTPREL16_HI,
+            .DTPREL16_HA,
+            .GOT_TLSGD16,
+            .GOT_TLSGD16_LO,
+            .GOT_TLSGD16_HI,
+            .GOT_TLSGD16_HA,
+            .GOT_TLSLD16,
+            .GOT_TLSLD16_LO,
+            .GOT_TLSLD16_HI,
+            .GOT_TLSLD16_HA,
+            .GOT_TPREL16_DS,
+            .GOT_TPREL16_LO_DS,
+            .GOT_TPREL16_HI,
+            .GOT_TPREL16_HA,
+            .GOT_DTPREL16_DS,
+            .GOT_DTPREL16_LO_DS,
+            .GOT_DTPREL16_HI,
+            .GOT_DTPREL16_HA,
+            .TPREL16_DS,
+            .TPREL16_LO_DS,
+            .TPREL16_HIGHER,
+            .TPREL16_HIGHERA,
+            .TPREL16_HIGHEST,
+            .TPREL16_HIGHESTA,
+            .DTPREL16_DS,
+            .DTPREL16_LO_DS,
+            .DTPREL16_HIGHER,
+            .DTPREL16_HIGHERA,
+            .DTPREL16_HIGHEST,
+            .DTPREL16_HIGHESTA,
+            .ADDR16_HIGH,
+            .ADDR16_HIGHA,
+            .TPREL16_HIGH,
+            .TPREL16_HIGHA,
+            .DTPREL16_HIGH,
+            .DTPREL16_HIGHA,
+            .REL16,
+            .REL16_LO,
+            .REL16_HI,
+            .REL16_HA,
+            => 2,
+        },
+
+        // For SPARC, only the 8 lower bits represent the type.
+        .SPARCV9 => switch (@as(std.elf.R_SPARC, @fromBackingInt(@as(u8, @truncate(reloc_type))))) {
+            _,
+            .NONE,
+            .COPY,
+            .JMP_SLOT,
+            .REGISTER,
+            .GOTDATA_OP,
+            .TLS_GD_ADD,
+            .TLS_LDM_ADD,
+            .TLS_LDO_ADD,
+            .TLS_IE_LD,
+            .TLS_IE_LDX,
+            .TLS_IE_ADD,
+            => 0,
+
+            .GLOB_DAT,
+            .RELATIVE,
+            .IRELATIVE,
+            => class.size(),
+
+            .@"64",
+            .UA64,
+            .DISP64,
+            .SIZE64,
+            .PLT64,
+            .TLS_DTPMOD64,
+            .TLS_DTPOFF64,
+            .TLS_TPOFF64,
+            => 8,
+
+            .@"32",
+            .UA32,
+            .@"5",
+            .@"6",
+            .@"7",
+            .@"10",
+            .@"11",
+            .@"13",
+            .@"22",
+            .DISP32,
+            .SIZE32,
+            .PCPLT32,
+            .PLT32,
+            .TLS_DTPMOD32,
+            .TLS_DTPOFF32,
+            .TLS_TPOFF32,
+            => 4,
+
+            .@"16",
+            .UA16,
+            .DISP16,
+            => 2,
+
+            .@"8",
+            .DISP8,
+            => 1,
+
+            .WDISP10,
+            .WDISP16,
+            .WDISP19,
+            .WDISP22,
+            .WDISP30,
+            .WPLT30,
+            .PC22,
+            .PC_LM22,
+            .PC_HH22,
+            .HI22,
+            .LM22,
+            .HH22,
+            .HIX22,
+            .H34,
+            .H44,
+            .M44,
+            .TLS_LDO_HIX22,
+            .TLS_LE_HIX22,
+            .GOT13,
+            .GOT22,
+            .GOTDATA_OP_LOX10,
+            .GOTDATA_OP_HIX22,
+            .TLS_GD_HI22,
+            .TLS_LDM_HI22,
+            .TLS_IE_HI22,
+            .TLS_GD_CALL,
+            .TLS_LDM_CALL,
+            .OLO10,
+            .PC10,
+            .PC_HM10,
+            .LO10,
+            .HM10,
+            .LOX10,
+            .L44,
+            .TLS_LDO_LOX10,
+            .TLS_LE_LOX10,
+            .GOT10,
+            .TLS_GD_LO10,
+            .TLS_LDM_LO10,
+            .TLS_IE_LO10,
+            .HIPLT22,
+            .LOPLT10,
+            .PCPLT22,
+            .PCPLT10,
+            .GOTDATA_HIX22,
+            .GOTDATA_LOX10,
+            => 4,
+        },
+
+        .LOONGARCH => switch (@as(std.elf.R_LARCH, @fromBackingInt(reloc_type))) {
+            _,
+            .NONE,
+            .COPY,
+            .RELAX,
+            .TLS_LE_ADD_R,
+            => 0,
+
+            .JUMP_SLOT,
+            .RELATIVE,
+            .IRELATIVE,
+            => class.size(),
+
+            .@"64",
+            .@"64_PCREL",
+            .TLS_DTPMOD64,
+            .TLS_DTPREL64,
+            .TLS_TPREL64,
+            => 8,
+
+            .@"32",
+            .@"32_PCREL",
+            .TLS_DTPMOD32,
+            .TLS_DTPREL32,
+            .TLS_TPREL32,
+            => 4,
+
+            .CALL36 => 8,
+
+            .ABS_LO12,
+            .ABS_HI20,
+            .ABS64_LO20,
+            .ABS64_HI12,
+            .PCALA_LO12,
+            .PCALA_HI20,
+            .PCALA64_LO20,
+            .PCALA64_HI12,
+            .B16,
+            .B21,
+            .B26,
+            .TLS_LE_LO12,
+            .TLS_LE_LO12_R,
+            .TLS_LE_HI20,
+            .TLS_LE_HI20_R,
+            .TLS_LE64_LO20,
+            .TLS_LE64_HI12,
+            .GOT_PC_LO12,
+            .GOT_PC_HI20,
+            .GOT64_PC_LO20,
+            .GOT64_PC_HI12,
+            .GOT_LO12,
+            .GOT_HI20,
+            .GOT64_LO20,
+            .GOT64_HI12,
+            => 4,
+
+            else => 0, // TODO: handle all loongarch relocs
+        },
+    };
+}
+fn relocRelativeType(machine: std.elf.EM) u32 {
+    return switch (machine) {
+        else => 0,
+        .X86_64 => @backingInt(std.elf.R_X86_64.RELATIVE),
+        .AARCH64 => @backingInt(std.elf.R_AARCH64.RELATIVE),
+        .RISCV => @backingInt(std.elf.R_RISCV.RELATIVE),
+        .PPC64 => @backingInt(std.elf.R_PPC64.RELATIVE),
+        .SPARCV9 => @backingInt(std.elf.R_SPARC.RELATIVE),
+        .LOONGARCH => @backingInt(std.elf.R_LARCH.RELATIVE),
     };
 }
 
@@ -2652,6 +3195,397 @@ const FormatShndx = struct {
         }
     }
 };
+
+fn hexDumpSection(
+    d: *Objdump,
+    et: std.elf.ET,
+    class: std.elf.CLASS,
+    em: std.elf.EM,
+    sections: []const Section,
+    section_index: u32,
+    opts: struct {
+        show_relocs: bool,
+        /// The labels at the start of each hexdump line shows the 0-based offset into the section,
+        /// plus this shift. For instance, to show virtual addresses instead of section offsets, set
+        /// this to the section's `addr` field.
+        shift_offset_labels: u64,
+    },
+) Objdump.Error!void {
+    const gpa = d.gpa;
+
+    const section = &sections[section_index];
+
+    const start_addr = section.addr;
+    const end_addr = section.addr + section.size;
+
+    const relocs_section: ?*const Section = relocs: {
+        var shared_relocs_section: ?*const Section = null;
+        for (sections) |*reloc_section| {
+            switch (reloc_section.contents) {
+                .relocs, .relr => {},
+                else => continue,
+            }
+            if (reloc_section.info == 0) {
+                shared_relocs_section = reloc_section;
+                continue;
+            }
+            if (reloc_section.info == section_index) {
+                break :relocs reloc_section;
+            }
+        }
+        break :relocs switch (et) {
+            .NONE, .REL, .CORE, _ => null,
+            .EXEC, .DYN => if (section.flags.ALLOC) shared_relocs_section else null,
+        };
+    };
+
+    const relocs_symtab: []const Section.Contents.Symbol, const relocs_strtab: []const u8 = symtab: {
+        const rs = relocs_section orelse break :symtab .{ &.{}, &.{} };
+        const symtab = rs.linkedContents(.symtab, sections) orelse break :symtab .{ &.{}, &.{} };
+        break :symtab .{
+            symtab,
+            sections[rs.link].linkedContents(.strtab, sections) orelse &.{},
+        };
+    };
+
+    var sorted_relocs: std.ArrayList(std.elf.Elf64.Rela) = .empty;
+    defer sorted_relocs.deinit(gpa);
+    if (relocs_section) |s| switch (s.contents) {
+        .relr => |addrs| for (addrs) |addr| {
+            if (addr < start_addr) continue;
+            if (addr >= end_addr) continue;
+            try sorted_relocs.append(gpa, .{
+                .offset = addr,
+                .info = .{ .type = relocRelativeType(em), .sym = 0 },
+                .addend = 0,
+            });
+        },
+        .relocs => |relocs| for (relocs) |*rel| {
+            if (rel.offset < start_addr) continue;
+            if (rel.offset >= end_addr) continue;
+            try sorted_relocs.append(gpa, rel.*);
+        },
+        else => unreachable,
+    };
+    std.mem.sort(std.elf.Elf64.Rela, sorted_relocs.items, {}, struct {
+        fn lessThan(_: void, lhs: std.elf.Elf64.Rela, rhs: std.elf.Elf64.Rela) bool {
+            return lhs.offset < rhs.offset;
+        }
+    }.lessThan);
+
+    const SortedSymbol = struct { name: []const u8, addr: u64 };
+    var sorted_symbols: std.ArrayList(SortedSymbol) = .empty;
+    defer sorted_symbols.deinit(gpa);
+
+    {
+        // Try to find a `SHT_SYMTAB` section. We prefer not to use `relocs_symtab` because it may
+        // be a `SHT_DYNSYM` section which only contains dynamic symbols.
+        const symtab: []const Section.Contents.Symbol, const strtab: []const u8 = for (sections) |*symtab_section| {
+            const symtab = switch (symtab_section.contents) {
+                .symtab => |symtab| symtab,
+                else => continue,
+            };
+            switch (symtab_section.type) {
+                .SYMTAB => {},
+                .DYNSYM => continue,
+                else => unreachable,
+            }
+            break .{
+                symtab,
+                symtab_section.linkedContents(.strtab, sections) orelse &.{},
+            };
+        } else .{ relocs_symtab, relocs_strtab };
+
+        for (symtab) |*sym| {
+            const addr: u64 = switch (sym.type) {
+                .SECTION => continue,
+                .TLS => addr: {
+                    if (sym.shndx.sectionIndex()) |sym_section_index| {
+                        if (sym_section_index == section_index) {
+                            break :addr section.addr + sym.value;
+                        }
+                    }
+                    continue;
+                },
+                else => addr: {
+                    if (sym.shndx.sectionIndex()) |sym_section_index| {
+                        if (sym_section_index == section_index) {
+                            break :addr sym.value;
+                        }
+                    }
+
+                    if (et != .REL and
+                        sym.shndx.is(.UNDEF) and
+                        sym.value != 0)
+                    {
+                        break :addr sym.value;
+                    }
+
+                    continue;
+                },
+            };
+            if (addr < start_addr) continue;
+            if (addr > end_addr) continue;
+            try sorted_symbols.append(gpa, .{
+                .name = std.mem.sliceTo(
+                    strtab[@min(sym.name, strtab.len)..],
+                    0,
+                ),
+                .addr = addr,
+            });
+        }
+
+        std.mem.sort(SortedSymbol, sorted_symbols.items, {}, struct {
+            fn lessThan(_: void, lhs: SortedSymbol, rhs: SortedSymbol) bool {
+                return lhs.addr < rhs.addr;
+            }
+        }.lessThan);
+    }
+
+    var reloc_index: usize = 0;
+    var sym_index: usize = 0;
+    var reloc_end_addr: u64 = 0;
+
+    const r = d.reader();
+    const w = d.w;
+
+    const hex_cols = 16;
+
+    const ascii: bool = d.terminal_mode == .no_color;
+
+    const term: std.Io.Terminal = .{ .writer = w, .mode = d.terminal_mode };
+    var style: std.Io.Terminal.Style = .reset;
+
+    try w.print("contents of section {q}:\n", .{section.name});
+
+    if (section.type != .NOBITS) {
+        try d.seekTo(section.offset);
+    }
+    var offset: u64 = 0;
+    while (offset < end_addr - start_addr) {
+        const line_addr = start_addr + offset;
+
+        const display_offset: u64 = offset + opts.shift_offset_labels;
+
+        if (sym_index < sorted_symbols.items.len and
+            sorted_symbols.items[sym_index].addr == line_addr)
+        {
+            if (offset > 0) try w.writeByte('\n');
+            while (sym_index < sorted_symbols.items.len and
+                sorted_symbols.items[sym_index].addr == line_addr)
+            {
+                try w.splatByteAll(' ', 24);
+                try style.update(term, .{ .weight = .bold, .color = .bright_blue });
+                try w.print("{q}:", .{sorted_symbols.items[sym_index].name});
+                try style.update(term, .reset); // reset before newline to make `objdump | less -r` work well
+                try w.writeByte('\n');
+                sym_index += 1;
+            }
+        }
+        const addr_limit: u64 = if (sym_index < sorted_symbols.items.len) limit: {
+            break :limit sorted_symbols.items[sym_index].addr;
+        } else limit: {
+            break :limit section.addr + section.size;
+        };
+        var buf: [hex_cols]u8 = undefined;
+        const n_skip: u8 = @intCast(display_offset % hex_cols);
+        const n: u8 = n_bytes: {
+            const max = @min(buf.len - n_skip, addr_limit - line_addr);
+            switch (section.type) {
+                .NOBITS => {
+                    @memset(buf[0..max], 0);
+                    break :n_bytes @intCast(max);
+                },
+                else => {
+                    break :n_bytes @intCast(try r.readSliceShort(buf[0..max]));
+                },
+            }
+        };
+        offset += n;
+
+        const reloc_continuation_len = reloc_end_addr -| line_addr;
+
+        try style.update(term, .reset);
+        try w.print("  {x:0>16}   ", .{d.fmtIntField(display_offset, .address)});
+        try w.splatByteAll(' ', n_skip * 3);
+
+        if (opts.show_relocs and reloc_continuation_len > 0) {
+            try style.update(term, .{ .color = .cyan });
+            try w.writeAll(if (ascii) "~" else "⮞");
+        } else {
+            try w.writeByte(' ');
+        }
+
+        const RelocInLine = struct {
+            start: u8,
+            type: u32,
+            target_sym_name: []const u8,
+            addend: i64,
+        };
+        var relocs_in_line_buf: [hex_cols]RelocInLine = undefined;
+        var n_relocs_in_line: u8 = 0;
+
+        var byte_has_reloc: [hex_cols]bool = @splat(false);
+        @memset(byte_has_reloc[0..@min(reloc_continuation_len, hex_cols)], true);
+
+        while (reloc_index < sorted_relocs.items.len and
+            sorted_relocs.items[reloc_index].offset < line_addr + n) : (reloc_index += 1)
+        {
+            const rel = &sorted_relocs.items[reloc_index];
+            assert(rel.offset >= line_addr);
+            if (rel.info.type == 0) continue; // R_*_NONE
+            const reloc_len = relocTypeLen(class, em, rel.info.type);
+            reloc_end_addr = @max(reloc_end_addr, rel.offset + reloc_len);
+            for (@intCast(rel.offset - line_addr)..n) |byte_index| {
+                if (line_addr + byte_index >= rel.offset + reloc_len) break;
+                byte_has_reloc[byte_index] = true;
+            }
+            relocs_in_line_buf[n_relocs_in_line] = .{
+                .start = @intCast(rel.offset - line_addr),
+                .type = rel.info.type,
+                .addend = rel.addend,
+                .target_sym_name = target_sym_name: {
+                    if (rel.info.sym >= relocs_symtab.len) break :target_sym_name "";
+                    const sym = &relocs_symtab[rel.info.sym];
+                    if (sym.type == .SECTION) {
+                        if (sym.shndx.sectionIndex()) |shndx| {
+                            if (shndx < sections.len) {
+                                break :target_sym_name sections[shndx].name;
+                            }
+                        }
+                    }
+                    break :target_sym_name std.mem.sliceTo(
+                        relocs_strtab[@min(sym.name, relocs_strtab.len)..],
+                        0,
+                    );
+                },
+            };
+            n_relocs_in_line += 1;
+        }
+
+        for (buf[0..n], byte_has_reloc[0..n], 0..) |byte, this_byte_has_reloc, byte_index| {
+            try style.update(term, .{
+                .color = if (this_byte_has_reloc) .cyan else .default,
+                .italic = this_byte_has_reloc,
+            });
+            if (byte_index != 0) try w.writeByte(' ');
+            try w.print("{x:0>2}", .{byte});
+        }
+
+        try style.update(term, .{ .italic = false });
+
+        if (opts.show_relocs and reloc_end_addr > line_addr + n) {
+            try style.update(term, .{ .color = .cyan });
+            try w.writeAll(if (ascii) "~" else "⮞");
+        } else {
+            try w.writeByte(' ');
+        }
+
+        try w.splatBytesAll("   ", hex_cols - (n + n_skip) + 1);
+
+        try style.update(term, .{ .color = .yellow });
+        try w.writeAll(if (ascii) "|" else "│");
+        try w.splatByteAll(' ', n_skip);
+        for (buf[0..n]) |b| {
+            if (std.ascii.isPrint(b)) {
+                try style.update(term, .{ .weight = .default });
+                try w.writeByte(b);
+            } else {
+                try style.update(term, .{ .weight = .dim });
+                try w.writeByte('.');
+            }
+        }
+        try w.splatByteAll(' ', hex_cols - (n + n_skip));
+        try w.writeAll(if (ascii) "|" else "│");
+
+        try style.update(term, .reset); // reset before newline to make `objdump | less -r` work well
+        try w.writeByte('\n');
+
+        if (!opts.show_relocs) continue;
+
+        var cur_col: u32 = 0;
+        if (reloc_continuation_len > 0) {
+            try style.update(term, .{ .color = .cyan });
+
+            try w.splatByteAll(' ', (23 + 3 * n_skip) -| cur_col);
+            cur_col += (23 + 3 * n_skip) -| cur_col;
+
+            if (reloc_continuation_len > n) {
+                try w.splatBytesAll(if (ascii) "=" else "━", 3 * n + 1);
+                cur_col += 3 * n + 1;
+            } else {
+                try w.splatBytesAll(if (ascii) "=" else "━", @intCast(3 * reloc_continuation_len - 1));
+                cur_col += @intCast(3 * reloc_continuation_len - 1);
+
+                try w.writeAll(if (ascii) "|" else "┛");
+                cur_col += 1;
+            }
+
+            if (n_relocs_in_line == 0 or
+                relocs_in_line_buf[0].start < reloc_continuation_len)
+            {
+                try style.update(term, .reset); // reset before newline to make `objdump | less -r` work well
+                try w.writeByte('\n');
+                cur_col = 0;
+            }
+        }
+        for (relocs_in_line_buf[0..n_relocs_in_line]) |*rel| {
+            const rel_type_str = relocTypeString(em, rel.type);
+            const rel_len = relocTypeLen(class, em, rel.type);
+
+            const start_hex_byte_index: u8 = n_skip + rel.start;
+
+            try style.update(term, .{ .color = .cyan });
+
+            try w.splatByteAll(' ', (24 + 3 * start_hex_byte_index) -| cur_col);
+            cur_col += (24 + 3 * start_hex_byte_index) -| cur_col;
+
+            try w.writeAll(if (ascii) "|" else "┗");
+            cur_col += 1;
+
+            const type_start_col: u32 = @intCast((45 + hex_cols * 3) -| rel_type_str.len);
+            if (rel_len > 0) {
+                if (start_hex_byte_index + rel_len <= hex_cols) {
+                    const bytes_end_col = 24 + 3 * (start_hex_byte_index + rel_len) - 2;
+                    try w.splatBytesAll(if (ascii) "=" else "━", bytes_end_col -| cur_col);
+                    cur_col += bytes_end_col -| cur_col;
+                    try w.writeAll(if (ascii) "|" else "┛");
+                    cur_col += 1;
+                } else {
+                    const bytes_end_col = 24 + 3 * hex_cols;
+                    try w.splatBytesAll(if (ascii) "=" else "━", bytes_end_col -| cur_col);
+                    cur_col += bytes_end_col -| cur_col;
+                }
+            }
+            // The Unicode character here is intentionally "BOX DRAWINGS LIGHT LEFT" rather than a
+            // full "BOX DRAWINGS LIGHT HORIZONTAL" to create a dashed line. Unicode does have
+            // dashed line-drawing characters, but they're too compact to be legible in a terminal.
+            try w.splatBytesAll(if (ascii) "-" else "╴", type_start_col -| cur_col);
+            cur_col += type_start_col -| cur_col;
+            try style.update(term, .{ .weight = .bold });
+            try w.writeAll(rel_type_str);
+            if (rel.type != relocRelativeType(em)) {
+                try w.writeAll(" [");
+                if (rel.target_sym_name.len == 0) {
+                    if (rel.addend < 0) try w.writeByte('-');
+                    try w.print("{x}", .{d.fmtIntField(@abs(rel.addend), null)});
+                } else {
+                    try w.print("{q}", .{rel.target_sym_name});
+                    if (rel.addend != 0) {
+                        const sign: u8 = if (rel.addend < 0) '-' else '+';
+                        try w.print(" {c} {x}", .{ sign, d.fmtIntField(@abs(rel.addend), null) });
+                    }
+                }
+                try w.writeByte(']');
+            }
+            try style.update(term, .reset); // reset before newline to make `objdump | less -r` work well
+            try w.writeByte('\n');
+            cur_col = 0;
+        }
+    }
+    try style.update(term, .reset);
+    try w.writeByte('\n');
+}
 
 const std = @import("std");
 const assert = std.debug.assert;
