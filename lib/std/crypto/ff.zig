@@ -357,18 +357,20 @@ pub fn Uint(comptime max_bits: comptime_int) type {
 
         // Replaces the limbs of `x` with the limbs of `y` if `on` is `true`.
         fn cmov(x: *Self, on: bool, y: Self) void {
+            const choice: timing_safe.Choice = .fromBool(on);
             for (x.limbs(), y.limbsConst()) |*x_limb, y_limb| {
-                x_limb.* = timing_safe.select(Limb, .fromBool(on), y_limb, x_limb.*);
+                x_limb.* = timing_safe.select(Limb, choice, y_limb, x_limb.*);
             }
         }
 
         // Zeroed unused limbs allow `y` to be narrower than `x`.
         fn conditionalAddWithOverflow(x: *Self, on: bool, y: Self) u1 {
+            const choice: timing_safe.Choice = .fromBool(on);
             var carry: u1 = 0;
             assert(y.limbs_len <= x.limbs_len);
             for (x.limbs(), 0..) |*x_limb, i| {
                 const res = x_limb.* + y.limbs_buffer[i] + carry;
-                x_limb.* = timing_safe.select(Limb, .fromBool(on), @as(TLimb, @truncate(res)), x_limb.*);
+                x_limb.* = timing_safe.select(Limb, choice, @as(TLimb, @truncate(res)), x_limb.*);
                 carry = @truncate(res >> t_bits);
             }
             return carry;
@@ -376,14 +378,29 @@ pub fn Uint(comptime max_bits: comptime_int) type {
 
         // Zeroed unused limbs allow `y` to be narrower than `x`.
         fn conditionalSubWithOverflow(x: *Self, on: bool, y: Self) u1 {
+            const choice: timing_safe.Choice = .fromBool(on);
             var borrow: u1 = 0;
             assert(y.limbs_len <= x.limbs_len);
             for (x.limbs(), 0..) |*x_limb, i| {
                 const res = x_limb.* -% y.limbs_buffer[i] -% borrow;
-                x_limb.* = timing_safe.select(Limb, .fromBool(on), @as(TLimb, @truncate(res)), x_limb.*);
+                x_limb.* = timing_safe.select(Limb, choice, @as(TLimb, @truncate(res)), x_limb.*);
                 borrow = @truncate(res >> t_bits);
             }
             return borrow;
+        }
+
+        // Subtracts `bound` if needed; `x` with the extra high bit `top` must be below 2 * bound.
+        // Returns whether it subtracted.
+        fn reduceOnce(x: *Self, top: u1, bound: Self) bool {
+            if (std.options.side_channels_mitigations == .none) {
+                const need_sub = timing_safe.eql(u1, top, @intFromBool(ct.limbsCmpLt(x.*, bound)));
+                _ = x.conditionalSubWithOverflow(need_sub, bound);
+                return need_sub;
+            }
+            var reduced = x.*;
+            const need_sub = timing_safe.eql(u1, top, reduced.subWithOverflow(bound));
+            x.cmov(need_sub, reduced);
+            return need_sub;
         }
 
         fn shiftLeft(x: *Self, shift: usize) void {
@@ -879,10 +896,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
         // Adds y to x. Returns whether reduction was needed.
         fn addAndReduce(x: *FeUint, y: FeUint, bound: FeUint) bool {
             const overflow = x.addWithOverflow(y);
-            const underflow: u1 = @bitCast(ct.limbsCmpLt(x.*, bound));
-            const need_sub = timing_safe.eql(u1, overflow, underflow);
-            _ = x.conditionalSubWithOverflow(need_sub, bound);
-            return need_sub;
+            return x.reduceOnce(overflow, bound);
         }
 
         /// Adds two field elements (mod m).
@@ -1024,6 +1038,22 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
 
         /// Reduces an arbitrary `Uint`, converting it to a field element.
         pub fn reduce(self: Self, x: anytype) Fe {
+            if (self.v.isOdd()) {
+                const n = self.limbs_count();
+                var acc = self.zero;
+                var k = (x.limbs_len - 1) / n;
+                while (true) : (k -= 1) {
+                    const chunk = x.limbsConst()[k * n .. @min((k + 1) * n, x.limbs_len)];
+                    var c = self.zero;
+                    @memcpy(c.v.limbs()[0..chunk.len], chunk);
+                    _ = addAndReduce(&acc.v, self.montgomeryMul(c, self.rr).v, self.v);
+                    if (k == 0) break;
+                    acc = self.montgomeryMul(acc, self.rr);
+                }
+                acc.montgomery = true;
+                self.fromMontgomery(&acc) catch unreachable;
+                return acc;
+            }
             var out = self.zero;
             var i = x.limbs_len - 1;
             if (self.limbs_count() >= 2) {
@@ -1103,9 +1133,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
             assert(x.limbs_count() == self.limbs_count());
             assert(y.limbs_count() == self.limbs_count());
             const overflow = self.montgomeryLoop(&d, &x, &y);
-            const underflow = 1 -% @intFromBool(ct.limbsCmpGeq(d.v, self.v));
-            const need_sub = timing_safe.eql(u1, overflow, underflow);
-            _ = d.v.conditionalSubWithOverflow(need_sub, self.v);
+            _ = d.v.reduceOnce(overflow, self.v);
             d.montgomery = x.montgomery == y.montgomery;
             return d;
         }
@@ -1114,9 +1142,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
             var d = self.zero;
             assert(x.limbs_count() == self.limbs_count());
             const overflow = self.montgomeryLoop(&d, &x, &x);
-            const underflow = 1 -% @intFromBool(ct.limbsCmpGeq(d.v, self.v));
-            const need_sub = timing_safe.eql(u1, overflow, underflow);
-            _ = d.v.conditionalSubWithOverflow(need_sub, self.v);
+            _ = d.v.reduceOnce(overflow, self.v);
             d.montgomery = true;
             return d;
         }
