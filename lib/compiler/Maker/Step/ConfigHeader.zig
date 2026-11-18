@@ -65,20 +65,20 @@ pub fn make(
     defer aw.deinit();
 
     switch (conf_ch.flags.style) {
-        .autoconf_undef => {
+        .autoconf_header => {
             const tf = template_file.?;
             const contents = tf.root_dir.handle.readFileAlloc(io, tf.sub_path, arena, input_size_limit) catch |err|
                 return step.fail(maker, "unable to read autoconf input file {f}: {t}", .{ tf, err });
-            renderAutoConfUndef(maker, step, contents, &aw.writer, value_pairs, &value_map, tf) catch |err| switch (err) {
+            renderAutoConfHeader(maker, step, contents, &aw.writer, value_pairs, &value_map, tf) catch |err| switch (err) {
                 error.WriteFailed => return error.OutOfMemory,
                 else => |e| return e,
             };
         },
-        .autoconf_at => {
+        .autoconf_file => {
             const tf = template_file.?;
             const contents = tf.root_dir.handle.readFileAlloc(io, tf.sub_path, arena, input_size_limit) catch |err|
                 return step.fail(maker, "unable to read autoconf input file {f}: {t}", .{ tf, err });
-            renderAutoconfAt(maker, step, contents, &aw, value_pairs, &value_map, tf) catch |err| switch (err) {
+            renderAutoconfFile(maker, step, contents, &aw, value_pairs, &value_map, tf) catch |err| switch (err) {
                 error.WriteFailed => return error.OutOfMemory,
                 else => |e| return e,
             };
@@ -182,7 +182,7 @@ fn detectNewline(contents: []const u8) []const u8 {
     return if (lf_index > 0 and contents[lf_index - 1] == '\r') "\r\n" else "\n";
 }
 
-fn renderAutoConfUndef(
+fn renderAutoConfHeader(
     maker: *Maker,
     step: *Step,
     contents: []const u8,
@@ -232,7 +232,7 @@ fn renderAutoConfUndef(
     if (any_errors) return error.MakeFailed;
 }
 
-fn renderAutoconfAt(
+fn renderAutoconfFile(
     maker: *Maker,
     step: *Step,
     contents: []const u8,
@@ -244,9 +244,6 @@ fn renderAutoconfAt(
     const w = &aw.writer;
     const conf = &maker.scanned_config.configuration;
     const newline = detectNewline(contents);
-
-    try w.writeAll(c_generated_line);
-    try w.writeAll(newline);
 
     var any_errors = false;
     var line_index: u32 = 0;

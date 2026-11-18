@@ -1135,8 +1135,8 @@ pub const Step = extern struct {
         values: Storage.LengthPrefixedList(Value.Pair),
 
         pub const Style = enum(u3) {
-            autoconf_undef,
-            autoconf_at,
+            autoconf_header,
+            autoconf_file,
             cmake,
             meson,
             blank,
@@ -1144,8 +1144,8 @@ pub const Step = extern struct {
 
             pub fn init(s: std.Build.Step.ConfigHeader.Style) Style {
                 return switch (s) {
-                    .autoconf_undef => .autoconf_undef,
-                    .autoconf_at => .autoconf_at,
+                    .autoconf_header => .autoconf_header,
+                    .autoconf_file => .autoconf_file,
                     .cmake => .cmake,
                     .meson => .meson,
                     .blank => .blank,

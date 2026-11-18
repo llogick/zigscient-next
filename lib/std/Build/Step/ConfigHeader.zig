@@ -19,25 +19,44 @@ include_guard: Configuration.OptionalString,
 pub const base_tag: Step.Tag = .config_header;
 
 pub const Style = union(enum) {
-    /// A configure format supported by autotools that uses `#undef foo` to
-    /// mark lines that can be substituted with different values.
-    autoconf_undef: std.Build.LazyPath,
-    /// A configure format supported by autotools that uses `@FOO@` output variables.
-    autoconf_at: std.Build.LazyPath,
-    /// The configure format supported by CMake. It uses `@FOO@`, `${}` and
-    /// `#cmakedefine` for template substitution.
+    /// The autotools configure header format.
+    ///
+    /// - Replaces `#undef VAR` with `#define VAR value`.
+    autoconf_header: std.Build.LazyPath,
+    /// The autotools configure file format.
+    ///
+    /// - Replaces `@VAR@` with `value`.
+    /// - Replaces `@@` with `@`
+    autoconf_file: std.Build.LazyPath,
+    /// The CMAKE configure header format.
+    ///
+    /// - Replaces `@VAR@` with `value`
+    /// - Replaces `${VAR}` with `value`
+    /// - Replaces `#cmakedefine01 VAR` with `#define VAR 1` if value is truthy, or `#define VAR 0`
+    ///   if it is falsy or unspecified.
+    /// - Replaces `#cmakedefine VAR` with `#define VAR` if value is truthy, or `/* #undef VAR */ if
+    ///   it is falsy or unspecified.
+    ///
+    /// False, null, 0, and the empty string are considered falsy. All other values are considered
+    /// truthy.
     cmake: std.Build.LazyPath,
-    /// The configure format supported by Meson. It uses `@FOO@`, and
-    /// `#mesondefine` for template substitution.
+    /// The CMAKE configure header format.
+    ///
+    /// - Replaces `@VAR@` with `value`
+    /// - Replaces `#mesondefine VAR` with `#define VAR value`.
     meson: std.Build.LazyPath,
-    /// Instead of starting with an input file, start with nothing.
+    /// Build a header file from scratch.
+    ///
+    /// Emits all variables as defines.
     blank,
-    /// Start with nothing, like blank, and output a nasm .asm file.
+    /// Build a nasm .asm file from scratch.
+    ///
+    /// Emits all variables as defines.
     nasm,
 
     pub fn getPath(style: Style) ?std.Build.LazyPath {
         switch (style) {
-            .autoconf_undef, .autoconf_at, .cmake, .meson => |s| return s,
+            .autoconf_header, .autoconf_file, .cmake, .meson => |s| return s,
             .blank, .nasm => return null,
         }
     }

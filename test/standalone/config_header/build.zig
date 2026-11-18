@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
     if (builtin.os.tag == .freebsd) return;
 
     const config_header = b.addConfigHeader(
-        .{ .style = .{ .autoconf_undef = b.path("autoconf_undef/config.h.in") } },
+        .{ .style = .{ .autoconf_header = b.path("autoconf_header/config.h.in") } },
         .{
             .SOME_NO = null,
             .SOME_TRUE = true,
@@ -28,12 +28,12 @@ pub fn build(b: *std.Build) void {
         },
     );
     const check_config_header = b.addCheckFile(config_header.getOutputFile(), .{
-        .expected_exact = @embedFile("autoconf_undef/config.h"),
+        .expected_exact = @embedFile("autoconf_header/config.h"),
     });
     test_step.dependOn(&check_config_header.step);
 
-    const config_header_autoconf_at = b.addConfigHeader(
-        .{ .style = .{ .autoconf_at = b.path("autoconf_at/autoconf_at.h.in") } },
+    const config_header_autoconf_file = b.addConfigHeader(
+        .{ .style = .{ .autoconf_file = b.path("autoconf_file/autoconf_file.h.in") } },
         .{
             .undefined = null,
             .defined = {},
@@ -46,10 +46,10 @@ pub fn build(b: *std.Build) void {
             .at_sign = "@",
         },
     );
-    const check_config_header_autoconf_at = b.addCheckFile(config_header_autoconf_at.getOutputFile(), .{
-        .expected_exact = @embedFile("autoconf_at/autoconf_at.h"),
+    const check_config_header_autoconf_file = b.addCheckFile(config_header_autoconf_file.getOutputFile(), .{
+        .expected_exact = @embedFile("autoconf_file/autoconf_file.h"),
     });
-    test_step.dependOn(&check_config_header_autoconf_at.step);
+    test_step.dependOn(&check_config_header_autoconf_file.step);
 
     const config_header_meson = b.addConfigHeader(
         .{ .style = .{
