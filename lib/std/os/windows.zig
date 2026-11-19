@@ -5365,21 +5365,6 @@ pub const LDR = struct {
         DONT_RECORD_FORWARDER: bool = false,
         Reserved1: u31 = 0,
     };
-
-    pub const LOAD = bitpack struct(ULONG) {
-        DONT_RESOLVE_DLL_REFERENCES: bool = false,
-        LIBRARY_AS_DATAFILE: bool = false,
-        PACKAGED_LIBRARY: bool = false,
-        WITH_ALTERED_SEARCH_PATH: bool = false,
-        IGNORE_CODE_AUTHZ_LEVEL: bool = false,
-        LIBRARY_AS_IMAGE_RESOURCE: bool = false,
-        LIBRARY_AS_DATAFILE_EXCLUSIVE: bool = false,
-        LIBRARY_REQUERE_SIGNED_TARGET: bool = false,
-        LIBRARY_SEARCH_DLL_LOAD_DIR: bool = false,
-        LIBRARY_SEARCH_USER_DIRS: bool = false,
-        LIBRARY_SEARCH_SYSTEM32: bool = false,
-        LIBRARY_SEARCH_DEFAULT_DIRS: bool = false,
-    };
 };
 
 pub const RTL_USER_PROCESS_PARAMETERS = extern struct {

@@ -401,12 +401,6 @@ pub extern "ntdll" fn LdrGetDllFullName(
     DllHandle: ?PVOID,
     FullDllName: *UNICODE_STRING,
 ) callconv(.winapi) NTSTATUS;
-pub extern "ntdll" fn LdrGetDllPath(
-    DllName: PCWSTR,
-    Flags: LDR.LOAD,
-    DllPath: *PWSTR,
-    SearchPaths: *PWSTR,
-) callconv(.winapi) NTSTATUS;
 
 pub extern "ntdll" fn LdrGetDllHandle(
     DllPath: ?PCWSTR,
