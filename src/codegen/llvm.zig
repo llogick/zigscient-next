@@ -2234,6 +2234,7 @@ pub const Object = struct {
             .float_array,
             .i32_array,
             .i64_array,
+            .i128_array,
             => continue,
         };
     }
@@ -3025,10 +3026,11 @@ pub const Object = struct {
                 const float_ty = try o.lowerType(aarch64_c_abi.getFloatArrayType(param_ty, zcu).?, .memory_access);
                 try llvm_params.append(o.gpa, try o.builder.arrayType(count, float_ty));
             },
-            .i32_array, .i64_array => |arr_len| {
+            .i32_array, .i64_array, .i128_array => |arr_len| {
                 try llvm_params.append(o.gpa, try o.builder.arrayType(arr_len, switch (lowering) {
                     .i32_array => .i32,
                     .i64_array => .i64,
+                    .i128_array => .i128,
                     else => unreachable,
                 }));
             },

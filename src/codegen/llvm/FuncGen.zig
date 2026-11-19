@@ -295,7 +295,7 @@ pub fn genMainBody(fg: *FuncGen) TodoError!void {
                     args.appendAssumeCapacity(try fg.load(arg_ptr, .none, param_ty, .normal));
                 }
             },
-            .i32_array, .i64_array => {
+            .i32_array, .i64_array, .i128_array => {
                 const param_ty: Type = .fromInterned(param_types[it.zig_index - 1]);
                 const param = fg.wip.arg(it.llvm_index - 1);
 
@@ -893,8 +893,13 @@ fn buildCall(
                 const loaded = try fg.wip.load(.normal, array_ty, arg_ptr, arg_ty.abiAlignment(zcu).toLlvm(), "");
                 try llvm_args.append(fg.gpa, loaded);
             },
-            .i32_array, .i64_array => |arr_len| {
-                const elem_size: u8 = if (lowering == .i32_array) 32 else 64;
+            .i32_array, .i64_array, .i128_array => |arr_len| {
+                const elem_size: u8 = switch (lowering) {
+                    .i32_array => 32,
+                    .i64_array => 64,
+                    .i128_array => 128,
+                    else => unreachable,
+                };
 
                 const arg_ptr: Builder.Value = if (!isByRef(arg_ty, zcu)) ptr: {
                     const ptr = try fg.buildZigAlloca(arg_ty, .none);
@@ -952,6 +957,7 @@ fn buildCall(
             .float_array,
             .i32_array,
             .i64_array,
+            .i128_array,
             => continue,
 
             .slice => {
@@ -7124,6 +7130,7 @@ const ParamTypeIterator = struct {
         float_array: u8,
         i32_array: u8,
         i64_array: u8,
+        i128_array: u8,
     };
 
     pub fn next(it: *ParamTypeIterator) Allocator.Error!?Lowering {
@@ -7198,7 +7205,12 @@ const ParamTypeIterator = struct {
                         it.types_len = 1;
                         return .multiple_llvm_types;
                     },
-                    .double_integer => return .{ .i64_array = 2 },
+                    .double_integer => {
+                        // AAPCS64 C.10: If the argument has an alignment of 16 then the NGRN
+                        // is rounded up to the next even number.
+                        if (ty.abiAlignment(zcu).toByteUnits().? >= 16) return .abi_sized_int;
+                        return .{ .i64_array = 2 };
+                    },
                 }
             },
             .arm_aapcs, .arm_aapcs_vfp => {
@@ -7296,7 +7308,11 @@ const ParamTypeIterator = struct {
                 it.llvm_index += 1;
                 if (isByRef(ty, zcu)) return switch (ty.abiSize(zcu)) {
                     1...8 => .abi_sized_int,
-                    9...64 => |abi_size| .{ .i64_array = @intCast(@divCeil(abi_size, 8)) },
+                    // ELFv2 aligns 16-byte-aligned aggregates to an even parameter doubleword.
+                    9...64 => |abi_size| if (ty.abiAlignment(zcu).toByteUnits().? >= 16)
+                        .{ .i128_array = @intCast(@divCeil(abi_size, 16)) }
+                    else
+                        .{ .i64_array = @intCast(@divCeil(abi_size, 8)) },
                     else => .byref,
                 };
                 return .byval; // TODO

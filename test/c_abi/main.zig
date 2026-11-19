@@ -104,6 +104,38 @@ export fn zig_struct_u128(a: U128) void {
     expect(a.value == 0xfffffffffffffffc) catch @panic("test failure: zig_struct_u128");
 }
 
+const AlignedIntUnion = extern union {
+    value: i128,
+    words: [2]u64,
+};
+const aligned_int_value: i128 = 0x123456789abcdef0_fedcba9876543210;
+
+extern fn c_aligned_int_struct(i64, i64, i64, i64, i64, I128, i64) I128;
+extern fn c_aligned_int_union(i64, i64, i64, i64, i64, AlignedIntUnion, i64) AlignedIntUnion;
+extern fn c_check_aligned_int_arguments() void;
+
+test "16-aligned integer aggregates after an odd number of registers" {
+    if (!have_i128) return error.SkipZigTest;
+
+    const s = c_aligned_int_struct(1, 2, 3, 4, 5, .{ .value = aligned_int_value }, 6);
+    try expectEqual(aligned_int_value, s.value);
+    const u = c_aligned_int_union(1, 2, 3, 4, 5, .{ .value = aligned_int_value }, 6);
+    try expectEqual(aligned_int_value, u.value);
+    c_check_aligned_int_arguments();
+}
+
+export fn zig_aligned_int_struct(a: i64, b: i64, c: i64, d: i64, e: i64, s: I128, tail: i64) I128 {
+    expect(a == 1 and b == 2 and c == 3 and d == 4 and e == 5 and tail == 6) catch @panic("bad integer arguments");
+    expectEqual(aligned_int_value, s.value) catch @panic("bad aligned struct argument");
+    return s;
+}
+
+export fn zig_aligned_int_union(a: i64, b: i64, c: i64, d: i64, e: i64, u: AlignedIntUnion, tail: i64) AlignedIntUnion {
+    expect(a == 1 and b == 2 and c == 3 and d == 4 and e == 5 and tail == 6) catch @panic("bad integer arguments");
+    expectEqual(aligned_int_value, u.value) catch @panic("bad aligned union argument");
+    return u;
+}
+
 // On windows x64, the first 4 are passed via registers, others on the stack.
 extern fn c_five_floats(f32, f32, f32, f32, f32) void;
 

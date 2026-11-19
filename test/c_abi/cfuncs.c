@@ -16114,6 +16114,40 @@ void c_i64(int64_t x) {
 void c_struct_i128(struct i128 x) {
     assert_or_panic(x.value == -6);
 }
+
+union aligned_int_union {
+    __int128 value;
+    uint64_t words[2];
+};
+
+static const __int128 aligned_int_value =
+    ((__int128)0x123456789abcdef0 << 64) | (__int128)0xfedcba9876543210ULL;
+
+struct i128 c_aligned_int_struct(int64_t a, int64_t b, int64_t c, int64_t d,
+                                 int64_t e, struct i128 s, int64_t tail) {
+    assert_or_panic(a == 1 && b == 2 && c == 3 && d == 4 && e == 5 && tail == 6);
+    assert_or_panic(s.value == aligned_int_value);
+    return s;
+}
+
+union aligned_int_union c_aligned_int_union(int64_t a, int64_t b, int64_t c, int64_t d,
+                                            int64_t e, union aligned_int_union u, int64_t tail) {
+    assert_or_panic(a == 1 && b == 2 && c == 3 && d == 4 && e == 5 && tail == 6);
+    assert_or_panic(u.value == aligned_int_value);
+    return u;
+}
+
+struct i128 zig_aligned_int_struct(int64_t, int64_t, int64_t, int64_t, int64_t, struct i128, int64_t);
+union aligned_int_union zig_aligned_int_union(int64_t, int64_t, int64_t, int64_t, int64_t, union aligned_int_union, int64_t);
+
+void c_check_aligned_int_arguments(void) {
+    struct i128 s = {aligned_int_value};
+    s = zig_aligned_int_struct(1, 2, 3, 4, 5, s, 6);
+    assert_or_panic(s.value == aligned_int_value);
+    union aligned_int_union u = {aligned_int_value};
+    u = zig_aligned_int_union(1, 2, 3, 4, 5, u, 6);
+    assert_or_panic(u.value == aligned_int_value);
+}
 #endif
 
 void c_ptr(void *x) {
