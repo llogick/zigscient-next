@@ -106,6 +106,7 @@ const errors = std.crypto.errors;
 const math = std.math;
 const mem = std.mem;
 const sha3 = crypto.hash.sha3;
+const timing_safe = crypto.timing_safe;
 
 const RndGen = std.Random.DefaultPrng;
 
@@ -337,6 +338,7 @@ fn Kyber(comptime p: Params) type {
 
                 // ct' = innerEnc(pk, m', r')
                 const ct2 = sk.pk.encrypt(&m2, kr2[32..64]);
+                const valid: timing_safe.Choice = .fromBool(timing_safe.eql([ciphertext_length]u8, ct.*, ct2));
 
                 if (p.ml_kem) {
                     // ML-KEM: K = K'' if ct == ct', else K = J(z || c) per FIPS 203
@@ -345,12 +347,11 @@ fn Kyber(comptime p: Params) type {
                     j.update(&sk.z);
                     j.update(ct);
                     j.squeeze(&k_bar);
-                    cmov(shared_length, kr2[0..shared_length], k_bar, ctneq(ciphertext_length, ct.*, ct2));
-                    return kr2[0..shared_length].*;
+                    return timing_safe.select([shared_length]u8, valid, kr2[0..shared_length].*, k_bar);
                 } else {
                     // Kyber: K = KDF(K''/z ‖ H(c))
                     sha3.Sha3_256.hash(ct, kr2[32..], .{});
-                    cmov(32, kr2[0..32], sk.z, ctneq(ciphertext_length, ct.*, ct2));
+                    kr2[0..32].* = timing_safe.select([32]u8, valid, kr2[0..32].*, sk.z);
                     var ss: [shared_length]u8 = undefined;
                     sha3.Shake256.hash(&kr2, &ss, .{});
                     return ss;
@@ -755,23 +756,18 @@ test "Test Barrett reduction" {
     }
 }
 
-// Returns x if x < q and x - q otherwise.  Assumes x ≥ -29439.
+// Returns x if x < q and x - q otherwise.  Assumes that x - q fits in 15 bits.
 fn csubq(x: i16) i16 {
     var r = x;
     r -= Q;
-    r += (r >> 15) & Q;
+    r += (r >> 14) & Q;
     return r;
 }
 
 test "Test csubq" {
-    var x: i32 = -29439;
-    while (x < 1 << 15) : (x += 1) {
-        const y1 = csubq(@as(i16, @intCast(x)));
-        var y2 = @as(i16, @intCast(x));
-        if (@as(i16, @intCast(x)) >= Q) {
-            y2 -= Q;
-        }
-        try testing.expectEqual(y1, y2);
+    var x: i16 = Q - (1 << 14);
+    while (x < Q + (1 << 14)) : (x += 1) {
+        try testing.expectEqual(if (x >= Q) x - Q else x, csubq(x));
     }
 }
 
@@ -1425,19 +1421,6 @@ fn Mat(comptime k: u8) type {
     };
 }
 
-// Returns `true` if a ≠ b.
-fn ctneq(comptime len: usize, a: [len]u8, b: [len]u8) u1 {
-    return 1 - @intFromBool(crypto.timing_safe.eql([len]u8, a, b));
-}
-
-// Copy src into dst given b = 1.
-fn cmov(comptime len: usize, dst: *[len]u8, src: [len]u8, b: u1) void {
-    const mask = @as(u8, 0) -% b;
-    for (0..len) |i| {
-        dst[i] ^= mask & (dst[i] ^ src[i]);
-    }
-}
-
 // Test helper: generates a random polynomial with each coefficient |x| ≤ q
 fn randPolyAbsLeqQ(rnd: anytype) Poly {
     var ret: Poly = undefined;
@@ -1843,51 +1826,6 @@ fn modularPow(comptime T: type, comptime a: T, s: T, comptime p: T) T {
     }
 
     return ret;
-}
-
-/// Creates an all-ones or all-zeros mask from a single bit value.
-/// Returns all 1s (0xFF...FF) if bit == 1, all 0s if bit == 0.
-fn bitMask(comptime T: type, bit: T) T {
-    const type_info = @typeInfo(T);
-    if (type_info != .int or type_info.int.signedness != .unsigned) {
-        @compileError("bitMask requires an unsigned integer type");
-    }
-    return -%bit;
-}
-
-/// Creates a mask from the sign bit of a signed integer.
-/// Returns all 1s (0xFF...FF) if x < 0, all 0s if x >= 0.
-fn signMask(comptime T: type, x: T) @Int(.unsigned, @typeInfo(T).int.bits) {
-    const type_info = @typeInfo(T);
-    if (type_info != .int) {
-        @compileError("signMask requires an integer type");
-    }
-
-    const bits = type_info.int.bits;
-    const SignedT = @Int(.signed, bits);
-
-    // Convert to signed if needed, arithmetic right shift to propagate sign bit
-    const x_signed: SignedT = if (type_info.int.signedness == .signed) x else @bitCast(x);
-    const shifted = x_signed >> (bits - 1);
-    return @bitCast(shifted);
-}
-
-test "bitMask and signMask helpers" {
-    try testing.expectEqual(@as(u32, 0x00000000), bitMask(u32, 0));
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), bitMask(u32, 1));
-    try testing.expectEqual(@as(u8, 0x00), bitMask(u8, 0));
-    try testing.expectEqual(@as(u8, 0xFF), bitMask(u8, 1));
-    try testing.expectEqual(@as(u64, 0x0000000000000000), bitMask(u64, 0));
-    try testing.expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFF), bitMask(u64, 1));
-
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), signMask(i32, -1));
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), signMask(i32, -100));
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(i32, 0));
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(i32, 1));
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(i32, 100));
-
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), signMask(u32, 0x80000000)); // MSB set
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(u32, 0x7FFFFFFF)); // MSB clear
 }
 
 /// Montgomery reduction: for input x, returns y where y ≡ x*R^(-1) (mod q).

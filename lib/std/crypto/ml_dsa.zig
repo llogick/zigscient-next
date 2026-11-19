@@ -19,6 +19,7 @@ const errors = std.crypto.errors;
 const math = std.math;
 const mem = std.mem;
 const sha3 = crypto.hash.sha3;
+const timing_safe = crypto.timing_safe;
 
 const ContextTooLongError = errors.ContextTooLongError;
 const EncodingError = errors.EncodingError;
@@ -698,7 +699,7 @@ fn modQ(x: u32) u32 {
 // Given x < 2q, reduce to [0, q)
 fn le2qModQ(x: u32) u32 {
     const r = x -% Q;
-    const mask = signMask(u32, r);
+    const mask: u32 = @bitCast(@as(i32, @bitCast(r)) >> 30);
     return r +% (mask & Q);
 }
 
@@ -798,7 +799,7 @@ fn power2Round(a: u32) struct { a0_plus_q: u32, a1: u32 } {
     // now a0 is -2^(D-1)-1, -2^(D-1), ..., -2, -1, 0, ..., 2^(D-1)-2
 
     // Next, add 2^D to those a0 that are negative (seen as i32)
-    a0 +%= @as(u32, @bitCast(@as(i32, @bitCast(a0)) >> 31)) & (1 << D);
+    a0 +%= @as(u32, @bitCast(@as(i32, @bitCast(a0)) >> 30)) & (1 << D);
     // now a0 is 2^(D-1)-1, 2^(D-1), ..., 2^D-2, 2^D-1, 0, ..., 2^(D-1)-2
 
     a0 -%= (1 << (D - 1)) - 1;
@@ -833,7 +834,7 @@ fn decompose(a: u32, comptime gamma2: u32) struct { a0_plus_q: u32, a1: u32 } {
         a1 = ((a1 * 11275) + (1 << 23)) >> 24;
 
         // For the corner-case a1 = (q-1)/alpha = 44, we have to set a1=0
-        a1 ^= @as(u32, @bitCast(@as(i32, @bitCast(43 -% a1)) >> 31)) & a1;
+        a1 ^= @as(u32, @bitCast(@as(i32, @bitCast(43 -% a1)) >> 30)) & a1;
     } else {
         @compileError("unsupported gamma2/alpha value");
     }
@@ -843,7 +844,7 @@ fn decompose(a: u32, comptime gamma2: u32) struct { a0_plus_q: u32, a1: u32 } {
     // In the corner-case, when we set a1=0, we will incorrectly
     // have a0 > (q-1)/2 and we'll need to subtract q. As we
     // return a0 + q, that comes down to adding q if a0 < (q-1)/2.
-    a0_plus_q +%= @as(u32, @bitCast(@as(i32, @bitCast(a0_plus_q -% (Q - 1) / 2)) >> 31)) & Q;
+    a0_plus_q +%= @as(u32, @bitCast(@as(i32, @bitCast(a0_plus_q -% (Q - 1) / 2)) >> 30)) & Q;
 
     return .{ .a0_plus_q = a0_plus_q, .a1 = a1 };
 }
@@ -1134,7 +1135,7 @@ fn polyUnpackT0(buf: []const u8) Poly {
 /// Transforms value from [0,γ₁] ∪ (Q-γ₁, Q) to [0, 2γ₁).
 fn centeredToPositive(val: u32, comptime gamma1: u32) u32 {
     var result = gamma1 -% val;
-    result +%= (signMask(u32, result) & Q);
+    result +%= @as(u32, @bitCast(@as(i32, @bitCast(result)) >> 30)) & Q;
     return result;
 }
 
@@ -1391,10 +1392,7 @@ fn sampleInBall(comptime tau: u16, seed: []const u8) Poly {
         p.cs[i] = p.cs[b];
 
         // Set position b to ±1 based on sign bit
-        p.cs[b] = 1;
-        const sign_bit: u1 = @truncate(signs);
-        const mask = bitMask(u32, sign_bit);
-        p.cs[b] ^= mask & (1 | (Q - 1));
+        p.cs[b] = timing_safe.select(u32, .fromBool(signs & 1 != 0), Q - 1, 1);
         signs >>= 1;
     }
 
@@ -3481,33 +3479,6 @@ fn modularPow(comptime T: type, comptime a: T, s: T, comptime p: T) T {
     return ret;
 }
 
-/// Creates an all-ones or all-zeros mask from a single bit value.
-/// Returns all 1s (0xFF...FF) if bit == 1, all 0s if bit == 0.
-fn bitMask(comptime T: type, bit: T) T {
-    const type_info = @typeInfo(T);
-    if (type_info != .int or type_info.int.signedness != .unsigned) {
-        @compileError("bitMask requires an unsigned integer type");
-    }
-    return -%bit;
-}
-
-/// Creates a mask from the sign bit of a signed integer.
-/// Returns all 1s (0xFF...FF) if x < 0, all 0s if x >= 0.
-fn signMask(comptime T: type, x: T) @Int(.unsigned, @typeInfo(T).int.bits) {
-    const type_info = @typeInfo(T);
-    if (type_info != .int) {
-        @compileError("signMask requires an integer type");
-    }
-
-    const bits = type_info.int.bits;
-    const SignedT = @Int(.signed, bits);
-
-    // Convert to signed if needed, arithmetic right shift to propagate sign bit
-    const x_signed: SignedT = if (type_info.int.signedness == .signed) x else @bitCast(x);
-    const shifted = x_signed >> (bits - 1);
-    return @bitCast(shifted);
-}
-
 /// Montgomery reduction: for input x, returns y where y ≡ x*R^(-1) (mod q).
 /// This is a generic implementation parameterized by the modulus q, its inverse qInv,
 /// the Montgomery constant R, and the result bound.
@@ -3606,22 +3577,4 @@ fn sampleUniformRejection(
     }
 
     return ret;
-}
-
-test "bitMask and signMask helpers" {
-    try testing.expectEqual(@as(u32, 0x00000000), bitMask(u32, 0));
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), bitMask(u32, 1));
-    try testing.expectEqual(@as(u8, 0x00), bitMask(u8, 0));
-    try testing.expectEqual(@as(u8, 0xFF), bitMask(u8, 1));
-    try testing.expectEqual(@as(u64, 0x0000000000000000), bitMask(u64, 0));
-    try testing.expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFF), bitMask(u64, 1));
-
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), signMask(i32, -1));
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), signMask(i32, -100));
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(i32, 0));
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(i32, 1));
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(i32, 100));
-
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), signMask(u32, 0x80000000)); // MSB set
-    try testing.expectEqual(@as(u32, 0x00000000), signMask(u32, 0x7FFFFFFF)); // MSB clear
 }
