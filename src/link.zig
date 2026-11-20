@@ -1653,6 +1653,44 @@ pub fn doPrelinkTask(comp: *Compilation, task: PrelinkTask) void {
                             else => |e| diags.addParseError(dso_path, "failed to parse shared library: {s}", .{@errorName(e)}),
                         }
 
+                        if (target.os.tag == .openbsd) versioned: {
+                            const best_match = findVersionedLib(
+                                comp.arena,
+                                io,
+                                .cwd(),
+                                crt_dir,
+                                lib_name,
+                            ) catch |err| switch (err) {
+                                error.OutOfMemory => return diags.setAllocFailure(),
+                                error.Canceled => {
+                                    io.recancel();
+                                    break :versioned;
+                                },
+                                else => |e| {
+                                    diags.addError("unable to search for shared library 'lib{s}.so.*' in '{s}': {t}", .{
+                                        lib_name, crt_dir, e,
+                                    });
+                                    break :loaded;
+                                },
+                            };
+                            const basename = best_match orelse break :versioned;
+                            const versioned_path: Path = .initCwd(comp.arena.print(
+                                "{s}" ++ sep ++ "{s}",
+                                .{ crt_dir, basename },
+                            ) catch return diags.setAllocFailure());
+                            if (base.openLoadDso(versioned_path, .{
+                                .preferred_mode = .dynamic,
+                                .search_strategy = .paths_first,
+                            })) {
+                                break :loaded;
+                            } else |err| switch (err) {
+                                error.FileNotFound => {},
+                                error.AlreadyReported => return,
+                                error.Canceled => io.recancel(),
+                                else => |e| diags.addParseError(versioned_path, "failed to parse shared library: {t}", .{e}),
+                            }
+                        }
+
                         // Also try static.
                         const archive_path = Path.initCwd(
                             comp.arena.print("{s}" ++ sep ++ "{s}{s}{s}", .{
@@ -2540,45 +2578,13 @@ fn resolveLibInput(
         return .ok;
     }
 
-    // In the case of OpenBSD, dynamic libraries are always versioned, without
-    // unversioned symlinks. OpenBSD patches LLD to select the highest-versioned
-    // shared library, and this code is intended to match that upstream behavior.
-    if (target.isOpenBSDLibC() and link_mode == .dynamic and !name_query.name_done) versioned: {
-        const prefix = try arena.print("lib{s}.so.", .{lib_name});
-
-        var dir = lib_directory.handle.openDir(io, ".", .{ .iterate = true }) catch |err| switch (err) {
-            error.NotDir, error.FileNotFound => break :versioned,
-            else => |e| fatal("unable to search for shared library \"{f}.*\": {t}", .{
-                std.zig.fmtString(prefix), e,
+    if (target.os.tag == .openbsd and link_mode == .dynamic and !name_query.name_done) {
+        const best_match = findVersionedLib(arena, io, lib_directory.handle, ".", lib_name) catch |err| switch (err) {
+            error.OutOfMemory => |e| return e,
+            else => |e| fatal("unable to search for shared library \"lib{f}.so.*\": {t}", .{
+                std.zig.fmtString(lib_name), e,
             }),
         };
-        defer dir.close(io);
-
-        var best_match_major: u32 = 0;
-        var best_match_minor: u32 = 0;
-        var best_match: ?[]const u8 = null;
-
-        var iter = dir.iterate();
-        while (iter.next(io) catch |err| {
-            fatal("scanning library directory: {t}", .{err});
-        }) |entry| {
-            if (entry.kind != .file) continue;
-            if (!std.mem.startsWith(u8, entry.name, prefix)) continue;
-
-            const rest = entry.name[prefix.len..];
-            var sit = std.mem.splitScalar(u8, rest, '.');
-            const major_str = sit.next() orelse continue;
-            const minor_str = sit.next() orelse continue;
-            if (sit.next() != null) continue;
-            const major = std.fmt.parseInt(u32, major_str, 10) catch continue;
-            const minor = std.fmt.parseInt(u32, minor_str, 10) catch continue;
-
-            if (major > best_match_major or (major == best_match_major and minor >= best_match_minor)) {
-                best_match_major = major;
-                best_match_minor = minor;
-                best_match = try arena.dupe(u8, entry.name);
-            }
-        }
 
         if (best_match) |found| {
             const test_path: Path = .{
@@ -2597,6 +2603,52 @@ fn resolveLibInput(
     }
 
     return .no_match;
+}
+
+/// In the case of OpenBSD, system dynamic libraries are always versioned,
+/// without unversioned symlinks. OpenBSD patches LLD to select the
+/// highest-versioned shared library, and this code is intended to match that
+/// upstream behavior.
+fn findVersionedLib(
+    arena: Allocator,
+    io: Io,
+    dir: Io.Dir,
+    sub_path: []const u8,
+    lib_name: []const u8,
+) (Allocator.Error || Io.Dir.OpenError || Io.Dir.Iterator.Error)!?[]const u8 {
+    const prefix = try arena.print("lib{s}.so.", .{lib_name});
+
+    var search_dir = dir.openDir(io, sub_path, .{ .iterate = true }) catch |err| switch (err) {
+        error.NotDir, error.FileNotFound => return null,
+        else => |e| return e,
+    };
+    defer search_dir.close(io);
+
+    var best_match_major: u32 = 0;
+    var best_match_minor: u32 = 0;
+    var best_match: ?[]const u8 = null;
+
+    var iter = search_dir.iterate();
+    while (try iter.next(io)) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.startsWith(u8, entry.name, prefix)) continue;
+
+        const rest = entry.name[prefix.len..];
+        var sit = std.mem.splitScalar(u8, rest, '.');
+        const major_str = sit.next() orelse continue;
+        const minor_str = sit.next() orelse continue;
+        if (sit.next() != null) continue;
+        const major = std.fmt.parseInt(u32, major_str, 10) catch continue;
+        const minor = std.fmt.parseInt(u32, minor_str, 10) catch continue;
+
+        if (major > best_match_major or (major == best_match_major and minor >= best_match_minor)) {
+            best_match_major = major;
+            best_match_minor = minor;
+            best_match = try arena.dupe(u8, entry.name);
+        }
+    }
+
+    return best_match;
 }
 
 fn resolveFrameworkInput(
