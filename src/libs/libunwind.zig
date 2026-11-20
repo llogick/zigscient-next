@@ -41,7 +41,7 @@ pub fn buildStaticLib(comp: *Compilation, prog_node: std.Progress.Node) BuildErr
         .root_strip = comp.compilerRtStrip(),
         .link_libc = true,
         .any_unwind_tables = unwind_tables != .none,
-        .pic = if (target_util.supports_fpic(target)) true else null,
+        .pic = comp.config.pic,
         .lto = comp.config.lto,
         .function_sections = true,
         .data_sections = true,

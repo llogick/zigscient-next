@@ -258,7 +258,7 @@ pub fn canBuildLibC(target: *const std.Target) bool {
     return false;
 }
 
-pub fn hurdTupleSimple(
+pub fn hurdTuple(
     allocator: Allocator,
     arch: std.Target.Cpu.Arch,
     abi: std.Target.Abi,
@@ -266,21 +266,13 @@ pub fn hurdTupleSimple(
     return allocator.print("{s}-{s}", .{ @tagName(arch), @tagName(abi) });
 }
 
-pub fn hurdTuple(allocator: Allocator, target: *const std.Target) ![]u8 {
-    return hurdTupleSimple(allocator, target.cpu.arch, target.abi);
-}
-
-pub fn linuxTripleSimple(
+pub fn linuxTriple(
     allocator: Allocator,
     arch: std.Target.Cpu.Arch,
     os_tag: std.Target.Os.Tag,
     abi: std.Target.Abi,
 ) ![]u8 {
     return allocator.print("{s}-{s}-{s}", .{ @tagName(arch), @tagName(os_tag), @tagName(abi) });
-}
-
-pub fn linuxTriple(allocator: Allocator, target: *const std.Target) ![]u8 {
-    return linuxTripleSimple(allocator, target.cpu.arch, target.os.tag, target.abi);
 }
 
 /// Returns the subdirectory triple to be used to find the correct glibc for the given `arch`, `os`,
@@ -302,8 +294,8 @@ pub fn glibcRuntimeTriple(
     }
 
     return switch (os) {
-        .hurd => hurdTupleSimple(allocator, arch, abi),
-        .linux => linuxTripleSimple(allocator, arch, os, abi),
+        .hurd => hurdTuple(allocator, arch, abi),
+        .linux => linuxTriple(allocator, arch, os, abi),
         else => unreachable,
     };
 }
@@ -319,7 +311,91 @@ pub fn muslRuntimeTriple(
 ) Allocator.Error![]const u8 {
     assert(abi.isMusl());
 
-    return linuxTripleSimple(allocator, arch, .linux, abi);
+    return linuxTriple(allocator, arch, .linux, abi);
+}
+
+/// Computes the Debian-style multiarch triple (or tuple) for `target` if one exists.
+pub fn multiarchTriple(allocator: Allocator, target: *const std.Target) !?[]u8 {
+    return switch (target.os.tag) {
+        .hurd => switch (target.abi) {
+            .gnu => switch (target.cpu.arch) {
+                .x86 => try allocator.dupe(u8, "i386-gnu"),
+                .x86_64 => try allocator.dupe(u8, "x86_64-gnu"),
+
+                else => null,
+            },
+
+            else => null,
+        },
+        .linux => b: {
+            const arch = switch (target.cpu.arch) {
+                .aarch64 => "aarch64",
+                .alpha => "alpha",
+                .arc => "arc",
+                .arm => "arm",
+                .hppa => "hppa",
+                .loongarch64 => "loongarch64",
+                .m68k => "m68k",
+                .mips, .mipsf32, .mipsf64 => "mips",
+                .mipsel, .mipsf32el, .mipsf64el => "mipsel",
+                .mipsr6 => "mipsisa32r6",
+                .mipsr6el => "mipsisa32r6el",
+                .mips64 => "mips64",
+                .mips64el => "mips64el",
+                .mips64r6 => "mipsisa64r6",
+                .mips64r6el => "mipsisa64r6el",
+                .or1k => "or1k",
+                .powerpc => "powerpc",
+                .powerpcle => "powerpcle",
+                .powerpc64 => "powerpc64",
+                .powerpc64le => "powerpc64le",
+                .riscv64 => "riscv64",
+                .s390x => "s390x",
+                .sparc => "sparc",
+                .sparc64 => "sparc64",
+                .sh => "sh4",
+                .sheb => "sh4eb",
+                .x86 => "i386",
+                .x86_64 => "x86_64",
+
+                else => break :b null,
+            };
+
+            const abi = switch (target.cpu.arch) {
+                .arm => switch (target.abi) {
+                    .gnu => "gnueabihf",
+                    .gnusf => "gnueabi",
+                    .musl => "musleabihf",
+
+                    else => break :b null,
+                },
+                .mips64, .mips64el, .mips64r6, .mips64r6el => switch (target.abi) {
+                    .gnu => "gnuabi64",
+                    .gnun32 => "gnuabin32",
+                    .musl => "musl",
+
+                    else => break :b null,
+                },
+                .x86_64 => switch (target.abi) {
+                    .gnu => "gnu",
+                    .gnux32 => "gnux32",
+                    .musl => "musl",
+
+                    else => break :b null,
+                },
+                else => switch (target.abi) {
+                    .gnu => "gnu",
+                    .musl => "musl",
+
+                    else => break :b null,
+                },
+            };
+
+            break :b try allocator.print("{s}-linux-{s}", .{ arch, abi });
+        },
+
+        else => null,
+    };
 }
 
 pub fn osArchName(target: *const std.Target) [:0]const u8 {

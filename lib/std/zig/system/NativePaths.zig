@@ -149,7 +149,7 @@ pub fn detect(
     }
 
     if (builtin.os.tag != .windows and builtin.os.tag != .wasi) {
-        const triple = try std.zig.target.linuxTriple(arena, native_target);
+        const multiarch = try std.zig.target.multiarchTriple(arena, native_target);
 
         const qual = native_target.ptrBitWidth();
 
@@ -162,8 +162,19 @@ pub fn detect(
         try self.addLibDirFmt("/usr/local/lib{d}", .{qual});
         try self.addLibDir("/usr/local/lib");
 
-        try self.addIncludeDirFmt("/usr/include/{s}", .{triple});
-        try self.addLibDirFmt("/usr/lib/{s}", .{triple});
+        if (multiarch) |triple| {
+            try self.addIncludeDirFmt("/usr/include/{s}", .{triple});
+            try self.addLibDirFmt("/usr/lib/{s}", .{triple});
+        }
+
+        // Exherbo puts sysroots under `/usr/<triple>`, with `/usr/host` being
+        // a symlink to the native `/usr/<triple>`.
+        //
+        // https://www.exherbo.org/docs/multiarch.html
+        if (native_target.os.tag == .linux) {
+            try self.addIncludeDir("/usr/host/include");
+            try self.addLibDir("/usr/host/lib");
+        }
 
         try self.addIncludeDir("/usr/include");
         try self.addLibDirFmt("/lib{d}", .{qual});
@@ -174,7 +185,7 @@ pub fn detect(
         // example: on a 64-bit debian-based linux distro, with zlib installed from apt:
         // zlib.h is in /usr/include (added above)
         // libz.so.1 is in /lib/x86_64-linux-gnu (added here)
-        try self.addLibDirFmt("/lib/{s}", .{triple});
+        if (multiarch) |triple| try self.addLibDirFmt("/lib/{s}", .{triple});
 
         // Distros like guix don't use FHS, so they rely on environment
         // variables to search for headers and libraries.
