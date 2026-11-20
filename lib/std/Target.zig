@@ -223,7 +223,7 @@ pub const Os = struct {
         win7 = 0x06010000,
         win8 = 0x06020000,
         win8_1 = 0x06030000,
-        win10 = 0x0A000000, //aka win10_th1
+        win10 = 0x0A000000,
         win10_th2 = 0x0A000001,
         win10_rs1 = 0x0A000002,
         win10_rs2 = 0x0A000003,
@@ -231,46 +231,45 @@ pub const Os = struct {
         win10_rs4 = 0x0A000005,
         win10_rs5 = 0x0A000006,
         win10_19h1 = 0x0A000007,
-        win10_vb = 0x0A000008, //aka win10_19h2
-        win10_mn = 0x0A000009, //aka win10_20h1
-        win10_fe = 0x0A00000A, //aka win10_20h2
-        win10_co = 0x0A00000B, //aka win10_21h1
-        win10_ni = 0x0A00000C, //aka win10_21h2
-        win10_cu = 0x0A00000D, //aka win10_22h2
-        win11_zn = 0x0A00000E, //aka win11_21h2
-        win11_ga = 0x0A00000F, //aka win11_22h2
-        win11_ge = 0x0A000010, //aka win11_23h2
-        win11_dt = 0x0A000011, //aka win11_24h2
-        win11_br = 0x0A000012, //aka win11_25h2
-        win11_kr = 0x0A000013, //aka win11_26h1
+        win10_vb = 0x0A000008,
+        win10_mn = 0x0A000009,
+        win10_fe = 0x0A00000A,
+        win10_co = 0x0A00000B,
+        win10_ni = 0x0A00000C,
+        win10_cu = 0x0A00000D,
+        win11_zn = 0x0A00000E,
+        win11_ga = 0x0A00000F,
+        win11_ge = 0x0A000010,
+        win11_dt = 0x0A000011,
+        win11_br = 0x0A000012,
+        win11_kr = 0x0A000013,
         _,
 
-        /// Latest Windows version that the Zig Standard Library is aware of
+        /// Deprecated; to be removed in 0.19.0.
         pub const latest = WindowsVersion.win11_kr;
 
-        /// Compared against build numbers reported by the runtime to distinguish win10 versions,
-        /// where 0x0A000000 + index corresponds to the WindowsVersion u32 value.
+        /// Deprecated; to be removed in 0.19.0.
         pub const known_win10_build_numbers = [_]u32{
-            10240, //win10 aka win10_th1
-            10586, //win10_th2
-            14393, //win10_rs1
-            15063, //win10_rs2
-            16299, //win10_rs3
-            17134, //win10_rs4
-            17763, //win10_rs5
-            18362, //win10_19h1
-            18363, //win10_vb aka win10_19h2
-            19041, //win10_mn aka win10_20h1
-            19042, //win10_fe aka win10_20h2
-            19043, //win10_co aka win10_21h1
-            19044, //win10_ni aka win10_21h2
-            19045, //win10_cu aka win10_22h2
-            22000, //win11_zn aka win11_21h2
-            22621, //win11_ga aka win11_22h2
-            22631, //win11_ge aka win11_23h2
-            26100, //win11_dt aka win11_24h2
-            26200, //win11_br aka win11_25h2
-            28000, //win11_kr aka win11_26h1
+            10240,
+            10586,
+            14393,
+            15063,
+            16299,
+            17134,
+            17763,
+            18362,
+            18363,
+            19041,
+            19042,
+            19043,
+            19044,
+            19045,
+            22000,
+            22621,
+            22631,
+            26100,
+            26200,
+            28000,
         };
 
         /// Returns whether the first version `ver` is newer (greater) than or equal to the second version `ver`.
@@ -601,8 +600,8 @@ pub const Os = struct {
 
                 .windows => .{
                     .windows = .{
-                        .min = .win10,
-                        .max = WindowsVersion.latest,
+                        .min = .win10_rs5,
+                        .max = .win11_kr,
                     },
                 },
                 .uefi => .{

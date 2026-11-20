@@ -8,6 +8,26 @@ const PF = std.os.windows.PF;
 const REG = std.os.windows.REG;
 const IsProcessorFeaturePresent = std.os.windows.IsProcessorFeaturePresent;
 
+/// Known Windows 10+ releases, not including Insider/Preview builds. This only
+/// needs to contain the lowest known build number for a given `WindowsVersion`.
+pub const known_win10_builds = [_]struct { u32, WindowsVersion }{
+    .{ 10240, .win10 },
+    .{ 10586, .win10_th2 },
+    .{ 14393, .win10_rs1 },
+    .{ 15063, .win10_rs2 },
+    .{ 16299, .win10_rs3 },
+    .{ 17134, .win10_rs4 },
+    .{ 17763, .win10_rs5 },
+    .{ 18362, .win10_19h1 },
+    .{ 19041, .win10_vb },
+    .{ 20348, .win10_fe },
+    .{ 22000, .win10_co },
+    .{ 22621, .win10_ni },
+    .{ 25398, .win11_zn },
+    .{ 26100, .win11_ge },
+    .{ 28000, .win11_br },
+};
+
 /// Returns the highest known WindowsVersion deduced from reported runtime information.
 /// Discards information about in-between versions we don't differentiate.
 pub fn detectRuntimeVersion() WindowsVersion {
@@ -27,22 +47,23 @@ pub fn detectRuntimeVersion() WindowsVersion {
     //      `--> OS version (Major & minor)
     const os_ver: u16 = (@as(u16, @intCast(version_info.dwMajorVersion & 0xff)) << 8) |
         @as(u16, @intCast(version_info.dwMinorVersion & 0xff));
-    const sp_ver: u8 = 0;
-    const sub_ver: u8 = if (os_ver >= 0x0A00) subver: {
+
+    if (os_ver >= 0x0A00) {
         // There's no other way to obtain this info beside
         // checking the build number against a known set of
         // values
-        var last_idx: usize = 0;
-        for (WindowsVersion.known_win10_build_numbers, 0..) |build, i| {
-            if (version_info.dwBuildNumber >= build)
-                last_idx = i;
+        var result: WindowsVersion = .win10;
+        for (known_win10_builds) |entry| {
+            if (version_info.dwBuildNumber < entry[0]) break;
+            result = entry[1];
         }
-        break :subver @as(u8, @truncate(last_idx));
-    } else 0;
+        return result;
+    }
 
-    const version: u32 = (@as(u32, os_ver) << 16) | (@as(u16, sp_ver) << 8) | sub_ver;
+    const sp_ver: u8 = 0;
+    const sub_ver: u8 = 0;
 
-    return @as(WindowsVersion, @fromBackingInt(@intCast(version)));
+    return @fromBackingInt((@as(u32, os_ver) << 16) | (@as(u16, sp_ver) << 8) | sub_ver);
 }
 
 // Technically, a registry value can be as long as 1MB. However, MS recommends storing

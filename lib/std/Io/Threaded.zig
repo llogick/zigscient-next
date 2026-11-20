@@ -19023,7 +19023,7 @@ fn unpark(tids: []const UnparkTid, addr_hint: ?*const anyopaque) void {
         .windows => {
             // TODO: this condition is currently disabled because mingw-w64 does not contain this
             // symbol. Once it's added, enable this check to use the new bulk API where possible.
-            if (false and (builtin.os.version_range.windows.isAtLeast(.win11_dt) orelse false)) {
+            if (false and (builtin.os.version_range.windows.isAtLeast(.win11_ge) orelse false)) {
                 _ = windows.ntdll.NtAlertMultipleThreadByThreadId(tids.ptr, @intCast(tids.len), null, null);
             } else {
                 for (tids) |tid| {

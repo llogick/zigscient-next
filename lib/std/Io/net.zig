@@ -47,7 +47,6 @@ pub const Protocol = enum(u32) {
 /// Windows 10 added support for unix sockets in build 17063, redstone 4 is the
 /// first release to support them.
 pub const has_unix_sockets = switch (native_os) {
-    .windows => builtin.os.version_range.windows.isAtLeast(.win10_rs4) orelse false,
     .wasi => false,
     else => true,
 };
