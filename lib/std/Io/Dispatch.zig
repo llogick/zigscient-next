@@ -4648,7 +4648,7 @@ fn scanEnviron(context: ?*anyopaque) callconv(.c) void {
 fn now(userdata: ?*anyopaque, clock: Io.Clock) Io.Timestamp {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
-    const clock_id: c.clockid_t = clockToPosix(clock);
+    const clock_id: c.clockid_t = clockToPosix(clock).?; // All clocks are available on darwin
     var timespec: c.timespec = undefined;
     switch (c.errno(c.clock_gettime(clock_id, &timespec))) {
         .SUCCESS => return timestampFromPosix(&timespec),
@@ -4659,7 +4659,7 @@ fn now(userdata: ?*anyopaque, clock: Io.Clock) Io.Timestamp {
 fn clockResolution(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.ResolutionError!Io.Duration {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
-    const clock_id: c.clockid_t = clockToPosix(clock);
+    const clock_id: c.clockid_t = clockToPosix(clock).?; // All clocks are available on darwin
     var timespec: c.timespec = undefined;
     return switch (c.errno(c.clock_getres(clock_id, &timespec))) {
         .SUCCESS => .fromNanoseconds(nanosecondsFromPosix(&timespec)),

@@ -11914,7 +11914,7 @@ fn fileWriteFilePositional(
 }
 
 fn nowPosix(clock: Io.Clock) Io.Timestamp {
-    const clock_id: posix.clockid_t = clockToPosix(clock);
+    const clock_id: posix.clockid_t = clockToPosix(clock) orelse return .zero;
     var timespec: posix.timespec = undefined;
     switch (posix.errno(posix.system.clock_gettime(clock_id, &timespec))) {
         .SUCCESS => return timestampFromPosix(&timespec),
@@ -11973,7 +11973,7 @@ fn clockResolution(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.ResolutionEr
 }
 
 fn clockResolutionPosix(clock: Io.Clock) Io.Clock.ResolutionError!Io.Duration {
-    const clock_id: posix.clockid_t = clockToPosix(clock);
+    const clock_id: posix.clockid_t = clockToPosix(clock) orelse return error.ClockUnavailable;
     var timespec: posix.timespec = undefined;
     return switch (posix.errno(posix.system.clock_getres(clock_id, &timespec))) {
         .SUCCESS => .fromNanoseconds(nanosecondsFromPosix(&timespec)),
@@ -12069,11 +12069,14 @@ fn sleep(userdata: ?*anyopaque, timeout: Io.Timeout) Io.Cancelable!void {
 }
 
 fn sleepPosix(timeout: Io.Timeout) Io.Cancelable!void {
-    const clock_id: posix.clockid_t = clockToPosix(switch (timeout) {
+    const clock: Io.Clock = switch (timeout) {
         .none => .awake,
         .duration => |d| d.clock,
         .deadline => |d| d.clock,
-    });
+    };
+    // Unsupported clock is treated the same as clock_nanosleep returning EINVAL,
+    // i.e. asuming a resolution of 0.
+    const clock_id: posix.clockid_t = clockToPosix(clock) orelse return;
     const deadline_nanoseconds: i96 = switch (timeout) {
         .none => std.math.maxInt(i96),
         .duration => |duration| duration.raw.nanoseconds,
@@ -14638,7 +14641,7 @@ pub fn recoverableOsBugDetected() void {
     if (is_debug) unreachable;
 }
 
-pub fn clockToPosix(clock: Io.Clock) posix.clockid_t {
+pub fn clockToPosix(clock: Io.Clock) ?posix.clockid_t {
     return switch (clock) {
         .real => posix.CLOCK.REALTIME,
         .awake => switch (native_os) {
@@ -14657,8 +14660,18 @@ pub fn clockToPosix(clock: Io.Clock) posix.clockid_t {
             // ticks while suspended.
             else => posix.CLOCK.MONOTONIC,
         },
-        .cpu_process => posix.CLOCK.PROCESS_CPUTIME_ID,
-        .cpu_thread => posix.CLOCK.THREAD_CPUTIME_ID,
+        .cpu_process => switch (native_os) {
+            // Support for PROCESS_CPUTIME_ID is optional, indicated by the
+            // _POSIX_CPUTIME macro being defined.
+            .serenity => null,
+            else => posix.CLOCK.PROCESS_CPUTIME_ID,
+        },
+        .cpu_thread => switch (native_os) {
+            // Support for THREAD_CPUTIME_ID is optional, indicated by the
+            // _POSIX_THREAD_CPUTIME macro being defined.
+            .serenity => null,
+            else => posix.CLOCK.THREAD_CPUTIME_ID,
+        },
     };
 }
 

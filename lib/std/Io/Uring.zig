@@ -4927,7 +4927,7 @@ fn scanEnviron(ev: *Evented) Io.Cancelable!void {
 fn clockResolution(userdata: ?*anyopaque, clock: Io.Clock) Io.Clock.ResolutionError!Io.Duration {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
-    const clock_id = clockToPosix(clock);
+    const clock_id = clockToPosix(clock).?; // All clocks are available on linux
     var timespec: linux.timespec = undefined;
     return switch (linux.errno(linux.clock_getres(clock_id, &timespec))) {
         .SUCCESS => .fromNanoseconds(nanosecondsFromPosix(&timespec)),
@@ -4940,7 +4940,8 @@ fn now(userdata: ?*anyopaque, clock: Io.Clock) Io.Timestamp {
     const ev: *Evented = @ptrCast(@alignCast(userdata));
     _ = ev;
     var tp: linux.timespec = undefined;
-    switch (linux.errno(linux.clock_gettime(clockToPosix(clock), &tp))) {
+    const clock_id = clockToPosix(clock).?; // All clocks are available on linux
+    switch (linux.errno(linux.clock_gettime(clock_id, &tp))) {
         .SUCCESS => return timestampFromPosix(&tp),
         else => return .zero,
     }
