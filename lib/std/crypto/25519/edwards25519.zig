@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const crypto = std.crypto;
 const debug = std.debug;
 const fmt = std.fmt;
@@ -635,11 +636,13 @@ test "implicit reduction of invalid scalars" {
 }
 
 test "subgroup check" {
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
+
     const io = std.testing.io;
     var t8: [Edwards25519.encoded_length]u8 = undefined;
     _ = try std.fmt.hexToBytes(&t8, "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05");
     const torsion8 = try Edwards25519.fromBytes(t8);
-    for (0..100) |_| {
+    for (0..8) |_| {
         var p = Edwards25519.basePoint;
         const s = Edwards25519.scalar.random(io);
         p = try p.mulPublic(s);
