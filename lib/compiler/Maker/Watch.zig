@@ -384,7 +384,7 @@ const Os = switch (builtin.os.tag) {
 
             fn notifyApc(apc_context: ?*anyopaque, iosb: *windows.IO_STATUS_BLOCK, _: windows.ULONG) align(Io.Threaded.apc_align) callconv(.winapi) void {
                 const w: *Watch = @ptrCast(@alignCast(apc_context));
-                const dir: *Directory = @fieldParentPtr("iosb", iosb);
+                const dir: *Directory = @alignCast(@fieldParentPtr("iosb", iosb));
                 assert(iosb.u.Status != .PENDING);
                 assert(dir.state == .listening);
                 w.os.ready_dirs.append(&dir.ready_node);
@@ -661,7 +661,7 @@ const Os = switch (builtin.os.tag) {
 
             for (0..2) |attempt| {
                 while (w.os.ready_dirs.popFirst()) |ready_node| {
-                    const dir: *Directory = @fieldParentPtr("ready_node", ready_node);
+                    const dir: *Directory = @alignCast(@fieldParentPtr("ready_node", ready_node));
                     assert(dir.state == .ready);
                     dir.state = .idle;
                     switch (dir.iosb.u.Status) {
