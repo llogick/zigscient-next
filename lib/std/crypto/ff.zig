@@ -1941,7 +1941,7 @@ test "modular inversion" {
     };
     for (moduli) |m_val| {
         const m = try Modulus(256).fromPrimitiveWithOptions(u256, m_val, .{ .allow_even = true });
-        for ([_]u256{ 2, 97, (1 << t_bits) + 1, 0x24ebd835a70be4e2 }) |a_val| {
+        for ([_]u256{ 2, 97, (1 << t_bits) + 1, 0x24ebd835a70be4e2, m_val - 1 }) |a_val| {
             const a = try Modulus(256).Fe.fromPrimitive(u256, m, a_val);
             var a_mont = a;
             if (m_val % 2 == 1) try m.toMontgomery(&a_mont);
@@ -1955,5 +1955,17 @@ test "modular inversion" {
                 }
             }
         }
+    }
+
+    const M = Modulus(2048);
+    const p = try Uint(2048).fromPrimitive(u1024, (1 << 1024) - 1);
+    const q = try Uint(2048).fromPrimitive(u1024, (1 << 1023) + 1);
+    const odd = try M.fromProduct(p.normalize(), q.normalize());
+    const even = try M.fromPrimitiveWithOptions(u2048, math.maxInt(u2048) - 1, .{ .allow_even = true });
+    try testing.expect(odd.invert(odd.reduce(p)) == null);
+    try testing.expect(even.invert(try M.Fe.fromPrimitive(u8, even, 2)) == null);
+    for ([_]M{ odd, even }) |m| {
+        const x = m.subOne(m.zero);
+        try testing.expect(m.isOne(m.mul(x, m.invert(x).?)));
     }
 }
