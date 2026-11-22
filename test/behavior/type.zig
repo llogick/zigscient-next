@@ -197,6 +197,29 @@ test "Type.Struct" {
     try testing.expectEqual(@as(bool, false), infoF.is_tuple);
 }
 
+test "reified struct default value pointer with unresolved field layout" {
+    const A = extern struct {
+        x: i32,
+    };
+    const B = extern struct {
+        y: u32 = 0xffffffff,
+
+        const default: @This() = .{};
+    };
+    const S = @Struct(
+        .auto,
+        null,
+        &.{"a"},
+        &.{A},
+        &@splat(.{ .default_value_ptr = &B.default }),
+    );
+
+    comptime {
+        const value: S = .{};
+        assert(value.a.x == -1);
+    }
+}
+
 test "Type.Enum" {
     if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest; // TODO
     if (builtin.cpu.arch.isSpirv()) return error.SkipZigTest;

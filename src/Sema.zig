@@ -20406,6 +20406,7 @@ fn zirReifyStruct(
         const field_default: InternPool.Index = d: {
             const ptr_val = field_attr_default_value_ptr.optionalValue(zcu) orelse break :d .none;
             const field_ty = (try field_types_arr.elemValue(pt, field_idx)).toType();
+            try sema.ensureLayoutResolved(field_ty, field_attrs_src, .ptr_access);
             const coerced_ptr = try pt.getCoerced(ptr_val, try pt.singleConstPtrType(field_ty));
             const deref_val = try sema.derefPtr(block, field_attrs_src, coerced_ptr, .{ .simple = .struct_field_default_value });
             if (deref_val.canMutateComptimeVarState(zcu)) {
