@@ -176501,7 +176501,8 @@ fn lowerSwitchBr(
 ) !void {
     const zcu = cg.pt.zcu;
     const condition_ty = cg.typeOf(switch_br.operand);
-    const unsigned_condition_ty = try cg.pt.intType(.unsigned, cg.intInfo(condition_ty).?.bits);
+    const condition_bits = cg.intInfo(condition_ty).?.bits;
+    const unsigned_condition_ty = try cg.pt.intType(.unsigned, condition_bits);
 
     const ExpectedContents = extern struct {
         liveness_deaths: [(1 << 8) | 1]Air.Inst.Index,
@@ -176571,29 +176572,33 @@ fn lowerSwitchBr(
         );
         const table_start: u31 = @intCast(cg.mir_table.items.len);
         const else_reloc = dispatch: {
+            var cond_temp = try cg.tempInit(unsigned_condition_ty, condition_index);
+            const index_ty: Type = if (condition_bits <= cg.target.ptrBitWidth())
+                unsigned_condition_ty
+            else
+                .usize;
             const condition_index_reg = condition_index_reg: {
                 if (condition_index.isRegister()) {
                     const condition_index_reg = condition_index.getReg().?;
                     if (condition_index_reg.isClass(.general_purpose)) break :condition_index_reg condition_index_reg;
                 }
-                break :condition_index_reg try cg.copyToTmpRegister(.usize, condition_index);
+                break :condition_index_reg try cg.copyToTmpRegister(index_ty, cond_temp.tracking(cg).short);
             };
             const condition_index_lock = cg.register_manager.lockReg(condition_index_reg);
             defer if (condition_index_lock) |lock| cg.register_manager.unlockReg(lock);
-            try cg.truncateRegister(unsigned_condition_ty, condition_index_reg);
+            try cg.truncateRegister(index_ty, condition_index_reg);
             const else_reloc = if (switch_br.else_body_len > 0) else_reloc: {
-                var cond_temp = try cg.tempInit(unsigned_condition_ty, condition_index);
                 var table_max_temp = try cg.tempFromValue(try cg.pt.intValue(unsigned_condition_ty, table_len - 1));
                 const cc_temp = cond_temp.cmpInts(.gt, &table_max_temp, cg) catch |err| switch (err) {
                     error.SelectFailed => unreachable,
                     else => |e| return e,
                 };
-                try cond_temp.die(cg);
                 try table_max_temp.die(cg);
                 const reloc = try cg.asmJccReloc(cc_temp.tracking(cg).short.eflags, undefined);
                 try cc_temp.die(cg);
                 break :else_reloc reloc;
             } else undefined;
+            try cond_temp.die(cg);
             const ptr_size = @divExact(cg.target.ptrBitWidth(), 8);
             try cg.asmMemory(.{ ._mp, .j }, .{
                 .base = .table,

@@ -144,6 +144,27 @@ test "dense switch" {
             try expect(signed(i64, -(1 << 32) - 2) == 4);
             try expect(signed(i64, (1 << 32) + 1) == 4);
 
+            inline for (.{ u65, u129 }) |T| {
+                try expect(unsigned(T, 0) == 0);
+                try expect(unsigned(T, 1) == 1);
+                try expect(unsigned(T, 2) == 2);
+                try expect(unsigned(T, 3) == 3);
+                try expect(unsigned(T, 4) == 4);
+                try expect(unsigned(T, maxInt(T)) == 4);
+                try expect(unsigned(T, (1 << 64) + 1) == 4);
+            }
+
+            inline for (.{ i65, i129 }) |T| {
+                try expect(signed(T, -2) == 0);
+                try expect(signed(T, -1) == 1);
+                try expect(signed(T, 0) == 2);
+                try expect(signed(T, 1) == 3);
+                try expect(signed(T, 2) == 4);
+                try expect(signed(T, minInt(T)) == 4);
+                try expect(signed(T, -(1 << 63) - 2) == 4);
+                try expect(signed(T, (1 << 63) + 1) == 4);
+            }
+
             try expect(unsigned(u128, 0) == 0);
             try expect(unsigned(u128, 1) == 1);
             try expect(unsigned(u128, 2) == 2);
@@ -1190,6 +1211,27 @@ test "switch on 8-bit mod result" {
         0 => {},
         1, 2, 3 => return error.TestFailed,
         else => unreachable,
+    }
+}
+
+test "dense switch on 8-bit mod result with else" {
+    if (builtin.cpu.arch.isSpirv() and builtin.zig_backend == .stage2_llvm) return error.SkipZigTest;
+
+    const S = struct {
+        noinline fn f(x: u8) u32 {
+            return switch (x % 6) {
+                0 => 10,
+                1 => 20,
+                2 => 30,
+                3 => 40,
+                4 => 50,
+                else => 60,
+            };
+        }
+    };
+
+    for (0..256) |x| {
+        try expectEqual(@as(u32, @intCast((x % 6 + 1) * 10)), S.f(@intCast(x)));
     }
 }
 
