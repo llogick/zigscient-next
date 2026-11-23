@@ -191,3 +191,19 @@ test "@shuffle u0" {
     try S.doTheTest();
     try comptime S.doTheTest();
 }
+
+test "@shuffle coercions" {
+    const S = struct {
+        fn doTheTest() !void {
+            const result = @shuffle(
+                f32,
+                struct { f32, f32 }{ 0, 1 },
+                [2]f32{ 2, 3 },
+                struct { i64, i64 }{ 0, ~@as(i32, 0) },
+            );
+            try expect(std.meta.eql(result, .{ 0, 2 }));
+        }
+    };
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}

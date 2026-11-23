@@ -17,6 +17,11 @@ test "Basic vector usage" {
 
     // The length of a vector can be accessed using ".len"
     try expectEqual(4, a.len);
+
+    // Vectors can be concatenated with "++"
+    const d = a ++ b;
+    try expectEqual(@Vector(8, i32), @TypeOf(d));
+    try expectEqual(@Vector(8, i32){ 1, 2, 3, 4, 5, 6, 7, 8 }, d);
 }
 
 test "Conversion between vectors, arrays, and slices" {

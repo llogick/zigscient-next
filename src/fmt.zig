@@ -622,7 +622,7 @@ fn fixupTree(gpa: Allocator, tree: *std.zig.Ast, fix_precedence: bool) Allocator
                 .mul_sat,
                 .add,
                 .sub,
-                .array_cat,
+                .cat,
                 .add_wrap,
                 .sub_wrap,
                 .add_sat,

@@ -1796,10 +1796,10 @@ pub const SrcLoc = struct {
                 const node = node_off.toAbsolute(src_loc.base_node);
                 return tree.nodeToSpan(tree.nodeData(node).node_and_node[1]);
             },
-            .array_cat_lhs, .array_cat_rhs => |cat| {
+            .cat_lhs, .cat_rhs => |cat| {
                 const tree = try src_loc.file_scope.getTree(zcu);
-                const node = cat.array_cat_offset.toAbsolute(src_loc.base_node);
-                const arr_node = if (src_loc.lazy == .array_cat_lhs)
+                const node = cat.cat_offset.toAbsolute(src_loc.base_node);
+                const arr_node = if (src_loc.lazy == .cat_lhs)
                     tree.nodeData(node).node_and_node[0]
                 else
                     tree.nodeData(node).node_and_node[1];
@@ -2740,8 +2740,8 @@ pub const LazySrcLoc = struct {
         },
         fn_proto_param: FnProtoParam,
         fn_proto_param_type: FnProtoParam,
-        array_cat_lhs: ArrayCat,
-        array_cat_rhs: ArrayCat,
+        cat_lhs: Cat,
+        cat_rhs: Cat,
         /// The source location points to the backing or tag type expression of
         /// the container type declaration at the base node.
         ///
@@ -2837,9 +2837,9 @@ pub const LazySrcLoc = struct {
             case_idx: Zir.UnwrappedSwitchBlock.Case.Index,
         };
 
-        pub const ArrayCat = struct {
+        pub const Cat = struct {
             /// Points to the array concat AST node.
-            array_cat_offset: Ast.Node.Offset,
+            cat_offset: Ast.Node.Offset,
             /// The index of the element the source location points to.
             elem_index: u32,
         };

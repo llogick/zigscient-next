@@ -1221,7 +1221,7 @@ fn parseCPostfixExpr(mt: *MacroTranslator, scope: *Scope, type_name: ?ZigNode) P
             else => break,
         }
         const rhs = try mt.parseCPostfixExprInner(scope, type_name);
-        node = try ZigTag.array_cat.create(mt.t.arena, .{ .lhs = node, .rhs = rhs });
+        node = try ZigTag.cat.create(mt.t.arena, .{ .lhs = node, .rhs = rhs });
     }
     return node;
 }

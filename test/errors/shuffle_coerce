@@ -1,0 +1,28 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo(ptr: *anyopaque) void {
+    _ = @shuffle(
+        f32,
+        @as(*[4294967296]f32, @alignCast(@ptrCast(ptr))).*,
+        undefined,
+        .{ 0, 1 },
+    );
+}
+export fn bar() void {
+    _ = @shuffle(
+        f32,
+        10,
+        undefined,
+        .{ 0, 1 },
+    );
+}
+#}
+#update
+#check errors {
+test.zig:4:57: error: vector length of 4294967296 is over 2^32-1
+test.zig:12:9: error: expected vector; found "comptime_int"
+#}

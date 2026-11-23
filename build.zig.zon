@@ -31,9 +31,9 @@
             // .path = "../../../lws-lsp-kit",
         },
         .extended_zccs = .{
-            .url = "https://github.com/llogick/extended-zccs/archive/e0251a7d4cd481f7701014caf04ae2077f820e9a.tar.gz",
-            .hash = "extended_zccs-0.17.0-dev-zEaUNpWVDgBGVmgNgurJXlljD9bELbsRfeVZ8-CfdDsU",
-            //.path = "../../../extended-zccs",
+            .url = "https://github.com/llogick/extended-zccs/archive/a0e224556bbae0b4bde4f8a04c33971dbf724895.tar.gz",
+            .hash = "extended_zccs-0.17.0-dev-zEaUNmWVDgDADYoP7BOnXF-iBoOda0qfnAWsdoZ2G89R",
+            // .path = "../../../extended-zccs",
         },
         .tracy = .{
             .url = "https://github.com/wolfpld/tracy/archive/refs/tags/v0.13.1.tar.gz",

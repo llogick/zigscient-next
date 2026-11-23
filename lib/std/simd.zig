@@ -143,22 +143,20 @@ pub inline fn iota(comptime T: type, comptime len: usize) @Vector(len, T) {
 pub fn repeat(comptime len: usize, vec: anytype) @Vector(len, std.meta.Child(@TypeOf(vec))) {
     const Child = std.meta.Child(@TypeOf(vec));
 
-    return @shuffle(Child, vec, undefined, iota(i32, len) % @as(@Vector(len, i32), @splat(@intCast(vectorLength(@TypeOf(vec))))));
+    return @shuffle(Child, vec, undefined, iota(i32, len) % @as(@Vector(len, i32), @splat(@intCast(vec.len))));
 }
 
+/// Deprecated in favor of `a ++ b`.
+///
 /// Returns a vector containing all elements of the first vector at the lower indices followed by all elements of the second vector
 /// at the higher indices.
-pub fn join(a: anytype, b: anytype) @Vector(vectorLength(@TypeOf(a)) + vectorLength(@TypeOf(b)), std.meta.Child(@TypeOf(a))) {
-    const Child = std.meta.Child(@TypeOf(a));
-    const a_len = vectorLength(@TypeOf(a));
-    const b_len = vectorLength(@TypeOf(b));
-
-    return @shuffle(Child, a, b, @as([a_len]i32, iota(i32, a_len)) ++ @as([b_len]i32, ~iota(i32, b_len)));
+pub fn join(a: anytype, b: anytype) @Vector(a.len + b.len, std.meta.Child(@TypeOf(a))) {
+    return a ++ b;
 }
 
 /// Returns a vector whose elements alternates between those of each input vector.
 /// For example, `interlace(.{[4]u32{11, 12, 13, 14}, [4]u32{21, 22, 23, 24}})` returns a vector containing `.{11, 21, 12, 22, 13, 23, 14, 24}`.
-pub fn interlace(vecs: anytype) @Vector(vectorLength(@TypeOf(vecs[0])) * vecs.len, std.meta.Child(@TypeOf(vecs[0]))) {
+pub fn interlace(vecs: anytype) @Vector(vecs[0].len * vecs.len, std.meta.Child(@TypeOf(vecs[0]))) {
     const VecType = @TypeOf(vecs[0]);
     const vecs_arr = @as([vecs.len]VecType, vecs);
     const Child = std.meta.Child(@TypeOf(vecs_arr[0]));
@@ -171,15 +169,13 @@ pub fn interlace(vecs: anytype) @Vector(vectorLength(@TypeOf(vecs[0])) * vecs.le
     const a = interlace(@as(*const [a_vec_count]VecType, @ptrCast(vecs_arr[0..a_vec_count])).*);
     const b = interlace(@as(*const [b_vec_count]VecType, @ptrCast(vecs_arr[a_vec_count..])).*);
 
-    const a_len = vectorLength(@TypeOf(a));
-    const b_len = vectorLength(@TypeOf(b));
-    const len = a_len + b_len;
+    const len = a.len + b.len;
 
     const indices = comptime blk: {
         const Vi32 = @Vector(len, i32);
         const count_up = iota(i32, len);
         const cycle = @divFloor(count_up, @as(Vi32, @splat(@intCast(vecs_arr.len))));
-        const select_mask = repeat(len, join(@as(@Vector(a_vec_count, bool), @splat(true)), @as(@Vector(b_vec_count, bool), @splat(false))));
+        const select_mask = repeat(len, @as(@Vector(a_vec_count, bool), @splat(true)) ++ @as(@Vector(b_vec_count, bool), @splat(false)));
         const a_indices = count_up - cycle * @as(Vi32, @splat(@intCast(b_vec_count)));
         const b_indices = shiftElementsRight(count_up - cycle * @as(Vi32, @splat(@intCast(a_vec_count))), a_vec_count, 0);
         break :blk @select(i32, select_mask, a_indices, ~b_indices);
@@ -194,10 +190,10 @@ pub fn deinterlace(
     comptime vec_count: usize,
     interlaced: anytype,
 ) [vec_count]@Vector(
-    vectorLength(@TypeOf(interlaced)) / vec_count,
+    interlaced.len / vec_count,
     std.meta.Child(@TypeOf(interlaced)),
 ) {
-    const vec_len = vectorLength(@TypeOf(interlaced)) / vec_count;
+    const vec_len = interlaced.len / vec_count;
     const Child = std.meta.Child(@TypeOf(interlaced));
 
     var out: [vec_count]@Vector(vec_len, Child) = undefined;
@@ -217,9 +213,8 @@ pub fn extract(
     comptime count: VectorCount(@TypeOf(vec)),
 ) @Vector(count, std.meta.Child(@TypeOf(vec))) {
     const Child = std.meta.Child(@TypeOf(vec));
-    const len = vectorLength(@TypeOf(vec));
 
-    std.debug.assert(@as(comptime_int, @intCast(first)) + @as(comptime_int, @intCast(count)) <= len);
+    std.debug.assert(@as(comptime_int, @intCast(first)) + @as(comptime_int, @intCast(count)) <= vec.len);
 
     return @shuffle(Child, vec, undefined, iota(i32, count) + @as(@Vector(count, i32), @splat(@intCast(first))));
 }
@@ -251,7 +246,7 @@ test "vector patterns" {
 pub fn mergeShift(a: anytype, b: anytype, comptime shift: VectorCount(@TypeOf(a, b))) @TypeOf(a, b) {
     const len = vectorLength(@TypeOf(a, b));
 
-    return extract(join(a, b), shift, len);
+    return extract(a ++ b, shift, len);
 }
 
 /// Elements are shifted rightwards (towards higher indices). New elements are added to the left, and the rightmost elements are cut off
@@ -261,9 +256,8 @@ pub fn shiftElementsRight(vec: anytype, comptime amount: VectorCount(@TypeOf(vec
     // slice would be comptime-known. This would permit vector shifts and rotates by a non-comptime-known amount.
     // However, I am unsure whether compiler optimizations would handle that well enough on all platforms.
     const V = @TypeOf(vec);
-    const len = vectorLength(V);
 
-    return mergeShift(@as(V, @splat(shift_in)), vec, len - amount);
+    return mergeShift(@as(V, @splat(shift_in)), vec, vec.len - amount);
 }
 
 /// Elements are shifted leftwards (towards lower indices). New elements are added to the right, and the leftmost elements are cut off
@@ -281,14 +275,17 @@ pub fn rotateElementsLeft(vec: anytype, comptime amount: VectorCount(@TypeOf(vec
 
 /// Elements are shifted rightwards (towards higher indices). Elements that leave to the right will reappear to the left in the same order.
 pub fn rotateElementsRight(vec: anytype, comptime amount: VectorCount(@TypeOf(vec))) @TypeOf(vec) {
-    return rotateElementsLeft(vec, vectorLength(@TypeOf(vec)) - amount);
+    return rotateElementsLeft(vec, vec.len - amount);
 }
 
 pub fn reverseOrder(vec: anytype) @TypeOf(vec) {
     const Child = std.meta.Child(@TypeOf(vec));
-    const len = vectorLength(@TypeOf(vec));
-
-    return @shuffle(Child, vec, undefined, @as(@Vector(len, i32), @splat(@as(i32, @intCast(len)) - 1)) - iota(i32, len));
+    return @shuffle(
+        Child,
+        vec,
+        undefined,
+        @as(@Vector(vec.len, i32), @splat(@as(i32, @intCast(vec.len)) - 1)) - iota(i32, vec.len),
+    );
 }
 
 test "vector shifting" {
@@ -302,36 +299,33 @@ test "vector shifting" {
 }
 
 pub fn firstTrue(vec: anytype) ?VectorIndex(@TypeOf(vec)) {
-    const len = vectorLength(@TypeOf(vec));
     const IndexInt = VectorIndex(@TypeOf(vec));
 
     if (!@reduce(.Or, vec)) {
         return null;
     }
-    const all_max: @Vector(len, IndexInt) = @splat(~@as(IndexInt, 0));
-    const indices = @select(IndexInt, vec, iota(IndexInt, len), all_max);
+    const all_max: @Vector(vec.len, IndexInt) = @splat(~@as(IndexInt, 0));
+    const indices = @select(IndexInt, vec, iota(IndexInt, vec.len), all_max);
     return @reduce(.Min, indices);
 }
 
 pub fn lastTrue(vec: anytype) ?VectorIndex(@TypeOf(vec)) {
-    const len = vectorLength(@TypeOf(vec));
     const IndexInt = VectorIndex(@TypeOf(vec));
 
     if (!@reduce(.Or, vec)) {
         return null;
     }
 
-    const all_zeroes: @Vector(len, IndexInt) = @splat(0);
-    const indices = @select(IndexInt, vec, iota(IndexInt, len), all_zeroes);
+    const all_zeroes: @Vector(vec.len, IndexInt) = @splat(0);
+    const indices = @select(IndexInt, vec, iota(IndexInt, vec.len), all_zeroes);
     return @reduce(.Max, indices);
 }
 
 pub fn countTrues(vec: anytype) VectorCount(@TypeOf(vec)) {
-    const len = vectorLength(@TypeOf(vec));
     const CountIntType = VectorCount(@TypeOf(vec));
 
-    const all_ones: @Vector(len, CountIntType) = @splat(1);
-    const all_zeroes: @Vector(len, CountIntType) = @splat(0);
+    const all_ones: @Vector(vec.len, CountIntType) = @splat(1);
+    const all_zeroes: @Vector(vec.len, CountIntType) = @splat(0);
 
     const one_if_true = @select(CountIntType, vec, all_ones, all_zeroes);
     return @reduce(.Add, one_if_true);
@@ -375,14 +369,12 @@ pub fn prefixScanWithFunc(
     /// For example, this should be 0 for addition or 1 for multiplication.
     comptime identity: std.meta.Child(@TypeOf(vec)),
 ) if (ErrorType == void) @TypeOf(vec) else ErrorType!@TypeOf(vec) {
-    const len = vectorLength(@TypeOf(vec));
-
     if (hop == 0) @compileError("hop can not be 0; you'd be going nowhere forever!");
     const abs_hop = if (hop < 0) -hop else hop;
 
     var acc = vec;
     comptime var i = 0;
-    inline while ((abs_hop << i) < len) : (i += 1) {
+    inline while ((abs_hop << i) < vec.len) : (i += 1) {
         const shifted = if (hop < 0) shiftElementsLeft(acc, abs_hop << i, identity) else shiftElementsRight(acc, abs_hop << i, identity);
 
         acc = if (ErrorType == void) func(acc, shifted) else try func(acc, shifted);

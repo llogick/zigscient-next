@@ -707,7 +707,7 @@ fn expr(w: *Walk, scope: *Scope, parent_decl: Decl.Index, node: Ast.Node.Index) 
         .greater_or_equal,
         .less_than,
         .less_or_equal,
-        .array_cat,
+        .cat,
 
         .error_union,
         .merge_error_sets,

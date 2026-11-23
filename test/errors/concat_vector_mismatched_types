@@ -1,0 +1,30 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn entry() void {
+    const a: @Vector(4, f32) = undefined;
+    const b: @Vector(4, u32) = undefined;
+    _ = a ++ b;
+}
+export fn entry2() void {
+    const a: @Vector(4, f32) = undefined;
+    const b: [4]f32 = undefined;
+    _ = a ++ b;
+}
+export fn entry3() void {
+    const a: [4]f32 = undefined;
+    const b: @Vector(4, f32) = undefined;
+    _ = a ++ b;
+}
+#}
+#update
+#check errors {
+test.zig:4:11: error: incompatible types: 'f32' and 'u32'
+test.zig:4:9: note: type 'f32' here
+test.zig:4:14: note: type 'u32' here
+test.zig:9:14: error: expected vector; found "[4]f32"
+test.zig:14:9: error: expected vector; found "[4]f32"
+#}

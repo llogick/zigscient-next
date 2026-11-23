@@ -1,0 +1,20 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn foo(ptr: *anyopaque) void {
+    const pred: *[4294967296]bool = @ptrCast(ptr);
+    _ = @select(
+        f32,
+        pred.*,
+        undefined,
+        undefined,
+    );
+}
+#}
+#update
+#check errors {
+test.zig:5:13: error: expression produces integer value '4294967296' which is too big for this compiler implementation to handle
+#}

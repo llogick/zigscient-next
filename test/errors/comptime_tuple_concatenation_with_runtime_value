@@ -1,0 +1,33 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+export fn a() void {
+    var lhs: struct { f32, f32 } = undefined;
+    lhs = .{ 0, 0 };
+    comptime {
+        const rhs: struct { f32, f32 } = .{ 0, 0 };
+        _ = lhs ++ rhs;
+    }
+}
+
+export fn b() void {
+    var rhs: struct { f32, f32 } = undefined;
+    rhs = .{ 0, 0 };
+    comptime {
+        const lhs: struct { f32, f32 } = .{ 0, 0 };
+        _ = lhs ++ rhs;
+    }
+}
+#}
+#update
+#check errors {
+test.zig:6:17: error: unable to evaluate comptime expression
+test.zig:6:13: note: operation is runtime due to this operand
+test.zig:4:5: note: 'comptime' keyword forces comptime evaluation
+test.zig:15:17: error: unable to evaluate comptime expression
+test.zig:15:20: note: operation is runtime due to this operand
+test.zig:13:5: note: 'comptime' keyword forces comptime evaluation
+#}

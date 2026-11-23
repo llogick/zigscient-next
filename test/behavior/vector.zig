@@ -1933,3 +1933,23 @@ test "len" {
     try S.runAllTests();
     try comptime S.runAllTests();
 }
+
+test "concat" {
+    const S = struct {
+        fn testTypes(Lhs: type, Rhs: type, Result: type) !void {
+            const lhs: Lhs = .{ 1, 2 };
+            const rhs: Rhs = .{ 3, 4 };
+            const result = lhs ++ rhs;
+            try expect(@TypeOf(result) == Result);
+            try expect(std.meta.eql(result, .{ 1, 2, 3, 4 }));
+        }
+
+        fn doTheTest() !void {
+            try testTypes(@Vector(2, f32), @Vector(2, f32), @Vector(4, f32));
+            try testTypes(@Vector(2, f32), @Vector(2, u8), @Vector(4, f32));
+            try testTypes(@Vector(2, u8), @Vector(2, f32), @Vector(4, f32));
+        }
+    };
+    try S.doTheTest();
+    try comptime S.doTheTest();
+}

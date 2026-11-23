@@ -506,7 +506,7 @@ fn lvalExpr(gz: *GenZir, scope: *Scope, node: Ast.Node.Index) InnerError!Zir.Ins
         .greater_or_equal,
         .less_than,
         .less_or_equal,
-        .array_cat,
+        .cat,
         .bool_and,
         .bool_or,
         .@"asm",
@@ -774,7 +774,7 @@ fn expr(gz: *GenZir, scope: *Scope, ri: ResultInfo, node: Ast.Node.Index) InnerE
         .greater_or_equal => return simpleBinOp(gz, scope, ri, node, .cmp_gte),
         .less_than        => return simpleBinOp(gz, scope, ri, node, .cmp_lt),
         .less_or_equal    => return simpleBinOp(gz, scope, ri, node, .cmp_lte),
-        .array_cat        => return simpleBinOp(gz, scope, ri, node, .array_cat),
+        .cat              => return simpleBinOp(gz, scope, ri, node, .cat),
 
         .error_union, .merge_error_sets => |tag| {
             const inst_tag: Zir.Inst.Tag = switch (tag) {
@@ -2706,7 +2706,7 @@ fn addEnsureResult(gz: *GenZir, maybe_unused_result: Zir.Inst.Ref, statement: As
             .alloc_inferred_comptime,
             .alloc_inferred_comptime_mut,
             .make_ptr_const,
-            .array_cat,
+            .cat,
             .array_type,
             .array_type_sentinel,
             .elem_type,
@@ -10433,7 +10433,7 @@ fn nodeMayEvalToError(tree: *const Ast, start_node: Ast.Node.Index) BuiltinFn.Ev
             .add,
             .add_wrap,
             .add_sat,
-            .array_cat,
+            .cat,
             .assign,
             .assign_destructure,
             .assign_bit_and,

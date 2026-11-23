@@ -1,0 +1,29 @@
+#zig build-obj {
+--name test -fno-emit-bin
+-Mroot=test.zig
+#}
+
+#write test.zig {
+// We don't support coercing non-vectors to vectors when doing concatenation to avoid complicating
+// RLS, once RLS can propagate result types across binary expresions these error tests will instead
+// become behavior tests.
+export fn vecArray() void {
+    _ = @Vector(2, f32){ 1, 2 } ++ [2]f32{ 3, 4 };
+}
+export fn arrayVec() void {
+    _ = [2]f32{ 3, 4 } ++ @Vector(2, f32){ 1, 2 };
+}
+export fn tupleVec() void {
+    _ = struct{f32, f32}{ 3, 4 } ++ @Vector(2, f32){ 1, 2 };
+}
+export fn vecTuple() void {
+    _ = @Vector(2, f32){ 1, 2 } ++ struct{f32, f32}{ 3, 4 };
+}
+#}
+#update
+#check errors {
+test.zig:5:42: error: expected vector; found "[2]f32"
+test.zig:8:15: error: expected vector; found "[2]f32"
+test.zig:11:25: error: expected vector; found "struct { f32, f32 }"
+test.zig:14:52: error: expected vector; found "struct { f32, f32 }"
+#}

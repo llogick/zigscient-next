@@ -355,7 +355,7 @@ const Writer = struct {
             .addwrap,
             .add_sat,
             .add_unsafe,
-            .array_cat,
+            .cat,
             .mul,
             .mulwrap,
             .mul_sat,

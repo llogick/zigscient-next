@@ -1756,7 +1756,7 @@ const operTable = std.enums.directEnumArrayDefault(Token.Tag, OperInfo, .{ .prec
 
     .plus =                                  .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .add },
     .minus =                                 .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .sub },
-    .plus_plus =                             .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .array_cat },
+    .plus_plus =                             .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .cat },
     .plus_percent =                          .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .add_wrap },
     .minus_percent =                         .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .sub_wrap },
     .plus_pipe =                             .{ .prec = .{ .group = .arithmetic_sum },                                   .tag = .add_sat },

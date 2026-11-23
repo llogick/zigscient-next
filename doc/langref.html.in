@@ -1821,11 +1821,13 @@ try value == 5678{#endsyntax#}</pre>
           </td>
         </tr>
         <tr>
-          <td>Array Concatenation</td>
+          <td>Concatenation</td>
           <td><pre>{#syntax#}a ++ b{#endsyntax#}</pre></td>
           <td>
             <ul>
               <li>{#link|Arrays#}</li>
+              <li>{#link|Vectors#}</li>
+              <li>{#link|Tuples#}</li>
             </ul>
           </td>
           <td>
@@ -1953,7 +1955,7 @@ and or{#endsyntax#}</pre>
       <pre>{#syntax#}||{#endsyntax#}</pre>
 
       <p>
-      For array concatenation operators:
+      For concatenation operators:
       </p>
 
       <pre>{#syntax#}++{#endsyntax#}</pre>

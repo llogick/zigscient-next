@@ -703,7 +703,7 @@ pub fn firstToken(tree: Ast, node: Node.Index) TokenIndex {
         .mul_sat,
         .add,
         .sub,
-        .array_cat,
+        .cat,
         .add_wrap,
         .sub_wrap,
         .add_sat,
@@ -939,7 +939,7 @@ pub fn lastToken(tree: Ast, node: Node.Index) TokenIndex {
         .mul_sat,
         .add,
         .sub,
-        .array_cat,
+        .cat,
         .add_wrap,
         .sub_wrap,
         .add_sat,
@@ -3211,7 +3211,7 @@ pub const Node = struct {
         /// `lhs - rhs`. The `main_token` field is the `-` token.
         sub,
         /// `lhs ++ rhs`. The `main_token` field is the `++` token.
-        array_cat,
+        cat,
         /// `lhs +% rhs`. The `main_token` field is the `+%` token.
         add_wrap,
         /// `lhs -% rhs`. The `main_token` field is the `-%` token.

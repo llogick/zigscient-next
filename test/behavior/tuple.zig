@@ -64,6 +64,24 @@ test "more tuple concatenation" {
             try consume_tuple(.{0} ++ t2, 2);
             try consume_tuple(.{void} ++ t2, 2);
             try consume_tuple(.{u8} ++ .{rt_var} ++ .{true}, 3);
+
+            // Explicit types, no defaults
+            {
+                const lhs: struct { f32, f32 } = .{ 1, 2 };
+                const rhs: struct { f32, f32 } = .{ 3, 4 };
+                const result = lhs ++ rhs;
+                try expect(@TypeOf(result) == struct { f32, f32, f32, f32 });
+                inline for (result, 0..) |e, i| try expect(e == i + 1);
+            }
+
+            // Explicit types, with defaults
+            {
+                const lhs: struct { comptime f32 = 1, f32 } = .{ 1, 2 };
+                const rhs: struct { f32, comptime f32 = 4 } = .{ 3, 4 };
+                const result = lhs ++ rhs;
+                try expect(@TypeOf(result) == struct { comptime f32 = 1, f32, f32, comptime f32 = 4 });
+                inline for (result, 0..) |e, i| try expect(e == i + 1);
+            }
         }
     };
 
