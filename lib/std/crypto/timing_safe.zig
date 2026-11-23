@@ -343,7 +343,7 @@ const Protected = struct {
                 for (x) |e| {
                     acc |= e;
                 }
-                return isZeroBit(Element, acc) != 0;
+                return isZeroBit(Element, Protected.valueBarrier(acc)) != 0;
             },
             else => unreachable,
         }
@@ -359,7 +359,7 @@ const Protected = struct {
                 for (a, b) |x, y| {
                     acc |= x ^ y;
                 }
-                return isZeroBit(Element, acc) != 0;
+                return isZeroBit(Element, Protected.valueBarrier(acc)) != 0;
             },
             else => unreachable,
         }
