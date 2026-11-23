@@ -265,7 +265,8 @@ pub fn parse(args: ParseOptions) !Query {
             if (std.mem.eql(u8, abi_name, "eabihf")) break :compat Target.Abi.none;
             if (std.mem.eql(u8, abi_name, "gnuabi64")) break :compat Target.Abi.gnu;
             if (std.mem.eql(u8, abi_name, "gnuabin32")) break :compat Target.Abi.gnun32;
-            if (std.mem.eql(u8, abi_name, "gnueabihf")) break :compat Target.Abi.none;
+            if (std.mem.eql(u8, abi_name, "gnueabi")) break :compat Target.Abi.gnusf;
+            if (std.mem.eql(u8, abi_name, "gnueabihf")) break :compat Target.Abi.gnu;
             if (std.mem.eql(u8, abi_name, "muslabi64")) break :compat Target.Abi.musl;
             if (std.mem.eql(u8, abi_name, "muslabin32")) break :compat Target.Abi.musln32;
             if (std.mem.eql(u8, abi_name, "musleabi")) break :compat Target.Abi.muslsf;
