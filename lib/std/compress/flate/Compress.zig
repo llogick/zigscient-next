@@ -1166,7 +1166,8 @@ const huffman = struct {
 
             tree_nodes[nodes_end] = .{
                 .freq = tree_nodes[a].freq + tree_nodes[b].freq,
-                .depth = @max(tree_nodes[a].depth, tree_nodes[b].depth) + 1,
+                // @as is here to avoid @max collapsing comptime known 0s to u0 if run at comptime
+                .depth = @as(u16, @max(tree_nodes[a].depth, tree_nodes[b].depth)) + 1,
             };
             defer nodes_end += 1;
             tree_parent_nodes[a] = nodes_end;
@@ -1244,6 +1245,7 @@ const huffman = struct {
     fn buildValues(freqs: []const u16, out_codes: []u16, bits: []u4, bit_counts: [16]u16) u32 {
         var code: u16 = 0;
         var base: [16]u16 = undefined;
+        base[0] = 0;
         assert(bit_counts[0] == 0);
         for (bit_counts[1..], base[1..]) |c, *b| {
             b.* = code;
@@ -1253,7 +1255,7 @@ const huffman = struct {
         var freq_sums: [16]u16 = @splat(0);
         for (out_codes, bits, freqs) |*c, b, f| {
             c.* = @bitReverse(base[b]) >> -%b;
-            base[b] += 1; // For `b == 0` this is fine since v is specified to be undefined.
+            base[b] += 1;
             freq_sums[b] += f;
         }
         return @reduce(.Add, @as(@Vector(16, u32), freq_sums) * std.simd.iota(u32, 16));
@@ -1490,6 +1492,25 @@ test Compress {
     const fbufs = try testingFreqBufs();
     defer std.testing.allocator.destroy(fbufs);
     try std.testing.fuzz(fbufs, testFuzzedCompressInput, .{});
+}
+
+test "Compress at comptime" {
+    const actual = comptime blk: {
+        @setEvalBranchQuota(3000);
+        var buffer: [100]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buffer);
+
+        var compress_buffer: [flate.max_window_len]u8 = undefined;
+        var compress = try init(&writer, &compress_buffer, .raw, .default);
+        try compress.writer.writeAll("random text");
+        try compress.finish();
+
+        break :blk writer.buffered().*;
+    };
+
+    // copied from output of expectEqualSlices and verified to be identical to pythons zlib
+    const expected: []const u8 = &.{ 0x2B, 0x4A, 0xCC, 0x4B, 0xC9, 0xCF, 0x55, 0x28, 0x49, 0xAD, 0x28, 0x01, 0x00 };
+    try std.testing.expectEqualSlices(u8, expected, &actual);
 }
 
 fn testFuzzedCompressInput(fbufs: *const [2][65536]u8, smith: *std.testing.Smith) !void {
