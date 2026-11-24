@@ -60,7 +60,7 @@ pub fn getSymbols(
         });
     };
 
-    const compile_unit = ofile_dwarf.findCompileUnit(native_endian, ofile_vaddr) catch {
+    const compile_unit = ofile_dwarf.findCompileUnit(ofile_vaddr) orelse {
         // Return at least the symbol name if available.
         return symbols.append(symbol_allocator, .{
             .name = try file.lookupSymbolName(vaddr),
@@ -72,19 +72,10 @@ pub fn getSymbols(
     try symbols.append(symbol_allocator, .{
         .name = ofile_dwarf.getSymbolName(ofile_vaddr) orelse
             try file.lookupSymbolName(vaddr),
-        .compile_unit_name = compile_unit.die.getAttrString(
-            ofile_dwarf,
-            native_endian,
-            std.dwarf.AT.name,
-            ofile_dwarf.section(.debug_str),
-            compile_unit,
-        ) catch |err| switch (err) {
-            error.MissingDebugInfo, error.InvalidDebugInfo => null,
-        },
+        .compile_unit_name = compile_unit.ptr(ofile_dwarf).name,
         .source_location = ofile_dwarf.getLineNumberInfo(
             gpa,
             text_arena,
-            native_endian,
             compile_unit,
             ofile_vaddr,
         ) catch null,

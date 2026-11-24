@@ -1246,6 +1246,14 @@ pub fn Aligned(comptime T: type, comptime alignment: ?mem.Alignment) type {
             self.items.len = new_len;
         }
 
+        /// Adjust the list length to `new_len`.
+        /// Additional elements contain the value `undefined`.
+        /// Never invalidates element pointers.
+        pub fn resizeAssumeCapacity(self: *Self, new_len: usize) void {
+            assert(new_len <= self.capacity);
+            self.items.len = new_len;
+        }
+
         /// Reduce allocated capacity to `new_len`.
         /// May invalidate element pointers.
         /// Asserts that the new length is less than or equal to the previous length.

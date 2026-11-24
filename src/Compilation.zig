@@ -423,7 +423,7 @@ pub const Path = struct {
     }
 
     /// Given a `Path`, returns the directory handle and sub path to be used to open the path.
-    pub fn openInfo(p: Path, dirs: std.zig.Directories) struct { Io.Dir, []const u8 } {
+    pub fn openInfo(p: Path, dirs: *const std.zig.Directories) struct { Io.Dir, []const u8 } {
         const dir = switch (p.root) {
             .none => {
                 const cwd_sub_path = absToCwdRelative(p.sub_path, dirs.cwd);
@@ -488,7 +488,7 @@ pub const Path = struct {
 
     /// From an unresolved path (which can be made of multiple not-yet-joined strings), construct a
     /// canonical `Path`.
-    pub fn fromUnresolved(gpa: Allocator, dirs: std.zig.Directories, unresolved_parts: []const []const u8) Allocator.Error!Path {
+    pub fn fromUnresolved(gpa: Allocator, dirs: *const std.zig.Directories, unresolved_parts: []const []const u8) Allocator.Error!Path {
         const resolved = try std.zig.resolvePath(gpa, dirs.cwd, unresolved_parts);
         errdefer gpa.free(resolved);
 
@@ -562,12 +562,7 @@ pub const Path = struct {
     ///
     /// For instance, if the Zig lib directory is inside the global cache, passing `root` as
     /// `.global_cache` could still end up returning a `Path` with `Path.root == .zig_lib`.
-    pub fn fromRoot(
-        gpa: Allocator,
-        dirs: std.zig.Directories,
-        root: Path.Root,
-        sub_path: []const u8,
-    ) Allocator.Error!Path {
+    pub fn fromRoot(gpa: Allocator, dirs: *const std.zig.Directories, root: Path.Root, sub_path: []const u8) Allocator.Error!Path {
         // Currently, this just wraps `fromUnresolved` for simplicity. A more efficient impl is
         // probably possible if this function ever ends up impacting performance somehow.
         return .fromUnresolved(gpa, dirs, &.{
@@ -585,12 +580,7 @@ pub const Path = struct {
     /// Given a `Path` and an (unresolved) sub path relative to it, construct a `Path` representing
     /// the joined path `p/sub_path`. Note that, like with `fromRoot`, the `sub_path` might cause us
     /// to move into a different `Path.Root`.
-    pub fn join(
-        p: Path,
-        gpa: Allocator,
-        dirs: std.zig.Directories,
-        sub_path: []const u8,
-    ) Allocator.Error!Path {
+    pub fn join(p: Path, gpa: Allocator, dirs: *const std.zig.Directories, sub_path: []const u8) Allocator.Error!Path {
         // Currently, this just wraps `fromUnresolved` for simplicity. A more efficient impl is
         // probably possible if this function ever ends up impacting performance somehow.
         return .fromUnresolved(gpa, dirs, &.{
@@ -607,12 +597,7 @@ pub const Path = struct {
     }
 
     /// Like `join`, but `sub_path` is relative to the dirname of `p` instead of `p` itself.
-    pub fn upJoin(
-        p: Path,
-        gpa: Allocator,
-        dirs: std.zig.Directories,
-        sub_path: []const u8,
-    ) Allocator.Error!Path {
+    pub fn upJoin(p: Path, gpa: Allocator, dirs: *const std.zig.Directories, sub_path: []const u8) Allocator.Error!Path {
         return .fromUnresolved(gpa, dirs, &.{
             switch (p.root) {
                 .zig_lib => dirs.zig_lib.path orelse "",
@@ -627,7 +612,7 @@ pub const Path = struct {
         });
     }
 
-    pub fn toCachePath(p: Path, dirs: std.zig.Directories) Cache.Path {
+    pub fn toCachePath(p: Path, dirs: *const std.zig.Directories) Cache.Path {
         const root_dir: Cache.Directory = switch (p.root) {
             .zig_lib => dirs.zig_lib,
             .global_cache => dirs.global_cache,
@@ -684,7 +669,7 @@ pub const Path = struct {
     /// Returns whether this `Path` is illegal to have as a user-imported `Zcu.File` (including
     /// as the root of a module). Such paths exist in directories which the Zig compiler treats
     /// specially, like 'global_cache/b/', which stores 'builtin.zig' files.
-    pub fn isIllegalZigImport(p: Path, gpa: Allocator, dirs: std.zig.Directories) Allocator.Error!bool {
+    pub fn isIllegalZigImport(p: Path, gpa: Allocator, dirs: *const std.zig.Directories) Allocator.Error!bool {
         const zig_builtin_dir: Path = try .fromRoot(gpa, dirs, .global_cache, "b");
         defer zig_builtin_dir.deinit(gpa);
         return switch (p.isNested(zig_builtin_dir)) {
@@ -1986,7 +1971,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
 
             const std_mod = options.std_mod orelse (Module.create(arena, .{
                 .paths = .{
-                    .root = try .fromRoot(arena, options.dirs, .zig_lib, "std"),
+                    .root = try .fromRoot(arena, &options.dirs, .zig_lib, "std"),
                     .root_src_path = "std.zig",
                 },
                 .fully_qualified_name = "std",
@@ -2944,13 +2929,13 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
         try comp.c_object_work_queue.ensureUnusedCapacity(gpa, comp.c_objects.items.len);
         for (comp.c_objects.items) |c_object| {
             comp.c_object_work_queue.pushBackAssumeCapacity(c_object);
-            try comp.appendFileSystemInput(try .fromUnresolved(arena, comp.dirs, &.{c_object.src.src_path}));
+            try comp.appendFileSystemInput(try .fromUnresolved(arena, &comp.dirs, &.{c_object.src.src_path}));
         }
     }
 
     for (comp.link_inputs) |input| {
         const path = input.path();
-        try comp.appendFileSystemInput(try .fromUnresolved(arena, comp.dirs, &.{
+        try comp.appendFileSystemInput(try .fromUnresolved(arena, &comp.dirs, &.{
             path.root_dir.path orelse ".",
             path.sub_path,
         }));
@@ -2963,7 +2948,7 @@ pub fn update(comp: *Compilation, main_progress_node: std.Progress.Node) UpdateE
         comp.win32_resource_work_queue.pushBackAssumeCapacity(win32_resource);
         switch (win32_resource.src) {
             .rc => |f| {
-                try comp.appendFileSystemInput(try .fromUnresolved(arena, comp.dirs, &.{f.src_path}));
+                try comp.appendFileSystemInput(try .fromUnresolved(arena, &comp.dirs, &.{f.src_path}));
             },
             .manifest => {},
         }
@@ -4843,7 +4828,7 @@ fn docsCopyModule(
     const io = comp.io;
     const root = module.root;
     var mod_dir = d: {
-        const root_dir, const sub_path = root.openInfo(comp.dirs);
+        const root_dir, const sub_path = root.openInfo(&comp.dirs);
         break :d root_dir.openDir(io, sub_path, .{ .iterate = true });
     } catch |err| {
         return comp.lockAndSetMiscFailure(.docs_copy, "unable to open directory '{f}': {t}", .{ root.fmt(comp), err });
@@ -4960,7 +4945,7 @@ fn workerDocsWasmFallible(comp: *Compilation, prog_node: std.Progress.Node) SubU
 
     const root_mod = Module.create(arena, .{
         .paths = .{
-            .root = try .fromRoot(arena, dirs, .zig_lib, "docs/wasm"),
+            .root = try .fromRoot(arena, &dirs, .zig_lib, "docs/wasm"),
             .root_src_path = src_basename,
         },
         .fully_qualified_name = root_name,
@@ -4977,7 +4962,7 @@ fn workerDocsWasmFallible(comp: *Compilation, prog_node: std.Progress.Node) SubU
     };
     const walk_mod = Module.create(arena, .{
         .paths = .{
-            .root = try .fromRoot(arena, dirs, .zig_lib, "docs/wasm"),
+            .root = try .fromRoot(arena, &dirs, .zig_lib, "docs/wasm"),
             .root_src_path = "Walk.zig",
         },
         .fully_qualified_name = "Walk",
@@ -5839,10 +5824,10 @@ fn updateCObject(
                 while (it.next()) |token| {
                     const input_path: Compilation.Path = switch (token) {
                         .target, .target_must_resolve => continue,
-                        .prereq => |file_path| try .fromUnresolved(arena, comp.dirs, &.{file_path}),
+                        .prereq => |file_path| try .fromUnresolved(arena, &comp.dirs, &.{file_path}),
                         .prereq_must_resolve => p: {
                             try token.resolve(gpa, &str_buf);
-                            break :p try .fromUnresolved(arena, comp.dirs, &.{str_buf.items});
+                            break :p try .fromUnresolved(arena, &comp.dirs, &.{str_buf.items});
                         },
                         else => |err_token| return comp.failCObjRetryable(
                             c_object,

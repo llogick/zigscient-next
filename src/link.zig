@@ -826,7 +826,7 @@ pub const File = struct {
     /// * `updateLineNumber`
     ///
     /// Asserts that the ZCU is not using the LLVM backend.
-    fn zcuFilesReady(base: *File, zcu: *Zcu) Error!void {
+    fn zcuFilesReady(base: *File, zcu: *const Zcu) Error!void {
         assert(zcu.llvm_object == null);
         switch (base.tag) {
             else => {},

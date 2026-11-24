@@ -1133,7 +1133,7 @@ pub const File = struct {
         assert(file.stat.size <= std.math.maxInt(u32)); // `PerThread.updateFile` checks this
 
         var f = f: {
-            const dir, const sub_path = file.path.openInfo(zcu.comp.dirs);
+            const dir, const sub_path = file.path.openInfo(&zcu.comp.dirs);
             break :f try dir.openFile(io, sub_path, .{});
         };
         defer f.close(io);

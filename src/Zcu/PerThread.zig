@@ -483,7 +483,7 @@ pub fn updateFile(
 
     // In any case we need to examine the stat of the file to determine the course of action.
     var source_file = f: {
-        const dir, const sub_path = file.path.openInfo(comp.dirs);
+        const dir, const sub_path = file.path.openInfo(&comp.dirs);
         break :f try dir.openFile(io, sub_path, .{});
     };
     defer source_file.close(io);
@@ -2464,7 +2464,7 @@ fn discoverImport(
         return .module;
     }
 
-    const new_path = try importer_path.upJoin(gpa, zcu.comp.dirs, import_string);
+    const new_path = try importer_path.upJoin(gpa, &comp.dirs, import_string);
     errdefer new_path.deinit(gpa);
 
     // We're about to do a GOP on `import_table`, so we need the mutex.
@@ -2554,9 +2554,9 @@ pub fn doImport(
     {
         return error.ModuleNotFound;
     }
-    const path = try importer.path.upJoin(gpa, zcu.comp.dirs, import_string);
+    const path = try importer.path.upJoin(gpa, &zcu.comp.dirs, import_string);
     defer path.deinit(gpa);
-    if (try path.isIllegalZigImport(gpa, zcu.comp.dirs)) {
+    if (try path.isIllegalZigImport(gpa, &zcu.comp.dirs)) {
         return error.IllegalZigImport;
     }
     return .{
@@ -2564,8 +2564,8 @@ pub fn doImport(
         .module_root = null,
     };
 }
-/// This is called once during `Compilation.create` and never again. "builtin" modules don't yet
-/// exist, so are not added to `module_roots` here. They must be added when they are created.
+/// "builtin" modules don't yet exist, so are not added to `module_roots` here. They must be added
+/// when they are created.
 pub fn populateModuleRootTable(pt: Zcu.PerThread) Allocator.Error!void {
     const zcu = pt.zcu;
     const comp = zcu.comp;
@@ -2606,10 +2606,10 @@ pub fn populateModuleRootTable(pt: Zcu.PerThread) Allocator.Error!void {
             continue;
         }
 
-        const path = try mod.root.join(gpa, zcu.comp.dirs, mod.root_src_path);
+        const path = try mod.root.join(gpa, &zcu.comp.dirs, mod.root_src_path);
         errdefer path.deinit(gpa);
 
-        if (try path.isIllegalZigImport(gpa, zcu.comp.dirs)) {
+        if (try path.isIllegalZigImport(gpa, &zcu.comp.dirs)) {
             // One of the specified modules had its root source file at an illegal path.
             zcu.illegal_module_root = mod;
             return;
@@ -2856,7 +2856,7 @@ fn updateBuiltinModule(pt: Zcu.PerThread, opts: Builtin) Allocator.Error!struct 
         const gop = try zcu.builtin_modules.getOrPut(gpa, opts.hash());
         if (!gop.found_existing) {
             errdefer _ = zcu.builtin_modules.pop();
-            gop.value_ptr.* = try .createBuiltin(comp.arena, opts, comp.dirs);
+            gop.value_ptr.* = try .createBuiltin(comp.arena, opts, &comp.dirs);
         }
         const mod = gop.value_ptr.*;
         assert(std.mem.eql(u8, &mod.getBuiltinOptions(comp.config).hash(), gop.key_ptr)); // builtin is its own builtin
@@ -2868,7 +2868,7 @@ fn updateBuiltinModule(pt: Zcu.PerThread, opts: Builtin) Allocator.Error!struct 
         return .{ .file = file.unwrap().?, .module_root = mod };
     }
 
-    const path = try mod.root.join(gpa, comp.dirs, "builtin.zig");
+    const path = try mod.root.join(gpa, &comp.dirs, "builtin.zig");
     errdefer path.deinit(gpa);
 
     const file_gop = try zcu.import_table.getOrPutAdapted(gpa, path, Zcu.ImportTableAdapter{ .zcu = zcu });
@@ -2951,7 +2951,7 @@ pub fn embedFile(
         break :m cur_file.mod.?.deps.get(import_string);
     };
     if (opt_mod) |mod| {
-        const path = try mod.root.join(gpa, zcu.comp.dirs, mod.root_src_path);
+        const path = try mod.root.join(gpa, &zcu.comp.dirs, mod.root_src_path);
         errdefer path.deinit(gpa);
 
         const gop = try zcu.embed_table.getOrPutAdapted(gpa, path, Zcu.EmbedTableAdapter{});
@@ -2965,7 +2965,7 @@ pub fn embedFile(
     }
 
     const embed_file, const embed_file_idx: Zcu.EmbedFile.Index = ef: {
-        const path = try cur_file.path.upJoin(gpa, zcu.comp.dirs, import_string);
+        const path = try cur_file.path.upJoin(gpa, &zcu.comp.dirs, import_string);
         errdefer path.deinit(gpa);
         const gop = try zcu.embed_table.getOrPutAdapted(gpa, path, Zcu.EmbedTableAdapter{});
         if (!gop.found_existing) {
@@ -3012,7 +3012,7 @@ fn updateEmbedFileInner(
     const ip = &zcu.intern_pool;
 
     var file = f: {
-        const dir, const sub_path = ef.path.openInfo(zcu.comp.dirs);
+        const dir, const sub_path = ef.path.openInfo(&zcu.comp.dirs);
         break :f try dir.openFile(io, sub_path, .{});
     };
     defer file.close(io);

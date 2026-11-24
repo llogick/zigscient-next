@@ -1,6 +1,5 @@
 const std = @import("std.zig");
 const assert = std.debug.assert;
-const mem = std.mem;
 
 pub const archive_signature = "!<arch>\n";
 pub const archive_end_of_header = "`\n";
@@ -1028,9 +1027,9 @@ pub const Coff = struct {
     // The lifetime of `data` must be longer than the lifetime of the returned Coff
     pub fn init(data: []const u8, is_loaded: bool) error{ EndOfStream, MissingPEHeader }!Coff {
         if (data.len < pe_pointer_offset + 4) return error.EndOfStream;
-        const header_offset = mem.readInt(u32, data[pe_pointer_offset..][0..4], .little);
+        const header_offset = std.mem.readInt(u32, data[pe_pointer_offset..][0..4], .little);
         if (data.len < header_offset + 4) return error.EndOfStream;
-        const is_image = mem.eql(u8, data[header_offset..][0..4], pe_signature);
+        const is_image = std.mem.eql(u8, data[header_offset..][0..4], pe_signature);
 
         const coff: Coff = .{
             .data = data,
@@ -1090,7 +1089,7 @@ pub const Coff = struct {
 
         const code_view_signature = try reader.takeArray(4);
         // 'RSDS' indicates PDB70 format, used by lld.
-        if (!mem.eql(u8, code_view_signature, "RSDS"))
+        if (!std.mem.eql(u8, code_view_signature, "RSDS"))
             return error.InvalidPEMagic;
         try reader.readSliceAll(self.guid[0..]);
         self.age = try reader.takeInt(u32, .little);
@@ -1166,7 +1165,7 @@ pub const Coff = struct {
         if (coff_header.pointer_to_symbol_table == 0) return null;
 
         const offset = coff_header.pointer_to_symbol_table + Symbol.sizeOf() * coff_header.number_of_symbols;
-        const size = mem.readInt(u32, self.data[offset..][0..4], .little);
+        const size = std.mem.readInt(u32, self.data[offset..][0..4], .little);
         if ((offset + size) > self.data.len) return error.InvalidStrtabSize;
 
         return Strtab{ .buffer = self.data[offset..][0..size] };
@@ -1183,7 +1182,7 @@ pub const Coff = struct {
         return @as([*]align(1) const SectionHeader, @ptrCast(self.data.ptr + offset))[0..coff_header.number_of_sections];
     }
 
-    pub fn getSectionHeadersAlloc(self: *const Coff, allocator: mem.Allocator) ![]SectionHeader {
+    pub fn getSectionHeadersAlloc(self: *const Coff, allocator: std.mem.Allocator) ![]SectionHeader {
         const section_headers = self.getSectionHeaders();
         const out_buff = try allocator.alloc(SectionHeader, section_headers.len);
         for (out_buff, 0..) |*section_header, i| {
@@ -1202,12 +1201,12 @@ pub const Coff = struct {
         return name;
     }
 
-    pub fn getSectionByName(self: *const Coff, comptime name: []const u8) ?*align(1) const SectionHeader {
+    pub fn getSectionByName(self: *const Coff, name: []const u8) ?*align(1) const SectionHeader {
         for (self.getSectionHeaders()) |*sect| {
             const section_name = self.getSectionName(sect) catch |e| switch (e) {
                 error.InvalidStrtabSize => continue, //ignore invalid(?) strtab entries - see also GitHub issue #15238
             };
-            if (mem.eql(u8, section_name, name)) {
+            if (std.mem.eql(u8, section_name, name)) {
                 return sect;
             }
         }
@@ -1219,7 +1218,7 @@ pub const Coff = struct {
         return self.data[offset..][0..sec.virtual_size];
     }
 
-    pub fn getSectionDataAlloc(self: *const Coff, sec: *align(1) const SectionHeader, allocator: mem.Allocator) ![]u8 {
+    pub fn getSectionDataAlloc(self: *const Coff, sec: *align(1) const SectionHeader, allocator: std.mem.Allocator) ![]u8 {
         const section_data = self.getSectionData(sec);
         return allocator.dupe(u8, section_data);
     }
@@ -1267,9 +1266,9 @@ pub const Symtab = struct {
     fn asSymbol(raw: []const u8) Symbol {
         return .{
             .name = raw[0..8].*,
-            .value = mem.readInt(u32, raw[8..12], .little),
-            .section_number = @as(SectionNumber, @fromBackingInt(@intCast(mem.readInt(u16, raw[12..14], .little)))),
-            .type = @as(SymType, @bitCast(mem.readInt(u16, raw[14..16], .little))),
+            .value = std.mem.readInt(u32, raw[8..12], .little),
+            .section_number = @as(SectionNumber, @fromBackingInt(@intCast(std.mem.readInt(u16, raw[12..14], .little)))),
+            .type = @as(SymType, @bitCast(std.mem.readInt(u16, raw[14..16], .little))),
             .storage_class = @as(StorageClass, @fromBackingInt(@intCast(raw[16]))),
             .number_of_aux_symbols = raw[17],
         };
@@ -1278,27 +1277,27 @@ pub const Symtab = struct {
     fn asDebugInfo(raw: []const u8) DebugInfoDefinition {
         return .{
             .unused_1 = raw[0..4].*,
-            .linenumber = mem.readInt(u16, raw[4..6], .little),
+            .linenumber = std.mem.readInt(u16, raw[4..6], .little),
             .unused_2 = raw[6..12].*,
-            .pointer_to_next_function = mem.readInt(u32, raw[12..16], .little),
+            .pointer_to_next_function = std.mem.readInt(u32, raw[12..16], .little),
             .unused_3 = raw[16..18].*,
         };
     }
 
     fn asFuncDef(raw: []const u8) FunctionDefinition {
         return .{
-            .tag_index = mem.readInt(u32, raw[0..4], .little),
-            .total_size = mem.readInt(u32, raw[4..8], .little),
-            .pointer_to_linenumber = mem.readInt(u32, raw[8..12], .little),
-            .pointer_to_next_function = mem.readInt(u32, raw[12..16], .little),
+            .tag_index = std.mem.readInt(u32, raw[0..4], .little),
+            .total_size = std.mem.readInt(u32, raw[4..8], .little),
+            .pointer_to_linenumber = std.mem.readInt(u32, raw[8..12], .little),
+            .pointer_to_next_function = std.mem.readInt(u32, raw[12..16], .little),
             .unused = raw[16..18].*,
         };
     }
 
     fn asWeakExtDef(raw: []const u8) WeakExternalDefinition {
         return .{
-            .tag_index = mem.readInt(u32, raw[0..4], .little),
-            .flag = @as(WeakExternalFlag, @fromBackingInt(@intCast(mem.readInt(u32, raw[4..8], .little)))),
+            .tag_index = std.mem.readInt(u32, raw[0..4], .little),
+            .flag = @as(WeakExternalFlag, @fromBackingInt(@intCast(std.mem.readInt(u32, raw[4..8], .little)))),
             .unused = raw[8..18].*,
         };
     }
@@ -1311,11 +1310,11 @@ pub const Symtab = struct {
 
     fn asSectDef(raw: []const u8) SectionDefinition {
         return .{
-            .length = mem.readInt(u32, raw[0..4], .little),
-            .number_of_relocations = mem.readInt(u16, raw[4..6], .little),
-            .number_of_linenumbers = mem.readInt(u16, raw[6..8], .little),
-            .checksum = mem.readInt(u32, raw[8..12], .little),
-            .number = mem.readInt(u16, raw[12..14], .little),
+            .length = std.mem.readInt(u32, raw[0..4], .little),
+            .number_of_relocations = std.mem.readInt(u16, raw[4..6], .little),
+            .number_of_linenumbers = std.mem.readInt(u16, raw[6..8], .little),
+            .checksum = std.mem.readInt(u32, raw[8..12], .little),
+            .number = std.mem.readInt(u16, raw[12..14], .little),
             .selection = @as(ComdatSelection, @fromBackingInt(@intCast(raw[14]))),
             .unused = raw[15..18].*,
         };
@@ -1349,7 +1348,7 @@ pub const Strtab = struct {
 
     pub fn get(self: Strtab, off: u32) []const u8 {
         assert(off < self.buffer.len);
-        return mem.sliceTo(@as([*:0]const u8, @ptrCast(self.buffer.ptr + off)), 0);
+        return std.mem.sliceTo(@as([*:0]const u8, @ptrCast(self.buffer.ptr + off)), 0);
     }
 };
 

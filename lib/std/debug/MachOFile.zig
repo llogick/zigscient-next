@@ -58,7 +58,7 @@ pub fn load(gpa: Allocator, io: Io, path: []const u8, arch: std.Target.Cpu.Arch)
         while (try it.next()) |cmd| switch (cmd.hdr.cmd) {
             .SYMTAB => symtab = cmd.cast(macho.symtab_command) orelse return error.InvalidMachO,
             .SEGMENT_64 => if (cmd.cast(macho.segment_command_64)) |seg_cmd| {
-                if (!mem.eql(u8, seg_cmd.segName(), "__TEXT")) continue;
+                if (!std.mem.eql(u8, seg_cmd.segName(), "__TEXT")) continue;
                 text_vmaddr = seg_cmd.vmaddr;
             },
             .UUID => if (cmd.cast(macho.uuid_command)) |uuid_cmd| {
@@ -218,7 +218,7 @@ pub fn load(gpa: Allocator, io: Io, path: []const u8, arch: std.Target.Cpu.Arch)
     // Even though lld emits symbols in ascending order, this debug code
     // should work for programs linked in any valid way.
     // This sort is so that we can binary search later.
-    mem.sort(Symbol, symbols_slice, {}, Symbol.addressLessThan);
+    std.mem.sort(Symbol, symbols_slice, {}, Symbol.addressLessThan);
 
     const adjacent_dsym = if (uuid) |expected_uuid|
         try loadAdjacentDsym(gpa, io, path, arch, expected_uuid)
@@ -250,11 +250,11 @@ pub fn getDwarfForAddress(mf: *MachOFile, gpa: Allocator, io: Io, vaddr: u64) !s
 
     // Take the symbol name from the N_FUN STAB entry, we're going to
     // use it if we fail to find the DWARF infos
-    const stab_symbol = mem.sliceTo(mf.strings[symbol.strx..], 0);
+    const stab_symbol = std.mem.sliceTo(mf.strings[symbol.strx..], 0);
 
     const gop = try mf.ofiles.getOrPut(gpa, symbol.ofile);
     if (!gop.found_existing) {
-        const name = mem.sliceTo(mf.strings[symbol.ofile..], 0);
+        const name = std.mem.sliceTo(mf.strings[symbol.ofile..], 0);
         gop.value_ptr.* = loadOFile(gpa, io, name);
     }
     const of = &(gop.value_ptr.* catch |err| return err);
@@ -274,7 +274,7 @@ pub fn getDwarfForAddress(mf: *MachOFile, gpa: Allocator, io: Io, vaddr: u64) !s
 }
 pub fn lookupSymbolName(mf: *MachOFile, vaddr: u64) error{MissingDebugInfo}![]const u8 {
     const symbol = Symbol.find(mf.symbols, vaddr) orelse return error.MissingDebugInfo;
-    return mem.sliceTo(mf.strings[symbol.strx..], 0);
+    return std.mem.sliceTo(mf.strings[symbol.strx..], 0);
 }
 
 const OFile = struct {
@@ -298,7 +298,7 @@ const OFile = struct {
             var b_sym = ctx.symtab_raw[b_sym_index];
             if (builtin.cpu.arch.endian() != .little) std.mem.byteSwap(macho.nlist_64, &b_sym);
             const b_sym_name = std.mem.sliceTo(ctx.strtab[b_sym.n_strx..], 0);
-            return mem.eql(u8, a_sym_name, b_sym_name);
+            return std.mem.eql(u8, a_sym_name, b_sym_name);
         }
     };
 };
@@ -432,7 +432,7 @@ fn loadDsymFile(
     var it: macho.LoadCommandIterator = try .init(&hdr, mapped_macho[@sizeOf(macho.mach_header_64)..]);
     while (try it.next()) |lc| switch (lc.hdr.cmd) {
         .SEGMENT_64 => if (lc.cast(macho.segment_command_64)) |seg_cmd| {
-            if (!mem.eql(u8, "__DWARF", seg_cmd.segName())) continue;
+            if (!std.mem.eql(u8, "__DWARF", seg_cmd.segName())) continue;
             dwarf_sections = lc.getSections();
         },
         .UUID => if (lc.cast(macho.uuid_command)) |uuid_cmd| {
@@ -442,7 +442,7 @@ fn loadDsymFile(
     };
 
     const actual_uuid = uuid orelse return error.MissingDebugInfo;
-    if (!mem.eql(u8, &actual_uuid, &expected_uuid)) return error.MissingDebugInfo;
+    if (!std.mem.eql(u8, &actual_uuid, &expected_uuid)) return error.MissingDebugInfo;
 
     return .{
         .mapped_memory = all_mapped_memory,
@@ -482,16 +482,16 @@ fn loadOFile(gpa: Allocator, io: Io, o_file_name: []const u8) !OFile {
             const file_magic = ar_reader.takeArray(2) catch return error.InvalidMachO;
             if (!std.mem.eql(u8, file_magic, "`\n")) return error.InvalidMachO;
 
-            const size = std.fmt.parseInt(u32, mem.sliceTo(raw_size, ' '), 10) catch return error.InvalidMachO;
+            const size = std.fmt.parseInt(u32, std.mem.sliceTo(raw_size, ' '), 10) catch return error.InvalidMachO;
             const raw_data = ar_reader.take(size) catch return error.InvalidMachO;
 
             const entry_name: []const u8, const entry_contents: []const u8 = entry: {
                 if (!std.mem.startsWith(u8, raw_name, "#1/")) {
-                    break :entry .{ mem.sliceTo(raw_name, '/'), raw_data };
+                    break :entry .{ std.mem.sliceTo(raw_name, '/'), raw_data };
                 }
-                const len = std.fmt.parseInt(u32, mem.sliceTo(raw_name[3..], ' '), 10) catch return error.InvalidMachO;
+                const len = std.fmt.parseInt(u32, std.mem.sliceTo(raw_name[3..], ' '), 10) catch return error.InvalidMachO;
                 if (len > size) return error.InvalidMachO;
-                break :entry .{ mem.sliceTo(raw_data[0..len], 0), raw_data[len..] };
+                break :entry .{ std.mem.sliceTo(raw_data[0..len], 0), raw_data[len..] };
             };
 
             if (std.mem.eql(u8, entry_name, target_name_in_archive)) {
@@ -544,7 +544,7 @@ fn loadOFile(gpa: Allocator, io: Io, o_file_name: []const u8) !OFile {
             .abs => continue,
             else => {},
         }
-        const sym_name = mem.sliceTo(strtab[sym.n_strx..], 0);
+        const sym_name = std.mem.sliceTo(strtab[sym.n_strx..], 0);
         const gop = symbols_by_name.getOrPutAssumeCapacityAdapted(
             @as([]const u8, sym_name),
             @as(OFile.SymbolAdapter, .{ .strtab = strtab, .symtab_raw = symtab_raw }),
@@ -569,39 +569,40 @@ fn loadDwarfFromSections(
     mapped_macho: []const u8,
     section_headers: []align(1) const macho.section_64,
 ) !Dwarf {
-    var sections: Dwarf.SectionArray = @splat(null);
+    var dwarf: Dwarf = .empty;
+    errdefer dwarf.deinit(gpa);
+    dwarf.endian = .little;
+
     for (section_headers) |sect_raw| {
         var sect = sect_raw;
         if (builtin.cpu.arch.endian() != .little) std.mem.byteSwap(macho.section_64, &sect);
 
         if (!std.mem.eql(u8, "__DWARF", sect.segName())) continue;
 
-        const section_index: usize = inline for (@typeInfo(Dwarf.Section.Id).@"enum".field_names, 0..) |field_name, i| {
-            const section_name_long = "__" ++ field_name;
-            // Some dwarf section names don't fit in the `sectname` buffer, so they are truncated.
-            const section_name_trunc = section_name_long[0..@min(section_name_long.len, sect.sectname.len)];
-            if (mem.eql(u8, section_name_trunc, sect.sectName())) break i;
+        for (std.enums.values(Dwarf.Section.Id)) |section_id| {
+            var section_name_buffer: [sect.sectname.len]u8 = undefined;
+            const section_name = std.mem.print(&section_name_buffer, "__{t}", .{
+                section_id,
+            }) catch |err| switch (err) {
+                // Some dwarf section names don't fit in the `sectname` buffer so are truncated.
+                error.NoSpaceLeft => &section_name_buffer,
+            };
+            if (!std.mem.eql(u8, sect.sectName(), section_name)) continue;
+            if (mapped_macho.len < sect.offset + sect.size) return error.InvalidMachO;
+            dwarf.sections.set(section_id, .{ .slice = mapped_macho[sect.offset..][0..sect.size] });
+            break;
         } else continue;
-
-        if (mapped_macho.len < sect.offset + sect.size) return error.InvalidMachO;
-        const section_bytes = mapped_macho[sect.offset..][0..sect.size];
-        sections[section_index] = .{
-            .data = section_bytes,
-            .owned = false,
-        };
     }
 
-    if (sections[@backingInt(Dwarf.Section.Id.debug_info)] == null or
-        sections[@backingInt(Dwarf.Section.Id.debug_abbrev)] == null or
-        sections[@backingInt(Dwarf.Section.Id.debug_str)] == null or
-        sections[@backingInt(Dwarf.Section.Id.debug_line)] == null)
+    if (dwarf.sections.get(.debug_info).slice == null or
+        dwarf.sections.get(.debug_abbrev).slice == null or
+        dwarf.sections.get(.debug_str).slice == null or
+        dwarf.sections.get(.debug_line).slice == null)
     {
         return error.MissingDebugInfo;
     }
 
-    var dwarf: Dwarf = .{ .sections = sections };
-    errdefer dwarf.deinit(gpa);
-    dwarf.open(gpa, .little) catch |err| switch (err) {
+    dwarf.open(gpa, .{}) catch |err| switch (err) {
         error.InvalidDebugInfo,
         error.EndOfStream,
         error.Overflow,
@@ -696,7 +697,6 @@ const Io = std.Io;
 const assert = std.debug.assert;
 const posix = std.posix;
 const macho = std.macho;
-const mem = std.mem;
 const testing = std.testing;
 
 const builtin = @import("builtin");

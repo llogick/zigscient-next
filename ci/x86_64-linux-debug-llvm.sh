@@ -75,7 +75,7 @@ stage3-debug/bin/zig build install test docs \
   -Dskip-darwin \
   -Denable-superhtml \
   -Dspirv-test-executor="$SPIRV_TEST_EXECUTOR_OUT/bin/zig-spirv-test-executor" \
-  -Dlldb="$HOME/deps/lldb-zig/Debug-c003e86788/bin/lldb" \
+  -Dlldb="$HOME/deps/lldb-zig/Debug-2ab66e5ff8/bin/lldb" \
   -Dlibc-test-path="$HOME/deps/libc-test-b95fe84"
 
 stage4-debug/bin/zig test ../test/behavior.zig

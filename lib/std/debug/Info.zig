@@ -27,7 +27,7 @@ coverage: *Coverage,
 pub const LoadError = error{
     MissingDebugInfo,
     UnsupportedDebugInfo,
-} || Io.File.OpenError || ElfFile.LoadError || MachOFile.Error || std.debug.Dwarf.ScanError;
+} || Io.File.OpenError || ElfFile.LoadError || MachOFile.Error || std.debug.Dwarf.OpenError;
 
 pub fn load(
     gpa: Allocator,
@@ -46,8 +46,7 @@ pub fn load(
             errdefer elf_file.deinit(gpa);
 
             if (elf_file.dwarf == null) return error.MissingDebugInfo;
-            try elf_file.dwarf.?.open(gpa, elf_file.endian);
-            try elf_file.dwarf.?.populateRanges(gpa, elf_file.endian);
+            try elf_file.dwarf.?.open(gpa, .{});
 
             return .{
                 .impl = .{ .elf = elf_file },
@@ -93,7 +92,7 @@ pub fn resolveAddresses(
 ) ResolveAddressesError!void {
     assert(sorted_pc_addrs.len == output.len);
     switch (info.impl) {
-        .elf => |*ef| return info.coverage.resolveAddressesDwarf(gpa, io, ef.endian, sorted_pc_addrs, output, &ef.dwarf.?),
+        .elf => |*ef| return info.coverage.resolveAddressesDwarf(gpa, io, sorted_pc_addrs, output, &ef.dwarf.?),
         .macho => |*mf| {
             // Resolving all of the addresses at once unfortunately isn't so easy in Mach-O binaries
             // due to split debug information. For now, we'll just resolve the addreses one by one.
@@ -106,8 +105,8 @@ pub fn resolveAddresses(
                     error.InvalidMachO, error.InvalidDwarf => return error.InvalidDebugInfo,
                     else => |e| return e,
                 };
-                if (dwarf.ranges.items.len == 0) {
-                    dwarf.populateRanges(gpa, .little) catch |err| switch (err) {
+                if (dwarf.compile_units_by_pc.len == 0) {
+                    dwarf.populateRanges(gpa) catch |err| switch (err) {
                         error.EndOfStream,
                         error.Overflow,
                         error.StreamTooLong,
@@ -116,7 +115,7 @@ pub fn resolveAddresses(
                         else => |e| return e,
                     };
                 }
-                try info.coverage.resolveAddressesDwarf(gpa, io, .little, &.{dwarf_pc_addr}, src_loc[0..1], dwarf);
+                try info.coverage.resolveAddressesDwarf(gpa, io, &.{dwarf_pc_addr}, src_loc[0..1], dwarf);
             }
         },
     }

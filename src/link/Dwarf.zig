@@ -1525,13 +1525,13 @@ pub const WipNav = struct {
         wip_nav.debug_loclists.deinit();
     }
 
-    pub fn genDebugFrame(wip_nav: *WipNav, loc: u32, cfa: Cfa) UpdateError!void {
-        wip_nav.genDebugFrameWriterError(loc, cfa) catch |err| switch (err) {
+    pub fn genCfa(wip_nav: *WipNav, loc: u32, cfa: Cfa) UpdateError!void {
+        wip_nav.genCfaWriterError(loc, cfa) catch |err| switch (err) {
             error.WriteFailed => return error.OutOfMemory,
             else => |e| return e,
         };
     }
-    fn genDebugFrameWriterError(wip_nav: *WipNav, loc: u32, cfa: Cfa) (UpdateError || Writer.Error)!void {
+    fn genCfaWriterError(wip_nav: *WipNav, loc: u32, cfa: Cfa) (UpdateError || Writer.Error)!void {
         assert(wip_nav.func != .none);
         if (wip_nav.dwarf.debug_frame.header.format == .none) return;
         const loc_cfa: Cfa = .{ .advance_loc = loc };

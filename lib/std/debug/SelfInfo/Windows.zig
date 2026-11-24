@@ -378,7 +378,6 @@ const Module = struct {
                 return dwarf.getSymbols(
                     symbol_allocator,
                     text_arena,
-                    native_endian,
                     addr,
                     resolve_inline_callers,
                     symbols,
@@ -510,33 +509,35 @@ const Module = struct {
         const coff_image_base = coff_obj.getImageBase();
 
         var opt_dwarf: ?Dwarf = dwarf: {
-            if (coff_obj.getSectionByName(".debug_info") == null) break :dwarf null;
-
-            var sections: Dwarf.SectionArray = undefined;
-            inline for (@typeInfo(Dwarf.Section.Id).@"enum".field_names, 0..) |section_name, i| {
-                sections[i] = if (coff_obj.getSectionByName("." ++ section_name)) |section_header| .{
-                    .data = try coff_obj.getSectionDataAlloc(section_header, arena),
-                    .owned = false,
-                } else null;
+            var dwarf: Dwarf = .empty;
+            for (std.enums.values(Dwarf.Section.Id)) |section_id| {
+                var section_name_buffer: [".debug_str_offsets".len]u8 = undefined;
+                const section_name = std.mem.print(&section_name_buffer, ".{t}", .{
+                    section_id,
+                }) catch |err| switch (err) {
+                    error.NoSpaceLeft => unreachable,
+                };
+                const section_header = coff_obj.getSectionByName(section_name) orelse continue;
+                dwarf.sections.set(section_id, .{
+                    .slice = try coff_obj.getSectionDataAlloc(section_header, arena),
+                });
             }
-            break :dwarf .{ .sections = sections };
+            break :dwarf if (dwarf.sections.get(.debug_info).slice) |_| dwarf else null;
         };
         errdefer if (opt_dwarf) |*dwarf| dwarf.deinit(gpa);
 
-        if (opt_dwarf) |*dwarf| {
-            dwarf.open(gpa, native_endian) catch |err| switch (err) {
-                error.Overflow,
-                error.EndOfStream,
-                error.StreamTooLong,
-                error.ReadFailed,
-                => return error.InvalidDebugInfo,
+        if (opt_dwarf) |*dwarf| dwarf.open(gpa, .{}) catch |err| switch (err) {
+            error.Overflow,
+            error.EndOfStream,
+            error.StreamTooLong,
+            error.ReadFailed,
+            => return error.InvalidDebugInfo,
 
-                error.InvalidDebugInfo,
-                error.MissingDebugInfo,
-                error.OutOfMemory,
-                => |e| return e,
-            };
-        }
+            error.InvalidDebugInfo,
+            error.MissingDebugInfo,
+            error.OutOfMemory,
+            => |e| return e,
+        };
 
         var opt_pdb: ?Pdb = pdb: {
             const path = (coff_obj.getPdbPath() catch {

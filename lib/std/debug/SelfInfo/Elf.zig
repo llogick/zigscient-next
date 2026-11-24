@@ -49,7 +49,7 @@ pub fn getSymbols(
     const dwarf_err: ?Error = err: {
         const dwarf = &(loaded_elf.file.dwarf orelse break :err null);
         switch (loaded_elf.dwarf) {
-            .not_scanned => if (dwarf.open(gpa, native_endian)) {
+            .not_scanned => if (dwarf.open(gpa, .{})) {
                 loaded_elf.dwarf = .ok;
             } else |err| switch (err) {
                 error.InvalidDebugInfo,
@@ -74,7 +74,6 @@ pub fn getSymbols(
         return dwarf.getSymbols(
             symbol_allocator,
             text_arena,
-            native_endian,
             vaddr,
             resolve_inline_callers,
             symbols,

@@ -141,27 +141,32 @@ pub fn stringAt(cov: *Coverage, index: String) [:0]const u8 {
     return span(cov.string_bytes.items[@backingInt(index)..]);
 }
 
-pub const ResolveAddressesDwarfError = Dwarf.ScanError || Io.Cancelable;
+pub const ResolveAddressesDwarfError = Dwarf.OpenError || Io.Cancelable;
 
 pub fn resolveAddressesDwarf(
     cov: *Coverage,
     gpa: Allocator,
     io: Io,
-    endian: std.builtin.Endian,
     /// Asserts the addresses are in ascending order.
     sorted_pc_addrs: []const u64,
     /// Asserts its length equals length of `sorted_pc_addrs`.
     output: []SourceLocation,
-    d: *Dwarf,
+    dwarf: *Dwarf,
 ) ResolveAddressesDwarfError!void {
     assert(sorted_pc_addrs.len == output.len);
-    assert(d.ranges.items.len != 0); // call `populateRanges` first.
+    assert(dwarf.compile_units_by_pc.len > 0); // call `populateRanges` first.
 
-    var range_i: usize = 0;
-    var range: *std.debug.Dwarf.Range = &d.ranges.items[0];
-    var line_table_i: usize = undefined;
+    const linear_scan_max = @max(std.atomic.cache_line / @sizeOf(u64), 2);
+    const order_u64 = std.debug.Dwarf.order_u64;
+
+    const compile_unit_low_pcs = dwarf.compile_units_by_pc.items(.low_pc);
+    const compile_unit_high_pcs = dwarf.compile_units_by_pc.items(.high_pc);
+    const compile_units = dwarf.compile_units_by_pc.items(.compile_unit);
+
     var prev_pc: u64 = 0;
-    var prev_cu: ?*std.debug.Dwarf.CompileUnit = null;
+    var range_i: usize = 0;
+    var prev_compile_unit: ?std.debug.Dwarf.CompileUnit.Index = null;
+    var line_table_i: usize = undefined;
     // Protects directories and files tables from other threads.
     try cov.mutex.lock(io);
     defer cov.mutex.unlock(io);
@@ -169,44 +174,37 @@ pub fn resolveAddressesDwarf(
         assert(pc >= prev_pc);
         prev_pc = pc;
 
-        while (pc >= range.end) {
+        for (0..linear_scan_max) |_| {
+            if (compile_unit_high_pcs.len - range_i == 0 or pc < compile_unit_high_pcs[range_i]) break;
             range_i += 1;
-            if (range_i >= d.ranges.items.len) {
-                out.* = SourceLocation.invalid;
-                continue :next_pc;
-            }
-            range = &d.ranges.items[range_i];
-        }
-        if (pc < range.start) {
-            out.* = SourceLocation.invalid;
+        } else range_i += std.sort.upperBound(u64, compile_unit_high_pcs[range_i..], pc, order_u64);
+        if (compile_unit_low_pcs.len - range_i == 0 or pc < compile_unit_low_pcs[range_i]) {
+            out.* = .invalid;
             continue :next_pc;
         }
-        const cu = &d.compile_unit_list.items[range.compile_unit_index];
-        if (cu != prev_cu) {
-            prev_cu = cu;
-            if (cu.src_loc_cache == null) {
+        const compile_unit = compile_units[range_i];
+        if (compile_unit != prev_compile_unit) {
+            if (compile_unit.ptr(dwarf).src_loc_cache == null) {
+                @branchHint(.unlikely);
                 cov.mutex.unlock(io);
                 defer cov.mutex.lockUncancelable(io);
-                d.populateSrcLocCache(gpa, endian, cu) catch |err| switch (err) {
+                dwarf.populateSrcLocCache(gpa, compile_unit) catch |err| switch (err) {
                     error.MissingDebugInfo, error.InvalidDebugInfo => {
-                        out.* = SourceLocation.invalid;
-                        continue :next_pc;
+                        out.* = .invalid;
+                        continue;
                     },
                     else => |e| return e,
                 };
             }
-            const slc = &cu.src_loc_cache.?;
-            const table_addrs = slc.line_table.keys();
-            line_table_i = std.sort.upperBound(u64, table_addrs, pc, struct {
-                fn order(context: u64, item: u64) std.math.Order {
-                    return std.math.order(context, item);
-                }
-            }.order);
+            line_table_i = 0;
+            prev_compile_unit = compile_unit;
         }
-        const slc = &cu.src_loc_cache.?;
+        const slc = &compile_unit.ptr(dwarf).src_loc_cache.?;
         const table_addrs = slc.line_table.keys();
-        while (line_table_i < table_addrs.len and table_addrs[line_table_i] <= pc) line_table_i += 1;
-
+        for (0..linear_scan_max) |_| {
+            if (table_addrs.len - line_table_i == 0 or table_addrs[line_table_i] > pc) break;
+            line_table_i += 1;
+        } else line_table_i += std.sort.upperBound(u64, table_addrs[line_table_i..], pc, order_u64);
         const entry = slc.line_table.values()[line_table_i - 1];
         const corrected_file_index = entry.file - @intFromBool(slc.version < 5);
         const file_entry = slc.files[corrected_file_index];

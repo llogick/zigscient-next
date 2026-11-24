@@ -1512,7 +1512,7 @@ pub const Directories = struct {
     /// Returns a `Directories` where `local_cache` is replaced with `global_cache`, intended for
     /// use by sub-compilations (e.g. compiler_rt). Do not `deinit` the returned `Directories`; it
     /// shares handles with `dirs`.
-    pub fn withoutLocalCache(dirs: Directories) Directories {
+    pub fn withoutLocalCache(dirs: *const Directories) Directories {
         return .{
             .cwd = dirs.cwd,
             .zig_lib = dirs.zig_lib,

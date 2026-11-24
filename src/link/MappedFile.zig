@@ -152,25 +152,41 @@ pub const Alignment = enum(u6) {
     }
 };
 
-pub fn init(file: Io.File, gpa: Allocator, io: Io) (Allocator.Error || Io.Cancelable || IoError)!MappedFile {
-    var mf: MappedFile = .{
-        .io = io,
-        .flags = undefined,
-        .memory_map = .{
-            .file = file,
-            .memory = &.{},
-            .offset = 0,
-            .section = null,
-        },
-        .nodes = .empty,
-        .free_ni = .none,
-        .large = .empty,
-        .updates = .empty,
-        .update_prog_node = .none,
-        .writers = .{},
-        .io_err = null,
-    };
-    errdefer mf.deinit(gpa);
+pub const init: MappedFile = .{
+    .io = undefined,
+    .flags = undefined,
+    .memory_map = .{
+        .file = undefined,
+        .memory = &.{},
+        .offset = 0,
+        .section = null,
+    },
+    .nodes = .empty,
+    .free_ni = .none,
+    .large = .empty,
+    .updates = .empty,
+    .update_prog_node = .none,
+    .writers = .{},
+    .io_err = null,
+};
+pub fn deinit(mf: *MappedFile, gpa: Allocator) void {
+    mf.unmap();
+    mf.nodes.deinit(gpa);
+    mf.large.deinit(gpa);
+    mf.updates.deinit(gpa);
+    mf.update_prog_node.end();
+    assert(mf.writers.first == null);
+    mf.* = undefined;
+}
+
+pub fn map(
+    mf: *MappedFile,
+    gpa: Allocator,
+    io: Io,
+    file: Io.File,
+) (Allocator.Error || Io.Cancelable || IoError)!void {
+    mf.io = io;
+    mf.memory_map.file = file;
     const size: u64, const block_size = stat: {
         const stat = file.stat(io) catch |err| switch (err) {
             error.Streaming => return error.PathAlreadyExists,
@@ -221,18 +237,36 @@ pub fn init(file: Io.File, gpa: Allocator, io: Io) (Allocator.Error || Io.Cancel
         error.MappedFileIo => return mf.io_err.?,
         else => |e| return e,
     };
-
-    return mf;
+}
+pub fn unmap(mf: *MappedFile) void {
+    if (mf.memory_map.memory.len == 0) return;
+    const file = mf.memory_map.file;
+    mf.memory_map.destroy(mf.io);
+    mf.memory_map.memory = &.{};
+    mf.memory_map.file = file;
 }
 
-pub fn deinit(mf: *MappedFile, gpa: Allocator) void {
-    mf.unmap();
-    mf.nodes.deinit(gpa);
-    mf.large.deinit(gpa);
-    mf.updates.deinit(gpa);
-    mf.update_prog_node.end();
-    assert(mf.writers.first == null);
-    mf.* = undefined;
+pub fn flush(mf: *MappedFile) (Io.Cancelable || error{MappedFileIo})!void {
+    mf.flushInner() catch |err| switch (err) {
+        error.Canceled => |e| return e,
+
+        error.WouldBlock, // file was not opened as non-blocking
+        error.NotOpenForWriting, // we definitely opened the file for writing
+        error.ReadOnlyFileSystem, // again, we opened the file for writing
+        => {
+            mf.io_err = error.Unexpected;
+            return error.MappedFileIo;
+        },
+
+        else => |e| {
+            mf.io_err = e;
+            return error.MappedFileIo;
+        },
+    };
+}
+fn flushInner(mf: *MappedFile) (Io.File.WritePositionalError || Io.File.SetTimestampsError)!void {
+    try mf.memory_map.write(mf.io);
+    if (is_windows) try mf.memory_map.file.setTimestampsNow(mf.io);
 }
 
 pub const Node = extern struct {
@@ -547,7 +581,7 @@ pub const Node = extern struct {
             try mf.updates.ensureUnusedCapacity(gpa, 1);
             ni.resizedAssumeCapacity(mf);
         }
-        pub fn cleanResized(ni: Node.Index, mf: *MappedFile) bool {
+        pub fn cleanResized(ni: Node.Index, mf: *const MappedFile) bool {
             const node_resized = &ni.get(mf).flags.resized;
             defer node_resized.* = false;
             return node_resized.*;
@@ -570,7 +604,7 @@ pub const Node = extern struct {
             try mf.updates.ensureUnusedCapacity(gpa, 1);
             ni.nextMovedAssumeCapacity(mf);
         }
-        pub fn cleanNextMoved(ni: Node.Index, mf: *MappedFile) bool {
+        pub fn cleanNextMoved(ni: Node.Index, mf: *const MappedFile) bool {
             const node_next_moved = &ni.get(mf).flags.next_moved;
             defer node_next_moved.* = false;
             return node_next_moved.*;
@@ -590,7 +624,13 @@ pub const Node = extern struct {
             return ni.get(mf).flags.alignment;
         }
 
-        fn setLocation(ni: Node.Index, gpa: Allocator, mf: *MappedFile, offset: u64, size: u64) Allocator.Error!void {
+        fn setLocation(
+            ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            offset: u64,
+            size: u64,
+        ) Allocator.Error!void {
             try mf.large.ensureUnusedCapacity(gpa, 2);
             try mf.updates.ensureUnusedCapacity(gpa, 2);
             const node = ni.get(mf);
@@ -652,11 +692,6 @@ pub const Node = extern struct {
 
         pub fn slice(ni: Node.Index, mf: *const MappedFile) []u8 {
             const file_loc = ni.fileLocation(mf, true);
-            return mf.memory_map.memory[@intCast(file_loc.offset)..][0..@intCast(file_loc.size)];
-        }
-
-        pub fn slicePadding(ni: Node.Index, mf: *const MappedFile) []u8 {
-            const file_loc = ni.fileLocation(mf, false);
             return mf.memory_map.memory[@intCast(file_loc.offset)..][0..@intCast(file_loc.size)];
         }
 
@@ -2323,7 +2358,7 @@ fn realignNode(
     ni.get(mf).flags.alignment = new_align;
 }
 
-fn updateWriters(mf: *MappedFile) void {
+fn updateWriters(mf: *const MappedFile) void {
     var writers_it = mf.writers.first;
     while (writers_it) |writer_node| : (writers_it = writer_node.next) {
         const w: *Node.Writer = @fieldParentPtr("writer_node", writer_node);
@@ -2375,7 +2410,7 @@ fn moveRange(mf: *MappedFile, old_file_offset: u64, new_file_offset: u64, size: 
         try mf.zeroRange(new_file_offset + size, clear_size);
     }
 }
-fn zeroRange(mf: *MappedFile, file_offset: u64, size: u64) Error!void {
+pub fn zeroRange(mf: *MappedFile, file_offset: u64, size: u64) Error!void {
     const trace = tracy.trace(@src());
     defer trace.end();
     trace.addTextFmt("{Bi} (at 0x{X})", .{ size, file_offset });
@@ -2536,39 +2571,6 @@ pub fn ensureTotalCapacityPrecise(mf: *MappedFile, new_capacity: usize) Error!vo
     };
 }
 
-pub fn unmap(mf: *MappedFile) void {
-    if (mf.memory_map.memory.len == 0) return;
-    const io = mf.io;
-    const file = mf.memory_map.file;
-    mf.memory_map.destroy(io);
-    mf.memory_map.memory = &.{};
-    mf.memory_map.file = file;
-}
-
-pub fn flush(mf: *MappedFile) (Io.Cancelable || error{MappedFileIo})!void {
-    mf.flushInner() catch |err| switch (err) {
-        error.Canceled => |e| return e,
-
-        error.WouldBlock, // file was not opened as non-blocking
-        error.NotOpenForWriting, // we definitely opened the file for writing
-        error.ReadOnlyFileSystem, // again, we opened the file for writing
-        => {
-            mf.io_err = error.Unexpected;
-            return error.MappedFileIo;
-        },
-
-        else => |e| {
-            mf.io_err = e;
-            return error.MappedFileIo;
-        },
-    };
-}
-
-fn flushInner(mf: *MappedFile) (Io.File.WritePositionalError || Io.File.SetTimestampsError)!void {
-    try mf.memory_map.write(mf.io);
-    if (is_windows) try mf.memory_map.file.setTimestampsNow(mf.io);
-}
-
 fn verify(mf: *MappedFile) void {
     const root = Node.Index.root.get(mf);
     assert(root.parent == .none);
@@ -2637,8 +2639,9 @@ fn fuzzOneNodeOperations(_: void, smith: *std.testing.Smith) anyerror!void {
     var tmp_file = try tmp_dir.dir.createFile(io, "test.mf", .{ .read = true });
     defer tmp_file.close(io);
 
-    var mf: MappedFile = try .init(tmp_file, gpa, io);
+    var mf: MappedFile = .init;
     defer mf.deinit(gpa);
+    try mf.map(gpa, io, tmp_file);
 
     var nodes: std.array_hash_map.Auto(MappedFile.Node.Index, struct {
         parent: MappedFile.Node.Index.Optional,

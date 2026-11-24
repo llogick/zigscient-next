@@ -317,7 +317,7 @@ pub fn updateFileOnDisk(file: *File, comp: *Compilation) !void {
     assert(file.status == .success);
     assert(file.source != null);
 
-    const root_dir, const sub_path = file.path.openInfo(comp.dirs);
+    const root_dir, const sub_path = file.path.openInfo(&comp.dirs);
     const io = comp.io;
 
     if (root_dir.statFile(io, sub_path, .{})) |stat| {

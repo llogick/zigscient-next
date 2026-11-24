@@ -184,6 +184,7 @@ input_pending_index: u32,
 input_sections: std.ArrayList(Input.Section),
 input_section_pending_index: u32,
 merge_sections: std.array_hash_map.Custom(Section.Merge.Key, Section.Merge, void, true),
+zav_ranges: std.EnumArray(Zav.Range.Key, std.array_hash_map.Custom(void, Zav.Range, void, true)),
 /// SPARC has some weird relocations which involve setting some bits to fixed constant values. When
 /// we encounter such a relocation, we queue the action here, and apply them during `idle`.
 one_shot_fixups: std.ArrayList(struct {
@@ -223,16 +224,24 @@ textrel_count: u32,
 entry_gsi: Symbol.Global.Index.Optional,
 
 dwarf: Dwarf,
-dwarf_shared: std.enums.EnumArray(Dwarf.SharedSection, dwarf_relocs.Shared),
-dwarf_addr: dwarf_relocs.Addr,
+debug_abbrev_first_target_reloc: Reloc.Index,
+debug_addr_first_target_reloc: Reloc.Index,
+debug_addr_relocs: std.ArrayList(Reloc.Index),
+debug_frame_cie_first_target_reloc: Reloc.Index,
+debug_info_header_first_reloc: Reloc.Index,
+debug_line_header_first_target_reloc: Reloc.Index,
+debug_line_header_first_reloc: Reloc.Index,
 debug_line_str_msi: Section.Merge.Index,
+debug_rnglists_header_first_target_reloc: Reloc.Index,
+debug_rnglists_compile_unit_relocs: std.ArrayList(Reloc.Index),
 debug_str_msi: Section.Merge.Index,
-dwarf_str_offsets: dwarf_relocs.StrOffsets,
-dwarf_units: []dwarf_relocs.Unit,
-dwarf_consts: std.array_hash_map.Auto(link.ConstPool.Index, dwarf_relocs.Const),
-dwarf_globals: std.ArrayList(dwarf_relocs.Global),
-dwarf_funcs: std.ArrayList(dwarf_relocs.Func),
-dwarf_decls: std.array_hash_map.Auto(Dwarf.Decl.Index, dwarf_relocs.Decl),
+debug_str_offsets_first_target_reloc: Reloc.Index,
+debug_str_offsets_relocs: std.ArrayList(Reloc.Index),
+debug_modules: []DebugModule,
+debug_consts: std.array_hash_map.Auto(link.ConstPool.Index, DebugConst),
+debug_globals: std.ArrayList(DebugGlobal),
+debug_funcs: std.ArrayList(DebugFunc),
+debug_decls: std.array_hash_map.Auto(Dwarf.Decl.Index, DebugDecl),
 
 overflowed_reloc_count: u32,
 misaligned_reloc_count: u32,
@@ -278,12 +287,14 @@ const Node = union(enum) {
     ehdr,
     shdr,
     segment: u32,
-    section: Section.Index,
+    well_known_section: Section.Index,
     /// The section '.plt' may contain relocations via `elf.plt_first_reloc`.
-    section_manual_size: Section.Index,
+    custom_section: Section.Index,
     /// May contain relocations.
     input_section: Input.Section.Index,
     merge_section: Section.Merge.Index,
+    compile_unit_range: Zav.Range.Index(.compile_unit_ranges),
+    zav_range_end,
     /// May contain relocations.
     nav: NavMapIndex,
     /// May contain relocations.
@@ -293,26 +304,27 @@ const Node = union(enum) {
     /// May contain relocations.
     lazy_const_data: LazyMapRef.Index(.const_data),
 
-    debug_shared: Dwarf.SharedSection,
+    debug_abbrev,
     debug_addr,
+    eh_frame_cie,
+    eh_frame_fde: Dwarf.Func.Index,
     eh_frame_footer,
+    debug_frame_cie,
+    debug_frame_fde: Dwarf.Func.Index,
+    debug_info_header,
+    debug_info_module: Dwarf.Module.Index,
+    debug_info_module_header: Dwarf.Module.Index,
+    debug_info_const: link.ConstPool.Index,
+    debug_info_global: Dwarf.Global.Index,
+    debug_info_func: Dwarf.Func.Index,
+    debug_info_decl: Dwarf.Decl.Index,
+    debug_info_footer,
+    debug_line_header,
+    debug_line_func: Dwarf.Func.Index,
+    debug_rnglists_header,
+    debug_rnglists_compile_unit,
+    debug_rnglists_module: Dwarf.Module.Index,
     debug_str_offsets,
-    unit_padding,
-    unit_frame: Dwarf.Unit.Index,
-    unit_frame_cie: Dwarf.Unit.Index,
-    unit_debug_info: Dwarf.Unit.Index,
-    unit_debug_info_header: Dwarf.Unit.Index,
-    unit_debug_info_footer: Dwarf.Unit.Index,
-    unit_debug_line: Dwarf.Unit.Index,
-    unit_debug_line_header: Dwarf.Unit.Index,
-    unit_debug_rnglists: Dwarf.Unit.Index,
-
-    const_debug_info: link.ConstPool.Index,
-    global_debug_info: Dwarf.Global.Index,
-    func_frame_fde: Dwarf.Func.Index,
-    func_debug_info: Dwarf.Func.Index,
-    func_debug_line: Dwarf.Func.Index,
-    decl_debug_info: Dwarf.Decl.Index,
 
     const NavMapIndex = enum(u32) {
         _,
@@ -370,7 +382,7 @@ const Node = union(enum) {
     };
 
     comptime {
-        if (!std.debug.runtime_safety) std.debug.assert(@sizeOf(Node) == 8);
+        if (!std.debug.runtime_safety) assert(@sizeOf(Node) == 8);
     }
 
     /// In this linker implementation, `link.File.AtomId` is a type-erased `MappedFile.Node.Index`.
@@ -382,34 +394,42 @@ const Node = union(enum) {
         return @bitCast(atom);
     }
 
-    fn fmtDebug(ni: MappedFile.Node.Index, elf: *Elf) FormatDebug {
+    fn fmtDebug(ni: MappedFile.Node.Index, elf: *const Elf) FormatDebug {
         return .{ .ni = ni, .elf = elf };
     }
     const FormatDebug = struct {
         ni: MappedFile.Node.Index,
-        elf: *Elf,
+        elf: *const Elf,
         pub fn format(ctx: FormatDebug, w: *Io.Writer) Io.Writer.Error!void {
             const elf = ctx.elf;
             const node = elf.getNode(ctx.ni);
             try w.writeAll(@tagName(node));
+            try w.writeByte('(');
             switch (node) {
-                // nodes with no payload
                 .deleted,
                 .archive,
                 .archive_header,
+                .archive_elf_member_header,
                 .elf,
                 .ehdr,
                 .shdr,
+                .zav_range_end,
+                .debug_abbrev,
                 .debug_addr,
+                .eh_frame_cie,
                 .eh_frame_footer,
+                .debug_frame_cie,
+                .debug_info_header,
+                .debug_info_footer,
+                .debug_line_header,
+                .debug_rnglists_header,
+                .debug_rnglists_compile_unit,
                 .debug_str_offsets,
-                .unit_padding,
-                .archive_elf_member_header,
-                => |tag| comptime assert(@TypeOf(tag) == void),
+                => |no_payload| no_payload,
 
                 .archive_input_member => |ii| {
                     const input = ii.ptr(elf);
-                    try w.print("({f}{f})", .{
+                    try w.print("\"{f}{f}\"", .{
                         input.path.fmtEscapeString(),
                         fmtMemberString(input.member),
                     });
@@ -417,7 +437,6 @@ const Node = union(enum) {
                 .segment => |phndx| switch (elf.phdrSlice()) {
                     inline else => |phdr| {
                         const ph = &phdr[phndx];
-                        try w.writeByte('(');
                         const pt = elf.targetLoad(&ph.type);
                         if (std.enums.tagName(std.elf.PT, pt)) |pt_name|
                             try w.writeAll(pt_name)
@@ -431,16 +450,15 @@ const Node = union(enum) {
                         if (pf.R) try w.writeByte('R');
                         if (pf.W) try w.writeByte('W');
                         if (pf.X) try w.writeByte('X');
-                        try w.writeByte(')');
                     },
                 },
-                .section, .section_manual_size => |shndx| try w.print("({q})", .{
+                .well_known_section, .custom_section => |shndx| try w.print("{q}", .{
                     shndx.name(elf).slice(elf),
                 }),
                 .input_section => |isi| {
                     const section = isi.ptr(elf);
                     const input = section.input.ptr(elf);
-                    try w.print("({f}{f}, {q})", .{
+                    try w.print("\"{f}{f}\", {q}", .{
                         input.path.fmtEscapeString(),
                         fmtMemberString(input.member),
                         elf.getNodeShndx(section.node).name(elf).slice(elf),
@@ -448,75 +466,60 @@ const Node = union(enum) {
                 },
                 .merge_section => |msi| {
                     const key = msi.key(elf);
-                    try w.print("({}, {d}, {q})", .{
+                    try w.print("{}, {d}, {q}", .{
                         key.kind,
                         key.entrySize(),
-                        elf.getNodeShndx(msi.ptr(elf).node).name(elf).slice(elf),
+                        msi.shndx(elf).name(elf).slice(elf),
                     });
                 },
+                inline .compile_unit_range => |zri| try w.print("{q}", .{
+                    zri.shndx(elf).name(elf).slice(elf),
+                }),
                 .nav => |nmi| {
                     const ip = &elf.base.comp.zcu.?.intern_pool;
-                    try w.print("({qf})", .{
-                        ip.getNav(nmi.nav(elf)).fqn.fmt(ip),
-                    });
+                    try w.print("{qf}", .{ip.getNav(nmi.nav(elf)).fqn.fmt(ip)});
                 },
                 .uav => |umi| {
                     const zcu = elf.base.comp.zcu.?;
                     const val: Value = .fromInterned(umi.value(elf));
-                    try w.print("({f}, {f})", .{
-                        val.typeOf(zcu).fmt(zcu),
-                        val.fmtValue(zcu),
-                    });
+                    try w.print("{f}, {f}", .{ val.typeOf(zcu).fmt(zcu), val.fmtValue(zcu) });
                 },
-                inline .lazy_code, .lazy_const_data => |lmi| try w.print("({f})", .{
+                inline .lazy_code, .lazy_const_data => |lmi| try w.print("{f}", .{
                     Type.fromInterned(lmi.lazySymbol(elf).ty).fmt(elf.base.comp.zcu.?),
                 }),
-
-                .debug_shared => |ss| try w.print("({t})", .{ss}),
-
-                .unit_frame,
-                .unit_frame_cie,
-                .unit_debug_info,
-                .unit_debug_info_header,
-                .unit_debug_info_footer,
-                .unit_debug_line,
-                .unit_debug_line_header,
-                .unit_debug_rnglists,
-                => |ui| try w.print("({q})", .{
-                    ui.mod(&elf.dwarf).fully_qualified_name,
-                }),
-
-                .const_debug_info => |cpi| switch (cpi.val(&elf.dwarf.const_pool)) {
-                    .generic_poison_type => try w.writeAll("(anytype)"),
-                    else => |val| try w.print("({f})", .{
+                .debug_info_module,
+                .debug_info_module_header,
+                .debug_rnglists_module,
+                => |mi| try w.print("{q}", .{mi.zigModule(&elf.dwarf).fully_qualified_name}),
+                .debug_info_const => |cpi| switch (cpi.val(&elf.dwarf.const_pool)) {
+                    .generic_poison_type => try w.writeAll("anytype"),
+                    else => |val| try w.print("{f}", .{
                         Value.fromInterned(val).fmtValue(elf.base.comp.zcu.?),
                     }),
                 },
-                .global_debug_info => |gi| {
+                .debug_info_global => |gi| {
                     const ip = &elf.base.comp.zcu.?.intern_pool;
-                    try w.print("({qf})", .{
-                        ip.getNav(gi.nav(&elf.dwarf)).fqn.fmt(ip),
-                    });
+                    try w.print("{qf}", .{ip.getNav(gi.nav(&elf.dwarf)).fqn.fmt(ip)});
                 },
-                .func_frame_fde, .func_debug_info, .func_debug_line => |fi| {
+                .eh_frame_fde, .debug_frame_fde, .debug_info_func, .debug_line_func => |fi| {
                     const ip = &elf.base.comp.zcu.?.intern_pool;
-                    try w.print("({qf})", .{
-                        ip.getNav(fi.nav(&elf.dwarf)).fqn.fmt(ip),
-                    });
+                    try w.print("{qf}", .{ip.getNav(fi.nav(&elf.dwarf)).fqn.fmt(ip)});
                 },
-                .decl_debug_info => |di| {
+                .debug_info_decl => |di| {
                     const comp = elf.base.comp;
                     const zcu = comp.zcu.?;
                     const ip = &zcu.intern_pool;
                     const src_inst = di.srcInst(&elf.dwarf);
                     const path = zcu.fileByIndex(src_inst.resolveFile(ip)).path;
+                    try w.print("{f}, ", .{path.fmt(comp)});
                     if (src_inst.resolve(ip)) |inst| {
-                        try w.print("({f}, %{d})", .{ path.fmt(comp), inst });
+                        try w.print("%{d}", .{inst});
                     } else {
-                        try w.print("({f}, lost)", .{path.fmt(comp)});
+                        try w.writeAll("lost");
                     }
                 },
             }
+            try w.writeByte(')');
         }
     };
 };
@@ -812,7 +815,7 @@ const Section = struct {
     /// File-backed node corresponding to this section.
     /// This is `.none` for `SHT_NOBITS` sections.
     node: MappedFile.Node.Index.Optional,
-    /// The head of a linked list of symbols in this merge section. This first symbol is the section
+    /// The head of a linked list of symbols in this section. This first symbol is the section
     /// symbol for relocatables.
     first_symbol: Symbol.Id,
     rela: union {
@@ -843,6 +846,8 @@ const Section = struct {
         /// unnecessary dependency of the output binary on the compiler's host architecture.
         free_head: RelaIndex.Optional,
     },
+
+    const NodeTag = enum { well_known, custom };
 
     const RelaIndex = enum(u32) {
         none,
@@ -915,7 +920,7 @@ const Section = struct {
                             .entsize = @sizeOf(u32),
                             .node_align = elf.mf.flags.block_size,
                             .link = Section.Index.symtab.toSectionIndex().?,
-                            .manual_size = true,
+                            .node_tag = .custom,
                         });
                         @memset(elf.shndx.symtab_shndx.node(elf).slice(&elf.mf)[0..section_size], 0);
                     }
@@ -1002,13 +1007,15 @@ const Section = struct {
             };
         }
 
-        fn setSize(shndx: Index, elf: *Elf, new_size: u64) void {
+        fn setSize(shndx: Index, elf: *const Elf, new_size: u64) void {
             return switch (elf.shdrPtr(shndx)) {
                 inline else => |shdr| {
-                    elf.targetStore(&shdr.type, switch (new_size) {
-                        0 => .NULL,
-                        else => .PROGBITS,
-                    });
+                    switch (elf.targetLoad(&shdr.type)) {
+                        else => unreachable,
+                        .NULL => if (new_size > 0) elf.targetStore(&shdr.type, .PROGBITS),
+                        .PROGBITS => if (new_size == 0) elf.targetStore(&shdr.type, .NULL),
+                        .STRTAB, .X86_64_UNWIND => {},
+                    }
                     elf.targetStore(&shdr.size, @intCast(new_size));
                 },
             };
@@ -1275,12 +1282,6 @@ const Section = struct {
             }
         }
 
-        fn debugFrameFormat(shndx: Index, elf: *const Elf) ?Dwarf.Frame.Format {
-            if (shndx == elf.shndx.eh_frame) return .eh_frame;
-            if (shndx == elf.shndx.debug_frame) return .debug_frame;
-            return null;
-        }
-
         fn hasRuntimeLoadAddress(shndx: Index, elf: *const Elf) bool {
             return switch (elf.ehdrType()) {
                 .REL => unreachable,
@@ -1325,13 +1326,13 @@ const Section = struct {
 
         const Key = bitpack struct(u4) {
             log2_entry_size: u3,
-            kind: Kind,
+            kind: Section.Merge.Key.Kind,
 
             const Kind = enum(u1) { cst, str };
 
             const strtab: Key = .{ .log2_entry_size = 0, .kind = .str };
 
-            fn get(entry_size: u64, kind: Kind) ?Section.Merge.Key {
+            fn get(entry_size: u64, kind: Section.Merge.Key.Kind) ?Section.Merge.Key {
                 if (entry_size == 0) return null;
                 const key: Section.Merge.Key = .{
                     .log2_entry_size = std.math.log2_int(
@@ -1353,13 +1354,17 @@ const Section = struct {
             null = std.math.maxInt(u32),
             _,
 
-            fn slice(mse: Entry, msi: Section.Merge.Index, elf: *const Elf) []const u8 {
+            fn slice(mse: Section.Merge.Entry, msi: Section.Merge.Index, elf: *const Elf) []const u8 {
                 const merge_key = msi.key(elf);
                 const entry_size = merge_key.entrySize();
                 const entry = msi.ptr(elf).node.sliceConst(&elf.mf)[@backingInt(mse)..];
                 return switch (merge_key.kind) {
                     .cst => entry[0..entry_size],
                     .str => {
+                        if (entry_size == 1) {
+                            @branchHint(.likely);
+                            return std.mem.sliceTo(entry, 0);
+                        }
                         var end: u32 = 0;
                         while (true) : (end += entry_size)
                             if (std.mem.allEqual(u8, entry[end..][0..entry_size], 0))
@@ -1370,7 +1375,7 @@ const Section = struct {
 
             fn Ref(comptime msi: Section.Merge.Index) type {
                 return bitpack struct(u32) {
-                    entry: Entry,
+                    entry: Section.Merge.Entry,
 
                     const empty: @This() = .{ .entry = .empty };
                     const @"null": @This() = .{ .entry = .null };
@@ -1378,7 +1383,7 @@ const Section = struct {
                     fn fromString(entry: []const u8, elf: *Elf) Error!@This() {
                         return fromSlice(.@"1", entry, elf);
                     }
-                    fn fromStringAssumeCapacity(entry: []const u8, elf: *const Elf) @This() {
+                    fn fromStringAssumeCapacity(entry: []const u8, elf: *Elf) @This() {
                         return fromSliceAssumeCapacity(.@"1", entry, elf);
                     }
 
@@ -1389,7 +1394,7 @@ const Section = struct {
                     fn fromSliceAssumeCapacity(
                         need_align: Alignment,
                         entry: []const u8,
-                        elf: *const Elf,
+                        elf: *Elf,
                     ) @This() {
                         return .{ .entry = msi.getOrPutEntryAssumeCapacity(need_align, entry, elf) };
                     }
@@ -1462,14 +1467,15 @@ const Section = struct {
                     .cst => 0,
                     .str => merge_key.entrySize(),
                 });
+                try elf.mf.updates.ensureUnusedCapacity(gpa, 1);
             }
 
             pub fn getOrPutEntryAssumeCapacity(
                 msi: Section.Merge.Index,
                 need_align: Alignment,
                 entry: []const u8,
-                elf: *const Elf,
-            ) Entry {
+                elf: *Elf,
+            ) Section.Merge.Entry {
                 const merge_key = msi.key(elf);
                 const merge = msi.ptr(elf);
                 const entry_size = merge_key.entrySize();
@@ -1509,15 +1515,8 @@ const Section = struct {
                     const slice = merge.node.slice(&elf.mf);
                     switch (free_index) {
                         0 => {
+                            merge.node.resizedAssumeCapacity(&elf.mf);
                             @memset(slice[free_offset..offset], 0);
-                            switch (elf.getNode(merge.node.parent(&elf.mf).unwrap().?)) {
-                                else => unreachable,
-                                .section => {},
-                                .section_manual_size,
-                                => |parent_shndx| switch (elf.shdrPtr(parent_shndx)) {
-                                    inline else => |shdr| elf.targetStore(&shdr.size, next_offset),
-                                },
-                            }
                         },
                         else => if (offset >= old_end or !std.mem.allEqual(u8, switch (merge_key.kind) {
                             .cst => slice[offset..][0..entry_size],
@@ -1617,15 +1616,6 @@ const Section = struct {
         }
     };
 };
-fn debugFrameFooterSize(elf: *Elf, frame_format: Dwarf.Frame.Format) usize {
-    return switch (frame_format) {
-        .eh_frame => switch (elf.ehdrType()) {
-            .REL => 0,
-            .EXEC, .DYN => 4,
-        },
-        .debug_frame => 0,
-    };
-}
 
 /// nav, uav, or lazy symbol
 const Zav = struct {
@@ -1643,51 +1633,169 @@ const Zav = struct {
     fn node(zav: *const Zav, elf: *const Elf) MappedFile.Node.Index {
         return zav.symbol().index().ptr(elf).node.unwrap().?;
     }
+
+    const Range = struct {
+        node: MappedFile.Node.Index,
+        first_target_reloc: Reloc.Index,
+        end_first_target_reloc: Reloc.Index,
+
+        const Key = enum { compile_unit_ranges };
+
+        const Adapter = struct {
+            elf: *const Elf,
+            key: Key,
+
+            pub fn eql(
+                adapter: Zav.Range.Adapter,
+                lhs_key: Section.Index,
+                rhs_key: void,
+                rhs_index: usize,
+            ) bool {
+                rhs_key;
+                return lhs_key == adapter.elf.getNodeShndx(
+                    adapter.elf.zav_ranges.getPtrConst(adapter.key).values()[rhs_index].node,
+                );
+            }
+
+            pub fn hash(_: Zav.Range.Adapter, key: Section.Index) u32 {
+                return std.hash.int(@backingInt(key));
+            }
+        };
+
+        fn Index(comptime key: Key) type {
+            return enum(u32) {
+                _,
+
+                fn ptr(zri: @This(), elf: *const Elf) *Range {
+                    return &elf.zav_ranges.getPtrConst(key).values()[@backingInt(zri)];
+                }
+
+                fn shndx(zri: @This(), elf: *const Elf) Section.Index {
+                    return elf.getNodeShndx(zri.ptr(elf).node);
+                }
+            };
+        }
+
+        fn getOrCreate(
+            elf: *Elf,
+            ni: MappedFile.Node.Index,
+            key: Key,
+            need_align: Alignment,
+        ) Error!MappedFile.Node.Index {
+            const gpa = elf.base.comp.gpa;
+            const alignment = elf.mf.flags.block_size.max(need_align);
+            var parent_ni = ni;
+            const shndx = while (true) {
+                switch (elf.getNode(parent_ni)) {
+                    else => unreachable,
+                    .well_known_section, .custom_section => |shndx| break shndx,
+                    .compile_unit_range => if (alignment.compare(.gt, parent_ni.alignment(&elf.mf)))
+                        try parent_ni.realign(gpa, &elf.mf, alignment),
+                }
+                parent_ni = parent_ni.parent(&elf.mf).unwrap().?;
+            };
+            const range_gop = try elf.zav_ranges.getPtr(key).getOrPutAdapted(
+                gpa,
+                shndx,
+                Zav.Range.Adapter{ .elf = elf, .key = key },
+            );
+            if (range_gop.found_existing) {
+                const range_ni = range_gop.value_ptr.node;
+                assert(range_ni.parent(&elf.mf).unwrap().? == ni);
+                if (alignment.compare(.gt, range_ni.alignment(&elf.mf)))
+                    try range_ni.realign(gpa, &elf.mf, alignment);
+                return range_ni;
+            }
+            errdefer _ = elf.zav_ranges.getPtr(key).pop().?;
+            const range_ni = elf.addNodeAssumeCapacity(try ni.addFloatingChild(gpa, &elf.mf, .{
+                .alignment = alignment,
+            }), switch (key) {
+                .compile_unit_ranges => .{
+                    .compile_unit_range = @fromBackingInt(@intCast(range_gop.index)),
+                },
+            });
+            const range_end_ni = elf.addNodeAssumeCapacity(
+                try range_ni.addOnlyFooterChild(gpa, &elf.mf, .{}),
+                .zav_range_end,
+            );
+            range_gop.key_ptr.* = {};
+            range_gop.value_ptr.* = .{
+                .node = range_ni,
+                .first_target_reloc = .none,
+                .end_first_target_reloc = .none,
+            };
+            {
+                const debug_rnglists_ni = elf.dwarf.debug_rnglists.compile_unit_ni.unwrap().?;
+                var dr_nw: MappedFile.Node.Writer = undefined;
+                try debug_rnglists_ni.moved(gpa, &elf.mf);
+                debug_rnglists_ni.writer(gpa, &elf.mf, &dr_nw);
+                defer dr_nw.deinit();
+                const first_ri = elf.relocs.items.len;
+                elf.dwarf.genDebugRnglistsCompileUnitRange(
+                    &dr_nw,
+                    range_ni,
+                    range_end_ni,
+                ) catch |err| switch (err) {
+                    else => |e| return e,
+                    error.WriteFailed => return dr_nw.err.?,
+                };
+                try elf.debug_rnglists_compile_unit_relocs
+                    .ensureUnusedCapacity(gpa, elf.relocs.items.len - first_ri);
+                for (first_ri..elf.relocs.items.len) |ri| elf.debug_rnglists_compile_unit_relocs
+                    .appendAssumeCapacity(@fromBackingInt(@intCast(ri)));
+            }
+            return range_ni;
+        }
+    };
 };
 
-const dwarf_relocs = struct {
-    const Shared = struct {
-        first_target_reloc: Reloc.Index,
-    };
-    const Addr = struct {
-        first_target_reloc: Reloc.Index,
-        relocs: std.ArrayList(Reloc.Index),
-        /// Index into `relocs`.
-        pending_reloc_index: usize,
-    };
-    const StrOffsets = struct {
-        first_target_reloc: Reloc.Index,
-        relocs: std.ArrayList(Reloc.Index),
-        /// Index into `relocs`.
-        pending_reloc_index: usize,
-    };
-    const Unit = struct {
-        frame_cie_first_target_reloc: Reloc.Index,
-        debug_info_header_first_target_reloc: Reloc.Index,
-        debug_info_header_first_reloc: Reloc.Index,
-        debug_line_header_first_target_reloc: Reloc.Index,
-        debug_line_header_first_reloc: Reloc.Index,
-        debug_rnglists_first_target_reloc: Reloc.Index,
-        debug_rnglists_relocs: std.ArrayList(Reloc.Index),
-    };
-    const Const = struct {
-        debug_info_first_target_reloc: Reloc.Index,
-        debug_info_first_reloc: Reloc.Index,
-    };
-    const Global = struct {
-        debug_info_first_target_reloc: Reloc.Index,
-        debug_info_first_reloc: Reloc.Index,
-    };
-    const Func = struct {
-        frame_fde_first_reloc: Reloc.Index,
-        debug_info_first_target_reloc: Reloc.Index,
-        debug_info_first_reloc: Reloc.Index,
-        debug_line_first_reloc: Reloc.Index,
-    };
-    const Decl = struct {
-        debug_info_first_target_reloc: Reloc.Index,
-        debug_info_first_reloc: Reloc.Index,
-    };
+const DebugModule = struct {
+    debug_info_first_target_reloc: Reloc.Index,
+    debug_info_first_reloc: Reloc.Index,
+
+    fn ptr(mi: Dwarf.Module.Index, elf: *const Elf) *DebugModule {
+        return &elf.debug_modules[@backingInt(mi)];
+    }
+};
+const DebugConst = struct {
+    debug_info_first_target_reloc: Reloc.Index,
+    debug_info_first_reloc: Reloc.Index,
+
+    fn ptr(cpi: link.ConstPool.Index, elf: *const Elf) *DebugConst {
+        return elf.debug_consts.getPtr(cpi).?;
+    }
+};
+const DebugGlobal = struct {
+    debug_info_first_target_reloc: Reloc.Index,
+    debug_info_first_reloc: Reloc.Index,
+
+    fn ptr(gi: Dwarf.Global.Index, elf: *const Elf) *DebugGlobal {
+        return &elf.debug_globals.items[@backingInt(gi)];
+    }
+};
+const DebugFunc = struct {
+    fde: union {
+        eh_frame: struct {
+            first_target_reloc: Reloc.Index,
+            first_reloc: Reloc.Index,
+        },
+        debug_frame_first_reloc: Reloc.Index,
+    },
+    debug_info_first_target_reloc: Reloc.Index,
+    debug_info_first_reloc: Reloc.Index,
+    debug_line_first_reloc: Reloc.Index,
+
+    fn ptr(fi: Dwarf.Func.Index, elf: *const Elf) *DebugFunc {
+        return &elf.debug_funcs.items[@backingInt(fi)];
+    }
+};
+const DebugDecl = struct {
+    debug_info_first_target_reloc: Reloc.Index,
+    debug_info_first_reloc: Reloc.Index,
+
+    fn ptr(di: Dwarf.Decl.Index, elf: *const Elf) *DebugDecl {
+        return elf.debug_decls.getPtr(di).?;
+    }
 };
 
 const MachineRelocType = union {
@@ -1891,7 +1999,7 @@ const MachineRelocType = union {
             .X86_64 => .{ .X86_64 = .PC32 },
         };
     }
-    fn rel64(elf: *const Elf) MachineRelocType {
+    pub fn rel64(elf: *const Elf) MachineRelocType {
         return switch (elf.ehdrMachine()) {
             .AARCH64 => .{ .AARCH64 = .PREL64 },
             .LOONGARCH => unreachable,
@@ -2079,17 +2187,23 @@ const Reloc = struct {
                 .node => |ni| switch (elf.getNode(ni)) {
                     else => unreachable,
                     inline .input_section, .merge_section => |si| &si.ptr(elf).first_target_reloc,
-                    .debug_shared => |ss| &elf.dwarf_shared.getPtr(ss).first_target_reloc,
-                    .debug_addr => &elf.dwarf_addr.first_target_reloc,
-                    .debug_str_offsets => &elf.dwarf_str_offsets.first_target_reloc,
-                    .unit_frame_cie => |ui| &elf.dwarf_units[@backingInt(ui)].frame_cie_first_target_reloc,
-                    .unit_debug_info_header => |ui| &elf.dwarf_units[@backingInt(ui)].debug_info_header_first_target_reloc,
-                    .unit_debug_line_header => |ui| &elf.dwarf_units[@backingInt(ui)].debug_line_header_first_target_reloc,
-                    .unit_debug_rnglists => |ui| &elf.dwarf_units[@backingInt(ui)].debug_rnglists_first_target_reloc,
-                    .const_debug_info => |cpi| &elf.dwarf_consts.getPtr(cpi).?.debug_info_first_target_reloc,
-                    .global_debug_info => |gi| &elf.dwarf_globals.items[@backingInt(gi)].debug_info_first_target_reloc,
-                    .func_debug_info => |fi| &elf.dwarf_funcs.items[@backingInt(fi)].debug_info_first_target_reloc,
-                    .decl_debug_info => |di| &elf.dwarf_decls.getPtr(di).?.debug_info_first_target_reloc,
+                    inline .compile_unit_range => |zri| &zri.ptr(elf).first_target_reloc,
+                    .zav_range_end => switch (elf.getNode(ni.parent(&elf.mf).unwrap().?)) {
+                        else => unreachable,
+                        inline .compile_unit_range => |zri| &zri.ptr(elf).end_first_target_reloc,
+                    },
+                    .debug_abbrev => &elf.debug_abbrev_first_target_reloc,
+                    .debug_addr => &elf.debug_addr_first_target_reloc,
+                    .eh_frame_fde => |fi| &DebugFunc.ptr(fi, elf).fde.eh_frame.first_target_reloc,
+                    .debug_frame_cie => &elf.debug_frame_cie_first_target_reloc,
+                    .debug_info_module => |mi| &DebugModule.ptr(mi, elf).debug_info_first_target_reloc,
+                    .debug_info_const => |cpi| &DebugConst.ptr(cpi, elf).debug_info_first_target_reloc,
+                    .debug_info_global => |gi| &DebugGlobal.ptr(gi, elf).debug_info_first_target_reloc,
+                    .debug_info_func => |fi| &DebugFunc.ptr(fi, elf).debug_info_first_target_reloc,
+                    .debug_info_decl => |di| &DebugDecl.ptr(di, elf).debug_info_first_target_reloc,
+                    .debug_line_header => &elf.debug_line_header_first_target_reloc,
+                    .debug_rnglists_header => &elf.debug_rnglists_header_first_target_reloc,
+                    .debug_str_offsets => &elf.debug_str_offsets_first_target_reloc,
                 },
             };
         }
@@ -5315,7 +5429,9 @@ const Symbol = struct {
                 };
                 switch (elf.getNode(symbol_ni)) {
                     else => unreachable,
-                    .section, .section_manual_size => |parent_shndx| break :parent_shndx parent_shndx,
+                    .well_known_section,
+                    .custom_section,
+                    => |parent_shndx| break :parent_shndx parent_shndx,
                     inline .input_section, .merge_section => |si| return &si.ptr(elf).first_symbol,
                     inline .nav, .uav, .lazy_code, .lazy_const_data => |mi| {
                         const zav = mi.zav(elf);
@@ -5591,29 +5707,33 @@ pub fn symbolForAtom(elf: *Elf, atom: link.File.AtomId) link.File.SymbolId {
         .ehdr,
         .shdr,
         .segment,
-        .section,
-        .section_manual_size,
+        .well_known_section,
+        .custom_section,
         .input_section,
         .merge_section,
-        .debug_shared,
+        .compile_unit_range,
+        .zav_range_end,
+        .debug_abbrev,
         .debug_addr,
+        .eh_frame_cie,
+        .eh_frame_fde,
         .eh_frame_footer,
+        .debug_frame_cie,
+        .debug_frame_fde,
         .debug_str_offsets,
-        .unit_padding,
-        .unit_frame,
-        .unit_frame_cie,
-        .unit_debug_info,
-        .unit_debug_info_header,
-        .unit_debug_info_footer,
-        .unit_debug_line,
-        .unit_debug_line_header,
-        .unit_debug_rnglists,
-        .const_debug_info,
-        .global_debug_info,
-        .func_frame_fde,
-        .func_debug_info,
-        .func_debug_line,
-        .decl_debug_info,
+        .debug_info_header,
+        .debug_info_const,
+        .debug_info_global,
+        .debug_info_func,
+        .debug_info_decl,
+        .debug_info_module,
+        .debug_info_module_header,
+        .debug_info_footer,
+        .debug_line_header,
+        .debug_line_func,
+        .debug_rnglists_header,
+        .debug_rnglists_compile_unit,
+        .debug_rnglists_module,
         => unreachable,
         inline .nav, .uav, .lazy_code, .lazy_const_data => |mi| mi.zav(elf).symbol(),
     };
@@ -5626,7 +5746,8 @@ pub fn lazySymbol(elf: *Elf, lazy: link.File.LazySymbol) link.Error!link.File.Sy
     };
 }
 fn lazySymbolInner(elf: *Elf, lazy: link.File.LazySymbol) Error!link.File.SymbolId {
-    const gpa = elf.base.comp.gpa;
+    const comp = elf.base.comp;
+    const gpa = comp.gpa;
 
     try elf.nodes.ensureUnusedCapacity(gpa, 1);
     try elf.lazy.getPtr(lazy.kind).map.ensureUnusedCapacity(gpa, 1);
@@ -5637,8 +5758,26 @@ fn lazySymbolInner(elf: *Elf, lazy: link.File.LazySymbol) Error!link.File.Symbol
             .code => .{ .text, .FUNC },
             .const_data => .{ .rodata, .OBJECT },
         };
+        const shndx_ni = shndx.node(elf);
+        const alignment: Alignment = switch (lazy.kind) {
+            .code => a: {
+                const target = comp.getTarget();
+                break :a .fromIp(switch (comp.root_mod.optimize_mode) {
+                    .debug, .safe, .fast => target_util.defaultFunctionAlignment(target),
+                    .small => target_util.minFunctionAlignment(target),
+                });
+            },
+            .const_data => .@"1",
+        };
+        const parent_ni = switch (lazy.kind) {
+            .code => try Zav.Range.getOrCreate(elf, shndx_ni, .compile_unit_ranges, alignment),
+            .const_data => shndx_ni,
+        };
+        try shndx.ensureAligned(elf, alignment);
         const node = elf.addNodeAssumeCapacity(
-            try shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{}),
+            try parent_ni.addFloatingChild(gpa, &elf.mf, .{
+                .alignment = alignment,
+            }),
             switch (lazy.kind) {
                 .code => .{ .lazy_code = @fromBackingInt(@intCast(gop.index)) },
                 .const_data => .{ .lazy_const_data = @fromBackingInt(@intCast(gop.index)) },
@@ -5859,11 +5998,6 @@ fn create(
     };
 
     const elf = try arena.create(Elf);
-    const file = try path.root_dir.handle.createFile(io, path.sub_path, .{
-        .read = true,
-        .permissions = link.File.determinePermissions(comp.config.output_mode, comp.config.link_mode),
-    });
-    errdefer file.close(io);
     elf.* = .{
         .base = .{
             .tag = .elf2,
@@ -5871,7 +6005,7 @@ fn create(
             .comp = comp,
             .emit = path,
 
-            .file = file,
+            .file = null,
             .gc_sections = false,
             .print_gc_sections = false,
             .build_id = .none,
@@ -5879,7 +6013,7 @@ fn create(
             .stack_size = 0,
         },
         .options = options,
-        .mf = try .init(file, comp.gpa, io),
+        .mf = .init,
         .ehdr_fields = .{
             .class = class,
             .type = @"type",
@@ -5975,6 +6109,7 @@ fn create(
         .input_sections = .empty,
         .input_section_pending_index = 0,
         .merge_sections = .empty,
+        .zav_ranges = comptime .initFill(.empty),
         .one_shot_fixups = .empty,
         .navs = .empty,
         .uavs = .empty,
@@ -5996,26 +6131,24 @@ fn create(
             .dwarf => |v| v,
             .code_view, .nsdi => unreachable,
         }),
-        .dwarf_shared = comptime .initFill(.{
-            .first_target_reloc = .none,
-        }),
-        .dwarf_addr = .{
-            .first_target_reloc = .none,
-            .relocs = .empty,
-            .pending_reloc_index = 0,
-        },
+        .debug_abbrev_first_target_reloc = .none,
+        .debug_addr_first_target_reloc = .none,
+        .debug_addr_relocs = .empty,
+        .debug_frame_cie_first_target_reloc = .none,
+        .debug_info_header_first_reloc = .none,
+        .debug_line_header_first_target_reloc = .none,
+        .debug_line_header_first_reloc = .none,
         .debug_line_str_msi = undefined,
+        .debug_rnglists_header_first_target_reloc = .none,
+        .debug_rnglists_compile_unit_relocs = .empty,
         .debug_str_msi = undefined,
-        .dwarf_str_offsets = .{
-            .first_target_reloc = .none,
-            .relocs = .empty,
-            .pending_reloc_index = 0,
-        },
-        .dwarf_units = &.{},
-        .dwarf_consts = .empty,
-        .dwarf_globals = .empty,
-        .dwarf_funcs = .empty,
-        .dwarf_decls = .empty,
+        .debug_str_offsets_first_target_reloc = .none,
+        .debug_str_offsets_relocs = .empty,
+        .debug_modules = &.{},
+        .debug_consts = .empty,
+        .debug_globals = .empty,
+        .debug_funcs = .empty,
+        .debug_decls = .empty,
 
         .overflowed_reloc_count = 0,
         .misaligned_reloc_count = 0,
@@ -6025,9 +6158,16 @@ fn create(
         .const_prog_node = .none,
         .input_prog_node = .none,
     };
-    errdefer elf.deinit();
+    errdefer elf.base.destroy();
 
-    try elf.initHeaders(class, data, osabi, @"type", machine, maybe_interp);
+    const file = try path.root_dir.handle.createFile(io, path.sub_path, .{
+        .read = true,
+        .permissions = link.File.determinePermissions(comp.config.output_mode, comp.config.link_mode),
+    });
+    elf.base.file = file;
+    try elf.mf.map(comp.gpa, io, file);
+
+    try elf.initHeaders(arena, class, data, osabi, @"type", machine, maybe_interp);
     return elf;
 }
 
@@ -6051,6 +6191,7 @@ pub fn deinit(elf: *Elf) void {
     elf.dso_globals.string_bytes.deinit(gpa);
     elf.dso_globals.symbols.deinit(gpa);
     elf.dso_globals.default_sym_vers.deinit(gpa);
+    elf.section_first_target_reloc.deinit(gpa);
     elf.got.deinit(gpa);
     elf.plt.deinit(gpa);
     elf.needed.deinit(gpa);
@@ -6059,6 +6200,7 @@ pub fn deinit(elf: *Elf) void {
     elf.input_sections.deinit(gpa);
     for (elf.merge_sections.values()) |*merge_section| merge_section.deinit(gpa);
     elf.merge_sections.deinit(gpa);
+    for (&elf.zav_ranges.values) |*zav_range| zav_range.deinit(gpa);
     elf.one_shot_fixups.deinit(gpa);
     elf.navs.deinit(gpa);
     elf.uavs.deinit(gpa);
@@ -6071,20 +6213,21 @@ pub fn deinit(elf: *Elf) void {
     elf.changed_symtab_index.deinit(gpa);
 
     elf.dwarf.deinit();
-    elf.dwarf_addr.relocs.deinit(gpa);
-    elf.dwarf_str_offsets.relocs.deinit(gpa);
-    for (elf.dwarf_units) |*dwarf_unit| dwarf_unit.debug_rnglists_relocs.deinit(gpa);
-    gpa.free(elf.dwarf_units);
-    elf.dwarf_consts.deinit(gpa);
-    elf.dwarf_globals.deinit(gpa);
-    elf.dwarf_funcs.deinit(gpa);
-    elf.dwarf_decls.deinit(gpa);
+    elf.debug_addr_relocs.deinit(gpa);
+    elf.debug_rnglists_compile_unit_relocs.deinit(gpa);
+    elf.debug_str_offsets_relocs.deinit(gpa);
+    gpa.free(elf.debug_modules);
+    elf.debug_consts.deinit(gpa);
+    elf.debug_globals.deinit(gpa);
+    elf.debug_funcs.deinit(gpa);
+    elf.debug_decls.deinit(gpa);
 
     elf.* = undefined;
 }
 
 fn initHeaders(
     elf: *Elf,
+    arena: std.mem.Allocator,
     class: std.elf.CLASS,
     data: std.elf.DATA,
     osabi: std.elf.OSABI,
@@ -6102,9 +6245,9 @@ fn initHeaders(
         .DYN => true,
     };
     const have_eh_frame = machine == .X86_64 and comp.config.any_unwind_tables;
-    const have_debug_frame = machine == .X86_64 and switch (comp.config.debug_format) {
+    const have_self_hosted_debug_info = machine == .X86_64 and switch (comp.config.debug_format) {
         .strip => false,
-        .dwarf => !comp.config.any_unwind_tables,
+        .dwarf => comp.zcu != null and !comp.config.use_llvm,
         .code_view, .nsdi => unreachable,
     };
     const addr_align: Alignment = switch (class) {
@@ -6153,20 +6296,16 @@ fn initHeaders(
             shnum += @intFromBool(@"type" != .REL); // .eh_frame_hdr
             shnum += 1; // .eh_frame
         }
-        switch (comp.config.debug_format) {
-            .strip => {},
-            .dwarf => {
-                shnum += 1; // .debug_abbrev
-                shnum += 1; // .debug_addr
-                shnum += @intFromBool(have_debug_frame); // .debug_frame
-                shnum += 1; // .debug_info
-                shnum += 1; // .debug_line
-                shnum += 1; // .debug_line_str
-                shnum += 1; // .debug_rnglists
-                shnum += 1; // .debug_str
-                shnum += 1; // .debug_str_offsets
-            },
-            .code_view, .nsdi => unreachable,
+        if (have_self_hosted_debug_info) {
+            shnum += 1; // .debug_abbrev
+            shnum += 1; // .debug_addr
+            shnum += @intFromBool(!comp.config.any_unwind_tables); // .debug_frame
+            shnum += 1; // .debug_info
+            shnum += 1; // .debug_line
+            shnum += 1; // .debug_line_str
+            shnum += 1; // .debug_rnglists
+            shnum += 1; // .debug_str
+            shnum += 1; // .debug_str_offsets
         }
         if (@"type" != .REL) {
             shnum += 1; // .got
@@ -6260,12 +6399,9 @@ fn initHeaders(
 
     const expected_merge_sections_len = @as(usize, 2) + // .shstrtab, .strtab
         @intFromBool(have_dynamic) + // .dynstr
-        @as(usize, switch (comp.config.debug_format) {
-            .strip => 0,
-            .dwarf => 2, // .debug_line_str, .debug_str
-            .code_view, .nsdi => unreachable,
-        });
-    const expected_nodes_len = @as(usize, if (is_archive) 3 else 0) + // .archive, .archive_header, .archive_elf_member_header
+        @as(usize, if (have_self_hosted_debug_info) 2 else 0); // .debug_line_str, .debug_str
+    const expected_nodes_len =
+        @as(usize, if (is_archive) 3 else 0) + // .archive, .archive_header, .archive_elf_member_header
         3 + // `.elf`, `.ehdr`, and `.shdr` nodes
         (shnum - 1 - nobits_shnum) + // -1 because the SHN_UNDEF shdr does not have a `.section` node
         (phnum -| 1) + // -1 because the GNU_STACK phdr does not have a `.segment` node
@@ -6343,10 +6479,8 @@ fn initHeaders(
             .ar_size = undefined, // populated by `flushResized` for the `.elf` node
             .ar_fmag = std.elf.ARFMAG.*,
         };
-        const zcu_member_name = try gpa.print("{s}_zcu.o", .{comp.root_name});
-        defer gpa.free(zcu_member_name);
         // After this call returns, `elf_ar_hdr` is invalidated.
-        try elf.populateArchiveMemberName(elf_ar_hdr, zcu_member_name);
+        try elf.populateArchiveMemberName(elf_ar_hdr, try arena.print("{s}_zcu.o", .{comp.root_name}));
     } else elf.ni.elf = elf.addNodeAssumeCapacity(.root, .elf);
 
     const entsize: struct { ph: u32, sh: u32 } = switch (class) {
@@ -6675,13 +6809,15 @@ fn initHeaders(
                 .next_sibling = .null,
             };
             assert(.symtab == try elf.addSection(elf.ni.elf, .{
+                .name = "", // can't be set until shstrtab merge section exists
                 .type = .SYMTAB,
                 .size = @sizeOf(ElfN.Sym) * 1,
                 .addralign = addr_align,
                 .entsize = @sizeOf(ElfN.Sym),
                 .node_align = node_block_align,
+                .link = @backingInt(Section.Index.strtab),
                 .info = 1, // index of first non-local symbol
-                .manual_size = true,
+                .node_tag = .custom,
             }));
             const symtab_null = @field(elf.symPtr(.null), @tagName(ct_class));
             symtab_null.* = .{
@@ -6699,14 +6835,14 @@ fn initHeaders(
         },
     }
     assert(.shstrtab == try elf.addSection(elf.ni.elf, .{
+        .name = "", // can't be set until shstrtab merge section exists
         .type = .STRTAB,
         .size = 1,
         .entsize = 1,
         .node_align = node_block_align,
-        .manual_size = true,
+        .node_tag = .custom,
     }));
     assert(.shstrtab == try Section.Merge.getOrCreateAssumeCapacity(.shstrtab, .strtab, .@"1", elf));
-
     try Section.Index.symtab.rename(elf, ".symtab");
     try Section.Index.shstrtab.rename(elf, ".shstrtab");
 
@@ -6716,38 +6852,40 @@ fn initHeaders(
         .size = 1,
         .entsize = 1,
         .node_align = node_block_align,
-        .manual_size = true,
+        .node_tag = .custom,
     }));
     assert(.strtab == try Section.Merge.getOrCreateAssumeCapacity(.strtab, .strtab, .@"1", elf));
-    switch (elf.shdrPtr(.symtab)) {
-        inline else => |shdr| elf.targetStore(&shdr.link, @backingInt(Section.Index.strtab)),
-    }
 
     assert(.rodata == try elf.addSection(elf.ni.rodata, .{
         .name = ".rodata",
         .flags = .{ .ALLOC = true },
         .node_align = node_block_align,
+        .node_tag = .well_known,
     }));
     assert(.text == try elf.addSection(elf.ni.text, .{
         .name = ".text",
         .flags = .{ .ALLOC = true, .EXECINSTR = true },
         .node_align = node_block_align,
+        .node_tag = .well_known,
     }));
     assert(.data == try elf.addSection(elf.ni.data, .{
         .name = ".data",
         .flags = .{ .WRITE = true, .ALLOC = true },
         .node_align = node_block_align,
+        .node_tag = .well_known,
     }));
     assert(.data_rel_ro == try elf.addSection(elf.ni.data_rel_ro, .{
         .name = ".data.rel.ro",
         .flags = .{ .WRITE = true, .ALLOC = true },
         .node_align = node_block_align,
+        .node_tag = .well_known,
     }));
 
     elf.shndx.bss = try elf.addSection(elf.ni.data, .{
         .name = ".bss",
         .type = .NOBITS,
         .flags = .{ .WRITE = true, .ALLOC = true },
+        .node_tag = null,
     });
 
     if (@"type" != .REL) {
@@ -6763,7 +6901,7 @@ fn initHeaders(
             .flags = .{ .WRITE = true, .ALLOC = true },
             .addralign = addr_align,
             .entsize = @intCast(addr_align.toByteUnits()),
-            .manual_size = true,
+            .node_tag = .custom,
         });
         {
             const init_plt_size = plt.entry_size * plt.header_entries;
@@ -6776,7 +6914,7 @@ fn initHeaders(
                     .size = got_plt.header_entries * elf.targetPtrSize(),
                     .addralign = addr_align,
                     .entsize = @intCast(addr_align.toByteUnits()),
-                    .manual_size = true,
+                    .node_tag = .custom,
                 });
                 elf.shndx.plt = try elf.addSection(elf.ni.text, .{
                     .name = ".plt",
@@ -6785,7 +6923,7 @@ fn initHeaders(
                     .size = plt.@"align".forward(init_plt_size),
                     .addralign = plt.@"align",
                     .node_align = node_block_align,
-                    .manual_size = true,
+                    .node_tag = .custom,
                 });
             } else {
                 elf.shndx.plt = try elf.addSection(elf.phdrs.items[phndx.plt].unwrap().?, .{
@@ -6795,7 +6933,7 @@ fn initHeaders(
                     .size = plt.@"align".forward(init_plt_size),
                     .addralign = plt.@"align",
                     .node_align = node_block_align,
-                    .manual_size = true,
+                    .node_tag = .custom,
                 });
             }
             // And the award for most annoying PLT requirement goes to SPARC, which decided that the
@@ -6812,6 +6950,7 @@ fn initHeaders(
             .flags = .{ .ALLOC = true, .EXECINSTR = true },
             .addralign = plt.@"align",
             .node_align = node_block_align,
+            .node_tag = .well_known,
         });
         if (maybe_interp) |interp| {
             const interp_ni = elf.addNodeAssumeCapacity(
@@ -6829,6 +6968,7 @@ fn initHeaders(
                 .type = .PROGBITS,
                 .flags = .{ .ALLOC = true },
                 .size = @intCast(interp.len + 1),
+                .node_tag = .custom,
             });
             const sec_interp = sec_interp_shndx.node(elf).slice(&elf.mf);
             @memcpy(sec_interp[0..interp.len], interp);
@@ -6852,7 +6992,7 @@ fn initHeaders(
                 .size = 1,
                 .entsize = 1,
                 .node_align = node_block_align,
-                .manual_size = true,
+                .node_tag = .custom,
             });
             assert(.dynstr ==
                 try Section.Merge.getOrCreateAssumeCapacity(dynstr_shndx, .strtab, .@"1", elf));
@@ -6872,7 +7012,7 @@ fn initHeaders(
                         .addralign = addr_align,
                         .entsize = @sizeOf(Sym),
                         .node_align = node_block_align,
-                        .manual_size = true,
+                        .node_tag = .custom,
                     });
                     const dynsym_null = @field(elf.dynsymPtr(0), @tagName(ct_class));
                     dynsym_null.* = .{
@@ -6901,7 +7041,7 @@ fn initHeaders(
                 .addralign = addr_align,
                 .entsize = rela_size,
                 .node_align = node_block_align,
-                .manual_size = true,
+                .node_tag = .custom,
             });
             elf.shndx.rela_plt = try elf.addSection(elf.ni.rodata, .{
                 .name = ".rela.plt",
@@ -6913,7 +7053,7 @@ fn initHeaders(
                 .addralign = addr_align,
                 .entsize = rela_size,
                 .node_align = node_block_align,
-                .manual_size = true,
+                .node_tag = .custom,
             });
             elf.shndx.dynamic = try elf.addSection(dynamic_ni, .{
                 .name = ".dynamic",
@@ -6922,7 +7062,7 @@ fn initHeaders(
                 .link = dynstr_shndx.toSectionIndex().?,
                 .entsize = @intCast(addr_align.toByteUnits() * 2),
                 .addralign = addr_align,
-                .manual_size = true,
+                .node_tag = .custom,
             });
 
             elf.shndx.gnu_version = try elf.addSection(elf.ni.rodata, .{
@@ -6933,7 +7073,7 @@ fn initHeaders(
                 .link = elf.shndx.dynsym.toSectionIndex().?,
                 .addralign = .@"2",
                 .entsize = @sizeOf(std.elf.Versym),
-                .manual_size = true,
+                .node_tag = .custom,
             });
             elf.targetStore(&elf.versymSlice()[0], .LOCAL); // "null" dynsym entry
 
@@ -6947,7 +7087,7 @@ fn initHeaders(
                 .info = 1,
                 .addralign = .@"4",
                 .size = @sizeOf(VerdefEntry), // "file" entry
-                .manual_size = true,
+                .node_tag = .custom,
             });
             {
                 const base_version_name: []const u8 = elf.options.soname orelse comp.root_name;
@@ -6984,7 +7124,7 @@ fn initHeaders(
                 .info = 0,
                 .addralign = .@"4",
                 .size = 0,
-                .manual_size = true,
+                .node_tag = .custom,
             });
 
             switch (elf.targetDynsymHashInfo()) {
@@ -7001,7 +7141,7 @@ fn initHeaders(
                         .addralign = .fromByteUnits(@sizeOf(info.Int())),
                         // initially: nbucket = 8 + nchain = 1
                         .size = @sizeOf(info.Header()) + @sizeOf(info.Int()) * (8 + 1),
-                        .manual_size = true,
+                        .node_tag = .custom,
                     });
                     const hash_slice: []align(@sizeOf(info.Int())) u8 = @alignCast(elf.shndx.hash.node(elf).slice(&elf.mf));
                     const header: *info.Header() = @ptrCast(hash_slice[0..@sizeOf(info.Header())]);
@@ -7137,13 +7277,14 @@ fn initHeaders(
                 .flags = .{ .ALLOC = true },
                 .size = @sizeOf(Dwarf.EhFrameHdr),
                 .addralign = .@"4",
+                .node_tag = .custom,
             });
             elf.shndx.eh_frame = try elf.addSection(elf.ni.rodata, .{
                 .name = ".eh_frame",
                 .flags = .{ .ALLOC = true },
                 .addralign = addr_align,
                 .node_align = elf.mf.flags.block_size,
-                .manual_size = true,
+                .node_tag = .custom,
             });
 
             elf.section_first_target_reloc.putAssumeCapacityNoClobber(elf.shndx.eh_frame, .none);
@@ -7382,7 +7523,7 @@ fn initHeaders(
             .flags = .{ .ALLOC = true },
             .addralign = addr_align,
             .node_align = elf.mf.flags.block_size,
-            .manual_size = true,
+            .node_tag = .custom,
         });
     }
     if (elf.ni.tls.unwrap()) |tls_segment_ni| {
@@ -7390,63 +7531,74 @@ fn initHeaders(
             .name = ".tdata",
             .flags = .{ .WRITE = true, .ALLOC = true, .TLS = true },
             .node_align = node_block_align,
+            .node_tag = .well_known,
         });
-
         elf.shndx.tbss = try elf.addSection(tls_segment_ni, .{
             .name = ".tbss",
             .type = .NOBITS,
             .flags = .{ .WRITE = true, .ALLOC = true, .TLS = true },
+            .node_tag = null,
         });
     }
-    switch (comp.config.debug_format) {
-        .strip => {},
-        .dwarf => {
-            elf.shndx.debug_abbrev = try elf.addSection(elf.ni.elf, .{ .name = ".debug_abbrev" });
-            elf.shndx.debug_addr = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_addr",
-                .addralign = addr_align,
-                .node_align = elf.mf.flags.block_size,
-            });
-            if (have_debug_frame) elf.shndx.debug_frame = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_frame",
-                .addralign = addr_align,
-                .node_align = elf.mf.flags.block_size,
-                .manual_size = true,
-            });
-            elf.shndx.debug_info = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_info",
-                .node_align = elf.mf.flags.block_size,
-            });
-            elf.shndx.debug_line = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_line",
-                .node_align = elf.mf.flags.block_size,
-            });
-            const debug_line_str_shndx = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_line_str",
-                .flags = .{ .MERGE = true, .STRINGS = true },
-            });
-            elf.debug_line_str_msi =
-                try Section.Merge.getOrCreateAssumeCapacity(debug_line_str_shndx, .strtab, .@"1", elf);
-            elf.shndx.debug_rnglists = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_rnglists",
-                .node_align = elf.mf.flags.block_size,
-            });
-            const debug_str_shndx = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_str",
-                .flags = .{ .MERGE = true, .STRINGS = true },
-            });
-            elf.debug_str_msi =
-                try Section.Merge.getOrCreateAssumeCapacity(debug_str_shndx, .strtab, .@"1", elf);
-            elf.shndx.debug_str_offsets = try elf.addSection(elf.ni.elf, .{
-                .name = ".debug_str_offsets",
-                .addralign = switch (elf.dwarf.format) {
-                    .@"32" => .@"4",
-                    .@"64" => .@"8",
-                },
-                .node_align = elf.mf.flags.block_size,
-            });
-        },
-        .code_view, .nsdi => unreachable,
+    if (have_self_hosted_debug_info) {
+        elf.shndx.debug_abbrev = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_abbrev",
+            .node_tag = .custom,
+        });
+        elf.shndx.debug_addr = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_addr",
+            .addralign = addr_align,
+            .node_align = elf.mf.flags.block_size,
+            .node_tag = .custom,
+        });
+        if (!comp.config.any_unwind_tables) elf.shndx.debug_frame = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_frame",
+            .addralign = addr_align,
+            .node_align = elf.mf.flags.block_size,
+            .node_tag = .custom,
+        });
+        elf.shndx.debug_info = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_info",
+            .node_align = elf.mf.flags.block_size,
+            .node_tag = .custom,
+        });
+        elf.shndx.debug_line = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_line",
+            .node_align = elf.mf.flags.block_size,
+            .node_tag = .custom,
+        });
+        const debug_line_str_shndx = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_line_str",
+            .flags = .{ .MERGE = true, .STRINGS = true },
+            .entsize = 1,
+            .node_tag = .custom,
+        });
+        elf.debug_line_str_msi =
+            try Section.Merge.getOrCreateAssumeCapacity(debug_line_str_shndx, .strtab, .@"1", elf);
+        elf.shndx.debug_rnglists = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_rnglists",
+            .node_align = elf.mf.flags.block_size,
+            .node_tag = .custom,
+        });
+        const debug_str_shndx = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_str",
+            .flags = .{ .MERGE = true, .STRINGS = true },
+            .entsize = 1,
+            .node_tag = .custom,
+        });
+        elf.debug_str_msi =
+            try Section.Merge.getOrCreateAssumeCapacity(debug_str_shndx, .strtab, .@"1", elf);
+        elf.shndx.debug_str_offsets = try elf.addSection(elf.ni.elf, .{
+            .name = ".debug_str_offsets",
+            .addralign = switch (elf.dwarf.format) {
+                .@"32" => .@"4",
+                .@"64" => .@"8",
+            },
+            .node_align = elf.mf.flags.block_size,
+            .node_tag = .custom,
+        });
+
+        try elf.dwarf.initDebugInfo(arena);
     }
 
     // If we have an entry point symbol, create the undefined reference now.
@@ -7476,6 +7628,7 @@ fn initHeaders(
 
     assert(elf.nodes.len == expected_nodes_len);
     assert(elf.shdrs.items.len == shnum - 1); // -1 to exclude SHN_UNDEF
+    assert(elf.merge_sections.count() == expected_merge_sections_len);
 
     for (1..shnum) |shndx_raw| { // start at 1 to exclude SHN_UNDEF
         const shndx: Section.Index = @fromBackingInt(@intCast(shndx_raw));
@@ -7492,10 +7645,9 @@ fn initHeaders(
         },
         .rpath = rpath: {
             var rpath: std.ArrayList(u8) = .empty;
-            defer rpath.deinit(gpa);
             for (elf.options.rpath_list, 0..) |path, rpath_index| {
-                if (rpath_index > 0) try rpath.append(gpa, ':');
-                try rpath.appendSlice(gpa, path);
+                if (rpath_index > 0) try rpath.append(arena, ':');
+                try rpath.appendSlice(arena, path);
             }
             break :rpath try .fromString(rpath.items, elf);
         },
@@ -7541,40 +7693,41 @@ fn getNodeShndx(elf: *const Elf, ni: MappedFile.Node.Index) Section.Index {
         .shdr,
         .segment,
         => unreachable,
-        .section, .section_manual_size => |shndx| shndx,
-        .input_section,
-        .merge_section,
-        .nav,
-        .uav,
-        .lazy_code,
-        .lazy_const_data,
-        .debug_shared,
-        .debug_addr,
-        .eh_frame_footer,
-        .debug_str_offsets,
-        .unit_padding,
-        .unit_frame,
-        .unit_debug_info,
-        .unit_debug_line,
-        .unit_debug_rnglists,
-        => switch (elf.getNode(ni.parent(&elf.mf).unwrap().?)) {
+        .well_known_section, .custom_section => |shndx| shndx,
+        .input_section, .merge_section => switch (elf.getNode(ni.parent(&elf.mf).unwrap().?)) {
             else => unreachable,
-            .section, .section_manual_size => |shndx| shndx,
+            .well_known_section, .custom_section => |shndx| shndx,
         },
-        .unit_frame_cie,
-        .unit_debug_info_header,
-        .unit_debug_info_footer,
-        .unit_debug_line_header,
-        .const_debug_info,
-        .global_debug_info,
-        .func_frame_fde,
-        .func_debug_info,
-        .func_debug_line,
-        .decl_debug_info,
-        => switch (elf.getNode(ni.parent(&elf.mf).unwrap().?.parent(&elf.mf).unwrap().?)) {
-            else => unreachable,
-            .section, .section_manual_size => |shndx| shndx,
+        .compile_unit_range, .zav_range_end, .nav, .uav, .lazy_code, .lazy_const_data => {
+            var parent_ni = ni;
+            while (true) {
+                parent_ni = parent_ni.parent(&elf.mf).unwrap().?;
+                switch (elf.getNode(parent_ni)) {
+                    else => unreachable,
+                    .well_known_section, .custom_section => |shndx| return shndx,
+                    .compile_unit_range => {},
+                }
+            }
         },
+        .debug_abbrev => elf.shndx.debug_abbrev,
+        .debug_addr => elf.shndx.debug_addr,
+        .eh_frame_cie, .eh_frame_fde, .eh_frame_footer => elf.shndx.eh_frame,
+        .debug_frame_cie, .debug_frame_fde => elf.shndx.debug_frame,
+        .debug_info_header,
+        .debug_info_module,
+        .debug_info_module_header,
+        .debug_info_const,
+        .debug_info_global,
+        .debug_info_func,
+        .debug_info_decl,
+        .debug_info_footer,
+        => elf.shndx.debug_info,
+        .debug_line_header, .debug_line_func => elf.shndx.debug_line,
+        .debug_rnglists_header,
+        .debug_rnglists_module,
+        .debug_rnglists_compile_unit,
+        => elf.shndx.debug_rnglists,
+        .debug_str_offsets => elf.shndx.debug_str_offsets,
     };
 }
 fn getNodeVAddr(elf: *const Elf, ni: MappedFile.Node.Index) u64 {
@@ -7589,29 +7742,33 @@ fn getNodeVAddr(elf: *const Elf, ni: MappedFile.Node.Index) u64 {
         .shdr,
         .segment,
         => unreachable,
-        .section, .section_manual_size => |shndx| shndx.vaddr(elf),
+        .well_known_section, .custom_section => |shndx| shndx.vaddr(elf),
         inline .input_section, .merge_section => |si| si.ptr(elf).vaddr,
-        inline .nav, .uav, .lazy_code, .lazy_const_data => |mi| mi.zav(elf).symbol().id().value(elf),
-        .debug_shared,
+        .compile_unit_range,
+        .zav_range_end,
+        .debug_abbrev,
         .debug_addr,
+        .eh_frame_cie,
+        .eh_frame_fde,
         .eh_frame_footer,
+        .debug_frame_cie,
+        .debug_frame_fde,
+        .debug_info_header,
+        .debug_info_module,
+        .debug_info_module_header,
+        .debug_info_const,
+        .debug_info_global,
+        .debug_info_func,
+        .debug_info_decl,
+        .debug_info_footer,
+        .debug_line_header,
+        .debug_line_func,
+        .debug_rnglists_header,
+        .debug_rnglists_compile_unit,
+        .debug_rnglists_module,
         .debug_str_offsets,
-        .unit_padding,
-        .unit_frame,
-        .unit_frame_cie,
-        .unit_debug_info,
-        .unit_debug_info_header,
-        .unit_debug_info_footer,
-        .unit_debug_line,
-        .unit_debug_line_header,
-        .unit_debug_rnglists,
-        .const_debug_info,
-        .global_debug_info,
-        .func_frame_fde,
-        .func_debug_info,
-        .func_debug_line,
-        .decl_debug_info,
         => elf.computeNodeVAddr(ni),
+        inline .nav, .uav, .lazy_code, .lazy_const_data => |mi| mi.zav(elf).symbol().id().value(elf),
     };
 }
 
@@ -7624,42 +7781,58 @@ fn tbssOffset(elf: *const Elf) u64 {
 }
 
 fn computeNodeVAddr(elf: *const Elf, ni: MappedFile.Node.Index) u64 {
-    const parent_ni = ni.parent(&elf.mf).unwrap().?;
-    const parent_vaddr = parent_vaddr: switch (elf.getNode(parent_ni)) {
-        .deleted,
-        .archive,
-        .archive_header,
-        .archive_input_member,
-        .archive_elf_member_header,
-        => unreachable,
-        .elf => return 0,
-        .ehdr, .shdr => unreachable,
-        .segment => |phndx| switch (elf.phdrSlice()) {
-            inline else => |phdr| elf.targetLoad(&phdr[phndx].vaddr),
-        },
-        .section, .section_manual_size => |shndx| if (shndx == elf.shndx.tdata) 0 else shndx.vaddr(elf),
-        .input_section, .merge_section => unreachable,
-        inline .nav, .uav, .lazy_code, .lazy_const_data => |mi| mi.zav(elf).symbol().id().value(elf),
-        .debug_shared, .debug_addr, .eh_frame_footer, .debug_str_offsets, .unit_padding => unreachable,
-        .unit_frame, .unit_debug_info, .unit_debug_line => {
-            const section_offset, _ = parent_ni.location(&elf.mf).resolve(&elf.mf);
-            break :parent_vaddr elf.getNodeShndx(parent_ni).vaddr(elf) + section_offset;
-        },
-        .unit_frame_cie,
-        .unit_debug_info_header,
-        .unit_debug_info_footer,
-        .unit_debug_line_header,
-        .unit_debug_rnglists,
-        .const_debug_info,
-        .global_debug_info,
-        .func_frame_fde,
-        .func_debug_info,
-        .func_debug_line,
-        .decl_debug_info,
-        => unreachable,
-    };
-    const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
-    return parent_vaddr + offset;
+    var parent_ni = ni;
+    var section_offset: u64 = 0;
+    while (true) {
+        const offset, _ = parent_ni.location(&elf.mf).resolve(&elf.mf);
+        parent_ni = parent_ni.parent(&elf.mf).unwrap().?;
+        section_offset += offset;
+        const section_vaddr = switch (elf.getNode(parent_ni)) {
+            .deleted,
+            .archive,
+            .archive_header,
+            .archive_input_member,
+            .archive_elf_member_header,
+            .ehdr,
+            .shdr,
+            .input_section,
+            .merge_section,
+            .nav,
+            .uav,
+            .lazy_code,
+            .lazy_const_data,
+            .debug_abbrev,
+            .debug_addr,
+            .eh_frame_cie,
+            .eh_frame_fde,
+            .eh_frame_footer,
+            .debug_frame_cie,
+            .debug_frame_fde,
+            .debug_info_header,
+            .debug_info_module_header,
+            .debug_info_const,
+            .debug_info_global,
+            .debug_info_func,
+            .debug_info_decl,
+            .debug_info_footer,
+            .debug_line_header,
+            .debug_line_func,
+            .debug_rnglists_header,
+            .debug_rnglists_compile_unit,
+            .debug_rnglists_module,
+            .debug_str_offsets,
+            => unreachable,
+            .elf => return 0,
+            .segment => |phndx| switch (elf.phdrSlice()) {
+                inline else => |phdr| elf.targetLoad(&phdr[phndx].vaddr),
+            },
+            .well_known_section,
+            .custom_section,
+            => |shndx| if (shndx == elf.shndx.tdata) 0 else shndx.vaddr(elf),
+            .compile_unit_range, .zav_range_end, .debug_info_module => continue,
+        };
+        return section_vaddr + section_offset;
+    }
 }
 fn computeNodeElfOffset(elf: *const Elf, ni: MappedFile.Node.Index) u64 {
     return ni.fileLocation(&elf.mf, false).offset - elf.ni.elf.fileLocation(&elf.mf, false).offset;
@@ -7684,65 +7857,60 @@ pub fn resetNodeRelocs(elf: *Elf, ni: MappedFile.Node.Index) void {
         .ehdr,
         .shdr,
         .segment,
+        .well_known_section,
+        .custom_section,
         .merge_section,
-        .debug_shared,
+        .compile_unit_range,
+        .zav_range_end,
+        .debug_abbrev,
         .debug_addr,
+        .eh_frame_cie,
         .eh_frame_footer,
+        .debug_frame_cie,
+        .debug_info_module,
+        .debug_info_footer,
+        .debug_rnglists_header,
+        .debug_rnglists_compile_unit,
+        .debug_rnglists_module,
         .debug_str_offsets,
-        .unit_padding,
-        .unit_frame,
-        .unit_frame_cie,
-        .unit_debug_info,
-        .unit_debug_line,
-        => unreachable, // cannot contain relocs
-        .section,
-        .section_manual_size,
-        => unreachable, // cannot contain relocs (.plt, .dynamic, and .eh_frame_hdr unsupported)
+        => unreachable,
         .input_section => |isi| .{ .first_reloc = &isi.ptr(elf).first_reloc },
         .nav => |nmi| .{
-            .first_reloc = &elf.navs.values()[@backingInt(nmi)].first_reloc,
+            .first_reloc = &nmi.zav(elf).first_reloc,
             .skip_nodes = if (elf.dwarf.getFuncIfExists(nmi.nav(elf))) |fi| .{
                 fi.ptr(&elf.dwarf).debug_info_ni,
                 fi.ptr(&elf.dwarf).debug_line_ni,
             } else @splat(.none),
         },
-        .uav => |umi| .{ .first_reloc = &elf.uavs.values()[@backingInt(umi)].first_reloc },
+        .uav => |umi| .{ .first_reloc = &umi.zav(elf).first_reloc },
         inline .lazy_code, .lazy_const_data => |lmi| .{
             .first_reloc = &elf.lazy.getPtr(lmi.ref().kind).map.values()[lmi.ref().index].first_reloc,
         },
-        .unit_debug_info_header => |ui| .{
-            .first_reloc = &elf.dwarf_units[@backingInt(ui)].debug_info_header_first_reloc,
+        .eh_frame_fde => |fi| .{ .first_reloc = &DebugFunc.ptr(fi, elf).fde.eh_frame.first_reloc },
+        .debug_frame_fde => |fi| .{
+            .first_reloc = &DebugFunc.ptr(fi, elf).fde.debug_frame_first_reloc,
         },
-        .unit_debug_info_footer => unreachable, // cannot contain relocs
-        .unit_debug_line_header => |ui| .{
-            .first_reloc = &elf.dwarf_units[@backingInt(ui)].debug_line_header_first_reloc,
+        .debug_info_header => .{ .first_reloc = &elf.debug_info_header_first_reloc },
+        .debug_info_module_header => |mi| .{
+            .first_reloc = &DebugModule.ptr(mi, elf).debug_info_first_reloc,
         },
-        .unit_debug_rnglists => unreachable, // cannot contain relocs
-        .const_debug_info => |cpi| .{
-            .first_reloc = &elf.dwarf_consts.getPtr(cpi).?.debug_info_first_reloc,
-        },
-        .global_debug_info => |gi| .{
-            .first_reloc = &elf.dwarf_globals.items[@backingInt(gi)].debug_info_first_reloc,
-        },
-        .func_frame_fde => |fi| .{
-            .first_reloc = &elf.dwarf_funcs.items[@backingInt(fi)].frame_fde_first_reloc,
-        },
-        .func_debug_info => |fi| .{
-            .first_reloc = &elf.dwarf_funcs.items[@backingInt(fi)].debug_info_first_reloc,
+        .debug_info_const => |cpi| .{ .first_reloc = &DebugConst.ptr(cpi, elf).debug_info_first_reloc },
+        .debug_info_global => |gi| .{ .first_reloc = &DebugGlobal.ptr(gi, elf).debug_info_first_reloc },
+        .debug_info_func => |fi| .{
+            .first_reloc = &DebugFunc.ptr(fi, elf).debug_info_first_reloc,
             .skip_nodes = .{
                 if (elf.navs.getPtr(fi.nav(&elf.dwarf))) |zav| .wrap(zav.node(elf)) else .none,
                 fi.ptr(&elf.dwarf).debug_line_ni,
             },
         },
-        .func_debug_line => |fi| .{
-            .first_reloc = &elf.dwarf_funcs.items[@backingInt(fi)].debug_line_first_reloc,
+        .debug_info_decl => |di| .{ .first_reloc = &DebugDecl.ptr(di, elf).debug_info_first_reloc },
+        .debug_line_header => .{ .first_reloc = &elf.debug_line_header_first_reloc },
+        .debug_line_func => |fi| .{
+            .first_reloc = &DebugFunc.ptr(fi, elf).debug_line_first_reloc,
             .skip_nodes = .{
                 if (elf.navs.getPtr(fi.nav(&elf.dwarf))) |zav| .wrap(zav.node(elf)) else .none,
                 fi.ptr(&elf.dwarf).debug_info_ni,
             },
-        },
-        .decl_debug_info => |di| .{
-            .first_reloc = &elf.dwarf_decls.getPtr(di).?.debug_info_first_reloc,
         },
     };
     switch (opts.first_reloc.*) {
@@ -8178,7 +8346,6 @@ fn mapInputSection(elf: *Elf, opts: struct {
     flags: std.elf.SHF,
     entsize: std.elf.Xword,
     /// Must be one of:
-    /// * `.NULL`
     /// * `.PROGBITS`
     /// * `.NOBITS`
     /// * `.X86_64_UNWIND`
@@ -8209,7 +8376,7 @@ fn mapInputSection(elf: *Elf, opts: struct {
     }
 
     if (elf.base.comp.config.debug_format == .strip and
-        (opts.type == .PROGBITS or opts.type == .NULL) and
+        opts.type == .PROGBITS and
         std.mem.startsWith(u8, opts.name, ".debug_") and
         !opts.flags.ALLOC)
     {
@@ -8217,7 +8384,7 @@ fn mapInputSection(elf: *Elf, opts: struct {
     }
 
     if (!elf.base.comp.config.any_unwind_tables and
-        (opts.type == .PROGBITS or opts.type == .NULL or opts.type == std.elf.SHT.X86_64_UNWIND) and
+        (opts.type == .PROGBITS or opts.type == std.elf.SHT.X86_64_UNWIND) and
         std.mem.eql(u8, opts.name, ".eh_frame"))
     {
         return error.StripSection;
@@ -8227,6 +8394,20 @@ fn mapInputSection(elf: *Elf, opts: struct {
         const name: []const u8 = switch (elf.ehdrType()) {
             .REL => opts.name,
             .EXEC, .DYN => switch (opts.type) {
+                else => unreachable,
+                .PROGBITS, .NOBITS, .X86_64_UNWIND => name: {
+                    if (std.mem.startsWith(u8, opts.name, ".text.")) break :name ".text";
+                    if (std.mem.startsWith(u8, opts.name, ".rodata.")) break :name ".rodata";
+                    if (std.mem.startsWith(u8, opts.name, ".data.rel.ro.")) break :name ".data.rel.ro";
+                    if (std.mem.startsWith(u8, opts.name, ".data.")) break :name ".data";
+                    if (std.mem.startsWith(u8, opts.name, ".tdata.")) break :name ".tdata";
+                    if (std.mem.startsWith(u8, opts.name, ".gcc_except_table.")) break :name ".gcc_except_table";
+                    if (std.mem.eql(u8, opts.name, ".bss")) break :name ".bss";
+                    if (std.mem.startsWith(u8, opts.name, ".bss.")) break :name ".bss";
+                    if (std.mem.eql(u8, opts.name, ".tbss")) break :name ".tbss";
+                    if (std.mem.startsWith(u8, opts.name, ".tbss.")) break :name ".tbss";
+                    break :name opts.name;
+                },
                 .INIT_ARRAY => break :existing try elf.getOrCreateInitFiniArraySection(
                     &elf.shndx.init_array,
                     .INIT_ARRAY,
@@ -8248,19 +8429,6 @@ fn mapInputSection(elf: *Elf, opts: struct {
                     "__preinit_array_start",
                     "__preinit_array_end",
                 ),
-                else => name: {
-                    if (std.mem.startsWith(u8, opts.name, ".text.")) break :name ".text";
-                    if (std.mem.startsWith(u8, opts.name, ".rodata.")) break :name ".rodata";
-                    if (std.mem.startsWith(u8, opts.name, ".data.rel.ro.")) break :name ".data.rel.ro";
-                    if (std.mem.startsWith(u8, opts.name, ".data.")) break :name ".data";
-                    if (std.mem.startsWith(u8, opts.name, ".tdata.")) break :name ".tdata";
-                    if (std.mem.startsWith(u8, opts.name, ".gcc_except_table.")) break :name ".gcc_except_table";
-                    if (std.mem.eql(u8, opts.name, ".bss")) break :name ".bss";
-                    if (std.mem.startsWith(u8, opts.name, ".bss.")) break :name ".bss";
-                    if (std.mem.eql(u8, opts.name, ".tbss")) break :name ".tbss";
-                    if (std.mem.startsWith(u8, opts.name, ".tbss.")) break :name ".tbss";
-                    break :name opts.name;
-                },
             },
         };
         const name_ref: Section.Merge.Entry.Ref(.shstrtab) = try .fromString(name, elf);
@@ -8280,16 +8448,17 @@ fn mapInputSection(elf: *Elf, opts: struct {
         return elf.addSection(parent_node, .{
             .name = name,
             .type = switch (opts.type) {
-                .NULL, .PROGBITS => .NULL, // size is 0
-                .NOBITS => if (elf.ehdrType() == .REL) .NOBITS else return error.UnsupportedNobitsSection,
-
+                else => unreachable,
+                .PROGBITS => .NULL, // size is 0
+                .NOBITS => switch (elf.ehdrType()) {
+                    .REL => .NOBITS,
+                    .EXEC, .DYN => return error.UnsupportedNobitsSection,
+                },
                 .X86_64_UNWIND,
                 .INIT_ARRAY,
                 .FINI_ARRAY,
                 .PREINIT_ARRAY,
                 => |t| t,
-
-                else => unreachable, // unsupported section type
             },
             .flags = flags: {
                 // We need to decompress the section for linking.
@@ -8298,16 +8467,19 @@ fn mapInputSection(elf: *Elf, opts: struct {
                 break :flags flags;
             },
             .entsize = switch (opts.type) {
+                else => unreachable,
+                .PROGBITS, .NOBITS, .X86_64_UNWIND => std.math.lossyCast(u32, opts.entsize),
                 .INIT_ARRAY, .FINI_ARRAY, .PREINIT_ARRAY => elf.targetPtrSize(),
-                else => std.math.lossyCast(u32, opts.entsize),
             },
             .addralign = switch (opts.type) {
+                else => unreachable,
+                .PROGBITS, .NOBITS, .X86_64_UNWIND => .@"1",
                 .INIT_ARRAY, .FINI_ARRAY, .PREINIT_ARRAY => .fromByteUnits(elf.targetPtrSize()),
-                else => .@"1",
             },
-            .manual_size = switch (opts.type) {
-                .INIT_ARRAY, .FINI_ARRAY, .PREINIT_ARRAY => true,
-                else => false,
+            .node_tag = switch (opts.type) {
+                else => unreachable,
+                .PROGBITS, .X86_64_UNWIND, .INIT_ARRAY, .FINI_ARRAY, .PREINIT_ARRAY => .custom,
+                .NOBITS => null,
             },
         });
     };
@@ -8325,18 +8497,16 @@ fn mapInputSection(elf: *Elf, opts: struct {
             const existing_type = elf.targetLoad(&shdr.type);
 
             switch (opts.type) {
-                .NULL, .PROGBITS, .X86_64_UNWIND => switch (existing_type) {
+                else => unreachable,
+                .PROGBITS, .X86_64_UNWIND => switch (existing_type) {
                     .NULL, .PROGBITS, .X86_64_UNWIND => {},
                     else => return error.SectionTypeConflict,
                 },
-
                 .NOBITS,
                 .INIT_ARRAY,
                 .FINI_ARRAY,
                 .PREINIT_ARRAY,
                 => |t| if (existing_type != t) return error.SectionTypeConflict,
-
-                else => unreachable, // unsupported section type
             }
 
             // All okay, combine the section flags
@@ -8363,13 +8533,14 @@ fn navMapIndex(elf: *Elf, zcu: *Zcu, nav_index: InternPool.Nav.Index) Error!Node
     const nav_gop = elf.navs.getOrPutAssumeCapacity(nav_index);
     const nmi: Node.NavMapIndex = @fromBackingInt(@intCast(nav_gop.index));
     if (!nav_gop.found_existing) {
+        const is_code = ip.isFunctionType(nav.resolved.?.type);
         const shndx: Section.Index = section: {
             if (nav.resolved.?.@"linksection".toSlice(ip)) |@"linksection"| {
                 if (elf.mapInputSection(.{
                     .name = @"linksection",
                     .flags = .{
                         .ALLOC = true,
-                        .EXECINSTR = ip.isFunctionType(nav.resolved.?.type),
+                        .EXECINSTR = is_code,
                         .WRITE = !nav.resolved.?.@"const",
                         .TLS = elf.base.comp.config.any_non_single_threaded and
                             nav.resolved.?.@"threadlocal",
@@ -8394,12 +8565,13 @@ fn navMapIndex(elf: *Elf, zcu: *Zcu, nav_index: InternPool.Nav.Index) Error!Node
                 break :section elf.shndx.tdata;
             } else if (!nav.resolved.?.@"const") {
                 break :section .data;
-            } else if (ip.isFunctionType(nav.resolved.?.type)) {
+            } else if (is_code) {
                 break :section .text;
             } else {
                 break :section .data_rel_ro; // TODO: it would be better to use `.rodata` if the NAV value doesn't have relocs
             }
         };
+        const shndx_ni = shndx.node(elf);
         const alignment: Alignment = switch (Type.fromInterned(nav.resolved.?.type).zigTypeTag(zcu)) {
             .@"fn" => a: {
                 const mod = zcu.navFileScope(nav_index).mod.?;
@@ -8417,8 +8589,12 @@ fn navMapIndex(elf: *Elf, zcu: *Zcu, nav_index: InternPool.Nav.Index) Error!Node
                 else => |a| .fromIp(a),
             },
         };
+        const parent_ni = if (is_code)
+            try Zav.Range.getOrCreate(elf, shndx_ni, .compile_unit_ranges, alignment)
+        else
+            shndx_ni;
         try shndx.ensureAligned(elf, alignment);
-        const node = elf.addNodeAssumeCapacity(try shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
+        const node = elf.addNodeAssumeCapacity(try parent_ni.addFloatingChild(gpa, &elf.mf, .{
             .alignment = alignment,
         }), .{ .nav = nmi });
         nav_gop.value_ptr.* = .{
@@ -8877,6 +9053,7 @@ fn loadObject(
                     const name = std.mem.sliceTo(shstrtab[section.shdr.name..], 0);
 
                     switch (section.shdr.type) {
+                        .NULL,
                         .REL,
                         .RELA,
                         .STRTAB,
@@ -8917,7 +9094,6 @@ fn loadObject(
                         .GNU_SFRAME,
                         => continue, // TODO
 
-                        .NULL,
                         .PROGBITS,
                         .NOBITS,
                         .X86_64_UNWIND,
@@ -8985,8 +9161,6 @@ fn loadObject(
 
                     switch (section.shdr.type) {
                         else => unreachable, // handled above
-
-                        .NULL => continue,
 
                         .NOBITS => {
                             _ = try elf.section_first_target_reloc.getOrPutValue(gpa, shndx, .none);
@@ -9059,7 +9233,7 @@ fn loadObject(
                                 section.shdr.entsize = 0;
                                 break :merge_key null;
                             }) |merge_key| {
-                                var w: std.Io.Writer =
+                                var w: Io.Writer =
                                     .fixed(try gpa.alloc(u8, @intCast(opts.output_size)));
                                 defer gpa.free(w.buffer);
                                 try fr.seekTo(fl.offset + opts.offset);
@@ -9131,13 +9305,13 @@ fn loadObject(
                             // For well-known sections, we know that it's fine to have e.g. random
                             // padding, so there's no need to make the sections fixed. For custom
                             // sections, however, we do want fixed nodes to avoid padding.
-                            const use_header_node = shndx != .text and
-                                shndx != .rodata and
-                                shndx != .data and
-                                shndx != .data_rel_ro and
-                                shndx != elf.shndx.tdata;
-
                             const shndx_ni = shndx.node(elf);
+                            const section_node_tag: Section.NodeTag = switch (elf.getNode(shndx_ni)) {
+                                else => unreachable,
+                                .well_known_section => .well_known,
+                                .custom_section => .custom,
+                            };
+
                             const add_node_opts: MappedFile.Node.AddOptions = .{
                                 .size = need_align.forward(opts.output_size),
                                 .alignment = need_align,
@@ -9147,21 +9321,19 @@ fn loadObject(
                                 elf.input_sections.items.len,
                             ));
                             const ni = elf.addNodeAssumeCapacity(
-                                if (use_header_node) try shndx_ni.addHeaderChildAfter(
-                                    gpa,
-                                    &elf.mf,
-                                    after: {
+                                switch (section_node_tag) {
+                                    .well_known => try shndx_ni
+                                        .addFloatingChild(gpa, &elf.mf, add_node_opts),
+                                    .custom => try shndx_ni.addHeaderChildAfter(gpa, &elf.mf, after: {
                                         var node_it = shndx_ni.last(&elf.mf);
-                                        while (node_it.unwrap()) |ni| : ({
-                                            node_it = ni.prev(&elf.mf);
-                                        }) switch (ni.position(&elf.mf)) {
-                                            .header => break :after .wrap(ni), // last header
-                                            .footer, .floating => {},
-                                        };
+                                        while (node_it.unwrap()) |ni| : (node_it = ni.prev(&elf.mf))
+                                            switch (ni.position(&elf.mf)) {
+                                                .header => break :after .wrap(ni), // last header
+                                                .footer, .floating => {},
+                                            };
                                         break :after .none;
-                                    },
-                                    add_node_opts,
-                                ) else try shndx_ni.addFloatingChild(gpa, &elf.mf, add_node_opts),
+                                    }, add_node_opts),
+                                },
                                 .{ .input_section = isi },
                             );
                             elf.input_sections.addOneAssumeCapacity().* = .{
@@ -9181,6 +9353,13 @@ fn loadObject(
                                 .first_reloc = .none,
                             };
                             elf.input_prog_node.increaseEstimatedTotalItems(1);
+                            switch (section_node_tag) {
+                                .well_known => {},
+                                .custom => if (ni == shndx_ni.last(&elf.mf).unwrap().?) {
+                                    const offset, const size = ni.location(&elf.mf).resolve(&elf.mf);
+                                    shndx.setSize(elf, offset + size);
+                                },
+                            }
                             section.placement = .{ .progbits = isi };
                         },
                         .INIT_ARRAY => {
@@ -10208,7 +10387,7 @@ fn getOrCreateInitFiniArraySection(
                 .@"64" => .@"8",
             },
             .entsize = elf.identClass().size(),
-            .manual_size = true,
+            .node_tag = .custom,
         });
         const shndx_ni = shndx.node(elf);
         const shndx_vaddr = shndx.vaddr(elf);
@@ -10375,52 +10554,11 @@ pub fn prelink(elf: *Elf, prog_node: std.Progress.Node) link.Error!void {
 fn prelinkInner(elf: *Elf) Error!void {
     const comp = elf.base.comp;
     const gpa = comp.gpa;
-
     const addr_align: Alignment = switch (elf.identClass()) {
         .NONE, _ => unreachable,
         .@"32" => .@"4",
         .@"64" => .@"8",
     };
-    try elf.nodes.ensureUnusedCapacity(gpa, 7 + 5);
-    for ([7]Section.Index{
-        elf.shndx.debug_addr,
-        elf.shndx.eh_frame,
-        elf.shndx.debug_frame,
-        elf.shndx.debug_info,
-        elf.shndx.debug_line,
-        elf.shndx.debug_rnglists,
-        elf.shndx.debug_str_offsets,
-    }) |debug_shndx| {
-        if (debug_shndx == .UNDEF) continue;
-        const debug_ni = debug_shndx.node(elf);
-        const frame_format = debug_shndx.debugFrameFormat(elf);
-        const unit_padding_ni = elf.addNodeAssumeCapacity(
-            try debug_ni.addHeaderChildAfter(gpa, &elf.mf, last_header_oni: {
-                var last_header_oni = debug_ni.last(&elf.mf);
-                while (last_header_oni.unwrap()) |last_header_ni|
-                    switch (last_header_ni.position(&elf.mf)) {
-                        .header => break,
-                        .footer => last_header_oni = last_header_ni.prev(&elf.mf),
-                        .floating => unreachable,
-                    };
-                break :last_header_oni last_header_oni;
-            }, .{
-                .alignment = if (frame_format) |_| addr_align else .@"1",
-                .next_moved = true,
-                .enable_next_moved = true,
-            }),
-            .unit_padding,
-        );
-        var debug_nw: MappedFile.Node.Writer = undefined;
-        unit_padding_ni.writer(gpa, &elf.mf, &debug_nw);
-        defer debug_nw.deinit();
-        (if (frame_format) |format|
-            elf.dwarf.genDebugFrameCie(&debug_nw.interface, null, format)
-        else
-            elf.dwarf.genUnitPadding(&debug_nw.interface)) catch |err| switch (err) {
-            error.WriteFailed => return debug_nw.err.?,
-        };
-    }
 
     if (comp.zcu) |_| self_hosted_codegen: {
         if (comp.config.use_llvm) break :self_hosted_codegen;
@@ -10447,64 +10585,231 @@ fn prelinkInner(elf: *Elf) Error!void {
             elf.input_pending_index += 1;
         }
 
+        try elf.nodes.ensureUnusedCapacity(gpa, 10);
+        switch (elf.shndx.debug_abbrev) {
+            .UNDEF => {},
+            else => |debug_abbrev_shndx| {
+                const debug_abbrev_ni = debug_abbrev_shndx.node(elf);
+                elf.dwarf.debug_abbrev.ni = .wrap(elf.addNodeAssumeCapacity(
+                    try debug_abbrev_ni.addHeaderChildAfter(
+                        gpa,
+                        &elf.mf,
+                        debug_abbrev_ni.last(&elf.mf),
+                        .{ .moved = true },
+                    ),
+                    .debug_abbrev,
+                ));
+            },
+        }
         switch (elf.shndx.debug_addr) {
             .UNDEF => {},
             else => |debug_addr_shndx| {
-                const debug_addr_ni = elf.addNodeAssumeCapacity(
-                    try debug_addr_shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
+                const debug_addr_ni = debug_addr_shndx.node(elf);
+                elf.dwarf.debug_addr.ni = .wrap(elf.addNodeAssumeCapacity(
+                    try debug_addr_ni.addHeaderChildAfter(gpa, &elf.mf, debug_addr_ni.last(&elf.mf), .{
                         .alignment = addr_align,
-                        .next_moved = true,
-                        .enable_next_moved = true,
+                        .moved = true,
                     }),
                     .debug_addr,
-                );
-                elf.dwarf.debug_addr.ni = .wrap(debug_addr_ni);
-
-                var dah_nw: link.MappedFile.Node.Writer = undefined;
-                debug_addr_ni.writer(gpa, &elf.mf, &dah_nw);
-                defer dah_nw.deinit();
-                elf.dwarf.genDebugAddrHeader(&dah_nw.interface) catch |err| switch (err) {
-                    else => |e| return e,
-                    error.WriteFailed => return dah_nw.err.?,
-                };
+                ));
             },
         }
-        switch (elf.shndx.debug_abbrev) {
+        switch (elf.shndx.eh_frame) {
             .UNDEF => {},
-            else => |debug_abbrev_shndx| elf.dwarf.debug_abbrev.ni = .wrap(elf.addNodeAssumeCapacity(
-                try debug_abbrev_shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{}),
-                .{ .debug_shared = .debug_abbrev },
-            )),
+            else => |eh_frame_shndx| {
+                const eh_frame_ni = eh_frame_shndx.node(elf);
+                elf.dwarf.frame.eh_cie_ni = .wrap(elf.addNodeAssumeCapacity(
+                    try eh_frame_ni.addHeaderChildAfter(gpa, &elf.mf, after: {
+                        var node_it = eh_frame_ni.last(&elf.mf);
+                        while (node_it.unwrap()) |ni| : ({
+                            node_it = ni.prev(&elf.mf);
+                        }) switch (ni.position(&elf.mf)) {
+                            .header => break :after .wrap(ni), // last header
+                            .footer => {},
+                            .floating => unreachable,
+                        };
+                        break :after .none;
+                    }, .{
+                        .alignment = addr_align,
+                        .enable_next_moved = true,
+                        .moved = true,
+                        .next_moved = true,
+                    }),
+                    .eh_frame_cie,
+                ));
+            },
+        }
+        switch (elf.shndx.debug_frame) {
+            .UNDEF => {},
+            else => |debug_frame_shndx| {
+                const debug_frame_ni = debug_frame_shndx.node(elf);
+                elf.dwarf.frame.debug_cie_ni = .wrap(elf.addNodeAssumeCapacity(
+                    try debug_frame_ni.addHeaderChildAfter(
+                        gpa,
+                        &elf.mf,
+                        debug_frame_ni.last(&elf.mf),
+                        .{
+                            .alignment = addr_align,
+                            .enable_next_moved = true,
+                            .moved = true,
+                            .next_moved = true,
+                        },
+                    ),
+                    .debug_frame_cie,
+                ));
+            },
+        }
+        switch (elf.shndx.debug_info) {
+            .UNDEF => {},
+            else => |debug_info_shndx| {
+                const debug_info_ni = debug_info_shndx.node(elf);
+                elf.dwarf.debug_info.header_ni = .wrap(elf.addNodeAssumeCapacity(
+                    try debug_info_ni.addHeaderChildAfter(gpa, &elf.mf, debug_info_ni.last(&elf.mf), .{
+                        .enable_next_moved = true,
+                        .moved = true,
+                        .next_moved = true,
+                    }),
+                    .debug_info_header,
+                ));
+                footer: {
+                    if (debug_info_ni.last(&elf.mf).unwrap()) |last_child_ni| {
+                        switch (last_child_ni.position(&elf.mf)) {
+                            .footer => break :footer,
+                            .header, .floating => {},
+                        }
+                    }
+                    _ = elf.addNodeAssumeCapacity(try debug_info_ni.addOnlyFooterChild(gpa, &elf.mf, .{
+                        .size = comptime Dwarf.uleb128Size(@backingInt(Dwarf.AbbrevCode.null)),
+                    }), .debug_info_footer);
+                }
+            },
+        }
+        switch (elf.shndx.debug_line) {
+            .UNDEF => {},
+            else => |debug_line_shndx| {
+                const debug_line_ni = debug_line_shndx.node(elf);
+                elf.dwarf.debug_line.header_ni = .wrap(elf.addNodeAssumeCapacity(
+                    try debug_line_ni.addHeaderChildAfter(gpa, &elf.mf, debug_line_ni.last(&elf.mf), .{
+                        .enable_next_moved = true,
+                        .moved = true,
+                        .next_moved = true,
+                    }),
+                    .debug_line_header,
+                ));
+            },
+        }
+        switch (elf.shndx.debug_rnglists) {
+            .UNDEF => {},
+            else => |debug_rnglists_shndx| {
+                const debug_rnglists_ni = debug_rnglists_shndx.node(elf);
+                elf.dwarf.debug_rnglists.header_ni = .wrap(
+                    elf.addNodeAssumeCapacity(try debug_rnglists_ni.addHeaderChildAfter(
+                        gpa,
+                        &elf.mf,
+                        debug_rnglists_ni.last(&elf.mf),
+                        .{
+                            .enable_next_moved = true,
+                            .moved = true,
+                            .next_moved = true,
+                        },
+                    ), .debug_rnglists_header),
+                );
+                elf.dwarf.debug_rnglists.compile_unit_ni = .wrap(
+                    elf.addNodeAssumeCapacity(try debug_rnglists_ni.addFloatingChild(gpa, &elf.mf, .{
+                        .size = 1,
+                        .enable_next_moved = true,
+                        .moved = true,
+                        .next_moved = true,
+                    }), .debug_rnglists_compile_unit),
+                );
+            },
         }
         switch (elf.shndx.debug_str_offsets) {
             .UNDEF => {},
             else => |debug_str_offsets_shndx| {
-                const debug_str_offsets_ni = elf.addNodeAssumeCapacity(
-                    try debug_str_offsets_shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
-                        .alignment = switch (elf.dwarf.format) {
-                            .@"32" => .@"4",
-                            .@"64" => .@"8",
+                const debug_str_offsets_ni = debug_str_offsets_shndx.node(elf);
+                elf.dwarf.debug_str_offsets.ni = .wrap(elf.addNodeAssumeCapacity(
+                    try debug_str_offsets_ni.addHeaderChildAfter(
+                        gpa,
+                        &elf.mf,
+                        debug_str_offsets_ni.last(&elf.mf),
+                        .{
+                            .alignment = switch (elf.dwarf.format) {
+                                .@"32" => .@"4",
+                                .@"64" => .@"8",
+                            },
+                            .moved = true,
                         },
-                        .next_moved = true,
-                        .enable_next_moved = true,
-                    }),
+                    ),
                     .debug_str_offsets,
-                );
-                elf.dwarf.debug_str_offsets.ni = .wrap(debug_str_offsets_ni);
-
-                var dsoh_nw: link.MappedFile.Node.Writer = undefined;
-                debug_str_offsets_ni.writer(gpa, &elf.mf, &dsoh_nw);
-                defer dsoh_nw.deinit();
-                elf.dwarf.genDebugStrOffsetsHeader(&dsoh_nw.interface) catch |err| switch (err) {
-                    else => |e| return e,
-                    error.WriteFailed => return dsoh_nw.err.?,
-                };
+                ));
             },
+        }
+
+        if (elf.dwarf.debug_addr.ni.unwrap()) |debug_addr_ni| {
+            var dah_nw: MappedFile.Node.Writer = undefined;
+            debug_addr_ni.writer(gpa, &elf.mf, &dah_nw);
+            defer dah_nw.deinit();
+            const first_ri = elf.relocs.items.len;
+            defer assert(first_ri == elf.relocs.items.len);
+            elf.dwarf.genDebugAddrHeader(&dah_nw.interface) catch |err| switch (err) {
+                else => |e| return e,
+                error.WriteFailed => return dah_nw.err.?,
+            };
+        }
+        if (elf.dwarf.frame.eh_cie_ni.unwrap()) |eh_frame_cie_ni| {
+            var efc_nw: MappedFile.Node.Writer = undefined;
+            eh_frame_cie_ni.writer(gpa, &elf.mf, &efc_nw);
+            defer efc_nw.deinit();
+            const first_ri = elf.relocs.items.len;
+            defer assert(first_ri == elf.relocs.items.len);
+            elf.dwarf.genCie(&efc_nw.interface, switch (elf.ehdrMachine()) {
+                else => unreachable,
+                .X86_64 => .x86_64,
+            }, .eh_frame) catch |err| switch (err) {
+                else => |e| return e,
+                error.WriteFailed => return efc_nw.err.?,
+            };
+        }
+        if (elf.dwarf.frame.debug_cie_ni.unwrap()) |debug_frame_cie_ni| {
+            var dfc_nw: MappedFile.Node.Writer = undefined;
+            debug_frame_cie_ni.writer(gpa, &elf.mf, &dfc_nw);
+            defer dfc_nw.deinit();
+            const first_ri = elf.relocs.items.len;
+            defer assert(first_ri == elf.relocs.items.len);
+            elf.dwarf.genCie(&dfc_nw.interface, switch (elf.ehdrMachine()) {
+                else => unreachable,
+                .X86_64 => .x86_64,
+            }, .debug_frame) catch |err| switch (err) {
+                else => |e| return e,
+                error.WriteFailed => return dfc_nw.err.?,
+            };
+        }
+        if (elf.dwarf.debug_info.header_ni.unwrap()) |debug_info_header_ni| {
+            var dih_nw: MappedFile.Node.Writer = undefined;
+            debug_info_header_ni.writer(gpa, &elf.mf, &dih_nw);
+            defer dih_nw.deinit();
+            elf.resetNodeRelocs(debug_info_header_ni);
+            elf.dwarf.genDebugInfoHeader(&dih_nw) catch |err| switch (err) {
+                else => |e| return e,
+                error.WriteFailed => return dih_nw.err.?,
+            };
+        }
+        if (elf.dwarf.debug_str_offsets.ni.unwrap()) |debug_str_offsets_ni| {
+            var dsoh_nw: MappedFile.Node.Writer = undefined;
+            debug_str_offsets_ni.writer(gpa, &elf.mf, &dsoh_nw);
+            defer dsoh_nw.deinit();
+            const first_ri = elf.relocs.items.len;
+            defer assert(first_ri == elf.relocs.items.len);
+            elf.dwarf.genDebugStrOffsetsHeader(&dsoh_nw.interface) catch |err| switch (err) {
+                else => |e| return e,
+                error.WriteFailed => return dsoh_nw.err.?,
+            };
         }
     }
 }
 
-pub fn zcuFilesReady(elf: *Elf, zcu: *Zcu) link.Error!void {
+pub fn zcuFilesReady(elf: *Elf, zcu: *const Zcu) link.Error!void {
     elf.zcuFilesReadyInner(zcu) catch |err| switch (err) {
         else => |e| return e,
         error.MappedFileIo => return elf.base.comp.link_diags.fail(
@@ -10514,139 +10819,131 @@ pub fn zcuFilesReady(elf: *Elf, zcu: *Zcu) link.Error!void {
     };
     try elf.updateSegmentLoadAddresses();
 }
-fn zcuFilesReadyInner(elf: *Elf, zcu: *Zcu) Error!void {
+fn zcuFilesReadyInner(elf: *Elf, zcu: *const Zcu) Error!void {
     const gpa = zcu.gpa;
-    const units_len = zcu.module_roots.count();
-    if (elf.dwarf_units.len == 0) {
+    const modules_len = zcu.module_roots.count();
+    if (elf.debug_modules.len == 0) {
         @branchHint(.unlikely);
-        try elf.dwarf.initUnits(gpa, units_len);
-        elf.dwarf_units = try gpa.alloc(dwarf_relocs.Unit, zcu.module_roots.count());
-        @memset(elf.dwarf_units, .{
-            .frame_cie_first_target_reloc = .none,
-            .debug_info_header_first_target_reloc = .none,
-            .debug_info_header_first_reloc = .none,
-            .debug_line_header_first_target_reloc = .none,
-            .debug_line_header_first_reloc = .none,
-            .debug_rnglists_first_target_reloc = .none,
-            .debug_rnglists_relocs = .empty,
+        try elf.dwarf.initModules(gpa, modules_len);
+        elf.debug_modules = try gpa.alloc(DebugModule, modules_len);
+        @memset(elf.debug_modules, .{
+            .debug_info_first_target_reloc = .none,
+            .debug_info_first_reloc = .none,
         });
+
+        if (elf.dwarf.debug_rnglists.header_ni.unwrap()) |debug_rnglists_header_ni| {
+            var drh_nw: MappedFile.Node.Writer = undefined;
+            debug_rnglists_header_ni.writer(gpa, &elf.mf, &drh_nw);
+            defer drh_nw.deinit();
+            const first_ri = elf.relocs.items.len;
+            defer assert(first_ri == elf.relocs.items.len);
+            elf.dwarf.genDebugRnglistsHeader(&drh_nw) catch |err| switch (err) {
+                else => |e| return e,
+                error.WriteFailed => return drh_nw.err.?,
+            };
+        }
     }
-    if (!try elf.dwarf.updateUnits(zcu)) return;
-    try elf.nodes.ensureUnusedCapacity(gpa, 6 * units_len);
-    for (0..units_len) |unit_index| {
-        const ui: Dwarf.Unit.Index = @fromBackingInt(@intCast(unit_index));
-        const unit = ui.ptr(&elf.dwarf);
-        if (!unit.alive) continue;
+    if (!try elf.dwarf.updateModules(zcu)) return;
+
+    try elf.nodes.ensureUnusedCapacity(gpa, 4 * modules_len);
+    for (0..modules_len) |module_index| {
+        const mi: Dwarf.Module.Index = @fromBackingInt(@intCast(module_index));
+        const module = mi.ptr(&elf.dwarf);
+        if (!module.alive) continue;
         switch (elf.shndx.debug_info) {
             .UNDEF => {},
             else => |debug_info_shndx| {
-                const debug_info_ni = unit.debug_info_ni.unwrap() orelse debug_info_ni: {
+                const debug_info_ni = module.debug_info_ni.unwrap() orelse debug_info_ni: {
                     const debug_info_ni = elf.addNodeAssumeCapacity(
                         try debug_info_shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
                             .alignment = elf.mf.flags.block_size,
                             .enable_next_moved = true,
+                            .moved = true,
                         }),
-                        .{ .unit_debug_info = ui },
+                        .{ .debug_info_module = mi },
                     );
-                    unit.debug_info_ni = .wrap(debug_info_ni);
+                    module.debug_info_ni = .wrap(debug_info_ni);
                     break :debug_info_ni debug_info_ni;
                 };
-                if (unit.debug_info_header_ni == .none) unit.debug_info_header_ni = .wrap(
-                    elf.addNodeAssumeCapacity(try debug_info_ni.addOnlyHeaderChild(gpa, &elf.mf, .{
+                header: {
+                    if (debug_info_ni.first(&elf.mf).unwrap()) |first_child_ni| {
+                        switch (first_child_ni.position(&elf.mf)) {
+                            .header => break :header,
+                            .footer, .floating => {},
+                        }
+                    }
+                    _ = elf.addNodeAssumeCapacity(try debug_info_ni.addOnlyHeaderChild(gpa, &elf.mf, .{
+                        .enable_next_moved = true,
+                        .moved = true,
                         .next_moved = true,
-                        .enable_next_moved = true,
-                    }), .{ .unit_debug_info_header = ui }),
-                );
-                if (unit.debug_info_footer_ni == .none) unit.debug_info_footer_ni = .wrap(
-                    elf.addNodeAssumeCapacity(try debug_info_ni.addOnlyFooterChild(gpa, &elf.mf, .{
-                        .size = comptime Dwarf.uleb128Size(@backingInt(Dwarf.AbbrevCode.null)) * 2,
-                    }), .{ .unit_debug_info_footer = ui }),
-                );
-            },
-        }
-        switch (elf.shndx.debug_line) {
-            .UNDEF => {},
-            else => |debug_line_shndx| {
-                const debug_line_ni = unit.debug_line_ni.unwrap() orelse debug_line_ni: {
-                    const debug_line_ni = elf.addNodeAssumeCapacity(
-                        try debug_line_shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
-                            .alignment = elf.mf.flags.block_size,
-                            .enable_next_moved = true,
-                        }),
-                        .{ .unit_debug_line = ui },
-                    );
-                    unit.debug_line_ni = .wrap(debug_line_ni);
-                    break :debug_line_ni debug_line_ni;
-                };
-                if (unit.debug_line_header_ni == .none) unit.debug_line_header_ni = .wrap(
-                    elf.addNodeAssumeCapacity(try debug_line_ni.addOnlyHeaderChild(gpa, &elf.mf, .{
-                        // Idle tasks are going to try to keep this up to date before we are able to
-                        // write out the full header, so just reserve space for them to do so.
-                        .size = elf.dwarf.unitLengthSize(),
-                        .enable_next_moved = true,
-                    }), .{ .unit_debug_line_header = ui }),
-                );
+                    }), .{ .debug_info_module_header = mi });
+                }
+                footer: {
+                    if (debug_info_ni.last(&elf.mf).unwrap()) |last_child_ni| {
+                        switch (last_child_ni.position(&elf.mf)) {
+                            .footer => break :footer,
+                            .header, .floating => {},
+                        }
+                    }
+                    _ = elf.addNodeAssumeCapacity(try debug_info_ni.addOnlyFooterChild(gpa, &elf.mf, .{
+                        .size = comptime Dwarf.uleb128Size(@backingInt(Dwarf.AbbrevCode.null)),
+                    }), .debug_info_footer);
+                }
             },
         }
         switch (elf.shndx.debug_rnglists) {
             .UNDEF => {},
-            else => |debug_rnglists_shndx| {
-                const debug_rnglists_ni = unit.debug_rnglists_ni.unwrap() orelse debug_rnglists_ni: {
-                    const debug_rnglists_ni = elf.addNodeAssumeCapacity(
-                        try debug_rnglists_shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
-                            .next_moved = true,
-                            .enable_next_moved = true,
-                        }),
-                        .{ .unit_debug_rnglists = ui },
-                    );
-                    unit.debug_rnglists_ni = .wrap(debug_rnglists_ni);
-                    break :debug_rnglists_ni debug_rnglists_ni;
-                };
-
-                var drh_nw: MappedFile.Node.Writer = undefined;
-                debug_rnglists_ni.writer(gpa, &elf.mf, &drh_nw);
-                defer drh_nw.deinit();
-                elf.dwarf.genDebugRnglistsHeader(unit, &drh_nw) catch |err| switch (err) {
-                    else => |e| return e,
-                    error.WriteFailed => return drh_nw.err.?,
-                };
+            else => |debug_rnglists_shndx| if (module.debug_rnglists_ni == .none) {
+                module.debug_rnglists_ni = .wrap(elf.addNodeAssumeCapacity(
+                    try debug_rnglists_shndx.node(elf).addFloatingChild(gpa, &elf.mf, .{
+                        .size = 1,
+                        .enable_next_moved = true,
+                        .moved = true,
+                        .next_moved = true,
+                    }),
+                    .{ .debug_rnglists_module = mi },
+                ));
             },
         }
     }
-    for (0..units_len) |unit_index| {
-        const ui: Dwarf.Unit.Index = @fromBackingInt(@intCast(unit_index));
-        const unit = ui.ptr(&elf.dwarf);
-        if (unit.debug_info_header_ni == .none) continue;
-        var dih_nw: MappedFile.Node.Writer = undefined;
-        const debug_info_header_ni = unit.debug_info_header_ni.unwrap().?;
-        debug_info_header_ni.writer(gpa, &elf.mf, &dih_nw);
-        defer dih_nw.deinit();
-        elf.resetNodeRelocs(debug_info_header_ni);
-        elf.dwarf.genDebugInfoHeader(zcu, ui.mod(&elf.dwarf), unit, &dih_nw) catch |err| switch (err) {
-            else => |e| return e,
-            error.WriteFailed => return dih_nw.err.?,
-        };
-    }
-    try elf.genPendingDebug(gpa);
 }
 
-fn flushFiles(elf: *Elf) Error!void {
-    const gpa = elf.base.comp.gpa;
-    if (elf.shndx.debug_line != .UNDEF) for (elf.dwarf.units) |*unit| {
-        if (!unit.cleanDebugLineHeaderChanged()) continue;
-        assert(unit.alive);
-        const debug_line_header_ni = unit.debug_line_header_ni.unwrap().?;
+fn flushFiles(elf: *Elf, tid: Zcu.PerThread.Id) Error!void {
+    const comp = elf.base.comp;
+    const gpa = comp.gpa;
+    if (elf.dwarf.debug_info.cleanModulesChanged()) {
+        const pt: Zcu.PerThread = .{ .zcu = elf.base.comp.zcu.?, .tid = tid };
+        for (0..elf.dwarf.modules.len) |module_index| {
+            const mi: Dwarf.Module.Index = @fromBackingInt(@intCast(module_index));
+            const module = mi.ptr(&elf.dwarf);
+            if (!module.alive) continue;
+            const debug_info_ni = module.debug_info_ni.unwrap().?;
+            const debug_info_header_ni = debug_info_ni.first(&elf.mf).unwrap().?;
+            var dih_nw: MappedFile.Node.Writer = undefined;
+            debug_info_header_ni.writer(gpa, &elf.mf, &dih_nw);
+            defer dih_nw.deinit();
+            elf.resetNodeRelocs(debug_info_header_ni);
+            elf.dwarf.genDebugInfoModule(pt, mi, &dih_nw) catch |err| switch (err) {
+                else => |e| return e,
+                error.WriteFailed => return dih_nw.err.?,
+            };
+        }
+        try elf.genPending(pt);
+        try elf.dwarf.const_pool.flushPending(pt, .{ .elf2 = elf });
+    }
+    if (elf.dwarf.debug_line.cleanHeaderChanged()) {
+        const debug_line_header_ni = elf.dwarf.debug_line.header_ni.unwrap().?;
         try debug_line_header_ni.parent(&elf.mf).unwrap().?.nextMoved(gpa, &elf.mf);
         try debug_line_header_ni.moved(gpa, &elf.mf);
         var dlh_nw: MappedFile.Node.Writer = undefined;
         debug_line_header_ni.writer(gpa, &elf.mf, &dlh_nw);
         defer dlh_nw.deinit();
         elf.resetNodeRelocs(debug_line_header_ni);
-        elf.dwarf.genDebugLineHeader(unit, &dlh_nw, elf.base.comp.zcu.?) catch |err| switch (err) {
+        elf.dwarf.genDebugLineHeader(&dlh_nw, elf.base.comp.zcu.?) catch |err| switch (err) {
             else => |e| return e,
             error.WriteFailed => return dlh_nw.err.?,
         };
-    };
+    }
 }
 
 fn prepareDynamic(elf: *Elf) Error!void {
@@ -10811,7 +11108,7 @@ fn flushDynamic(elf: *Elf) void {
 }
 
 fn addSection(elf: *Elf, segment_ni: MappedFile.Node.Index, opts: struct {
-    name: []const u8 = "",
+    name: []const u8,
     /// If this is `.NOBITS`, then the section's address is initialized to 0, and it is the caller's
     /// responsibility to populate it.
     type: std.elf.SHT = .NULL,
@@ -10822,7 +11119,8 @@ fn addSection(elf: *Elf, segment_ni: MappedFile.Node.Index, opts: struct {
     addralign: Alignment = .@"1",
     entsize: std.elf.Word = 0,
     node_align: Alignment = .@"1",
-    manual_size: bool = false,
+    /// `null` means no `MappedFile.Node` should be created.
+    node_tag: ?Section.NodeTag,
 }) Error!Section.Index {
     switch (opts.type) {
         .NULL => assert(opts.size == 0),
@@ -10878,19 +11176,23 @@ fn addSection(elf: *Elf, segment_ni: MappedFile.Node.Index, opts: struct {
         .EXEC, .DYN => segment_ni,
     };
     assert(opts.addralign.check(opts.size));
-    const oni: MappedFile.Node.Index.Optional = switch (opts.type) {
-        .NOBITS => .none,
-        else => .wrap(elf.addNodeAssumeCapacity(
-            try parent_ni.addFloatingChild(gpa, &elf.mf, .{
-                .size = opts.node_align.forward(opts.size),
-                .alignment = opts.addralign.max(opts.node_align),
-                .resized = opts.size > 0,
-                .bubbles_moved = opts.flags.ALLOC, // see handling in `flushMoved`
-            }),
-            if (opts.manual_size) .{ .section_manual_size = shndx } else .{ .section = shndx },
-        )),
+    const oni: MappedFile.Node.Index.Optional = if (opts.node_tag) |node_tag| oni: {
+        assert(opts.type != .NOBITS);
+        break :oni .wrap(elf.addNodeAssumeCapacity(try parent_ni.addFloatingChild(gpa, &elf.mf, .{
+            .size = opts.node_align.forward(opts.size),
+            .alignment = opts.addralign.max(opts.node_align),
+            .resized = opts.size > 0,
+            .bubbles_moved = opts.flags.ALLOC, // see handling in `flushMoved`
+        }), switch (node_tag) {
+            .well_known => .{ .well_known_section = shndx },
+            .custom => .{ .custom_section = shndx },
+        }));
+    } else oni: {
+        assert(opts.type == .NOBITS);
+        break :oni .none;
     };
     const addr = if (oni.unwrap()) |ni| elf.computeNodeVAddr(ni) else 0;
+    const offset = if (oni.unwrap()) |ni| elf.computeNodeElfOffset(ni) else 0;
     const section = elf.shdrs.addOneAssumeCapacity();
     section.* = .{
         .node = oni,
@@ -10908,7 +11210,7 @@ fn addSection(elf: *Elf, segment_ni: MappedFile.Node.Index, opts: struct {
                 .type = opts.type,
                 .flags = .{ .shf = opts.flags },
                 .addr = @intCast(addr),
-                .offset = if (oni.unwrap()) |ni| @intCast(elf.computeNodeElfOffset(ni)) else 0,
+                .offset = @intCast(offset),
                 .size = @intCast(opts.size),
                 .link = opts.link,
                 .info = opts.info,
@@ -10954,7 +11256,7 @@ fn ensureUnusedRelocCapacity(elf: *Elf, node: MappedFile.Node.Index, len: usize)
                         inline else => |ct_class| @sizeOf(ct_class.ElfN().Rela),
                     },
                     .node_align = elf.mf.flags.block_size,
-                    .manual_size = true,
+                    .node_tag = .custom,
                 });
                 elf.section_by_name.putAssumeCapacityNoClobber(rela_shndx.name(elf), {});
                 shndx.ptr(elf).rela.shndx = rela_shndx;
@@ -11676,15 +11978,15 @@ fn updateNavInner(elf: *Elf, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index)
     switch (ip.indexToKey(nav.resolved.?.value)) {
         .@"extern" => {
             if (mod.strip or elf.ehdrMachine() != .X86_64) return;
-            const dwarf_gi = try elf.dwarf.getGlobal(nav_index);
-            const dwarf_global = dwarf_gi.ptr(&elf.dwarf);
-            const debug_info_ni = dwarf_global.debug_info_ni.unwrap().?;
+            const gi = try elf.dwarf.getGlobal(nav_index);
+            const debug_info_ni = gi.ptr(&elf.dwarf).debug_info_ni.unwrap().?;
             try debug_info_ni.moved(gpa, &elf.mf);
             var di_nw: MappedFile.Node.Writer = undefined;
             debug_info_ni.writer(gpa, &elf.mf, &di_nw);
             defer di_nw.deinit();
             elf.resetNodeRelocs(debug_info_ni);
             try elf.dwarf.updateExtern(pt, &di_nw, nav_index);
+            gi.ptr(&elf.dwarf).debug_info_size = di_nw.interface.end;
         },
         else => if (Type.fromInterned(nav.resolved.?.type).hasRuntimeBits(zcu)) {
             const nmi = try elf.navMapIndex(zcu, nav_index);
@@ -11717,9 +12019,8 @@ fn updateNavInner(elf: *Elf, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index)
             }
 
             if (!mod.strip and elf.ehdrMachine() == .X86_64) {
-                const dwarf_gi = try elf.dwarf.getGlobal(nav_index);
-                const dwarf_global = dwarf_gi.ptr(&elf.dwarf);
-                const debug_info_ni = dwarf_global.debug_info_ni.unwrap().?;
+                const gi = try elf.dwarf.getGlobal(nav_index);
+                const debug_info_ni = gi.ptr(&elf.dwarf).debug_info_ni.unwrap().?;
                 try debug_info_ni.moved(gpa, &elf.mf);
                 var di_nw: MappedFile.Node.Writer = undefined;
                 debug_info_ni.writer(gpa, &elf.mf, &di_nw);
@@ -11729,6 +12030,7 @@ fn updateNavInner(elf: *Elf, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index)
                     else => unreachable,
                     .X86_64 => .x86_64,
                 }, lsi.id().toTypeErased(), nav_index);
+                gi.ptr(&elf.dwarf).debug_info_size = di_nw.interface.end;
             }
         } else {
             if (mod.strip or elf.ehdrMachine() != .X86_64) return;
@@ -11791,7 +12093,7 @@ pub fn addConst(
             const gpa = elf.base.comp.gpa;
             try elf.nodes.ensureUnusedCapacity(gpa, 1);
             try elf.dwarf.consts.ensureUnusedCapacity(gpa, 1);
-            try elf.dwarf_consts.ensureUnusedCapacity(gpa, 1);
+            try elf.debug_consts.ensureUnusedCapacity(gpa, 1);
             try elf.dwarf.addConst(cpi, val, &addConstNode);
         },
         .code_view, .nsdi => unreachable,
@@ -11799,23 +12101,23 @@ pub fn addConst(
 }
 fn addConstNode(
     lf: *link.File,
-    ui: Dwarf.Unit.Index,
+    parent: ?Dwarf.Module.Index,
     cpi: link.ConstPool.Index,
 ) link.Error!MappedFile.Node.Index {
     const elf = lf.cast(.elf2).?;
-    const unit = ui.ptr(&elf.dwarf);
-    const debug_info_ni = elf.addNodeAssumeCapacity(
-        unit.debug_info_ni.unwrap().?.addFloatingChild(lf.comp.gpa, &elf.mf, .{
-            .enable_next_moved = true,
-        }) catch |err| switch (err) {
-            else => |e| return e,
-            error.MappedFileIo => return lf.comp.link_diags.fail("failed to write output file: {t}", .{
-                elf.mf.io_err.?,
-            }),
-        },
-        .{ .const_debug_info = cpi },
-    );
-    elf.dwarf_consts.putAssumeCapacityNoClobber(cpi, .{
+    const parent_ni = if (parent) |mi|
+        mi.ptr(&elf.dwarf).debug_info_ni.unwrap().?
+    else
+        elf.shndx.debug_info.node(elf);
+    const debug_info_ni = elf.addNodeAssumeCapacity(parent_ni.addFloatingChild(lf.comp.gpa, &elf.mf, .{
+        .enable_next_moved = true,
+    }) catch |err| switch (err) {
+        else => |e| return e,
+        error.MappedFileIo => return lf.comp.link_diags.fail("failed to write output file: {t}", .{
+            elf.mf.io_err.?,
+        }),
+    }, .{ .debug_info_const = cpi });
+    elf.debug_consts.putAssumeCapacityNoClobber(cpi, .{
         .debug_info_first_target_reloc = .none,
         .debug_info_first_reloc = .none,
     });
@@ -11865,6 +12167,13 @@ fn updateConstInner(
                 switch (complete) {
                     .incomplete => try elf.dwarf.updateConstIncomplete(pt, &di_nw, val),
                     .complete => try elf.dwarf.updateConst(pt, &di_nw, val),
+                }
+                switch (elf.getNode(debug_info_ni)) {
+                    else => unreachable,
+                    .debug_info_const => Dwarf.Const.ptr(cpi, &elf.dwarf).debug_info_size =
+                        di_nw.interface.end,
+                    .debug_info_global => |gi| gi.ptr(&elf.dwarf).debug_info_size = di_nw.interface.end,
+                    .debug_info_func => |fi| fi.ptr(&elf.dwarf).debug_info_size = di_nw.interface.end,
                 }
             }
             try elf.genPending(pt);
@@ -11924,7 +12233,7 @@ fn updateFuncInner(
         ni.writer(gpa, &elf.mf, &nw);
         defer nw.deinit();
         var debug_output_buf: Dwarf.WipFunc.Debug = undefined;
-        const debug_output: link.File.DebugInfoOutput, const dwarf_func = debug_output: {
+        const debug_output: link.File.DebugInfoOutput, const dwarf_fi = debug_output: {
             if (elf.ehdrMachine() != .X86_64) break :debug_output .{ .none, undefined };
             const dwarf = &elf.dwarf;
             const mod = zcu.fileByIndex(nav.srcInst(ip).resolveFile(ip)).mod.?;
@@ -11936,8 +12245,8 @@ fn updateFuncInner(
             const wip_func = &debug_output_buf.wip_func;
             wip_func.* = .{
                 .dwarf = dwarf,
-                .unit = dwarf.getUnit(mod),
-                .func = func_index,
+                .module = dwarf.getModule(mod),
+                .func = dwarf_fi,
                 .func_si = lsi.id().toTypeErased(),
                 .cfi = .{
                     .loc = 0,
@@ -11950,61 +12259,35 @@ fn updateFuncInner(
                 .fde_writer = undefined,
                 .frame_func_length = undefined,
             };
-            const unit = wip_func.unit.ptr(dwarf);
 
             const frame_align: Alignment = switch (elf.identClass()) {
                 .NONE, _ => unreachable,
                 .@"32" => .@"4",
                 .@"64" => .@"8",
             };
-            const frame_ni = unit.frame_ni.unwrap() orelse frame_ni: {
-                const frame_ni = elf.addNodeAssumeCapacity(try switch (wip_func.frame_format) {
-                    .debug_frame => elf.shndx.debug_frame,
-                    .eh_frame => elf.shndx.eh_frame,
-                }.node(elf).addFloatingChild(gpa, &elf.mf, .{
-                    .alignment = frame_align.max(elf.mf.flags.block_size),
-                    .enable_next_moved = true,
-                }), .{ .unit_frame = wip_func.unit });
-                unit.frame_ni = .wrap(frame_ni);
-                break :frame_ni frame_ni;
-            };
-            if (unit.cie_ni == .none) {
-                const cie_ni = elf.addNodeAssumeCapacity(
-                    try frame_ni.addOnlyHeaderChild(gpa, &elf.mf, .{
-                        .alignment = frame_align,
-                        .next_moved = true,
-                        .enable_next_moved = true,
-                    }),
-                    .{ .unit_frame_cie = wip_func.unit },
-                );
-                unit.cie_ni = .wrap(cie_ni);
-                var cie_nw: MappedFile.Node.Writer = undefined;
-                cie_ni.writer(gpa, &elf.mf, &cie_nw);
-                defer cie_nw.deinit();
-                dwarf.genDebugFrameCie(&cie_nw.interface, switch (elf.ehdrMachine()) {
-                    else => unreachable,
-                    .X86_64 => .x86_64,
-                }, wip_func.frame_format) catch |err| switch (err) {
-                    error.WriteFailed => return cie_nw.err.?,
-                };
-            }
             const dwarf_func = dwarf_fi.ptr(dwarf);
             const fde_ni = if (dwarf_func.fde_ni.unwrap()) |fde_ni| fde_ni: {
                 try fde_ni.moved(gpa, &elf.mf);
                 break :fde_ni fde_ni;
             } else fde_ni: {
-                const fde_ni = elf.addNodeAssumeCapacity(try frame_ni.addFloatingChild(gpa, &elf.mf, .{
+                const fde_ni = elf.addNodeAssumeCapacity(try switch (wip_func.frame_format) {
+                    .eh_frame => elf.shndx.eh_frame,
+                    .debug_frame => elf.shndx.debug_frame,
+                }.node(elf).addFloatingChild(gpa, &elf.mf, .{
                     .alignment = frame_align,
+                    .enable_next_moved = true,
                     .moved = true,
                     .next_moved = true,
-                    .enable_next_moved = true,
-                }), .{ .func_frame_fde = dwarf_fi });
+                }), switch (wip_func.frame_format) {
+                    .eh_frame => .{ .eh_frame_fde = dwarf_fi },
+                    .debug_frame => .{ .debug_frame_fde = dwarf_fi },
+                });
                 dwarf_func.fde_ni = .wrap(fde_ni);
                 break :fde_ni fde_ni;
             };
             fde_ni.writer(gpa, &elf.mf, &wip_func.fde_writer);
 
-            if (mod.strip) break :debug_output .{ .{ .eh_frame = wip_func }, dwarf_func };
+            if (mod.strip) break :debug_output .{ .{ .eh_frame = wip_func }, dwarf_fi };
 
             const debug = &debug_output_buf;
             debug.init(pt);
@@ -12016,40 +12299,43 @@ fn updateFuncInner(
 
             const debug_line_ni = dwarf_func.debug_line_ni.unwrap() orelse debug_line_ni: {
                 const debug_line_ni = elf.addNodeAssumeCapacity(
-                    try unit.debug_line_ni.unwrap().?.addFloatingChild(gpa, &elf.mf, .{
+                    try elf.shndx.debug_line.node(elf).addFloatingChild(gpa, &elf.mf, .{
+                        .enable_next_moved = true,
                         .moved = true,
                         .next_moved = true,
-                        .enable_next_moved = true,
                     }),
-                    .{ .func_debug_line = dwarf_fi },
+                    .{ .debug_line_func = dwarf_fi },
                 );
                 dwarf_func.debug_line_ni = .wrap(debug_line_ni);
                 break :debug_line_ni debug_line_ni;
             };
             debug_line_ni.writer(gpa, &elf.mf, &debug.line_writer);
 
-            break :debug_output .{ .{ .dwarf2 = debug }, dwarf_func };
+            break :debug_output .{ .{ .dwarf2 = debug }, dwarf_fi };
         };
         defer switch (debug_output) {
             .dwarf => unreachable,
             inline .eh_frame, .dwarf2 => |dwarf| dwarf.deinit(),
             .none => {},
         };
-        switch (debug_output) {
-            .dwarf => unreachable,
-            .eh_frame => |wip_func| {
-                elf.resetNodeRelocs(dwarf_func.fde_ni.unwrap().?);
-                try wip_func.genDebugFrameHeader();
-            },
-            .dwarf2 => |debug| {
-                elf.resetNodeRelocs(dwarf_func.fde_ni.unwrap().?);
-                try debug.wip_func.genDebugFrameHeader();
-                elf.resetNodeRelocs(dwarf_func.debug_line_ni.unwrap().?);
-                try debug.startDebugLine();
-                elf.resetNodeRelocs(dwarf_func.debug_info_ni.unwrap().?);
-                try debug.startDebugInfo();
-            },
-            .none => {},
+        {
+            const dwarf_func = dwarf_fi.ptr(&elf.dwarf);
+            switch (debug_output) {
+                .dwarf => unreachable,
+                .eh_frame => |wip_func| {
+                    elf.resetNodeRelocs(dwarf_func.fde_ni.unwrap().?);
+                    try wip_func.startFde();
+                },
+                .dwarf2 => |debug| {
+                    elf.resetNodeRelocs(dwarf_func.fde_ni.unwrap().?);
+                    try debug.wip_func.startFde();
+                    elf.resetNodeRelocs(dwarf_func.debug_line_ni.unwrap().?);
+                    try debug.startDebugLine();
+                    elf.resetNodeRelocs(dwarf_func.debug_info_ni.unwrap().?);
+                    try debug.startDebugInfo();
+                },
+                .none => {},
+            }
         }
         elf.resetNodeRelocs(ni);
         codegen.emitFunction(
@@ -12070,19 +12356,21 @@ fn updateFuncInner(
         }
         switch (debug_output) {
             .dwarf => unreachable,
-            .eh_frame => |wip_func| wip_func.finishDebugFrameFde(func_length),
+            .eh_frame => |wip_func| wip_func.finishFde(func_length),
             .dwarf2 => |debug| {
-                try debug.finish(func_length);
-                const unit = debug.wip_func.unit.ptr(debug.wip_func.dwarf);
+                try debug.finishDebugInfo(func_length);
+                dwarf_fi.ptr(&elf.dwarf).debug_line_size = debug.line_writer.interface.end;
+                const module = debug.wip_func.module.ptr(debug.wip_func.dwarf);
                 {
+                    const debug_rnglists_ni = module.debug_rnglists_ni.unwrap().?;
                     var dr_nw: MappedFile.Node.Writer = undefined;
-                    const debug_rnglists_ni = unit.debug_rnglists_ni.unwrap().?;
                     try debug_rnglists_ni.moved(gpa, &elf.mf);
                     debug_rnglists_ni.writer(gpa, &elf.mf, &dr_nw);
                     defer dr_nw.deinit();
                     const first_ri = elf.relocs.items.len;
-                    debug.wip_func.dwarf.genDebugRnglistsRange(
-                        unit,
+                    defer assert(first_ri == elf.relocs.items.len);
+                    debug.wip_func.dwarf.genDebugRnglistsModuleRange(
+                        module,
                         &dr_nw,
                         debug.wip_func.func_si,
                         func_length,
@@ -12090,13 +12378,8 @@ fn updateFuncInner(
                         else => |e| return e,
                         error.WriteFailed => return dr_nw.err.?,
                     };
-                    const relocs =
-                        &elf.dwarf_units[@backingInt(debug.wip_func.unit)].debug_rnglists_relocs;
-                    try relocs.ensureUnusedCapacity(gpa, elf.relocs.items.len - first_ri);
-                    for (first_ri..elf.relocs.items.len) |symbol_ri|
-                        relocs.appendAssumeCapacity(@fromBackingInt(@intCast(symbol_ri)));
                 }
-                debug.wip_func.finishDebugFrameFde(func_length);
+                debug.wip_func.finishFde(func_length);
                 if (func.analysisUnordered(ip).inferred_error_set) {
                     const ies = ip.getIfExists(.{ .inferred_error_set_type = func_index }).?;
                     if (elf.dwarf.const_pool.getIfExists(ies)) |cpi|
@@ -12162,8 +12445,7 @@ pub fn flush(
     tid: Zcu.PerThread.Id,
     prog_node: std.Progress.Node,
 ) link.Error!void {
-    _ = tid;
-    elf.flushInner(arena, prog_node) catch |err| switch (err) {
+    elf.flushInner(arena, tid, prog_node) catch |err| switch (err) {
         else => |e| return e,
         error.MappedFileIo => return elf.base.comp.link_diags.fail(
             "failed to write output file: {t}",
@@ -12174,6 +12456,7 @@ pub fn flush(
 fn flushInner(
     elf: *Elf,
     arena: std.mem.Allocator,
+    tid: Zcu.PerThread.Id,
     prog_node: std.Progress.Node,
 ) Error!void {
     const comp = elf.base.comp;
@@ -12182,8 +12465,6 @@ fn flushInner(
 
     const flush_prog_node = prog_node.start("ELF Flush", 0);
     defer flush_prog_node.end();
-
-    try elf.flushFiles();
 
     if (comp.config.output_mode == .Exe and elf.unknown_globals.count() > 0) {
         for (elf.unknown_globals.keys()) |gsi| {
@@ -12199,10 +12480,9 @@ fn flushInner(
         return error.AlreadyReported;
     }
 
+    try elf.flushFiles(tid);
     try elf.prepareDynamic();
-
     try elf.updateSegmentLoadAddresses();
-
     while (try elf.idle()) {}
 
     assert(elf.input_pending_index == elf.inputs.items.len);
@@ -12491,30 +12771,6 @@ pub fn idle(elf: *Elf) link.Error!bool {
 
             break :task;
         }
-        if (elf.dwarf_addr.pending_reloc_index < elf.dwarf_addr.relocs.items.len) {
-            const idle_prog_node = elf.mf.update_prog_node.start(@tagName(Node.debug_addr), 0);
-            defer idle_prog_node.end();
-            const debug_addr_ni = elf.dwarf.debug_addr.ni.unwrap().?;
-            for (elf.dwarf_addr.relocs.items[elf.dwarf_addr.pending_reloc_index..]) |symbol_ri| {
-                const reloc = symbol_ri.ptr(elf);
-                assert(reloc.node.unwrap() == debug_addr_ni);
-                reloc.apply(elf);
-            }
-            elf.dwarf_addr.pending_reloc_index = elf.dwarf_addr.relocs.items.len;
-            break :task;
-        }
-        if (elf.dwarf_str_offsets.pending_reloc_index < elf.dwarf_str_offsets.relocs.items.len) {
-            const idle_prog_node = elf.mf.update_prog_node.start(@tagName(Node.debug_str_offsets), 0);
-            defer idle_prog_node.end();
-            const debug_str_offsets_ni = elf.dwarf.debug_str_offsets.ni.unwrap().?;
-            for (elf.dwarf_str_offsets.relocs.items[elf.dwarf_str_offsets.pending_reloc_index..]) |node_ri| {
-                const reloc = node_ri.ptr(elf);
-                assert(reloc.node.unwrap() == debug_str_offsets_ni);
-                reloc.apply(elf);
-            }
-            elf.dwarf_str_offsets.pending_reloc_index = elf.dwarf_str_offsets.relocs.items.len;
-            break :task;
-        }
     }
     if (elf.inputs.items.len - elf.input_pending_index > 0) return true;
     if (elf.input_sections.items.len - elf.input_section_pending_index > 0) return true;
@@ -12522,8 +12778,6 @@ pub fn idle(elf: *Elf) link.Error!bool {
     if (elf.changed_symtab_index.count() > 0) return true;
     if (elf.mf.updates.items.len > 0) return true;
     if (elf.bss_moved) return true;
-    if (elf.dwarf_addr.pending_reloc_index < elf.dwarf_addr.relocs.items.len) return true;
-    if (elf.dwarf_str_offsets.pending_reloc_index < elf.dwarf_str_offsets.relocs.items.len) return true;
     return false;
 }
 
@@ -12535,7 +12789,7 @@ fn startIdleProgress(
     var name: [std.Progress.Node.max_name_len]u8 = undefined;
     return prog_node.start(name: switch (node) {
         else => |tag| @tagName(tag),
-        .section, .section_manual_size => |shndx| shndx.name(elf).slice(elf),
+        .well_known_section, .custom_section => |shndx| shndx.name(elf).slice(elf),
         .nav => |nmi| {
             const ip = &elf.base.comp.zcu.?.intern_pool;
             break :name ip.getNav(nmi.nav(elf)).fqn.toSlice(ip);
@@ -12543,63 +12797,53 @@ fn startIdleProgress(
         .uav => |umi| std.mem.print(&name, "{f}", .{
             Value.fromInterned(umi.value(elf)).fmtValue(elf.base.comp.zcu.?),
         }) catch &name,
-        .debug_shared => |ss| switch (ss) {
-            .debug_abbrev => "debug info abbrevs",
-            .debug_str => "debug info strings",
-            .debug_line_str => "line info strings",
-        },
-        .unit_frame,
-        .unit_frame_cie,
-        .unit_debug_info,
-        .unit_debug_info_header,
-        .unit_debug_info_footer,
-        .unit_debug_line,
-        .unit_debug_line_header,
-        .unit_debug_rnglists,
-        => |ui, tag| std.mem.print(&name, "{s} info for {s}", .{
+        .debug_abbrev => "abbreviation info",
+        .debug_addr, .debug_rnglists_header => "address info",
+        .debug_info_header, .debug_info_footer => "debug info",
+        .debug_line_header => "line info",
+        .debug_info_module,
+        .debug_info_module_header,
+        .debug_rnglists_module,
+        => |mi, tag| std.mem.print(&name, "{s} info for {s}", .{
             switch (tag) {
                 else => unreachable,
-                .unit_frame, .unit_frame_cie => "unwind",
-                .unit_debug_info,
-                .unit_debug_info_header,
-                .unit_debug_info_footer,
-                .unit_debug_rnglists,
-                => "debug",
-                .unit_debug_line, .unit_debug_line_header => "line",
+                .debug_info_module, .debug_info_module_header => "debug",
+                .debug_rnglists_module => "address",
             },
-            ui.mod(&elf.dwarf).fully_qualified_name,
+            mi.zigModule(&elf.dwarf).fully_qualified_name,
         }) catch &name,
-        .const_debug_info => |cpi| switch (cpi.val(&elf.dwarf.const_pool)) {
-            .generic_poison_type => "anytype",
-            else => |val| std.mem.print(&name, "debug info for {f}", .{
-                Value.fromInterned(val).fmtValue(elf.base.comp.zcu.?),
+        .debug_info_const => |cpi| switch (cpi.val(&elf.dwarf.const_pool)) {
+            .generic_poison_type => "debug info for anytype",
+            else => |value| std.mem.print(&name, "debug info for {f}", .{
+                Value.fromInterned(value).fmtValue(elf.base.comp.zcu.?),
             }) catch &name,
         },
-        .global_debug_info => |gi| {
+        .debug_info_global => |gi| {
             const ip = &elf.base.comp.zcu.?.intern_pool;
             break :name std.mem.print(&name, "debug info for {f}", .{
                 ip.getNav(gi.nav(&elf.dwarf)).fqn.fmt(ip),
             }) catch &name;
         },
-        .func_frame_fde, .func_debug_info, .func_debug_line => |fi, tag| {
+        .eh_frame_fde, .debug_frame_fde, .debug_info_func, .debug_line_func => |fi, tag| {
             const ip = &elf.base.comp.zcu.?.intern_pool;
             break :name std.mem.print(&name, "{s} info for {f}", .{
                 switch (tag) {
                     else => unreachable,
-                    .func_frame_fde => "unwind",
-                    .func_debug_info => "debug",
-                    .func_debug_line => "line",
+                    .eh_frame_fde, .debug_frame_fde => "unwind",
+                    .debug_info_func => "debug",
+                    .debug_line_func => "line",
                 },
                 ip.getNav(fi.nav(&elf.dwarf)).fqn.fmt(ip),
             }) catch &name;
         },
-        .decl_debug_info => |di| {
+        .debug_info_decl => |di| {
             const comp = elf.base.comp;
             const zcu = comp.zcu.?;
             break :name std.mem.print(&name, "debug info for {f}", .{
                 zcu.fileByIndex(di.srcInst(&elf.dwarf).resolveFile(&zcu.intern_pool)).path.fmt(comp),
             }) catch &name;
         },
+        .debug_str_offsets => "string info",
     }, 0);
 }
 
@@ -12620,50 +12864,41 @@ fn genPending(elf: *Elf, pt: Zcu.PerThread) link.Error!void {
         lazy.value.pending_index += 1;
     };
     const gpa = elf.base.comp.gpa;
-    switch (elf.base.comp.config.debug_format) {
-        .strip => {},
-        .dwarf => while (true) {
-            const pending = elf.dwarf.pending_decl;
-            if (pending.instance == .none) break;
-            elf.dwarf.pending_decl = .{ .di = undefined, .instance = .none };
-            const debug_info_ni = pending.di.ptr(&elf.dwarf).debug_info_ni.unwrap().?;
-            try debug_info_ni.moved(gpa, &elf.mf);
-            var di_nw: MappedFile.Node.Writer = undefined;
-            debug_info_ni.writer(gpa, &elf.mf, &di_nw);
-            defer di_nw.deinit();
-            elf.resetNodeRelocs(debug_info_ni);
-            try elf.dwarf.genDecl(pt, &di_nw, pending.instance);
-        },
-        .code_view, .nsdi => unreachable,
+    while (elf.dwarf.pending_decl.instance != .none) {
+        const pending = elf.dwarf.pending_decl;
+        elf.dwarf.pending_decl = .{ .di = undefined, .instance = .none };
+        const debug_info_ni = pending.di.ptr(&elf.dwarf).debug_info_ni.unwrap().?;
+        try debug_info_ni.moved(gpa, &elf.mf);
+        var di_nw: MappedFile.Node.Writer = undefined;
+        debug_info_ni.writer(gpa, &elf.mf, &di_nw);
+        defer di_nw.deinit();
+        elf.resetNodeRelocs(debug_info_ni);
+        try elf.dwarf.genDecl(pt, &di_nw, pending.instance);
+        pending.di.ptr(&elf.dwarf).debug_info_size = di_nw.interface.end;
     }
-    try elf.genPendingDebug(gpa);
-    assert(elf.pending_uavs.items.len == 0); // no UAVs added by lazy code/data or by debug info
-}
-fn genPendingDebug(elf: *Elf, gpa: std.mem.Allocator) link.Error!void {
-    while (elf.dwarf.debug_addr.map.count() - elf.dwarf.debug_addr.pending_index > 0) {
+    if (elf.dwarf.debug_addr.map.count() - elf.dwarf.debug_addr.pending_index > 0) {
         const debug_addr_ni = elf.dwarf.debug_addr.ni.unwrap().?;
-        var da_nw: link.MappedFile.Node.Writer = undefined;
+        try debug_addr_ni.resized(gpa, &elf.mf);
+        var da_nw: MappedFile.Node.Writer = undefined;
         debug_addr_ni.writer(gpa, &elf.mf, &da_nw);
         defer da_nw.deinit();
         const first_ri = elf.relocs.items.len;
         try elf.dwarf.genPendingDebugAddr(&da_nw);
-        const relocs = &elf.dwarf_addr.relocs;
-        try relocs.ensureUnusedCapacity(gpa, elf.relocs.items.len - first_ri);
+        try elf.debug_addr_relocs.ensureUnusedCapacity(gpa, elf.relocs.items.len - first_ri);
         for (first_ri..elf.relocs.items.len) |ri|
-            relocs.appendAssumeCapacity(@fromBackingInt(@intCast(ri)));
+            elf.debug_addr_relocs.appendAssumeCapacity(@fromBackingInt(@intCast(ri)));
     }
-    const debug_str_ni = elf.debug_str_msi.ptr(elf).node;
-    const debug_str_offsets_ni = elf.dwarf.debug_str_offsets.ni.unwrap().?;
-    while (elf.dwarf.debug_str_offsets.map.count() - elf.dwarf.debug_str_offsets.pending_index > 0) {
-        var dso_nw: link.MappedFile.Node.Writer = undefined;
+    if (elf.dwarf.debug_str_offsets.map.count() - elf.dwarf.debug_str_offsets.pending_index > 0) {
+        const debug_str_offsets_ni = elf.dwarf.debug_str_offsets.ni.unwrap().?;
+        try debug_str_offsets_ni.resized(gpa, &elf.mf);
+        var dso_nw: MappedFile.Node.Writer = undefined;
         debug_str_offsets_ni.writer(gpa, &elf.mf, &dso_nw);
         defer dso_nw.deinit();
         const first_ri = elf.relocs.items.len;
-        try elf.dwarf.genPendingDebugStrOffsets(debug_str_ni, &dso_nw);
-        const relocs = &elf.dwarf_str_offsets.relocs;
-        try relocs.ensureUnusedCapacity(gpa, elf.relocs.items.len - first_ri);
+        try elf.dwarf.genPendingDebugStrOffsets(elf.debug_str_msi.ptr(elf).node, &dso_nw);
+        try elf.debug_str_offsets_relocs.ensureUnusedCapacity(gpa, elf.relocs.items.len - first_ri);
         for (first_ri..elf.relocs.items.len) |ri|
-            relocs.appendAssumeCapacity(@fromBackingInt(@intCast(ri)));
+            elf.debug_str_offsets_relocs.appendAssumeCapacity(@fromBackingInt(@intCast(ri)));
     }
 }
 
@@ -12736,31 +12971,67 @@ fn genLazyInner(elf: *Elf, pt: Zcu.PerThread, lmr: Node.LazyMapRef) link.Error!v
     // be called to apply the lazy node's new relocations.
     try ni.moved(gpa, &elf.mf);
 
-    var required_alignment: InternPool.Alignment = .none;
-    var nw: MappedFile.Node.Writer = undefined;
-    ni.writer(gpa, &elf.mf, &nw);
-    defer nw.deinit();
-    elf.resetNodeRelocs(ni);
-    codegen.generateLazySymbol(
-        &elf.base,
-        pt,
-        lazy,
-        &required_alignment,
-        &nw.interface,
-        .none,
-        .{ .atom_index = Node.toAtom(ni) },
-    ) catch |err| switch (err) {
-        else => |e| return e,
-        error.WriteFailed => return switch (nw.err.?) {
+    var required_align: InternPool.Alignment = .none;
+    {
+        var nw: MappedFile.Node.Writer = undefined;
+        ni.writer(gpa, &elf.mf, &nw);
+        defer nw.deinit();
+        elf.resetNodeRelocs(ni);
+        codegen.generateLazySymbol(
+            &elf.base,
+            pt,
+            lazy,
+            &required_align,
+            &nw.interface,
+            .none,
+            .{ .atom_index = Node.toAtom(ni) },
+        ) catch |err| switch (err) {
             else => |e| return e,
-            error.MappedFileIo => return elf.base.comp.link_diags.fail(
-                "failed to write output file: {t}",
-                .{elf.mf.io_err.?},
-            ),
+            error.WriteFailed => return switch (nw.err.?) {
+                else => |e| return e,
+                error.MappedFileIo => return zcu.comp.link_diags.fail(
+                    "failed to write output file: {t}",
+                    .{elf.mf.io_err.?},
+                ),
+            },
+        };
+        switch (elf.symPtr(lsi.index())) {
+            inline else => |sym| elf.targetStore(&sym.size, @intCast(nw.interface.end)),
+        }
+    }
+    switch (lazy.kind) {
+        .code => {},
+        .const_data => {
+            const resolved_align: Alignment = .fromIp(required_align);
+            var parent_ni = ni;
+            while (true) {
+                switch (elf.getNode(parent_ni)) {
+                    else => unreachable,
+                    .well_known_section, .custom_section => |shndx| {
+                        shndx.ensureAligned(elf, resolved_align) catch |err| switch (err) {
+                            else => |e| return e,
+                            error.MappedFileIo => return zcu.comp.link_diags.fail(
+                                "failed to write output file: {t}",
+                                .{elf.mf.io_err.?},
+                            ),
+                        };
+                        break;
+                    },
+                    .compile_unit_range,
+                    .lazy_code,
+                    .lazy_const_data,
+                    => if (resolved_align.compare(.gt, parent_ni.alignment(&elf.mf)))
+                        parent_ni.realign(gpa, &elf.mf, resolved_align) catch |err| switch (err) {
+                            else => |e| return e,
+                            error.MappedFileIo => return zcu.comp.link_diags.fail(
+                                "failed to write output file: {t}",
+                                .{elf.mf.io_err.?},
+                            ),
+                        },
+                }
+                parent_ni = parent_ni.parent(&elf.mf).unwrap().?;
+            }
         },
-    };
-    switch (elf.symPtr(lsi.index())) {
-        inline else => |sym| elf.targetStore(&sym.size, @intCast(nw.interface.end)),
     }
 }
 
@@ -12802,7 +13073,7 @@ fn flushElfOffset(elf: *Elf, ni: MappedFile.Node.Index) void {
                 elf.flushElfOffset(child_ni);
             }
         },
-        .section, .section_manual_size => |shndx| switch (elf.shdrPtr(shndx)) {
+        .well_known_section, .custom_section => |shndx| switch (elf.shdrPtr(shndx)) {
             inline else => |shdr| elf.targetStore(&shdr.offset, @intCast(elf_offset)),
         },
     }
@@ -12874,7 +13145,7 @@ fn flushMoved(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!void
                 },
             }
         },
-        .section, .section_manual_size => |shndx| {
+        .well_known_section, .custom_section => |shndx| {
             elf.flushElfOffset(ni);
             const addr = elf.computeNodeVAddr(ni);
             const old_addr: u64, const flags: std.elf.SHF = switch (elf.shdrPtr(shndx)) {
@@ -12966,6 +13237,27 @@ fn flushMoved(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!void
                 target_reloc_it = target_reloc.next;
             }
         },
+        inline .compile_unit_range => |zri| {
+            var target_reloc_it = zri.ptr(elf).first_target_reloc;
+            while (target_reloc_it != .none) {
+                const target_reloc = target_reloc_it.ptr(elf);
+                assert(target_reloc.target_payload.node == ni);
+                target_reloc.apply(elf);
+                target_reloc_it = target_reloc.next;
+            }
+        },
+        .zav_range_end => switch (elf.getNode(ni.parent(&elf.mf).unwrap().?)) {
+            else => unreachable,
+            inline .compile_unit_range => |zri| {
+                var target_reloc_it = zri.ptr(elf).end_first_target_reloc;
+                while (target_reloc_it != .none) {
+                    const target_reloc = target_reloc_it.ptr(elf);
+                    assert(target_reloc.target_payload.node == ni);
+                    target_reloc.apply(elf);
+                    target_reloc_it = target_reloc.next;
+                }
+            },
+        },
         inline .nav, .uav, .lazy_code, .lazy_const_data => |mi, tag| {
             const new_addr = elf.computeNodeVAddr(ni);
             const zav = mi.zav(elf);
@@ -12987,8 +13279,8 @@ fn flushMoved(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!void
                 },
             });
         },
-        .debug_shared => |ss| {
-            var target_reloc_it = elf.dwarf_shared.getPtr(ss).first_target_reloc;
+        .debug_abbrev => {
+            var target_reloc_it = elf.debug_abbrev_first_target_reloc;
             while (target_reloc_it != .none) {
                 const target_reloc = target_reloc_it.ptr(elf);
                 assert(target_reloc.target_payload.node == ni);
@@ -12996,122 +13288,88 @@ fn flushMoved(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!void
                 target_reloc_it = target_reloc.next;
             }
         },
-        .eh_frame_footer, .unit_padding, .unit_frame, .unit_debug_info, .unit_debug_line => {},
         .debug_addr => {
-            var target_reloc_it = elf.dwarf_addr.first_target_reloc;
+            var target_reloc_it = elf.debug_addr_first_target_reloc;
             while (target_reloc_it != .none) {
                 const target_reloc = target_reloc_it.ptr(elf);
                 assert(target_reloc.target_payload.node == ni);
                 target_reloc.apply(elf);
                 target_reloc_it = target_reloc.next;
             }
-            for (elf.dwarf_addr.relocs.items) |ri| {
-                const reloc = ri.ptr(elf);
-                assert(reloc.node.unwrap() == ni);
-                reloc.apply(elf);
-            }
-            elf.dwarf_addr.pending_reloc_index = elf.dwarf_addr.relocs.items.len;
-        },
-        .debug_str_offsets => {
-            var target_reloc_it = elf.dwarf_str_offsets.first_target_reloc;
-            while (target_reloc_it != .none) {
-                const target_reloc = target_reloc_it.ptr(elf);
-                assert(target_reloc.target_payload.node == ni);
-                target_reloc.apply(elf);
-                target_reloc_it = target_reloc.next;
-            }
-            for (elf.dwarf_str_offsets.relocs.items) |ri| {
-                const reloc = ri.ptr(elf);
-                assert(reloc.node.unwrap() == ni);
-                reloc.apply(elf);
-            }
-            elf.dwarf_str_offsets.pending_reloc_index = elf.dwarf_str_offsets.relocs.items.len;
-        },
-        .unit_frame_cie => |ui| {
-            var target_reloc_it = elf.dwarf_units[@backingInt(ui)].frame_cie_first_target_reloc;
-            while (target_reloc_it != .none) {
-                const target_reloc = target_reloc_it.ptr(elf);
-                assert(target_reloc.target_payload.node == ni);
-                target_reloc.apply(elf);
-                target_reloc_it = target_reloc.next;
-            }
-        },
-        .unit_debug_info_header => |ui| {
-            const dwarf_unit = &elf.dwarf_units[@backingInt(ui)];
-            var target_reloc_it = dwarf_unit.debug_info_header_first_target_reloc;
-            while (target_reloc_it != .none) {
-                const target_reloc = target_reloc_it.ptr(elf);
-                assert(target_reloc.target_payload.node == ni);
-                target_reloc.apply(elf);
-                target_reloc_it = target_reloc.next;
-            }
-            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = dwarf_unit.debug_info_header_first_reloc });
-        },
-        .unit_debug_info_footer => {},
-        .unit_debug_line_header => |ui| {
-            const dwarf_unit = &elf.dwarf_units[@backingInt(ui)];
-            var target_reloc_it = dwarf_unit.debug_line_header_first_target_reloc;
-            while (target_reloc_it != .none) {
-                const target_reloc = target_reloc_it.ptr(elf);
-                assert(target_reloc.target_payload.node == ni);
-                target_reloc.apply(elf);
-                target_reloc_it = target_reloc.next;
-            }
-            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = dwarf_unit.debug_line_header_first_reloc });
-        },
-        .unit_debug_rnglists => |ui| {
-            const dwarf_unit = &elf.dwarf_units[@backingInt(ui)];
-            var target_reloc_it = dwarf_unit.debug_rnglists_first_target_reloc;
-            while (target_reloc_it != .none) {
-                const target_reloc = target_reloc_it.ptr(elf);
-                assert(target_reloc.target_payload.node == ni);
-                target_reloc.apply(elf);
-                target_reloc_it = target_reloc.next;
-            }
-            for (dwarf_unit.debug_rnglists_relocs.items) |ri| {
+            for (elf.debug_addr_relocs.items) |ri| {
                 const reloc = ri.ptr(elf);
                 assert(reloc.node.unwrap() == ni);
                 reloc.apply(elf);
             }
         },
-        .const_debug_info => |cpi| {
-            const dwarf_const = &elf.dwarf_consts.get(cpi).?;
-            var target_reloc_it = dwarf_const.debug_info_first_target_reloc;
+        .eh_frame_cie, .eh_frame_footer => {},
+        .eh_frame_fde => |fi| {
+            const debug_fde = &DebugFunc.ptr(fi, elf).fde.eh_frame;
+            var target_reloc_it = debug_fde.first_target_reloc;
             while (target_reloc_it != .none) {
                 const target_reloc = target_reloc_it.ptr(elf);
                 assert(target_reloc.target_payload.node == ni);
                 target_reloc.apply(elf);
                 target_reloc_it = target_reloc.next;
             }
-            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = dwarf_const.debug_info_first_reloc });
+            const cie_offset, _ =
+                elf.dwarf.frame.eh_cie_ni.unwrap().?.location(&elf.mf).resolve(&elf.mf);
+            const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
+            elf.dwarf.updateEhFrameFde(ni.slice(&elf.mf), offset - cie_offset);
+            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = debug_fde.first_reloc });
         },
-        .global_debug_info => |gi| {
-            const dwarf_global = &elf.dwarf_globals.items[@backingInt(gi)];
-            var target_reloc_it = dwarf_global.debug_info_first_target_reloc;
+        .debug_frame_cie => {
+            var target_reloc_it = elf.debug_frame_cie_first_target_reloc;
             while (target_reloc_it != .none) {
                 const target_reloc = target_reloc_it.ptr(elf);
                 assert(target_reloc.target_payload.node == ni);
                 target_reloc.apply(elf);
                 target_reloc_it = target_reloc.next;
             }
-            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = dwarf_global.debug_info_first_reloc });
         },
-        .func_frame_fde => |fi| {
-            const dwarf_func = &elf.dwarf_funcs.items[@backingInt(fi)];
-            const zcu = elf.base.comp.zcu.?;
-            const mod = zcu.navFileScope(fi.nav(&elf.dwarf)).mod.?;
-            switch (mod.unwind_tables) {
-                .none => {},
-                .sync, .async => {
-                    const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
-                    elf.dwarf.updateEhFrameFde(ni.slice(&elf.mf), offset);
-                },
+        .debug_frame_fde => |fi| elf.flushMovedNodeRelocs(ni, .{
+            .first_reloc = DebugFunc.ptr(fi, elf).fde.debug_frame_first_reloc,
+        }),
+        .debug_info_header => elf.flushMovedNodeRelocs(ni, .{
+            .first_reloc = elf.debug_info_header_first_reloc,
+        }),
+        .debug_info_module => |mi| {
+            var target_reloc_it = DebugModule.ptr(mi, elf).debug_info_first_target_reloc;
+            while (target_reloc_it != .none) {
+                const target_reloc = target_reloc_it.ptr(elf);
+                assert(target_reloc.target_payload.node == ni);
+                target_reloc.apply(elf);
+                target_reloc_it = target_reloc.next;
             }
-            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = dwarf_func.frame_fde_first_reloc });
         },
-        .func_debug_info => |fi| {
-            const dwarf_func = &elf.dwarf_funcs.items[@backingInt(fi)];
-            var target_reloc_it = dwarf_func.debug_info_first_target_reloc;
+        .debug_info_module_header => |mi| elf.flushMovedNodeRelocs(ni, .{
+            .first_reloc = DebugModule.ptr(mi, elf).debug_info_first_reloc,
+        }),
+        .debug_info_const => |cpi| {
+            const debug_const = DebugConst.ptr(cpi, elf);
+            var target_reloc_it = debug_const.debug_info_first_target_reloc;
+            while (target_reloc_it != .none) {
+                const target_reloc = target_reloc_it.ptr(elf);
+                assert(target_reloc.target_payload.node == ni);
+                target_reloc.apply(elf);
+                target_reloc_it = target_reloc.next;
+            }
+            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = debug_const.debug_info_first_reloc });
+        },
+        .debug_info_global => |gi| {
+            const debug_global = DebugGlobal.ptr(gi, elf);
+            var target_reloc_it = debug_global.debug_info_first_target_reloc;
+            while (target_reloc_it != .none) {
+                const target_reloc = target_reloc_it.ptr(elf);
+                assert(target_reloc.target_payload.node == ni);
+                target_reloc.apply(elf);
+                target_reloc_it = target_reloc.next;
+            }
+            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = debug_global.debug_info_first_reloc });
+        },
+        .debug_info_func => |fi| {
+            const debug_func = DebugFunc.ptr(fi, elf);
+            var target_reloc_it = debug_func.debug_info_first_target_reloc;
             while (target_reloc_it != .none) {
                 const target_reloc = target_reloc_it.ptr(elf);
                 assert(target_reloc.target_payload.node == ni);
@@ -13119,33 +13377,89 @@ fn flushMoved(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!void
                 target_reloc_it = target_reloc.next;
             }
             elf.flushMovedNodeRelocs(ni, .{
-                .first_reloc = dwarf_func.debug_info_first_reloc,
+                .first_reloc = debug_func.debug_info_first_reloc,
                 .skip_nodes = .{
                     if (elf.navs.getPtr(fi.nav(&elf.dwarf))) |zav| .wrap(zav.node(elf)) else .none,
                     fi.ptr(&elf.dwarf).debug_line_ni,
                 },
             });
         },
-        .func_debug_line => |fi| {
-            const dwarf_func = &elf.dwarf_funcs.items[@backingInt(fi)];
-            elf.flushMovedNodeRelocs(ni, .{
-                .first_reloc = dwarf_func.debug_line_first_reloc,
-                .skip_nodes = .{
-                    if (elf.navs.getPtr(fi.nav(&elf.dwarf))) |zav| .wrap(zav.node(elf)) else .none,
-                    fi.ptr(&elf.dwarf).debug_info_ni,
-                },
-            });
-        },
-        .decl_debug_info => |di| {
-            const dwarf_decl = &elf.dwarf_decls.get(di).?;
-            var target_reloc_it = dwarf_decl.debug_info_first_target_reloc;
+        .debug_info_decl => |di| {
+            const debug_decl = DebugDecl.ptr(di, elf);
+            var target_reloc_it = debug_decl.debug_info_first_target_reloc;
             while (target_reloc_it != .none) {
                 const target_reloc = target_reloc_it.ptr(elf);
                 assert(target_reloc.target_payload.node == ni);
                 target_reloc.apply(elf);
                 target_reloc_it = target_reloc.next;
             }
-            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = dwarf_decl.debug_info_first_reloc });
+            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = debug_decl.debug_info_first_reloc });
+        },
+        .debug_info_footer => {},
+        .debug_line_header => {
+            var target_reloc_it = elf.debug_line_header_first_target_reloc;
+            while (target_reloc_it != .none) {
+                const target_reloc = target_reloc_it.ptr(elf);
+                assert(target_reloc.target_payload.node == ni);
+                target_reloc.apply(elf);
+                target_reloc_it = target_reloc.next;
+            }
+            elf.flushMovedNodeRelocs(ni, .{ .first_reloc = elf.debug_line_header_first_reloc });
+        },
+        .debug_line_func => |fi| elf.flushMovedNodeRelocs(ni, .{
+            .first_reloc = DebugFunc.ptr(fi, elf).debug_line_first_reloc,
+            .skip_nodes = .{
+                if (elf.navs.getPtr(fi.nav(&elf.dwarf))) |zav| .wrap(zav.node(elf)) else .none,
+                fi.ptr(&elf.dwarf).debug_info_ni,
+            },
+        }),
+        .debug_rnglists_header => {
+            var target_reloc_it = elf.debug_rnglists_header_first_target_reloc;
+            while (target_reloc_it != .none) {
+                const target_reloc = target_reloc_it.ptr(elf);
+                assert(target_reloc.target_payload.node == ni);
+                target_reloc.apply(elf);
+                target_reloc_it = target_reloc.next;
+            }
+        },
+        .debug_rnglists_compile_unit => {
+            const header_ni = elf.dwarf.debug_rnglists.header_ni.unwrap().?;
+            const header_offset, const header_size = header_ni.location(&elf.mf).resolve(&elf.mf);
+            const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
+            if (header_size > 0) elf.dwarf.updateDebugRnglistsHeader(
+                header_ni.slice(&elf.mf),
+                null,
+                offset - header_offset,
+            );
+            for (elf.debug_rnglists_compile_unit_relocs.items) |ri| {
+                const reloc = ri.ptr(elf);
+                assert(reloc.node.unwrap() == ni);
+                reloc.apply(elf);
+            }
+        },
+        .debug_rnglists_module => |mi| {
+            const header_ni = elf.dwarf.debug_rnglists.header_ni.unwrap().?;
+            const header_offset, const header_size = header_ni.location(&elf.mf).resolve(&elf.mf);
+            const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
+            if (header_size > 0) elf.dwarf.updateDebugRnglistsHeader(
+                header_ni.slice(&elf.mf),
+                mi,
+                offset - header_offset,
+            );
+        },
+        .debug_str_offsets => {
+            var target_reloc_it = elf.debug_str_offsets_first_target_reloc;
+            while (target_reloc_it != .none) {
+                const target_reloc = target_reloc_it.ptr(elf);
+                assert(target_reloc.target_payload.node == ni);
+                target_reloc.apply(elf);
+                target_reloc_it = target_reloc.next;
+            }
+            for (elf.debug_str_offsets_relocs.items) |ri| {
+                const reloc = ri.ptr(elf);
+                assert(reloc.node.unwrap() == ni);
+                reloc.apply(elf);
+            }
         },
     }
     try ni.childrenMoved(elf.base.comp.gpa, &elf.mf);
@@ -13311,7 +13625,7 @@ fn flushResized(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!vo
     defer trace.end();
     trace.addTextFmt("{f}", .{Node.fmtDebug(ni, elf)});
 
-    _, const size = ni.location(&elf.mf).resolve(&elf.mf);
+    const offset, const size = ni.location(&elf.mf).resolve(&elf.mf);
     switch (elf.getNode(ni)) {
         .deleted => unreachable,
         .archive, .archive_header => {},
@@ -13404,7 +13718,7 @@ fn flushResized(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!vo
                 }
             },
         },
-        .section => |shndx| switch (elf.shdrPtr(shndx)) {
+        .well_known_section => |shndx| switch (elf.shdrPtr(shndx)) {
             inline else => |shdr| {
                 switch (elf.targetLoad(&shdr.type)) {
                     else => unreachable,
@@ -13415,37 +13729,54 @@ fn flushResized(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!vo
                 elf.targetStore(&shdr.size, @intCast(size));
             },
         },
-        .section_manual_size,
-        .merge_section,
-        .input_section,
-        .nav,
-        .uav,
-        .lazy_code,
-        .lazy_const_data,
-        .debug_shared,
-        .debug_addr,
+        .custom_section, .input_section => {},
+        .merge_section => |msi| switch (elf.getNode(ni.parent(&elf.mf).unwrap().?)) {
+            else => unreachable,
+            .well_known_section => {},
+            .custom_section => |shndx| switch (ni.next(&elf.mf)) {
+                else => {},
+                .none => shndx.setSize(elf, offset + msi.ptr(elf).free_list.items[0]),
+            },
+        },
+        .compile_unit_range, .zav_range_end => {},
+        .nav, .uav, .lazy_code, .lazy_const_data => {},
+        .debug_abbrev => elf.shndx.debug_abbrev.setSize(elf, offset + elf.dwarf.debug_abbrev.size()),
+        .debug_addr => {
+            const unit_length = elf.dwarf.debug_addr.size(&elf.dwarf);
+            elf.dwarf.updateUnitLength(elf.dwarf.debug_addr.ni.unwrap().?.slice(&elf.mf), unit_length);
+            elf.shndx.debug_addr.setSize(elf, offset + unit_length);
+        },
+        .eh_frame_cie,
+        .eh_frame_fde,
         .eh_frame_footer,
-        .debug_str_offsets,
-        .unit_padding,
-        .unit_frame,
-        .unit_frame_cie,
-        .unit_debug_info,
-        .unit_debug_info_header,
-        .unit_debug_info_footer,
-        .unit_debug_line,
-        .unit_debug_line_header,
-        .unit_debug_rnglists,
-        .const_debug_info,
-        .global_debug_info,
-        .func_frame_fde,
-        .func_debug_info,
-        .func_debug_line,
-        .decl_debug_info,
+        .debug_frame_cie,
+        .debug_frame_fde,
+        .debug_info_header,
+        .debug_info_module,
+        .debug_info_module_header,
+        .debug_info_const,
+        .debug_info_global,
+        .debug_info_func,
+        .debug_info_decl,
+        .debug_info_footer,
+        .debug_line_header,
+        .debug_line_func,
+        .debug_rnglists_header,
+        .debug_rnglists_compile_unit,
+        .debug_rnglists_module,
         => {},
+        .debug_str_offsets => {
+            const unit_length = elf.dwarf.debug_str_offsets.size(&elf.dwarf);
+            elf.dwarf.updateUnitLength(
+                elf.dwarf.debug_str_offsets.ni.unwrap().?.slice(&elf.mf),
+                unit_length,
+            );
+            elf.shndx.debug_str_offsets.setSize(elf, offset + unit_length);
+        },
     }
 }
 
-fn flushPadding(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!void {
+fn flushPadding(elf: *Elf, ni: MappedFile.Node.Index) link.Error!void {
     const trace = tracy.trace(@src());
     defer trace.end();
     trace.addTextFmt("{f}", .{Node.fmtDebug(ni, elf)});
@@ -13453,26 +13784,7 @@ fn flushPadding(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!vo
     const node = elf.getNode(ni);
     switch (node) {
         .deleted => unreachable,
-        .archive,
-        .archive_input_member,
-        .archive_elf_member_header,
-        .elf,
-        .ehdr,
-        .shdr,
-        .segment,
-        .section,
-        .section_manual_size,
-        .merge_section,
-        .input_section,
-        .nav,
-        .uav,
-        .lazy_code,
-        .lazy_const_data,
-        .debug_shared,
-        .eh_frame_footer,
-        .unit_debug_info_footer,
-        => {},
-
+        .archive => {},
         .archive_header => {
             const archive = &elf.archive.?;
 
@@ -13499,215 +13811,190 @@ fn flushPadding(elf: *Elf, ni: MappedFile.Node.Index) std.mem.Allocator.Error!vo
                 error.NoSpaceLeft => archive.strtab_member_too_big = true,
             }
         },
+        .archive_input_member,
+        .archive_elf_member_header,
+        .elf,
+        .ehdr,
+        .shdr,
+        .segment,
+        .well_known_section,
+        .custom_section,
+        .merge_section,
+        .input_section,
+        .compile_unit_range,
+        .zav_range_end,
+        .nav,
+        .uav,
+        .lazy_code,
+        .lazy_const_data,
+        .debug_abbrev,
         .debug_addr,
-        .debug_str_offsets,
-        .unit_padding,
-        .unit_frame_cie,
-        .unit_debug_info_header,
-        .unit_debug_line_header,
-        .unit_debug_rnglists,
-        .const_debug_info,
-        .global_debug_info,
-        .func_frame_fde,
-        .func_debug_info,
-        .func_debug_line,
-        .decl_debug_info,
-        => {
-            const offset, const size = location: {
-                const offset, const size = ni.location(&elf.mf).resolve(&elf.mf);
-                break :location .{ offset, switch (node) {
-                    else => unreachable,
-                    .debug_addr => elf.dwarf.debug_addr.size(&elf.dwarf),
-                    .debug_str_offsets => elf.dwarf.debug_str_offsets.size(&elf.dwarf),
-                    .unit_padding,
-                    .unit_frame_cie,
-                    .unit_debug_info_header,
-                    .unit_debug_line_header,
-                    .const_debug_info,
-                    .global_debug_info,
-                    .func_frame_fde,
-                    .func_debug_info,
-                    .func_debug_line,
-                    .decl_debug_info,
-                    => size,
-                    .unit_debug_rnglists => |ui| Dwarf.Rnglists.size(&elf.dwarf, ui),
-                } };
+        => {},
+        .eh_frame_cie,
+        .eh_frame_fde,
+        .debug_frame_cie,
+        .debug_frame_fde,
+        => elf.dwarf.updateUnitLength(ni.slice(&elf.mf), unit_length: {
+            const shndx, const frame_format: Dwarf.Frame.Format = switch (node) {
+                else => unreachable,
+                .eh_frame_cie, .eh_frame_fde => .{ elf.shndx.eh_frame, .eh_frame },
+                .debug_frame_cie, .debug_frame_fde => .{ elf.shndx.debug_frame, .debug_frame },
             };
-            const parent_ni = ni.parent(&elf.mf).unwrap().?;
-            const slice = slice: {
-                if (ni.next(&elf.mf).unwrap()) |next_ni| switch (next_ni.position(&elf.mf)) {
+            const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
+            const size = switch (node) {
+                else => unreachable,
+                .eh_frame_cie => elf.dwarf.frame.eh_cie_size,
+                .debug_frame_cie => elf.dwarf.frame.debug_cie_size,
+                .eh_frame_fde, .debug_frame_fde => |fi| fi.ptr(&elf.dwarf).fde_size,
+            };
+            const end_offset = offset + size;
+            if (ni.next(&elf.mf).unwrap()) |next_sibling_ni| {
+                const section_file_loc = shndx.node(elf).fileLocation(&elf.mf, false);
+                const section_padding = elf.mf.memory_map
+                    .memory[@intCast(section_file_loc.offset)..][0..@intCast(section_file_loc.size)];
+                switch (next_sibling_ni.position(&elf.mf)) {
                     .header => unreachable,
-                    .footer => {},
+                    .footer => {
+                        assert(elf.getNode(next_sibling_ni) == .eh_frame_footer);
+                        const footer = section_padding[@intCast(end_offset)..][0..4];
+                        std.mem.writeInt(u32, footer, 0, elf.targetEndian());
+                        shndx.setSize(elf, end_offset + footer.len);
+                    },
                     .floating => {
-                        const parent_slice = parent_ni.slicePadding(&elf.mf);
-                        const next_offset, _ = next_ni.location(&elf.mf).resolve(&elf.mf);
-                        break :slice parent_slice[@intCast(offset)..@intCast(next_offset)];
-                    },
-                };
-                switch (node) {
-                    else => unreachable,
-                    .debug_addr, .debug_str_offsets, .unit_padding, .unit_debug_rnglists => {
-                        const parent_slice = parent_ni.slicePadding(&elf.mf);
-                        const frame_shndx = elf.getNodeShndx(parent_ni);
-                        const frame_format = frame_shndx.debugFrameFormat(elf) orelse
-                            break :slice parent_slice[@intCast(offset)..];
-                        const footer_size = elf.debugFrameFooterSize(frame_format);
-                        @memset(parent_slice[@intCast(offset + size)..][0..footer_size], 0);
-                        frame_shndx.setSize(elf, offset + size + footer_size);
-                        break :slice parent_slice[@intCast(offset)..][0..@intCast(size)];
-                    },
-                    .unit_frame_cie, .func_frame_fde => {
-                        const parent_offset, _ = parent_ni.location(&elf.mf).resolve(&elf.mf);
-                        const frame_ni = parent_ni.parent(&elf.mf).unwrap().?;
-                        const frame_slice = frame_ni.slicePadding(&elf.mf);
-                        const frame_shndx = elf.getNode(frame_ni).section_manual_size;
-                        const frame_format = frame_shndx.debugFrameFormat(elf).?;
-                        if (parent_ni.next(&elf.mf).unwrap()) |parent_next_ni| {
-                            switch (parent_next_ni.position(&elf.mf)) {
-                                .header => unreachable,
-                                .footer => {},
-                                .floating => {
-                                    const parent_next_offset, _ =
-                                        parent_next_ni.location(&elf.mf).resolve(&elf.mf);
-                                    const slice = frame_slice[@intCast(
-                                        parent_offset + offset,
-                                    )..@intCast(parent_next_offset)];
-                                    var fw: Io.Writer = .fixed(slice[@intCast(size)..]);
-                                    elf.dwarf.genDebugFrameCie(
-                                        &fw,
-                                        null,
-                                        frame_format,
-                                    ) catch |err| switch (err) {
-                                        error.WriteFailed => break :slice slice,
-                                    };
-                                    elf.dwarf.updateUnitLength(fw.buffer, fw.buffer.len);
-                                    break :slice slice[0..@intCast(size)];
-                                },
-                            }
-                        }
-                        const footer_size = elf.debugFrameFooterSize(frame_format);
-                        @memset(
-                            frame_slice[@intCast(parent_offset + offset + size)..][0..footer_size],
-                            0,
-                        );
-                        frame_shndx.setSize(elf, parent_offset + offset + size + footer_size);
-                        break :slice frame_slice[@intCast(parent_offset + offset)..][0..@intCast(size)];
-                    },
-                    .unit_debug_info_header,
-                    .unit_debug_line_header,
-                    .const_debug_info,
-                    .global_debug_info,
-                    .func_debug_info,
-                    .func_debug_line,
-                    .decl_debug_info,
-                    => {
-                        const parent_offset, _ = parent_ni.location(&elf.mf).resolve(&elf.mf);
-                        const debug_ni = parent_ni.parent(&elf.mf).unwrap().?;
-                        const debug_slice = debug_ni.slicePadding(&elf.mf);
-                        var fw: Io.Writer = .fixed(buffer: {
-                            if (parent_ni.next(&elf.mf).unwrap()) |parent_next_ni| {
-                                switch (parent_next_ni.position(&elf.mf)) {
-                                    .header => unreachable,
-                                    .footer => {},
-                                    .floating => {
-                                        const parent_next_offset, _ =
-                                            parent_next_ni.location(&elf.mf).resolve(&elf.mf);
-                                        break :buffer debug_slice[@intCast(
-                                            parent_offset,
-                                        )..@intCast(parent_next_offset)];
-                                    },
-                                }
-                            }
-                            break :buffer debug_slice[@intCast(parent_offset)..];
-                        });
-                        fw.end = @intCast(offset + size);
-                        switch (node) {
-                            else => unreachable,
-                            .unit_debug_info_header,
-                            .const_debug_info,
-                            .global_debug_info,
-                            .func_debug_info,
-                            .decl_debug_info,
-                            => for (0..2) |_| fw.writeUleb128(@backingInt(Dwarf.AbbrevCode.null)) catch
-                                unreachable,
-                            .unit_debug_line_header, .func_debug_line => {},
-                        }
-                        const unit_padding_offset = fw.end;
-                        const unit_padding = fw.unusedCapacitySlice();
-                        elf.dwarf.genUnitPadding(&fw) catch |err| switch (err) {
+                        const next_offset, _ = next_sibling_ni.location(&elf.mf).resolve(&elf.mf);
+                        var padding_fw: Io.Writer =
+                            .fixed(section_padding[@intCast(end_offset)..@intCast(next_offset)]);
+                        const first_ri = elf.relocs.items.len;
+                        defer assert(first_ri == elf.relocs.items.len);
+                        elf.dwarf.genCie(&padding_fw, null, frame_format) catch |err| switch (err) {
                             error.WriteFailed => {
-                                fw.end = unit_padding_offset;
-                                elf.dwarf.updateUnitLength(fw.buffer, fw.buffer.len);
-                                switch (node) {
-                                    else => unreachable,
-                                    .unit_debug_info_header,
-                                    .const_debug_info,
-                                    .global_debug_info,
-                                    .func_debug_info,
-                                    .decl_debug_info,
-                                    => {
-                                        comptime assert(
-                                            Dwarf.uleb128Size(@backingInt(Dwarf.AbbrevCode.null)) == 1,
-                                        );
-                                        @memset(
-                                            fw.unusedCapacitySlice(),
-                                            @backingInt(Dwarf.AbbrevCode.null),
-                                        );
-                                    },
-                                    .unit_debug_line_header,
-                                    .func_debug_line,
-                                    => Dwarf.genDebugLinePadding(&fw, fw.unusedCapacityLen()) catch
-                                        unreachable,
-                                }
-                                return;
+                                Dwarf.genFramePadding(padding_fw.buffer);
+                                break :unit_length next_offset - offset;
                             },
                         };
-                        elf.dwarf.updateUnitLength(fw.buffer, unit_padding_offset);
-                        elf.dwarf.updateUnitLength(unit_padding, unit_padding.len);
-                        return;
+                        elf.dwarf.updateUnitLength(padding_fw.buffer, padding_fw.buffer.len);
                     },
                 }
-            };
-            var fw: Io.Writer = .fixed(slice[@intCast(size)..]);
-            switch (node) {
+            } else shndx.setSize(elf, end_offset);
+            break :unit_length size;
+        }),
+        .eh_frame_footer => {},
+        .debug_info_header,
+        .debug_info_module,
+        .debug_info_module_header,
+        .debug_info_const,
+        .debug_info_global,
+        .debug_info_func,
+        .debug_info_decl,
+        => {
+            const shndx = elf.shndx.debug_info;
+            const section_ni = shndx.node(elf);
+            var cur_ni = ni;
+            var end_offset: u64 = node: switch (node) {
                 else => unreachable,
-                .debug_addr, .debug_str_offsets, .unit_debug_rnglists => {
-                    elf.dwarf.genUnitPadding(&fw) catch |err| switch (err) {
-                        error.WriteFailed => {
-                            elf.dwarf.updateUnitLength(slice, slice.len);
-                            @memset(fw.buffer, switch (node) {
-                                else => unreachable,
-                                .debug_addr, .debug_str_offsets => std.math.maxInt(u8),
-                                .unit_debug_rnglists => std.dwarf.RLE.end_of_list,
-                            });
-                            return;
-                        },
-                    };
-                    elf.dwarf.updateUnitLength(slice, size);
-                    elf.dwarf.updateUnitLength(fw.buffer, fw.buffer.len);
+                .debug_info_header => elf.dwarf.debug_info.header_size,
+                .debug_info_module => {
+                    cur_ni = cur_ni.last(&elf.mf).unwrap().?;
+                    assert(elf.getNode(cur_ni) == .debug_info_footer);
+                    cur_ni = cur_ni.prev(&elf.mf).unwrap().?;
+                    assert(cur_ni.position(&elf.mf) != .footer);
+                    continue :node elf.getNode(cur_ni);
                 },
-                .unit_padding => elf.dwarf.updateUnitLength(slice, slice.len),
-                .unit_frame_cie, .func_frame_fde => {
-                    elf.dwarf.updateUnitLength(slice, slice.len);
-                    @memset(fw.buffer, std.dwarf.CFA.nop);
-                },
-                .unit_debug_info_header,
-                .const_debug_info,
-                .global_debug_info,
-                .func_debug_info,
-                .decl_debug_info,
-                => elf.dwarf.genDebugInfoPadding(&fw, fw.buffer.len) catch unreachable,
-                .unit_debug_line_header,
-                .func_debug_line,
-                => Dwarf.genDebugLinePadding(&fw, fw.buffer.len) catch unreachable,
+                .debug_info_module_header => |mi| mi.ptr(&elf.dwarf).debug_info_header_size,
+                .debug_info_const => |cpi| Dwarf.Const.ptr(cpi, &elf.dwarf).debug_info_size,
+                inline .debug_info_global,
+                .debug_info_func,
+                .debug_info_decl,
+                => |i| i.ptr(&elf.dwarf).debug_info_size,
+            };
+            var parent_file_offset = cur_ni.fileLocation(&elf.mf, false).offset;
+            while (cur_ni != section_ni) {
+                const parent_ni = cur_ni.parent(&elf.mf).unwrap().?;
+                const offset, _ = cur_ni.location(&elf.mf).resolve(&elf.mf);
+                parent_file_offset -= offset;
+                end_offset += offset;
+
+                const next_sibling_ni = cur_ni.next(&elf.mf).unwrap() orelse {
+                    elf.dumpNodeStderr(section_ni) catch {};
+                    unreachable;
+                };
+                switch (next_sibling_ni.position(&elf.mf)) {
+                    .header => unreachable,
+                    .footer => {
+                        std.leb.writeUnsignedExtended(
+                            elf.mf.memory_map.memory[@intCast(parent_file_offset + end_offset)..][0..1],
+                            @backingInt(Dwarf.AbbrevCode.null),
+                        );
+                        end_offset += 1;
+                        cur_ni = parent_ni;
+                    },
+                    .floating => {
+                        const next_offset, _ = next_sibling_ni.location(&elf.mf).resolve(&elf.mf);
+                        try elf.dwarf.genDebugInfoPadding(
+                            &elf.mf,
+                            parent_file_offset + end_offset,
+                            next_offset - end_offset,
+                        );
+                        break;
+                    },
+                }
+            } else {
+                const header_ni = elf.dwarf.debug_info.header_ni.unwrap().?;
+                const header_offset, const header_size = header_ni.location(&elf.mf).resolve(&elf.mf);
+                if (header_size > 0)
+                    elf.dwarf.updateUnitLength(header_ni.slice(&elf.mf), end_offset - header_offset);
+                shndx.setSize(elf, end_offset);
             }
         },
-        .unit_frame, .unit_debug_info, .unit_debug_line => {
-            var last_ni = ni.last(&elf.mf).unwrap() orelse return;
-            while (last_ni.position(&elf.mf) == .footer)
-                last_ni = last_ni.prev(&elf.mf).unwrap() orelse return;
-            try last_ni.nextMoved(elf.base.comp.gpa, &elf.mf);
+        .debug_info_footer => {},
+        .debug_line_header, .debug_line_func => {
+            const shndx = elf.shndx.debug_line;
+            const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
+            const end_offset = offset + switch (node) {
+                else => unreachable,
+                .debug_line_header => elf.dwarf.debug_line.header_size,
+                .debug_line_func => |fi| fi.ptr(&elf.dwarf).debug_line_size,
+            };
+            if (ni.next(&elf.mf).unwrap()) |next_sibling_ni| {
+                const next_offset, _ = next_sibling_ni.location(&elf.mf).resolve(&elf.mf);
+                try elf.dwarf.genDebugLinePadding(
+                    &elf.mf,
+                    shndx.node(elf).fileLocation(&elf.mf, false).offset + end_offset,
+                    next_offset - end_offset,
+                );
+            } else {
+                const header_ni = elf.dwarf.debug_line.header_ni.unwrap().?;
+                const header_offset, const header_size = header_ni.location(&elf.mf).resolve(&elf.mf);
+                if (header_size > 0)
+                    elf.dwarf.updateUnitLength(header_ni.slice(&elf.mf), end_offset - header_offset);
+                shndx.setSize(elf, end_offset);
+            }
         },
+        .debug_rnglists_header, .debug_rnglists_compile_unit, .debug_rnglists_module => {
+            const shndx = elf.shndx.debug_rnglists;
+            const offset, _ = ni.location(&elf.mf).resolve(&elf.mf);
+            const end_offset = offset + switch (node) {
+                else => unreachable,
+                .debug_rnglists_header => elf.dwarf.debug_rnglists.header_size,
+                .debug_rnglists_compile_unit => elf.dwarf.debug_rnglists.compileUnitSize(),
+                .debug_rnglists_module => |mi| Dwarf.Rnglists.moduleSize(&elf.dwarf, mi),
+            };
+            if (ni.next(&elf.mf).unwrap()) |next_sibling_ni| {
+                const next_offset, _ = next_sibling_ni.location(&elf.mf).resolve(&elf.mf);
+                try elf.dwarf.genDebugRnglistsPadding(
+                    &elf.mf,
+                    shndx.node(elf).fileLocation(&elf.mf, false).offset + end_offset,
+                    next_offset - end_offset,
+                );
+            } else {
+                const header_ni = elf.dwarf.debug_rnglists.header_ni.unwrap().?;
+                const header_offset, const header_size = header_ni.location(&elf.mf).resolve(&elf.mf);
+                if (header_size > 0)
+                    elf.dwarf.updateUnitLength(header_ni.slice(&elf.mf), end_offset - header_offset);
+                shndx.setSize(elf, end_offset);
+            }
+        },
+        .debug_str_offsets => {},
     }
 }
 
@@ -14109,7 +14396,10 @@ pub fn updateExports(
     for (export_indices) |export_index| {
         elf.updateExportInner(export_index) catch |err| switch (err) {
             else => |e| return e,
-            error.MappedFileIo => return elf.base.comp.link_diags.fail("failed to write output file: {t}", .{elf.mf.io_err.?}),
+            error.MappedFileIo => return elf.base.comp.link_diags.fail(
+                "failed to write output file: {t}",
+                .{elf.mf.io_err.?},
+            ),
         };
     }
     try elf.genPending(pt);
@@ -14191,7 +14481,7 @@ fn updateExportInner(elf: *Elf, export_index: Zcu.Export.Index) Error!void {
     };
 }
 
-fn dumpStderr(elf: *Elf) Io.File.Writer.Error!void {
+fn dumpStderr(elf: *const Elf) Io.File.Writer.Error!void {
     const comp = elf.base.comp;
     const io = comp.io;
     var buffer: [512]u8 = undefined;
@@ -14201,9 +14491,23 @@ fn dumpStderr(elf: *Elf) Io.File.Writer.Error!void {
     _ = elf.dump(w) catch |err| switch (err) {
         error.WriteFailed => return stderr.file_writer.err.?,
     };
+    try stderr.file_writer.flush();
 }
 
-pub fn dump(elf: *Elf, w: *Io.Writer) Io.Writer.Error!link.File.DumpResult {
+fn dumpNodeStderr(elf: *const Elf, ni: MappedFile.Node.Index) Io.File.Writer.Error!void {
+    const comp = elf.base.comp;
+    const io = comp.io;
+    var buffer: [512]u8 = undefined;
+    const stderr = try io.lockStderr(&buffer, null);
+    defer io.unlockStderr();
+    const w = &stderr.file_writer.interface;
+    _ = elf.printNode(w, ni, 0) catch |err| switch (err) {
+        error.WriteFailed => return stderr.file_writer.err.?,
+    };
+    try stderr.file_writer.flush();
+}
+
+pub fn dump(elf: *const Elf, w: *Io.Writer) Io.Writer.Error!link.File.DumpResult {
     if (elf.options.enable_link_snapshots) {
         try elf.printNode(w, .root, 0);
         return .enabled;
@@ -14212,7 +14516,7 @@ pub fn dump(elf: *Elf, w: *Io.Writer) Io.Writer.Error!link.File.DumpResult {
 }
 
 fn printNode(
-    elf: *Elf,
+    elf: *const Elf,
     w: *Io.Writer,
     ni: MappedFile.Node.Index,
     indent: usize,

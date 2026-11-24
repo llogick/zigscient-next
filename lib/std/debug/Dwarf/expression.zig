@@ -24,6 +24,8 @@ pub const Context = struct {
     format: std.dwarf.Format = .@"32",
     /// The compilation unit this expression relates to, if any
     compile_unit: ?*const std.debug.Dwarf.CompileUnit = null,
+    /// The frame base of the function this expression relates to, if any
+    frame_base: ?*const std.debug.Dwarf.FormValue = null,
     /// When evaluating a user-presented expression, this is the address of the object being evaluated
     object_address: ?*const anyopaque = null,
     /// .debug_addr section
@@ -339,9 +341,10 @@ pub fn StackMachine(comptime options: Options) type {
                 OP.constx,
                 => {
                     if (context.compile_unit == null) return error.IncompleteExpressionContext;
+                    if (context.compile_unit.?.addr_base == null) return error.IncompleteExpressionContext;
                     if (context.debug_addr == null) return error.IncompleteExpressionContext;
                     const debug_addr_index = operand.?.generic;
-                    const offset = context.compile_unit.?.addr_base + debug_addr_index;
+                    const offset = context.compile_unit.?.addr_base.? + debug_addr_index;
                     if (offset >= context.debug_addr.?.len) return error.InvalidExpression;
                     const value = mem.readInt(usize, context.debug_addr.?[offset..][0..@sizeOf(usize)], native_endian);
                     try self.stack.append(allocator, .{ .generic = value });
@@ -349,13 +352,12 @@ pub fn StackMachine(comptime options: Options) type {
 
                 // 2.5.1.2: Register Values
                 OP.fbreg => {
-                    if (context.compile_unit == null) return error.IncompleteExpressionContext;
-                    if (context.compile_unit.?.frame_base == null) return error.IncompleteExpressionContext;
+                    if (context.frame_base == null) return error.IncompleteExpressionContext;
 
                     const offset: i64 = @intCast(operand.?.generic);
                     _ = offset;
 
-                    switch (context.compile_unit.?.frame_base.?.*) {
+                    switch (context.frame_base.?.*) {
                         .exprloc => {
                             // TODO: Run this expression in a nested stack machine
                             return error.UnimplementedOpcode;

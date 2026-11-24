@@ -13,7 +13,7 @@ is_64: bool,
 endian: Endian,
 
 /// This is `null` iff any of the required DWARF sections were missing. `ElfFile.load` does *not*
-/// call `Dwarf.open`, `Dwarf.scanAllFunctions`, etc; that is the caller's responsibility.
+/// call `Dwarf.open`; that is the caller's responsibility.
 dwarf: ?Dwarf,
 
 /// If non-`null`, describes the `.eh_frame` section, which can be used with `Dwarf.Unwind`.
@@ -218,14 +218,15 @@ pub fn load(
             {
                 break :dwarf null; // debug info not present
             }
-            var sections: Dwarf.SectionArray = @splat(null);
-            const info = @typeInfo(Dwarf.Section.Id).@"enum";
-            inline for (info.field_names, info.field_values) |f_name, f_value| {
-                if (result.sections.get(@field(Section.Id, f_name))) |s| {
-                    sections[f_value] = .{ .data = s.bytes, .owned = false };
-                }
-            }
-            break :dwarf .{ .sections = sections };
+            var dwarf: Dwarf = .empty;
+            dwarf.endian = result.endian;
+            for (
+                &dwarf.sections.values,
+                result.sections.values[0..dwarf.sections.values.len],
+            ) |*dwarf_section, section| if (section) |s| {
+                dwarf_section.* = .{ .slice = s.bytes };
+            };
+            break :dwarf dwarf;
         },
         .eh_frame = if (result.sections.get(.eh_frame)) |s| .{
             .vaddr = s.header.sh_addr,
@@ -366,6 +367,13 @@ const Section = struct {
         debug_frame,
         symtab,
         strtab,
+
+        comptime {
+            const dwarf_ids = @typeInfo(Dwarf.Section.Id).@"enum".field_names;
+            for (@typeInfo(Id).@"enum".field_names[0..dwarf_ids.len], dwarf_ids) |id, dwarf_id| {
+                std.debug.assert(std.mem.eql(u8, id, dwarf_id));
+            }
+        }
     };
     const Array = std.enums.EnumArray(Section.Id, ?Section);
 };
