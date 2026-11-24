@@ -1141,6 +1141,34 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
             return out;
         }
 
+        /// Returns the inverses of the given elements, or null if one of them doesn't have one.
+        ///
+        /// This is much faster than individual inversions: it needs at most one inversion, and uses multiplications for the rest.
+        /// Elements must all be in the same form.
+        pub fn invertBatch(self: Self, comptime count: usize, xs_: [count]Fe) ?[count]Fe {
+            if (count == 0) return .{};
+
+            var xs = xs_;
+            const plain = !xs[0].montgomery and self.v.isOdd();
+            if (plain) for (&xs) |*x| self.toMontgomery(x) catch unreachable;
+
+            var out: [count]Fe = undefined;
+            out[0] = xs[0];
+            for (1..count) |i| {
+                assert(xs[i].montgomery == xs[0].montgomery); // all the elements must have the same form
+                out[i] = self.mul(out[i - 1], xs[i]);
+            }
+            var acc = self.invert(out[count - 1]) orelse return null;
+            var i = count - 1;
+            while (i > 0) : (i -= 1) {
+                out[i] = self.mul(acc, out[i - 1]);
+                acc = self.mul(acc, xs[i]);
+            }
+            out[0] = acc;
+            if (plain) for (&out) |*x| self.fromMontgomery(x) catch unreachable;
+            return out;
+        }
+
         /// Converts a field element to the Montgomery form.
         /// Rejects even moduli, which have no Montgomery form.
         pub fn toMontgomery(self: Self, x: *Fe) RepresentationError!void {
@@ -2000,5 +2028,32 @@ test "secret modulus" {
         const r: u256 = max % mv;
         try testing.expectEqual(r, try x.toPrimitive(u128));
         try testing.expectEqual((r * r) % mv, try m.sq(x).toPrimitive(u128));
+    }
+}
+
+test "batch modular inversion" {
+    if (builtin.zig_backend == .stage2_c) return error.SkipZigTest;
+
+    const M = Modulus(256);
+
+    for ([_][2]u8{ .{ 101, 0 }, .{ 15, 3 }, .{ 16, 2 } }) |c| {
+        const m = try M.fromPrimitiveWithOptions(u8, c[0], .{ .allow_even = true });
+        try testing.expect(m.invertBatch(0, .{}) != null);
+        var xs = [_]M.Fe{ m.one(), try M.Fe.fromPrimitive(u8, m, 7), m.subOne(m.zero) };
+        var no_inverse = try M.Fe.fromPrimitive(u8, m, c[1]);
+        for ([_]bool{ false, true }) |montgomery| {
+            if (montgomery) {
+                if (!m.v.isOdd()) break;
+                for (&xs) |*x| try m.toMontgomery(x);
+                try m.toMontgomery(&no_inverse);
+            }
+            const inverses = m.invertBatch(xs.len, xs).?;
+            for (xs, inverses) |x, inv| {
+                try testing.expectEqual(montgomery, inv.montgomery);
+                try testing.expect(m.isOne(m.mul(x, inv)));
+            }
+            try testing.expect(m.invertBatch(1, .{xs[1]}).?[0].eql(inverses[1]));
+            try testing.expect(m.invertBatch(xs.len, .{ xs[0], no_inverse, xs[2] }) == null);
+        }
     }
 }
