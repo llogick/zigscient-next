@@ -10,6 +10,8 @@ MCPU="baseline"
 CACHE_BASENAME="zig+llvm+lld+clang-$TARGET-0.18.0-dev.92+1e1964473"
 PREFIX="$HOME/deps/$CACHE_BASENAME"
 ZIG="$PREFIX/bin/zig"
+SPIRV_TEST_EXECUTOR="$HOME/deps/zig-spirv-test-executor-20ed6f7"
+SPIRV_LOCK_DIR="${ZSF_LOCK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/lock}/zig-spirv"
 
 export PATH="$HOME/local/bin:$PATH"
 
@@ -39,6 +41,14 @@ ninja install
 # Must be done after zig cc is finished.
 export ZIG_LIB_DIR="$PWD/../lib"
 
+SPIRV_TEST_EXECUTOR_OUT="$PWD/spirv-test-executor"
+stage3-release/bin/zig build \
+  --build-file "$SPIRV_TEST_EXECUTOR/build.zig" \
+  --prefix "$SPIRV_TEST_EXECUTOR_OUT" \
+  --system "$SPIRV_TEST_EXECUTOR/zig-pkg"
+
+mkdir -p "$SPIRV_LOCK_DIR"
+
 stage3-release/bin/zig build install test docs \
   --maxrss "${ZSF_MAX_RSS:-0}" \
   --prefix stage4-release \
@@ -52,6 +62,9 @@ stage3-release/bin/zig build install test docs \
   -Duse-zig-libcxx \
   -Denable-llvm \
   -Dno-lib \
+  -Dspirv-test-executor="$SPIRV_TEST_EXECUTOR_OUT/bin/zig-spirv-test-executor" \
+  -Dspirv-test-lock-dir="$SPIRV_LOCK_DIR" \
+  ${ZSF_GPU_DRIVERS:+$(printf " -Dspirv-test-driver=%s" $ZSF_GPU_DRIVERS)} \
   -Dskip-non-native
 
 # Ensure that the fuzzer at least compiles.

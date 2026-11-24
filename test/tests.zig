@@ -36,6 +36,34 @@ const ModuleTestTarget = struct {
     // invocation. This could be because of a slow backend, requiring a newer LLVM version, being
     // too niche, etc.
     extra_target: bool = false,
+
+    /// Required for SPIR-V targets.
+    spirv_driver: ?SpirvDriver = null,
+};
+
+pub const SpirvDriver = enum {
+    anv,
+    lavapipe,
+    nvidia,
+    radv,
+
+    fn platform(driver: SpirvDriver) []const u8 {
+        return switch (driver) {
+            .anv => "Intel",
+            .lavapipe => "llvmpipe",
+            .nvidia => "NVIDIA",
+            .radv => "radv",
+        };
+    }
+
+    fn icd(driver: SpirvDriver) []const u8 {
+        return switch (driver) {
+            .anv => "*intel_icd*",
+            .lavapipe => "*lvp_icd*",
+            .nvidia => "*nvidia_icd*",
+            .radv => "*radeon_icd*",
+        };
+    }
 };
 
 const module_test_targets = blk: {
@@ -3062,6 +3090,37 @@ const module_test_targets = blk: {
                 .arch_os_abi = "spirv64-vulkan",
                 .cpu_features = "vulkan_v1_2+variable_pointers+float16+float64+int8+int16+int64",
             }) catch unreachable,
+            .spirv_driver = .anv,
+            .use_llvm = false,
+            .use_lld = false,
+            .skip_modules = &.{ "compiler-rt", "libc", "std" },
+        },
+        .{
+            .target = std.Target.Query.parse(.{
+                .arch_os_abi = "spirv64-vulkan",
+                .cpu_features = "vulkan_v1_2+variable_pointers+float16+float64+int8+int16+int64",
+            }) catch unreachable,
+            .spirv_driver = .lavapipe,
+            .use_llvm = false,
+            .use_lld = false,
+            .skip_modules = &.{ "compiler-rt", "libc", "std" },
+        },
+        .{
+            .target = std.Target.Query.parse(.{
+                .arch_os_abi = "spirv64-vulkan",
+                .cpu_features = "vulkan_v1_2+variable_pointers+float16+float64+int8+int16+int64",
+            }) catch unreachable,
+            .spirv_driver = .nvidia,
+            .use_llvm = false,
+            .use_lld = false,
+            .skip_modules = &.{ "compiler-rt", "libc", "std" },
+        },
+        .{
+            .target = std.Target.Query.parse(.{
+                .arch_os_abi = "spirv64-vulkan",
+                .cpu_features = "vulkan_v1_2+variable_pointers+float16+float64+int8+int16+int64",
+            }) catch unreachable,
+            .spirv_driver = .radv,
             .use_llvm = false,
             .use_lld = false,
             .skip_modules = &.{ "compiler-rt", "libc", "std" },
@@ -4083,6 +4142,8 @@ pub const ModuleTestOptions = struct {
     sanitize_thread: ?bool = null,
     build_options: ?*Step.Options = null,
     spirv_test_executor: ?std.Build.LazyPath = null,
+    spirv_test_drivers: []const SpirvDriver = &.{},
+    spirv_test_lock_dir: ?[]const u8 = null,
 
     pub const TestOnly = union(enum) {
         default,
@@ -4123,10 +4184,19 @@ pub fn addModuleTests(b: *std.Build, options: ModuleTestOptions) *Step {
 
         if (!options.test_extra_targets and test_target.extra_target) continue;
 
-        if (options.skip_non_native and !std.zig.target.isNative(&resolved_target.query, &resolved_target.result, &b.graph.host.result))
-            continue;
+        if (test_target.spirv_driver) |driver| {
+            for (options.spirv_test_drivers) |enabled| {
+                if (enabled == driver) break;
+            } else continue;
+        }
 
         const target = &resolved_target.result;
+
+        // SPIR-V tests are native if there's an executor available.
+        if (options.skip_non_native and
+            !(target.cpu.arch.isSpirv() and options.spirv_test_executor != null) and
+            !std.zig.target.isNative(&resolved_target.query, target, &b.graph.host.result))
+            continue;
 
         if (target.cpu.arch.isAarch64() and target.os.tag == .openbsd and target.ofmt == .c) {
             continue; // https://codeberg.org/ziglang/zig/issues/36766
@@ -4250,10 +4320,11 @@ fn addOneModuleTest(
         inline else => |t| "-" ++ @tagName(t),
     } else "";
     const use_pic = if (test_target.pic == true) "-pic" else "";
+    const spirv_driver_suffix = if (test_target.spirv_driver) |driver| b.fmt("-{t}", .{driver}) else "";
 
     for (options.include_paths) |include_path| these_tests.root_module.addIncludePath(b.path(include_path));
 
-    const qualified_name = b.fmt("{s}-{s}-{s}-{t}{s}{s}{s}{s}{s}{s}", .{
+    const qualified_name = b.fmt("{s}-{s}-{s}-{t}{s}{s}{s}{s}{s}{s}{s}", .{
         options.name,
         triple_txt,
         model_txt,
@@ -4264,6 +4335,7 @@ fn addOneModuleTest(
         linker_suffix,
         linkage_name,
         use_pic,
+        spirv_driver_suffix,
     });
 
     if (target.ofmt == .c) {
@@ -4377,10 +4449,18 @@ fn addOneModuleTest(
         step.dependOn(&run.step);
     } else if (target.cpu.arch.isSpirv()) {
         if (options.spirv_test_executor) |executor| {
+            const driver = test_target.spirv_driver.?;
             const run = b.addRunFile(executor);
-            run.addArgs(&.{ "--platform", "llvmpipe" });
+            run.addArgs(&.{ "--platform", driver.platform() });
+            if (options.spirv_test_lock_dir) |lock_dir| run.addArgs(&.{ "--lock-dir", lock_dir });
             run.addFileArg(these_tests.getEmittedBin());
-            run.enableProtocolMode(.{});
+            run.setEnvironmentVariable("VK_LOADER_DRIVERS_SELECT", driver.icd());
+            run.setEnvironmentVariable("MESA_VK_IGNORE_CONFORMANCE_WARNING", "1");
+            run.enableProtocolMode(.{
+                // We may be competing with other CI jobs for a particular
+                // device, so add some slack.
+                .test_timeout_scale = 5,
+            });
             run.setName(b.fmt("run test {s}", .{qualified_name}));
             step.dependOn(&run.step);
         } else {

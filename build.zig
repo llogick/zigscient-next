@@ -160,6 +160,8 @@ pub fn build(b: *std.Build) !void {
     const enable_symlinks_windows = b.option(bool, "enable-symlinks-windows", "Run tests requiring presence of symlinks on Windows") orelse false;
     const config_h_path_option = b.option([]const u8, "config_h", "Path to the generated config.h");
     const spirv_test_executor = b.option([]const u8, "spirv-test-executor", "Path to the SPIR-V test executor");
+    const spirv_test_drivers: []const tests.SpirvDriver = b.option([]const tests.SpirvDriver, "spirv-test-driver", "Driver(s) to run the SPIR-V tests on") orelse &.{};
+    const spirv_test_lock_dir = b.option([]const u8, "spirv-test-lock-dir", "Directory in which SPIR-V test executors store advisory device locks");
 
     if (!skip_install_lib_files) {
         b.installDirectory(.{
@@ -460,6 +462,8 @@ pub fn build(b: *std.Build) !void {
         .skip_cbe = skip_cbe,
         .skip_libc = skip_libc,
         .spirv_test_executor = if (spirv_test_executor) |path| .{ .cwd_relative = path } else null,
+        .spirv_test_drivers = spirv_test_drivers,
+        .spirv_test_lock_dir = spirv_test_lock_dir,
         .max_rss = 4_000_000_000,
     }));
 

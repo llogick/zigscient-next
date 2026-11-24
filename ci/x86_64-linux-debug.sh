@@ -10,7 +10,7 @@ MCPU="baseline"
 CACHE_BASENAME="zig+llvm+lld+clang-$TARGET-0.18.0-dev.92+1e1964473"
 PREFIX="$HOME/deps/$CACHE_BASENAME"
 ZIG="$PREFIX/bin/zig"
-SPIRV_TEST_EXECUTOR="$HOME/deps/zig-spirv-test-executor-3dc4873"
+SPIRV_TEST_EXECUTOR="$HOME/deps/zig-spirv-test-executor-20ed6f7"
 
 export PATH="$HOME/deps/wasmtime-v50.0.0-x86_64-linux:$HOME/deps/qemu-linux-x86_64-11.1.1.1/bin:$HOME/local/bin:$PATH"
 
@@ -70,6 +70,7 @@ stage3-debug/bin/zig build install test docs \
   -Dno-lib \
   -Denable-superhtml \
   -Dspirv-test-executor="$SPIRV_TEST_EXECUTOR_OUT/bin/zig-spirv-test-executor" \
+  -Dspirv-test-driver=lavapipe \
   -Dlldb="$HOME/deps/lldb-zig/Debug-2ab66e5ff8/bin/lldb" \
   -Dskip-freebsd \
   -Dskip-netbsd \
