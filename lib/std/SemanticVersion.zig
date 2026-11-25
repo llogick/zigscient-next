@@ -2,14 +2,20 @@
 //!
 //! See: https://semver.org
 
-const std = @import("std");
 const Version = @This();
 
-major: usize,
-minor: usize,
-patch: usize,
+const std = @import("std");
+const ascii = std.ascii;
+const math = std.math;
+const mem = std.mem;
+
+major: Int,
+minor: Int,
+patch: Int,
 pre: ?[]const u8 = null,
 build: ?[]const u8 = null,
+
+const Int = usize;
 
 pub const Range = struct {
     min: Version,
@@ -30,20 +36,17 @@ pub const Range = struct {
     }
 };
 
-pub fn order(lhs: Version, rhs: Version) std.math.Order {
-    if (lhs.major < rhs.major) return .lt;
-    if (lhs.major > rhs.major) return .gt;
-    if (lhs.minor < rhs.minor) return .lt;
-    if (lhs.minor > rhs.minor) return .gt;
-    if (lhs.patch < rhs.patch) return .lt;
-    if (lhs.patch > rhs.patch) return .gt;
+pub fn order(lhs: Version, rhs: Version) math.Order {
+    if (math.order(lhs.major, rhs.major).differ()) |o| return o;
+    if (math.order(lhs.minor, rhs.minor).differ()) |o| return o;
+    if (math.order(lhs.patch, rhs.patch).differ()) |o| return o;
     if (lhs.pre != null and rhs.pre == null) return .lt;
     if (lhs.pre == null and rhs.pre == null) return .eq;
     if (lhs.pre == null and rhs.pre != null) return .gt;
 
     // Iterate over pre-release identifiers until a difference is found.
-    var lhs_pre_it = std.mem.splitScalar(u8, lhs.pre.?, '.');
-    var rhs_pre_it = std.mem.splitScalar(u8, rhs.pre.?, '.');
+    var lhs_pre_it = mem.splitScalar(u8, lhs.pre.?, '.');
+    var rhs_pre_it = mem.splitScalar(u8, rhs.pre.?, '.');
     while (true) {
         const next_lid = lhs_pre_it.next();
         const next_rid = rhs_pre_it.next();
@@ -56,41 +59,34 @@ pub fn order(lhs: Version, rhs: Version) std.math.Order {
         const lid = next_lid.?; // Left identifier
         const rid = next_rid.?; // Right identifier
 
-        // Attempt to parse identifiers as numbers. Overflows are checked by parse.
-        const lnum: ?usize = std.fmt.parseUnsigned(usize, lid, 10) catch |err| switch (err) {
-            error.InvalidCharacter => null,
-            error.Overflow => unreachable,
-        };
-        const rnum: ?usize = std.fmt.parseUnsigned(usize, rid, 10) catch |err| switch (err) {
-            error.InvalidCharacter => null,
-            error.Overflow => unreachable,
-        };
+        const lnum = isAllDigits(lid);
+        const rnum = isAllDigits(rid);
 
         // Numeric identifiers always have lower precedence than non-numeric identifiers.
-        if (lnum != null and rnum == null) return .lt;
-        if (lnum == null and rnum != null) return .gt;
+        if (lnum and !rnum) return .lt;
+        if (!lnum and rnum) return .gt;
 
         // Identifiers consisting of only digits are compared numerically.
         // Identifiers with letters or hyphens are compared lexically in ASCII sort order.
-        if (lnum != null and rnum != null) {
-            if (lnum.? < rnum.?) return .lt;
-            if (lnum.? > rnum.?) return .gt;
-        } else {
-            const ord = std.mem.order(u8, lid, rid);
-            if (ord != .eq) return ord;
-        }
+        if (lnum and rnum) if (math.order(lid.len, rid.len).differ()) |o| return o;
+        if (mem.order(u8, lid, rid).differ()) |o| return o;
     }
 }
 
-pub fn parse(text: []const u8) !Version {
+fn isAllDigits(text: []const u8) bool {
+    for (text) |c| if (!ascii.isDigit(c)) return false;
+    return true;
+}
+
+pub fn parse(text: []const u8) error{ InvalidVersion, Overflow }!Version {
     // Parse the required major, minor, and patch numbers.
-    const extra_index = std.mem.findAny(u8, text, "-+");
+    const extra_index = mem.findAny(u8, text, "-+");
     const required = text[0..(extra_index orelse text.len)];
-    var it = std.mem.splitScalar(u8, required, '.');
-    var ver = Version{
-        .major = try parseNum(it.first()),
-        .minor = try parseNum(it.next() orelse return error.InvalidVersion),
-        .patch = try parseNum(it.next() orelse return error.InvalidVersion),
+    var it = mem.splitScalar(u8, required, '.');
+    var ver: Version = .{
+        .major = try parseInt(it.first()),
+        .minor = try parseInt(it.next() orelse return error.InvalidVersion),
+        .patch = try parseInt(it.next() orelse return error.InvalidVersion),
     };
     if (it.next() != null) return error.InvalidVersion;
     if (extra_index == null) return ver;
@@ -98,7 +94,7 @@ pub fn parse(text: []const u8) !Version {
     // Slice optional pre-release or build metadata components.
     const extra: []const u8 = text[extra_index.?..text.len];
     if (extra[0] == '-') {
-        const build_index = std.mem.findScalar(u8, extra, '+');
+        const build_index = mem.findScalar(u8, extra, '+');
         ver.pre = extra[1..(build_index orelse extra.len)];
         if (build_index) |idx| ver.build = extra[(idx + 1)..];
     } else {
@@ -108,43 +104,40 @@ pub fn parse(text: []const u8) !Version {
     // Check validity of optional pre-release identifiers.
     // See: https://semver.org/#spec-item-9
     if (ver.pre) |pre| {
-        it = std.mem.splitScalar(u8, pre, '.');
+        it = mem.splitScalar(u8, pre, '.');
         while (it.next()) |id| {
             // Identifiers MUST NOT be empty.
             if (id.len == 0) return error.InvalidVersion;
 
             // Identifiers MUST comprise only ASCII alphanumerics and hyphens [0-9A-Za-z-].
-            for (id) |c| if (!std.ascii.isAlphanumeric(c) and c != '-') return error.InvalidVersion;
+            for (id) |c| if (!ascii.isAlphanumeric(c) and c != '-') return error.InvalidVersion;
 
             // Numeric identifiers MUST NOT include leading zeroes.
-            const is_num = for (id) |c| {
-                if (!std.ascii.isDigit(c)) break false;
-            } else true;
-            if (is_num) _ = try parseNum(id);
+            if (id[0] == '0' and id.len > 1 and isAllDigits(id)) return error.InvalidVersion;
         }
     }
 
     // Check validity of optional build metadata identifiers.
     // See: https://semver.org/#spec-item-10
     if (ver.build) |build| {
-        it = std.mem.splitScalar(u8, build, '.');
+        it = mem.splitScalar(u8, build, '.');
         while (it.next()) |id| {
             // Identifiers MUST NOT be empty.
             if (id.len == 0) return error.InvalidVersion;
 
             // Identifiers MUST comprise only ASCII alphanumerics and hyphens [0-9A-Za-z-].
-            for (id) |c| if (!std.ascii.isAlphanumeric(c) and c != '-') return error.InvalidVersion;
+            for (id) |c| if (!ascii.isAlphanumeric(c) and c != '-') return error.InvalidVersion;
         }
     }
 
     return ver;
 }
 
-fn parseNum(text: []const u8) error{ InvalidVersion, Overflow }!usize {
+fn parseInt(text: []const u8) error{ InvalidVersion, Overflow }!Int {
     // Leading zeroes are not allowed.
     if (text.len > 1 and text[0] == '0') return error.InvalidVersion;
 
-    return std.fmt.parseUnsigned(usize, text, 10) catch |err| switch (err) {
+    return std.fmt.parseUnsigned(Int, text, 10) catch |err| switch (err) {
         error.InvalidCharacter => return error.InvalidVersion,
         error.Overflow => |e| return e,
     };
@@ -195,6 +188,8 @@ test format {
         "1.0.0+0.build.1-rc.10000aaa-kk-0.1",
         "5.4.0-1018-raspi",
         "5.7.123",
+        "1.0.0-0.3.7",
+        "1.0.0-1111111111111111111111",
     }) |valid| try std.testing.expectFmt(valid, "{f}", .{try parse(valid)});
 
     // Invalid version strings should be rejected.
@@ -270,7 +265,7 @@ test format {
     if (parse(big_invalid)) |ver| std.debug.panic("expected error, found {f}", .{ver}) else |_| {}
 }
 
-test "precedence" {
+test order {
     // SemVer 2 spec 11.2 example: 1.0.0 < 2.0.0 < 2.1.0 < 2.1.1.
     try expect(order(try parse("1.0.0"), try parse("2.0.0")) == .lt);
     try expect(order(try parse("2.0.0"), try parse("2.1.0")) == .lt);
@@ -290,11 +285,17 @@ test "precedence" {
     try expect(order(try parse("1.0.0-rc.1"), try parse("1.0.0")) == .lt);
 }
 
-test "zig_version" {
-    // An approximate Zig build that predates this test.
-    const older_version: Version = .{ .major = 0, .minor = 8, .patch = 0, .pre = "dev.874" };
+test "order with large pre number" {
+    const ones: Version = .{ .major = 1, .minor = 0, .patch = 0, .pre = "1111111111111111111111" };
+    const twos: Version = .{ .major = 1, .minor = 0, .patch = 0, .pre = "2222222222222222222222" };
+    try expect(order(ones, ones) == .eq);
+    try expect(order(ones, twos) == .lt);
+    try expect(order(twos, ones) == .gt);
+}
 
+test "zig_version" {
     // Simulated compatibility check using Zig version.
-    const compatible = comptime @import("builtin").zig_version.order(older_version) == .gt;
+    const compatible = comptime @import("builtin").zig_version
+        .order(.{ .major = 0, .minor = 8, .patch = 0, .pre = "dev.874" }) == .gt;
     if (!compatible) @compileError("zig_version test failed");
 }
