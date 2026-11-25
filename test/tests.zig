@@ -4759,88 +4759,95 @@ pub fn addRunnerTests(
             if (std.mem.find(u8, @"test".name, filter) != null) break;
         } else if (options.test_filters.len > 0) continue;
 
-        const run = b.addRunArtifact(runner);
-        run.setName(@"test".name);
-        run.enableProtocolMode(.{
-            // We need more time to compile an entire program than an individual unit test needs.
-            .test_timeout_scale = 5,
-        });
-        run.addArg("--log=err"); // don't fill stderr telling us about skipped tests etc
+        // Manually batch the matrix until unit test concurrency is implemented.
+        const batch_len = @divCeil(matrix.len, 100);
+        for (0..batch_len, 1..) |batch_index, batch_number| {
+            const run = b.addRunArtifact(runner);
+            run.setName(if (batch_len > 1) b.fmt("[{d}/{d}] {s}", .{
+                batch_number, batch_len, @"test".name,
+            }) else @"test".name);
+            run.enableProtocolMode(.{
+                // We need more time to compile an entire program than an individual unit test needs.
+                .test_timeout_scale = 5,
+            });
+            run.addArg("--log=err"); // don't fill stderr telling us about skipped tests etc
 
-        const test_path = tests_path.path(b, @"test".name);
-        switch (@"test".kind) {
-            else => continue,
-            .file => run.addFileArg(test_path),
-            .directory => run.addDirectoryArg(test_path),
-        }
-        run.addPrefixedFileArg("--zig=", .zig_exe);
-        run.addPrefixedDirectoryArg("--lib=", .zig_lib);
-        run.addPrefixedDirectoryArg("--src=", b.tmpPath());
+            const test_path = tests_path.path(b, @"test".name);
+            switch (@"test".kind) {
+                else => unreachable,
+                .file => run.addFileArg(test_path),
+                .directory => run.addDirectoryArg(test_path),
+            }
+            run.addPrefixedFileArg("--zig=", .zig_exe);
+            run.addPrefixedDirectoryArg("--lib=", .zig_lib);
+            run.addPrefixedDirectoryArg("--src=", b.tmpPath());
 
-        for (matrix) |test_target| {
-            const target_str = b.fmt("{f}", .{test_target});
+            run.addArg(b.fmt("--batch={d}/{d}", .{ batch_index, batch_len }));
+            for (matrix) |test_target| {
+                const target_str = b.fmt("{f}", .{test_target});
 
-            const skip = skip: {
-                const resolved_target = b.resolveTargetQuery(test_target.toQuery());
+                const skip = skip: {
+                    const resolved_target = b.resolveTargetQuery(test_target.toQuery());
 
-                if (!options.test_extra_targets and test_target.extra) break :skip true;
+                    if (!options.test_extra_targets and test_target.extra) break :skip true;
 
-                if (options.skip_non_native and !std.zig.target.isNative(
-                    &resolved_target.query,
-                    &resolved_target.result,
-                    &b.graph.host.result,
-                )) break :skip true;
+                    if (options.skip_non_native and !std.zig.target.isNative(
+                        &resolved_target.query,
+                        &resolved_target.result,
+                        &b.graph.host.result,
+                    )) break :skip true;
 
-                const target = &resolved_target.result;
+                    const target = &resolved_target.result;
 
-                if (options.skip_wasm and target.cpu.arch.isWasm()) break :skip true;
+                    if (options.skip_wasm and target.cpu.arch.isWasm()) break :skip true;
 
-                if (options.skip_freebsd and target.os.tag == .freebsd) break :skip true;
-                if (options.skip_netbsd and target.os.tag == .netbsd) break :skip true;
-                if (options.skip_openbsd and target.os.tag == .openbsd) break :skip true;
-                if (options.skip_windows and target.os.tag == .windows) break :skip true;
-                if (options.skip_darwin and target.os.tag.isDarwin()) break :skip true;
-                if (options.skip_linux and target.os.tag == .linux) break :skip true;
+                    if (options.skip_freebsd and target.os.tag == .freebsd) break :skip true;
+                    if (options.skip_netbsd and target.os.tag == .netbsd) break :skip true;
+                    if (options.skip_openbsd and target.os.tag == .openbsd) break :skip true;
+                    if (options.skip_windows and target.os.tag == .windows) break :skip true;
+                    if (options.skip_darwin and target.os.tag.isDarwin()) break :skip true;
+                    if (options.skip_linux and target.os.tag == .linux) break :skip true;
 
-                if (test_target.backend == .llvm) {
-                    if (options.skip_llvm) break :skip true;
-                    switch (target.cpu.arch) {
-                        else => {},
-                        .m68k => if (!options.llvm_has_m68k) break :skip true,
-                        .csky => if (!options.llvm_has_csky) break :skip true,
-                        .arc => if (!options.llvm_has_arc) break :skip true,
-                        .xtensa => if (!options.llvm_has_xtensa) break :skip true,
+                    if (test_target.backend == .llvm) {
+                        if (options.skip_llvm) break :skip true;
+                        switch (target.cpu.arch) {
+                            else => {},
+                            .m68k => if (!options.llvm_has_m68k) break :skip true,
+                            .csky => if (!options.llvm_has_csky) break :skip true,
+                            .arc => if (!options.llvm_has_arc) break :skip true,
+                            .xtensa => if (!options.llvm_has_xtensa) break :skip true,
+                        }
                     }
-                }
-                if (test_target.backend == .cbe) {
-                    if (options.skip_cbe) break :skip true;
-                }
+                    if (test_target.backend == .cbe) {
+                        if (options.skip_cbe) break :skip true;
+                    }
 
-                // We can't provide MSVC libc when cross-compiling.
-                if (target.abi == .msvc and test_target.link_libc == .lc and builtin.os.tag != .windows)
-                    break :skip true;
+                    // We can't provide MSVC libc when cross-compiling.
+                    if (target.abi == .msvc and test_target.link_libc == .lc and
+                        builtin.os.tag != .windows) break :skip true;
 
-                for (options.test_target_filters) |filter| {
-                    if (std.mem.find(u8, target_str, filter) != null) break;
-                } else if (options.test_target_filters.len > 0) break :skip true;
+                    for (options.test_target_filters) |filter| {
+                        if (std.mem.find(u8, target_str, filter) != null) break;
+                    } else if (options.test_target_filters.len > 0) break :skip true;
 
-                break :skip false;
-            };
+                    break :skip false;
+                };
 
-            run.addArgs(&.{ if (skip) "--skipped-target" else "--target", target_str });
+                run.addArgs(&.{ if (skip) "--skipped-target" else "--target", target_str });
+            }
+
+            run.addPrefixedDirectoryArg("--libc-runtimes=", .{ .relative = .{ .base = .libc_runtimes } });
+            run.addThirdPartyEnabledArgDarling(.{ .enabled = "-fdarling" });
+            run.addThirdPartyEnabledArgQemu(.{ .enabled = "-fqemu" });
+            run.addThirdPartyEnabledArgRosetta(.{ .enabled = "-frosetta" });
+            run.addThirdPartyEnabledArgWasmtime(.{ .enabled = "-fwasmtime" });
+            run.addThirdPartyEnabledArgWine(.{ .enabled = "-fwine" });
+
+            if (options.gdb) |gdb| run.addPrefixedFileArg("--gdb=", b.graph.cwdRelativePath(gdb));
+            if (options.lldb) |lldb| run.addPrefixedFileArg("--lldb=", b.graph.cwdRelativePath(lldb));
+
+            tests_step.dependOn(&run.step);
         }
-
-        run.addPrefixedDirectoryArg("--libc-runtimes=", .{ .relative = .{ .base = .libc_runtimes } });
-        run.addThirdPartyEnabledArgDarling(.{ .enabled = "-fdarling" });
-        run.addThirdPartyEnabledArgQemu(.{ .enabled = "-fqemu" });
-        run.addThirdPartyEnabledArgRosetta(.{ .enabled = "-frosetta" });
-        run.addThirdPartyEnabledArgWasmtime(.{ .enabled = "-fwasmtime" });
-        run.addThirdPartyEnabledArgWine(.{ .enabled = "-fwine" });
-
-        if (options.gdb) |gdb| run.addPrefixedFileArg("--gdb=", b.graph.cwdRelativePath(gdb));
-        if (options.lldb) |lldb| run.addPrefixedFileArg("--lldb=", b.graph.cwdRelativePath(lldb));
-
-        tests_step.dependOn(&run.step);
     }
 }
 

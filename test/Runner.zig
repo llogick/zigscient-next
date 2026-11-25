@@ -262,6 +262,7 @@ const Args = struct {
     zig_exe: ?std.Io.File,
     lib_dir: ?std.Io.Dir,
     src_dir: ?std.Io.Dir,
+    batch: struct { index: u32, len: u32 },
     targets: std.array_hash_map.Custom(u32, Target.State, void, true),
     target_bytes: std.ArrayList(u8),
 
@@ -310,12 +311,20 @@ const Args = struct {
         args.target_bytes.appendAssumeCapacity(0);
     }
 
-    fn getTargetIndex(args: *const Args, target: []const u8) ?usize {
-        return args.targets.getIndexAdapted(target, TargetAdapter{ .bytes = args.target_bytes.items });
+    fn batchStart(args: *const Args) u32 {
+        return @intCast(@as(u64, args.targets.count()) * args.batch.index / args.batch.len);
+    }
+
+    fn batchEnd(args: *const Args) u32 {
+        return @intCast(@as(u64, args.targets.count()) * (args.batch.index + 1) / args.batch.len);
     }
 
     fn getTarget(args: *const Args, index: usize) []const u8 {
         return std.mem.sliceTo(args.target_bytes.items[args.targets.keys()[index]..], 0);
+    }
+
+    fn getTargetIndex(args: *const Args, target: []const u8) ?usize {
+        return args.targets.getIndexAdapted(target, TargetAdapter{ .bytes = args.target_bytes.items });
     }
 };
 
@@ -383,6 +392,7 @@ pub fn runServer(runner: *Runner) ProtocolError!void {
                 const State = enum {
                     positional,
                     @"--log",
+                    @"--batch",
                     @"--zig",
                     @"--lib",
                     @"--src",
@@ -399,6 +409,7 @@ pub fn runServer(runner: *Runner) ProtocolError!void {
                 ) = .init(.{
                     .positional = .path,
                     .@"--log" = .string,
+                    .@"--batch" = .string,
                     .@"--zig" = .file,
                     .@"--lib" = .dir,
                     .@"--src" = .dir,
@@ -418,35 +429,27 @@ pub fn runServer(runner: *Runner) ProtocolError!void {
                     arg: switch (arg) {
                         .string => {
                             const end = std.mem.findScalarPos(u8, args_body, args_body_offset, 0).?;
-                            const string = args_body[args_body_offset..end];
+                            var string: []const u8 = args_body[args_body_offset..end];
                             args_body_offset = end + 1;
-                            switch (state) {
+                            state: switch (state) {
                                 .positional => if (std.mem.eql(u8, string, "--log")) {
                                     state = .@"--log";
                                     continue;
                                 } else if (std.mem.cutPrefix(u8, string, "--log=")) |log_level| {
-                                    global_log_level = std.meta.stringToEnum(
-                                        std.log.Level,
-                                        log_level,
-                                    ) orelse return runner.fail("invalid log level {q}", .{log_level});
+                                    string = log_level;
+                                    continue :state .@"--log";
+                                } else if (std.mem.eql(u8, string, "--batch")) {
+                                    state = .@"--batch";
+                                    continue;
+                                } else if (std.mem.cutPrefix(u8, string, "--batch=")) |batch| {
+                                    string = batch;
+                                    continue :state .@"--batch";
                                 } else if (std.mem.eql(u8, string, "--target")) {
                                     state = .@"--target";
                                     continue;
                                 } else if (std.mem.cutPrefix(u8, string, "--target=")) |target| {
-                                    runner.args.addTarget(
-                                        runner.gpa,
-                                        target,
-                                        false,
-                                    ) catch |err| switch (err) {
-                                        error.OutOfMemory => |e| return e,
-                                        error.DuplicatedTarget => switch (runner.fail(
-                                            "duplicated target {q}",
-                                            .{target},
-                                        )) {
-                                            error.Canceled, error.OutOfMemory => |e| return e,
-                                            error.AlreadyReported => duplicated_target = true,
-                                        },
-                                    };
+                                    string = target;
+                                    continue :state .@"--target";
                                 } else if (std.mem.eql(u8, string, "--skipped-target")) {
                                     state = .@"--skipped-target";
                                     continue;
@@ -455,20 +458,8 @@ pub fn runServer(runner: *Runner) ProtocolError!void {
                                     string,
                                     "--skipped-target=",
                                 )) |target| {
-                                    runner.args.addTarget(
-                                        runner.gpa,
-                                        target,
-                                        true,
-                                    ) catch |err| switch (err) {
-                                        error.OutOfMemory => |e| return e,
-                                        error.DuplicatedTarget => switch (runner.fail(
-                                            "duplicated target {q}",
-                                            .{target},
-                                        )) {
-                                            error.Canceled, error.OutOfMemory => |e| return e,
-                                            error.AlreadyReported => duplicated_target = true,
-                                        },
-                                    };
+                                    string = target;
+                                    continue :state .@"--skipped-target";
                                 } else if (std.mem.eql(u8, string, "--libc-runtimes")) {
                                     state = .@"--libc-runtimes";
                                     continue;
@@ -494,6 +485,28 @@ pub fn runServer(runner: *Runner) ProtocolError!void {
                                         std.log.Level,
                                         string,
                                     ) orelse return runner.fail("invalid log level {q}", .{string});
+                                },
+                                .@"--batch" => {
+                                    const index, const len = std.mem.cutScalar(u8, string, '/') orelse
+                                        return runner.fail("invalid batch {q}", .{string});
+                                    runner.args.batch = .{
+                                        .index = std.fmt.parseInt(
+                                            u32,
+                                            index,
+                                            0,
+                                        ) catch |err| switch (err) {
+                                            error.Overflow,
+                                            error.InvalidCharacter,
+                                            => return runner.fail("invalid batch {q}", .{string}),
+                                        },
+                                        .len = std.fmt.parseInt(u32, len, 0) catch |err| switch (err) {
+                                            error.Overflow,
+                                            error.InvalidCharacter,
+                                            => return runner.fail("invalid batch {q}", .{string}),
+                                        },
+                                    };
+                                    if (runner.args.batch.index >= runner.args.batch.len)
+                                        return runner.fail("invalid batch {q}", .{string});
                                 },
                                 .@"--target" => {
                                     runner.args.addTarget(
@@ -704,18 +717,21 @@ pub fn runServer(runner: *Runner) ProtocolError!void {
                 if (duplicated_target) return error.AlreadyReported;
             },
             .query_test_metadata => runner.server.serveTestMetadata(.{
-                .names = runner.args.targets.keys(),
+                .names = runner.args.targets.keys()[runner.args.batchStart()..runner.args.batchEnd()],
                 .string_bytes = runner.args.target_bytes.items,
             }) catch |err| switch (err) {
                 error.WriteFailed => return error.ServerWriteFailed,
             },
             .run_test => {
-                const test_index = runner.server.receiveBody_u32() catch unreachable;
+                const batch_test_index = runner.server.receiveBody_u32() catch unreachable;
                 runner.server.serveBodylessMessage(.test_started) catch |err| switch (err) {
                     error.WriteFailed => return error.ServerWriteFailed,
                 };
+                const test_index = runner.args.batchStart() + batch_test_index;
+                if (test_index >= runner.args.batchEnd())
+                    return runner.fail("invalid test index {d}", .{batch_test_index});
                 runner.server.serveTestResults(.{
-                    .index = test_index,
+                    .index = batch_test_index,
                     .flags = .{
                         .status = if (runner.testOne(test_index))
                             .pass
@@ -3290,6 +3306,7 @@ pub fn main(init: std.process.Init) (std.mem.Allocator.Error || std.Io.Cancelabl
                     .zig_exe = null,
                     .lib_dir = null,
                     .src_dir = null,
+                    .batch = .{ .index = 0, .len = 1 },
                     .targets = .empty,
                     .target_bytes = .empty,
 

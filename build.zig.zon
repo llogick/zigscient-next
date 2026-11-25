@@ -10,7 +10,7 @@
     .minimum_runtime_zig_version = "0.18.0-dev.973+78ee94268",
     // Would like to be accurate even during a dev cycle,
     // but there isn't an easy way to automate this based on the last cherry-picked commit
-    .compiler_internals_version = "0.18.0-dev.973+78ee94268",
+    .compiler_internals_version = "0.18.0-dev.1307+9e2100706",
     // The integrated langref version. A valid Zig release version or "master"
     // Used in links to documentation, ie https://ziglang.org/documentation/0.16.0/
     .langref_version = "master",
