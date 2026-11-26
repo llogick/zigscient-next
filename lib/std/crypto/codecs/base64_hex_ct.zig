@@ -332,6 +332,8 @@ pub const base64 = struct {
                 if (!set.isSet(c)) {
                     return error.InvalidPadding;
                 }
+            } else {
+                return error.InvalidPadding;
             }
             b64_pos += 1;
         }
@@ -459,6 +461,13 @@ test "base64 urlsafe" {
     try testing.expectEqualSlices(u8, "-_8=", encoded);
     const decoded = try base64.decode(&dec_buf, encoded, .urlsafe);
     try testing.expectEqualSlices(u8, &input, decoded);
+}
+
+test "base64 with invalid characters in the padding" {
+    var bin_buf: [4]u8 = undefined;
+    try testing.expectEqualSlices(u8, "A", try base64.decode(&bin_buf, "QQ==", .standard));
+    try testing.expectError(error.InvalidPadding, base64.decode(&bin_buf, "QQ*=*=", .standard));
+    try testing.expectError(error.InvalidPadding, base64.decode(&bin_buf, "QQ=Q=", .standard));
 }
 
 test "base64 with ignored chars" {
