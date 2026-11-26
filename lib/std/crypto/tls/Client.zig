@@ -718,7 +718,7 @@ pub fn init(input: *Reader, output: *Writer, options: Options) InitError!Client 
                         const key_size = hsd.decode(u8);
                         try hsd.ensure(key_size);
                         const server_pub_key = hsd.slice(key_size);
-                        try main_cert_pub_key.verifySignature(&hsd, &.{ &client_hello_rand, &server_hello_rand, hsd.buf[0..hsd.idx] });
+                        try main_cert_pub_key.verifySignature(.tls_1_2, &hsd, &.{ &client_hello_rand, &server_hello_rand, hsd.buf[0..hsd.idx] });
                         try key_share.exchange(named_group, server_pub_key);
                         handshake_state = .server_hello_done;
                     },
@@ -828,7 +828,7 @@ pub fn init(input: *Reader, output: *Writer, options: Options) InitError!Client 
                         switch (handshake_cipher) {
                             inline else => |*p| {
                                 const pad: [64]u8 = @splat(' ');
-                                try main_cert_pub_key.verifySignature(&hsd, &.{
+                                try main_cert_pub_key.verifySignature(.tls_1_3, &hsd, &.{
                                     pad ++ "TLS 1.3, server CertificateVerify\x00",
                                     &p.transcript_hash.peek(),
                                 });
@@ -1521,6 +1521,7 @@ const CertificatePublicKey = struct {
 
     fn verifySignature(
         cert_pub_key: *const CertificatePublicKey,
+        version: tls.ProtocolVersion,
         sigd: *tls.Decoder,
         msg: []const []const u8,
     ) VerifyError!void {
@@ -1539,10 +1540,11 @@ const CertificatePublicKey = struct {
             .rsa_pkcs1_sha256,
             .rsa_pkcs1_sha384,
             .rsa_pkcs1_sha512,
+            .rsa_pkcs1_sha1,
+            => if (version == .tls_1_3) return error.TlsBadSignatureScheme else .rsaEncryption, // TLS 1.3 only allows RSASSA-PSS
             .rsa_pss_rsae_sha256,
             .rsa_pss_rsae_sha384,
             .rsa_pss_rsae_sha512,
-            .rsa_pkcs1_sha1,
             => .rsaEncryption,
             .rsa_pss_pss_sha256,
             .rsa_pss_pss_sha384,
