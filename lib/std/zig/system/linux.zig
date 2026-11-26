@@ -633,7 +633,7 @@ const riscv = struct {
         }
 
         var cpu: Target.Cpu = maybe_cpu orelse cpu: {
-            const model = Target.Cpu.Model.generic(arch);
+            const model = Target.Cpu.Model.generic(arch).?;
             break :cpu .{
                 .arch = arch,
                 .model = model,

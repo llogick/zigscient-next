@@ -1,4 +1,4 @@
-#skip amdgcn-amdhsa-none-baseline-whole-llvm-debug-lld
+#skip amdgcn-amdhsa-none-gfx906-whole-llvm-debug-lld
 
 #skip bpfeb-freestanding-none-baseline-whole-llvm-debug-lld
 

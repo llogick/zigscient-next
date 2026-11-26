@@ -1630,7 +1630,7 @@ test "alignment functions - smoke test" {
     const x86_64_target: Target = .{
         .abi = .default(.x86_64, linux.tag),
         .vendor = .unknown,
-        .cpu = Cpu.Model.generic(.x86_64).toCpu(.x86_64),
+        .cpu = Cpu.Model.generic(.x86_64).?.toCpu(.x86_64),
         .os = linux,
         .ofmt = .elf,
     };
@@ -1657,7 +1657,7 @@ test "target size/align tests" {
     const x86_target: Target = .{
         .abi = .default(.x86, linux.tag),
         .vendor = .unknown,
-        .cpu = Cpu.Model.generic(.x86).toCpu(.x86),
+        .cpu = Cpu.Model.generic(.x86).?.toCpu(.x86),
         .os = linux,
         .ofmt = .elf,
     };

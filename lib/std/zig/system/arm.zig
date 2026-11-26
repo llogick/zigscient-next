@@ -263,7 +263,7 @@ pub const aarch64 = struct {
     /// 11 -> ID_AA64MMFR2_EL1
     pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch, registers: [12]u64) Target.Cpu {
         const info = detectNativeCoreInfo(registers[0]);
-        const model = cpu_models.isKnown(info, true) orelse Target.Cpu.Model.generic(arch);
+        const model = cpu_models.isKnown(info, true) orelse Target.Cpu.Model.generic(arch).?;
 
         var cpu = Target.Cpu{
             .arch = arch,

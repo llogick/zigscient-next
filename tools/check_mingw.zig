@@ -101,24 +101,24 @@ const targets = [_]std.Target{
         .ofmt = .coff,
         .abi = .gnu,
         .os = .{ .tag = .windows, .version_range = .default(.thumb, .windows, .gnu) },
-        .cpu = .{ .arch = .thumb, .model = .generic(.thumb), .features = .empty },
+        .cpu = .{ .arch = .thumb, .model = std.Target.Cpu.Model.generic(.thumb).?, .features = .empty },
     },
     .{
         .ofmt = .coff,
         .abi = .gnu,
         .os = .{ .tag = .windows, .version_range = .default(.aarch64, .windows, .gnu) },
-        .cpu = .{ .arch = .aarch64, .model = .generic(.aarch64), .features = .empty },
+        .cpu = .{ .arch = .aarch64, .model = std.Target.Cpu.Model.generic(.aarch64).?, .features = .empty },
     },
     .{
         .ofmt = .coff,
         .abi = .gnu,
         .os = .{ .tag = .windows, .version_range = .default(.x86, .windows, .gnu) },
-        .cpu = .{ .arch = .x86, .model = .generic(.x86), .features = .empty },
+        .cpu = .{ .arch = .x86, .model = std.Target.Cpu.Model.generic(.x86).?, .features = .empty },
     },
     .{
         .ofmt = .coff,
         .abi = .gnu,
         .os = .{ .tag = .windows, .version_range = .default(.x86_64, .windows, .gnu) },
-        .cpu = .{ .arch = .x86_64, .model = .generic(.x86_64), .features = .empty },
+        .cpu = .{ .arch = .x86_64, .model = std.Target.Cpu.Model.generic(.x86_64).?, .features = .empty },
     },
 };

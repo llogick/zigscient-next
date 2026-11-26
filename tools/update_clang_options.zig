@@ -331,6 +331,10 @@ const known_options = [_]KnownOpt{
         .ident = "mcpu",
     },
     .{
+        .name = "mmcu",
+        .ident = "mmcu",
+    },
+    .{
         .name = "mtune",
         .ident = "ignore",
     },

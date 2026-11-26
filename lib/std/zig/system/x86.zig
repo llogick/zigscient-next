@@ -44,7 +44,7 @@ inline fn hasMask(input: u32, mask: u32) bool {
 pub fn detectNativeCpuAndFeatures(arch: Target.Cpu.Arch) Target.Cpu {
     var cpu = Target.Cpu{
         .arch = arch,
-        .model = Target.Cpu.Model.generic(arch),
+        .model = Target.Cpu.Model.generic(arch).?,
         .features = Target.Cpu.Feature.Set.empty,
     };
 

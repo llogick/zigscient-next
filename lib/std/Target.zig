@@ -2346,14 +2346,20 @@ pub const Cpu = struct {
         /// Returns the most bare-bones CPU model that is valid for `arch`. Note that this function
         /// can return CPU models that are understood by LLVM, but *not* understood by Clang. If
         /// Clang compatibility is important, consider using `baseline` instead.
-        pub fn generic(arch: Arch) *const Model {
+        ///
+        /// Returns `null` if `arch` has no meaningful notion of a generic model, e.g. AVR. For such
+        /// architectures, an explicit model is always required. Guaranteed to return `null` for the
+        /// same `arch` values that `baseline` does.
+        pub fn generic(arch: Arch) ?*const Model {
             return switch (arch) {
+                .amdgcn,
+                .avr,
+                => null,
+
                 .aarch64, .aarch64be => &aarch64.cpu.armv8a,
                 .alpha => &alpha.cpu.ev4,
-                .amdgcn => &amdgcn.cpu.gfx600,
                 .arc, .arceb => &arc.cpu.arcv2,
                 .arm, .armeb => &arm.cpu.armv4,
-                .avr => &avr.cpu.avr1,
                 .bpfel, .bpfeb => &bpf.cpu.v1,
                 .csky => &csky.cpu.e2,
                 .hexagon => &hexagon.cpu.hexagonv60,
@@ -2409,11 +2415,18 @@ pub const Cpu = struct {
         /// the baseline would be for `arch` in isolation; for example, for `aarch64-macos`, the
         /// baseline is considered to be `apple_m1`. To avoid this behavior entirely, pass
         /// `Os.Tag.freestanding`.
-        pub fn baseline(arch: Arch, os: Os, abi: Abi) *const Model {
+        ///
+        /// Returns `null` if `arch` has no meaningful notion of a baseline model, e.g. AVR. For
+        /// such architectures, an explicit model is always required. Guaranteed to return `null`
+        /// for the same `arch` values that `generic` does.
+        pub fn baseline(arch: Arch, os: Os, abi: Abi) ?*const Model {
             _ = abi;
             return switch (arch) {
+                .amdgcn,
+                .avr,
+                => null,
+
                 .alpha => &alpha.cpu.ev56,
-                .amdgcn => &amdgcn.cpu.gfx906,
                 .arm => switch (os.tag) {
                     .@"3ds" => &arm.cpu.mpcore,
                     .vita => &arm.cpu.kermit,
@@ -2437,7 +2450,6 @@ pub const Cpu = struct {
                     .@"switch" => &aarch64.cpu.cortex_a57,
                     else => generic(arch),
                 },
-                .avr => &avr.cpu.avr2,
                 .bpfel, .bpfeb => &bpf.cpu.v3,
                 .csky => &csky.cpu.ck810,
                 .hexagon => &hexagon.cpu.hexagonv68,
@@ -2511,8 +2523,11 @@ pub const Cpu = struct {
 
     /// The "default" set of CPU features for cross-compiling. A conservative set
     /// of features that is expected to be supported on most available hardware.
-    pub fn baseline(arch: Arch, os: Os, abi: Abi) Cpu {
-        return Model.baseline(arch, os, abi).toCpu(arch);
+    ///
+    /// Returns `null` if `arch` has no meaningful notion of a baseline model,
+    /// e.g. AVR. For such architectures, an explicit model is always required.
+    pub fn baseline(arch: Arch, os: Os, abi: Abi) ?Cpu {
+        return (Model.baseline(arch, os, abi) orelse return null).toCpu(arch);
     }
 
     /// Returns true if `feature` is enabled.

@@ -1372,6 +1372,7 @@ fn testOne(runner: *Runner, test_index: u32) (error{ServerWriteFailed} || TestEr
             };
             break :target .{
                 .triple = triple,
+                .cpu = cpu,
                 .resolved = resolved,
                 .cache_mode = cache_mode,
                 .backend = backend,
@@ -2088,6 +2089,13 @@ fn spawnCompiler(
         @tagName(command),
         "-target",
         comp.target.triple,
+    });
+    // If the test case passes `-target` or `-mcpu` itself, we should avoid
+    // passing `comp.target.cpu` since doing so may result in nonsense like
+    // `-target spirv32-vulkan -mcpu native`.
+    const mcpu_index = argv.items.len;
+    var case_sets_cpu = false;
+    try argv.appendSlice(gpa, &.{
         "--cache-dir",
         ".zig-cache",
     });
@@ -2155,7 +2163,12 @@ fn spawnCompiler(
         const end = std.mem.findAnyPos(u8, buffered, start, "\n ") orelse buffered.len;
         if (end - start > 0) {
             const arg = try arena.dupe(u8, buffered[start..end]);
-            if (std.mem.cutPrefix(u8, arg, "-ofmt=")) |ofmt| {
+            if (std.mem.eql(u8, arg, "-target") or
+                std.mem.eql(u8, arg, "-mcpu") or
+                std.mem.startsWith(u8, arg, "-mcpu="))
+            {
+                case_sets_cpu = true;
+            } else if (std.mem.cutPrefix(u8, arg, "-ofmt=")) |ofmt| {
                 comp.target.resolved.ofmt =
                     std.meta.stringToEnum(std.Target.ObjectFormat, ofmt) orelse
                     return runner.fail("invalid object format {q}", .{ofmt});
@@ -2197,6 +2210,7 @@ fn spawnCompiler(
         }
         if (done) break;
     }
+    if (!case_sets_cpu) try argv.insertSlice(gpa, mcpu_index, &.{ "-mcpu", comp.target.cpu });
     try argv.append(gpa, "--listen=-");
 
     std.log.info("{f}", .{std.zig.SubprocessCommand{
@@ -2275,6 +2289,7 @@ const Compiler = struct {
     };
     const Target = struct {
         triple: []const u8,
+        cpu: []const u8,
         resolved: std.Target,
         cache_mode: Runner.Target.CacheMode,
         /// `null` means c compiler.

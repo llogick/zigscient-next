@@ -1104,6 +1104,7 @@ pub const CompilationState = struct {
         .rc_source_files = .empty,
 
         .llvm_m_args = .empty,
+        .cc_mmcu = null,
         .sysroot = null,
         .lib_dir_args = .empty, // populated from CLI arg parsing
         .lib_directories = .empty, // populated by createModule()
@@ -1329,6 +1330,7 @@ pub fn buildOutputType(
         .rc_source_files = .empty,
 
         .llvm_m_args = .empty,
+        .cc_mmcu = null,
         .sysroot = null,
         .lib_dir_args = .empty, // populated from CLI arg parsing
         .lib_directories = .empty, // populated by createModule()
@@ -2800,6 +2802,11 @@ pub fn buildOutputType(
                     },
                     .lib_dir => try cs.create_module.lib_dir_args.append(arena, it.only_arg),
                     .mcpu => cs.target_mcpu = it.only_arg,
+                    // We need to pass this through to Clang, but for AVR, it should also select the CPU like `-mcpu`.
+                    .mmcu => {
+                        cs.create_module.cc_mmcu = it.only_arg;
+                        try cs.cc_argv.appendSlice(arena, it.other_args);
+                    },
                     .m => try cs.create_module.llvm_m_args.append(arena, it.only_arg),
                     .dep_file => {
                         cs.disable_c_depfile = true;
@@ -4325,6 +4332,7 @@ const CreateModule = struct {
     /// This array is populated by zig cc frontend and then has to be converted to zig-style
     /// CPU features.
     llvm_m_args: std.ArrayList([]const u8),
+    cc_mmcu: ?[]const u8,
     sysroot: ?[]const u8,
     lib_dir_args: std.ArrayList([]const u8),
     lib_directories: std.ArrayList(Directory),
@@ -4368,6 +4376,11 @@ fn createModule(
             .object_format = create_module.object_format,
         };
 
+        if (create_module.cc_mmcu) |mmcu| {
+            // On AVR, `-mmcu` needs to have the same effect as `-mcpu`.
+            if (std.Target.Query.parseCpuArch(target_parse_options) == .avr) target_parse_options.cpu_features = mmcu;
+        }
+
         // Before passing the mcpu string in for parsing, we convert any -m flags that were
         // passed in via zig cc to zig-style.
         if (create_module.llvm_m_args.items.len != 0) {
@@ -4385,7 +4398,7 @@ fn createModule(
                 var mcpu_buffer: std.ArrayList(u8) = .empty;
                 defer mcpu_buffer.deinit(gpa);
 
-                try mcpu_buffer.appendSlice(gpa, cli_mod.target_mcpu orelse "baseline");
+                try mcpu_buffer.appendSlice(gpa, target_parse_options.cpu_features orelse "baseline");
 
                 for (create_module.llvm_m_args.items) |llvm_m_arg| {
                     if (mem.cutPrefix(u8, llvm_m_arg, "mno-")) |llvm_name| {

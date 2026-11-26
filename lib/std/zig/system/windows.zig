@@ -220,7 +220,7 @@ fn setFeature(comptime Feature: type, cpu: *Target.Cpu, feature: Feature, enable
 fn genericCpuAndNativeFeatures(arch: Target.Cpu.Arch) Target.Cpu {
     var cpu: Target.Cpu = .{
         .arch = arch,
-        .model = Target.Cpu.Model.generic(arch),
+        .model = Target.Cpu.Model.generic(arch).?,
         .features = .empty,
     };
 

@@ -5007,7 +5007,11 @@
 },
 .{ .name = "mfpu=", .syntax = .joined },
 .{ .name = "mhvx=", .syntax = .joined },
-.{ .name = "mmcu=", .syntax = .joined },
+.{
+    .name = "mmcu=",
+    .ze = .mmcu,
+    .syntax = .joined,
+},
 .{ .name = "mnan=", .syntax = .joined },
 .{
     .name = "link",

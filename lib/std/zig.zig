@@ -1292,6 +1292,7 @@ pub const ClangCliParam = struct {
         linker_input_z,
         lib_dir,
         mcpu,
+        mmcu,
         dep_file,
         dep_file_to_stdout,
         framework_dir,

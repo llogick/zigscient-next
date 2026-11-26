@@ -231,21 +231,36 @@ pub const ResolveTargetError = error{
     ProcessFdQuotaExceeded,
     SystemFdQuotaExceeded,
     ResourceLimitReached,
-    /// Guarantees `!diags.isEmpty()`.
+    /// Guarantees `diags.invalid_query != null`.
     InvalidTargetQuery,
 } || Io.Cancelable;
 
 pub const ResolveTargetDiagnostics = struct {
+    /// Set if and only if `error.InvalidTargetQuery` is returned.
+    invalid_query: ?InvalidQuery,
     os_version: ?OsVersion,
     dynamic_linker: ?DynamicLinker,
     libc_version: ?LibcVersion,
     android_api_level: ?AndroidApiLevel,
 
     pub const none: ResolveTargetDiagnostics = .{
+        .invalid_query = null,
         .os_version = null,
         .dynamic_linker = null,
         .libc_version = null,
         .android_api_level = null,
+    };
+
+    pub const InvalidQuery = union(enum) {
+        explicit_cpu_required: Target.Cpu.Arch,
+        native_cpu_foreign_arch: Target.Cpu.Arch,
+
+        pub fn format(diag: InvalidQuery, w: *Io.Writer) Io.Writer.Error!void {
+            switch (diag) {
+                .explicit_cpu_required => |arch| try w.print("architecture {t} requires an explicit CPU model", .{arch}),
+                .native_cpu_foreign_arch => |arch| try w.print("native CPU model requested for foreign architecture {t}", .{arch}),
+            }
+        }
     };
 
     pub const OsVersion = union(enum) {
@@ -310,7 +325,8 @@ pub const ResolveTargetDiagnostics = struct {
     };
 
     pub fn isEmpty(self: *const ResolveTargetDiagnostics) bool {
-        return self.os_version == null and
+        return self.invalid_query == null and
+            self.os_version == null and
             self.dynamic_linker == null and
             self.libc_version == null and
             self.android_api_level == null;
@@ -338,7 +354,11 @@ pub const ResolveTargetDiagnostics = struct {
             var sep: []const u8 = "";
 
             if (self.err) |e| {
-                try w.print("unable to resolve target {f}: {t}", .{ q, e });
+                try w.print("unable to resolve target {f}: ", .{q});
+                if (e == error.InvalidTargetQuery)
+                    try w.print("{f}", .{self.diags.invalid_query.?})
+                else
+                    try w.print("{t}", .{e});
                 sep = "\n";
             }
 
@@ -565,7 +585,12 @@ pub fn resolveTargetQuery(
     }
 
     const maybe_cpu: ?Target.Cpu = switch (query.cpu_model) {
-        .native => detectNativeCpuAndFeatures(io, query_cpu_arch),
+        .native => if (query_cpu_arch.family() == builtin.target.cpu.arch.family())
+            detectNativeCpuAndFeatures(io, query_cpu_arch)
+        else {
+            diags.invalid_query = .{ .native_cpu_foreign_arch = query_cpu_arch };
+            return error.InvalidTargetQuery;
+        },
         .baseline => null,
         .determined_by_arch_os => if (query.cpu_arch == null)
             detectNativeCpuAndFeatures(io, query_cpu_arch)
@@ -609,7 +634,10 @@ pub fn resolveTargetQuery(
         }
     }
 
-    var cpu: Target.Cpu = maybe_cpu orelse .baseline(arch, detected.os, detected.abi);
+    var cpu: Target.Cpu = maybe_cpu orelse Target.Cpu.baseline(arch, detected.os, detected.abi) orelse {
+        diags.invalid_query = .{ .explicit_cpu_required = arch };
+        return error.InvalidTargetQuery;
+    };
 
     resolveCpuFeatures(
         arch,

@@ -68,14 +68,15 @@ ofmt: ?Target.ObjectFormat = null,
 dynamic_linker: ?Target.DynamicLinker = null,
 
 pub const CpuModel = union(enum) {
-    /// Always native
+    /// Always native.
     native,
 
-    /// Always baseline
+    /// Always baseline. If `Target.Cpu.Model.baseline(arch) == null` then this results in an error.
     baseline,
 
-    /// If CPU Architecture is native, then the CPU model will be native. Otherwise,
-    /// it will be baseline.
+    /// If CPU Architecture is native, then the CPU model will be native. Otherwise, it will be
+    /// baseline. In the latter case, if `Target.Cpu.Model.baseline(arch) == null` then this results
+    /// in an error.
     determined_by_arch_os,
 
     explicit: *const Target.Cpu.Model,
@@ -186,6 +187,7 @@ pub const ParseOptions = struct {
     /// The following special strings are recognized for CPU Model name:
     /// * "baseline" - The "default" set of CPU features for cross-compiling. A conservative set
     ///                of features that is expected to be supported on most available hardware.
+    ///                Not available if `Target.Cpu.Model.baseline(arch) == null`.
     /// * "native"   - The native CPU model is to be detected when compiling.
     /// If this field is not provided (`null`), then the value will depend on the
     /// parsed CPU Architecture. If native, then this will be "native". Otherwise, it will be "baseline".

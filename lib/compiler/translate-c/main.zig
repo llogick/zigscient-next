@@ -133,7 +133,8 @@ fn translate(
     var keep_macro_literals = true;
     var default_init = true;
     var strict_flex_arrays: Translator.StrictFlexArraysLevel = .@"2";
-    var target_query: std.Target.Query = .{};
+    var target_arch_os_abi: ?[]const u8 = null;
+    var target_mcpu: ?[]const u8 = null;
     var link_libc = false;
     var link_libcpp = false;
     var link_libunwind = false;
@@ -190,11 +191,10 @@ fn translate(
             }
             strict_flex_arrays = @fromBackingInt(@intCast(rest[0] - '0'));
         } else if (mem.cutPrefix(u8, arg, "--target=")) |rest| {
-            target_query = std.zig.parseTargetQueryOrReportFatalError(arena, .{
-                .arch_os_abi = rest,
-            });
+            target_arch_os_abi = rest;
             try aro_args.append(arena, arg);
         } else if (mem.cutPrefix(u8, arg, "-mcpu=")) |rest| {
+            target_mcpu = rest;
             try aro_args.ensureUnusedCapacity(arena, 2);
             aro_args.appendAssumeCapacity("-mcpu");
             aro_args.appendAssumeCapacity(rest);
@@ -259,6 +259,10 @@ fn translate(
         },
     }
 
+    const target_query = std.zig.parseTargetQueryOrReportFatalError(arena, .{
+        .arch_os_abi = target_arch_os_abi orelse "native",
+        .cpu_features = target_mcpu,
+    });
     const target = std.zig.resolveTargetQueryOrFatal(io, arena, target_query);
 
     if (link_libc) {
