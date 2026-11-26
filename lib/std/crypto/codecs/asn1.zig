@@ -263,7 +263,7 @@ pub const Element = struct {
                 error.ReadFailed => unreachable, // it's all fixed buffers
                 else => |e| return e,
             };
-            if (len < 128) return error.EndOfStream; // should have used short form
+            if (len < 128 or std.math.shr(Index, len, 8 * (len_size - 1)) == 0) return error.InvalidEncoding; // not the shortest form
 
             break :blk len;
         };
@@ -288,6 +288,10 @@ test Element {
         .tag = Tag.universal(.sequence, true),
         .slice = Element.Slice{ .start = 3, .end = long_form.len },
     }, Element.decode(&long_form, 0));
+
+    for ([_][]const u8{ &.{ 0x30, 0x81, 0x7f }, &.{ 0x30, 0x82, 0x00, 0x81 } }) |non_minimal_length| {
+        try std.testing.expectError(error.InvalidEncoding, Element.decode(non_minimal_length, 0));
+    }
 
     const multi_byte_tag = [_]u8{ 0x1F, 0x20, 0x08, 0x30, 0x36, 0x3A, 0x32, 0x37, 0x3A, 0x31, 0x35 };
     try std.testing.expectEqual(Element{

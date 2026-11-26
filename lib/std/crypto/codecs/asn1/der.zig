@@ -11,7 +11,7 @@ pub const Encoder = @import("der/Encoder.zig");
 pub fn decode(comptime T: type, encoded: []const u8) !T {
     var decoder = Decoder{ .bytes = encoded };
     const res = try decoder.any(T);
-    std.debug.assert(decoder.index == encoded.len);
+    if (decoder.index != encoded.len) return error.InvalidEncoding;
     return res;
 }
 
@@ -47,6 +47,7 @@ test decode {
     const decoded = try decode(Value, test_case.encoded);
 
     try std.testing.expectEqualDeep(test_case.value, decoded);
+    try std.testing.expectError(error.InvalidEncoding, decode(Value, test_case.encoded ++ [_]u8{0}));
 }
 
 test "integer round trip across signed and unsigned boundaries" {
