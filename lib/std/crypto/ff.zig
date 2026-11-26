@@ -171,7 +171,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
                     switch (endian) {
                         .big => {
                             if (out_i == 0) {
-                                if (limb | orLimbs(self.limbsConst()[i + 1 ..]) != 0) {
+                                if ((limb != 0) | !timing_safe.isZero([]const Limb, self.limbsConst()[i + 1 ..])) {
                                     return error.Overflow;
                                 }
                                 return;
@@ -181,7 +181,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
                         .little => {
                             out_i += 1;
                             if (out_i == bytes.len) {
-                                if (limb | orLimbs(self.limbsConst()[i + 1 ..]) != 0) {
+                                if ((limb != 0) | !timing_safe.isZero([]const Limb, self.limbsConst()[i + 1 ..])) {
                                     return error.Overflow;
                                 }
                                 return;
@@ -230,7 +230,7 @@ pub fn Uint(comptime max_bits: comptime_int) type {
 
         pub fn isOne(x: Self) bool {
             const x_limbs = x.limbsConst();
-            return timing_safe.isZero(Limb, (x_limbs[0] ^ 1) | orLimbs(x_limbs[1..]));
+            return timing_safe.isZero(Limb, x_limbs[0] ^ 1) & timing_safe.isZero([]const Limb, x_limbs[1..]);
         }
 
         /// Adds `y` to `x`, wrapping at the larger active width. Returns 1 on overflow.
@@ -574,14 +574,6 @@ fn decodeBytes(limbs: []Limb, bytes: []const u8, comptime endian: Endian) Limb {
     return acc;
 }
 
-fn orLimbs(limbs: []const Limb) Limb {
-    var t: Limb = 0;
-    for (limbs) |limb| {
-        t |= limb;
-    }
-    return t;
-}
-
 // Adds `x * y` to `z` and returns the carry.
 fn mulAddLimb(z: []Limb, x: []const Limb, y: Limb) Limb {
     assert(z.len == x.len);
@@ -794,7 +786,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
         pub fn fromProductWithOptions(a: FeUint, b: FeUint, options: Options) (InvalidModulusError || OverflowError)!Self {
             const product = fullProduct(a.limbsConst(), b.limbsConst());
 
-            if (orLimbs(product.limbs_buffer[FeUint.max_limbs_count..]) != 0) {
+            if (!timing_safe.isZero([]const Limb, product.limbs_buffer[FeUint.max_limbs_count..])) {
                 return error.Overflow;
             }
 
@@ -1311,9 +1303,7 @@ pub fn Modulus(comptime max_bits: comptime_int) type {
 
         // Set `public` to `false` for secret exponents.
         fn powWithEncodedExponentInternal(self: Self, x: Fe, e: []const u8, endian: Endian, comptime public: bool) NullExponentError!Fe {
-            var acc: u8 = 0;
-            for (e) |b| acc |= b;
-            if (acc == 0) return error.NullExponent;
+            if (timing_safe.isZero([]const u8, e)) return error.NullExponent;
 
             // Modulus parity is public; even moduli need plain arithmetic.
             if (!self.v.isOdd()) {
