@@ -420,6 +420,7 @@ pub const Any = struct {
 
     pub fn decodeDer(decoder: *der.Decoder) !@This() {
         const ele = try decoder.element(ExpectedTag{});
+        decoder.index = ele.slice.end;
         return .{ .tag = ele.tag, .bytes = decoder.view(ele) };
     }
 

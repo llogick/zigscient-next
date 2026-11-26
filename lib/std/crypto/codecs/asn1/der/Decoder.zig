@@ -21,24 +21,19 @@ pub fn any(self: *Decoder, comptime T: type) !T {
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
             const ele = try self.element(tag);
-            defer self.index = ele.slice.end; // don't force parsing all fields
+            const bytes = self.bytes;
+            self.bytes = bytes[0..ele.slice.end]; // fields can't go past the sequence
+            defer self.bytes = bytes;
 
             var res: T = undefined;
 
             inline for (info.field_names, info.field_types, info.field_attrs) |f_name, f_type, f_attrs| {
                 self.field_tag = FieldTag.fromContainer(T, f_name);
+                const field_start = self.index;
 
-                if (self.field_tag) |ft| {
-                    if (ft.explicit) {
-                        const seq = try self.element(ft.toTag().toExpected());
-                        self.index = seq.slice.start;
-                        self.field_tag = null;
-                    }
-                }
-
-                @field(res, f_name) = self.any(f_type) catch |err| brk: {
+                @field(res, f_name) = self.structField(f_type) catch |err| brk: {
                     if (f_attrs.defaultValue(f_type)) |d| {
-                        break :brk d;
+                        if (self.index == field_start) break :brk d; // nothing was read, so the field is just missing
                     }
                     return err;
                 };
@@ -47,6 +42,7 @@ pub fn any(self: *Decoder, comptime T: type) !T {
                     if (f_attrs.defaultValue(f_type)) |d| @field(res, f_name) = d;
                 }
             }
+            if (self.index != ele.slice.end) return error.InvalidEncoding;
 
             return res;
         },
@@ -74,9 +70,26 @@ pub fn any(self: *Decoder, comptime T: type) !T {
             }
             return @fromBackingInt(@intCast(try int(e.tag_type, bytes)));
         },
-        .optional => |o| return self.any(o.child) catch return null,
+        .optional => |o| {
+            const start = self.index;
+            return self.any(o.child) catch |err| if (self.index == start) null else return err;
+        },
         else => @compileError("cannot decode type " ++ @typeName(T)),
     }
+}
+
+// An explicitly tagged field is wrapped, and if the wrapper is there, the value has to fill it.
+fn structField(self: *Decoder, comptime T: type) !T {
+    const ft = self.field_tag orelse return self.any(T);
+    if (!ft.explicit) return self.any(T);
+    const wrapper = self.element(ft.toTag().toExpected()) catch |err| if (@typeInfo(T) == .optional) return null else return err;
+    self.field_tag = null;
+    const value: T = try self.any(switch (@typeInfo(T)) {
+        .optional => |o| o.child,
+        else => T,
+    });
+    if (self.index != wrapper.slice.end) return error.InvalidEncoding;
+    return value;
 }
 
 //// Expect a sequence.
@@ -167,6 +180,31 @@ test int {
     try expectError(error.LargeValue, int(u8, &.{0xff}));
     try expectError(error.LargeValue, int(u16, &.{0x80}));
     try expectError(error.LargeValue, int(u32, &.{ 0x80, 0x00, 0x00, 0x00 }));
+}
+
+test "struct decoding is strict" {
+    const T = struct { a: u8, b: ?u8 };
+    var decoder: Decoder = .{ .bytes = &.{ 0x30, 0x03, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02 } }; // an integer after the sequence
+    try expectEqual(T{ .a = 1, .b = null }, try decoder.any(T));
+    decoder = .{ .bytes = &.{ 0x30, 0x09, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02, 0x02, 0x01, 0x03 } }; // extra element
+    try expectError(error.InvalidEncoding, decoder.any(T));
+
+    // Broken fields are errors, even when they are optional or have a default.
+    const ThenAny = struct { a: ?u8, b: asn1.Any };
+    try expectError(error.LargeValue, asn1.der.decode(ThenAny, &.{ 0x30, 0x04, 0x02, 0x02, 0x01, 0x00 }));
+    try expectError(error.NonCanonical, asn1.der.decode(struct { a: u8 = 0 }, &.{ 0x30, 0x04, 0x02, 0x02, 0x00, 0x01 }));
+    const Wrapper = struct { any: asn1.Any };
+    try std.testing.expectEqualSlices(u8, &.{ 0x02, 0x01, 0x07 }, (try asn1.der.decode(Wrapper, &.{ 0x30, 0x05, 0x30, 0x03, 0x02, 0x01, 0x07 })).any.bytes);
+
+    const Explicit = struct {
+        n: ?u8,
+        ok: ?bool,
+
+        pub const asn1_tags = .{ .n = FieldTag.initExplicit(0, .context_specific) };
+    };
+    try expectEqual(Explicit{ .n = null, .ok = true }, try asn1.der.decode(Explicit, &.{ 0x30, 0x03, 0x01, 0x01, 0xff }));
+    try expectError(error.UnexpectedElement, asn1.der.decode(Explicit, &.{ 0x30, 0x05, 0xa0, 0x00, 0x01, 0x01, 0xff })); // empty wrapper
+    try expectError(error.InvalidEncoding, asn1.der.decode(Explicit, &.{ 0x30, 0x08, 0xa0, 0x06, 0x02, 0x01, 0x05, 0x01, 0x01, 0xff })); // extra element in the wrapper
 }
 
 test Decoder {
