@@ -726,7 +726,7 @@ fn lowerUavRef(
     uav: InternPool.Key.Ptr.BaseAddr.Uav,
     w: *std.Io.Writer,
     reloc_parent: link.File.RelocInfo.Parent,
-    offset: u64,
+    addend: u64,
 ) link.EmitError!void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
@@ -750,7 +750,7 @@ fn lowerUavRef(
         .wasm => {
             const wasm = lf.cast(.wasm).?;
             assert(reloc_parent == .none);
-            try wasm.addUavReloc(w.end, uav.val, uav.orig_ty, @intCast(offset));
+            try wasm.addUavReloc(w.end, uav.val, uav.orig_ty, @intCast(addend));
             try w.splatByteAll(0, ptr_width_bytes);
             return;
         },
@@ -759,14 +759,14 @@ fn lowerUavRef(
 
     const uav_align = Type.fromInterned(uav.orig_ty).ptrAlignment(zcu);
 
+    const offset = w.end;
+    try w.splatByteAll(0, ptr_width_bytes); // overwritten by relocation
     try lf.relocSymAddr(.{
         .parent = reloc_parent,
-        .offset = w.end,
+        .offset = offset,
         .target = try lf.uavSymbol(pt, uav_val, uav_align),
-        .addend = @intCast(offset),
+        .addend = @bitCast(addend),
     });
-
-    try w.splatByteAll(0, ptr_width_bytes); // overwritten by relocation
 }
 
 fn lowerNavRef(
@@ -775,7 +775,7 @@ fn lowerNavRef(
     nav_index: InternPool.Nav.Index,
     w: *std.Io.Writer,
     reloc_parent: link.File.RelocInfo.Parent,
-    offset: u64,
+    addend: u64,
 ) link.EmitError!void {
     const zcu = pt.zcu;
     const ip = &zcu.intern_pool;
@@ -794,21 +794,21 @@ fn lowerNavRef(
         .wasm => {
             const wasm = lf.cast(.wasm).?;
             assert(reloc_parent == .none);
-            try wasm.addNavReloc(w.end, nav_index, nav_ty, @intCast(offset));
+            try wasm.addNavReloc(w.end, nav_index, nav_ty, @intCast(addend));
             try w.splatByteAll(0, ptr_width_bytes);
             return;
         },
         else => {},
     }
 
+    const offset = w.end;
+    try w.splatByteAll(0, ptr_width_bytes); // overwritten by relocation
     try lf.relocSymAddr(.{
         .parent = reloc_parent,
-        .offset = w.end,
+        .offset = offset,
         .target = try lf.navSymbol(nav_index),
-        .addend = @intCast(offset),
+        .addend = @bitCast(addend),
     });
-
-    try w.splatByteAll(0, ptr_width_bytes); // overwritten by relocation
 }
 
 /// deprecated legacy type

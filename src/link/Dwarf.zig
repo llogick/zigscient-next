@@ -1863,7 +1863,7 @@ pub const WipNav = struct {
 
             try dlw.writeByte(DW.LNS.extended_op);
             try dlw.writeUleb128(1 + dwarf.sectionOffsetBytes());
-            try dlw.writeByte(DW.LNE.ZIG_set_source_decl);
+            try dlw.writeByte(DW.LNE.ZIG_set_source_decl_ref);
             try dwarf.debug_line.section.getUnit(wip_nav.unit).getEntry(wip_nav.entry).cross_section_relocs.append(dwarf.gpa, .{
                 .source_off = @intCast(dlw.end),
                 .target_sec = .debug_info,
@@ -2787,7 +2787,7 @@ fn initWipNavInner(
             try dlw.writeByte(DW.LNS.extended_op);
             if (dwarf.incremental()) {
                 try dlw.writeUleb128(1 + dwarf.sectionOffsetBytes());
-                try dlw.writeByte(DW.LNE.ZIG_set_decl);
+                try dlw.writeByte(DW.LNE.ZIG_set_decl_ref);
                 try dwarf.debug_line.section.getUnit(wip_nav.unit).getEntry(wip_nav.entry).cross_section_relocs.append(dwarf.gpa, .{
                     .source_off = @intCast(dlw.end),
                     .target_sec = .debug_info,
@@ -4129,8 +4129,8 @@ fn updateConstInner(dwarf: *Dwarf, pt: Zcu.PerThread, debug_const_index: link.Co
                 }
                 if (loaded_enum.field_names.len > 0) try diw.writeUleb128(@backingInt(AbbrevCode.null));
             } else {
-                assert(loaded_enum.owner_union != .none);
-                try wip_nav.abbrevCode(if (loaded_enum.field_names.len == 0) .generated_empty_enum_type else .generated_enum_type);
+                try wip_nav.abbrevCode(if (loaded_enum.field_names.len == 0) .generated_empty_tag_type else .generated_tag_type);
+                try wip_nav.refType(.fromInterned(loaded_enum.owner_union));
                 try wip_nav.strp(loaded_enum.fqn.toSlice(ip));
                 try wip_nav.refType(.fromInterned(loaded_enum.int_tag_type));
                 for (0..loaded_enum.field_names.len) |field_index| {
@@ -5226,6 +5226,8 @@ const AbbrevCode = enum {
     is_var_args,
     generated_empty_enum_type,
     generated_enum_type,
+    generated_empty_tag_type,
+    generated_tag_type,
     generated_empty_struct_type,
     generated_struct_type,
     generated_union_type,
@@ -5956,6 +5958,23 @@ const AbbrevCode = enum {
             .tag = .enumeration_type,
             .children = true,
             .attrs = &.{
+                .{ .name, .strp },
+                .{ .type, .ref_addr },
+            },
+        },
+        .generated_empty_tag_type = .{
+            .tag = .enumeration_type,
+            .attrs = &.{
+                .{ .ZIG_parent, .ref_addr },
+                .{ .name, .strp },
+                .{ .type, .ref_addr },
+            },
+        },
+        .generated_tag_type = .{
+            .tag = .enumeration_type,
+            .children = true,
+            .attrs = &.{
+                .{ .ZIG_parent, .ref_addr },
                 .{ .name, .strp },
                 .{ .type, .ref_addr },
             },

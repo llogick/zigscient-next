@@ -11,7 +11,7 @@ pub const LANG = @import("dwarf/LANG.zig");
 pub const FORM = @import("dwarf/FORM.zig");
 pub const ATE = @import("dwarf/ATE.zig");
 pub const EH = @import("dwarf/EH.zig");
-pub const Format = enum { @"32", @"64" };
+pub const Format = enum(u1) { @"32", @"64" };
 
 pub const LLE = struct {
     pub const end_of_list = 0x00;
@@ -98,8 +98,10 @@ pub const LNE = struct {
     pub const hi_user = 0xff;
 
     // Zig extensions
-    pub const ZIG_set_decl = 0xec;
-    pub const ZIG_set_source_decl = 0xed;
+    pub const ZIG_set_decl_ref = 0xec;
+    pub const ZIG_set_source_decl_ref = 0xed;
+    pub const ZIG_set_decl = 0xee;
+    pub const ZIG_set_source_decl = 0xef;
 };
 
 pub const UT = struct {

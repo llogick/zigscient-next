@@ -406,7 +406,12 @@ pub const Node = extern struct {
         }
 
         /// Adds a floating child node to `parent_ni`. Returns the index of the new child.
-        pub fn addFloatingChild(parent_ni: Node.Index, gpa: Allocator, mf: *MappedFile, opts: AddOptions) Error!Node.Index {
+        pub fn addFloatingChild(
+            parent_ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            opts: AddOptions,
+        ) Error!Node.Index {
             return mf.addNode(gpa, .{
                 .add_options = opts,
                 .position = .floating,
@@ -417,7 +422,12 @@ pub const Node = extern struct {
         /// Adds a header child node to `parent_ni`. Returns the index of the new child.
         ///
         /// Asserts that `parent_ni` has no existing header children.
-        pub fn addOnlyHeaderChild(parent_ni: Node.Index, gpa: Allocator, mf: *MappedFile, opts: AddOptions) Error!Node.Index {
+        pub fn addOnlyHeaderChild(
+            parent_ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            opts: AddOptions,
+        ) Error!Node.Index {
             if (parent_ni.first(mf).unwrap()) |first_ni| {
                 assert(first_ni.position(mf) != .header); // `parent_ni` already has a header child
             }
@@ -430,7 +440,13 @@ pub const Node = extern struct {
         ///
         /// Otherwise, asserts that `prev_oni` is a header node and a child of `parent_ni`, and
         /// places the new child node immediately after `prev_oni`.
-        pub fn addHeaderChildAfter(parent_ni: Node.Index, gpa: Allocator, mf: *MappedFile, prev_oni: Node.Index.Optional, opts: AddOptions) Error!Node.Index {
+        pub fn addHeaderChildAfter(
+            parent_ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            prev_oni: Node.Index.Optional,
+            opts: AddOptions,
+        ) Error!Node.Index {
             return mf.addNode(gpa, .{
                 .add_options = opts,
                 .position = .header,
@@ -441,7 +457,12 @@ pub const Node = extern struct {
         /// Adds a footer child node to `parent_ni`. Returns the index of the new child.
         ///
         /// Asserts that `parent_ni` has no existing footer children.
-        pub fn addOnlyFooterChild(parent_ni: Node.Index, gpa: Allocator, mf: *MappedFile, opts: AddOptions) Error!Node.Index {
+        pub fn addOnlyFooterChild(
+            parent_ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            opts: AddOptions,
+        ) Error!Node.Index {
             if (parent_ni.last(mf).unwrap()) |last_ni| {
                 assert(last_ni.position(mf) != .footer); // `parent_ni` already has a footer child
             }
@@ -454,7 +475,13 @@ pub const Node = extern struct {
         ///
         /// Otherwise, asserts that `next_oni` is a footer node and a child of `parent_ni`, and
         /// places the new child node immediately before `next_oni`.
-        pub fn addFooterChildBefore(parent_ni: Node.Index, gpa: Allocator, mf: *MappedFile, next_oni: Node.Index.Optional, opts: AddOptions) Error!Node.Index {
+        pub fn addFooterChildBefore(
+            parent_ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            next_oni: Node.Index.Optional,
+            opts: AddOptions,
+        ) Error!Node.Index {
             const prev_oni: Node.Index.Optional = prev: {
                 const next_ni = next_oni.unwrap() orelse {
                     break :prev parent_ni.last(mf);
@@ -732,7 +759,12 @@ pub const Node = extern struct {
         /// Ensures that the size of `ni` is at least `min_size`. Valid for any node.
         ///
         /// Applies `growth_factor` if necessary (so the caller should *not* apply `growth_factor`).
-        pub fn ensureMinimumSize(ni: Node.Index, gpa: Allocator, mf: *MappedFile, min_size: u64) Error!void {
+        pub fn ensureMinimumSize(
+            ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            min_size: u64,
+        ) Error!void {
             _, const current_size = ni.location(mf).resolve(mf);
             if (current_size >= min_size) return;
             const new_size = ni.alignment(mf).forward(min_size +| min_size / growth_factor);
@@ -768,7 +800,12 @@ pub const Node = extern struct {
         /// If the node's current offset or size is not sufficiently aligned, it will be moved
         /// and/or resized to match the new alignment. The node's size may be increased by any
         /// amount, as if `ensureMinimumSize` were used.
-        pub fn realign(ni: Node.Index, gpa: Allocator, mf: *MappedFile, new_alignment: Alignment) Error!void {
+        pub fn realign(
+            ni: Node.Index,
+            gpa: Allocator,
+            mf: *MappedFile,
+            new_alignment: Alignment,
+        ) Error!void {
             try mf.realignNode(gpa, ni, new_alignment);
             mf.updateWriters();
         }
@@ -777,15 +814,15 @@ pub const Node = extern struct {
             w.* = .{
                 .gpa = gpa,
                 .mf = mf,
-                .writer_node = .{},
-                .ni = ni,
+                .writers_node = .{},
+                .node = ni,
                 .interface = .{
                     .buffer = ni.slice(mf),
                     .vtable = &Writer.vtable,
                 },
                 .err = null,
             };
-            mf.writers.prepend(&w.writer_node);
+            mf.writers.prepend(&w.writers_node);
         }
     };
 
@@ -802,13 +839,13 @@ pub const Node = extern struct {
     pub const Writer = struct {
         gpa: Allocator,
         mf: *MappedFile,
-        writer_node: std.SinglyLinkedList.Node,
-        ni: Node.Index,
+        writers_node: std.SinglyLinkedList.Node,
+        node: Node.Index,
         interface: Io.Writer,
         err: ?Error,
 
         pub fn deinit(w: *Writer) void {
-            assert(w.mf.writers.popFirst() == &w.writer_node);
+            assert(w.mf.writers.popFirst() == &w.writers_node);
             w.* = undefined;
         }
 
@@ -871,7 +908,7 @@ pub const Node = extern struct {
                     const n: usize = @intCast(w.mf.copyFileRange(
                         file_reader.file,
                         file_reader.pos,
-                        w.ni.fileLocation(w.mf, true).offset + interface.end,
+                        w.node.fileLocation(w.mf, true).offset + interface.end,
                         limit.minInt(interface.unusedCapacityLen()),
                     ) catch |err| {
                         w.err = err;
@@ -903,7 +940,7 @@ pub const Node = extern struct {
         ) Io.Writer.Error!void {
             _ = preserve;
             const w: *Writer = @fieldParentPtr("interface", interface);
-            w.ni.ensureMinimumSize(w.gpa, w.mf, interface.end + unused_capacity) catch |err| {
+            w.node.ensureMinimumSize(w.gpa, w.mf, interface.end + unused_capacity) catch |err| {
                 w.err = err;
                 return error.WriteFailed;
             };
@@ -1633,7 +1670,8 @@ fn growFloatingNodeWithAlignment(
             break :grow_in_place;
         }
         const limit: u64 = limit: {
-            const next_ni = ni.next(mf).unwrap() orelse break :limit parent_ni.location(mf).resolve(mf)[1];
+            const next_ni = ni.next(mf).unwrap() orelse
+                break :limit parent_ni.location(mf).resolve(mf)[1];
             const next_offset, _ = next_ni.location(mf).resolve(mf);
             break :limit next_offset;
         };
@@ -1651,7 +1689,12 @@ fn growFloatingNodeWithAlignment(
                 while (true) {
                     footers_have_content = footers_have_content or cur_ni.get(mf).flags.has_content;
                     const old_footer_offset, const footer_size = cur_ni.location(mf).resolve(mf);
-                    try cur_ni.setLocation(gpa, mf, old_footer_offset + (new_size - old_size), footer_size);
+                    try cur_ni.setLocation(
+                        gpa,
+                        mf,
+                        old_footer_offset + (new_size - old_size),
+                        footer_size,
+                    );
                     cur_ni = cur_ni.next(mf).unwrap() orelse break;
                 }
                 if (footers_have_content) {
@@ -2360,9 +2403,9 @@ fn realignNode(
 
 fn updateWriters(mf: *const MappedFile) void {
     var writers_it = mf.writers.first;
-    while (writers_it) |writer_node| : (writers_it = writer_node.next) {
-        const w: *Node.Writer = @fieldParentPtr("writer_node", writer_node);
-        w.interface.buffer = w.ni.slice(mf);
+    while (writers_it) |writers_node| : (writers_it = writers_node.next) {
+        const w: *Node.Writer = @fieldParentPtr("writers_node", writers_node);
+        w.interface.buffer = w.node.slice(mf);
     }
 }
 

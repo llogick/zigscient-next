@@ -692,6 +692,7 @@ pub fn emitMir(emit: *Emit) Error!void {
     if (emit.lower.mir.table.len > 0) {
         const ptr_size = @divExact(emit.lower.target.ptrBitWidth(), 8);
         var table_offset = std.mem.alignForward(u32, @intCast(emit.w.end), ptr_size);
+        try emit.w.splatByteAll(0, table_offset + ptr_size * emit.lower.mir.table.len - emit.w.end);
         if (emit.bin_file.cast(.elf)) |elf_file| {
             const zo = elf_file.zigObjectPtr().?;
             const atom = zo.symbol(@backingInt(emit.atom_id)).atom(elf_file).?;
@@ -709,7 +710,6 @@ pub fn emitMir(emit: *Emit) Error!void {
                 }, zo);
                 table_offset += ptr_size;
             }
-            try emit.w.splatByteAll(0, table_offset - emit.w.end);
         } else if (emit.bin_file.cast(.elf2)) |elf| {
             for (emit.table_relocs.items) |table_reloc| try elf.addAtomReloc(
                 emit.atom_id,
@@ -728,7 +728,6 @@ pub fn emitMir(emit: *Emit) Error!void {
                 );
                 table_offset += ptr_size;
             }
-            try emit.w.splatByteAll(0, table_offset - emit.w.end);
         } else unreachable;
     }
 }

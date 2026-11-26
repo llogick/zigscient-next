@@ -1109,6 +1109,7 @@ pub fn ensureFilePopulated(pt: Zcu.PerThread, file_index: Zcu.File.Index) (Alloc
     try pt.scanNamespace(new_namespace_index, struct_decl.decls);
     if (zcu.comp.debugIncremental()) try zcu.incremental_debug_state.newType(zcu, wip.index);
     zcu.setFileRootType(file_index, wip.finish(ip, new_namespace_index));
+    try comp.link_queue.enqueueZcu(comp, pt.tid, .{ .file_root_type_ready = file_index });
 }
 
 const UpdateUnitError = Allocator.Error || Io.Cancelable || error{

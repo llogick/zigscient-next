@@ -47,9 +47,9 @@ Process #... stopped
 (type) $0 = struct {
   (type) Untagged = union {}
   (type) SafetyTagged = union(enum) {
-    (@typeInfo(unions.Unions.SafetyTagged).@"union".tag_type.?) void = .void
-    (@typeInfo(unions.Unions.SafetyTagged).@"union".tag_type.?) en = .en
-    (@typeInfo(unions.Unions.SafetyTagged).@"union".tag_type.?) eu = .eu
+    (@typeInfo(root.unions.Unions.SafetyTagged).@"union".tag_type.?) void = .void
+    (@typeInfo(root.unions.Unions.SafetyTagged).@"union".tag_type.?) en = .en
+    (@typeInfo(root.unions.Unions.SafetyTagged).@"union".tag_type.?) eu = .eu
   }
   (type) Enum = enum {
     (root.unions.Unions.Enum) first = .first
@@ -57,9 +57,9 @@ Process #... stopped
     (root.unions.Unions.Enum) third = .third
   }
   (type) Tagged = union(enum) {
-    (@typeInfo(unions.Unions.Tagged).@"union".tag_type.?) void = .void
-    (@typeInfo(unions.Unions.Tagged).@"union".tag_type.?) en = .en
-    (@typeInfo(unions.Unions.Tagged).@"union".tag_type.?) eu = .eu
+    (@typeInfo(root.unions.Unions.Tagged).@"union".tag_type.?) void = .void
+    (@typeInfo(root.unions.Unions.Tagged).@"union".tag_type.?) en = .en
+    (@typeInfo(root.unions.Unions.Tagged).@"union".tag_type.?) eu = .eu
   }
 }
 (lldb) frame variable --show-all-children --show-types -- unions

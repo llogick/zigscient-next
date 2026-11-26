@@ -76,7 +76,7 @@ stage3-release/bin/zig build install test docs \
   -Denable-superhtml \
   -Dspirv-test-executor="$SPIRV_TEST_EXECUTOR_OUT/bin/zig-spirv-test-executor" \
   -Dspirv-test-driver=lavapipe \
-  -Dlldb="$HOME/deps/lldb-zig/Release-2ab66e5ff8/bin/lldb" \
+  -Dlldb="$HOME/deps/lldb-zig/Release-ebe4dd859f/bin/lldb" \
   -Dlibc-test-path="$HOME/deps/libc-test-b95fe84"
 
 # Ensure that the fuzzer at least compiles.

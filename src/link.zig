@@ -837,6 +837,17 @@ pub const File = struct {
         }
     }
 
+    fn zcuFileRootTypeReady(base: *File, pt: Zcu.PerThread, file_index: Zcu.File.Index) Error!void {
+        assert(pt.zcu.llvm_object == null);
+        switch (base.tag) {
+            else => {},
+            inline .elf2 => |tag| {
+                dev.check(tag.devFeature());
+                return @as(*tag.Type(), @fieldParentPtr("base", base)).zcuFileRootTypeReady(pt, file_index);
+            },
+        }
+    }
+
     /// Asserts that the ZCU is not using the LLVM backend.
     fn updateNav(base: *File, pt: Zcu.PerThread, nav_index: InternPool.Nav.Index) Error!void {
         assert(pt.zcu.llvm_object == null);
@@ -1066,7 +1077,7 @@ pub const File = struct {
         parent: Parent,
         offset: u64,
         target: SymbolId,
-        addend: u32,
+        addend: i64,
 
         pub const Parent = union(enum) {
             none,
@@ -1537,6 +1548,8 @@ pub const ZcuTask = union(enum) {
     /// Sent once per update, as the very first `ZcuTask` in the update. Indicates that all per-file
     /// state (e.g. `Zcu.alive_files`) is populated so can now be safely accessed by the linker.
     files_ready,
+    /// Sent when an `@import` is first analyzed, and `Zcu.fileRootType` will return non-`.none`.
+    file_root_type_ready: Zcu.File.Index,
     /// Write the constant value for a Decl to the output file.
     link_nav: InternPool.Nav.Index,
     /// Write the machine code for a function to the output file.
@@ -1870,6 +1883,16 @@ pub fn doZcuTask(comp: *Compilation, tid: Zcu.PerThread.Id, task: ZcuTask) void 
                 error.OutOfMemory => return diags.setAllocFailure(),
             };
             return;
+        },
+        .file_root_type_ready => |file_index| nav: {
+            if (zcu.llvm_object != null) return;
+            const lf = comp.bin_file orelse return;
+            lf.zcuFileRootTypeReady(pt, file_index) catch |err| switch (err) {
+                error.Canceled => io.recancel(),
+                error.AlreadyReported => return,
+                error.OutOfMemory => return diags.setAllocFailure(),
+            };
+            break :nav null;
         },
         .link_nav => |nav_index| nav: {
             const fqn_slice = ip.getNav(nav_index).fqn.toSlice(ip);

@@ -669,7 +669,7 @@ pub fn relocSymAddr(
         .debug_output => |debug_output| try debug_output.dwarf.infoExternalReloc(.{
             .source_off = @intCast(reloc_info.offset),
             .target_sym = @fromBackingInt(@intCast(sym_index)),
-            .target_off = reloc_info.addend,
+            .target_off = @bitCast(reloc_info.addend),
         }),
     }
 }

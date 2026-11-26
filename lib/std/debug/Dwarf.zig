@@ -1107,8 +1107,8 @@ fn runLineNumberProgram(
         if (opcode == DW.LNS.extended_op) {
             const op_size = try fr.takeLeb128(u64);
             if (op_size < 1) return bad();
-            const sub_op = try fr.takeByte();
-            switch (sub_op) {
+            const extended_op = try fr.takeByte();
+            switch (extended_op) {
                 DW.LNE.end_sequence => {
                     // The row being added here is an "end" address, meaning
                     // that it does not map to the source location here -
@@ -1140,20 +1140,38 @@ fn runLineNumberProgram(
                         .size = size,
                     });
                 },
-                DW.LNE.ZIG_set_decl, DW.LNE.ZIG_set_source_decl => {
-                    const decl_die_offset =
-                        try readFormatSizedInt(&fr, unit_header.format, dwarf.endian);
-                    var dwarf_fr: Reader = .fixed(
-                        dwarf.sections.get(.debug_info).slice orelse return missing(),
-                    );
-                    dwarf_fr.seek = @intCast(decl_die_offset);
+                DW.LNE.ZIG_set_decl_ref,
+                DW.LNE.ZIG_set_source_decl_ref,
+                DW.LNE.ZIG_set_decl,
+                DW.LNE.ZIG_set_source_decl,
+                => {
+                    const decl_die_offset = switch (op_size) {
+                        else => return bad(),
+                        1 + 1 => try fr.takeByte(),
+                        1 + 2 => try fr.takeInt(u16, dwarf.endian),
+                        1 + 4 => try fr.takeInt(u32, dwarf.endian),
+                        1 + 8 => try fr.takeInt(u64, dwarf.endian),
+                    };
+                    var dwarf_fr: Reader =
+                        .fixed(dwarf.sections.get(.debug_info).slice orelse return missing());
                     var cur_compile_unit: CompileUnit.Index = compile_unit_index;
+                    dwarf_fr.seek = @intCast(switch (extended_op) {
+                        else => unreachable,
+                        DW.LNE.ZIG_set_decl_ref, DW.LNE.ZIG_set_source_decl_ref => decl_die_offset,
+                        DW.LNE.ZIG_set_decl,
+                        DW.LNE.ZIG_set_source_decl,
+                        => cur_compile_unit.offset(dwarf) + decl_die_offset,
+                    });
                     var cur_die = try cur_compile_unit.ptr(dwarf)
                         .parseDie(dwarf, &dwarf_fr, attrs_buf) orelse return bad();
-                    if (sub_op == DW.LNE.ZIG_set_decl) {
-                        if (cur_die.getAttr(DW.AT.low_pc)) |low_pc| {
+                    switch (extended_op) {
+                        else => unreachable,
+                        DW.LNE.ZIG_set_decl_ref,
+                        DW.LNE.ZIG_set_decl,
+                        => if (cur_die.getAttr(DW.AT.low_pc)) |low_pc| {
                             prog.address = try low_pc.getAddr(dwarf, cur_compile_unit.ptr(dwarf));
-                        }
+                        },
+                        DW.LNE.ZIG_set_source_decl_ref, DW.LNE.ZIG_set_source_decl => {},
                     }
                     while (true) {
                         if (cur_die.getAttr(DW.AT.decl_line)) |decl_line| {

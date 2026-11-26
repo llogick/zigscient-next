@@ -226,7 +226,9 @@ pub const ZIG_relative_decl = 0x2cd0;
 pub const ZIG_decl_line_relative = 0x2cd1;
 pub const ZIG_comptime_value = 0x2cd2;
 pub const ZIG_call_line_relative = 0x2cd3;
+pub const ZIG_pointer_size = 0x2ce1;
 pub const ZIG_sentinel = 0x2ce2;
+pub const ZIG_allowzero = 0x2ce3;
 
 // UPC extension.
 pub const upc_threads_scaled = 0x3210;
