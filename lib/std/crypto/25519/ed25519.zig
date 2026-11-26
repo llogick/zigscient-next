@@ -511,6 +511,14 @@ pub const Ed25519 = struct {
             /// Public key equivalent, that can used for signature verification.
             key: PublicKey,
 
+            /// Blind a public key, given a blinding seed and a context.
+            pub fn blind(public_key: PublicKey, blind_seed: [blind_seed_length]u8, ctx: []const u8) (IdentityElementError || NonCanonicalError || EncodingError || WeakPublicKeyError)!BlindPublicKey {
+                const blind_h = blindCtx(blind_seed, ctx);
+                const blind_factor = Scalar.fromBytes(blind_h[0..32].*).toBytes();
+                const pk_p = try (try Curve.fromBytes(public_key.bytes)).mul(blind_factor);
+                return BlindPublicKey{ .key = try PublicKey.fromBytes(pk_p.toBytes()) };
+            }
+
             /// Recover a public key from a blind version of it.
             pub fn unblind(blind_public_key: BlindPublicKey, blind_seed: [blind_seed_length]u8, ctx: []const u8) (IdentityElementError || NonCanonicalError || EncodingError || WeakPublicKeyError)!PublicKey {
                 const blind_h = blindCtx(blind_seed, ctx);
@@ -756,6 +764,76 @@ test "with blind keys" {
     // Unblind the public key
     const pk = try blind_kp.blind_public_key.unblind(blind, "ctx");
     try std.testing.expectEqualSlices(u8, &pk.toBytes(), &kp.public_key.toBytes());
+}
+
+test "BlindPublicKey.blind" {
+    const io = std.testing.io;
+    const key_blinding = Ed25519.key_blinding;
+
+    // Ed25519 test vectors from the IRTF CFRG key blinding draft.
+    const Vec = struct {
+        source_public_key_hex: []const u8,
+        blind_seed_hex: []const u8,
+        context_hex: []const u8,
+        blinded_public_key_hex: []const u8,
+    };
+    const entries = [_]Vec{
+        .{
+            .source_public_key_hex = "cd875d3f46a8e8742cf4a6a9f9645d4153a394a5a0a8028c9041cd455d093cd5",
+            .blind_seed_hex = "bb58c768d9b16571f553efd48207e64391e16439b79fe9409e70b38040c81302",
+            .context_hex = "",
+            .blinded_public_key_hex = "666443ce8f03fa09240db73a584efad5462ffe346b14fd78fb666b25db29902f",
+        },
+        .{
+            .source_public_key_hex = "5c9a9e271f204c931646aa079e2e66f0783ab3d29946eff37bd3b569e9c8e009",
+            .blind_seed_hex = "0000000000000000000000000000000000000000000000000000000000000000",
+            .context_hex = "",
+            .blinded_public_key_hex = "23eb5eccb9448ee8403c36595ccfd5edd7257ae70da69aa22282a0a7cd97e443",
+        },
+        .{
+            .source_public_key_hex = "8b37c949d39cddf4d2a0fc0da781ea7f85c7bfbdfeb94a3c9ecb5e8a3c24d65f",
+            .blind_seed_hex = "05b235297dff87c492835d562c6e03c0f36b9c306f2dcb3b5038c2744d4e8a70",
+            .context_hex = "d6bbaa0646f5617d3cbd1e22ef05e714d1ec7812efff793999667648b2cc54bc",
+            .blinded_public_key_hex = "019b0a06107e01361facdad39ec16a9647c86c0086bc38825eb664b97d9c514d",
+        },
+        .{
+            .source_public_key_hex = "3f667a2305a8baf328a1d8e9ed726f278229607d28fb32d9933da7379947ac44",
+            .blind_seed_hex = "0000000000000000000000000000000000000000000000000000000000000000",
+            .context_hex = "802def4d21c7c7d0fa4b48af5e85f8ebfc4119a04117c14d961567eaef2859f2",
+            .blinded_public_key_hex = "90a543dd29c6e6cd08ef85c43618f2d314139db5baed802383cf674310294e40",
+        },
+    };
+    for (entries) |entry| {
+        var public_key_bytes: [32]u8 = undefined;
+        _ = try fmt.hexToBytes(&public_key_bytes, entry.source_public_key_hex);
+        const public_key = try Ed25519.PublicKey.fromBytes(public_key_bytes);
+
+        var blind_seed: [key_blinding.blind_seed_length]u8 = undefined;
+        _ = try fmt.hexToBytes(&blind_seed, entry.blind_seed_hex);
+        var ctx: [64]u8 = undefined;
+        const ctx_len = entry.context_hex.len / 2;
+        _ = try fmt.hexToBytes(ctx[0..ctx_len], entry.context_hex);
+
+        const blind_public_key = try key_blinding.BlindPublicKey.blind(public_key, blind_seed, ctx[0..ctx_len]);
+        try std.testing.expect(!std.mem.eql(u8, &blind_public_key.key.bytes, &public_key.bytes));
+
+        var buf: [64]u8 = undefined;
+        try std.testing.expectEqualStrings(try std.mem.print(&buf, "{x}", .{&blind_public_key.key.toBytes()}), entry.blinded_public_key_hex);
+
+        const unblinded_public_key = try blind_public_key.unblind(blind_seed, ctx[0..ctx_len]);
+        try std.testing.expectEqualSlices(u8, &unblinded_public_key.bytes, &public_key.bytes);
+    }
+
+    // A blind public key computed with the secret key is the same as a blind public key computed without it.
+    const kp = Ed25519.KeyPair.generate(io);
+    var blind_seed: [key_blinding.blind_seed_length]u8 = undefined;
+    io.random(&blind_seed);
+    const blind_key_pair = try key_blinding.BlindKeyPair.init(kp, blind_seed, "ctx");
+    const blind_public_key = try key_blinding.BlindPublicKey.blind(kp.public_key, blind_seed, "ctx");
+    try std.testing.expectEqualSlices(u8, &blind_key_pair.blind_public_key.key.bytes, &blind_public_key.key.bytes);
+
+    const blind_public_key2 = try key_blinding.BlindPublicKey.blind(kp.public_key, blind_seed, "c");
+    try std.testing.expectError(error.SignatureVerificationFailed, (try blind_key_pair.sign("test", null)).verify("test", blind_public_key2.key));
 }
 
 test "signatures with streaming" {
