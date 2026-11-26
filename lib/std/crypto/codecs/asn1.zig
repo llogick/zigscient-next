@@ -239,6 +239,13 @@ pub const Element = struct {
     /// - Ensures length is within `bytes`
     /// - Ensures length is less than `std.math.maxInt(Index)`
     pub fn decode(bytes: []const u8, index: Index) DecodeError!Element {
+        const element = try decodeHeader(bytes, index);
+        if (element.slice.end > bytes.len) return error.EndOfStream;
+        return element;
+    }
+
+    /// Like decode(), but the contents don't have to be in `bytes`.
+    pub fn decodeHeader(bytes: []const u8, index: Index) DecodeError!Element {
         if (index > bytes.len) return error.EndOfStream;
         var reader: std.Io.Reader = .fixed(bytes[index..]);
 
@@ -268,9 +275,8 @@ pub const Element = struct {
             break :blk len;
         };
 
-        const start = index + @as(Index, @intCast(reader.seek));
+        const start = std.math.add(Index, index, @intCast(reader.seek)) catch return error.EndOfStream;
         const end = std.math.add(Index, start, len) catch return error.EndOfStream;
-        if (end > bytes.len) return error.EndOfStream;
 
         return Element{ .tag = tag, .slice = Slice{ .start = start, .end = end } };
     }
@@ -298,6 +304,9 @@ test Element {
         .tag = Tag.universal(.time_of_day, false),
         .slice = Element.Slice{ .start = 3, .end = multi_byte_tag.len },
     }, Element.decode(&multi_byte_tag, 0));
+
+    try std.testing.expectError(error.EndOfStream, Element.decode(long_form[0..10], 0));
+    try std.testing.expectEqual(long_form.len, (try Element.decodeHeader(long_form[0..10], 0)).slice.end);
 }
 
 /// For decoding.

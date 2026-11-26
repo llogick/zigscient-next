@@ -11,6 +11,15 @@ pub fn init(allocator: std.mem.Allocator) Encoder {
     return Encoder{ .buffer = ArrayListReverse.init(allocator) };
 }
 
+/// Initialize with externally-managed memory.
+/// The buffer determines the capacity, and encoding fails with `error.OutOfMemory` when it's full.
+///
+/// The result ends at the end of `buf`.
+/// Don't call deinit().
+pub fn initBuffer(buf: []u8) Encoder {
+    return .{ .buffer = .{ .data = buf[buf.len..], .capacity = buf.len, .allocator = .failing } };
+}
+
 pub fn deinit(self: *Encoder) void {
     self.buffer.deinit();
 }
@@ -211,6 +220,15 @@ test int {
     encoder.buffer.clearAndFree();
     try encoder.int(i16, -129);
     try std.testing.expectEqualSlices(u8, &.{ 0xff, 0x7f }, encoder.buffer.data);
+}
+
+test initBuffer {
+    var buf: [8]u8 = undefined;
+    var encoder: Encoder = .initBuffer(&buf);
+    try encoder.any(@as(u16, 0x1234));
+    try std.testing.expectEqualSlices(u8, &.{ 0x02, 0x02, 0x12, 0x34 }, encoder.buffer.data);
+    try std.testing.expectEqual(&buf[4], &encoder.buffer.data[0]);
+    try std.testing.expectError(error.OutOfMemory, encoder.any(@as(u32, 0x12345678)));
 }
 
 test length {
