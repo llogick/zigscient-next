@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const log = std.log;
 const mem = std.mem;
 const path = std.fs.path;
 const assert = std.debug.assert;
@@ -16,6 +17,8 @@ pub const CrtFile = enum {
     libc_so,
 };
 
+const static_version: std.SemanticVersion = .{ .major = 1, .minor = 2, .patch = 5 };
+
 /// TODO replace anyerror with explicit error set, recording user-friendly errors with
 /// lockAndSetMiscFailure and returning error.AlreadyReported. see libcxx.zig for example.
 pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Progress.Node) anyerror!void {
@@ -27,6 +30,19 @@ pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Pro
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
     const io = comp.io;
+    const target = comp.getTarget();
+
+    switch (in_crt_file) {
+        .libc_a, .libc_so => {
+            const target_version = target.os.versionRange().muslLibCVersion().?;
+            if (target_version.order(static_version) == .gt) {
+                log.warn("zig cannot build new musl version {f}; providing instead {f}", .{
+                    target_version, static_version,
+                });
+            }
+        },
+        else => {},
+    }
 
     switch (in_crt_file) {
         .crt1_o => {
@@ -85,7 +101,6 @@ pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Pro
         .libc_a => {
             // When there is a src/<arch>/foo.* then it should substitute for src/foo.*
             // Even a .s file can substitute for a .c file.
-            const target = comp.getTarget();
             const arch_name = std.zig.target.muslArchName(target.cpu.arch, target.abi);
             var source_table: std.array_hash_map.String(Ext) = .empty;
             defer source_table.deinit(gpa);
@@ -182,7 +197,6 @@ pub fn buildCrtFile(comp: *Compilation, in_crt_file: CrtFile, prog_node: std.Pro
                 .link_libc = false,
             });
 
-            const target = &comp.root_mod.resolved_target.result;
             const arch_name = std.zig.target.muslArchName(target.cpu.arch, target.abi);
             const time32 = for (time32_compat_arch_list) |time32_compat_arch| {
                 if (mem.eql(u8, arch_name, time32_compat_arch)) break true;

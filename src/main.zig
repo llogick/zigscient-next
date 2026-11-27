@@ -4091,10 +4091,10 @@ pub fn buildOutputType(
 
                 for (std.zig.target.available_libcs) |t| {
                     if (t.arch == target.cpu.arch and t.os == target.os.tag) {
-                        // If there's a `glibc_min`, there's also an `os_ver`.
-                        if (t.glibc_min) |glibc_min| {
+                        // If there's a `libc_min`, there's also an `os_ver`.
+                        if (t.libc_min) |libc_min| {
                             std.log.info("zig can provide libc for related target {t}-{t}.{f}-{t}.{d}.{d}", .{
-                                t.arch, t.os, t.os_ver.?, t.abi, glibc_min.major, glibc_min.minor,
+                                t.arch, t.os, t.os_ver.?, t.abi, libc_min.major, libc_min.minor,
                             });
                         } else if (t.os_ver) |os_ver| {
                             std.log.info("zig can provide libc for related target {t}-{t}.{f}-{t}", .{
@@ -4434,6 +4434,7 @@ fn createModule(
             .result = target,
             .is_native_os = target_query.isNativeOs(),
             .is_native_abi = target_query.isNativeAbi(),
+            .is_explicit_musl_version = target_query.musl_version != null,
             .is_explicit_dynamic_linker = target_query.dynamic_linker != null,
         };
     };
@@ -5382,6 +5383,7 @@ fn jitCmdInner(
         .result = std.zig.resolveTargetQueryOrFatal(io, arena, target_query),
         .is_native_os = true,
         .is_native_abi = true,
+        .is_explicit_musl_version = false,
         .is_explicit_dynamic_linker = false,
     };
 

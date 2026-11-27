@@ -148,6 +148,11 @@ pub fn append(opts: @This(), gpa: Allocator, buffer: *std.ArrayList(u8)) Allocat
             \\            .minor = {},
             \\            .patch = {},
             \\        }},
+            \\        .musl = .{{
+            \\            .major = {},
+            \\            .minor = {},
+            \\            .patch = {},
+            \\        }},
             \\        .android = {},
             \\    }}}},
             \\
@@ -163,6 +168,10 @@ pub fn append(opts: @This(), gpa: Allocator, buffer: *std.ArrayList(u8)) Allocat
             linux.glibc.major,
             linux.glibc.minor,
             linux.glibc.patch,
+
+            linux.musl.major,
+            linux.musl.minor,
+            linux.musl.patch,
 
             linux.android,
         }),

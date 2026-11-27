@@ -1274,6 +1274,7 @@ pub const cache_helpers = struct {
         hh.add(target.ofmt);
         hh.add(resolved_target.is_native_os);
         hh.add(resolved_target.is_native_abi);
+        hh.add(resolved_target.is_explicit_musl_version);
         hh.add(resolved_target.is_explicit_dynamic_linker);
     }
 
@@ -4920,6 +4921,7 @@ fn workerDocsWasmFallible(comp: *Compilation, prog_node: std.Progress.Node) SubU
 
         .is_native_os = false,
         .is_native_abi = false,
+        .is_explicit_musl_version = false,
         .is_explicit_dynamic_linker = false,
     };
     assert(target_diags.isEmpty());

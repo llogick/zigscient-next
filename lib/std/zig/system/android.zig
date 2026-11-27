@@ -71,9 +71,10 @@ pub fn detectApiLevel(
     };
     defer child.kill(io);
 
-    // PROP_VALUE_MAX is 92, output is value + newline.
-    // Currently API levels are two-digit numbers, but we want to make sure we never read a partial value.
-    var stdout_buf: [92 + 1]u8 = undefined;
+    // `PROP_VALUE_MAX` is 92, output is value + newline, plus one byte so we can tell if there is
+    // more output. Currently API levels are two-digit numbers, but we want to make sure we never
+    // read a partial value.
+    var stdout_buf: [92 + 1 + 1]u8 = undefined;
     var reader = child.stdout.?.readerStreaming(io, &.{});
     const n = reader.interface.readSliceShort(&stdout_buf) catch |err| switch (err) {
         error.ReadFailed => switch (reader.err.?) {
@@ -98,6 +99,12 @@ pub fn detectApiLevel(
         },
     };
 
+    // Anything longer is definitely not a property value, so just give up.
+    if (n == stdout_buf.len) {
+        diags.android_api_level = .{ .invalid_output = try arena.dupe(u8, &stdout_buf) };
+        return null;
+    }
+
     const term = child.wait(io) catch |err| switch (err) {
         error.Canceled => |e| return e,
         error.Unexpected => |e| {
@@ -116,7 +123,7 @@ pub fn detectApiLevel(
         error.Overflow,
         error.InvalidCharacter,
         => {
-            diags.android_api_level = .{ .invalid_output = .{ .output = try arena.dupe(u8, output) } };
+            diags.android_api_level = .{ .invalid_output = try arena.dupe(u8, output) };
             return null;
         },
     };

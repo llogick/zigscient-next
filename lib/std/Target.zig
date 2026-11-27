@@ -331,6 +331,8 @@ pub const Os = struct {
     pub const LinuxVersionRange = struct {
         range: std.SemanticVersion.Range,
         glibc: std.SemanticVersion,
+        // TODO: Remove this default field value on the next `zig1.wasm` update.
+        musl: std.SemanticVersion = .{ .major = 1, .minor = 2, .patch = 3 },
         /// Android API level.
         android: u32,
 
@@ -480,7 +482,20 @@ pub const Os = struct {
                             for (std.zig.target.available_libcs) |libc| {
                                 if (libc.os != tag or libc.arch != arch or libc.abi != abi) continue;
 
-                                if (libc.glibc_min) |min| {
+                                if (libc.libc_min) |min| {
+                                    if (min.order(default_min) == .gt) break :blk min;
+                                }
+                            }
+
+                            break :blk default_min;
+                        },
+                        .musl = blk: {
+                            const default_min: std.SemanticVersion = .{ .major = 1, .minor = 2, .patch = 3 };
+
+                            for (std.zig.target.available_libcs) |libc| {
+                                if (libc.os != tag or libc.arch != arch or libc.abi != abi) continue;
+
+                                if (libc.libc_min) |min| {
                                     if (min.order(default_min) == .gt) break :blk min;
                                 }
                             }
@@ -721,6 +736,13 @@ pub const Os = struct {
                 .none, .semver, .windows => null,
                 .hurd => |h| h.glibc,
                 .linux => |l| l.glibc,
+            };
+        }
+
+        pub fn muslLibCVersion(range: TaggedVersionRange) ?std.SemanticVersion {
+            return switch (range) {
+                .none, .semver, .hurd, .windows => null,
+                .linux => |l| l.musl,
             };
         }
     };
@@ -1007,7 +1029,7 @@ pub const Abi = enum {
             .muslsf,
             .muslx32,
             => true,
-            else => abi.isOpenHarmony(),
+            else => false,
         };
     }
 
@@ -2580,6 +2602,8 @@ pub fn printZigTriple(target: *const Target, w: *std.Io.Writer) std.Io.Writer.Er
     }
     if (target.isGnuLibC())
         try w.print("-{t}.{f}", .{ target.abi, Query.PrintVersion{ .version = version_range.gnuLibCVersion().? } })
+    else if (target.isMuslLibC())
+        try w.print("-{t}.{f}", .{ target.abi, Query.PrintVersion{ .version = version_range.muslLibCVersion().? } })
     else if (target.isBionicLibC())
         try w.print("-{t}.{d}", .{ target.abi, target.os.version_range.linux.android })
     else
@@ -2770,15 +2794,17 @@ pub const DynamicLinker = struct {
     /// Contains the memory used to store the dynamic linker path. This field
     /// should not be used directly. See `get` and `set`. This field exists so
     /// that this API requires no allocator.
-    buffer: [255]u8,
+    buffer: [max_len]u8,
 
     /// Used to construct the dynamic linker path. This field should not be used
     /// directly. See `get` and `set`.
     len: u8,
 
+    pub const max_len = 255;
+
     pub const none: DynamicLinker = .{ .buffer = undefined, .len = 0 };
 
-    /// Asserts that the length is less than or equal to 255 bytes.
+    /// Asserts that the length is less than or equal to `max_len`.
     pub fn init(maybe_path: ?[]const u8) DynamicLinker {
         var dl: DynamicLinker = undefined;
         dl.set(maybe_path);
@@ -2796,14 +2822,14 @@ pub const DynamicLinker = struct {
         return if (dl.len > 0) dl.buffer[0..dl.len] else null;
     }
 
-    /// Asserts that the length is less than or equal to 255 bytes.
+    /// Asserts that the length is less than or equal to `max_len`.
     pub fn set(dl: *DynamicLinker, maybe_path: ?[]const u8) void {
         const path = maybe_path orelse "";
         @memcpy(dl.buffer[0..path.len], path);
         dl.len = @intCast(path.len);
     }
 
-    /// Asserts that the length is less than or equal to 255 bytes.
+    /// Asserts that the length is less than or equal to `max_len`.
     pub fn setFmt(dl: *DynamicLinker, comptime fmt_str: []const u8, args: anytype) !void {
         dl.len = @intCast((try std.mem.print(&dl.buffer, fmt_str, args)).len);
     }

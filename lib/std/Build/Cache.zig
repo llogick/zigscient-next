@@ -185,6 +185,7 @@ pub const HashHelper = struct {
                         hh.add(linux.range.min);
                         hh.add(linux.range.max);
                         hh.add(linux.glibc);
+                        hh.add(linux.musl);
                         hh.add(linux.android);
                     },
                     .windows => |windows| {

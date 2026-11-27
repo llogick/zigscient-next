@@ -17,6 +17,7 @@ pub const darwin = @import("system/darwin.zig");
 pub const freebsd = @import("system/freebsd.zig");
 pub const glibc = @import("system/glibc.zig");
 pub const linux = @import("system/linux.zig");
+pub const musl = @import("system/musl.zig");
 pub const netbsd = @import("system/netbsd.zig");
 pub const openbsd = @import("system/openbsd.zig");
 pub const windows = @import("system/windows.zig");
@@ -298,10 +299,20 @@ pub const ResolveTargetDiagnostics = struct {
 
     pub const LibcVersion = union(enum) {
         not_found,
+        spawn_failed: struct { path: []const u8, err: std.process.SpawnError },
+        read_error: struct { path: []const u8, err: Io.File.Reader.Error },
+        wait_failed: struct { path: []const u8, err: std.process.Child.WaitError },
+        bad_term: if (std.process.can_spawn) struct { path: []const u8, term: std.process.Child.Term } else noreturn,
+        invalid_output: struct { path: []const u8, output: []const u8 },
 
         pub fn format(diag: LibcVersion, w: *Io.Writer) Io.Writer.Error!void {
             switch (diag) {
                 .not_found => try w.writeAll("could not determine the libc version"),
+                .spawn_failed => |e| try w.print("failed to spawn {q}: {t}", .{ e.path, e.err }),
+                .read_error => |e| try w.print("failed to read output of {q}: {t}", .{ e.path, e.err }),
+                .wait_failed => |e| try w.print("failed to wait for {q}: {t}", .{ e.path, e.err }),
+                .bad_term => |e| try w.print("{q} {f}", .{ e.path, e.term }),
+                .invalid_output => |e| try w.print("{q} printed unrecognized output {q}", .{ e.path, e.output }),
             }
         }
     };
@@ -311,7 +322,7 @@ pub const ResolveTargetDiagnostics = struct {
         read_error: Io.File.Reader.Error,
         wait_failed: std.process.Child.WaitError,
         bad_term: if (std.process.can_spawn) std.process.Child.Term else noreturn,
-        invalid_output: struct { output: []const u8 },
+        invalid_output: []const u8,
 
         pub fn format(diag: AndroidApiLevel, w: *Io.Writer) Io.Writer.Error!void {
             switch (diag) {
@@ -319,7 +330,7 @@ pub const ResolveTargetDiagnostics = struct {
                 .read_error => |e| try w.print("failed to read output of {q}: {t}", .{ android.getprop_path, e }),
                 .wait_failed => |e| try w.print("failed to wait for {q}: {t}", .{ android.getprop_path, e }),
                 .bad_term => |e| try w.print("{q} {f}", .{ android.getprop_path, e }),
-                .invalid_output => |e| try w.print("{q} printed invalid API level {q}", .{ android.getprop_path, e.output }),
+                .invalid_output => |o| try w.print("{q} printed invalid API level {q}", .{ android.getprop_path, o }),
             }
         }
     };
@@ -580,6 +591,13 @@ pub fn resolveTargetQuery(
         }
     }
 
+    if (query.musl_version) |libc| {
+        switch (os.tag.versionRangeTag()) {
+            inline .linux => |t| @field(os.version_range, @tagName(t)).musl = libc,
+            else => {},
+        }
+    }
+
     if (query.android_api_level) |lvl| {
         os.version_range.linux.android = lvl;
     }
@@ -626,6 +644,13 @@ pub fn resolveTargetQuery(
                     query.glibc_version == null)
                 {
                     @field(result_ver_range, @tagName(t)).glibc = @field(abi_ver_range, @tagName(t)).glibc;
+                }
+
+                if (t == .linux and
+                    @field(result_ver_range, @tagName(t)).musl.order(@field(abi_ver_range, @tagName(t)).musl) == .lt and
+                    query.musl_version == null)
+                {
+                    @field(result_ver_range, @tagName(t)).musl = @field(abi_ver_range, @tagName(t)).musl;
                 }
             },
             .windows => if (!result_ver_range.windows.min.isAtLeast(abi_ver_range.windows.min)) {
@@ -706,6 +731,7 @@ const AbiAndDynamicLinkerFromFileError = error{
     Unexpected,
     StaticElfFile,
     InvalidElfFile,
+    UnknownDynamicLinker,
 } || Io.Cancelable;
 
 /// In the past, this function attempted to use the executable's own binary if it was dynamically
@@ -889,7 +915,22 @@ fn detectAbiAndDynamicLinker(
             => break :failure .invalid_executable,
 
             error.StaticElfFile => break :failure .no_executable,
+
+            // We found a dynamic linker, but its name is not one that we recognize for this `arch`
+            // and `os`. That means we can't draw any useful conclusions about ABI from it, so just
+            // give up on detecting ABI and libc version.
+            error.UnknownDynamicLinker => return defaultAbiAndDynamicLinker(arch, os, query),
         };
+
+        if (builtin.target.os.tag == .linux and result.abi.isMusl() and query.musl_version == null) {
+            if (result.dynamic_linker.get()) |dl_path| {
+                if (try musl.detectVersion(io, arena, dl_path, diags)) |ver| {
+                    result.os.version_range.linux.musl = ver;
+                }
+            } else {
+                diags.libc_version = .not_found;
+            }
+        }
 
         if (builtin.target.os.tag == .linux and result.abi.isAndroid() and query.android_api_level == null) {
             if (try android.detectApiLevel(io, arena, diags)) |api_level| {
@@ -972,6 +1013,7 @@ fn abiAndDynamicLinkerFromFile(
     const look_for_ld = query.dynamic_linker == null;
 
     var got_dyn_section: bool = false;
+    var got_abi: bool = false;
     {
         var it = header.iterateProgramHeaders(file_reader);
         while (try it.next()) |phdr| switch (phdr.type) {
@@ -996,6 +1038,7 @@ fn abiAndDynamicLinkerFromFile(
                     if (std.mem.endsWith(u8, interp.get().?, fs.path.basename(ld_info.ld.get().?))) {
                         result.abi = ld_info.abi;
                         if (look_for_ld) result.dynamic_linker = interp;
+                        got_abi = true;
                         break;
                     }
                 }
@@ -1010,13 +1053,8 @@ fn abiAndDynamicLinkerFromFile(
         };
     }
 
-    if (look_for_ld and result.dynamic_linker.get() == null) {
-        result.dynamic_linker = .standard(arch, os.tag, result.abi);
-    }
-
-    if (!got_dyn_section) {
-        return error.StaticElfFile;
-    }
+    if (!got_dyn_section) return error.StaticElfFile;
+    if (!got_abi) return error.UnknownDynamicLinker;
 
     if (builtin.target.os.tag == .linux and result.abi.isGnu() and query.glibc_version == null) {
         // Since glibc 2.33, the dynamic linker contains the banner string just like libc.so.6.
@@ -1510,6 +1548,7 @@ test {
     _ = freebsd;
     _ = glibc;
     _ = linux;
+    _ = musl;
     _ = netbsd;
     _ = openbsd;
     _ = windows;

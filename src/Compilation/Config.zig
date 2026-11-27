@@ -285,8 +285,16 @@ pub fn resolve(options: Options) ResolveError!Config {
         if (options.any_dyn_libs) break :b .dynamic;
 
         if (explicitly_exe_or_dyn_lib and link_libc) {
-            // When using the native glibc/musl ABI, dynamic linking is usually what people want.
-            if (options.resolved_target.is_native_abi and (target.isGnuLibC() or target.isMuslLibC())) {
+            // When using the native libc ABI, dynamic linking is usually what people want.
+            if (options.resolved_target.is_native_abi and
+                (target.isGnuLibC() or target.isMuslLibC() or (target.os.tag == .linux and target.abi.isOpenHarmony())))
+            {
+                break :b .dynamic;
+            }
+
+            // We only bundle a single version of static musl, so if the user specified an explicit
+            // musl version, they almost certainly want dynamic linking.
+            if (target.isMuslLibC() and options.resolved_target.is_explicit_musl_version) {
                 break :b .dynamic;
             }
 

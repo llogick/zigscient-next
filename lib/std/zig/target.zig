@@ -4,16 +4,17 @@ pub const ArchOsAbi = struct {
     abi: std.Target.Abi,
     os_ver: ?std.SemanticVersion = null,
 
-    /// Minimum glibc version that provides support for the arch/OS when ABI is GNU. Note that Zig
-    /// can only target glibc 2.2.5+, so `null` means the minimum is older than that.
-    glibc_min: ?std.SemanticVersion = null,
+    /// Minimum glibc/musl version that provides support for the arch/OS when ABI is gnu/musl. Note
+    /// that Zig can only target glibc 2.2.5+ and musl 1.2.0+, so `null` means the minimum is older
+    /// than that.
+    libc_min: ?std.SemanticVersion = null,
     /// Override for `glibcRuntimeTriple` when glibc has an unusual directory name for the target.
     glibc_triple: ?[]const u8 = null,
 };
 
 pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .aarch64, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 11, .minor = 0, .patch = 0 } },
-    .{ .arch = .aarch64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 7, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 17, .patch = 0 } },
+    .{ .arch = .aarch64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 7, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 17, .patch = 0 } },
     .{ .arch = .aarch64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 7, .patch = 0 } },
     .{ .arch = .aarch64, .os = .maccatalyst, .abi = .none, .os_ver = .{ .major = 11, .minor = 0, .patch = 0 } },
     .{ .arch = .aarch64, .os = .macos, .abi = .none, .os_ver = .{ .major = 11, .minor = 0, .patch = 0 } },
@@ -21,11 +22,11 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .aarch64, .os = .openbsd, .abi = .none, .os_ver = .{ .major = 6, .minor = 1, .patch = 0 } },
     .{ .arch = .aarch64, .os = .windows, .abi = .gnu },
 
-    .{ .arch = .aarch64be, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 13, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 17, .patch = 0 }, .glibc_triple = "aarch64_be-linux-gnu" },
+    .{ .arch = .aarch64be, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 13, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 17, .patch = 0 }, .glibc_triple = "aarch64_be-linux-gnu" },
     .{ .arch = .aarch64be, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 13, .patch = 0 } },
     .{ .arch = .aarch64be, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 9, .minor = 0, .patch = 0 } },
 
-    .{ .arch = .arc, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 2, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 32, .patch = 0 } },
+    .{ .arch = .arc, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 2, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 32, .patch = 0 } },
     .{ .arch = .arm, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 10, .minor = 0, .patch = 0 } },
     .{ .arch = .arm, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 2, .minor = 1, .patch = 0 }, .glibc_triple = "arm-linux-gnueabihf" },
     .{ .arch = .arm, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 2, .minor = 1, .patch = 0 }, .glibc_triple = "arm-linux-gnueabi" },
@@ -42,19 +43,19 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .armeb, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 1, .minor = 2, .patch = 0 } },
     .{ .arch = .armeb, .os = .netbsd, .abi = .sf, .os_ver = .{ .major = 1, .minor = 2, .patch = 0 } },
 
-    .{ .arch = .csky, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 20, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 29, .patch = 0 }, .glibc_triple = "csky-linux-gnuabiv2" },
-    .{ .arch = .csky, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 20, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 29, .patch = 0 }, .glibc_triple = "csky-linux-gnuabiv2-soft" },
+    .{ .arch = .csky, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 20, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 29, .patch = 0 }, .glibc_triple = "csky-linux-gnuabiv2" },
+    .{ .arch = .csky, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 20, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 29, .patch = 0 }, .glibc_triple = "csky-linux-gnuabiv2-soft" },
 
     .{ .arch = .hexagon, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 2, .patch = 102 } },
 
-    .{ .arch = .loongarch32, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 6, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 44, .patch = 0 }, .glibc_triple = "loongarch32-linux-gnuf64" },
-    .{ .arch = .loongarch32, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 6, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 44, .patch = 0 } },
+    .{ .arch = .loongarch32, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 6, .minor = 19, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 44, .patch = 0 }, .glibc_triple = "loongarch32-linux-gnuf64" },
+    .{ .arch = .loongarch32, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 6, .minor = 19, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 44, .patch = 0 } },
 
-    .{ .arch = .loongarch64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 36, .patch = 0 }, .glibc_triple = "loongarch64-linux-gnuf64" },
-    .{ .arch = .loongarch64, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 36, .patch = 0 } },
-    .{ .arch = .loongarch64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 } },
-    .{ .arch = .loongarch64, .os = .linux, .abi = .muslf32, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 } },
-    .{ .arch = .loongarch64, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 } },
+    .{ .arch = .loongarch64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 36, .patch = 0 }, .glibc_triple = "loongarch64-linux-gnuf64" },
+    .{ .arch = .loongarch64, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 36, .patch = 0 } },
+    .{ .arch = .loongarch64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .libc_min = .{ .major = 1, .minor = 2, .patch = 5 } },
+    .{ .arch = .loongarch64, .os = .linux, .abi = .muslf32, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .libc_min = .{ .major = 1, .minor = 2, .patch = 5 } },
+    .{ .arch = .loongarch64, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 5, .minor = 19, .patch = 0 }, .libc_min = .{ .major = 1, .minor = 2, .patch = 5 } },
 
     .{ .arch = .m68k, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 1, .minor = 3, .patch = 94 } },
     .{ .arch = .m68k, .os = .linux, .abi = .musl, .os_ver = .{ .major = 1, .minor = 3, .patch = 94 } },
@@ -82,35 +83,35 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .mipsf32el, .os = .linux, .abi = .musl, .os_ver = .{ .major = 1, .minor = 1, .patch = 82 } },
     .{ .arch = .mipsf32el, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 1, .minor = 1, .patch = 0 } },
 
-    .{ .arch = .mipsf64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 0, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 21, .patch = 0 }, .glibc_triple = "mips-linux-gnu" },
+    .{ .arch = .mipsf64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 0, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 21, .patch = 0 }, .glibc_triple = "mips-linux-gnu" },
     .{ .arch = .mipsf64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 0, .patch = 0 } },
 
-    .{ .arch = .mipsf64el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 0, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 21, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu" },
+    .{ .arch = .mipsf64el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 0, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 21, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu" },
     .{ .arch = .mipsf64el, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 0, .patch = 0 } },
 
-    .{ .arch = .mipsf64n8, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips-linux-gnu-nan2008" },
+    .{ .arch = .mipsf64n8, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips-linux-gnu-nan2008" },
     .{ .arch = .mipsf64n8, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mipsf64n8el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu-nan2008" },
+    .{ .arch = .mipsf64n8el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu-nan2008" },
     .{ .arch = .mipsf64n8el, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mipsn8, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips-linux-gnu-nan2008" },
-    .{ .arch = .mipsn8, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips-linux-gnu-nan2008-soft" },
+    .{ .arch = .mipsn8, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips-linux-gnu-nan2008" },
+    .{ .arch = .mipsn8, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips-linux-gnu-nan2008-soft" },
     .{ .arch = .mipsn8, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mipsn8, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mipsn8el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu-nan2008" },
-    .{ .arch = .mipsn8el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu-nan2008-soft" },
+    .{ .arch = .mipsn8el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu-nan2008" },
+    .{ .arch = .mipsn8el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsel-linux-gnu-nan2008-soft" },
     .{ .arch = .mipsn8el, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mipsn8el, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mipsr6, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6-linux-gnu" },
-    .{ .arch = .mipsr6, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6-linux-gnu-soft" },
+    .{ .arch = .mipsr6, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6-linux-gnu" },
+    .{ .arch = .mipsr6, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6-linux-gnu-soft" },
     .{ .arch = .mipsr6, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mipsr6, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mipsr6el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6el-linux-gnu" },
-    .{ .arch = .mipsr6el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6el-linux-gnu-soft" },
+    .{ .arch = .mipsr6el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6el-linux-gnu" },
+    .{ .arch = .mipsr6el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa32r6el-linux-gnu-soft" },
     .{ .arch = .mipsr6el, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mipsr6el, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
@@ -137,37 +138,37 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .mips64el, .os = .netbsd, .abi = .n32sf, .os_ver = .{ .major = 6, .minor = 0, .patch = 0 } },
     .{ .arch = .mips64el, .os = .netbsd, .abi = .sf, .os_ver = .{ .major = 10, .minor = 0, .patch = 0 } },
 
-    .{ .arch = .mips64n8, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n64-nan2008" },
-    .{ .arch = .mips64n8, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n32-nan2008" },
-    .{ .arch = .mips64n8, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n32-nan2008-soft" },
-    .{ .arch = .mips64n8, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n64-nan2008-soft" },
+    .{ .arch = .mips64n8, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n64-nan2008" },
+    .{ .arch = .mips64n8, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n32-nan2008" },
+    .{ .arch = .mips64n8, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n32-nan2008-soft" },
+    .{ .arch = .mips64n8, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64-linux-gnu-n64-nan2008-soft" },
     .{ .arch = .mips64n8, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64n8, .os = .linux, .abi = .musln32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64n8, .os = .linux, .abi = .musln32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64n8, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n64-nan2008" },
-    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n32-nan2008" },
-    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n32-nan2008-soft" },
-    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n64-nan2008-soft" },
+    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n64-nan2008" },
+    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n32-nan2008" },
+    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n32-nan2008-soft" },
+    .{ .arch = .mips64n8el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mips64el-linux-gnu-n64-nan2008-soft" },
     .{ .arch = .mips64n8el, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64n8el, .os = .linux, .abi = .musln32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64n8el, .os = .linux, .abi = .musln32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64n8el, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mips64r6, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n64" },
-    .{ .arch = .mips64r6, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n32" },
-    .{ .arch = .mips64r6, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n32-soft" },
-    .{ .arch = .mips64r6, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n64-soft" },
+    .{ .arch = .mips64r6, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n64" },
+    .{ .arch = .mips64r6, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n32" },
+    .{ .arch = .mips64r6, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n32-soft" },
+    .{ .arch = .mips64r6, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6-linux-gnu-n64-soft" },
     .{ .arch = .mips64r6, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64r6, .os = .linux, .abi = .musln32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64r6, .os = .linux, .abi = .musln32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64r6, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
 
-    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n64" },
-    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n32" },
-    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n32-soft" },
-    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n64-soft" },
+    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n64" },
+    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnun32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n32" },
+    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnun32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n32-soft" },
+    .{ .arch = .mips64r6el, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 23, .patch = 0 }, .glibc_triple = "mipsisa64r6el-linux-gnu-n64-soft" },
     .{ .arch = .mips64r6el, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64r6el, .os = .linux, .abi = .musln32, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
     .{ .arch = .mips64r6el, .os = .linux, .abi = .musln32sf, .os_ver = .{ .major = 4, .minor = 5, .patch = 0 } },
@@ -183,19 +184,19 @@ pub const available_libcs = [_]ArchOsAbi{
     .{ .arch = .powerpc64, .os = .openbsd, .abi = .none, .os_ver = .{ .major = 6, .minor = 8, .patch = 0 } },
 
     .{ .arch = .powerpc64le, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 13, .minor = 0, .patch = 0 } },
-    .{ .arch = .powerpc64le, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 14, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 19, .patch = 0 } },
+    .{ .arch = .powerpc64le, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 3, .minor = 14, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 19, .patch = 0 } },
     .{ .arch = .powerpc64le, .os = .linux, .abi = .musl, .os_ver = .{ .major = 3, .minor = 14, .patch = 0 } },
 
-    .{ .arch = .riscv32, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 33, .patch = 0 }, .glibc_triple = "riscv32-linux-gnu-rv32imafdc-ilp32d" },
-    .{ .arch = .riscv32, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 33, .patch = 0 }, .glibc_triple = "riscv32-linux-gnu-rv32imac-ilp32" },
-    .{ .arch = .riscv32, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
-    .{ .arch = .riscv32, .os = .linux, .abi = .muslf32, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
-    .{ .arch = .riscv32, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
+    .{ .arch = .riscv32, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 33, .patch = 0 }, .glibc_triple = "riscv32-linux-gnu-rv32imafdc-ilp32d" },
+    .{ .arch = .riscv32, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 33, .patch = 0 }, .glibc_triple = "riscv32-linux-gnu-rv32imac-ilp32" },
+    .{ .arch = .riscv32, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .libc_min = .{ .major = 1, .minor = 2, .patch = 5 } },
+    .{ .arch = .riscv32, .os = .linux, .abi = .muslf32, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .libc_min = .{ .major = 1, .minor = 2, .patch = 5 } },
+    .{ .arch = .riscv32, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .libc_min = .{ .major = 1, .minor = 2, .patch = 5 } },
     .{ .arch = .riscv32, .os = .netbsd, .abi = .none, .os_ver = .{ .major = 11, .minor = 0, .patch = 0 } },
 
     .{ .arch = .riscv64, .os = .freebsd, .abi = .none, .os_ver = .{ .major = 12, .minor = 0, .patch = 0 } },
-    .{ .arch = .riscv64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 27, .patch = 0 }, .glibc_triple = "riscv64-linux-gnu-rv64imafdc-lp64d" },
-    .{ .arch = .riscv64, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .glibc_min = .{ .major = 2, .minor = 27, .patch = 0 }, .glibc_triple = "riscv64-linux-gnu-rv64imac-lp64" },
+    .{ .arch = .riscv64, .os = .linux, .abi = .gnu, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 27, .patch = 0 }, .glibc_triple = "riscv64-linux-gnu-rv64imafdc-lp64d" },
+    .{ .arch = .riscv64, .os = .linux, .abi = .gnusf, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 }, .libc_min = .{ .major = 2, .minor = 27, .patch = 0 }, .glibc_triple = "riscv64-linux-gnu-rv64imac-lp64" },
     .{ .arch = .riscv64, .os = .linux, .abi = .musl, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
     .{ .arch = .riscv64, .os = .linux, .abi = .muslf32, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
     .{ .arch = .riscv64, .os = .linux, .abi = .muslsf, .os_ver = .{ .major = 4, .minor = 15, .patch = 0 } },
@@ -249,9 +250,12 @@ pub fn canBuildLibC(target: *const std.Target) bool {
                     if (ver.min.order(libc_os_ver) == .lt) return false;
                 }
             }
-            if (libc.glibc_min) |glibc_min| {
+            if (target.isGnuLibC()) if (libc.libc_min) |glibc_min| {
                 if (target.os.versionRange().gnuLibCVersion().?.order(glibc_min) == .lt) return false;
-            }
+            };
+            if (target.isMuslLibC()) if (libc.libc_min) |musl_min| {
+                if (target.os.versionRange().muslLibCVersion().?.order(musl_min) == .lt) return false;
+            };
             return true;
         }
     }
@@ -636,7 +640,7 @@ pub fn isLibCLibName(target: *const std.Target, name: []const u8) bool {
         return false;
     }
 
-    if (target.abi.isGnu() or target.abi.isMusl()) {
+    if (target.abi.isGnu() or target.abi.isMusl() or target.abi.isOpenHarmony()) {
         if (eqlIgnoreCase(ignore_case, name, "m"))
             return true;
         if (eqlIgnoreCase(ignore_case, name, "rt"))
@@ -651,7 +655,7 @@ pub fn isLibCLibName(target: *const std.Target, name: []const u8) bool {
             return true;
     }
 
-    if (target.abi.isMusl()) {
+    if (target.abi.isMusl() or target.abi.isOpenHarmony()) {
         if (eqlIgnoreCase(ignore_case, name, "crypt"))
             return true;
         if (eqlIgnoreCase(ignore_case, name, "xnet"))

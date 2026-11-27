@@ -49,6 +49,12 @@ os_version_max: ?OsVersion = null,
 /// Must be `null` when `abi` is `null` or `isGnu()` is `false`.
 glibc_version: ?SemanticVersion = null,
 
+/// `null` means native when `abi` is native; otherwise, the default minimum version for `cpu_arch`,
+/// `os_tag`, and `abi`.
+///
+/// Must be `null` when `abi` is `null` or `isMusl()` is `false`.
+musl_version: ?SemanticVersion = null,
+
 /// `null` means native when `abi` is native; otherwise, the default minimum version for `cpu_arch`
 /// and `abi`.
 ///
@@ -130,6 +136,7 @@ pub fn fromTarget(target: *const Target) Query {
         .os_version_max = undefined,
         .abi = target.abi,
         .glibc_version = if (target.abi.isGnu()) target.os.versionRange().gnuLibCVersion() else null,
+        .musl_version = if (target.abi.isMusl()) target.os.versionRange().muslLibCVersion() else null,
         .android_api_level = if (target.abi.isAndroid()) target.os.version_range.linux.android else null,
     };
     result.updateOsVersionRange(target.os);
@@ -176,7 +183,7 @@ pub const ParseOptions = struct {
     /// The fields are, respectively:
     /// * CPU Architecture
     /// * Operating System (and optional version range)
-    /// * C ABI (optional, with optional glibc version or Android API level)
+    /// * C ABI (optional, with optional glibc/musl version or Android API level)
     /// The string "native" can be used for CPU architecture as well as Operating System.
     /// If the CPU Architecture is specified as "native", then the Operating System and C ABI may be omitted.
     arch_os_abi: []const u8 = "native",
@@ -282,6 +289,10 @@ pub fn parse(args: ParseOptions) !Query {
         if (abi_it.next() != null) {
             if (abi.isGnu()) {
                 result.glibc_version = parseVersion(abi_ver_text) catch |err| switch (err) {
+                    error.Overflow, error.InvalidVersion => return error.InvalidAbiVersion,
+                };
+            } else if (abi.isMusl()) {
+                result.musl_version = parseVersion(abi_ver_text) catch |err| switch (err) {
                     error.Overflow, error.InvalidVersion => return error.InvalidAbiVersion,
                 };
             } else if (abi.isAndroid()) {
@@ -423,6 +434,7 @@ pub fn isNativeAbi(self: Query) bool {
     return self.os_tag == null and
         self.abi == null and
         self.glibc_version == null and
+        self.musl_version == null and
         self.android_api_level == null;
 }
 
@@ -488,6 +500,8 @@ pub fn printZigTriple(query: *const Query, w: *std.Io.Writer) std.Io.Writer.Erro
     }
 
     if (query.glibc_version) |v| {
+        try w.print("-{t}.{f}", .{ query.abi.?, PrintVersion{ .version = v } });
+    } else if (query.musl_version) |v| {
         try w.print("-{t}.{f}", .{ query.abi.?, PrintVersion{ .version = v } });
     } else if (query.android_api_level) |lvl| {
         try w.print("-{t}.{d}", .{ query.abi.?, lvl });
@@ -603,6 +617,7 @@ pub fn eql(a: Query, b: Query) bool {
     if (!OsVersion.eqlOpt(a.os_version_min, b.os_version_min)) return false;
     if (!OsVersion.eqlOpt(a.os_version_max, b.os_version_max)) return false;
     if (!versionEqualOpt(a.glibc_version, b.glibc_version)) return false;
+    if (!versionEqualOpt(a.musl_version, b.musl_version)) return false;
     if (a.android_api_level != b.android_api_level) return false;
     if (a.abi != b.abi) return false;
     if (a.ofmt != b.ofmt) return false;
@@ -716,6 +731,31 @@ test parse {
         const text = try query.zigTriple(std.testing.allocator);
         defer std.testing.allocator.free(text);
         try std.testing.expectEqualSlices(u8, "aarch64-linux.3.10...4.4.1-gnu.2.27", text);
+    }
+    {
+        const query = try Query.parse(.{
+            .arch_os_abi = "riscv64-linux.5.10...6.12-musl.1.2.4",
+        });
+        var diags: std.zig.system.ResolveTargetDiagnostics = .none;
+        const target = try std.zig.system.resolveTargetQuery(io, std.testing.allocator, query, &diags);
+        try std.testing.expect(diags.isEmpty());
+
+        try std.testing.expect(target.cpu.arch == .riscv64);
+        try std.testing.expect(target.os.tag == .linux);
+        try std.testing.expect(target.os.version_range.linux.range.min.major == 5);
+        try std.testing.expect(target.os.version_range.linux.range.min.minor == 10);
+        try std.testing.expect(target.os.version_range.linux.range.min.patch == 0);
+        try std.testing.expect(target.os.version_range.linux.range.max.major == 6);
+        try std.testing.expect(target.os.version_range.linux.range.max.minor == 12);
+        try std.testing.expect(target.os.version_range.linux.range.max.patch == 0);
+        try std.testing.expect(target.os.version_range.linux.musl.major == 1);
+        try std.testing.expect(target.os.version_range.linux.musl.minor == 2);
+        try std.testing.expect(target.os.version_range.linux.musl.patch == 4);
+        try std.testing.expect(target.abi == .musl);
+
+        const text = try query.zigTriple(std.testing.allocator);
+        defer std.testing.allocator.free(text);
+        try std.testing.expectEqualSlices(u8, "riscv64-linux.5.10...6.12-musl.1.2.4", text);
     }
     {
         const query = try Query.parse(.{

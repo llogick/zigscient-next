@@ -1444,7 +1444,7 @@ pub fn isPIEDefault(target: *const Target) DefaultPIStatus {
 
             switch (target.cpu.arch) {
                 .ve => return .no,
-                else => return if (target.os.tag == .linux or target.abi.isAndroid() or target.abi.isMusl()) .yes else .no,
+                else => return if (target.os.tag == .linux or target.abi.isAndroid() or target.abi.isMusl() or target.abi.isOpenHarmony()) .yes else .no,
             }
         },
 
@@ -1462,7 +1462,7 @@ pub fn isPIEDefault(target: *const Target) DefaultPIStatus {
             switch (target.cpu.arch) {
                 .hexagon => {
                     // CLANG_DEFAULT_PIE_ON_LINUX
-                    return if (target.os.tag == .linux or target.abi.isAndroid() or target.abi.isMusl()) .yes else .no;
+                    return if (target.os.tag == .linux or target.abi.isAndroid() or target.abi.isMusl() or target.abi.isOpenHarmony()) .yes else .no;
                 },
 
                 else => return .no,
@@ -1475,7 +1475,7 @@ pub fn ppcElfVersion(target: *const Target) u32 {
     std.debug.assert(target.cpu.arch.isPowerpc());
     return switch (target.cpu.arch) {
         .powerpc64le => 2,
-        .powerpc64 => if ((target.os.isAtLeast(.freebsd, .{ .major = 13, .minor = 0, .patch = 0 }) orelse false) or target.os.tag == .openbsd or target.abi.isMusl())
+        .powerpc64 => if ((target.os.isAtLeast(.freebsd, .{ .major = 13, .minor = 0, .patch = 0 }) orelse false) or target.os.tag == .openbsd or target.abi.isMusl() or target.abi.isOpenHarmony())
             2
         else
             1,
@@ -1696,7 +1696,7 @@ pub fn standardDynamicLinkerPath(target: *const Target) std.Target.DynamicLinker
 
 /// Parse ABI string in `<abi>(.?<version>)?` format.
 ///
-/// Poplates `abi`, `glibc_version` and `android_api_level` fields of `result`.
+/// Poplates `abi`, `glibc_version`, `musl_version` and `android_api_level` fields of `result`.
 ///
 /// If given `version_string` will be populated when `InvalidAbiVersion` or `InvalidApiVerson` is returned.
 pub fn parseAbi(result: *std.Target.Query, text: []const u8, version_string: ?*[]const u8) !void {
@@ -1725,6 +1725,10 @@ pub fn parseAbi(result: *std.Target.Query, text: []const u8, version_string: ?*[
     if (version_text.len != 0) {
         if (abi.isGnu()) {
             result.glibc_version = std.Target.Query.parseVersion(version_text) catch |er| switch (er) {
+                error.Overflow, error.InvalidVersion => return error.InvalidAbiVersion,
+            };
+        } else if (abi.isMusl()) {
+            result.musl_version = std.Target.Query.parseVersion(version_text) catch |er| switch (er) {
                 error.Overflow, error.InvalidVersion => return error.InvalidAbiVersion,
             };
         } else if (abi.isAndroid()) {

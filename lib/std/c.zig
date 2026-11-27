@@ -70,16 +70,17 @@ comptime {
 }
 
 /// * If not linking libc, returns `false`.
-/// * If linking musl libc, returns `true`.
+/// * If linking musl libc or OpenHarmony libc, returns `true`.
 /// * If linking GNU libc (glibc), returns `true` if the target version is greater than or equal to
 ///   `version`.
 /// * If linking Android libc (bionic), returns `true` if the target API level is greater than or
 ///   equal to `version.major`, ignoring other components.
 /// * If linking a libc other than these, returns `false`.
 pub inline fn versionCheck(comptime version: std.SemanticVersion) bool {
+    // TODO: This function needs to be redesigned to allow testing OS version, musl version, etc.
     return comptime blk: {
         if (!builtin.link_libc) break :blk false;
-        if (native_abi.isMusl()) break :blk true;
+        if (native_abi.isMusl() or native_abi.isOpenHarmony()) break :blk true;
         if (builtin.target.isGnuLibC()) {
             const ver = builtin.os.versionRange().gnuLibCVersion().?;
             break :blk switch (ver.order(version)) {
@@ -3307,7 +3308,7 @@ pub const Sigaction = switch (native_os) {
         .mips64n8el,
         .mips64r6,
         .mips64r6el,
-        => if (builtin.target.abi.isMusl())
+        => if (builtin.target.abi.isMusl() or builtin.target.abi.isOpenHarmony())
             common_linux_Sigaction
         else if (builtin.target.ptrBitWidth() == 64) extern struct {
             pub const handler_fn = *align(1) const fn (SIG) callconv(.c) void;
@@ -4285,7 +4286,7 @@ pub const linger = switch (native_os) {
 };
 
 pub const msghdr = switch (native_os) {
-    .linux => if (@bitSizeOf(usize) > @bitSizeOf(i32) and builtin.abi.isMusl()) posix_msghdr else extern struct {
+    .linux => if (@bitSizeOf(usize) > @bitSizeOf(i32) and (builtin.abi.isMusl() or builtin.abi.isOpenHarmony())) posix_msghdr else extern struct {
         name: ?*sockaddr,
         namelen: socklen_t,
         iov: [*]iovec,
@@ -4337,7 +4338,7 @@ pub const msghdr = switch (native_os) {
 ///
 /// On 32-bit and non-musl systems, these fields will be zero sized, and ignored.
 fn MuslOnlyPadding(endian: std.builtin.Endian) type {
-    return if (builtin.abi.isMusl() and @sizeOf(usize) == 8 and native_endian == endian) u32 else u0;
+    return if ((builtin.abi.isMusl() or builtin.abi.isOpenHarmony()) and @sizeOf(usize) == 8 and native_endian == endian) u32 else u0;
 }
 
 /// https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/sys_socket.h.html
@@ -4356,7 +4357,7 @@ const posix_msghdr = extern struct {
 };
 
 pub const msghdr_const = switch (native_os) {
-    .linux => if (@bitSizeOf(usize) > @bitSizeOf(i32) and builtin.abi.isMusl()) posix_msghdr_const else extern struct {
+    .linux => if (@bitSizeOf(usize) > @bitSizeOf(i32) and (builtin.abi.isMusl() or builtin.abi.isOpenHarmony())) posix_msghdr_const else extern struct {
         name: ?*const sockaddr,
         namelen: socklen_t,
         iov: [*]const iovec_const,
@@ -4414,7 +4415,7 @@ pub const mmsghdr = switch (native_os) {
 };
 
 pub const cmsghdr = switch (native_os) {
-    .linux => if (@bitSizeOf(usize) > @bitSizeOf(i32) and builtin.abi.isMusl()) posix_cmsghdr else extern struct {
+    .linux => if (@bitSizeOf(usize) > @bitSizeOf(i32) and (builtin.abi.isMusl() or builtin.abi.isOpenHarmony())) posix_cmsghdr else extern struct {
         len: usize,
         level: i32,
         type: i32,
@@ -9073,7 +9074,7 @@ pub const V = switch (native_os) {
 pub const NCCS = switch (native_os) {
     .linux => if (native_abi.isGnu())
         32
-    else if (native_abi.isMusl())
+    else if (native_abi.isMusl() or native_abi.isOpenHarmony())
         if (native_arch.isPowerpc()) 19 else 32
     else
         linux.NCCS,
@@ -10596,7 +10597,7 @@ pub const getentropy = switch (native_os) {
 };
 pub const getrandom = switch (native_os) {
     .freebsd => private.getrandom,
-    .linux => if (builtin.abi.isMusl() or
+    .linux => if (builtin.abi.isMusl() or builtin.abi.isOpenHarmony() or
         (builtin.abi.isGnu() and versionCheck(.{ .major = 2, .minor = 25, .patch = 0 })) or
         (builtin.abi.isAndroid() and versionCheck(.{ .major = 28, .minor = 0, .patch = 0 })))
         private.getrandom
@@ -11237,7 +11238,7 @@ pub const pthread_cancelstate = switch (native_os) {
         ENABLE = 0,
         DISABLE = 1,
     },
-    .linux => if (native_abi.isMusl()) enum(c_int) {
+    .linux => if (native_abi.isMusl() or native_abi.isOpenHarmony()) enum(c_int) {
         ENABLE = 0,
         DISABLE = 1,
         MASKED = 2,

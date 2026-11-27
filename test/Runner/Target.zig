@@ -132,10 +132,12 @@ pub const Abi = Abi: {
     field_types[0] = void;
     for (field_types[1..], field_names[1..]) |*field_type, field_name| {
         const abi_tag = @field(std.Target.Abi, field_name);
-        const version: enum { none, libc, android } = if (abi_tag.isAndroid())
+        const version: enum { none, glibc, musl, android } = if (abi_tag.isAndroid())
             .android
-        else if (abi_tag.isGnu() or abi_tag.isMusl())
-            .libc
+        else if (abi_tag.isGnu())
+            .glibc
+        else if (abi_tag.isMusl())
+            .musl
         else
             .none;
         field_type.* = struct {
@@ -143,14 +145,15 @@ pub const Abi = Abi: {
 
             pub const Version = switch (version) {
                 .none => struct {},
-                .libc => std.SemanticVersion,
+                .glibc, .musl => std.SemanticVersion,
                 .android => u32,
             };
 
             pub fn updateQuery(abi: *const @This(), query: *std.Target.Query) void {
                 if (abi.version) |v| switch (version) {
                     .none => {},
-                    .libc => query.glibc_version = v,
+                    .glibc => query.glibc_version = v,
+                    .musl => query.musl_version = v,
                     .android => query.android_api_level = v,
                 };
             }

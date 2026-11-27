@@ -68,7 +68,7 @@ pub fn build(b: *std.Build) void {
                 libc.abi != target.result.abi)
                 continue;
 
-            if (libc.glibc_min) |min| {
+            if (libc.libc_min) |min| {
                 if (glibc_ver.order(min) == .lt) continue :versions;
             }
         }
@@ -126,7 +126,7 @@ pub fn build(b: *std.Build) void {
                 libc.abi != target.result.abi)
                 continue;
 
-            if (libc.glibc_min) |min| {
+            if (libc.libc_min) |min| {
                 if (glibc_ver.order(min) == .lt) continue :versions;
             }
         }

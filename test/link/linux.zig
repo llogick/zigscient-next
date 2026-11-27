@@ -328,7 +328,7 @@ pub fn addCases(ctx: *LinkContext) void {
             "--filter=sym_name ~ \"do_stuff\"",
         }, .{ .sub_name = "call_explicit" });
         const run_call_explicit = case.addRunArtifact(call_explicit);
-        if (ctx.target.result.abi.isMusl()) {
+        if (ctx.target.result.abi.isMusl() or ctx.target.result.abi.isOpenHarmony()) {
             // musl's dynamic linker does not support GNU symbol versioning and will simply always
             // bind to the default version.
             run_call_explicit.expectStdErrEqual(
@@ -375,7 +375,7 @@ pub fn addCases(ctx: *LinkContext) void {
             "--filter=sym_name ~ \"do_stuff\"",
         }, .{ .sub_name = "call_both" });
         const run_call_both = case.addRunArtifact(call_both);
-        if (ctx.target.result.abi.isMusl()) {
+        if (ctx.target.result.abi.isMusl() or ctx.target.result.abi.isOpenHarmony()) {
             // musl's dynamic linker does not support GNU symbol versioning and will simply always
             // bind to the default version.
             run_call_both.expectStdErrEqual(
@@ -584,7 +584,7 @@ pub fn addCases(ctx: *LinkContext) void {
                 \\main
                 \\
             );
-        } else if (ctx.target.result.abi.isMusl()) {
+        } else if (ctx.target.result.abi.isMusl() or ctx.target.result.abi.isOpenHarmony()) {
             // musl libc doesn't call preinit.
             run_arrays.expectStdErrEqual(
                 \\init_00000

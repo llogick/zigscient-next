@@ -281,6 +281,7 @@ pub const Wip = struct {
             .windows => |win_ver| .{ .windows = win_ver },
         } else .default;
         const glibc_version: ?String = if (q.glibc_version) |sem_ver| try wip.addSemVer(sem_ver) else null;
+        const musl_version: ?String = if (q.musl_version) |sem_ver| try wip.addSemVer(sem_ver) else null;
         const dynamic_linker: ?String = if (q.dynamic_linker) |*dl|
             if (dl.get()) |s| try wip.addString(s) else .empty
         else
@@ -303,10 +304,12 @@ pub const Wip = struct {
             },
             .flags2 = .{
                 .dynamic_linker = dynamic_linker != null,
+                .musl_version = musl_version != null,
             },
             .cpu_features_add = .{ .value = if (cpu_features_add_empty) null else q.cpu_features_add },
             .cpu_features_sub = .{ .value = if (cpu_features_sub_empty) null else q.cpu_features_sub },
             .glibc_version = .{ .value = glibc_version },
+            .musl_version = .{ .value = musl_version },
             .android_api_level = .{ .value = q.android_api_level },
             .dynamic_linker = .{ .value = dynamic_linker },
             .cpu_name = .{ .value = cpu_name },
@@ -330,10 +333,11 @@ pub const Wip = struct {
         const gpa = wip.gpa;
         const cpu_name: String = try wip.addString(t.cpu.model.name);
 
-        const os_version_min: TargetQuery.OsVersion, const os_version_max: TargetQuery.OsVersion, const glibc_version: ?String, const android_api_level: ?u32 = switch (t.os.versionRange()) {
+        const os_version_min: TargetQuery.OsVersion, const os_version_max: TargetQuery.OsVersion, const glibc_version: ?String, const musl_version: ?String, const android_api_level: ?u32 = switch (t.os.versionRange()) {
             .none => .{
                 .none,
                 .none,
+                null,
                 null,
                 null,
             },
@@ -342,22 +346,26 @@ pub const Wip = struct {
                 .{ .semver = try wip.addSemVer(range.max) },
                 null,
                 null,
+                null,
             },
             .hurd => |hurd| .{
                 .{ .semver = try wip.addSemVer(hurd.range.min) },
                 .{ .semver = try wip.addSemVer(hurd.range.max) },
                 try wip.addSemVer(hurd.glibc),
                 null,
+                null,
             },
             .linux => |linux| .{
                 .{ .semver = try wip.addSemVer(linux.range.min) },
                 .{ .semver = try wip.addSemVer(linux.range.max) },
                 try wip.addSemVer(linux.glibc),
+                try wip.addSemVer(linux.musl),
                 linux.android,
             },
             .windows => |range| .{
                 .{ .windows = range.min },
                 .{ .windows = range.max },
+                null,
                 null,
                 null,
             },
@@ -380,10 +388,12 @@ pub const Wip = struct {
             },
             .flags2 = .{
                 .dynamic_linker = dynamic_linker != null,
+                .musl_version = musl_version != null,
             },
             .cpu_features_add = .{ .value = if (cpu_features_add_empty) null else t.cpu.features },
             .cpu_features_sub = .{ .value = null },
             .glibc_version = .{ .value = glibc_version },
+            .musl_version = .{ .value = musl_version },
             .android_api_level = .{ .value = android_api_level },
             .dynamic_linker = .{ .value = dynamic_linker },
             .cpu_name = .{ .value = cpu_name },
@@ -2243,6 +2253,10 @@ pub const ResolvedTarget = struct {
                 std.SemanticVersion.parse(s.slice(c)) catch unreachable
             else
                 null,
+            .musl_version = if (tq.musl_version.value) |s|
+                std.SemanticVersion.parse(s.slice(c)) catch unreachable
+            else
+                null,
             .android_api_level = tq.android_api_level.value,
             .abi = tq.flags.abi.unwrap(),
             .dynamic_linker = if (tq.dynamic_linker.value) |s| .init(s.slice(c)) else null,
@@ -2261,6 +2275,7 @@ pub const TargetQuery = struct {
     os_version_min: Storage.FlagUnion(.flags, .os_version_min, OsVersion),
     os_version_max: Storage.FlagUnion(.flags, .os_version_max, OsVersion),
     glibc_version: Storage.FlagOptional(.flags, .glibc_version, String),
+    musl_version: Storage.FlagOptional(.flags2, .musl_version, String),
     android_api_level: Storage.FlagOptional(.flags, .android_api_level, u32),
     dynamic_linker: Storage.FlagOptional(.flags2, .dynamic_linker, String),
 
@@ -2615,7 +2630,8 @@ pub const TargetQuery = struct {
 
     pub const Flags2 = bitpack struct(u32) {
         dynamic_linker: bool,
-        _: u31 = 0,
+        musl_version: bool,
+        _: u30 = 0,
     };
 
     pub fn unwrapTarget(tq: *const TargetQuery, c: *const Configuration) std.Target {
@@ -2636,6 +2652,7 @@ pub const TargetQuery = struct {
                             .max = tq.os_version_max.u.unwrap(c).?.semver,
                         },
                         .glibc = std.SemanticVersion.parse(tq.glibc_version.value.?.slice(c)) catch unreachable,
+                        .musl = std.SemanticVersion.parse(tq.musl_version.value.?.slice(c)) catch unreachable,
                         .android = tq.android_api_level.value.?,
                     } },
                     .hurd => .{ .hurd = .{
