@@ -91,12 +91,18 @@ fn strcat(noalias dst: [*:0]c_char, noalias src: [*:0]const c_char) callconv(.c)
 }
 
 fn strncat(noalias dst: [*:0]c_char, noalias src: [*:0]const c_char, max: usize) callconv(.c) [*:0]c_char {
-    const dst_len = std.mem.len(@as([*:0]u8, @ptrCast(dst)));
-    const src_len = strnlen(src, max);
-
-    @memcpy(dst[dst_len..][0..src_len], src[0..src_len]);
-    dst[dst_len + src_len] = 0;
-    return dst[0..(dst_len + src_len) :0].ptr;
+    var s: [*:0]const u8 = @ptrCast(src);
+    var d: [*:0]u8 = @ptrCast(dst);
+    var n = max;
+    d += std.mem.len(d);
+    while (n != 0 and s[0] != 0) {
+        n -= 1;
+        d[0] = s[0];
+        d += 1;
+        s += 1;
+    }
+    d[0] = 0;
+    return dst;
 }
 
 fn strcmp(a: [*:0]const c_char, b: [*:0]const c_char) callconv(.c) c_int {
@@ -188,8 +194,6 @@ fn strndup(str: [*:0]const c_char, n: usize) callconv(.c) ?[*:0]c_char {
     d[len] = 0;
     return @ptrCast(d);
 }
-
-// strlen is in compiler_rt
 
 fn strtok_r(noalias maybe_str: ?[*:0]c_char, noalias values: [*:0]const c_char, noalias state: *?[*:0]c_char) callconv(.c) ?[*:0]c_char {
     const str = if (maybe_str) |str|
