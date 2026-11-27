@@ -74,19 +74,18 @@ pub fn Parsed(comptime T: type) type {
 }
 
 /// Parses the json document from `s` and returns the result packaged in a `std.json.Parsed`.
-/// You must call `deinit()` of the returned object to clean up allocated resources.
-/// If you are using a `std.heap.ArenaAllocator` or similar, consider calling `parseFromSliceLeaky` instead.
-/// Note that `error.BufferUnderrun` is not actually possible to return from this function.
+/// Created resources are not managed by this function.
+/// Function will not return `error.BufferUnderrun`.
 pub fn parseFromSlice(
     comptime T: type,
-    allocator: Allocator,
+    gpa: Allocator,
     s: []const u8,
     options: ParseOptions,
 ) ParseError(Scanner)!Parsed(T) {
-    var scanner = Scanner.initCompleteInput(allocator, s);
+    var scanner = Scanner.initCompleteInput(gpa, s);
     defer scanner.deinit();
 
-    return parseFromTokenSource(T, allocator, &scanner, options);
+    return parseFromTokenSource(T, gpa, &scanner, options);
 }
 
 /// Parses the json document from `s` and returns the result.
@@ -94,31 +93,31 @@ pub fn parseFromSlice(
 /// It is recommended to use a `std.heap.ArenaAllocator` or similar.
 pub fn parseFromSliceLeaky(
     comptime T: type,
-    allocator: Allocator,
+    arena: Allocator,
     s: []const u8,
     options: ParseOptions,
 ) ParseError(Scanner)!T {
-    var scanner = Scanner.initCompleteInput(allocator, s);
+    var scanner = Scanner.initCompleteInput(arena, s);
     defer scanner.deinit();
 
-    return parseFromTokenSourceLeaky(T, allocator, &scanner, options);
+    return parseFromTokenSourceLeaky(T, arena, &scanner, options);
 }
 
 /// `scanner_or_reader` must be either a `*std.json.Scanner` with complete input or a `*std.json.Reader`.
-/// Note that `error.BufferUnderrun` is not actually possible to return from this function.
+/// Function will not return `error.BufferUnderrun`.
 pub fn parseFromTokenSource(
     comptime T: type,
-    allocator: Allocator,
+    gpa: Allocator,
     scanner_or_reader: anytype,
     options: ParseOptions,
 ) ParseError(@TypeOf(scanner_or_reader.*))!Parsed(T) {
     errdefer scanner_or_reader.saveDiagnostics();
     var parsed = Parsed(T){
-        .arena = try allocator.create(ArenaAllocator),
+        .arena = try gpa.create(ArenaAllocator),
         .value = undefined,
     };
-    errdefer allocator.destroy(parsed.arena);
-    parsed.arena.* = ArenaAllocator.init(allocator);
+    errdefer gpa.destroy(parsed.arena);
+    parsed.arena.* = ArenaAllocator.init(gpa);
     errdefer parsed.arena.deinit();
 
     parsed.value = try parseFromTokenSourceLeaky(T, parsed.arena.allocator(), scanner_or_reader, options);
@@ -131,7 +130,7 @@ pub fn parseFromTokenSource(
 /// It is recommended to use a `std.heap.ArenaAllocator` or similar.
 pub fn parseFromTokenSourceLeaky(
     comptime T: type,
-    allocator: Allocator,
+    arena: Allocator,
     scanner_or_reader: anytype,
     options: ParseOptions,
 ) ParseError(@TypeOf(scanner_or_reader.*))!T {
@@ -158,7 +157,7 @@ pub fn parseFromTokenSourceLeaky(
         scanner_or_reader.enableDiagnostics(diag);
     }
 
-    const value = try innerParse(T, allocator, scanner_or_reader, resolved_options);
+    const value = try innerParse(T, arena, scanner_or_reader, resolved_options);
 
     assert(.end_of_document == try scanner_or_reader.next());
 
@@ -169,16 +168,16 @@ pub fn parseFromTokenSourceLeaky(
 /// Only `options.ignore_unknown_fields` is used from `options`.
 pub fn parseFromValue(
     comptime T: type,
-    allocator: Allocator,
+    gpa: Allocator,
     source: Value,
     options: ParseOptions,
 ) ParseFromValueError!Parsed(T) {
     var parsed = Parsed(T){
-        .arena = try allocator.create(ArenaAllocator),
+        .arena = try gpa.create(ArenaAllocator),
         .value = undefined,
     };
-    errdefer allocator.destroy(parsed.arena);
-    parsed.arena.* = ArenaAllocator.init(allocator);
+    errdefer gpa.destroy(parsed.arena);
+    parsed.arena.* = ArenaAllocator.init(gpa);
     errdefer parsed.arena.deinit();
 
     parsed.value = try parseFromValueLeaky(T, parsed.arena.allocator(), source, options);
@@ -186,16 +185,19 @@ pub fn parseFromValue(
     return parsed;
 }
 
+/// Parses the json document from `source` and returns the result.
+/// Allocations made during this operation are not carefully tracked and may not be possible to individually clean up.
+/// It is recommended to use a `std.heap.ArenaAllocator` or similar.
 pub fn parseFromValueLeaky(
     comptime T: type,
-    allocator: Allocator,
+    arena: Allocator,
     source: Value,
     options: ParseOptions,
 ) ParseFromValueError!T {
     // I guess this function doesn't need to exist,
     // but the flow of the sourcecode is easy to follow and grouped nicely with
     // this pub redirect function near the top and the implementation near the bottom.
-    return innerParseFromValue(T, allocator, source, options);
+    return innerParseFromValue(T, arena, source, options);
 }
 
 /// The error set that will be returned when parsing from `*Source`.
@@ -220,13 +222,13 @@ pub const ParseFromValueError = std.fmt.ParseIntError || std.fmt.ParseFloatError
 /// This is an internal function called recursively
 /// during the implementation of `parseFromTokenSourceLeaky` and similar.
 /// It is exposed primarily to enable custom `jsonParse()` methods to call back into the `parseFrom*` system,
-/// such as if you're implementing a custom container of type `T`;
-/// you can call `innerParse(T, ...)` for each of the container's items.
-/// Note that `null` fields are not allowed on the `options` when calling this function.
-/// (The `options` you get in your `jsonParse` method has no `null` fields.)
+/// such as when implementing a custom container of type `T`;
+/// `innerParse(T, ...)` can be called for each of the container's items.
+/// `null` fields are not allowed on the `options` when calling this function.
+/// (The `options` in the `jsonParse` method have no `null` fields.)
 pub fn innerParse(
     comptime T: type,
-    allocator: Allocator,
+    arena: Allocator,
     source: anytype,
     options: ParseOptions,
 ) ParseError(@TypeOf(source.*))!T {
@@ -243,8 +245,8 @@ pub fn innerParse(
             };
         },
         .float, .comptime_float => {
-            const token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
-            defer freeAllocated(allocator, token);
+            const token = try source.nextAllocMax(arena, .alloc_if_needed, options.max_value_len.?);
+            defer freeAllocated(arena, token);
             const slice = switch (token) {
                 inline .number, .allocated_number, .string, .allocated_string => |slice| slice,
                 else => |t| return typeError(options.diagnostics, t, "float"),
@@ -252,8 +254,8 @@ pub fn innerParse(
             return try std.fmt.parseFloat(T, slice);
         },
         .int, .comptime_int => {
-            const token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
-            defer freeAllocated(allocator, token);
+            const token = try source.nextAllocMax(arena, .alloc_if_needed, options.max_value_len.?);
+            defer freeAllocated(arena, token);
             const slice = switch (token) {
                 inline .number, .allocated_number, .string, .allocated_string => |slice| slice,
                 else => |t| return typeError(options.diagnostics, t, "int"),
@@ -267,17 +269,17 @@ pub fn innerParse(
                     return null;
                 },
                 else => {
-                    return try innerParse(optionalInfo.child, allocator, source, options);
+                    return try innerParse(optionalInfo.child, arena, source, options);
                 },
             }
         },
         .@"enum" => {
             if (std.meta.hasFn(T, "jsonParse")) {
-                return T.jsonParse(allocator, source, options);
+                return T.jsonParse(arena, source, options);
             }
 
-            const token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
-            defer freeAllocated(allocator, token);
+            const token = try source.nextAllocMax(arena, .alloc_if_needed, options.max_value_len.?);
+            defer freeAllocated(arena, token);
             const slice = switch (token) {
                 inline .number, .allocated_number, .string, .allocated_string => |slice| slice,
                 else => |t| return typeError(options.diagnostics, t, "enum (number or string)"),
@@ -286,7 +288,7 @@ pub fn innerParse(
         },
         .@"union" => |unionInfo| {
             if (std.meta.hasFn(T, "jsonParse")) {
-                return T.jsonParse(allocator, source, options);
+                return T.jsonParse(arena, source, options);
             }
 
             if (unionInfo.tag_type == null) @compileError("Unable to parse into untagged union '" ++ @typeName(T) ++ "'");
@@ -297,7 +299,7 @@ pub fn innerParse(
             }
 
             var result: ?T = null;
-            var name_token: ?Token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
+            var name_token: ?Token = try source.nextAllocMax(arena, .alloc_if_needed, options.max_value_len.?);
             const field_name = switch (name_token.?) {
                 inline .string, .allocated_string => |slice| slice,
                 else => {
@@ -310,7 +312,7 @@ pub fn innerParse(
                 if (std.mem.eql(u8, u_field_name, field_name)) {
                     // Free the name token now in case we're using an allocator that optimizes freeing the last allocated object.
                     // (Recursing into innerParse() might trigger more allocations.)
-                    freeAllocated(allocator, name_token.?);
+                    freeAllocated(arena, name_token.?);
                     name_token = null;
                     if (u_field_type == void) {
                         // void isn't really a json type, but we can support void payload union tags with {} as a value.
@@ -325,7 +327,7 @@ pub fn innerParse(
                         result = @unionInit(T, u_field_name, {});
                     } else {
                         // Recurse.
-                        result = @unionInit(T, u_field_name, try innerParse(u_field_type, allocator, source, options));
+                        result = @unionInit(T, u_field_name, try innerParse(u_field_type, arena, source, options));
                     }
                     break;
                 }
@@ -359,7 +361,7 @@ pub fn innerParse(
                         ));
                         return error.LengthMismatch;
                     }
-                    r[i] = try innerParse(field_type, allocator, source, options);
+                    r[i] = try innerParse(field_type, arena, source, options);
                 }
 
                 if (.array_end != try source.next()) {
@@ -374,7 +376,7 @@ pub fn innerParse(
             }
 
             if (std.meta.hasFn(T, "jsonParse")) {
-                return T.jsonParse(allocator, source, options);
+                return T.jsonParse(arena, source, options);
             }
 
             switch (try source.next()) {
@@ -386,7 +388,7 @@ pub fn innerParse(
             var fields_seen: [structInfo.field_names.len]bool = @splat(false);
 
             while (true) {
-                var name_token: ?Token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
+                var name_token: ?Token = try source.nextAllocMax(arena, .alloc_if_needed, options.max_value_len.?);
                 const field_name = switch (name_token.?) {
                     inline .string, .allocated_string => |slice| slice,
                     .object_end => { // No more fields.
@@ -405,7 +407,7 @@ pub fn innerParse(
                     if (std.mem.eql(u8, f_name, field_name)) {
                         // Free the name token now in case we're using an allocator that optimizes freeing the last allocated object.
                         // (Recursing into innerParse() might trigger more allocations.)
-                        freeAllocated(allocator, name_token.?);
+                        freeAllocated(arena, name_token.?);
                         errdefer if (options.diagnostics) |diag| diag.recordContext(@typeName(T) ++ "." ++ f_name);
                         name_token = null;
                         if (fields_seen[i]) {
@@ -413,7 +415,7 @@ pub fn innerParse(
                                 .use_first => {
                                     // Parse and ignore the redundant value.
                                     // We don't want to skip the value, because we want type checking.
-                                    _ = try innerParse(f_type, allocator, source, options);
+                                    _ = try innerParse(f_type, arena, source, options);
                                     break;
                                 },
                                 .@"error" => {
@@ -423,13 +425,13 @@ pub fn innerParse(
                                 .use_last => {},
                             }
                         }
-                        @field(r, f_name) = try innerParse(f_type, allocator, source, options);
+                        @field(r, f_name) = try innerParse(f_type, arena, source, options);
                         fields_seen[i] = true;
                         break;
                     }
                 } else {
                     // Didn't match anything.
-                    freeAllocated(allocator, name_token.?);
+                    freeAllocated(arena, name_token.?);
                     if (options.ignore_unknown_fields) {
                         try source.skipValue();
                     } else {
@@ -446,7 +448,7 @@ pub fn innerParse(
             switch (try source.peekNextTokenType()) {
                 .array_begin => {
                     // Typical array.
-                    return internalParseArray(T, arrayInfo.child, allocator, source, options);
+                    return internalParseArray(T, arrayInfo.child, arena, source, options);
                 },
                 .string => {
                     if (arrayInfo.child != u8) return typeError(options.diagnostics, .string, "string");
@@ -523,7 +525,7 @@ pub fn innerParse(
             switch (try source.peekNextTokenType()) {
                 .array_begin => {
                     const A = [vector_info.len]vector_info.child;
-                    return try internalParseArray(A, vector_info.child, allocator, source, options);
+                    return try internalParseArray(A, vector_info.child, arena, source, options);
                 },
                 else => |t| return typeError(options.diagnostics, t, "array"),
             }
@@ -532,8 +534,8 @@ pub fn innerParse(
         .pointer => |ptrInfo| {
             switch (ptrInfo.size) {
                 .one => {
-                    const r: *ptrInfo.child = try allocator.create(ptrInfo.child);
-                    r.* = try innerParse(ptrInfo.child, allocator, source, options);
+                    const r: *ptrInfo.child = try arena.create(ptrInfo.child);
+                    r.* = try innerParse(ptrInfo.child, arena, source, options);
                     return r;
                 },
                 .slice => {
@@ -552,15 +554,15 @@ pub fn innerParse(
                                     else => {},
                                 }
 
-                                try arraylist.ensureUnusedCapacity(allocator, 1);
-                                arraylist.appendAssumeCapacity(try innerParse(ptrInfo.child, allocator, source, options));
+                                try arraylist.ensureUnusedCapacity(arena, 1);
+                                arraylist.appendAssumeCapacity(try innerParse(ptrInfo.child, arena, source, options));
                             }
 
                             if (ptrInfo.sentinel()) |s| {
-                                return try arraylist.toOwnedSliceSentinel(allocator, s);
+                                return try arraylist.toOwnedSliceSentinel(arena, s);
                             }
 
-                            return try arraylist.toOwnedSlice(allocator);
+                            return try arraylist.toOwnedSlice(arena);
                         },
                         .string => {
                             if (ptrInfo.child != u8) {
@@ -572,17 +574,17 @@ pub fn innerParse(
                             if (ptrInfo.sentinel()) |s| {
                                 // Use our own array list so we can append the sentinel.
                                 var value_list: ArrayList(u8) = .empty;
-                                _ = try source.allocNextIntoArrayListMax(allocator, &value_list, .alloc_always, options.max_value_len.?);
-                                return try value_list.toOwnedSliceSentinel(allocator, s);
+                                _ = try source.allocNextIntoArrayListMax(arena, &value_list, .alloc_always, options.max_value_len.?);
+                                return try value_list.toOwnedSliceSentinel(arena, s);
                             }
                             if (ptrInfo.attrs.@"const") {
-                                switch (try source.nextAllocMax(allocator, options.allocate.?, options.max_value_len.?)) {
+                                switch (try source.nextAllocMax(arena, options.allocate.?, options.max_value_len.?)) {
                                     inline .string, .allocated_string => |slice| return slice,
                                     else => unreachable,
                                 }
                             } else {
                                 // Have to allocate to get a mutable copy.
-                                switch (try source.nextAllocMax(allocator, .alloc_always, options.max_value_len.?)) {
+                                switch (try source.nextAllocMax(arena, .alloc_always, options.max_value_len.?)) {
                                     .allocated_string => |slice| return slice,
                                     else => unreachable,
                                 }
@@ -602,7 +604,7 @@ pub fn innerParse(
 fn internalParseArray(
     comptime T: type,
     comptime Child: type,
-    allocator: Allocator,
+    arena: Allocator,
     source: anytype,
     options: ParseOptions,
 ) !T {
@@ -614,7 +616,7 @@ fn internalParseArray(
             if (options.diagnostics) |diag| diag.setMessage(std.fmt.comptimePrint("not enough items for fixed length array. expected length: {}", .{r.len}));
             return error.LengthMismatch;
         }
-        elem.* = try innerParse(Child, allocator, source, options);
+        elem.* = try innerParse(Child, arena, source, options);
     }
 
     if (.array_end != try source.next()) {
@@ -675,7 +677,11 @@ fn coerceToStringDescriptor(token: anytype, comptime prefix: []const u8) []const
     };
 }
 
-pub fn typeError(diagnostics: ?*Diagnostics, token: anytype, comptime expected: []const u8) error{UnexpectedToken} {
+pub fn typeError(
+    diagnostics: ?*Diagnostics,
+    token: anytype,
+    comptime expected: []const u8,
+) error{UnexpectedToken} {
     if (diagnostics) |diag| {
         const prefix = "expected: " ++ expected ++ ", found: ";
         const s = coerceToStringDescriptor(token, prefix);
@@ -687,11 +693,11 @@ pub fn typeError(diagnostics: ?*Diagnostics, token: anytype, comptime expected: 
 /// This is an internal function called recursively
 /// during the implementation of `parseFromValueLeaky`.
 /// It is exposed primarily to enable custom `jsonParseFromValue()` methods to call back into the `parseFromValue*` system,
-/// such as if you're implementing a custom container of type `T`;
-/// you can call `innerParseFromValue(T, ...)` for each of the container's items.
+/// such as when implementing a custom container of type `T`;
+/// `innerParse(T, ...)` can be called for each of the container's items.
 pub fn innerParseFromValue(
     comptime T: type,
-    allocator: Allocator,
+    arena: Allocator,
     source: Value,
     options: ParseOptions,
 ) ParseFromValueError!T {
@@ -737,12 +743,12 @@ pub fn innerParseFromValue(
         .optional => |optionalInfo| {
             switch (source) {
                 .null => return null,
-                else => return try innerParseFromValue(optionalInfo.child, allocator, source, options),
+                else => return try innerParseFromValue(optionalInfo.child, arena, source, options),
             }
         },
         .@"enum" => {
             if (std.meta.hasFn(T, "jsonParseFromValue")) {
-                return T.jsonParseFromValue(allocator, source, options);
+                return T.jsonParseFromValue(arena, source, options);
             }
 
             switch (source) {
@@ -760,7 +766,7 @@ pub fn innerParseFromValue(
         },
         .@"union" => |unionInfo| {
             if (std.meta.hasFn(T, "jsonParseFromValue")) {
-                return T.jsonParseFromValue(allocator, source, options);
+                return T.jsonParseFromValue(arena, source, options);
             }
 
             if (unionInfo.tag_type == null) @compileError("Unable to parse into untagged union '" ++ @typeName(T) ++ "'");
@@ -795,7 +801,7 @@ pub fn innerParseFromValue(
                         return @unionInit(T, u_field_name, {});
                     }
                     // Recurse.
-                    return @unionInit(T, u_field_name, try innerParseFromValue(u_field_type, allocator, kv.value_ptr.*, options));
+                    return @unionInit(T, u_field_name, try innerParseFromValue(u_field_type, arena, kv.value_ptr.*, options));
                 }
             }
             // Didn't match anything.
@@ -817,14 +823,14 @@ pub fn innerParseFromValue(
 
                 var r: T = undefined;
                 inline for (0..structInfo.field_names.len, source.array.items) |i, item| {
-                    r[i] = try innerParseFromValue(structInfo.field_types[i], allocator, item, options);
+                    r[i] = try innerParseFromValue(structInfo.field_types[i], arena, item, options);
                 }
 
                 return r;
             }
 
             if (std.meta.hasFn(T, "jsonParseFromValue")) {
-                return T.jsonParseFromValue(allocator, source, options);
+                return T.jsonParseFromValue(arena, source, options);
             }
 
             switch (source) {
@@ -849,7 +855,7 @@ pub fn innerParseFromValue(
                     if (std.mem.eql(u8, f_name, field_name)) {
                         errdefer if (options.diagnostics) |diag| diag.recordContext(@typeName(T) ++ "." ++ f_name);
                         assert(!fields_seen[i]); // Can't have duplicate keys in a Value.object.
-                        @field(r, f_name) = try innerParseFromValue(f_type, allocator, kv.value_ptr.*, options);
+                        @field(r, f_name) = try innerParseFromValue(f_type, arena, kv.value_ptr.*, options);
                         fields_seen[i] = true;
                         break;
                     }
@@ -869,7 +875,7 @@ pub fn innerParseFromValue(
             switch (source) {
                 .array => |array| {
                     // Typical array.
-                    return innerParseArrayFromArrayValue(T, arrayInfo.child, arrayInfo.len, allocator, array, options);
+                    return innerParseArrayFromArrayValue(T, arrayInfo.child, arrayInfo.len, arena, array, options);
                 },
                 .string => |s| {
                     if (arrayInfo.child != u8) return typeError(options.diagnostics, source, "array");
@@ -891,7 +897,7 @@ pub fn innerParseFromValue(
         .vector => |vecInfo| {
             switch (source) {
                 .array => |array| {
-                    return innerParseArrayFromArrayValue(T, vecInfo.child, vecInfo.len, allocator, array, options);
+                    return innerParseArrayFromArrayValue(T, vecInfo.child, vecInfo.len, arena, array, options);
                 },
                 else => |t| return typeError(options.diagnostics, t, "array"),
             }
@@ -900,20 +906,20 @@ pub fn innerParseFromValue(
         .pointer => |ptrInfo| {
             switch (ptrInfo.size) {
                 .one => {
-                    const r: *ptrInfo.child = try allocator.create(ptrInfo.child);
-                    r.* = try innerParseFromValue(ptrInfo.child, allocator, source, options);
+                    const r: *ptrInfo.child = try arena.create(ptrInfo.child);
+                    r.* = try innerParseFromValue(ptrInfo.child, arena, source, options);
                     return r;
                 },
                 .slice => {
                     switch (source) {
                         .array => |array| {
                             const r = if (ptrInfo.sentinel()) |sentinel|
-                                try allocator.allocSentinel(ptrInfo.child, array.items.len, sentinel)
+                                try arena.allocSentinel(ptrInfo.child, array.items.len, sentinel)
                             else
-                                try allocator.alloc(ptrInfo.child, array.items.len);
+                                try arena.alloc(ptrInfo.child, array.items.len);
 
                             for (array.items, r) |item, *dest| {
-                                dest.* = try innerParseFromValue(ptrInfo.child, allocator, item, options);
+                                dest.* = try innerParseFromValue(ptrInfo.child, arena, item, options);
                             }
 
                             return r;
@@ -923,9 +929,9 @@ pub fn innerParseFromValue(
                             // Dynamic length string.
 
                             const r = if (ptrInfo.sentinel()) |sentinel|
-                                try allocator.allocSentinel(ptrInfo.child, s.len, sentinel)
+                                try arena.allocSentinel(ptrInfo.child, s.len, sentinel)
                             else
-                                try allocator.alloc(ptrInfo.child, s.len);
+                                try arena.alloc(ptrInfo.child, s.len);
                             @memcpy(r[0..], s);
 
                             return r;
@@ -944,7 +950,7 @@ fn innerParseArrayFromArrayValue(
     comptime T: type,
     comptime Child: type,
     comptime len: comptime_int,
-    allocator: Allocator,
+    arena: Allocator,
     array: Array,
     options: ParseOptions,
 ) !T {
@@ -955,7 +961,7 @@ fn innerParseArrayFromArrayValue(
 
     var r: T = undefined;
     for (array.items, 0..) |item, i| {
-        r[i] = try innerParseFromValue(Child, allocator, item, options);
+        r[i] = try innerParseFromValue(Child, arena, item, options);
     }
 
     return r;
